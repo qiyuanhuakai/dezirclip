@@ -1,13 +1,9 @@
 import { Github, MessageSquare, RotateCcw } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { UpdateModalData } from "../types";
 
 interface SettingsFooterProps {
     t: (key: string) => string;
     appVersion: string;
-    updateStatus: string;
-    setUpdateStatus: (val: string) => void;
-    setUpdateModalData: (val: UpdateModalData | null) => void;
     onResetSettings: () => void;
     emailCopied: boolean;
     setEmailCopied: (val: boolean) => void;
@@ -16,9 +12,6 @@ interface SettingsFooterProps {
 const SettingsFooter = ({
     t,
     appVersion,
-    updateStatus,
-    setUpdateStatus,
-    setUpdateModalData,
     onResetSettings,
     emailCopied,
     setEmailCopied
@@ -102,65 +95,6 @@ const SettingsFooter = ({
                 gap: '8px'
             }}>
                 <span>TieZ {appVersion ? `v${appVersion}` : "v0.2.0"}</span>
-                <button
-                    onClick={async () => {
-                        if (updateStatus) return;
-                        setUpdateStatus(t('checking'));
-                        try {
-                            const response = await fetch('https://tiez.name666.top/api/v1/latest-version?t=' + Date.now());
-                            if (!response.ok) throw new Error('Update server unreachable');
-
-                            const data = await response.json();
-                            const remoteVersion = data.version;
-                            const currentVersion = appVersion || '0.0.0';
-
-                            const v1 = remoteVersion.split('.').map(Number);
-                            const v2 = currentVersion.split('.').map(Number);
-                            let isNewer = false;
-                            for (let i = 0; i < Math.max(v1.length, v2.length); i++) {
-                                const num1 = v1[i] || 0;
-                                const num2 = v2[i] || 0;
-                                if (num1 > num2) { isNewer = true; break; }
-                                if (num1 < num2) { break; }
-                            }
-
-                            if (isNewer) {
-                                setUpdateStatus('');
-                                // Use releaseNotes directly as it's a string from the new API
-                                const notes = data.releaseNotes || t('no_release_notes');
-                                setUpdateModalData({
-                                    version: remoteVersion,
-                                    notes: notes,
-                                    downloadUrl: data.downloadUrl
-                                });
-                            } else {
-                                setUpdateStatus(t('up_to_date'));
-                                setTimeout(() => setUpdateStatus(''), 3000);
-                            }
-                        } catch (err) {
-                            console.error('Update check failed:', err);
-                            setUpdateStatus(t('checking_failed'));
-                            setTimeout(() => setUpdateStatus(''), 3000);
-                        }
-                    }}
-                    disabled={!!updateStatus}
-                    style={{
-                        border: 'none',
-                        background: 'transparent',
-                        color: (updateStatus && (updateStatus.includes('Failed') || updateStatus.includes('失败'))) ? '#ff4d4f' : 'var(--accent-color)',
-                        cursor: updateStatus ? 'default' : 'pointer',
-                        fontSize: '11px',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        opacity: updateStatus ? 1 : 0.8,
-                        fontWeight: updateStatus ? 'bold' : 'normal',
-                        transition: 'all 0.2s'
-                    }}
-                    onMouseEnter={(e) => !updateStatus && (e.currentTarget.style.opacity = '1')}
-                    onMouseLeave={(e) => !updateStatus && (e.currentTarget.style.opacity = '0.8')}
-                >
-                    {updateStatus || t('check_update')}
-                </button>
             </div>
             <div style={{
                 fontSize: '11px',

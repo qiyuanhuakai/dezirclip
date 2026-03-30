@@ -208,7 +208,6 @@ fn main() {
             app::commands::get_platform_info,
             app::commands::register_hotkey,
             app::commands::test_hotkey_available,
-            app::commands::download_and_install_update,
 
             app::commands::toggle_clipboard_pin,
             app::commands::update_tags,
@@ -219,7 +218,6 @@ fn main() {
             app::commands::remove_emoji_favorite,
             app::commands::list_emoji_favorites,
             app::commands::save_emoji_favorite_data_url,
-            app::commands::save_emoji_favorite_url,
             app::commands::get_file_size,
             
             services::paste_queue::get_paste_queue,

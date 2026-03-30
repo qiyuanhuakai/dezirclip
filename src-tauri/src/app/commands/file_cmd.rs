@@ -2,10 +2,9 @@ use crate::error::{AppResult, AppError};
 use crate::app_state::AppDataDir;
 use base64::Engine;
 use image::ImageFormat;
-use reqwest::header;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::State;
 use serde::Serialize;
 
@@ -60,15 +59,6 @@ pub(crate) fn image_ext_from_mime(mime: &str) -> Option<&'static str> {
         "image/png" => Some("png"),
         _ => None,
     }
-}
-
-fn image_ext_from_url(url: &reqwest::Url) -> Option<&'static str> {
-    let path = url.path();
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-    normalize_image_ext(ext)
 }
 
 pub(crate) fn save_emoji_favorite_bytes_to_dir(
@@ -208,72 +198,4 @@ pub async fn save_emoji_favorite_data_url(
 
     let data_dir = app_data.0.lock().unwrap().clone();
     save_emoji_favorite_bytes_to_dir(&data_dir, &bytes, ext)
-}
-
-pub(crate) async fn save_emoji_favorite_url_to_dir(
-    data_dir: PathBuf,
-    url: String,
-) -> AppResult<String> {
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return Err(AppError::Validation("url is empty".to_string()));
-    }
-
-    let parsed = reqwest::Url::parse(trimmed)
-        .map_err(|_| AppError::Validation("invalid url".to_string()))?;
-    let scheme = parsed.scheme();
-    if scheme != "http" && scheme != "https" {
-        return Err(AppError::Validation("unsupported url scheme".to_string()));
-    }
-
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .build()
-        .map_err(|e| AppError::Network(e.to_string()))?;
-
-    let response = client
-        .get(parsed.clone())
-        .send()
-        .await
-        .map_err(|e| AppError::Network(e.to_string()))?;
-
-    if !response.status().is_success() {
-        return Err(AppError::Network(format!(
-            "HTTP {} when downloading image",
-            response.status()
-        )));
-    }
-
-    let mime = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-    let mime = mime.split(';').next().unwrap_or("").trim().to_string();
-
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| AppError::Network(e.to_string()))?;
-
-    if bytes.is_empty() {
-        return Err(AppError::Validation("empty image response".to_string()));
-    }
-
-    let ext = image_ext_from_mime(mime.as_str())
-        .or_else(|| image_ext_from_url(&parsed))
-        .or_else(|| image_ext_from_bytes(&bytes))
-        .ok_or_else(|| AppError::Validation("unsupported image type".to_string()))?;
-
-    save_emoji_favorite_bytes_to_dir(&data_dir, &bytes, ext)
-}
-
-#[tauri::command]
-pub async fn save_emoji_favorite_url(
-    app_data: State<'_, AppDataDir>,
-    url: String,
-) -> AppResult<String> {
-    let data_dir = app_data.0.lock().unwrap().clone();
-    save_emoji_favorite_url_to_dir(data_dir, url).await
 }
