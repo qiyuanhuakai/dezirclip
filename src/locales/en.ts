@@ -202,6 +202,8 @@ export const en = {
         edge_docking: "Edge Docking",
         edge_docking_hint: "Auto-hide window when near screen edges, slide out on hover",
         follow_mouse: "Follow Mouse Position",
+        disable_webview_gpu: "Disable WebView GPU",
+        disable_webview_gpu_hint: "Reduces GPU memory but increases CPU usage, requires app restart",
         tag_manager: "Tag Manager",
         confirm_delete_tag: "Are you sure? This tag and all its items will be permanently deleted.",
         items: "items",

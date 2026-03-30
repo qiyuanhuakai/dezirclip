@@ -74,6 +74,7 @@ export const useAppState = (): AppState => {
   const [hideTrayIcon, setHideTrayIcon] = useState(false);
   const [edgeDocking, setEdgeDocking] = useState(false);
   const [followMouse, setFollowMouse] = useState(true);
+  const [disableWebviewGpu, setDisableWebviewGpu] = useState(false);
   const [customBackground, setCustomBackground] = useState<string>("");
   const [customBackgroundOpacity, setCustomBackgroundOpacity] = useState(45);
   const [surfaceOpacity, setSurfaceOpacity] = useState(50);
@@ -209,6 +210,8 @@ export const useAppState = (): AppState => {
     setEdgeDocking,
     followMouse,
     setFollowMouse,
+    disableWebviewGpu,
+    setDisableWebviewGpu,
     customBackground,
     setCustomBackground,
     customBackgroundOpacity,
@@ -237,4 +240,3 @@ export const useAppState = (): AppState => {
     setTypeFilter
   };
 };
-

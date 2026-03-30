@@ -15,8 +15,112 @@ use std::sync::atomic::{Ordering};
 use crate::global_state::*;
 use crate::app::setup;
 
+const APP_IDENTIFIER: &str = "com.tiez.clipboard";
+const GPU_SETTING_KEY: &str = "app.disable_webview_gpu";
+
+fn resolve_default_app_data_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("APPDATA")
+            .map(std::path::PathBuf::from)
+            .map(|path| path.join(APP_IDENTIFIER))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .map(|path| path.join("Library").join("Application Support").join(APP_IDENTIFIER))
+    }
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+            Some(std::path::PathBuf::from(xdg).join(APP_IDENTIFIER))
+        } else {
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .map(|path| path.join(".local").join("share").join(APP_IDENTIFIER))
+        }
+    }
+}
+
+fn resolve_startup_db_path() -> Option<std::path::PathBuf> {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let portable_db = exe_dir.join("data").join("clipboard.db");
+            if portable_db.exists() {
+                return Some(portable_db);
+            }
+        }
+    }
+    let default_dir = resolve_default_app_data_dir()?;
+    let redirect_file = default_dir.join("datapath.txt");
+    let app_dir = if redirect_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&redirect_file) {
+            let custom = content.trim();
+            if !custom.is_empty() {
+                let custom_path = std::path::PathBuf::from(custom);
+                if custom_path.exists() {
+                    custom_path
+                } else {
+                    default_dir.clone()
+                }
+            } else {
+                default_dir.clone()
+            }
+        } else {
+            default_dir.clone()
+        }
+    } else {
+        default_dir
+    };
+    Some(app_dir.join("clipboard.db"))
+}
+
+fn read_disable_webview_gpu_setting() -> bool {
+    let db_path = match resolve_startup_db_path() {
+        Some(path) if path.exists() => path,
+        _ => return false,
+    };
+    let conn = match rusqlite::Connection::open(db_path) {
+        Ok(conn) => conn,
+        Err(_) => return false,
+    };
+    let mut stmt = match conn.prepare("SELECT value FROM settings WHERE key = ?1 LIMIT 1") {
+        Ok(stmt) => stmt,
+        Err(_) => return false,
+    };
+    let value = stmt
+        .query_row([GPU_SETTING_KEY], |row| row.get::<_, String>(0))
+        .ok();
+    matches!(value.as_deref(), Some("true") | Some("1") | Some("TRUE") | Some("True"))
+}
+
+fn should_disable_webview_gpu() -> bool {
+    read_disable_webview_gpu_setting()
+}
+
+fn apply_webview2_gpu_switch() {
+    if !should_disable_webview_gpu() {
+        return;
+    }
+    let key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+    let extra = "--disable-gpu";
+    let merged = match std::env::var(key) {
+        Ok(existing) if !existing.trim().is_empty() => {
+            if existing.contains(extra) {
+                existing
+            } else {
+                format!("{existing} {extra}")
+            }
+        }
+        _ => extra.to_string(),
+    };
+    std::env::set_var(key, merged);
+}
+
 fn main() {
     let _ = dotenvy::dotenv();
+    apply_webview2_gpu_switch();
 
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

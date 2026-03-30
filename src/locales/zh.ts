@@ -201,6 +201,8 @@ export const zh = {
         edge_docking: "贴边自动收纳",
         edge_docking_hint: "窗口靠近屏幕边缘时自动缩进，鼠标悬停时滑出",
         follow_mouse: "跟随鼠标位置呼出",
+        disable_webview_gpu: "禁用 WebView GPU",
+        disable_webview_gpu_hint: "降低 GPU 占用但会增加 CPU 占用，重启应用后生效",
         tag_manager: "标签管理",
         confirm_delete_tag: "确定要删除标签吗？该标签及其下的所有条目都将被永久删除。",
         items: "个条目",
