@@ -452,28 +452,6 @@ fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
 
     let db_state = app.state::<DbState>();
 
-    init_announcement_ping(app, &db_state.settings_repo);
-
-    #[cfg(target_os = "linux")]
-    {
-        let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
-        let x11_display = std::env::var("DISPLAY").unwrap_or_default();
-        if !wayland_display.is_empty() && x11_display.is_empty() {
-            crate::warn!(">>> [STARTUP] Wayland session detected without XWayland. Global shortcuts require X11 and will not work.");
-        } else if !wayland_display.is_empty() {
-            crate::warn!(">>> [STARTUP] Wayland session detected (XWayland display: {}). Global shortcuts may not work reliably.", x11_display);
-        } else if !x11_display.is_empty() {
-            crate::info!(
-                ">>> [STARTUP] X11 session detected (display: {}). Global shortcuts should work.",
-                x11_display
-            );
-        } else {
-            crate::warn!(
-                ">>> [STARTUP] No display server detected. Global shortcuts will not work."
-            );
-        }
-    }
-
     let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(&app_handle);
 
     #[cfg(target_os = "windows")]
@@ -788,45 +766,6 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
 #[cfg(not(target_os = "windows"))]
 fn start_edge_docking_monitor(_app_handle: AppHandle) {}
-
-fn init_announcement_ping(app: &App, repo: &impl SettingsRepository) {
-    let machine_id = crate::app::system::get_machine_id();
-    let stored_anon_id = repo.get("app.anon_id").unwrap_or(None);
-    let anon_id = stored_anon_id
-        .as_deref()
-        .and_then(crate::app::system::normalize_anon_id)
-        .unwrap_or_else(|| crate::app::system::build_anon_id(&machine_id));
-
-    if stored_anon_id
-        .as_deref()
-        .map(|value| value.trim() != anon_id)
-        .unwrap_or(true)
-    {
-        let _ = repo.set("app.anon_id", &anon_id);
-    }
-
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-    if repo.get("app.last_ping_date").unwrap_or(None).as_deref() != Some(&today) {
-        let _ = repo.set("app.last_ping_date", &today);
-        let version = app.package_info().version.to_string();
-        if let Ok(base_url) = std::env::var("TIEZ_ANNOUNCEMENT_PING_URL") {
-            let base_url = base_url.trim().to_string();
-            if !base_url.is_empty() {
-                std::thread::spawn(move || {
-                    let sep = if base_url.contains('?') { "&" } else { "?" };
-                    let ping_url = format!(
-                        "{}{}v={}&id={}",
-                        base_url,
-                        sep,
-                        urlencoding::encode(&version),
-                        urlencoding::encode(&anon_id)
-                    );
-                    let _ = reqwest::blocking::get(ping_url);
-                });
-            }
-        }
-    }
-}
 
 fn setup_tray(app: &App, hide_tray: bool) {
     use tauri::menu::{Menu, MenuItem};

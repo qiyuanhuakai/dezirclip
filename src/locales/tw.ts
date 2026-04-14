@@ -201,6 +201,8 @@ export const tw = {
         edge_docking: "貼邊自動收納",
         edge_docking_hint: "視窗靠近螢幕邊緣時自動縮進，滑鼠懸停時滑出",
         follow_mouse: "跟隨滑鼠位置呼出",
+        disable_webview_gpu: "停用 WebView GPU",
+        disable_webview_gpu_hint: "可降低 GPU 佔用但會增加 CPU 佔用，需重啟應用生效",
         tag_manager: "標籤管理",
         confirm_delete_tag: "確定要刪除標籤嗎？該標籤及其下的所有條目都將被永久刪除。",
         items: "個條目",

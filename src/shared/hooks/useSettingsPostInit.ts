@@ -28,6 +28,7 @@ interface UseSettingsPostInitOptions {
   setShowSearchBox: (val: boolean) => void;
   setScrollTopButtonEnabled: (val: boolean) => void;
   setArrowKeySelection: (val: boolean) => void;
+  setDisableWebviewGpu: (val: boolean) => void;
   setRegistryWinVEnabled: (val: boolean) => void;
   setSequentialHotkey: (val: string) => void;
   setRichPasteHotkey: (val: string) => void;
@@ -73,6 +74,7 @@ export const useSettingsPostInit = ({
   setShowSearchBox,
   setScrollTopButtonEnabled,
   setArrowKeySelection,
+  setDisableWebviewGpu,
   setRegistryWinVEnabled,
   setSequentialHotkey,
   setRichPasteHotkey,
@@ -153,6 +155,7 @@ export const useSettingsPostInit = ({
     setMoveToTopAfterPaste(settings["app.move_to_top_after_paste"] !== "false");
     setHideTrayIcon(settings["app.hide_tray_icon"] === "true");
     setEdgeDocking(settings["app.edge_docking"] === "true");
+    setDisableWebviewGpu(settings["app.disable_webview_gpu"] === "true");
     if (settings["app.show_search_box"] === "false") setShowSearchBox(false);
     setScrollTopButtonEnabled(settings["app.show_scroll_top_button"] !== "false");
     if (settings["app.arrow_key_selection"] === "false") setArrowKeySelection(false);
@@ -202,6 +205,7 @@ export const useSettingsPostInit = ({
     setShowSearchBox,
     setScrollTopButtonEnabled,
     setArrowKeySelection,
+    setDisableWebviewGpu,
     setRegistryWinVEnabled,
     setSequentialHotkey,
     setRichPasteHotkey,

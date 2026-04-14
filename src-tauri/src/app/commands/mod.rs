@@ -5,7 +5,6 @@ pub mod system_cmd;
 pub mod ui_cmd;
 pub mod hotkey_cmd;
 pub mod clipboard_cmd;
-pub mod update_cmd;
 pub mod file_cmd;
 
 // Re-export all commands for convenience in main.rs if needed, 
@@ -17,6 +16,4 @@ pub use system_cmd::*;
 pub use ui_cmd::*;
 pub use hotkey_cmd::*;
 pub use clipboard_cmd::*;
-pub use update_cmd::*;
 pub use file_cmd::*;
-
