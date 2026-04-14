@@ -243,7 +243,7 @@ async fn launch_file_with_app(
             #[cfg(target_os = "windows")]
             {
                 println!("Attempting to launch UWP app: {} for file: {}", app, path_str);
-                if let Err(e) = launch_uwp_with_file(app, path_str) {
+                if let Err(e) = launch_uwp_with_file(app, path_str).await {
                     println!("WinRT launch failed: {}, falling back to old method", e);
                     let ps_script = format!(
                         "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
