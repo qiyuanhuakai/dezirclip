@@ -454,18 +454,6 @@ pub fn process_local_images_in_html(html: &str, data_dir: &std::path::Path) -> S
             }
         }
 
-<<<<<<< HEAD
-        if let Some(remote_url) = normalize_remote_img_url(src) {
-            if let Some((bytes, ext)) = fetch_remote_image(&remote_url) {
-                if let Some(file_src) =
-                    save_image_bytes_to_attachments(&bytes, ext, &attachments_dir)
-                {
-                    return format!("{}{}{}", prefix, file_src, suffix);
-                }
-            }
-        }
-=======
->>>>>>> slim
         format!("{}{}{}", prefix, src, suffix)
     })
     .to_string()

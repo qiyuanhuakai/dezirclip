@@ -452,6 +452,28 @@ fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
 
     let db_state = app.state::<DbState>();
 
+
+    #[cfg(target_os = "linux")]
+    {
+        let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
+        let x11_display = std::env::var("DISPLAY").unwrap_or_default();
+        if !wayland_display.is_empty() && x11_display.is_empty() {
+            crate::warn!(">>> [STARTUP] Wayland session detected without XWayland. Global shortcuts require X11 and will not work.");
+        } else if !wayland_display.is_empty() {
+            crate::warn!(">>> [STARTUP] Wayland session detected (XWayland display: {}). Global shortcuts may not work reliably.", x11_display);
+        } else if !x11_display.is_empty() {
+            crate::info!(
+                ">>> [STARTUP] X11 session detected (display: {}). Global shortcuts should work.",
+                x11_display
+            );
+        } else {
+            crate::warn!(
+                ">>> [STARTUP] No display server detected. Global shortcuts will not work."
+            );
+        }
+    }
+
+
     let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(&app_handle);
 
     #[cfg(target_os = "windows")]
