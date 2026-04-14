@@ -5,8 +5,6 @@ import { motion } from "framer-motion";
 import type { Locale } from "../../../shared/types";
 import type { DefaultAppsMap, InstalledAppOption } from "../../app/types";
 import AppSelectorModal from "./AppSelectorModal";
-import UpdateModal from "./UpdateModal";
-import type { UpdateModalData } from "../types";
 import GeneralSettingsGroup from "./groups/GeneralSettingsGroup";
 import ClipboardSettingsGroup from "./groups/ClipboardSettingsGroup";
 import AppearanceSettingsGroup from "./groups/AppearanceSettingsGroup";
@@ -74,6 +72,8 @@ interface SettingsPanelProps {
     setEdgeDocking: (val: boolean) => void;
     followMouse: boolean;
     setFollowMouse: (val: boolean) => void;
+    disableWebviewGpu: boolean;
+    setDisableWebviewGpu: (val: boolean) => void;
     customBackground: string;
     setCustomBackground: (val: string) => void;
     customBackgroundOpacity: number;
@@ -137,6 +137,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         hideTrayIcon, setHideTrayIcon,
         edgeDocking, setEdgeDocking,
         followMouse, setFollowMouse,
+        disableWebviewGpu, setDisableWebviewGpu,
         customBackground, setCustomBackground,
         customBackgroundOpacity, setCustomBackgroundOpacity,
         surfaceOpacity, setSurfaceOpacity,
@@ -155,8 +156,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
 
     const [emailCopied, setEmailCopied] = useState(false);
     const [appVersion, setAppVersion] = useState("");
-    const [updateStatus, setUpdateStatus] = useState<string>("");
-    const [updateModalData, setUpdateModalData] = useState<UpdateModalData | null>(null);
     const [openHints, setOpenHints] = useState<Set<string>>(new Set());
     const [privacyKindsOpen, setPrivacyKindsOpen] = useState(false);
     const [privacyRulesOpen, setPrivacyRulesOpen] = useState(false);
@@ -224,6 +223,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setEdgeDocking={setEdgeDocking}
                 followMouse={followMouse}
                 setFollowMouse={setFollowMouse}
+                disableWebviewGpu={disableWebviewGpu}
+                setDisableWebviewGpu={setDisableWebviewGpu}
                 soundEnabled={soundEnabled}
                 setSoundEnabled={setSoundEnabled}
                 soundVolume={soundVolume}
@@ -356,9 +357,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             <SettingsFooter
                 t={t}
                 appVersion={appVersion}
-                updateStatus={updateStatus}
-                setUpdateStatus={setUpdateStatus}
-                setUpdateModalData={setUpdateModalData}
                 onResetSettings={handleResetSettings}
                 emailCopied={emailCopied}
                 setEmailCopied={setEmailCopied}
@@ -372,12 +370,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 onSave={saveAppSetting}
             />
 
-            <UpdateModal
-                data={updateModalData}
-                t={t}
-                onClose={() => setUpdateModalData(null)}
-                setUpdateStatus={setUpdateStatus}
-            />
         </motion.div>
     );
 };

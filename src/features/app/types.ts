@@ -127,6 +127,8 @@ export interface AppState {
   setEdgeDocking: StateSetter<boolean>;
   followMouse: boolean;
   setFollowMouse: StateSetter<boolean>;
+  disableWebviewGpu: boolean;
+  setDisableWebviewGpu: StateSetter<boolean>;
   customBackground: string;
   setCustomBackground: StateSetter<string>;
   customBackgroundOpacity: number;

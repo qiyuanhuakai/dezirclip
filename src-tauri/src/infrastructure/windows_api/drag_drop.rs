@@ -32,7 +32,6 @@ use windows::{
         UI::{
             Shell::{
                 DragFinish, DragQueryFileW, HDROP, CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW,
-                CFSTR_INETURLA, CFSTR_INETURLW,
             },
             WindowsAndMessaging::EnumChildWindows,
         },
@@ -163,43 +162,6 @@ impl EmojiDropTarget {
         Some(bytes)
     }
 
-    unsafe fn read_hglobal_wide_string(
-        hglobal: windows::Win32::Foundation::HGLOBAL,
-    ) -> Option<String> {
-        if hglobal.0.is_null() {
-            return None;
-        }
-        let size = GlobalSize(hglobal);
-        if size < 2 {
-            return None;
-        }
-        let ptr = GlobalLock(hglobal) as *const u16;
-        if ptr.is_null() {
-            return None;
-        }
-        let len = size / 2;
-        let slice = std::slice::from_raw_parts(ptr, len);
-        let end = slice.iter().position(|c| *c == 0).unwrap_or(len);
-        let text = String::from_utf16_lossy(&slice[..end]);
-        let _ = GlobalUnlock(hglobal);
-        if text.is_empty() {
-            None
-        } else {
-            Some(text)
-        }
-    }
-
-    unsafe fn read_hglobal_string(hglobal: windows::Win32::Foundation::HGLOBAL) -> Option<String> {
-        let bytes = Self::read_hglobal_bytes(hglobal)?;
-        let end = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
-        let text = String::from_utf8_lossy(&bytes[..end]).to_string();
-        if text.is_empty() {
-            None
-        } else {
-            Some(text)
-        }
-    }
-
     unsafe fn iterate_file_paths(data_obj: &IDataObject) -> Option<(Vec<PathBuf>, HDROP)> {
         let drop_format = Self::format_etc(CF_HDROP.0, -1, TYMED_HGLOBAL.0 as u32);
 
@@ -316,32 +278,6 @@ impl EmojiDropTarget {
         out
     }
 
-    unsafe fn read_inet_url(data_obj: &IDataObject) -> Option<String> {
-        let cf_inet_w = RegisterClipboardFormatW(CFSTR_INETURLW);
-        if cf_inet_w != 0 {
-            let format = Self::format_etc(cf_inet_w as u16, -1, TYMED_HGLOBAL.0 as u32);
-            if let Ok(mut medium) = data_obj.GetData(&format) {
-                let url = Self::read_hglobal_wide_string(medium.u.hGlobal);
-                ReleaseStgMedium(&mut medium);
-                if url.is_some() {
-                    return url;
-                }
-            }
-        }
-
-        let cf_inet_a = RegisterClipboardFormatW(CFSTR_INETURLA);
-        if cf_inet_a != 0 {
-            let format = Self::format_etc(cf_inet_a as u16, -1, TYMED_HGLOBAL.0 as u32);
-            if let Ok(mut medium) = data_obj.GetData(&format) {
-                let url = Self::read_hglobal_string(medium.u.hGlobal);
-                ReleaseStgMedium(&mut medium);
-                return url;
-            }
-        }
-
-        None
-    }
-
     fn emit_file_drop(app_handle: &AppHandle, paths: Vec<String>) {
         let payload = DropPayload { paths };
         let _ = app_handle.emit("tauri://file-drop", payload.clone());
@@ -406,38 +342,6 @@ impl EmojiDropTarget {
         Some(path.to_string_lossy().to_string())
     }
 
-    async fn save_url_to_temp(url: String) -> Option<String> {
-        let trimmed = url.trim();
-        if trimmed.is_empty() {
-            return None;
-        }
-        let parsed = reqwest::Url::parse(trimmed).ok()?;
-        let scheme = parsed.scheme();
-        if scheme != "http" && scheme != "https" {
-            return None;
-        }
-
-        let file_name = parsed
-            .path_segments()
-            .and_then(|mut segments| segments.next_back())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-
-        let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .build()
-            .ok()?;
-        let response = client.get(parsed).send().await.ok()?;
-        if !response.status().is_success() {
-            return None;
-        }
-        let bytes = response.bytes().await.ok()?;
-        if bytes.is_empty() {
-            return None;
-        }
-
-        Self::save_temp_bytes(file_name.as_deref(), &bytes)
-    }
 }
 
 #[allow(non_snake_case)]
@@ -451,16 +355,10 @@ impl IDropTarget_Impl for EmojiDropTarget_Impl {
     ) -> windows::core::Result<()> {
         let data_obj = pDataObj.as_ref().expect("Received null IDataObject");
         let cf_file_descriptor = unsafe { RegisterClipboardFormatW(CFSTR_FILEDESCRIPTORW) };
-        let cf_inet_url_w = unsafe { RegisterClipboardFormatW(CFSTR_INETURLW) };
-        let cf_inet_url_a = unsafe { RegisterClipboardFormatW(CFSTR_INETURLA) };
         let valid = unsafe {
             EmojiDropTarget::has_format(data_obj, CF_HDROP.0, TYMED_HGLOBAL.0 as u32, -1)
                 || (cf_file_descriptor != 0
                     && EmojiDropTarget::has_format(data_obj, cf_file_descriptor as u16, TYMED_HGLOBAL.0 as u32, -1))
-                || (cf_inet_url_w != 0
-                    && EmojiDropTarget::has_format(data_obj, cf_inet_url_w as u16, TYMED_HGLOBAL.0 as u32, -1))
-                || (cf_inet_url_a != 0
-                    && EmojiDropTarget::has_format(data_obj, cf_inet_url_a as u16, TYMED_HGLOBAL.0 as u32, -1))
         };
 
         unsafe {
@@ -541,13 +439,6 @@ impl IDropTarget_Impl for EmojiDropTarget_Impl {
                     }
                     if !saved.is_empty() {
                         EmojiDropTarget::emit_file_drop(&app_handle, saved);
-                    }
-                });
-            } else if let Some(url) = unsafe { EmojiDropTarget::read_inet_url(data_obj) } {
-                let app_handle = self.app_handle.as_ref().clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Some(path) = EmojiDropTarget::save_url_to_temp(url).await {
-                        EmojiDropTarget::emit_file_drop(&app_handle, vec![path]);
                     }
                 });
             }

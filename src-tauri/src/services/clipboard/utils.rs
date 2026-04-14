@@ -1,12 +1,9 @@
 use crate::database::save_image_to_file;
 use crate::domain::models::ClipboardEntry;
 use base64::{engine::general_purpose, Engine as _};
-use regex::Regex;
-use reqwest::header::CONTENT_TYPE;
-use std::io::Read;
 use std::path::Path;
 use std::sync::OnceLock;
-use std::time::Duration;
+use regex::Regex;
 use urlencoding::decode;
 
 const HTML_PREVIEW_MAX_CHARS: usize = 5000;
@@ -14,145 +11,6 @@ const HTML_PREVIEW_MAX_ROWS: usize = 10;
 const HTML_TRUNCATION_SUFFIX: &str = "... [HTML Truncated]";
 pub const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
 pub const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
-const REMOTE_IMAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
-const REMOTE_IMAGE_TIMEOUT_SECS: u64 = 4;
-
-fn normalize_image_ext(ext: &str) -> Option<&'static str> {
-    match ext.to_ascii_lowercase().as_str() {
-        "png" => Some("png"),
-        "jpg" | "jpeg" => Some("jpg"),
-        "gif" => Some("gif"),
-        "webp" => Some("webp"),
-        "bmp" => Some("bmp"),
-        _ => None,
-    }
-}
-
-fn image_ext_from_mime(mime: &str) -> Option<&'static str> {
-    match mime {
-        "image/png" => Some("png"),
-        "image/jpeg" => Some("jpg"),
-        "image/gif" => Some("gif"),
-        "image/webp" => Some("webp"),
-        "image/bmp" => Some("bmp"),
-        _ => None,
-    }
-}
-
-fn image_ext_from_url(url: &str) -> Option<&'static str> {
-    let parsed = reqwest::Url::parse(url).ok()?;
-    let ext = Path::new(parsed.path())
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-    normalize_image_ext(ext)
-}
-
-fn image_ext_from_bytes(bytes: &[u8]) -> Option<&'static str> {
-    let format = image::guess_format(bytes).ok()?;
-    match format {
-        image::ImageFormat::Png => Some("png"),
-        image::ImageFormat::Jpeg => Some("jpg"),
-        image::ImageFormat::Gif => Some("gif"),
-        image::ImageFormat::WebP => Some("webp"),
-        image::ImageFormat::Bmp => Some("bmp"),
-        _ => None,
-    }
-}
-
-fn image_mime_by_ext(ext: &str) -> &'static str {
-    match ext {
-        "jpg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "bmp" => "image/bmp",
-        _ => "image/png",
-    }
-}
-
-fn normalize_remote_img_url(src: &str) -> Option<String> {
-    let trimmed = src.trim();
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        return Some(trimmed.to_string());
-    }
-    if trimmed.starts_with("//") {
-        return Some(format!("https:{}", trimmed));
-    }
-    None
-}
-
-fn fetch_remote_image(url: &str) -> Option<(Vec<u8>, &'static str)> {
-    static REMOTE_IMG_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
-
-    let client = REMOTE_IMG_CLIENT.get_or_init(|| {
-        reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(REMOTE_IMAGE_TIMEOUT_SECS))
-            .redirect(reqwest::redirect::Policy::limited(8))
-            .build()
-            .unwrap_or_else(|_| reqwest::blocking::Client::new())
-    });
-
-    let resp = client.get(url).header("Accept", "image/*").send().ok()?;
-
-    if !resp.status().is_success() {
-        return None;
-    }
-
-    let content_len = resp.content_length().unwrap_or(0);
-    if content_len > REMOTE_IMAGE_MAX_BYTES as u64 {
-        return None;
-    }
-
-    let mime = resp
-        .headers()
-        .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .split(';')
-        .next()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-
-    let mut limited = resp.take((REMOTE_IMAGE_MAX_BYTES as u64) + 1);
-    let mut bytes = Vec::new();
-    if limited.read_to_end(&mut bytes).is_err() {
-        return None;
-    }
-    if bytes.is_empty() || bytes.len() > REMOTE_IMAGE_MAX_BYTES {
-        return None;
-    }
-
-    let ext = image_ext_from_mime(&mime)
-        .or_else(|| image_ext_from_url(url))
-        .or_else(|| image_ext_from_bytes(&bytes))?;
-
-    Some((bytes, ext))
-}
-
-fn save_image_bytes_to_attachments(
-    bytes: &[u8],
-    ext: &str,
-    attachments_dir: &Path,
-) -> Option<String> {
-    let ext = normalize_image_ext(ext)?;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    use std::hash::{Hash, Hasher};
-    bytes.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    let file_name = format!("img_{:x}.{}", hash, ext);
-    let target = attachments_dir.join(file_name);
-    if !target.exists() {
-        std::fs::write(&target, bytes).ok()?;
-    }
-    let path = target.to_string_lossy().replace('\\', "/");
-    if path.starts_with('/') {
-        Some(format!("file://{}", path))
-    } else {
-        Some(format!("file:///{}", path))
-    }
-}
 
 fn truncate_chars_with_suffix(text: &str, max_chars: usize, suffix: &str) -> String {
     if text.chars().count() <= max_chars {
@@ -512,14 +370,6 @@ pub fn embed_local_images(html: &str) -> String {
             }
         }
 
-        if let Some(remote_url) = normalize_remote_img_url(src) {
-            if let Some((bytes, ext)) = fetch_remote_image(&remote_url) {
-                let b64 = general_purpose::STANDARD.encode(&bytes);
-                let mime = image_mime_by_ext(ext);
-                let data_url = format!("data:{};base64,{}", mime, b64);
-                return format!("{}{}{}", prefix, data_url, suffix);
-            }
-        }
         format!("{}{}{}", prefix, src, suffix)
     })
     .to_string()
@@ -604,15 +454,6 @@ pub fn process_local_images_in_html(html: &str, data_dir: &std::path::Path) -> S
             }
         }
 
-        if let Some(remote_url) = normalize_remote_img_url(src) {
-            if let Some((bytes, ext)) = fetch_remote_image(&remote_url) {
-                if let Some(file_src) =
-                    save_image_bytes_to_attachments(&bytes, ext, &attachments_dir)
-                {
-                    return format!("{}{}{}", prefix, file_src, suffix);
-                }
-            }
-        }
         format!("{}{}{}", prefix, src, suffix)
     })
     .to_string()

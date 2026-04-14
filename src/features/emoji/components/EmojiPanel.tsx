@@ -294,27 +294,6 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     }
   };
 
-  const addFavoriteUrls = async (urls: string[]) => {
-    const normalized = urls
-      .map((url) => url.trim())
-      .filter((url) => url.startsWith("http://") || url.startsWith("https://"));
-    if (normalized.length === 0) return;
-    const saved = await Promise.all(
-      normalized.map(async (url) => {
-        try {
-          return await invoke<string>("save_emoji_favorite_url", { url });
-        } catch (e) {
-          console.warn("Failed to save emoji favorite url:", e);
-          return null;
-        }
-      })
-    );
-    const valid = saved.filter((p): p is string => typeof p === "string" && p.length > 0);
-    if (valid.length > 0) {
-      persistFavorites((prev) => Array.from(new Set([...prev, ...valid])));
-    }
-  };
-
   const handleSend = async (content: string, contentType: string) => {
     await invoke("copy_to_clipboard", {
       content,
@@ -375,12 +354,8 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     const urls = getDropUrls(dt);
     if (urls.length === 0) return;
     const dataUrls = urls.filter((url) => url.startsWith("data:"));
-    const httpUrls = urls.filter((url) => url.startsWith("http://") || url.startsWith("https://"));
     if (dataUrls.length > 0) {
       await addFavoriteDataUrls(dataUrls);
-    }
-    if (httpUrls.length > 0) {
-      await addFavoriteUrls(httpUrls);
     }
   };
 

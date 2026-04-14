@@ -40,8 +40,6 @@ import { useListSelectionReset } from "./shared/hooks/useListSelectionReset";
 import { useSearchFetchTrigger } from "./shared/hooks/useSearchFetchTrigger";
 import { useScrollToSelection } from "./shared/hooks/useScrollToSelection";
 import { useClipboardItemRenderer } from "./shared/hooks/useClipboardItemRenderer";
-import { AnnouncementSystem } from "./shared/components/Announcement";
-import { useAnnouncements } from "./shared/hooks/useAnnouncements";
 import { useOverlays } from "./shared/hooks/useOverlays";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
@@ -186,6 +184,7 @@ const App = () => {
     setHideTrayIcon,
     setEdgeDocking,
     setFollowMouse,
+    setDisableWebviewGpu,
     customBackground,
     setCustomBackground,
     customBackgroundOpacity,
@@ -331,7 +330,6 @@ const App = () => {
 
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
-  const { announcements, dismissAnnouncement } = useAnnouncements();
 
   const tagManagerSizeRef = useRef<{ width: number; height: number } | null>(null);
 
@@ -373,6 +371,7 @@ const App = () => {
     setMoveToTopAfterPaste,
     setHideTrayIcon,
     setEdgeDocking,
+    setDisableWebviewGpu,
     setShowSearchBox,
     setScrollTopButtonEnabled,
     setArrowKeySelection,
@@ -740,10 +739,6 @@ const App = () => {
     >
       <AppHeader {...appHeaderProps} />
 
-      <AnnouncementSystem
-        announcements={announcements}
-        onDismiss={dismissAnnouncement}
-      />
 
       <main
         className="main-content"
