@@ -18,6 +18,7 @@ use crate::infrastructure::repository::tag_repo::SqliteTagRepository;
 use crate::infrastructure::windows_ext::WindowExt;
 use crate::services::encryption_queue::init_encryption_queue;
 use crate::services::sensitive_align::spawn_sensitive_alignment;
+#[cfg(target_os = "windows")]
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -450,8 +451,7 @@ fn start_core_background_services(app_handle: &AppHandle) {
 fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
     start_core_background_services(&app_handle);
 
-    let db_state = app.state::<DbState>();
-
+    let _db_state = app.state::<DbState>();
 
     #[cfg(target_os = "linux")]
     {
@@ -472,7 +472,6 @@ fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
             );
         }
     }
-
 
     let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(&app_handle);
 

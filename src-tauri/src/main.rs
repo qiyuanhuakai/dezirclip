@@ -11,6 +11,7 @@ pub mod global_state;
 pub mod logger;
 pub mod migration;
 
+#[cfg(target_os = "windows")]
 use std::sync::atomic::{Ordering};
 use crate::global_state::*;
 use crate::app::setup;

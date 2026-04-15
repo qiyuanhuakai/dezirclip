@@ -1,14 +1,16 @@
-use tauri::{AppHandle, Manager, Emitter};
-use std::sync::atomic::Ordering;
 use crate::app_state::SettingsState;
 use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
+use std::sync::atomic::Ordering;
+use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(windows)]
 use windows::Win32::Foundation::{HWND, POINT};
 #[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
+};
 
 pub fn toggle_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -22,9 +24,9 @@ pub fn toggle_window(app: &AppHandle) {
             WindowExt::release_win_keys();
             let _ = window.set_focusable(false);
             let _ = window.hide();
-            
+
             let _ = restore_last_focus(app.clone());
-            
+
             IS_HIDDEN.store(false, Ordering::Relaxed);
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
             NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
@@ -60,13 +62,15 @@ pub fn toggle_window(app: &AppHandle) {
         if let Ok(size) = window.outer_size() {
             let settings = app.state::<SettingsState>();
             if settings.follow_mouse.load(Ordering::Relaxed) {
-                let w = size.width as i32;
-                let h = size.height as i32;
-                
+                let _w = size.width as i32;
+                let _h = size.height as i32;
+
                 #[cfg(windows)]
                 {
                     let mut point = POINT::default();
-                    unsafe { let _ = GetCursorPos(&mut point); }
+                    unsafe {
+                        let _ = GetCursorPos(&mut point);
+                    }
                     let mut target_x = point.x - (w / 2);
                     let mut target_y = point.y + 12;
 
@@ -79,7 +83,11 @@ pub fn toggle_window(app: &AppHandle) {
                             let my = m_pos.y;
                             let mw = m_size.width as i32;
                             let mh = m_size.height as i32;
-                            if point.x >= mx && point.x < mx + mw && point.y >= my && point.y < my + mh {
+                            if point.x >= mx
+                                && point.x < mx + mw
+                                && point.y >= my
+                                && point.y < my + mh
+                            {
                                 target_monitor = Some(m.clone());
                                 break;
                             }
@@ -96,25 +104,40 @@ pub fn toggle_window(app: &AppHandle) {
                         let my = m_pos.y;
                         let mw = m_size.width as i32;
                         let mh = m_size.height as i32;
-                        if target_x < mx { target_x = mx + 5; }
-                        if target_x + w > mx + mw { target_x = mx + mw - w - 5; }
+                        if target_x < mx {
+                            target_x = mx + 5;
+                        }
+                        if target_x + w > mx + mw {
+                            target_x = mx + mw - w - 5;
+                        }
                         if target_y + h > my + mh {
                             let above_y = point.y - h - 12;
-                            if above_y >= my { target_y = above_y; }
-                            else { target_y = my + mh - h - 5; }
+                            if above_y >= my {
+                                target_y = above_y;
+                            } else {
+                                target_y = my + mh - h - 5;
+                            }
                         }
-                        if target_y < my { target_y = my + 5; }
+                        if target_y < my {
+                            target_y = my + 5;
+                        }
                     }
 
-                    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: target_x, y: target_y }));
+                    let _ =
+                        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                            x: target_x,
+                            y: target_y,
+                        }));
                 }
             } else if was_docked {
-                let mut target_monitor = window.current_monitor().ok().flatten();
+                let target_monitor = window.current_monitor().ok().flatten();
 
                 #[cfg(windows)]
                 {
                     let mut point = POINT::default();
-                    unsafe { let _ = GetCursorPos(&mut point); }
+                    unsafe {
+                        let _ = GetCursorPos(&mut point);
+                    }
                     let (ref_x, ref_y) = active_center.unwrap_or((point.x, point.y));
 
                     if let Ok(monitors) = window.available_monitors() {
@@ -137,33 +160,61 @@ pub fn toggle_window(app: &AppHandle) {
                 }
 
                 if let Some(monitor) = target_monitor {
-                     let m_size = monitor.size();
-                     let m_pos = monitor.position();
-                     let w = size.width as i32;
-                     let h = size.height as i32;
-                     let mx = m_pos.x;
-                     let my = m_pos.y;
-                     let mw = m_size.width as i32;
-                     
-                     match current_dock_val {
-                          1 => { let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: mx + (mw/2 - w/2), y: my + 10 })); },
-                          2 => { let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: mx + 10, y: my + 10 })); },
-                          3 => { let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: mx + mw - w - 10, y: my + 10 })); },
-                          _ => {
-                                  let center_x = mx + (mw / 2) - (w / 2);
-                                  let center_y = my + (m_size.height as i32 / 2) - (h / 2);
-                                  let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: center_x, y: center_y }));
-                          }
-                     }
+                    let m_size = monitor.size();
+                    let m_pos = monitor.position();
+                    let w = size.width as i32;
+                    let h = size.height as i32;
+                    let mx = m_pos.x;
+                    let my = m_pos.y;
+                    let mw = m_size.width as i32;
+
+                    match current_dock_val {
+                        1 => {
+                            let _ = window.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition {
+                                    x: mx + (mw / 2 - w / 2),
+                                    y: my + 10,
+                                },
+                            ));
+                        }
+                        2 => {
+                            let _ = window.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition {
+                                    x: mx + 10,
+                                    y: my + 10,
+                                },
+                            ));
+                        }
+                        3 => {
+                            let _ = window.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition {
+                                    x: mx + mw - w - 10,
+                                    y: my + 10,
+                                },
+                            ));
+                        }
+                        _ => {
+                            let center_x = mx + (mw / 2) - (w / 2);
+                            let center_y = my + (m_size.height as i32 / 2) - (h / 2);
+                            let _ = window.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition {
+                                    x: center_x,
+                                    y: center_y,
+                                },
+                            ));
+                        }
+                    }
                 }
             } else {
-                let w = size.width as i32;
-                let h = size.height as i32;
+                let _w = size.width as i32;
+                let _h = size.height as i32;
 
                 #[cfg(windows)]
                 {
                     let mut point = POINT::default();
-                    unsafe { let _ = GetCursorPos(&mut point); }
+                    unsafe {
+                        let _ = GetCursorPos(&mut point);
+                    }
                     let (ref_x, ref_y) = active_center.unwrap_or((point.x, point.y));
 
                     let mut target_monitor: Option<tauri::Monitor> = None;
@@ -187,23 +238,31 @@ pub fn toggle_window(app: &AppHandle) {
 
                     if let Some(target) = target_monitor {
                         let current = window.current_monitor().ok().flatten();
-                        let is_same = current.as_ref().map(|c| {
-                            let c_pos = c.position();
-                            let c_size = c.size();
-                            let t_pos = target.position();
-                            let t_size = target.size();
-                            c_pos.x == t_pos.x
-                                && c_pos.y == t_pos.y
-                                && c_size.width == t_size.width
-                                && c_size.height == t_size.height
-                        }).unwrap_or(false);
+                        let is_same = current
+                            .as_ref()
+                            .map(|c| {
+                                let c_pos = c.position();
+                                let c_size = c.size();
+                                let t_pos = target.position();
+                                let t_size = target.size();
+                                c_pos.x == t_pos.x
+                                    && c_pos.y == t_pos.y
+                                    && c_size.width == t_size.width
+                                    && c_size.height == t_size.height
+                            })
+                            .unwrap_or(false);
 
                         if !is_same {
                             let t_pos = target.position();
                             let t_size = target.size();
                             let center_x = t_pos.x + (t_size.width as i32 - w) / 2;
                             let center_y = t_pos.y + (t_size.height as i32 - h) / 2;
-                            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: center_x, y: center_y }));
+                            let _ = window.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition {
+                                    x: center_x,
+                                    y: center_y,
+                                },
+                            ));
                         }
                     }
                 }
@@ -212,7 +271,10 @@ pub fn toggle_window(app: &AppHandle) {
 
         #[cfg(target_os = "windows")]
         WindowExt::release_win_keys();
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
 
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
@@ -225,7 +287,11 @@ pub fn toggle_window(app: &AppHandle) {
             if let Ok(hwnd_raw) = window.hwnd() {
                 unsafe {
                     let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
-                    let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, ex_style | WS_EX_NOACTIVATE.0 as isize);
+                    let _ = SetWindowLongPtrW(
+                        HWND(hwnd_raw.0),
+                        GWL_EXSTYLE,
+                        ex_style | WS_EX_NOACTIVATE.0 as isize,
+                    );
                 }
                 let _ = window.show();
                 if pinned {
@@ -264,7 +330,7 @@ pub fn set_navigation_mode(active: bool) -> Result<(), String> {
 pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_focusable(true);
-        
+
         #[cfg(windows)]
         {
             if let Ok(hwnd_raw) = window.hwnd() {
@@ -308,7 +374,7 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_focusable(true);
         let _ = window.show();
-        
+
         #[cfg(windows)]
         {
             if let Ok(hwnd_raw) = window.hwnd() {
