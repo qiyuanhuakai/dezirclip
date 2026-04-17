@@ -38,6 +38,21 @@ const COMPACT_PREVIEW_LABEL = "compact-preview";
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
 const COMPACT_PREVIEW_DEBUG = false;
+
+let linuxChecked = false;
+let isLinuxPlatform = false;
+
+const checkLinuxPlatform = async (): Promise<boolean> => {
+    if (linuxChecked) return isLinuxPlatform;
+    try {
+        const info = await invoke<{ is_linux: boolean }>("get_platform_info");
+        isLinuxPlatform = !!info?.is_linux;
+    } catch {
+        isLinuxPlatform = false;
+    }
+    linuxChecked = true;
+    return isLinuxPlatform;
+};
 const RICH_PREVIEW_DEBUG = import.meta.env.DEV;
 const compactPreviewLog = (...args: unknown[]) => {
     if (!COMPACT_PREVIEW_DEBUG) return;
@@ -424,7 +439,9 @@ const tryReuseExistingCompactPreviewWindow = async (): Promise<WebviewWindow | n
         compactPreviewMounted = true;
         compactPreviewMountedPromise = Promise.resolve(true);
         try {
-            await existing.setIgnoreCursorEvents(true);
+            if (!(await checkLinuxPlatform())) {
+                await existing.setIgnoreCursorEvents(true);
+            }
         } catch {}
         try {
             await existing.setAlwaysOnTop(true);
@@ -501,7 +518,9 @@ const ensureCompactPreviewWindow = async (): Promise<WebviewWindow | null> => {
             }
 
             try {
-                await previewWindow.setIgnoreCursorEvents(true);
+                if (!(await checkLinuxPlatform())) {
+                    await previewWindow.setIgnoreCursorEvents(true);
+                }
             } catch (err) {
                 console.error("Failed to enable ignore cursor events:", err);
             }

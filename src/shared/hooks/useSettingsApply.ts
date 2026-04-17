@@ -7,6 +7,7 @@ type PlatformInfo = {
   platform: string;
   is_windows_10: boolean;
   is_windows_11: boolean;
+  is_linux: boolean;
 };
 
 const themeCssLoaders = import.meta.glob("../../styles/themes/*.css");
@@ -78,11 +79,13 @@ export const useSettingsApply = ({
         body.classList.toggle("windows-10", !!info?.is_windows_10);
         root.classList.toggle("windows-11", !!info?.is_windows_11);
         body.classList.toggle("windows-11", !!info?.is_windows_11);
+        root.classList.toggle("linux", !!info?.is_linux);
+        body.classList.toggle("linux", !!info?.is_linux);
       })
       .catch(() => {
         if (disposed) return;
-        root.classList.remove("windows-10", "windows-11");
-        body.classList.remove("windows-10", "windows-11");
+        root.classList.remove("windows-10", "windows-11", "linux");
+        body.classList.remove("windows-10", "windows-11", "linux");
       });
     root.classList.toggle("hide-app-border", !showAppBorder);
     body.classList.toggle("hide-app-border", !showAppBorder);

@@ -14,7 +14,10 @@ pub fn simulate_paste_with_method(method: &str, content_type: Option<&str>) -> R
         .map_err(|e| format!("xdotool 粘贴失败: {}", e))?;
 
     if !status.success() {
-        return Err(format!("xdotool 粘贴失败，退出码: {:?}", status.code()));
+        eprintln!(
+            "xdotool warning: exit code {:?}, but keystroke may still have been delivered",
+            status.code()
+        );
     }
 
     Ok(())

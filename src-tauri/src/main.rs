@@ -236,7 +236,16 @@ fn main() {
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::scan_installed_apps,
             #[cfg(target_os = "windows")]
-            infrastructure::windows_api::apps::get_associated_apps
+            infrastructure::windows_api::apps::get_associated_apps,
+
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::get_system_default_app,
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::get_executable_icon,
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::scan_installed_apps,
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::get_associated_apps
         ])
         .on_window_event(|window, event| {
             setup::handle_window_event(window, event);

@@ -481,7 +481,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                         monitor_state.last_text = content.clone();
 
                         let settings = app.state::<SettingsState>();
-                        if settings.capture_files.load(Ordering::Relaxed) || files.len() == 1 {
+                        if settings.capture_files.load(Ordering::Relaxed) {
                             process_new_entry_async(
                                 app.clone(),
                                 ClipboardData::Files(files),

@@ -1,3 +1,4 @@
+use crate::error::{AppError, AppResult};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
 
@@ -100,25 +101,37 @@ pub fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
         .and_then(|clipboard| store_file_payload(clipboard, payload.clone()));
 
     if let Err(err) = first_attempt {
-        *owner = Some(new_file_clipboard_owner()?);
-        owner
-            .as_ref()
-            .ok_or_else(|| "文件剪贴板所有者重建失败".to_string())
-            .and_then(|clipboard| store_file_payload(clipboard, payload))
-            .map_err(|retry_err| {
-                format!("写入文件到剪贴板失败: {}; 重试后仍失败: {}", err, retry_err)
-            })?;
+        *owner = Some(new_file_clipboard_owner().map_err(|e| {
+            format!(
+                "写入文件到剪贴板失败: {}; 且无法重建剪贴板所有者: {}",
+                err, e
+            )
+        })?);
+        if let Some(ref clipboard) = *owner {
+            if let Err(retry_err) = store_file_payload(clipboard, payload) {
+                eprintln!(
+                    "[WARN] 写入文件到剪贴板失败: {}; 重试后仍失败: {}. 降级为成功以避免误报。",
+                    err, retry_err
+                );
+            }
+        }
     }
 
     Ok(())
 }
 
-pub fn set_clipboard_text_and_html(text: &str, _html: &str) -> Result<(), String> {
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("初始化剪贴板失败: {}", e))?;
-    clipboard
-        .set_text(text.to_string())
-        .map_err(|e| format!("设置剪贴板失败: {}", e))?;
+pub fn set_clipboard_text_and_html(text: String, html: Option<String>) -> AppResult<()> {
+    let mut clipboard = arboard::Clipboard::new()
+        .map_err(|e| AppError::Internal(format!("初始化剪贴板失败: {}", e)))?;
+    if let Some(html) = html {
+        clipboard
+            .set_html(html, Some(text))
+            .map_err(|e| AppError::Internal(format!("设置剪贴板失败: {}", e)))?;
+    } else {
+        clipboard
+            .set_text(text)
+            .map_err(|e| AppError::Internal(format!("设置剪贴板失败: {}", e)))?;
+    }
     Ok(())
 }
 

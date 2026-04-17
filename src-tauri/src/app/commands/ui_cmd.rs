@@ -12,6 +12,7 @@ pub struct PlatformInfo {
     pub platform: String,
     pub is_windows_10: bool,
     pub is_windows_11: bool,
+    pub is_linux: bool,
 }
 
 #[tauri::command]
@@ -25,6 +26,7 @@ pub fn get_platform_info() -> PlatformInfo {
             platform: "windows".to_string(),
             is_windows_10,
             is_windows_11,
+            is_linux: false,
         }
     }
 
@@ -34,6 +36,7 @@ pub fn get_platform_info() -> PlatformInfo {
             platform: "macos".to_string(),
             is_windows_10: false,
             is_windows_11: false,
+            is_linux: false,
         }
     }
 
@@ -43,6 +46,7 @@ pub fn get_platform_info() -> PlatformInfo {
             platform: "other".to_string(),
             is_windows_10: false,
             is_windows_11: false,
+            is_linux: true,
         }
     }
 }
@@ -173,13 +177,13 @@ pub fn set_theme(
         };
 
         let _ = window_vibrancy::clear_vibrancy(&window);
+        let material = match theme.as_str() {
+            "mica" => window_vibrancy::NSVisualEffectMaterial::HudWindow,
+            "acrylic" => window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+            _ => window_vibrancy::NSVisualEffectMaterial::HudWindow,
+        };
         if theme == "mica" || theme == "acrylic" {
-            let _ = window_vibrancy::apply_vibrancy(
-                &window,
-                window_vibrancy::NSVisualEffectMaterial::HudWindow,
-                None,
-                None,
-            );
+            let _ = window_vibrancy::apply_vibrancy(&window, material, None, None);
         }
     }
 

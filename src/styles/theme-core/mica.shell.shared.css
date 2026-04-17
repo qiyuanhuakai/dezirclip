@@ -1,0 +1,67 @@
+body.theme-mica .queue-bar {
+  background: var(--surface-shell-queue-bg) !important;
+  border-color: var(--surface-shell-queue-border);
+  box-shadow: var(--surface-shell-queue-shadow);
+}
+
+body.theme-mica #root {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--surface-shell-root-bg) !important;
+}
+
+body.theme-mica #root {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-shell-root-bg) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  box-shadow: var(--surface-shell-root-shadow) !important;
+}
+
+body.theme-mica #root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 8px;
+  background: var(--surface-shell-texture-image);
+}
+
+body.theme-mica #root>* {
+  position: relative;
+  z-index: 1;
+}
+
+body.theme-mica:not(.has-custom-bg)::before {
+  background-image: var(--surface-shell-body-image);
+  opacity: var(--surface-shell-body-opacity);
+}
+
+body.windows-10.theme-mica #root,
+body.windows-11.theme-mica #root {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.compact-preview.theme-mica #root,
+body.theme-mica.compact-preview #root {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+body.compact-preview.theme-mica #root::before,
+body.theme-mica.compact-preview #root::before {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+}
+
+body.compact-preview.theme-mica #root>*,
+body.theme-mica.compact-preview #root>* {
+  position: static !important;
+  z-index: auto !important;
+}

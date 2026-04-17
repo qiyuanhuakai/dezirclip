@@ -3,7 +3,8 @@
 @import "./styles/tokens/theme.tokens.css";
 @import "./styles/base.css";
 @import "./styles/theme-core/modern-mica-acrylic.shared.css";
-@import "./styles/theme-core/modern-mica-acrylic.shell.shared.css";
+@import "./styles/theme-core/mica.shell.shared.css";
+@import "./styles/theme-core/acrylic.shell.shared.css";
 @import "./styles/theme-core/tag-manager.modern.shared.css";
 @import "./styles/theme-core/macos-dialog.shared.css";
 
