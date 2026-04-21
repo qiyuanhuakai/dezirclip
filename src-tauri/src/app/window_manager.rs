@@ -119,8 +119,8 @@ pub fn toggle_window(app: &AppHandle) {
         if let Ok(size) = window.outer_size() {
             let settings = app.state::<SettingsState>();
             if settings.follow_mouse.load(Ordering::Relaxed) {
-                let _w = size.width as i32;
-                let _h = size.height as i32;
+                let w = size.width as i32;
+                let h = size.height as i32;
 
                 #[cfg(windows)]
                 {
@@ -262,7 +262,7 @@ pub fn toggle_window(app: &AppHandle) {
                     }
                 }
             } else if was_docked {
-                let target_monitor = window.current_monitor().ok().flatten();
+                let mut target_monitor = window.current_monitor().ok().flatten();
 
                 #[cfg(windows)]
                 {
@@ -338,8 +338,8 @@ pub fn toggle_window(app: &AppHandle) {
                     }
                 }
             } else {
-                let _w = size.width as i32;
-                let _h = size.height as i32;
+                let w = size.width as i32;
+                let h = size.height as i32;
 
                 #[cfg(windows)]
                 {

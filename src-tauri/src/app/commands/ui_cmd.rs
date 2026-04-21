@@ -79,7 +79,7 @@ pub fn set_theme(
             .unwrap_or(Some("true".to_string()))
             .map(|v| v != "false");
     }
-    let _show_border = effective_show_app_border.unwrap_or(true);
+    let show_border = effective_show_app_border.unwrap_or(true);
 
     if let Ok(mut guard) = state.theme.lock() {
         *guard = theme.clone();

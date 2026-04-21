@@ -116,7 +116,7 @@ async fn handle_url_content(app_path: &Option<String>, content: &str) -> Result<
             }
 
             println!("Attempting to launch URL handler: {}", app);
-            let _ps_script = format!(
+            let ps_script = format!(
                 "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
                 app,
                 content.replace("'", "''")
@@ -250,7 +250,7 @@ async fn launch_file_with_app(
                 println!("Attempting to launch UWP app: {} for file: {}", app, path_str);
                 if let Err(e) = launch_uwp_with_file(app, path_str).await {
                     println!("WinRT launch failed: {}, falling back to old method", e);
-            let _ps_script = format!(
+            let ps_script = format!(
                         "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
                         app, safe_path
                     );

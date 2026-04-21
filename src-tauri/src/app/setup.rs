@@ -454,7 +454,7 @@ fn start_core_background_services(app_handle: &AppHandle) {
 fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
     start_core_background_services(&app_handle);
 
-    let _db_state = app.state::<DbState>();
+    let db_state = app.state::<DbState>();
 
     #[cfg(target_os = "linux")]
     {
