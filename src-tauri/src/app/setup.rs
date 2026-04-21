@@ -443,7 +443,10 @@ fn start_core_background_services(app_handle: &AppHandle) {
             app_handle.clone(),
         );
     }
-    // Non-Windows: skip window tracking
+    #[cfg(target_os = "linux")]
+    {
+        crate::infrastructure::linux_api::window_tracker::start_window_tracking(app_handle.clone());
+    }
     crate::services::clipboard::start_clipboard_monitor(app_handle.clone());
     start_edge_docking_monitor(app_handle.clone());
 }

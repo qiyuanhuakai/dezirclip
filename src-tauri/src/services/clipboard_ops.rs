@@ -244,8 +244,11 @@ async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult
         }
     }
 
-    // Settling time for Windows to process focus change msg
-    // Increased to 150ms for heavy games/apps
+    #[cfg(target_os = "linux")]
+    {
+        let _ = crate::infrastructure::linux_api::window_tracker::activate_window_focus(last_hwnd_val);
+    }
+
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     Ok(())
 }

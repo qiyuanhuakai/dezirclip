@@ -192,6 +192,200 @@ fn resolve_app_info_from_pid(pid: u32) -> AppResult<ActiveAppInfo> {
     })
 }
 
+fn send_net_active_window(
+    conn: &impl Connection,
+    root: xproto::Window,
+    window_id: u32,
+) -> AppResult<()> {
+    let net_active_window_atom = conn
+        .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .reply()
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .atom;
+
+    let data: [u32; 5] = [2, x11rb::CURRENT_TIME as u32, window_id, 0, 0];
+
+    let event = xproto::ClientMessageEvent::new(32, window_id, net_active_window_atom, data);
+
+    conn.send_event(
+        false,
+        root,
+        xproto::EventMask::SUBSTRUCTURE_REDIRECT | xproto::EventMask::SUBSTRUCTURE_NOTIFY,
+        event,
+    )
+    .map_err(|e| AppError::Internal(e.to_string()))?
+    .check()
+    .map_err(|e| AppError::Internal(format!("Failed to send _NET_ACTIVE_WINDOW: {:?}", e)))?;
+
+    Ok(())
+}
+
+pub fn activate_window_focus(window_handle: usize) -> AppResult<()> {
+    let window_id = window_handle as u32;
+
+    if window_id == 0 {
+        return Ok(());
+    }
+
+    let (conn, screen_num) = x11rb::connect(None).map_err(|e| AppError::Internal(e.to_string()))?;
+    let screen = &conn.setup().roots[screen_num];
+    let root = screen.root;
+
+    let _ = send_net_active_window(&conn, root, window_id);
+
+    let _ = conn.configure_window(
+        window_id,
+        &xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE),
+    );
+
+    conn.set_input_focus(
+        xproto::InputFocus::POINTER_ROOT,
+        window_id,
+        x11rb::CURRENT_TIME,
+    )
+    .map_err(|e| AppError::Internal(e.to_string()))?
+    .check()
+    .map_err(|e| AppError::Internal(format!("Failed to set input focus: {:?}", e)))?;
+
+    let _ = conn.flush();
+
+    Ok(())
+}
+
+fn find_window_by_pid(conn: &impl Connection, screen_num: usize, target_pid: u32) -> Option<u32> {
+    let root = conn.setup().roots[screen_num].root;
+
+    let net_wm_pid = conn
+        .intern_atom(false, b"_NET_WM_PID")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+
+    // Try _NET_CLIENT_LIST first (standard way to list top-level windows)
+    let net_client_list = conn
+        .intern_atom(false, b"_NET_CLIENT_LIST")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+
+    let reply = conn
+        .get_property(
+            false,
+            root,
+            net_client_list,
+            xproto::AtomEnum::WINDOW,
+            0,
+            u32::MAX,
+        )
+        .ok()?
+        .reply()
+        .ok()?;
+
+    if reply.format == 32 {
+        for chunk in reply.value.chunks(4) {
+            if chunk.len() != 4 {
+                continue;
+            }
+            let window_id = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            if window_id == 0 {
+                continue;
+            }
+            let pid_reply = conn
+                .get_property(
+                    false,
+                    window_id,
+                    net_wm_pid,
+                    xproto::AtomEnum::CARDINAL,
+                    0,
+                    1,
+                )
+                .ok()?
+                .reply()
+                .ok()?;
+            if pid_reply.format == 32 && pid_reply.value.len() >= 4 {
+                let pid = u32::from_ne_bytes([
+                    pid_reply.value[0],
+                    pid_reply.value[1],
+                    pid_reply.value[2],
+                    pid_reply.value[3],
+                ]);
+                if pid == target_pid {
+                    return Some(window_id);
+                }
+            }
+        }
+    }
+
+    // Fallback: query tree from root
+    if let Ok(tree) = conn.query_tree(root) {
+        if let Ok(tree_reply) = tree.reply() {
+            for window_id in tree_reply.children {
+                let pid_reply = conn
+                    .get_property(
+                        false,
+                        window_id,
+                        net_wm_pid,
+                        xproto::AtomEnum::CARDINAL,
+                        0,
+                        1,
+                    )
+                    .ok()?
+                    .reply()
+                    .ok()?;
+                if pid_reply.format == 32 && pid_reply.value.len() >= 4 {
+                    let pid = u32::from_ne_bytes([
+                        pid_reply.value[0],
+                        pid_reply.value[1],
+                        pid_reply.value[2],
+                        pid_reply.value[3],
+                    ]);
+                    if pid == target_pid {
+                        return Some(window_id);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+pub fn raise_own_window() -> AppResult<()> {
+    let (conn, screen_num) = x11rb::connect(None).map_err(|e| AppError::Internal(e.to_string()))?;
+    let screen = &conn.setup().roots[screen_num];
+    let root = screen.root;
+
+    let target_pid = std::process::id() as u32;
+    let window_id = find_window_by_pid(&conn, screen_num, target_pid)
+        .ok_or_else(|| AppError::Internal("Failed to find TieZ window on X11".to_string()))?;
+
+    let _ = send_net_active_window(&conn, root, window_id);
+
+    conn.configure_window(
+        window_id,
+        &xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE),
+    )
+    .map_err(|e| AppError::Internal(e.to_string()))?
+    .check()
+    .map_err(|e| AppError::Internal(format!("Failed to raise window: {:?}", e)))?;
+
+    conn.set_input_focus(
+        xproto::InputFocus::POINTER_ROOT,
+        window_id,
+        x11rb::CURRENT_TIME,
+    )
+    .map_err(|e| AppError::Internal(e.to_string()))?
+    .check()
+    .map_err(|e| AppError::Internal(format!("Failed to set input focus: {:?}", e)))?;
+
+    let _ = conn.flush();
+
+    Ok(())
+}
+
 pub fn restore_last_focus() -> AppResult<()> {
     let window_id = {
         let hwnd = LAST_ACTIVE_HWND
@@ -205,27 +399,6 @@ pub fn restore_last_focus() -> AppResult<()> {
     }
 
     activate_window_focus(window_id as usize)
-}
-
-pub fn activate_window_focus(window_handle: usize) -> AppResult<()> {
-    let window_id = window_handle as u32;
-
-    if window_id == 0 {
-        return Ok(());
-    }
-
-    let (conn, _) = x11rb::connect(None).map_err(|e| AppError::Internal(e.to_string()))?;
-
-    conn.set_input_focus(
-        xproto::InputFocus::POINTER_ROOT,
-        window_id,
-        x11rb::CURRENT_TIME,
-    )
-    .map_err(|e| AppError::Internal(e.to_string()))?
-    .check()
-    .map_err(|e| AppError::Internal(format!("Failed to set input focus: {:?}", e)))?;
-
-    Ok(())
 }
 
 pub fn get_clipboard_source_app_info() -> AppResult<ActiveAppInfo> {
