@@ -134,6 +134,25 @@
   --compact-btn-active-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 30%, transparent), 0 4px 12px color-mix(in srgb, var(--accent-color) 25%, transparent);
 }
 
+.theme-acrylic {
+  --surface-shell-root-bg: rgba(255, 255, 255, calc(0.45 * var(--surface-opacity-scale, 1)));
+  --surface-shell-root-shadow: 0 14px 48px rgba(0, 0, 0, 0.22);
+  --surface-shell-texture-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%),
+    linear-gradient(225deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 100%);
+  --surface-shell-body-image:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 100%);
+  --surface-shell-body-opacity: 0.28;
+  --modern-settings-bg: rgba(255, 255, 255, 0.18);
+  --modern-history-bg: rgba(255, 255, 255, 0.55);
+  --modern-history-hover-bg: rgba(255, 255, 255, 0.82);
+  --modern-input-bg: rgba(255, 255, 255, 0.65);
+  --modern-input-focus-bg: rgba(255, 255, 255, 0.78);
+  --modern-data-bg: rgba(255, 255, 255, 0.14);
+  --modern-btn-bg: rgba(255, 255, 255, 0.32);
+  --modern-btn-hover-bg: rgba(255, 255, 255, 0.62);
+}
+
 body.dark-mode:is(.theme-mica, .theme-acrylic) {
   --text-primary: #e8e8e8;
   --text-secondary: #a8a8a8;
@@ -229,6 +248,23 @@ body.dark-mode:is(.theme-mica, .theme-acrylic) {
   --compact-btn-hover-bg: color-mix(in srgb, var(--bg-input) 88%, transparent);
   --compact-btn-active-bg: color-mix(in srgb, var(--accent-color) 35%, transparent);
   --compact-btn-active-border: 1px solid color-mix(in srgb, var(--accent-color) 72%, transparent);
+}
+
+body.dark-mode.theme-acrylic {
+  --surface-shell-root-bg: rgba(25, 25, 25, calc(0.38 * var(--surface-opacity-scale, 1)));
+  --surface-shell-root-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  --surface-shell-texture-image:
+    repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255, 255, 255, .015) 3px, rgba(255, 255, 255, .015) 6px),
+    repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255, 255, 255, .015) 3px, rgba(255, 255, 255, .015) 6px),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.04) 0%, transparent 60%);
+  --modern-settings-bg: linear-gradient(145deg, #2a2a2a 0%, #222222 100%);
+  --modern-history-bg: linear-gradient(135deg, rgba(55, 55, 55, 0.55) 0%, rgba(40, 40, 40, 0.55) 100%);
+  --modern-history-hover-bg: linear-gradient(135deg, rgba(65, 65, 65, 0.7) 0%, rgba(50, 50, 50, 0.7) 100%);
+  --modern-input-bg: rgba(255, 255, 255, 0.14);
+  --modern-input-focus-bg: rgba(255, 255, 255, 0.2);
+  --modern-data-bg: rgba(255, 255, 255, 0.04);
+  --modern-btn-bg: rgba(255, 255, 255, 0.04);
+  --modern-btn-hover-bg: rgba(255, 255, 255, 0.1);
 }
 
 :is(.theme-macos, .theme-scifi, .theme-retro) {

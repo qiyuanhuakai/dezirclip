@@ -42,11 +42,9 @@ body.has-custom-bg.theme-acrylic::before {
   border: none !important;
   box-shadow: var(--surface-shell-root-shadow) !important;
   border-radius: 8px;
-  backdrop-filter: none !important;
   position: relative;
 }
 
-/* Mica noise texture overlay */
 .theme-acrylic #root::before {
   content: '';
   position: absolute;
@@ -57,19 +55,11 @@ body.has-custom-bg.theme-acrylic::before {
   background-image: var(--surface-shell-texture-image);
   pointer-events: none;
   border-radius: 8px;
-  opacity: 0.22;
-}
-
-.theme-acrylic #root {
-  background-color: var(--surface-shell-root-bg) !important;
-  border: none !important;
-  border-radius: 8px;
-  box-shadow: var(--surface-shell-root-shadow) !important;
+  opacity: 0.14;
 }
 
 /* ---- Moved from index.css (theme overrides) ---- */
 
-/* Mica/Acrylic theme adjustments */
 .theme-acrylic .video-file-card {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(128, 128, 128, 0.2);
@@ -295,8 +285,3 @@ body:not(.compact-mode) .theme-acrylic .btn-icon.active {
   border-color: var(--modern-btn-active-border) !important;
   box-shadow: var(--modern-btn-active-shadow) !important;
 }
-
-/* Shared modern mica/acrylic component styles moved to:
-   src/styles/theme-core/modern-mica-acrylic.shared.css */
-/* Shared modern mica/acrylic shell styles moved to:
-   src/styles/theme-core/modern-mica-acrylic.shell.shared.css */

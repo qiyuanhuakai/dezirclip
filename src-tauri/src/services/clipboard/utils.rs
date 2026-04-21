@@ -1,9 +1,9 @@
 use crate::database::save_image_to_file;
 use crate::domain::models::ClipboardEntry;
 use base64::{engine::general_purpose, Engine as _};
+use regex::Regex;
 use std::path::Path;
 use std::sync::OnceLock;
-use regex::Regex;
 use urlencoding::decode;
 
 const HTML_PREVIEW_MAX_CHARS: usize = 5000;
@@ -459,6 +459,7 @@ pub fn process_local_images_in_html(html: &str, data_dir: &std::path::Path) -> S
     .to_string()
 }
 
+#[cfg(target_os = "windows")]
 pub fn parse_cf_html(raw: &[u8]) -> Option<String> {
     enum HtmlEncoding {
         Utf8,

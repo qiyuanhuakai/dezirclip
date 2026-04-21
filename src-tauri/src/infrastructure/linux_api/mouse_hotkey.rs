@@ -1,4 +1,3 @@
-use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 use tauri::Emitter;

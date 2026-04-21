@@ -34,10 +34,28 @@ body {
   /* Refined Brutalist shadow */
 }
 
+:root.hide-app-border,
+body.hide-app-border,
 :root.hide-app-border #root,
 body.hide-app-border #root {
-  border-color: transparent !important;
+  border-radius: 0 !important;
+}
+
+:root.hide-app-border #root,
+body.hide-app-border #root {
+  border: none !important;
   box-shadow: none !important;
+}
+
+:root.linux,
+body.linux {
+  background-color: var(--bg-window) !important;
+}
+:root.linux,
+body.linux,
+:root.linux #root,
+body.linux #root {
+  border-radius: var(--radius-window) !important;
 }
 
 /* Texture overlay - subtle noise */

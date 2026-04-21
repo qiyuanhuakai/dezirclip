@@ -25,7 +25,8 @@ use crate::infrastructure::linux_api::clipboard as clipboard_api;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_api::win_clipboard as clipboard_api;
 
-use utils::*;
+#[cfg(target_os = "windows")]
+use utils::{attach_rich_image_fallback, parse_cf_html};
 
 enum ClipboardProcessPayload {
     Pipeline {
@@ -33,6 +34,7 @@ enum ClipboardProcessPayload {
         source_override: Option<String>,
         source_snapshot: Option<ActiveAppInfo>,
     },
+    #[cfg(target_os = "windows")]
     GifImage {
         bytes: Vec<u8>,
         source_snapshot: Option<ActiveAppInfo>,
@@ -71,6 +73,7 @@ fn clipboard_process_sender() -> &'static Sender<ClipboardProcessTask> {
                                 source_snapshot,
                             );
                         }
+                        #[cfg(target_os = "windows")]
                         ClipboardProcessPayload::GifImage {
                             bytes,
                             source_snapshot,
@@ -151,6 +154,7 @@ fn build_png_data_url_from_rgba(width: u32, height: u32, bytes: Vec<u8>) -> Opti
     None
 }
 
+#[cfg(target_os = "windows")]
 fn process_gif_entry_async(
     app_handle: AppHandle,
     bytes: Vec<u8>,
@@ -269,11 +273,6 @@ fn clipboard_image_fallback_data_url() -> Option<String> {
         std::thread::sleep(std::time::Duration::from_millis(35));
     }
 
-    None
-}
-
-#[cfg(not(target_os = "windows"))]
-fn clipboard_image_fallback_data_url() -> Option<String> {
     None
 }
 
@@ -482,7 +481,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                         monitor_state.last_text = content.clone();
 
                         let settings = app.state::<SettingsState>();
-                        if settings.capture_files.load(Ordering::Relaxed) || files.len() == 1 {
+                        if settings.capture_files.load(Ordering::Relaxed) {
                             process_new_entry_async(
                                 app.clone(),
                                 ClipboardData::Files(files),
@@ -499,14 +498,14 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         // 2. Check Image
         if !handled {
             let settings = app.state::<SettingsState>();
-            let rich_text_enabled = settings.capture_rich_text.load(Ordering::Relaxed);
-            let has_text = clipboard
+            let _rich_text_enabled = settings.capture_rich_text.load(Ordering::Relaxed);
+            let _has_text = clipboard
                 .get_text()
                 .map(|t| !t.trim().is_empty())
                 .unwrap_or(false);
 
             #[cfg(target_os = "windows")]
-            let has_rich_html = if rich_text_enabled && has_text {
+            let has_rich_html = if _rich_text_enabled && _has_text {
                 unsafe {
                     clipboard_api::get_clipboard_raw_format("HTML Format")
                         .and_then(|raw| parse_cf_html(&raw))

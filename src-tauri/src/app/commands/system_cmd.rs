@@ -380,7 +380,24 @@ pub fn restart_as_admin(app_handle: AppHandle) -> AppResult<()> {
         Ok(())
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        use std::process::Command;
+
+        let exe_path = std::env::current_exe().map_err(|e| AppError::Internal(e.to_string()))?;
+
+        match Command::new("pkexec").arg(&exe_path).spawn() {
+            Ok(_) => {
+                app_handle.exit(0);
+                Ok(())
+            }
+            Err(_) => Err(AppError::Internal(
+                "Elevation requires pkexec or manual launch from terminal".into(),
+            )),
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         let _ = app_handle;
         Err(AppError::Internal(
