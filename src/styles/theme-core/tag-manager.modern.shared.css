@@ -99,3 +99,116 @@
   background: var(--modern-tag-card-bg);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-sidebar,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .content-toolbar {
+  background: rgba(24, 24, 24, 0.72);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-search-box {
+  background: var(--modern-input-bg);
+  border-color: var(--modern-input-border);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .items-area {
+  background: rgba(16, 17, 20, 0.78);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-item.active {
+  color: #ffffff;
+  background: var(--accent-color);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .themed-card {
+  background: var(--modern-tag-card-bg);
+  color: var(--text-primary);
+  border-color: var(--modern-tag-card-border);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .themed-card:hover {
+  background: var(--modern-history-hover-bg);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-content,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .sidebar-header {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-search-box input,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-name,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .selected-tag-indicator,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .breadcrumb-text {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-search-box input::placeholder,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-badge,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-footer,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .meta-time,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .meta-usage,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog p {
+  color: var(--text-secondary) !important;
+  opacity: 0.82 !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-color-dot {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-media {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-action-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .del-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .sort-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .toggle-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .add-item-btn {
+  color: var(--text-primary) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-action-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .del-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .sort-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .toggle-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .add-item-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .modal-overlay {
+  background: rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog h3 {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog-button {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog-button.primary {
+  background: var(--accent-color) !important;
+  border-color: var(--accent-color) !important;
+  color: #ffffff !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .modal-input-field .modal-textarea {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .modal-input-field .modal-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.45) !important;
+}

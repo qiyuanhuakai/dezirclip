@@ -52,6 +52,10 @@ extern "system" {
 pub const ENCRYPT_PREFIX: &str = "dpapi:";
 pub const LINUX_ENCRYPT_PREFIX: &str = "linux:";
 
+pub fn is_encrypted_value(value: &str) -> bool {
+    value.starts_with(ENCRYPT_PREFIX) || value.starts_with(LINUX_ENCRYPT_PREFIX)
+}
+
 #[cfg(windows)]
 pub fn encrypt_value(plain: &str) -> Option<String> {
     let bytes = plain.as_bytes();

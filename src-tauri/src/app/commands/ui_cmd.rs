@@ -5,6 +5,7 @@ use crate::error::AppError;
 use crate::error::AppResult;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use serde::Serialize;
+use std::process::Command;
 use tauri::{Emitter, State, Theme, WebviewWindow};
 
 #[derive(Debug, Serialize)]
@@ -49,6 +50,37 @@ pub fn get_platform_info() -> PlatformInfo {
             is_linux: true,
         }
     }
+}
+
+#[tauri::command]
+pub fn get_system_theme_mode() -> String {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(output) = Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+            .output()
+        {
+            let value = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if value.contains("dark") {
+                return "dark".to_string();
+            }
+            if value.contains("light") {
+                return "light".to_string();
+            }
+        }
+
+        if let Ok(output) = Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+            .output()
+        {
+            let value = String::from_utf8_lossy(&output.stdout).to_lowercase();
+            if value.contains("dark") {
+                return "dark".to_string();
+            }
+        }
+    }
+
+    "system".to_string()
 }
 
 #[tauri::command]

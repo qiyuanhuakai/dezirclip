@@ -726,3 +726,44 @@ body.dark-mode.theme-macos .compact-popover-portal .rich-text-preview {
   border-color: var(--macos-dialog-button-primary-border) !important;
   color: var(--macos-dialog-button-primary-text) !important;
 }
+
+body.dark-mode .themed-tag-manager.theme-macos .tag-content,
+body.dark-mode .themed-tag-manager.theme-macos .items-area,
+body.dark-mode .themed-tag-manager.theme-macos .tag-sidebar,
+body.dark-mode .themed-tag-manager.theme-macos .content-toolbar,
+body.dark-mode .themed-tag-manager.theme-macos .sidebar-header {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-macos .tag-color-dot {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+body.dark-mode .themed-tag-manager.theme-macos .tag-search-box input,
+body.dark-mode .themed-tag-manager.theme-macos .tag-name,
+body.dark-mode .themed-tag-manager.theme-macos .selected-tag-indicator,
+body.dark-mode .themed-tag-manager.theme-macos .breadcrumb-text,
+body.dark-mode .themed-tag-manager.theme-macos .card-body-text {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-macos .tag-search-box input::placeholder,
+body.dark-mode .themed-tag-manager.theme-macos .tag-badge,
+body.dark-mode .themed-tag-manager.theme-macos .card-footer,
+body.dark-mode .themed-tag-manager.theme-macos .meta-time,
+body.dark-mode .themed-tag-manager.theme-macos .meta-usage {
+  color: var(--text-secondary) !important;
+  opacity: 0.84 !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-macos .card-media {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: var(--macos-tag-card-border) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-macos .modal-overlay {
+  background: rgba(0, 0, 0, 0.52) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}

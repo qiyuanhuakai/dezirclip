@@ -15,6 +15,8 @@ use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
+const MAX_PERSISTED_TEXT_BYTES: usize = 10 * 1024 * 1024;
+
 #[derive(Debug, Clone)]
 pub enum ClipboardData {
     Text(String),
@@ -349,6 +351,33 @@ impl PipelineStage for ValidationStage {
             println!("Ignoring echo paste from queue");
             ctx.should_stop = true;
             return;
+        }
+
+        if let Some(entry) = ctx.entry.as_ref() {
+            if is_text_type(&entry.content_type)
+                && (entry.content.len()
+                    + entry.preview.len()
+                    + entry
+                        .html_content
+                        .as_ref()
+                        .map(|html| html.len())
+                        .unwrap_or(0))
+                    > MAX_PERSISTED_TEXT_BYTES
+            {
+                println!(
+                    "Ignoring oversized clipboard entry: type={}, bytes={}",
+                    entry.content_type,
+                    entry.content.len()
+                        + entry.preview.len()
+                        + entry
+                            .html_content
+                            .as_ref()
+                            .map(|html| html.len())
+                            .unwrap_or(0)
+                );
+                ctx.should_stop = true;
+                return;
+            }
         }
 
         self.process_deduplication(ctx);

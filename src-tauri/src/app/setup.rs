@@ -40,6 +40,20 @@ static WINDOW_SIZE_SAVE_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
 
+#[cfg(target_os = "linux")]
+fn linux_service_disabled(service: &str) -> bool {
+    std::env::var("TIEZ_DISABLE_LINUX_SERVICES")
+        .ok()
+        .map(|value| {
+            value
+                .split([',', ';', ' '])
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .any(|item| item.eq_ignore_ascii_case(service) || item.eq_ignore_ascii_case("all"))
+        })
+        .unwrap_or(false)
+}
+
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle = app.handle().clone();
 
@@ -106,7 +120,9 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // 10a. Linux Mouse Hotkey Listener (for MouseMiddle global shortcut)
     #[cfg(target_os = "linux")]
-    crate::infrastructure::linux_api::mouse_hotkey::start_mouse_hotkey_listener();
+    if !linux_service_disabled("mouse_hotkey") {
+        crate::infrastructure::linux_api::mouse_hotkey::start_mouse_hotkey_listener();
+    }
 
     // 11. TaskbarCreated & Subclass
     #[cfg(target_os = "windows")]
@@ -445,9 +461,20 @@ fn start_core_background_services(app_handle: &AppHandle) {
     }
     #[cfg(target_os = "linux")]
     {
-        crate::infrastructure::linux_api::window_tracker::start_window_tracking(app_handle.clone());
+        if !linux_service_disabled("window_tracker") {
+            crate::infrastructure::linux_api::window_tracker::start_window_tracking(
+                app_handle.clone(),
+            );
+        }
     }
     crate::services::clipboard::start_clipboard_monitor(app_handle.clone());
+    #[cfg(target_os = "linux")]
+    {
+        if !linux_service_disabled("edge_docking") {
+            start_edge_docking_monitor(app_handle.clone());
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
     start_edge_docking_monitor(app_handle.clone());
 }
 
@@ -795,6 +822,9 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
     use tauri::PhysicalPosition;
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::ConnectionExt;
+    use x11rb::protocol::xproto::KeyButMask;
+
+    const EDGE_REVEAL_GRACE_MS: u64 = 2_500;
 
     thread::spawn(move || {
         let (conn, screen_num) = match x11rb::connect(None) {
@@ -864,6 +894,11 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 };
                 let point_x = reply.root_x as i32;
                 let point_y = reply.root_y as i32;
+                let pointer_buttons = u16::from(reply.mask)
+                    & (u16::from(KeyButMask::BUTTON1)
+                        | u16::from(KeyButMask::BUTTON2)
+                        | u16::from(KeyButMask::BUTTON3));
+                let is_pointer_button_down = pointer_buttons != 0;
 
                 let win_pos = match window.outer_position() {
                     Ok(p) => p,
@@ -895,21 +930,9 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 let is_mouse_near_edge = if is_hidden_by_edge {
                     let current_dock = CURRENT_DOCK.load(Ordering::Relaxed);
                     match current_dock {
-                        1 => {
-                            point_y <= screen_top + threshold
-                                && point_x >= rect_left
-                                && point_x <= rect_right
-                        }
-                        2 => {
-                            point_x <= screen_left + threshold
-                                && point_y >= rect_top
-                                && point_y <= rect_bottom
-                        }
-                        3 => {
-                            point_x >= screen_right - threshold
-                                && point_y >= rect_top
-                                && point_y <= rect_bottom
-                        }
+                        1 => point_y <= screen_top + threshold,
+                        2 => point_x <= screen_left + threshold,
+                        3 => point_x >= screen_right - threshold,
                         _ => false,
                     }
                 } else {
@@ -940,8 +963,6 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     continue;
                 }
 
-                let hide_size = 3;
-
                 let mut dock = DockPosition::None;
                 if rect_top <= screen_top + threshold {
                     dock = DockPosition::Top;
@@ -963,6 +984,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
                         if dock_actual != DockPosition::None {
                             let _ = window.show();
+                            let _ = window.set_always_on_top(true);
                             match dock_actual {
                                 DockPosition::Top => {
                                     let _ = window
@@ -992,7 +1014,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         }
                     }
                 } else if dock != DockPosition::None {
-                    if is_mouse_in || IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst) {
+                    if is_pointer_button_down
+                        || now.saturating_sub(LAST_SHOW_TIMESTAMP.load(Ordering::Relaxed))
+                            < EDGE_REVEAL_GRACE_MS
+                    {
                         continue;
                     }
 
@@ -1004,33 +1029,20 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                             let _ = app_handle.emit("window-pinned-changed", true);
                         }
 
-                        let window_height = rect_bottom - rect_top;
-                        let window_width = rect_right - rect_left;
                         match dock {
                             DockPosition::Top => {
-                                let _ = window.set_position(PhysicalPosition::new(
-                                    rect_left,
-                                    screen_top - window_height + hide_size,
-                                ));
                                 CURRENT_DOCK.store(1, Ordering::Relaxed);
                             }
                             DockPosition::Left => {
-                                let _ = window.set_position(PhysicalPosition::new(
-                                    screen_left - window_width + hide_size,
-                                    rect_top,
-                                ));
                                 CURRENT_DOCK.store(2, Ordering::Relaxed);
                             }
                             DockPosition::Right => {
-                                let _ = window.set_position(PhysicalPosition::new(
-                                    screen_right - hide_size,
-                                    rect_top,
-                                ));
                                 CURRENT_DOCK.store(3, Ordering::Relaxed);
                             }
                             _ => {}
                         }
                         IS_HIDDEN.store(true, Ordering::Relaxed);
+                        let _ = window.hide();
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()

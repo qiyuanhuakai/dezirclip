@@ -22,6 +22,28 @@ const ensureThemeCssLoaded = async (theme: string) => {
   loadedThemes.add(theme);
 };
 
+const readNativeSystemIsDark = async () => {
+  try {
+    const mode = await invoke<string>("get_system_theme_mode");
+    if (mode === "dark") return true;
+    if (mode === "light") return false;
+  } catch {
+    // Fall through to Tauri/Web media detection.
+  }
+  return null;
+};
+
+const readWindowSystemIsDark = async () => {
+  try {
+    return (await getCurrentWindow().theme()) === "dark";
+  } catch {
+    return null;
+  }
+};
+
+const mediaSystemIsDark = () =>
+  !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+
 interface UseSettingsApplyOptions {
   theme: string;
   colorMode: string;
@@ -56,17 +78,13 @@ export const useSettingsApply = ({
       applyModeClass(root, body, mode);
     };
 
+    const readSystemIsDark = async () =>
+      (await readNativeSystemIsDark()) ?? (await readWindowSystemIsDark()) ?? mediaSystemIsDark();
+
     const applySystemMode = async () => {
-      try {
-        const current = await getCurrentWindow().theme();
-        if (disposed) return;
-        applyExplicitMode(resolveThemeMode("system", current === "dark"));
-      } catch {
-        if (disposed) return;
-        const isDark =
-          window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-        applyExplicitMode(resolveThemeMode("system", isDark));
-      }
+      const isDark = await readSystemIsDark();
+      if (disposed) return;
+      applyExplicitMode(resolveThemeMode("system", isDark));
     };
 
     ensureThemeCssLoaded(theme).catch(console.error);
@@ -112,13 +130,14 @@ export const useSettingsApply = ({
 
     let unlistenThemeChanged: (() => void) | null = null;
     let cleanupMedia: (() => void) | null = null;
+    let cleanupPoll: (() => void) | null = null;
 
     getCurrentWindow()
-      .onThemeChanged((event) => {
+      .onThemeChanged(() => {
         if (disposed) return;
 
         if (colorMode === "system") {
-          applyExplicitMode(resolveThemeMode("system", event?.payload === "dark"));
+          applySystemMode();
         } else {
           applyExplicitMode(resolveThemeMode(colorMode as "light" | "dark" | "system", false));
         }
@@ -142,7 +161,7 @@ export const useSettingsApply = ({
     if (colorMode === "system") {
       if (window.matchMedia) {
         const media = window.matchMedia("(prefers-color-scheme: dark)");
-        const onChange = () => applyExplicitMode(resolveThemeMode("system", media.matches));
+        const onChange = () => applySystemMode();
         if (media.addEventListener) {
           media.addEventListener("change", onChange);
           cleanupMedia = () => media.removeEventListener("change", onChange);
@@ -151,12 +170,18 @@ export const useSettingsApply = ({
           cleanupMedia = () => media.removeListener(onChange);
         }
       }
+
+      const poll = window.setInterval(() => {
+        applySystemMode();
+      }, 2000);
+      cleanupPoll = () => window.clearInterval(poll);
     }
 
     return () => {
       disposed = true;
       if (unlistenThemeChanged) unlistenThemeChanged();
       if (cleanupMedia) cleanupMedia();
+      if (cleanupPoll) cleanupPoll();
     };
   }, [theme, colorMode, showAppBorder, settingsLoaded, compactMode]);
 

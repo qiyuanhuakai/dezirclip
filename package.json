@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
+    "tauri:dev:safe": "TIEZ_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey tauri dev",
     "tauri:build": "tauri build",
     "build:portable": "tauri build --no-bundle --features portable && powershell -NoProfile -Command \"$ErrorActionPreference='Stop'; $out='artifacts/portable'; New-Item -ItemType Directory -Force -Path $out | Out-Null; Get-ChildItem 'src-tauri/target/release' -Filter *.exe | Copy-Item -Destination $out -Force; Compress-Archive -Path (Join-Path $out '*') -DestinationPath (Join-Path $out 'tiez-portable.zip') -Force\""
   },

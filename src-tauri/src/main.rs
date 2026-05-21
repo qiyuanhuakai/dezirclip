@@ -208,6 +208,7 @@ fn main() {
 
             app::commands::set_theme,
             app::commands::get_platform_info,
+            app::commands::get_system_theme_mode,
             app::commands::register_hotkey,
             app::commands::test_hotkey_available,
 

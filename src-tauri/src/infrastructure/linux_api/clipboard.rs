@@ -69,6 +69,15 @@ pub fn get_clipboard_raw_format(_name: &str) -> Option<Vec<u8>> {
     None
 }
 
+pub fn get_clipboard_html() -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    clipboard
+        .get()
+        .html()
+        .ok()
+        .filter(|html| !html.trim().is_empty())
+}
+
 pub fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
     let normalized_paths: Vec<String> = paths.into_iter().filter(|path| !path.is_empty()).collect();
 
