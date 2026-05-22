@@ -33,6 +33,26 @@ impl SqliteTagRepository {
         }
     }
 
+    fn maybe_decrypt_tags(&self, tags: Vec<String>) -> Vec<String> {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut decrypted = Vec::new();
+
+        for tag in tags {
+            let tag = self.maybe_decrypt_text(&tag);
+            let tag = tag.trim();
+            if tag.is_empty() {
+                continue;
+            }
+
+            let tag = tag.to_string();
+            if seen.insert(tag.clone()) {
+                decrypted.push(tag);
+            }
+        }
+
+        decrypted
+    }
+
     fn refresh_entry_tags_json(conn: &Connection, entry_id: i64) -> Result<(), String> {
         let mut stmt = conn
             .prepare("SELECT tag FROM entry_tags WHERE entry_id = ? ORDER BY tag")
@@ -94,6 +114,7 @@ impl TagRepository for SqliteTagRepository {
         let mut map = HashMap::new();
         for row in rows {
             if let Ok((name, color)) = row {
+                let name = self.maybe_decrypt_text(&name);
                 map.insert(name, color);
             }
         }
@@ -114,7 +135,8 @@ impl TagRepository for SqliteTagRepository {
         let mut tag_counts: HashMap<String, i32> = HashMap::new();
         for row in rows {
             if let Ok((tag, count)) = row {
-                tag_counts.insert(tag, count);
+                let tag = self.maybe_decrypt_text(&tag);
+                *tag_counts.entry(tag).or_insert(0) += count;
             }
         }
 
@@ -128,6 +150,7 @@ impl TagRepository for SqliteTagRepository {
 
         for row in saved_rows {
             if let Ok(name) = row {
+                let name = self.maybe_decrypt_text(&name);
                 tag_counts.entry(name).or_insert(0);
             }
         }
@@ -242,17 +265,16 @@ impl TagRepository for SqliteTagRepository {
     fn get_entries_by_tag(&self, tag: &str) -> Result<Vec<ClipboardEntry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
+            "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
              FROM clipboard_history ch
              INNER JOIN entry_tags et ON ch.id = et.entry_id
-             WHERE et.tag = ? 
              ORDER BY ch.is_pinned DESC, ch.pinned_order DESC, ch.timestamp DESC",
         ).map_err(|e| e.to_string())?;
 
         let rows = stmt
-            .query_map([tag], |row| {
+            .query_map([], |row| {
                 let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
-                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+                let tags = self.maybe_decrypt_tags(serde_json::from_str(&tags_str).unwrap_or_default());
                 let content_raw: String = row.get(2)?;
                 let html_raw: Option<String> = row.get(3).ok();
                 let preview_raw: String = row.get(6)?;
@@ -282,7 +304,9 @@ impl TagRepository for SqliteTagRepository {
         let mut history = Vec::new();
         for row in rows {
             if let Ok(entry) = row {
-                history.push(entry);
+                if entry.tags.iter().any(|entry_tag| entry_tag == tag) {
+                    history.push(entry);
+                }
             }
         }
         Ok(history)
