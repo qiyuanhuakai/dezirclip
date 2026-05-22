@@ -442,11 +442,6 @@ pub fn toggle_window(app: &AppHandle) {
             let _ = window.set_always_on_top(true);
             let _ = window.set_focusable(true);
             let _ = window.show();
-            let _ = window.set_focus();
-            #[cfg(target_os = "linux")]
-            {
-                let _ = crate::infrastructure::linux_api::window_tracker::raise_own_window();
-            }
         }
     }
 }

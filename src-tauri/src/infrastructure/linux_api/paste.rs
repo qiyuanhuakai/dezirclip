@@ -9,7 +9,7 @@ pub fn simulate_paste_with_method(method: &str, content_type: Option<&str>) -> R
     };
 
     let status = std::process::Command::new("xdotool")
-        .args([&"key", &"--clearmodifiers", key_combo])
+        .args([&"key", key_combo])
         .status()
         .map_err(|e| format!("xdotool 粘贴失败: {}", e))?;
 

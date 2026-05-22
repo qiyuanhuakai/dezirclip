@@ -82,7 +82,7 @@ pub fn toggle_autostart(enabled: bool) -> AppResult<()> {
         let desktop_file = autostart_dir.join("tiez-clipboard.desktop");
         if enabled {
             let content = format!(
-                "[Desktop Entry]\nType=Application\nName=TieZ Clipboard\nExec=\"{}\" --minimized\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n",
+                "[Desktop Entry]\nType=Application\nName=TieZ Clipboard\nExec=\"{}\" --minimized\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\nStartupNotify=false\nStartupWMClass=TieZ\n",
                 app_path.to_string_lossy()
             );
             std::fs::write(&desktop_file, content)
