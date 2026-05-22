@@ -13,6 +13,27 @@ body.theme-mica {
   --shadow-color: transparent !important;
 }
 
+body.dark-mode.theme-mica {
+  --bg-panel: rgba(255, 255, 255, 0.09);
+  --bg-input: rgba(255, 255, 255, 0.12);
+  --bg-element: rgba(255, 255, 255, 0.105);
+  --bg-button: rgba(255, 255, 255, 0.11);
+  --text-primary: #f6f7fb;
+  --text-secondary: #c7ccd8;
+  --border-dark: rgba(255, 255, 255, 0.14) !important;
+  --border-light: rgba(255, 255, 255, 0.1);
+  --shadow-color: rgba(0, 0, 0, 0.22) !important;
+  --tag-manager-panel-bg: rgba(255, 255, 255, 0.1);
+  --tag-manager-content-bg: rgba(255, 255, 255, 0.04);
+  --tag-manager-card-bg: rgba(255, 255, 255, 0.12);
+  --tag-manager-card-hover-bg: rgba(255, 255, 255, 0.16);
+  --tag-manager-input-bg: rgba(255, 255, 255, 0.13);
+  --tag-manager-button-bg: rgba(255, 255, 255, 0.12);
+  --tag-manager-button-hover-bg: rgba(255, 255, 255, 0.17);
+  --tag-manager-border: rgba(255, 255, 255, 0.12);
+  --tag-manager-strong-border: rgba(255, 255, 255, 0.17);
+}
+
 /* Custom background image support */
 body.theme-mica::before {
   content: '';
