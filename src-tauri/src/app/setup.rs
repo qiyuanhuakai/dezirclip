@@ -273,8 +273,8 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(true),
         privacy_kinds: repo
             .get("app.privacy_protection_kinds")
-            .unwrap_or(Some("phone,idcard,email,secret".to_string()))
-            .unwrap_or("phone,idcard,email,secret".to_string()),
+            .unwrap_or(Some("phone,idcard,email,secret,password".to_string()))
+            .unwrap_or("phone,idcard,email,secret,password".to_string()),
         privacy_custom: repo
             .get("app.privacy_protection_custom_rules")
             .unwrap_or(Some("".to_string()))
@@ -824,8 +824,6 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
     use x11rb::protocol::xproto::ConnectionExt;
     use x11rb::protocol::xproto::KeyButMask;
 
-    const EDGE_REVEAL_GRACE_MS: u64 = 2_500;
-
     thread::spawn(move || {
         let (conn, screen_num) = match x11rb::connect(None) {
             Ok(v) => v,
@@ -1014,10 +1012,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         }
                     }
                 } else if dock != DockPosition::None {
-                    if is_pointer_button_down
-                        || now.saturating_sub(LAST_SHOW_TIMESTAMP.load(Ordering::Relaxed))
-                            < EDGE_REVEAL_GRACE_MS
-                    {
+                    if is_pointer_button_down {
                         continue;
                     }
 
