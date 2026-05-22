@@ -833,12 +833,83 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                 }
                 .modal-buttons button:active { transform: translate(2px, 2px); box-shadow: 0 0 0; }
                 .btn-save { background: var(--accent-color); color: white; }
-                
+
+                body.dark-mode .themed-tag-manager .tag-search-box input::placeholder {
+                    color: var(--text-muted);
+                    opacity: 0.76;
+                }
+
+                body.dark-mode .themed-tag-manager .search-icon-placeholder,
+                body.dark-mode .themed-tag-manager .action-icon {
+                    opacity: 0.72;
+                }
+
+                body.dark-mode .themed-tag-manager .tag-color-dot {
+                    border-color: color-mix(in srgb, var(--text-primary) 28%, transparent);
+                }
+
+                body.dark-mode .themed-tag-manager .tag-badge,
+                body.dark-mode .themed-tag-manager .card-footer,
+                body.dark-mode .themed-tag-manager .selected-tag-indicator {
+                    opacity: 0.84;
+                }
+
+                body.dark-mode .themed-tag-manager .sort-btn,
+                body.dark-mode .themed-tag-manager .card-action-btn,
+                body.dark-mode .themed-tag-manager .del-btn {
+                    color: var(--text-secondary);
+                    opacity: 0.72;
+                }
+
+                body.dark-mode .themed-tag-manager .sort-btn:hover,
+                body.dark-mode .themed-tag-manager .card-action-btn:hover {
+                    color: var(--accent-color);
+                    opacity: 1;
+                }
+
+                body.dark-mode .themed-tag-manager .del-btn:hover {
+                    color: #ff6b6b;
+                    opacity: 1;
+                }
+
+                body.dark-mode .themed-tag-manager .modal-overlay {
+                    background: rgba(0, 0, 0, 0.58);
+                }
+
+                body.dark-mode .themed-tag-manager .modal-overlay .confirm-dialog h3 {
+                    background: transparent !important;
+                    color: var(--text-primary) !important;
+                    padding: 0;
+                }
+
+                body.dark-mode .themed-tag-manager.theme-retro .tag-sidebar,
+                body.dark-mode .themed-tag-manager.theme-retro .content-toolbar {
+                    border-color: var(--border-dark);
+                    background: var(--bg-toolbar);
+                }
+
+                body.dark-mode .themed-tag-manager.theme-retro .tag-item.active,
+                body.dark-mode .themed-tag-manager.theme-retro .themed-card {
+                    border-color: var(--border-dark);
+                    background: var(--bg-element);
+                    box-shadow: 3px 3px 0 var(--shadow-color);
+                }
+
+                body.dark-mode .themed-tag-manager.theme-retro .themed-card:hover,
+                body.dark-mode .themed-tag-manager.theme-retro .tag-item:hover:not(.active) {
+                    background: var(--bg-input);
+                }
+
+                body.dark-mode .themed-tag-manager.theme-scifi .tag-badge,
+                body.dark-mode .themed-tag-manager.theme-scifi .card-footer,
+                body.dark-mode .themed-tag-manager.theme-scifi .card-action-btn,
+                body.dark-mode .themed-tag-manager.theme-scifi .del-btn {
+                    opacity: 0.82 !important;
+                }
+
                 .custom-scrollbar::-webkit-scrollbar { width: 3px; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-dark); border-radius: 10px; }
             `}</style>
         </div >
     );
 }
-
-
