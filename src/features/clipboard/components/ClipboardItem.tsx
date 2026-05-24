@@ -63,6 +63,7 @@ const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) 
     if (!RICH_PREVIEW_DEBUG) return;
     console.warn("[RichTextPreview][MainList]", stage, detail || {});
 };
+
 type CompactPreviewAnchor = {
     clientX: number;
     clientY: number;

@@ -16,7 +16,7 @@ import { getConciseTime } from "../../../shared/lib/utils";
 import type { Locale } from "../../../shared/types";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
-import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
+import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 
@@ -99,24 +99,17 @@ const CompactPreviewWindow = () => {
     const requestResizeRef = useRef<() => void>(() => {});
     const previewBoundsRef = useRef({ width: 560, height: 560, mediaWidth: 520, mediaHeight: 360 });
     const lastSentSizeRef = useRef<{ width: number; height: number } | null>(null);
-    const richImageFallbackSrc = useMemo(() => {
-        if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
-        const { imagePayload } = extractRichImageFallback(payload.htmlContent);
-        if (!imagePayload) return null;
-        const src = resolveRichImageSrc(imagePayload);
-        if (!src) return null;
-        return src;
-    }, [payload]);
+    const richPreviewData = useMemo(() => getRichPreviewData(payload), [payload?.contentType, payload?.htmlContent]);
+    const richImageFallbackSrc = richPreviewData.imageSrc;
+    const richTextSnapshotHtml = richPreviewData.cleanHtml || payload?.htmlContent || "";
     const richTextSnapshotSrc = useMemo(() => {
         if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
         if (!payload.richTextSnapshotPreview) return null;
-        const { cleanHtml } = extractRichImageFallback(payload.htmlContent);
-        const htmlForSnapshot = cleanHtml || payload.htmlContent;
-        return getRichTextSnapshotDataUrl(htmlForSnapshot, {
+        return getRichTextSnapshotDataUrl(richTextSnapshotHtml, {
             width: 560,
             maxHeight: 1200
         });
-    }, [payload]);
+    }, [payload?.contentType, payload?.htmlContent, payload?.richTextSnapshotPreview, richTextSnapshotHtml]);
     const effectiveRichTextSnapshotSrc = snapshotFailed ? null : richTextSnapshotSrc;
     const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
     const useSnapshotPreviewImage = !effectiveRichImageFallbackSrc && !!effectiveRichTextSnapshotSrc;
@@ -210,7 +203,11 @@ const CompactPreviewWindow = () => {
         let timerB: number | null = null;
         let timerC: number | null = null;
         const updateSize = () => {
+            if (raf) {
+                window.cancelAnimationFrame(raf);
+            }
             raf = window.requestAnimationFrame(() => {
+                raf = 0;
                 const container = containerRef.current;
                 if (!container) {
                     compactPreviewLog("skip measure: container missing");
@@ -439,11 +436,10 @@ const CompactPreviewWindow = () => {
                     />
                 );
             }
-            const { cleanHtml } = extractRichImageFallback(payload.htmlContent);
             return (
                 <HtmlContent
                     className="rich-text-preview"
-                    htmlContent={cleanHtml || payload.htmlContent}
+                    htmlContent={richPreviewData.cleanHtml || payload.htmlContent}
                     fallbackText={payload.preview || payload.content}
                     preview={false}
                     style={{
@@ -457,7 +453,7 @@ const CompactPreviewWindow = () => {
             );
         }
         return payload.content || payload.preview || "";
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml]);
 
     return (
         <div className="compact-preview-root">
