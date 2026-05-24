@@ -8,6 +8,8 @@ pub fn simulate_paste_with_method(method: &str, content_type: Option<&str>) -> R
         _ => "Shift+Insert",
     };
 
+    release_active_modifiers();
+
     let status = std::process::Command::new("xdotool")
         .args([&"key", key_combo])
         .status()
@@ -21,6 +23,27 @@ pub fn simulate_paste_with_method(method: &str, content_type: Option<&str>) -> R
     }
 
     Ok(())
+}
+
+fn release_active_modifiers() {
+    // Linux hotkeys can leave Alt/Ctrl/Shift physically active while we synthesize
+    // the paste keystroke; release them explicitly so Ctrl+V/Shift+Insert is not
+    // transformed into a different shortcut by the target app.
+    let _ = std::process::Command::new("xdotool")
+        .args([
+            "keyup",
+            "Control_L",
+            "Control_R",
+            "Shift_L",
+            "Shift_R",
+            "Alt_L",
+            "Alt_R",
+            "Super_L",
+            "Super_R",
+            "Meta_L",
+            "Meta_R",
+        ])
+        .status();
 }
 
 pub fn simulate_paste_sequence(texts: Vec<String>) -> Result<(), String> {
