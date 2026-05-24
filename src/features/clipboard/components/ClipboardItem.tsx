@@ -12,9 +12,6 @@ import {
     Tag,
     X,
     FileText,
-    Image as ImageIcon,
-    Link as LinkIcon,
-    Code,
     File,
     Plus,
     Video,
@@ -35,9 +32,9 @@ import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
+import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
-const COMPACT_PREVIEW_DEBUG = false;
 
 let linuxChecked = false;
 let isLinuxPlatform = false;
@@ -53,16 +50,9 @@ const checkLinuxPlatform = async (): Promise<boolean> => {
     linuxChecked = true;
     return isLinuxPlatform;
 };
-const RICH_PREVIEW_DEBUG = import.meta.env.DEV;
-const compactPreviewLog = (...args: unknown[]) => {
-    if (!COMPACT_PREVIEW_DEBUG) return;
-    const ts = new Date().toISOString();
-    console.log(`[CompactPreview][Main][${ts}]`, ...args);
-};
-const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) => {
-    if (!RICH_PREVIEW_DEBUG) return;
-    console.warn("[RichTextPreview][MainList]", stage, detail || {});
-};
+
+import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
+
 type CompactPreviewAnchor = {
     clientX: number;
     clientY: number;
@@ -497,17 +487,7 @@ const ensureCompactPreviewWindow = async (): Promise<WebviewWindow | null> => {
     return compactPreviewReady;
 };
 
-const getIcon = (type: string) => {
-    switch (type) {
-        case "text": return <FileText size={14} />;
-        case "image": return <ImageIcon size={14} />;
-        case "url": return <LinkIcon size={14} />;
-        case "code": return <Code size={14} />;
-        case "file": return <File size={14} />;
-        case "video": return <Video size={14} />;
-        default: return <FileText size={14} />;
-    }
-};
+const getIcon = (type: string) => getContentTypeIcon(type);
 
 const renderSourceAppIcon = (iconSrc: string | null, contentType: string, sourceApp: string) => {
     if (!iconSrc) {

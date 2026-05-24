@@ -2,20 +2,14 @@ import { toTauriLocalImageSrc } from "./localImageSrc";
 import { extractRichImageFallback } from "./richPreview";
 
 const SNAPSHOT_CACHE_LIMIT = 120;
-const SNAPSHOT_CACHE_TTL_MS = 10 * 60 * 1000;
 const SNAPSHOT_CACHE_VERSION = "v4";
-const snapshotCache = new Map<string, { dataUrl: string; at: number }>();
+const snapshotCache = new Map<string, string>();
 
-const trimCache = (now = Date.now()) => {
-  for (const [key, value] of snapshotCache.entries()) {
-    if (now - value.at > SNAPSHOT_CACHE_TTL_MS) {
-      snapshotCache.delete(key);
-    }
-  }
+const trimCache = () => {
   while (snapshotCache.size > SNAPSHOT_CACHE_LIMIT) {
-    const first = snapshotCache.keys().next();
-    if (first.done) return;
-    snapshotCache.delete(first.value);
+    const firstKey = snapshotCache.keys().next().value;
+    if (!firstKey) break;
+    snapshotCache.delete(firstKey);
   }
 };
 
@@ -172,13 +166,14 @@ const normalizeRichHtml = (html: string): {
 const toXmlSafeNamedEntities = (html: string): string => {
   // XML only supports amp/lt/gt/quot/apos as named entities.
   // Office HTML often contains entities like &nbsp; which can break SVG parsing.
+  const probe = document.createElement("textarea");
+
   return html.replace(/&([a-zA-Z][a-zA-Z0-9]+);/g, (full, name: string) => {
     const lower = name.toLowerCase();
     if (lower === "amp" || lower === "lt" || lower === "gt" || lower === "quot" || lower === "apos") {
       return full;
     }
 
-    const probe = document.createElement("textarea");
     probe.innerHTML = full;
     const decoded = probe.value;
     if (!decoded || decoded === full) {
@@ -267,13 +262,9 @@ export const getRichTextSnapshotDataUrl = (
     const key = `${SNAPSHOT_CACHE_VERSION}:${hashString(sourceHtml)}:${sourceHtml.length}:${width}:${maxHeight}`;
     const cached = snapshotCache.get(key);
     if (cached) {
-      const now = Date.now();
-      if (now - cached.at <= SNAPSHOT_CACHE_TTL_MS) {
-        snapshotCache.delete(key);
-        snapshotCache.set(key, { dataUrl: cached.dataUrl, at: now });
-        return cached.dataUrl;
-      }
       snapshotCache.delete(key);
+      snapshotCache.set(key, cached);
+      return cached;
     }
 
     const normalized = normalizeRichHtml(sourceHtml);
@@ -366,9 +357,8 @@ export const getRichTextSnapshotDataUrl = (
       return null;
     }
 
-    const now = Date.now();
-    snapshotCache.set(key, { dataUrl, at: now });
-    trimCache(now);
+    snapshotCache.set(key, dataUrl);
+    trimCache();
     return dataUrl;
   } catch (error) {
     logSnapshotFailure("unexpected_error", {

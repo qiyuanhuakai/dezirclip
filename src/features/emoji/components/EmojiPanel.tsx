@@ -75,7 +75,7 @@ const isImageFile = (file: File) => {
   return IMAGE_EXTS.has(ext);
 };
 
-const fileToDataUrl = (file: File) =>
+const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -83,8 +83,10 @@ const fileToDataUrl = (file: File) =>
       else reject(new Error("Invalid file result"));
     };
     reader.onerror = () => reject(reader.error || new Error("File read failed"));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
+
+const fileToDataUrl = (file: File) => blobToDataUrl(file);
 
 const parseSrcset = (srcset: string) => {
   const first = srcset.split(",")[0]?.trim() || "";
@@ -350,15 +352,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
       const response = await fetch(url);
       if (!response.ok) return null;
       const blob = await response.blob();
-      return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === "string") resolve(reader.result);
-          else reject(new Error("Invalid file result"));
-        };
-        reader.onerror = () => reject(reader.error || new Error("File read failed"));
-        reader.readAsDataURL(blob);
-      });
+      return blobToDataUrl(blob);
     } catch {
       return null;
     }
