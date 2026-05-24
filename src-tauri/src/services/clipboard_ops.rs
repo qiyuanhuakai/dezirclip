@@ -195,6 +195,7 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
         // In auto-hide mode, hide the window now
         if let Some(window) = app_handle.get_webview_window("main") {
             let _ = window.hide();
+            // IS_HIDDEN only means "hidden by edge docking"; paste hides should clear it.
             crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
             crate::app::window_manager::release_win_keys();
         }
@@ -678,6 +679,7 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_focusable(false);
         let _ = window.hide();
+        // IS_HIDDEN only means "hidden by edge docking"; paste hides should clear it.
         crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
         crate::NAVIGATION_ENABLED.store(false, Ordering::Relaxed); // Disable navigation like hide_window_cmd does
         crate::app::window_manager::release_win_keys();
