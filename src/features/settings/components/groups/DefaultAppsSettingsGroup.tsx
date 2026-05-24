@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { DefaultAppsMap, InstalledAppOption } from "../../../app/types";
+import { getClipboardTypeName } from "../../../../shared/lib/clipboardTypeName";
 
 interface DefaultAppsSettingsGroupProps {
     t: (key: string) => string;
@@ -21,18 +22,6 @@ const DefaultAppsSettingsGroup = ({
     setShowAppSelector
 }: DefaultAppsSettingsGroupProps) => {
     const APP_TYPES = ['text', 'image', 'video', 'code', 'url'] as const;
-    const getTypeName = (type: string) => {
-        switch (type) {
-            case "code": return t('type_code');
-            case "link":
-            case "url": return t('type_url');
-            case "file": return t('type_file');
-            case "image": return t('type_image');
-            case "video": return t('type_video');
-            case "rich_text": return t('type_rich_text');
-            default: return t('type_text') || 'Text';
-        }
-    };
 
     return (
         <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
@@ -45,7 +34,7 @@ const DefaultAppsSettingsGroup = ({
                     {APP_TYPES.map((type, idx, arr) => (
                         <div key={type} className={`setting-item column ${idx === arr.length - 1 ? 'no-border' : ''}`}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                <span className="item-label" style={{ textTransform: 'uppercase', fontSize: '11px', opacity: 0.8 }}>{getTypeName(type)}</span>
+                                <span className="item-label" style={{ textTransform: 'uppercase', fontSize: '11px', opacity: 0.8 }}>{getClipboardTypeName(type, t)}</span>
                                 <button
                                     className="btn-icon"
                                     onClick={() => setShowAppSelector(type)}

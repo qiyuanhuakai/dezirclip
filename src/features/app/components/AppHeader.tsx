@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getTagColor } from "../../../shared/lib/utils";
+import { getClipboardTypeName } from "../../../shared/lib/clipboardTypeName";
 
 interface AppHeaderProps {
   t: (key: string) => string;
@@ -71,19 +72,6 @@ const AppHeader = ({
   typeFilter,
   setTypeFilter
 }: AppHeaderProps) => {
-  const getTypeName = (type: string) => {
-    switch (type) {
-      case "code": return t('type_code');
-      case "link":
-      case "url": return t('type_url');
-      case "file": return t('type_file');
-      case "image": return t('type_image');
-      case "video": return t('type_video');
-      case "rich_text": return t('type_rich_text');
-      default: return t('type_text') || 'Text';
-    }
-  };
-
   return (
   <header data-tauri-drag-region>
     <div className="header-top" data-tauri-drag-region>
@@ -238,11 +226,11 @@ const AppHeader = ({
                   }
                 }}
               >
-                {['text', 'image', 'file', 'url', 'code', 'video', 'rich_text'].map(t => (
+                {['text', 'image', 'file', 'url', 'code', 'video', 'rich_text'].map(type => (
                   <button
-                    key={t}
-                    className={`btn-icon ${typeFilter === t ? 'active' : ''}`}
-                    onClick={() => setTypeFilter(typeFilter === t ? null : t)}
+                    key={type}
+                    className={`btn-icon ${typeFilter === type ? 'active' : ''}`}
+                    onClick={() => setTypeFilter(typeFilter === type ? null : type)}
                     style={{
                       width: 'auto',
                       padding: '4px 8px',
@@ -250,11 +238,11 @@ const AppHeader = ({
                       borderRadius: '4px',
                       whiteSpace: 'nowrap',
                       flexShrink: 0,
-                      opacity: typeFilter === t ? 1 : 0.7
+                      opacity: typeFilter === type ? 1 : 0.7
                     }}
-                    title={getTypeName(t)}
+                    title={getClipboardTypeName(type, t)}
                   >
-                    {getTypeName(t)}
+                    {getClipboardTypeName(type, t)}
                   </button>
                 ))}
               </div>

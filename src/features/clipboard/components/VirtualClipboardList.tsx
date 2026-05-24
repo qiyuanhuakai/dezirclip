@@ -162,6 +162,4 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
 VirtualClipboardList.displayName = 'VirtualClipboardList';
 
 export { VirtualClipboardList };
-export default VirtualClipboardList;
-
 
