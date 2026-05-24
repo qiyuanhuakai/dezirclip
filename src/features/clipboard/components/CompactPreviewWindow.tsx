@@ -2,12 +2,6 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, currentMonitor } from "@tauri-apps/api/window";
 import {
-    FileText,
-    Image as ImageIcon,
-    Link as LinkIcon,
-    Code,
-    File,
-    Video,
     AppWindow,
     Clock
 } from "lucide-react";
@@ -19,6 +13,7 @@ import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot
 import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
+import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 
 type PreviewPayload = {
     contentType: string;
@@ -47,17 +42,7 @@ const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) 
     console.warn("[RichTextPreview][CompactWindow]", stage, detail || {});
 };
 
-const getIcon = (type: string) => {
-    switch (type) {
-        case "text": return <FileText size={14} />;
-        case "image": return <ImageIcon size={14} />;
-        case "url": return <LinkIcon size={14} />;
-        case "code": return <Code size={14} />;
-        case "file": return <File size={14} />;
-        case "video": return <Video size={14} />;
-        default: return <FileText size={14} />;
-    }
-};
+const getIcon = (type: string) => getContentTypeIcon(type);
 
 const applyTheme = (payload: PreviewPayload) => {
     const theme = payload.theme || "mica";
