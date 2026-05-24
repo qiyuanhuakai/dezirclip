@@ -16,7 +16,9 @@ import { getConciseTime } from "../../../shared/lib/utils";
 import type { Locale } from "../../../shared/types";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
+import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
+import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 
 type PreviewPayload = {
     contentType: string;
@@ -31,35 +33,6 @@ type PreviewPayload = {
     richTextSnapshotPreview?: boolean;
     clipboardItemFontSize?: number;
     clipboardTagFontSize?: number;
-};
-
-const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
-const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
-
-const extractRichImageFallback = (html?: string): { cleanHtml?: string; imagePayload?: string } => {
-    if (!html) return {};
-    const start = html.lastIndexOf(RICH_IMAGE_FALLBACK_PREFIX);
-    if (start < 0) return { cleanHtml: html };
-
-    const markerStart = start + RICH_IMAGE_FALLBACK_PREFIX.length;
-    const endRel = html.slice(markerStart).indexOf(RICH_IMAGE_FALLBACK_SUFFIX);
-    if (endRel < 0) return { cleanHtml: html };
-
-    const markerEnd = markerStart + endRel;
-    const payload = html.slice(markerStart, markerEnd).trim();
-    const cleanHtml = `${html.slice(0, start)}${html.slice(markerEnd + RICH_IMAGE_FALLBACK_SUFFIX.length)}`.trim();
-    return {
-        cleanHtml: cleanHtml || html,
-        imagePayload: payload || undefined
-    };
-};
-
-const resolveRichImageSrc = (payload: string): string | null => {
-    const value = payload.trim();
-    if (!value) return null;
-    if (value.startsWith("data:image/")) return value;
-    if (/^https?:\/\/asset\.localhost\//i.test(value)) return value;
-    return toTauriLocalImageSrc(value);
 };
 
 const COMPACT_PREVIEW_DEBUG = false;
@@ -83,22 +56,6 @@ const getIcon = (type: string) => {
         case "file": return <File size={14} />;
         case "video": return <Video size={14} />;
         default: return <FileText size={14} />;
-    }
-};
-
-const seekVideoPreviewFrame = (video: HTMLVideoElement | null) => {
-    if (!video) return;
-    const duration = video.duration;
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    const maxSeek = Math.max(duration - 0.05, 0);
-    if (maxSeek <= 0) return;
-    const preferred = Math.min(duration * 0.1, 2);
-    const target = Math.min(Math.max(preferred, 0.1), maxSeek);
-    if (target <= 0) return;
-    try {
-        video.currentTime = target;
-    } catch {
-        // Ignore seek errors; fallback will just show the first frame.
     }
 };
 

@@ -32,11 +32,11 @@ import type { ClipboardItemProps } from "../types";
 import { getConciseTime, getTagColor } from "../../../shared/lib/utils";
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
+import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
+import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
-const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
-const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
 const COMPACT_PREVIEW_DEBUG = false;
 
 let linuxChecked = false;
@@ -68,33 +68,6 @@ type CompactPreviewAnchor = {
     clientY: number;
     screenX: number;
     screenY: number;
-};
-
-const extractRichImageFallback = (html?: string): { cleanHtml?: string; imagePayload?: string } => {
-    if (!html) return {};
-    const start = html.lastIndexOf(RICH_IMAGE_FALLBACK_PREFIX);
-    if (start < 0) return { cleanHtml: html };
-
-    const markerStart = start + RICH_IMAGE_FALLBACK_PREFIX.length;
-    const endRel = html.slice(markerStart).indexOf(RICH_IMAGE_FALLBACK_SUFFIX);
-    if (endRel < 0) return { cleanHtml: html };
-
-    const markerEnd = markerStart + endRel;
-    const payload = html.slice(markerStart, markerEnd).trim();
-    const cleanHtml = `${html.slice(0, start)}${html.slice(markerEnd + RICH_IMAGE_FALLBACK_SUFFIX.length)}`.trim();
-    return {
-        cleanHtml: cleanHtml || html,
-        imagePayload: payload || undefined
-    };
-};
-
-const resolveRichImageSrc = (payload?: string): string | null => {
-    if (!payload) return null;
-    const value = payload.trim();
-    if (!value) return null;
-    if (value.startsWith("data:image/")) return value;
-    if (/^https?:\/\/asset\.localhost\//i.test(value)) return value;
-    return toTauriLocalImageSrc(value);
 };
 
 let compactPreviewWindow: WebviewWindow | null = null;
@@ -320,22 +293,6 @@ const hideCompactPreviewGlobal = async () => {
         compactPreviewWindow = null;
         compactPreviewMounted = false;
         compactPreviewMountedPromise = null;
-    }
-};
-
-const seekVideoPreviewFrame = (video: HTMLVideoElement | null) => {
-    if (!video) return;
-    const duration = video.duration;
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    const maxSeek = Math.max(duration - 0.05, 0);
-    if (maxSeek <= 0) return;
-    const preferred = Math.min(duration * 0.1, 2);
-    const target = Math.min(Math.max(preferred, 0.1), maxSeek);
-    if (target <= 0) return;
-    try {
-        video.currentTime = target;
-    } catch {
-        // Ignore seek errors; fallback will just show the first frame.
     }
 };
 
