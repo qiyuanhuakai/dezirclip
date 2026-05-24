@@ -21,3 +21,6 @@ src-tauri/target/
 Thumbs.db
 .vscode/
 .trae
+.claude/
+CLAUDE.md
+AGENTS.md
