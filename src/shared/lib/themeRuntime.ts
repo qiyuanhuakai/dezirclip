@@ -1,7 +1,7 @@
 export type ThemeMode = "light" | "dark";
 export type ThemeColorMode = "light" | "dark" | "system";
 
-export const clearThemeClasses = (element: HTMLElement) => {
+const clearThemeClasses = (element: HTMLElement) => {
   Array.from(element.classList)
     .filter((className) => className.startsWith("theme-"))
     .forEach((className) => element.classList.remove(className));
