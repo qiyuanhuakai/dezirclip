@@ -30,17 +30,7 @@ type PreviewPayload = {
     clipboardTagFontSize?: number;
 };
 
-const COMPACT_PREVIEW_DEBUG = false;
-const RICH_PREVIEW_DEBUG = import.meta.env.DEV;
-const compactPreviewLog = (...args: unknown[]) => {
-    if (!COMPACT_PREVIEW_DEBUG) return;
-    const ts = new Date().toISOString();
-    console.log(`[CompactPreview][Preview][${ts}]`, ...args);
-};
-const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) => {
-    if (!RICH_PREVIEW_DEBUG) return;
-    console.warn("[RichTextPreview][CompactWindow]", stage, detail || {});
-};
+import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
 const getIcon = (type: string) => getContentTypeIcon(type);
 

@@ -35,7 +35,6 @@ import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
-const COMPACT_PREVIEW_DEBUG = false;
 
 let linuxChecked = false;
 let isLinuxPlatform = false;
@@ -51,16 +50,8 @@ const checkLinuxPlatform = async (): Promise<boolean> => {
     linuxChecked = true;
     return isLinuxPlatform;
 };
-const RICH_PREVIEW_DEBUG = import.meta.env.DEV;
-const compactPreviewLog = (...args: unknown[]) => {
-    if (!COMPACT_PREVIEW_DEBUG) return;
-    const ts = new Date().toISOString();
-    console.log(`[CompactPreview][Main][${ts}]`, ...args);
-};
-const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) => {
-    if (!RICH_PREVIEW_DEBUG) return;
-    console.warn("[RichTextPreview][MainList]", stage, detail || {});
-};
+
+import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
 type CompactPreviewAnchor = {
     clientX: number;
