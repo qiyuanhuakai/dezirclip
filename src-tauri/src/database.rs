@@ -74,13 +74,13 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
 
 pub fn init_db(path: &str) -> Result<Connection> {
     fn init_db_once(path: &str) -> Result<Connection> {
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
         conn.execute_batch("
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             PRAGMA auto_vacuum = FULL;
         ")?;
-        crate::infrastructure::repository::migrations::run_migrations(&conn)?;
+        crate::infrastructure::repository::migrations::run_migrations(&mut conn)?;
         seed_defaults(&conn)?;
         Ok(conn)
     }

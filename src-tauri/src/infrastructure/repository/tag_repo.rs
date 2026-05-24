@@ -268,11 +268,12 @@ impl TagRepository for SqliteTagRepository {
             "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
              FROM clipboard_history ch
              INNER JOIN entry_tags et ON ch.id = et.entry_id
+             WHERE et.tag = ?
              ORDER BY ch.is_pinned DESC, ch.pinned_order DESC, ch.timestamp DESC",
         ).map_err(|e| e.to_string())?;
 
         let rows = stmt
-            .query_map([], |row| {
+            .query_map([tag], |row| {
                 let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
                 let tags = self.maybe_decrypt_tags(serde_json::from_str(&tags_str).unwrap_or_default());
                 let content_raw: String = row.get(2)?;
