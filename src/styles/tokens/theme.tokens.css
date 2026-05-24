@@ -153,9 +153,11 @@
   --modern-btn-hover-bg: rgba(255, 255, 255, 0.62);
 }
 
+:root.dark-mode:is(.theme-mica, .theme-acrylic),
 body.dark-mode:is(.theme-mica, .theme-acrylic) {
   --text-primary: #e8e8e8;
   --text-secondary: #a8a8a8;
+  --text-muted: #c7ccd8;
   --bg-panel: rgba(0, 0, 0, 0.15);
   --surface-dialog-bg: rgba(30, 30, 30, 0.8);
   --surface-dialog-border: rgba(255, 255, 255, 0.1);
@@ -250,6 +252,7 @@ body.dark-mode:is(.theme-mica, .theme-acrylic) {
   --compact-btn-active-border: 1px solid color-mix(in srgb, var(--accent-color) 72%, transparent);
 }
 
+:root.dark-mode.theme-acrylic,
 body.dark-mode.theme-acrylic {
   --surface-shell-root-bg: rgba(25, 25, 25, calc(0.38 * var(--surface-opacity-scale, 1)));
   --surface-shell-root-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;

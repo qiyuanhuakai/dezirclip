@@ -13,6 +13,7 @@ body.theme-acrylic {
   --shadow-color: transparent !important;
 }
 
+:root.dark-mode.theme-acrylic,
 body.dark-mode.theme-acrylic {
   --bg-panel: rgba(255, 255, 255, 0.075);
   --bg-input: rgba(255, 255, 255, 0.105);
@@ -20,6 +21,9 @@ body.dark-mode.theme-acrylic {
   --bg-button: rgba(255, 255, 255, 0.1);
   --text-primary: #f6f7fb;
   --text-secondary: #c7ccd8;
+  --text-muted: #c7ccd8;
+  --tag-manager-text-primary: #f6f7fb;
+  --tag-manager-text-muted: #d4d8e2;
   --border-dark: rgba(255, 255, 255, 0.13) !important;
   --border-light: rgba(255, 255, 255, 0.09);
   --shadow-color: rgba(0, 0, 0, 0.2) !important;

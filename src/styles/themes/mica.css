@@ -13,6 +13,7 @@ body.theme-mica {
   --shadow-color: transparent !important;
 }
 
+:root.dark-mode.theme-mica,
 body.dark-mode.theme-mica {
   --bg-panel: rgba(255, 255, 255, 0.09);
   --bg-input: rgba(255, 255, 255, 0.12);
@@ -20,6 +21,9 @@ body.dark-mode.theme-mica {
   --bg-button: rgba(255, 255, 255, 0.11);
   --text-primary: #f6f7fb;
   --text-secondary: #c7ccd8;
+  --text-muted: #c7ccd8;
+  --tag-manager-text-primary: #f6f7fb;
+  --tag-manager-text-muted: #d4d8e2;
   --border-dark: rgba(255, 255, 255, 0.14) !important;
   --border-light: rgba(255, 255, 255, 0.1);
   --shadow-color: rgba(0, 0, 0, 0.22) !important;
