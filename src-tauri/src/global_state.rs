@@ -43,6 +43,8 @@ pub enum DockPosition {
 }
 
 pub static CURRENT_DOCK: AtomicI32 = AtomicI32::new(0); // 0: None, 1: Top, 2: Left, 3: Right
+// Tracks whether the main window is hidden specifically by edge docking.
+// Other hide paths should clear it so the next toggle is treated as a normal show.
 pub static IS_HIDDEN: AtomicBool = AtomicBool::new(false);
 pub static IS_MOUSE_BUTTON_DOWN: AtomicBool = AtomicBool::new(false);
 pub static NAVIGATION_ENABLED: AtomicBool = AtomicBool::new(false);

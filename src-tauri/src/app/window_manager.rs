@@ -17,6 +17,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
 };
 
+fn hide_compact_preview_window(app: &AppHandle) {
+    if let Some(preview) = app.get_webview_window("compact-preview") {
+        let _ = preview.hide();
+    }
+}
+
 pub fn toggle_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(windows)]
@@ -68,6 +74,7 @@ pub fn toggle_window(app: &AppHandle) {
                 }
                 let _ = window.set_focusable(false);
                 let _ = window.hide();
+                hide_compact_preview_window(app);
                 IS_HIDDEN.store(true, Ordering::Relaxed);
                 NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
                 NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
@@ -79,6 +86,7 @@ pub fn toggle_window(app: &AppHandle) {
             WindowExt::release_win_keys();
             let _ = window.set_focusable(false);
             let _ = window.hide();
+            hide_compact_preview_window(app);
 
             let _ = restore_last_focus(app.clone());
 
@@ -442,11 +450,6 @@ pub fn toggle_window(app: &AppHandle) {
             let _ = window.set_always_on_top(true);
             let _ = window.set_focusable(true);
             let _ = window.show();
-            let _ = window.set_focus();
-            #[cfg(target_os = "linux")]
-            {
-                let _ = crate::infrastructure::linux_api::window_tracker::raise_own_window();
-            }
         }
     }
 }
@@ -496,6 +499,7 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
         WindowExt::release_win_keys();
         let _ = window.set_focusable(false);
         let _ = window.hide();
+        hide_compact_preview_window(&app_handle);
         NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
         NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
         let _ = restore_last_focus(app_handle.clone());

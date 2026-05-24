@@ -1,6 +1,7 @@
+use crate::infrastructure::encryption;
 use rusqlite::{params, Connection, Result};
 
-pub fn run_migrations(conn: &Connection) -> Result<()> {
+pub fn run_migrations(conn: &mut Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
@@ -180,7 +181,136 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (10)", [])?;
     }
 
+    // Migration 11: repair tag names accidentally persisted as encrypted values.
+    // Tags are metadata and should remain plaintext so tag management can display,
+    // rename, delete, and count them consistently across repository methods.
+    if current_version < 11 {
+        repair_encrypted_tags(conn)?;
+        conn.execute(
+            "UPDATE settings
+             SET value = 'phone,idcard,email,secret,password'
+             WHERE key = 'app.privacy_protection_kinds'
+               AND value = 'phone,idcard,email,secret'",
+            [],
+        )?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (11)", [])?;
+    }
+
     Ok(())
+}
+
+fn maybe_decrypt_metadata(value: &str) -> Option<String> {
+    if !encryption::is_encrypted_value(value) {
+        return None;
+    }
+
+    encryption::decrypt_value(value).and_then(|plain| {
+        let plain = plain.trim();
+        if plain.is_empty() || plain == value {
+            None
+        } else {
+            Some(plain.to_string())
+        }
+    })
+}
+
+fn repair_encrypted_tags(conn: &mut Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+
+    let encrypted_tags: Vec<String> = {
+        let mut stmt = tx.prepare("SELECT DISTINCT tag FROM entry_tags")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let tags = rows
+            .filter_map(|row| row.ok())
+            .filter(|tag| encryption::is_encrypted_value(tag))
+            .collect();
+        tags
+    };
+
+    for encrypted_tag in encrypted_tags {
+        if let Some(plain_tag) = maybe_decrypt_metadata(&encrypted_tag) {
+            let entry_ids: Vec<i64> = {
+                let mut id_stmt = tx.prepare("SELECT entry_id FROM entry_tags WHERE tag = ?")?;
+                let rows = id_stmt.query_map(params![&encrypted_tag], |row| row.get::<_, i64>(0))?;
+                let ids = rows.filter_map(|row| row.ok()).collect();
+                ids
+            };
+
+            for entry_id in entry_ids {
+                tx.execute(
+                    "INSERT OR IGNORE INTO entry_tags (entry_id, tag) VALUES (?1, ?2)",
+                    params![entry_id, &plain_tag],
+                )?;
+                tx.execute(
+                    "DELETE FROM entry_tags WHERE entry_id = ?1 AND tag = ?2",
+                    params![entry_id, &encrypted_tag],
+                )?;
+            }
+        }
+    }
+
+    let saved_tags: Vec<(String, Option<String>)> = {
+        let mut stmt = tx.prepare("SELECT name, color FROM saved_tags")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        let tags = rows
+            .filter_map(|row| row.ok())
+            .filter(|(name, _)| encryption::is_encrypted_value(name))
+            .collect();
+        tags
+    };
+
+    for (encrypted_name, color) in saved_tags {
+        if let Some(plain_name) = maybe_decrypt_metadata(&encrypted_name) {
+            tx.execute(
+                "INSERT OR IGNORE INTO saved_tags (name, color) VALUES (?1, ?2)",
+                params![&plain_name, color],
+            )?;
+            tx.execute(
+                "DELETE FROM saved_tags WHERE name = ?",
+                params![&encrypted_name],
+            )?;
+        }
+    }
+
+    let rows: Vec<(i64, String)> = {
+        let mut stmt = tx.prepare("SELECT id, tags FROM clipboard_history")?;
+        let mapped_rows = stmt.query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let tags: Option<String> = row.get(1)?;
+            Ok((id, tags.unwrap_or_else(|| "[]".to_string())))
+        })?;
+        let rows = mapped_rows.filter_map(|row| row.ok()).collect();
+        rows
+    };
+
+    for (id, tags_json) in rows {
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+        let mut changed = false;
+        let mut seen = std::collections::HashSet::new();
+        let mut repaired = Vec::new();
+
+        for tag in tags {
+            let next = maybe_decrypt_metadata(&tag).unwrap_or_else(|| tag.clone());
+            if next != tag {
+                changed = true;
+            }
+            if !next.trim().is_empty() && seen.insert(next.clone()) {
+                repaired.push(next);
+            }
+        }
+
+        if changed {
+            let repaired_json = serde_json::to_string(&repaired).unwrap_or_else(|_| "[]".to_string());
+            tx.execute(
+                "UPDATE clipboard_history SET tags = ? WHERE id = ?",
+                params![repaired_json, id],
+            )?;
+        }
+    }
+
+    tx.commit()
 }
 
 fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> Result<bool> {

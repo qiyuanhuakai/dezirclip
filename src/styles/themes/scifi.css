@@ -645,3 +645,44 @@ body.dark-mode.theme-scifi .compact-popover-portal .rich-text-preview {
   border-color: color-mix(in srgb, var(--accent-hover) 74%, white) !important;
   color: #03101f !important;
 }
+
+body.dark-mode .themed-tag-manager.theme-scifi .tag-sidebar {
+  background: rgba(8, 14, 30, 0.92) !important;
+  border-right-color: rgba(118, 255, 246, 0.22) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-scifi .content-toolbar {
+  background: rgba(10, 18, 40, 0.9) !important;
+  border-bottom-color: rgba(118, 255, 246, 0.2) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-scifi .tag-search-box {
+  background: rgba(9, 16, 35, 0.92) !important;
+  border-color: rgba(45, 233, 255, 0.3) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-scifi .items-area {
+  background: rgba(5, 8, 16, 0.72) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-scifi .themed-card {
+  background: linear-gradient(145deg, rgba(18, 30, 58, 0.92), rgba(10, 18, 40, 0.9)) !important;
+  border-color: rgba(118, 255, 246, 0.22) !important;
+  color: var(--text-primary) !important;
+  box-shadow: 0 8px 18px rgba(0, 8, 24, 0.5), inset 0 0 0 1px rgba(45, 233, 255, 0.08) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-scifi .themed-card:hover {
+  background: linear-gradient(145deg, rgba(24, 39, 80, 0.96), rgba(14, 24, 50, 0.94)) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-scifi .btn-icon,
+body.dark-mode .themed-tag-manager.theme-scifi .toggle-btn,
+body.dark-mode .themed-tag-manager.theme-scifi .add-item-btn,
+body.dark-mode .themed-tag-manager.theme-scifi .card-action-btn,
+body.dark-mode .themed-tag-manager.theme-scifi .del-btn,
+body.dark-mode .themed-tag-manager.theme-scifi .sort-btn {
+  background: rgba(24, 39, 80, 0.78) !important;
+  border-color: rgba(45, 233, 255, 0.28) !important;
+  color: var(--text-primary) !important;
+}
