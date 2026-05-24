@@ -1,12 +1,10 @@
 import { toTauriLocalImageSrc } from "./localImageSrc";
+import { extractRichImageFallback } from "./richPreview";
 
 const SNAPSHOT_CACHE_LIMIT = 120;
 const SNAPSHOT_CACHE_TTL_MS = 10 * 60 * 1000;
 const SNAPSHOT_CACHE_VERSION = "v4";
 const snapshotCache = new Map<string, { dataUrl: string; at: number }>();
-
-const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
-const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
 
 const trimCache = (now = Date.now()) => {
   for (const [key, value] of snapshotCache.entries()) {
@@ -31,14 +29,7 @@ const hashString = (input: string): string => {
 };
 
 const stripRichImageFallbackMarker = (html: string): string => {
-  const start = html.lastIndexOf(RICH_IMAGE_FALLBACK_PREFIX);
-  if (start < 0) return html;
-  const markerStart = start + RICH_IMAGE_FALLBACK_PREFIX.length;
-  const endRel = html.slice(markerStart).indexOf(RICH_IMAGE_FALLBACK_SUFFIX);
-  if (endRel < 0) return html;
-  const markerEnd = markerStart + endRel;
-  const clean = `${html.slice(0, start)}${html.slice(markerEnd + RICH_IMAGE_FALLBACK_SUFFIX.length)}`.trim();
-  return clean || html;
+  return extractRichImageFallback(html).cleanHtml || html;
 };
 
 type SnapshotOptions = {
