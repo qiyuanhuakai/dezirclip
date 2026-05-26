@@ -733,13 +733,14 @@ export default function TagManager({ t, theme }: TagManagerProps) {
 
                 /* Confirm Dialog - Base Retro (Brutalist) Style */
                 .modal-overlay .confirm-dialog {
-                    background: var(--bg-window) !important;
+                    background: var(--surface-confirm-bg, var(--surface-dialog-bg, var(--bg-window))) !important;
                     padding: 24px;
-                    border: 3px solid var(--border-dark) !important;
-                    box-shadow: 8px 8px 0 var(--shadow-color) !important;
+                    border: 3px solid var(--surface-confirm-border, var(--border-dark)) !important;
+                    box-shadow: var(--surface-confirm-shadow, 8px 8px 0 var(--shadow-color)) !important;
                     border-radius: 0 !important;
                     width: 360px;
                     max-width: 90%;
+                    color: var(--text-primary);
                     animation: modal-pop 0.15s cubic-bezier(0.17, 0.89, 0.32, 1.28);
                 }
 
@@ -778,10 +779,10 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                     font-size: 12px;
                     font-weight: 900;
                     cursor: pointer;
-                    background: var(--bg-button) !important;
-                    border: 2px solid var(--border-dark) !important;
-                    color: var(--text-primary) !important;
-                    box-shadow: 3px 3px 0 var(--border-dark) !important;
+                    background: var(--control-confirm-btn-bg, var(--bg-button)) !important;
+                    border: 2px solid var(--control-confirm-btn-border, var(--border-dark)) !important;
+                    color: var(--control-confirm-btn-text, var(--text-primary)) !important;
+                    box-shadow: var(--control-confirm-btn-shadow, 3px 3px 0 var(--border-dark)) !important;
                     transition: all 0.1s;
                     border-radius: 0;
                 }
@@ -805,7 +806,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                 .modal-input-field .modal-textarea {
                     width: 100%;
                     background: var(--bg-input);
-                    border: 2px solid var(--border-dark);
+                    border: 2px solid var(--surface-confirm-border, var(--border-dark));
                     padding: 12px;
                     color: var(--text-primary);
                     font-family: inherit;
@@ -814,6 +815,10 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                     outline: none;
                     resize: vertical;
                     margin-bottom: 20px;
+                }
+                .modal-input-field .modal-textarea::placeholder {
+                    color: var(--text-muted);
+                    opacity: 0.72;
                 }
                 .modal-input-field .modal-textarea-create {
                     min-height: 120px;
@@ -873,7 +878,15 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                 }
 
                 body.dark-mode .themed-tag-manager .modal-overlay {
-                    background: rgba(0, 0, 0, 0.58);
+                    background: var(--surface-overlay-bg, rgba(0, 0, 0, 0.58));
+                    backdrop-filter: blur(var(--surface-overlay-blur, 8px));
+                    -webkit-backdrop-filter: blur(var(--surface-overlay-blur, 8px));
+                }
+
+                body.dark-mode .themed-tag-manager .modal-overlay .confirm-dialog {
+                    background: var(--surface-confirm-bg, var(--surface-dialog-bg, #151515)) !important;
+                    border-color: var(--surface-confirm-border, color-mix(in srgb, var(--text-primary) 16%, transparent)) !important;
+                    box-shadow: var(--surface-confirm-shadow, 0 16px 40px rgba(0, 0, 0, 0.45)) !important;
                 }
 
                 body.dark-mode .themed-tag-manager .modal-overlay .confirm-dialog h3 {
