@@ -1,4 +1,5 @@
-:is(.theme-mica, .theme-acrylic) {
+:root:is(.theme-mica, .theme-acrylic),
+body:is(.theme-mica, .theme-acrylic) {
   --text-primary: #373737;
   --text-secondary: #707070;
   --bg-panel: rgba(255, 255, 255, 0.15);
@@ -134,7 +135,8 @@
   --compact-btn-active-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 30%, transparent), 0 4px 12px color-mix(in srgb, var(--accent-color) 25%, transparent);
 }
 
-.theme-acrylic {
+:root.theme-acrylic,
+body.theme-acrylic {
   --surface-shell-root-bg: rgba(255, 255, 255, calc(0.45 * var(--surface-opacity-scale, 1)));
   --surface-shell-root-shadow: 0 14px 48px rgba(0, 0, 0, 0.22);
   --surface-shell-texture-image:
@@ -270,7 +272,8 @@ body.dark-mode.theme-acrylic {
   --modern-btn-hover-bg: rgba(255, 255, 255, 0.1);
 }
 
-:is(.theme-macos, .theme-scifi, .theme-retro) {
+:root:is(.theme-macos, .theme-scifi, .theme-retro),
+body:is(.theme-macos, .theme-scifi, .theme-retro) {
   --surface-overlay-bg: rgba(0, 0, 0, 0.45);
   --surface-overlay-blur: 0px;
   --surface-dialog-radius: 12px;
@@ -347,7 +350,8 @@ body.light-mode.theme-scifi {
   --select-option-color: #0b2947;
 }
 
-.theme-macos {
+:root.theme-macos,
+body.theme-macos {
   --macos-root-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(245, 247, 250, 0.82) 100%);
   --macos-root-border: var(--border-dark);
   --macos-root-shadow: 0 8px 24px rgba(15, 18, 26, 0.18), 0 1px 0 rgba(255, 255, 255, 0.72) inset;
