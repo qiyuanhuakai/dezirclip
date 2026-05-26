@@ -812,3 +812,52 @@ body.dark-mode .themed-tag-manager.theme-macos .modal-overlay {
   backdrop-filter: blur(20px) !important;
   -webkit-backdrop-filter: blur(20px) !important;
 }
+
+body.dark-mode.theme-macos .modal-overlay,
+body.dark-mode.theme-macos .theme-macos .modal-overlay {
+  background: rgba(0, 0, 0, 0.56) !important;
+  backdrop-filter: blur(20px) saturate(135%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(135%) !important;
+}
+
+body.dark-mode.theme-macos .modal-content,
+body.dark-mode.theme-macos .confirm-dialog,
+body.dark-mode.theme-macos .confirm-dialog.theme-macos,
+body.dark-mode .theme-macos .modal-content,
+body.dark-mode .theme-macos .confirm-dialog,
+body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog {
+  background: var(--macos-tag-dialog-bg) !important;
+  border: 1px solid var(--macos-tag-dialog-border) !important;
+  box-shadow: var(--macos-tag-dialog-shadow) !important;
+  color: var(--text-primary) !important;
+  backdrop-filter: blur(22px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(145%) !important;
+}
+
+body.dark-mode.theme-macos .confirm-dialog-title,
+body.dark-mode.theme-macos .confirm-dialog h3,
+body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog h3 {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode.theme-macos .confirm-dialog-message,
+body.dark-mode.theme-macos .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog p {
+  color: var(--text-secondary) !important;
+  opacity: 1 !important;
+}
+
+body.dark-mode.theme-macos .confirm-dialog-button,
+body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog-button {
+  background: var(--macos-dialog-button-bg) !important;
+  border: 1px solid var(--macos-dialog-button-border) !important;
+  color: var(--macos-dialog-button-text) !important;
+  box-shadow: none !important;
+}
+
+body.dark-mode.theme-macos .confirm-dialog-button.primary,
+body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog-button.primary {
+  background: var(--macos-dialog-button-primary-bg) !important;
+  border-color: var(--macos-dialog-button-primary-border) !important;
+  color: var(--macos-dialog-button-primary-text) !important;
+}
