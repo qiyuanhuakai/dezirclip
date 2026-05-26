@@ -36,6 +36,18 @@ body.dark-mode.theme-acrylic {
   --tag-manager-button-hover-bg: rgba(255, 255, 255, 0.145);
   --tag-manager-border: rgba(255, 255, 255, 0.1);
   --tag-manager-strong-border: rgba(255, 255, 255, 0.145);
+  --surface-overlay-bg: rgba(0, 0, 0, 0.62);
+  --surface-overlay-blur: 22px;
+  --surface-dialog-bg: rgba(20, 22, 28, 0.82);
+  --surface-dialog-border: rgba(255, 255, 255, 0.12);
+  --surface-dialog-shadow: 0 24px 60px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --surface-confirm-bg: rgba(20, 22, 28, 0.86);
+  --surface-confirm-border: rgba(255, 255, 255, 0.12);
+  --surface-confirm-shadow: 0 24px 60px rgba(0, 0, 0, 0.54), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --control-confirm-btn-bg: rgba(255, 255, 255, 0.085);
+  --control-confirm-btn-border: rgba(255, 255, 255, 0.13);
+  --control-confirm-btn-hover-bg: rgba(255, 255, 255, 0.14);
+  --control-confirm-btn-text: #f6f7fb;
 }
 
 /* Custom background image support */
@@ -309,4 +321,62 @@ body:not(.compact-mode) .theme-acrylic .btn-icon.active {
   color: var(--modern-btn-active-text) !important;
   border-color: var(--modern-btn-active-border) !important;
   box-shadow: var(--modern-btn-active-shadow) !important;
+}
+
+body.dark-mode.theme-acrylic .modal-overlay,
+body.dark-mode.theme-acrylic .theme-acrylic .modal-overlay,
+body.dark-mode .themed-tag-manager.theme-acrylic .modal-overlay {
+  background: var(--surface-overlay-bg) !important;
+  backdrop-filter: blur(var(--surface-overlay-blur)) saturate(155%) !important;
+  -webkit-backdrop-filter: blur(var(--surface-overlay-blur)) saturate(155%) !important;
+}
+
+body.dark-mode.theme-acrylic .modal-content,
+body.dark-mode.theme-acrylic .confirm-dialog,
+body.dark-mode.theme-acrylic .confirm-dialog.theme-acrylic,
+body.dark-mode .theme-acrylic .modal-content,
+body.dark-mode .theme-acrylic .confirm-dialog,
+body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog {
+  background: var(--surface-confirm-bg) !important;
+  border: 1px solid var(--surface-confirm-border) !important;
+  box-shadow: var(--surface-confirm-shadow) !important;
+  color: var(--text-primary) !important;
+  backdrop-filter: blur(26px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(26px) saturate(160%) !important;
+}
+
+body.dark-mode.theme-acrylic .confirm-dialog-title,
+body.dark-mode.theme-acrylic .confirm-dialog-message,
+body.dark-mode.theme-acrylic .confirm-dialog h3,
+body.dark-mode.theme-acrylic .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog h3,
+body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog p {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode.theme-acrylic .confirm-dialog-message,
+body.dark-mode.theme-acrylic .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog p {
+  color: var(--text-secondary) !important;
+  opacity: 1 !important;
+}
+
+body.dark-mode.theme-acrylic .confirm-dialog-button,
+body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog-button {
+  background: var(--control-confirm-btn-bg) !important;
+  border: 1px solid var(--control-confirm-btn-border) !important;
+  color: var(--control-confirm-btn-text) !important;
+  box-shadow: none !important;
+}
+
+body.dark-mode.theme-acrylic .confirm-dialog-button:hover,
+body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog-button:hover {
+  background: var(--control-confirm-btn-hover-bg) !important;
+}
+
+body.dark-mode.theme-acrylic .modal-input-field .modal-textarea,
+body.dark-mode .themed-tag-manager.theme-acrylic .modal-input-field .modal-textarea {
+  background: rgba(255, 255, 255, 0.085) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  color: var(--text-primary) !important;
 }
