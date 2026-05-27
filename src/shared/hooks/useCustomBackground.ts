@@ -16,7 +16,7 @@ export const useCustomBackground = ({
     const root = document.documentElement;
     const body = document.body;
     root.style.setProperty("--custom-bg-opacity", (customBackgroundOpacity / 100).toString());
-    if (customBackground && (theme === "mica" || theme === "acrylic")) {
+    if (customBackground && (theme === "mica" || theme === "acrylic" || theme === "liquid-glass")) {
       root.style.setProperty("--custom-bg-image", `url("${convertFileSrc(customBackground)}")`);
       body.classList.add("has-custom-bg");
     } else {
