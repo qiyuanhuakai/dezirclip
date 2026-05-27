@@ -95,6 +95,7 @@ export const en = {
         theme_acrylic: "Acrylic",
         theme_macos: "macOS",
         theme_scifi: "Sci-Fi",
+        theme_liquid_glass: "Liquid Glass",
         color_mode: "Color Mode",
         mode_system: "System",
         mode_light: "Light",
