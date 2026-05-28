@@ -1,0 +1,1436 @@
+/* ============================================================
+   Liquid Glass — macOS Sequoia-inspired frosted translucent theme
+   True glass transparency with material texture overlays,
+   blue-white tinting, and refraction edge highlights.
+   Works WITHOUT backdrop-filter on Linux WebKitGTK.
+   ============================================================ */
+
+/* 1. Base variables — light mode */
+:root.light-mode.theme-liquid-glass,
+body.light-mode.theme-liquid-glass,
+:root.theme-liquid-glass,
+body.theme-liquid-glass {
+  --radius-window: 14px;
+  --font-main: "SF Pro Text", "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Consolas", monospace;
+
+  /* Surfaces — light mode (true glass: alpha 0.15–0.55) */
+  --bg-body: rgba(245, 248, 255, 0.25);
+  --bg-window: rgba(255, 255, 255, 0.22);
+  --bg-content: rgba(255, 255, 255, 0.18);
+  --bg-toolbar: rgba(255, 255, 255, 0.32);
+  --bg-panel: rgba(255, 255, 255, 0.40);
+  --bg-input: rgba(255, 255, 255, 0.55);
+  --bg-element: rgba(255, 255, 255, 0.35);
+  --bg-button: rgba(255, 255, 255, 0.42);
+
+  /* Text */
+  --text-primary: #1d1d1f;
+  --text-secondary: #636366;
+
+  /* Accent */
+  --accent-color: #0a84ff;
+  --accent-hover: #409cff;
+
+  /* Borders — light mode (very subtle on glass) */
+  --border-dark: rgba(60, 60, 67, 0.12);
+  --border-light: rgba(255, 255, 255, 0.50);
+  --border-subtle: rgba(60, 60, 67, 0.08);
+
+  /* Shadows — blue-tinted, diffused */
+  --shadow-color: rgba(20, 30, 60, 0.08);
+
+  /* Glass surfaces — layered depth (light mode), alpha scaled by --surface-opacity-scale */
+  --glass-shell-bg: rgba(255, 255, 255, calc(0.22 * var(--surface-opacity-scale, 1)));
+  --glass-header-bg: rgba(255, 255, 255, 0.35);
+  --glass-modal-bg: rgba(255, 255, 255, 0.48);
+  --glass-card-bg: rgba(255, 255, 255, 0.30);
+  --glass-sidebar-bg: rgba(255, 255, 255, 0.38);
+  --glass-toolbar-bg: rgba(255, 255, 255, 0.42);
+  --glass-dialog-bg: rgba(255, 255, 255, 0.52);
+
+  /* Glass edge highlights — light mode */
+  --glass-edge-top: rgba(255, 255, 255, 0.50);
+  --glass-edge-bottom: rgba(0, 0, 0, 0.03);
+  --glass-edge-left: rgba(255, 255, 255, 0.35);
+  --glass-edge-right: rgba(0, 0, 0, 0.02);
+  --glass-glow-light: rgba(255, 255, 255, 0.12);
+  --glass-glow-dark: rgba(0, 0, 0, 0.02);
+
+  /* Element specifics — light mode */
+  --lg-history-bg: rgba(255, 255, 255, 0.30);
+  --lg-history-hover-bg: rgba(255, 255, 255, 0.48);
+  --lg-history-selected-bg: rgba(10, 132, 255, 0.10);
+  --lg-history-selected-border: rgba(10, 132, 255, 0.42);
+  --lg-history-border: rgba(60, 60, 67, 0.10);
+  --lg-history-shadow:
+    0 2px 8px rgba(20, 30, 60, 0.06),
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom);
+  --lg-history-hover-shadow:
+    0 6px 20px rgba(20, 30, 60, 0.10),
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom);
+  --lg-history-selected-shadow:
+    0 0 0 1px rgba(10, 132, 255, 0.24) inset,
+    0 4px 16px rgba(10, 132, 255, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+
+  --lg-btn-active-bg: rgba(10, 132, 255, 0.14);
+  --lg-btn-active-border: rgba(10, 132, 255, 0.40);
+  --lg-btn-active-text: #0a84ff;
+  --lg-btn-hover-bg: rgba(0, 0, 0, 0.04);
+  --lg-btn-hover-border: rgba(60, 60, 67, 0.18);
+
+  --lg-toggle-bg: rgba(120, 120, 128, 0.20);
+  --lg-toggle-thumb-bg: #ffffff;
+  --lg-toggle-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.06);
+  --lg-toggle-active-shadow: 0 1px 4px rgba(10, 132, 255, 0.20);
+  --lg-toggle-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.24);
+
+  --lg-key-cap-bg: rgba(255, 255, 255, 0.52);
+  --lg-key-cap-border: rgba(60, 60, 67, 0.12);
+  --lg-key-cap-text: var(--text-primary);
+  --lg-key-cap-shadow:
+    0 1px 2px rgba(20, 30, 60, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.60),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+  --lg-key-cap-active-bg: rgba(255, 255, 255, 0.38);
+  --lg-key-cap-active-border: rgba(60, 60, 67, 0.18);
+  --lg-key-cap-active-shadow: inset 0 1px 3px rgba(20, 30, 60, 0.08);
+  --lg-key-recording-bg: rgba(10, 132, 255, 0.08);
+  --lg-key-recording-shadow: 0 0 0 1px rgba(10, 132, 255, 0.24) inset;
+
+  --lg-range-track-bg: rgba(120, 120, 128, 0.14);
+  --lg-range-track-border: rgba(60, 60, 67, 0.08);
+  --lg-range-track-shadow: inset 0 1px 2px rgba(20, 30, 60, 0.04);
+  --lg-range-thumb-bg: #ffffff;
+  --lg-range-thumb-border: rgba(60, 60, 67, 0.12);
+  --lg-range-thumb-shadow: 0 1px 4px rgba(20, 30, 60, 0.12);
+  --lg-range-thumb-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.22);
+
+  --lg-tag-chip-border: rgba(60, 60, 67, 0.10);
+
+  /* Settings group — light mode */
+  --lg-settings-bg: rgba(255, 255, 255, 0.35);
+  --lg-settings-border: rgba(60, 60, 67, 0.10);
+  --lg-settings-shadow:
+    0 2px 10px rgba(20, 30, 60, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.40);
+  --lg-settings-header-bg: rgba(255, 255, 255, 0.28);
+  --lg-settings-header-border: rgba(60, 60, 67, 0.08);
+  --lg-settings-open-header-bg: rgba(255, 255, 255, 0.22);
+  --lg-settings-open-header-border: rgba(60, 60, 67, 0.08);
+
+  /* Data panel — light mode */
+  --lg-data-border: rgba(60, 60, 67, 0.08);
+  --lg-data-bg: rgba(255, 255, 255, 0.28);
+  --lg-data-shadow: inset 0 1px 2px rgba(20, 30, 60, 0.04);
+
+  /* Input — light mode */
+  --lg-input-border: rgba(60, 60, 67, 0.12);
+  --lg-input-bg: rgba(255, 255, 255, 0.55);
+  --lg-input-shadow:
+    inset 0 1px 2px rgba(20, 30, 60, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30);
+  --lg-input-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.16);
+
+  /* History action buttons — light mode */
+  --lg-history-actions-bg: rgba(255, 255, 255, 0.35);
+  --lg-history-actions-border: rgba(60, 60, 67, 0.08);
+  --lg-history-actions-shadow:
+    0 2px 6px rgba(20, 30, 60, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.30);
+  --lg-history-action-btn-bg: rgba(255, 255, 255, 0.42);
+  --lg-history-action-btn-border: rgba(60, 60, 67, 0.08);
+  --lg-history-action-btn-text: var(--text-secondary);
+  --lg-history-action-btn-shadow: none;
+  --lg-history-action-btn-hover-bg: rgba(10, 132, 255, 0.12);
+  --lg-history-action-btn-hover-border: rgba(10, 132, 255, 0.36);
+  --lg-history-action-btn-hover-text: #0a84ff;
+  --lg-history-action-btn-hover-shadow: none;
+  --lg-history-action-btn-active-bg: rgba(10, 132, 255, 0.20);
+  --lg-history-action-btn-active-border: rgba(10, 132, 255, 0.48);
+  --lg-history-action-btn-active-text: #0a84ff;
+  --lg-history-action-btn-active-shadow: none;
+
+  /* Dialog / Modal — light mode */
+  --lg-dialog-bg: rgba(255, 255, 255, 0.52);
+  --lg-dialog-border: rgba(60, 60, 67, 0.12);
+  --lg-dialog-shadow:
+    0 16px 48px rgba(20, 30, 60, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.15) inset,
+    0 1px 0 rgba(255, 255, 255, 0.40);
+  --lg-dialog-button-bg: rgba(255, 255, 255, 0.48);
+  --lg-dialog-button-border: rgba(60, 60, 67, 0.12);
+  --lg-dialog-button-text: var(--text-primary);
+  --lg-dialog-button-primary-bg: #0a84ff;
+  --lg-dialog-button-primary-border: #0a84ff;
+  --lg-dialog-button-primary-text: #ffffff;
+
+  /* Tag manager — light mode */
+  --lg-tag-sidebar-bg: rgba(255, 255, 255, 0.38);
+  --lg-tag-sidebar-border: rgba(60, 60, 67, 0.08);
+  --lg-tag-search-bg: rgba(255, 255, 255, 0.30);
+  --lg-tag-search-border: rgba(60, 60, 67, 0.08);
+  --lg-tag-item-active-bg: rgba(10, 132, 255, 0.10);
+  --lg-tag-item-active-border: rgba(10, 132, 255, 0.36);
+  --lg-tag-item-hover-bg: rgba(0, 0, 0, 0.03);
+  --lg-tag-card-bg: rgba(255, 255, 255, 0.32);
+  --lg-tag-card-border: rgba(60, 60, 67, 0.10);
+  --lg-tag-card-shadow:
+    0 2px 10px rgba(20, 30, 60, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  --lg-tag-card-hover-bg: rgba(255, 255, 255, 0.50);
+  --lg-tag-card-hover-shadow:
+    0 4px 14px rgba(20, 30, 60, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.40);
+  --lg-tag-toolbar-bg: rgba(255, 255, 255, 0.42);
+  --lg-tag-toolbar-border: rgba(60, 60, 67, 0.08);
+  --lg-tag-sort-border: rgba(60, 60, 67, 0.06);
+  --lg-tag-btn-bg: rgba(255, 255, 255, 0.38);
+  --lg-tag-btn-border: rgba(60, 60, 67, 0.10);
+  --lg-tag-btn-text: var(--text-secondary);
+  --lg-tag-btn-hover-bg: rgba(255, 255, 255, 0.55);
+  --lg-tag-btn-hover-border: rgba(60, 60, 67, 0.18);
+  --lg-tag-textarea-bg: rgba(255, 255, 255, 0.50);
+  --lg-tag-textarea-border: rgba(60, 60, 67, 0.12);
+  --lg-tag-textarea-text: var(--text-primary);
+  --lg-tag-textarea-placeholder: rgba(60, 60, 67, 0.35);
+
+  /* Select — light mode */
+  --lg-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23636366' d='M2.5 4.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E");
+  --lg-select-option-bg: rgba(255, 255, 255, 0.92);
+  --lg-select-option-text: var(--text-primary);
+  --lg-select-option-checked-bg: var(--accent-color);
+  --lg-select-option-checked-text: #ffffff;
+}
+
+/* 2. Dark mode variables */
+:root.dark-mode.theme-liquid-glass,
+body.dark-mode.theme-liquid-glass {
+  /* Surfaces — dark mode (true glass: alpha 0.15–0.55) */
+  --bg-body: rgba(15, 18, 28, 0.30);
+  --bg-window: rgba(25, 28, 38, 0.25);
+  --bg-content: rgba(25, 28, 38, 0.20);
+  --bg-toolbar: rgba(30, 33, 42, 0.35);
+  --bg-panel: rgba(35, 38, 48, 0.42);
+  --bg-input: rgba(45, 48, 58, 0.55);
+  --bg-element: rgba(30, 33, 42, 0.32);
+  --bg-button: rgba(40, 43, 54, 0.45);
+
+  /* Text — dark */
+  --text-primary: #f5f5f7;
+  --text-secondary: #a1a1a6;
+
+  /* Accent — dark */
+  --accent-color: #0a84ff;
+  --accent-hover: #4d9fff;
+
+  /* Borders — dark (glass edge: top highlight visible) */
+  --border-dark: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+
+  /* Shadows — dark */
+  --shadow-color: rgba(0, 0, 0, 0.25);
+
+  /* Glass surfaces — dark (layered depth), alpha scaled by --surface-opacity-scale */
+  --glass-shell-bg: rgba(25, 28, 38, calc(0.25 * var(--surface-opacity-scale, 1)));
+  --glass-header-bg: rgba(30, 33, 42, 0.38);
+  --glass-modal-bg: rgba(35, 38, 48, 0.50);
+  --glass-card-bg: rgba(30, 33, 42, 0.32);
+  --glass-sidebar-bg: rgba(28, 31, 40, 0.40);
+  --glass-toolbar-bg: rgba(32, 35, 44, 0.44);
+  --glass-dialog-bg: rgba(38, 41, 52, 0.55);
+
+  /* Glass edge highlights — dark mode */
+  --glass-edge-top: rgba(255, 255, 255, 0.08);
+  --glass-edge-bottom: rgba(0, 0, 0, 0.15);
+  --glass-edge-left: rgba(255, 255, 255, 0.04);
+  --glass-edge-right: rgba(0, 0, 0, 0.08);
+  --glass-glow-light: rgba(255, 255, 255, 0.04);
+  --glass-glow-dark: rgba(0, 0, 0, 0.06);
+
+  /* Element specifics — dark */
+  --lg-history-bg: rgba(30, 33, 42, 0.32);
+  --lg-history-hover-bg: rgba(45, 48, 58, 0.45);
+  --lg-history-selected-bg: rgba(10, 132, 255, 0.14);
+  --lg-history-selected-border: rgba(10, 132, 255, 0.44);
+  --lg-history-border: rgba(255, 255, 255, 0.06);
+  --lg-history-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom);
+  --lg-history-hover-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom);
+  --lg-history-selected-shadow:
+    0 0 0 1px rgba(10, 132, 255, 0.28) inset,
+    0 4px 16px rgba(10, 132, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  --lg-btn-active-bg: rgba(10, 132, 255, 0.18);
+  --lg-btn-active-border: rgba(10, 132, 255, 0.44);
+  --lg-btn-active-text: #4d9fff;
+  --lg-btn-hover-bg: rgba(255, 255, 255, 0.06);
+  --lg-btn-hover-border: rgba(255, 255, 255, 0.14);
+
+  --lg-toggle-bg: rgba(120, 120, 128, 0.24);
+  --lg-toggle-thumb-bg: #e0e0e5;
+  --lg-toggle-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 1px rgba(0, 0, 0, 0.12);
+  --lg-toggle-active-shadow: 0 1px 4px rgba(10, 132, 255, 0.24);
+  --lg-toggle-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.28);
+
+  --lg-key-cap-bg: rgba(45, 48, 58, 0.50);
+  --lg-key-cap-border: rgba(255, 255, 255, 0.08);
+  --lg-key-cap-text: var(--text-primary);
+  --lg-key-cap-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+  --lg-key-cap-active-bg: rgba(45, 48, 58, 0.35);
+  --lg-key-cap-active-border: rgba(255, 255, 255, 0.12);
+  --lg-key-cap-active-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.20);
+  --lg-key-recording-bg: rgba(10, 132, 255, 0.12);
+  --lg-key-recording-shadow: 0 0 0 1px rgba(10, 132, 255, 0.28) inset;
+
+  --lg-range-track-bg: rgba(120, 120, 128, 0.18);
+  --lg-range-track-border: rgba(255, 255, 255, 0.06);
+  --lg-range-track-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+  --lg-range-thumb-bg: #e0e0e5;
+  --lg-range-thumb-border: rgba(255, 255, 255, 0.10);
+  --lg-range-thumb-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
+  --lg-range-thumb-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.26);
+
+  --lg-tag-chip-border: rgba(255, 255, 255, 0.08);
+
+  /* Settings group — dark */
+  --lg-settings-bg: rgba(30, 33, 42, 0.35);
+  --lg-settings-border: rgba(255, 255, 255, 0.06);
+  --lg-settings-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --lg-settings-header-bg: rgba(35, 38, 48, 0.30);
+  --lg-settings-header-border: rgba(255, 255, 255, 0.05);
+  --lg-settings-open-header-bg: rgba(35, 38, 48, 0.24);
+  --lg-settings-open-header-border: rgba(255, 255, 255, 0.06);
+
+  /* Data panel — dark */
+  --lg-data-border: rgba(255, 255, 255, 0.06);
+  --lg-data-bg: rgba(25, 28, 38, 0.30);
+  --lg-data-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
+
+  /* Input — dark */
+  --lg-input-border: rgba(255, 255, 255, 0.08);
+  --lg-input-bg: rgba(45, 48, 58, 0.55);
+  --lg-input-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --lg-input-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.20);
+
+  /* History action buttons — dark */
+  --lg-history-actions-bg: rgba(35, 38, 48, 0.38);
+  --lg-history-actions-border: rgba(255, 255, 255, 0.06);
+  --lg-history-actions-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --lg-history-action-btn-bg: rgba(50, 53, 63, 0.45);
+  --lg-history-action-btn-border: rgba(255, 255, 255, 0.05);
+  --lg-history-action-btn-text: var(--text-secondary);
+  --lg-history-action-btn-shadow: none;
+  --lg-history-action-btn-hover-bg: rgba(10, 132, 255, 0.16);
+  --lg-history-action-btn-hover-border: rgba(10, 132, 255, 0.38);
+  --lg-history-action-btn-hover-text: #4d9fff;
+  --lg-history-action-btn-hover-shadow: none;
+  --lg-history-action-btn-active-bg: rgba(10, 132, 255, 0.24);
+  --lg-history-action-btn-active-border: rgba(10, 132, 255, 0.50);
+  --lg-history-action-btn-active-text: #4d9fff;
+  --lg-history-action-btn-active-shadow: none;
+
+  /* Dialog / Modal — dark */
+  --lg-dialog-bg: rgba(38, 41, 52, 0.58);
+  --lg-dialog-border: rgba(255, 255, 255, 0.08);
+  --lg-dialog-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06);
+  --lg-dialog-button-bg: rgba(50, 53, 63, 0.52);
+  --lg-dialog-button-border: rgba(255, 255, 255, 0.08);
+  --lg-dialog-button-text: var(--text-primary);
+  --lg-dialog-button-primary-bg: #0a84ff;
+  --lg-dialog-button-primary-border: #0a84ff;
+  --lg-dialog-button-primary-text: #ffffff;
+
+  /* Tag manager — dark */
+  --lg-tag-sidebar-bg: rgba(28, 31, 40, 0.40);
+  --lg-tag-sidebar-border: rgba(255, 255, 255, 0.06);
+  --lg-tag-search-bg: rgba(32, 35, 44, 0.35);
+  --lg-tag-search-border: rgba(255, 255, 255, 0.06);
+  --lg-tag-item-active-bg: rgba(10, 132, 255, 0.14);
+  --lg-tag-item-active-border: rgba(10, 132, 255, 0.38);
+  --lg-tag-item-hover-bg: rgba(255, 255, 255, 0.04);
+  --lg-tag-card-bg: rgba(32, 35, 44, 0.34);
+  --lg-tag-card-border: rgba(255, 255, 255, 0.06);
+  --lg-tag-card-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --lg-tag-card-hover-bg: rgba(45, 48, 58, 0.48);
+  --lg-tag-card-hover-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --lg-tag-toolbar-bg: rgba(32, 35, 44, 0.44);
+  --lg-tag-toolbar-border: rgba(255, 255, 255, 0.06);
+  --lg-tag-sort-border: rgba(255, 255, 255, 0.05);
+  --lg-tag-btn-bg: rgba(50, 53, 63, 0.42);
+  --lg-tag-btn-border: rgba(255, 255, 255, 0.08);
+  --lg-tag-btn-text: var(--text-secondary);
+  --lg-tag-btn-hover-bg: rgba(60, 63, 73, 0.55);
+  --lg-tag-btn-hover-border: rgba(255, 255, 255, 0.14);
+  --lg-tag-textarea-bg: rgba(45, 48, 58, 0.50);
+  --lg-tag-textarea-border: rgba(255, 255, 255, 0.08);
+  --lg-tag-textarea-text: var(--text-primary);
+  --lg-tag-textarea-placeholder: rgba(161, 161, 166, 0.45);
+
+  /* Select — dark */
+  --lg-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a1a1a6' d='M2.5 4.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E");
+  --lg-select-option-bg: rgba(40, 43, 54, 0.92);
+  --lg-select-option-text: var(--text-primary);
+  --lg-select-option-checked-bg: var(--accent-color);
+  --lg-select-option-checked-text: #ffffff;
+}
+
+/* ============================================================
+   2b. Custom background image support
+   ============================================================ */
+body.theme-liquid-glass::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: var(--custom-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: -1;
+  opacity: 0.18;
+  pointer-events: none;
+  border-radius: var(--radius-window);
+  clip-path: inset(0 round var(--radius-window));
+}
+
+body.has-custom-bg.theme-liquid-glass::before {
+  opacity: var(--custom-bg-opacity, 0.45);
+}
+
+/* ============================================================
+   3. #root shell — the main glass surface with texture overlay
+   ============================================================ */
+.theme-liquid-glass #root {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-window) !important;
+  background: var(--glass-shell-bg) !important;
+  box-shadow:
+    0 0 0 1px var(--glass-edge-top) inset,
+    0 1px 0 var(--glass-edge-top) inset,
+    0 -1px 0 var(--glass-edge-bottom) inset,
+    0 20px 48px var(--shadow-color),
+    0 0 80px var(--glass-glow-dark) !important;
+  backdrop-filter: blur(40px) saturate(145%);
+  -webkit-backdrop-filter: blur(40px) saturate(145%);
+}
+
+/* Glass material texture overlay — simulates frosted glass grain */
+.theme-liquid-glass #root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 10%, rgba(255, 255, 255, 0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 40% at 80% 90%, rgba(255, 255, 255, 0.06) 0%, transparent 70%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, transparent 40%, rgba(255, 255, 255, 0.04) 100%);
+}
+
+/* All direct children of #root sit above the texture layer */
+.theme-liquid-glass #root > * {
+  position: relative;
+  z-index: 1;
+}
+
+body.theme-liquid-glass:not(.hide-app-border) #root {
+  border-radius: 0 !important;
+  border-color: transparent !important;
+  box-shadow:
+    0 0 0 1px var(--glass-edge-top) inset,
+    0 16px 40px var(--shadow-color),
+    0 0 60px var(--glass-glow-dark) !important;
+}
+
+body.theme-liquid-glass:not(.hide-app-border) #root::before {
+  border-radius: 0 !important;
+}
+
+:root.theme-liquid-glass:not(.hide-app-border),
+body.theme-liquid-glass:not(.hide-app-border) {
+  border-radius: 0 !important;
+}
+
+/* ============================================================
+   4. Header — slightly more opaque than shell
+   ============================================================ */
+.theme-liquid-glass header {
+  background: var(--glass-header-bg) !important;
+  border-bottom: 1px solid var(--border-dark) !important;
+  backdrop-filter: blur(16px) saturate(130%);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+}
+
+.theme-liquid-glass .header-title {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  padding: 0 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+/* ============================================================
+   5. Settings groups — glass panels with edge highlights
+   ============================================================ */
+.theme-liquid-glass .settings-group {
+  background: var(--lg-settings-bg) !important;
+  border: 1px solid var(--lg-settings-border) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--lg-settings-shadow) !important;
+  overflow: hidden !important;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.22s ease !important;
+}
+
+.theme-liquid-glass .settings-group .group-header {
+  border-radius: 12px !important;
+  background: var(--lg-settings-header-bg) !important;
+  border: 1px solid var(--lg-settings-header-border) !important;
+  padding: 10px 12px !important;
+  transition: background-color 0.18s ease, border-bottom-color 0.18s ease, padding 0.18s ease !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+}
+
+.theme-liquid-glass .settings-group:not(.collapsed) .group-header {
+  border-radius: 0 !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: 1px solid var(--lg-settings-open-header-border) !important;
+  background: var(--lg-settings-open-header-bg) !important;
+  padding: 12px 14px !important;
+}
+
+.theme-liquid-glass .settings-group.collapsed .group-header {
+  border-radius: 12px !important;
+}
+
+.theme-liquid-glass .settings-group .group-content {
+  border-radius: 0 0 12px 12px !important;
+  padding: 8px 14px 12px 14px !important;
+  background: transparent !important;
+  border-top: none !important;
+  animation: lg-settings-content-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes lg-settings-content-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.theme-liquid-glass .settings-group h3 {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+/* ============================================================
+   6. Data panels & inputs — higher opacity for readability
+   ============================================================ */
+.theme-liquid-glass .data-panel {
+  border-radius: 10px !important;
+  border: 1px solid var(--lg-data-border) !important;
+  background: var(--lg-data-bg) !important;
+  box-shadow: var(--lg-data-shadow) !important;
+}
+
+.theme-liquid-glass .search-input,
+.theme-liquid-glass .setting-input {
+  border: 1px solid var(--lg-input-border) !important;
+  border-radius: 10px !important;
+  background: var(--lg-input-bg) !important;
+  box-shadow: var(--lg-input-shadow) !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
+}
+
+.theme-liquid-glass .search-input:focus,
+.theme-liquid-glass .setting-input:focus {
+  border-color: rgba(10, 132, 255, 0.56) !important;
+  box-shadow: var(--lg-input-focus-shadow) !important;
+}
+
+.theme-liquid-glass select.search-input {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 30px !important;
+  background-image: var(--lg-select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  cursor: pointer;
+}
+
+.theme-liquid-glass select.search-input::-ms-expand {
+  display: none;
+}
+
+.theme-liquid-glass select.search-input option {
+  background: var(--lg-select-option-bg);
+  color: var(--lg-select-option-text);
+}
+
+.theme-liquid-glass select.search-input option:checked {
+  background: var(--lg-select-option-checked-bg);
+  color: var(--lg-select-option-checked-text);
+}
+
+/* ============================================================
+   7. Buttons — glass pill buttons with edge glow
+   ============================================================ */
+.theme-liquid-glass .btn-icon {
+  border-radius: 9px !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.theme-liquid-glass .btn-icon.active {
+  background: var(--lg-btn-active-bg) !important;
+  border-color: var(--lg-btn-active-border) !important;
+  color: var(--lg-btn-active-text) !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom),
+    0 0 8px rgba(10, 132, 255, 0.08) !important;
+}
+
+.theme-liquid-glass .btn-icon:hover:not(.active) {
+  background: var(--lg-btn-hover-bg) !important;
+  border-color: var(--lg-btn-hover-border) !important;
+}
+
+/* ============================================================
+   8. History items — transparent glass cards
+   ============================================================ */
+.theme-liquid-glass .history-item,
+.theme-liquid-glass .history-item.compact {
+  border-radius: 12px !important;
+  border: 1px solid var(--lg-history-border) !important;
+  background: var(--lg-history-bg) !important;
+  box-shadow: var(--lg-history-shadow) !important;
+  overflow: visible !important;
+}
+
+.theme-liquid-glass .history-item .item-actions {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 3px !important;
+  border-radius: 10px !important;
+  background: var(--lg-history-actions-bg) !important;
+  border: 1px solid var(--lg-history-actions-border) !important;
+  box-shadow: var(--lg-history-actions-shadow) !important;
+}
+
+.theme-liquid-glass .history-item .item-actions .btn-icon,
+.theme-liquid-glass .history-item.compact .item-actions .btn-icon {
+  width: 18px !important;
+  height: 18px !important;
+  padding: 2px !important;
+  border-radius: 4px !important;
+  background: var(--lg-history-action-btn-bg) !important;
+  border: 1px solid var(--lg-history-action-btn-border) !important;
+  color: var(--lg-history-action-btn-text) !important;
+  box-shadow: var(--lg-history-action-btn-shadow) !important;
+  transform: none !important;
+}
+
+.theme-liquid-glass .history-item .item-actions .btn-icon:hover,
+.theme-liquid-glass .history-item.compact .item-actions .btn-icon:hover {
+  background: var(--lg-history-action-btn-hover-bg) !important;
+  border-color: var(--lg-history-action-btn-hover-border) !important;
+  color: var(--lg-history-action-btn-hover-text) !important;
+  box-shadow: var(--lg-history-action-btn-hover-shadow) !important;
+  transform: none !important;
+}
+
+.theme-liquid-glass .history-item .item-actions .btn-icon.active,
+.theme-liquid-glass .history-item.compact .item-actions .btn-icon.active {
+  background: var(--lg-history-action-btn-active-bg) !important;
+  border-color: var(--lg-history-action-btn-active-border) !important;
+  color: var(--lg-history-action-btn-active-text) !important;
+  box-shadow: var(--lg-history-action-btn-active-shadow) !important;
+}
+
+.theme-liquid-glass .history-item:hover {
+  transform: none !important;
+  box-shadow: var(--lg-history-hover-shadow) !important;
+  background: var(--lg-history-hover-bg) !important;
+}
+
+.theme-liquid-glass .history-item:active {
+  transform: none !important;
+  box-shadow: var(--lg-history-shadow) !important;
+}
+
+.theme-liquid-glass .history-item.selected {
+  background: var(--lg-history-selected-bg) !important;
+  border-color: var(--lg-history-selected-border) !important;
+  border-radius: 12px !important;
+  outline: none !important;
+  box-shadow: var(--lg-history-selected-shadow) !important;
+}
+
+/* ============================================================
+   9. Media previews
+   ============================================================ */
+.theme-liquid-glass .image-preview,
+.theme-liquid-glass .video-file-card,
+.theme-liquid-glass .video-thumbnail-card,
+.theme-liquid-glass .file-thumbnail-card {
+  border-radius: 10px !important;
+}
+
+/* ============================================================
+   10. Tag chips
+   ============================================================ */
+.theme-liquid-glass .tag-chip {
+  border-radius: 999px !important;
+  border: 1px solid var(--lg-tag-chip-border) !important;
+  box-shadow: none !important;
+}
+
+/* ============================================================
+   11. Switch / toggle — frosted glass track
+   ============================================================ */
+.theme-liquid-glass .switch {
+  width: 38px !important;
+  height: 22px !important;
+}
+
+.theme-liquid-glass .toggle {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 999px !important;
+  background: var(--lg-toggle-bg) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.theme-liquid-glass .toggle > .left,
+.theme-liquid-glass .toggle > .right {
+  display: none !important;
+}
+
+.theme-liquid-glass .toggle::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--lg-toggle-thumb-bg);
+  box-shadow: var(--lg-toggle-thumb-shadow);
+  transition: transform 0.2s ease;
+}
+
+.theme-liquid-glass .switch input:checked + .toggle {
+  background: var(--accent-color) !important;
+  box-shadow: var(--lg-toggle-active-shadow) !important;
+}
+
+.theme-liquid-glass .switch input:checked + .toggle::before {
+  transform: translateX(16px);
+}
+
+.theme-liquid-glass .switch input:focus-visible + .toggle {
+  box-shadow: var(--lg-toggle-focus-shadow) !important;
+}
+
+.theme-liquid-glass .switch input:disabled + .toggle {
+  opacity: 0.56;
+}
+
+/* ============================================================
+   12. Key caps — glass key buttons with inner glow
+   ============================================================ */
+.theme-liquid-glass .key-group {
+  gap: 8px !important;
+  padding: 2px !important;
+  margin-top: 2px !important;
+  border-radius: 10px !important;
+  align-items: center !important;
+}
+
+.theme-liquid-glass .key-group.recording {
+  background: var(--lg-key-recording-bg) !important;
+  box-shadow: var(--lg-key-recording-shadow) !important;
+}
+
+.theme-liquid-glass .key-cap {
+  min-width: 2.4em !important;
+  height: 2em !important;
+  padding: 0 0.65em !important;
+  margin: 0 !important;
+  border: 1px solid var(--lg-key-cap-border) !important;
+  border-bottom-width: 1px !important;
+  border-radius: 8px !important;
+  background: var(--lg-key-cap-bg) !important;
+  color: var(--lg-key-cap-text) !important;
+  box-shadow: var(--lg-key-cap-shadow) !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.02em !important;
+  text-transform: uppercase !important;
+  transform: none !important;
+}
+
+.theme-liquid-glass .key-group:active .key-cap,
+.theme-liquid-glass .key-group.recording .key-cap {
+  transform: none !important;
+  background: var(--lg-key-cap-active-bg) !important;
+  border-color: var(--lg-key-cap-active-border) !important;
+  box-shadow: var(--lg-key-cap-active-shadow) !important;
+}
+
+.theme-liquid-glass .key-group:focus-visible {
+  outline: 2px solid var(--accent-color) !important;
+  outline-offset: 2px !important;
+}
+
+/* ============================================================
+   13. Range sliders — glass track with accent fill
+   ============================================================ */
+.theme-liquid-glass .settings-view input[type="range"] {
+  height: 8px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 999px !important;
+  box-shadow: none !important;
+}
+
+.theme-liquid-glass .settings-view input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background:
+    linear-gradient(var(--accent-color), var(--accent-color)) 0 / var(--range-progress, 0%) 100% no-repeat,
+    var(--lg-range-track-bg);
+  border: 1px solid var(--lg-range-track-border);
+  box-shadow: var(--lg-range-track-shadow);
+}
+
+.theme-liquid-glass .settings-view input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--lg-range-thumb-bg);
+  border: 1px solid var(--lg-range-thumb-border);
+  box-shadow: var(--lg-range-thumb-shadow);
+}
+
+.theme-liquid-glass .settings-view input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--lg-range-track-bg);
+  border: 1px solid var(--lg-range-track-border);
+  box-shadow: var(--lg-range-track-shadow);
+}
+
+.theme-liquid-glass .settings-view input[type="range"]::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent-color);
+}
+
+.theme-liquid-glass .settings-view input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--lg-range-thumb-bg);
+  border: 1px solid var(--lg-range-thumb-border);
+  box-shadow: var(--lg-range-thumb-shadow);
+}
+
+.theme-liquid-glass .settings-view input[type="range"]:focus-visible {
+  outline: none !important;
+}
+
+.theme-liquid-glass .settings-view input[type="range"]:focus-visible::-webkit-slider-thumb,
+.theme-liquid-glass .settings-view input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: var(--lg-range-thumb-focus-shadow);
+}
+
+/* ============================================================
+   14. Modals — frosted glass overlay and dialog
+   ============================================================ */
+.theme-liquid-glass .modal-overlay {
+  background: rgba(0, 0, 0, 0.18) !important;
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+}
+
+.theme-liquid-glass .app-selector-modal {
+  border-radius: 16px !important;
+  border: 1px solid var(--lg-dialog-border) !important;
+  background: var(--lg-dialog-bg) !important;
+  box-shadow: var(--lg-dialog-shadow) !important;
+  padding: 18px !important;
+  backdrop-filter: blur(20px) saturate(135%);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+}
+
+.theme-liquid-glass .app-selector-modal .modal-title {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  padding: 0 !important;
+}
+
+.theme-liquid-glass .app-selector-close-btn {
+  color: var(--text-secondary) !important;
+}
+
+.theme-liquid-glass .app-selector-close-btn:hover {
+  color: var(--accent-color) !important;
+}
+
+.theme-liquid-glass .app-selector-modal .selector-container {
+  border: 1px solid var(--lg-input-border) !important;
+  border-radius: 12px !important;
+  padding: 6px !important;
+  background: var(--lg-input-bg) !important;
+  box-shadow:
+    inset 0 1px 2px rgba(20, 30, 60, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.20) !important;
+}
+
+.theme-liquid-glass .app-selector-action-btn {
+  border-radius: 10px !important;
+  border: 1px solid var(--lg-dialog-button-border) !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+  text-transform: none !important;
+  font-weight: 600 !important;
+}
+
+.theme-liquid-glass .app-selector-action-btn-browse {
+  background: var(--lg-dialog-button-bg) !important;
+  color: var(--lg-dialog-button-text) !important;
+}
+
+.theme-liquid-glass .app-selector-action-btn-cancel {
+  background: var(--lg-dialog-button-primary-bg) !important;
+  color: var(--lg-dialog-button-primary-text) !important;
+  border-color: var(--lg-dialog-button-primary-border) !important;
+}
+
+/* ============================================================
+   15. Tag manager — glass sidebar, cards, and controls
+   ============================================================ */
+.themed-tag-manager.theme-liquid-glass {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  font-family: var(--font-main) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-sidebar {
+  border-right: 1px solid var(--lg-tag-sidebar-border) !important;
+  background: var(--lg-tag-sidebar-bg) !important;
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+}
+
+.themed-tag-manager.theme-liquid-glass .sidebar-header {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--lg-settings-header-border) !important;
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  min-height: 38px !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .header-label {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-search-box {
+  border-bottom: 1px solid var(--lg-tag-sort-border) !important;
+  background: var(--lg-tag-search-bg) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-search-box input::placeholder {
+  color: color-mix(in srgb, var(--text-secondary) 70%, transparent) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-item.active {
+  background: var(--lg-tag-item-active-bg) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--lg-tag-item-active-border) !important;
+  box-shadow: none !important;
+  border-radius: 9px !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-item {
+  border-radius: 9px !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-item.active .tag-name,
+.themed-tag-manager.theme-liquid-glass .tag-item.active .tag-badge {
+  color: var(--text-primary) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-item:hover:not(.active) {
+  background: var(--lg-tag-item-hover-bg) !important;
+  border-radius: 9px !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-name {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-badge {
+  font-size: 12px !important;
+  opacity: 0.6 !important;
+  font-weight: 600 !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-item.active .tag-hover-actions > *:hover {
+  color: var(--accent-color) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-search-box {
+  border-radius: 10px;
+  margin: 6px;
+  border: 1px solid var(--lg-tag-search-border);
+  background: var(--lg-tag-search-bg);
+}
+
+.themed-tag-manager.theme-liquid-glass .tag-search-box input {
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.themed-tag-manager.theme-liquid-glass .collapse-toggle,
+.themed-tag-manager.theme-liquid-glass .sort-btn,
+.themed-tag-manager.theme-liquid-glass .toggle-btn,
+.themed-tag-manager.theme-liquid-glass .add-item-btn,
+.themed-tag-manager.theme-liquid-glass .card-action-btn,
+.themed-tag-manager.theme-liquid-glass .del-btn {
+  border-radius: 8px;
+}
+
+.themed-tag-manager.theme-liquid-glass .themed-card {
+  border-radius: 12px !important;
+  border: 1px solid var(--lg-tag-card-border) !important;
+  background: var(--glass-card-bg) !important;
+  box-shadow: var(--lg-tag-card-shadow) !important;
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+}
+
+.themed-tag-manager.theme-liquid-glass .themed-card:hover {
+  transform: none !important;
+  background: var(--lg-tag-card-hover-bg) !important;
+  box-shadow: var(--lg-tag-card-hover-shadow) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .content-toolbar {
+  height: 44px !important;
+  border-bottom: 1px solid var(--lg-tag-toolbar-border) !important;
+  background: var(--lg-tag-toolbar-bg) !important;
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+}
+
+.themed-tag-manager.theme-liquid-glass .selected-tag-indicator {
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  opacity: 0.85 !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .breadcrumb-text {
+  letter-spacing: 0 !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .sort-group {
+  border-left: 1px solid var(--lg-tag-sort-border) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .btn-icon,
+.themed-tag-manager.theme-liquid-glass .toggle-btn,
+.themed-tag-manager.theme-liquid-glass .add-item-btn {
+  border-radius: 10px !important;
+  border: 1px solid var(--lg-tag-btn-border) !important;
+  background: var(--lg-tag-btn-bg) !important;
+  color: var(--lg-tag-btn-text) !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .btn-icon:hover,
+.themed-tag-manager.theme-liquid-glass .toggle-btn:hover,
+.themed-tag-manager.theme-liquid-glass .add-item-btn:hover {
+  background: var(--lg-tag-btn-hover-bg) !important;
+  border-color: var(--lg-tag-btn-hover-border) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .toggle-btn.active,
+.themed-tag-manager.theme-liquid-glass .add-item-btn.active {
+  background: var(--lg-btn-active-bg) !important;
+  border-color: var(--lg-btn-active-border) !important;
+  color: var(--lg-btn-active-text) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .card-action-btn,
+.themed-tag-manager.theme-liquid-glass .del-btn {
+  border-radius: 8px !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .card-action-btn:hover,
+.themed-tag-manager.theme-liquid-glass .del-btn:hover {
+  background: var(--lg-btn-hover-bg) !important;
+  color: var(--accent-color) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .confirm-dialog {
+  background: var(--lg-dialog-bg) !important;
+  backdrop-filter: blur(20px) saturate(135%);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  padding: 24px !important;
+  border-radius: 16px !important;
+  box-shadow: var(--lg-dialog-shadow) !important;
+  border: 1px solid var(--lg-dialog-border) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .confirm-dialog h3 {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+  padding: 0 !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .modal-input-field .modal-textarea {
+  border-radius: 10px !important;
+  border: 1px solid var(--lg-tag-textarea-border) !important;
+  background: var(--lg-tag-textarea-bg) !important;
+  color: var(--lg-tag-textarea-text) !important;
+  box-shadow:
+    inset 0 1px 2px rgba(20, 30, 60, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .modal-input-field .modal-textarea::placeholder {
+  color: var(--lg-tag-textarea-placeholder) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .modal-input-field .modal-textarea:focus {
+  border-color: rgba(10, 132, 255, 0.50) !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.16) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .confirm-dialog-button {
+  border-radius: 10px !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+  font-weight: 600 !important;
+  background: var(--lg-dialog-button-bg) !important;
+  border: 1px solid var(--lg-dialog-button-border) !important;
+  color: var(--lg-dialog-button-text) !important;
+}
+
+.themed-tag-manager.theme-liquid-glass .confirm-dialog-button:active {
+  transform: scale(0.95);
+}
+
+.themed-tag-manager.theme-liquid-glass .confirm-dialog-button.primary {
+  background: var(--lg-dialog-button-primary-bg) !important;
+  border-color: var(--lg-dialog-button-primary-border) !important;
+  color: var(--lg-dialog-button-primary-text) !important;
+}
+
+/* Dark mode tag manager overrides */
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-content,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .items-area,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-sidebar,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .content-toolbar,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .sidebar-header {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-sidebar {
+  background: rgba(28, 31, 40, 0.42) !important;
+  border-right-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .content-toolbar {
+  background: rgba(32, 35, 44, 0.46) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .items-area {
+  background: rgba(15, 18, 28, 0.28) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .sidebar-header {
+  background: rgba(30, 33, 42, 0.40) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-search-box {
+  background: rgba(32, 35, 44, 0.36) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .themed-card {
+  background: rgba(32, 35, 44, 0.36) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.30) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .themed-card:hover {
+  background: rgba(45, 48, 58, 0.50) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .btn-icon,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .toggle-btn,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .add-item-btn,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .card-action-btn,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .del-btn,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .sort-btn {
+  background: rgba(50, 53, 63, 0.44) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #f5f5f7 !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-color-dot {
+  border-color: rgba(255, 255, 255, 0.20) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16);
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-search-box input,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-name,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .selected-tag-indicator,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .breadcrumb-text,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .card-body-text {
+  color: #f5f5f7 !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-search-box input::placeholder,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-badge,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .card-footer,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .meta-time,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .meta-usage {
+  color: #a1a1a6 !important;
+  opacity: 0.9 !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .card-media {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border-color: var(--lg-tag-card-border) !important;
+}
+
+body.dark-mode .themed-tag-manager.theme-liquid-glass .modal-overlay {
+  background: rgba(0, 0, 0, 0.44) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+/* ============================================================
+   16. Compact preview
+   ============================================================ */
+.theme-liquid-glass .compact-popover-portal.compact-preview-window {
+  border-radius: 12px !important;
+  background: var(--lg-history-bg) !important;
+  border: 1px solid var(--lg-history-border) !important;
+  box-shadow: var(--lg-history-shadow) !important;
+}
+
+body.dark-mode.theme-liquid-glass .compact-popover-portal.compact-preview-window,
+body.dark-mode.theme-liquid-glass .compact-popover-portal.compact-preview-window.retro {
+  border-radius: 12px !important;
+  background: var(--lg-history-bg) !important;
+  border: 1px solid var(--lg-history-border) !important;
+  box-shadow: var(--lg-history-shadow) !important;
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode.theme-liquid-glass .compact-popover-portal.compact-preview-window .popover-divider,
+body.dark-mode.theme-liquid-glass .compact-popover-portal.compact-preview-window.retro .popover-divider {
+  display: none !important;
+}
+
+body.light-mode.theme-liquid-glass .compact-popover-portal .rich-text-preview {
+  color-scheme: light !important;
+}
+
+body.dark-mode.theme-liquid-glass .compact-popover-portal .rich-text-preview {
+  color-scheme: dark !important;
+}
+
+/* ============================================================
+   17. Queue bar — glass toolbar
+   ============================================================ */
+body.theme-liquid-glass .queue-bar {
+  background: var(--glass-header-bg) !important;
+  border: 1px solid var(--border-dark) !important;
+  border-radius: 10px !important;
+  box-shadow:
+    0 2px 10px var(--shadow-color),
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+}
+
+/* ============================================================
+   18. Compact preview variant
+   ============================================================ */
+body.compact-preview.theme-liquid-glass #root {
+  background: var(--glass-shell-bg) !important;
+  backdrop-filter: blur(40px) saturate(145%);
+  -webkit-backdrop-filter: blur(40px) saturate(145%);
+}
+
+body.compact-preview.theme-liquid-glass #root::before {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+}
+
+body.compact-preview.theme-liquid-glass #root > * {
+  position: static !important;
+  z-index: auto !important;
+}
+
+/* ============================================================
+   19. Dark mode modal / dialog overrides
+   ============================================================ */
+body.dark-mode.theme-liquid-glass .modal-overlay,
+body.dark-mode.theme-liquid-glass .theme-liquid-glass .modal-overlay {
+  background: rgba(0, 0, 0, 0.42) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+}
+
+body.dark-mode.theme-liquid-glass .modal-content,
+body.dark-mode.theme-liquid-glass .confirm-dialog,
+body.dark-mode.theme-liquid-glass .confirm-dialog.theme-liquid-glass,
+body.dark-mode .theme-liquid-glass .modal-content,
+body.dark-mode .theme-liquid-glass .confirm-dialog,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog {
+  background: var(--lg-dialog-bg) !important;
+  border: 1px solid var(--lg-dialog-border) !important;
+  box-shadow: var(--lg-dialog-shadow) !important;
+  color: var(--text-primary) !important;
+  backdrop-filter: blur(22px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(150%) !important;
+}
+
+body.dark-mode.theme-liquid-glass .confirm-dialog-title,
+body.dark-mode.theme-liquid-glass .confirm-dialog h3,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog h3 {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode.theme-liquid-glass .confirm-dialog-message,
+body.dark-mode.theme-liquid-glass .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog p {
+  color: var(--text-secondary) !important;
+  opacity: 1 !important;
+}
+
+body.dark-mode.theme-liquid-glass .confirm-dialog-button,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button {
+  background: var(--lg-dialog-button-bg) !important;
+  border: 1px solid var(--lg-dialog-button-border) !important;
+  color: var(--lg-dialog-button-text) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08) !important;
+}
+
+body.dark-mode.theme-liquid-glass .confirm-dialog-button.primary,
+body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button.primary {
+  background: var(--lg-dialog-button-primary-bg) !important;
+  border-color: var(--lg-dialog-button-primary-border) !important;
+  color: var(--lg-dialog-button-primary-text) !important;
+}
+
+/* ============================================================
+   20. Scrollbar — frosted glass scrollbar
+   ============================================================ */
+.theme-liquid-glass ::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.theme-liquid-glass ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.theme-liquid-glass ::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 128, 0.20) !important;
+  border-radius: 999px !important;
+  border: 2px solid transparent !important;
+  background-clip: content-box !important;
+}
+
+.theme-liquid-glass ::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 128, 0.32) !important;
+  background-clip: content-box !important;
+}
+
+.theme-liquid-glass ::-webkit-scrollbar-corner {
+  background: transparent !important;
+}

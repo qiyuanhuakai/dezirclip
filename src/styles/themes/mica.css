@@ -36,6 +36,18 @@ body.dark-mode.theme-mica {
   --tag-manager-button-hover-bg: rgba(255, 255, 255, 0.17);
   --tag-manager-border: rgba(255, 255, 255, 0.12);
   --tag-manager-strong-border: rgba(255, 255, 255, 0.17);
+  --surface-overlay-bg: rgba(0, 0, 0, 0.58);
+  --surface-overlay-blur: 18px;
+  --surface-dialog-bg: rgba(24, 26, 32, 0.88);
+  --surface-dialog-border: rgba(255, 255, 255, 0.14);
+  --surface-dialog-shadow: 0 22px 54px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --surface-confirm-bg: rgba(24, 26, 32, 0.9);
+  --surface-confirm-border: rgba(255, 255, 255, 0.14);
+  --surface-confirm-shadow: 0 22px 54px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --control-confirm-btn-bg: rgba(255, 255, 255, 0.1);
+  --control-confirm-btn-border: rgba(255, 255, 255, 0.15);
+  --control-confirm-btn-hover-bg: rgba(255, 255, 255, 0.16);
+  --control-confirm-btn-text: #f6f7fb;
 }
 
 /* Custom background image support */
@@ -310,4 +322,62 @@ body:not(.compact-mode) .theme-mica .btn-icon.active {
   color: var(--modern-btn-active-text) !important;
   border-color: var(--modern-btn-active-border) !important;
   box-shadow: var(--modern-btn-active-shadow) !important;
+}
+
+body.dark-mode.theme-mica .modal-overlay,
+body.dark-mode.theme-mica .theme-mica .modal-overlay,
+body.dark-mode .themed-tag-manager.theme-mica .modal-overlay {
+  background: var(--surface-overlay-bg) !important;
+  backdrop-filter: blur(var(--surface-overlay-blur)) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(var(--surface-overlay-blur)) saturate(145%) !important;
+}
+
+body.dark-mode.theme-mica .modal-content,
+body.dark-mode.theme-mica .confirm-dialog,
+body.dark-mode.theme-mica .confirm-dialog.theme-mica,
+body.dark-mode .theme-mica .modal-content,
+body.dark-mode .theme-mica .confirm-dialog,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog {
+  background: var(--surface-confirm-bg) !important;
+  border: 1px solid var(--surface-confirm-border) !important;
+  box-shadow: var(--surface-confirm-shadow) !important;
+  color: var(--text-primary) !important;
+  backdrop-filter: blur(22px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(150%) !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-title,
+body.dark-mode.theme-mica .confirm-dialog-message,
+body.dark-mode.theme-mica .confirm-dialog h3,
+body.dark-mode.theme-mica .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog h3,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog p {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-message,
+body.dark-mode.theme-mica .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog p {
+  color: var(--text-secondary) !important;
+  opacity: 1 !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-button,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog-button {
+  background: var(--control-confirm-btn-bg) !important;
+  border: 1px solid var(--control-confirm-btn-border) !important;
+  color: var(--control-confirm-btn-text) !important;
+  box-shadow: none !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-button:hover,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog-button:hover {
+  background: var(--control-confirm-btn-hover-bg) !important;
+}
+
+body.dark-mode.theme-mica .modal-input-field .modal-textarea,
+body.dark-mode .themed-tag-manager.theme-mica .modal-input-field .modal-textarea {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: var(--text-primary) !important;
 }

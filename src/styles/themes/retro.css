@@ -40,4 +40,33 @@ body.dark-mode.theme-retro {
   --border-dark: #000000;
   --border-light: #454545;
   --shadow-color: #000000;
+
+  --surface-overlay-bg: rgba(0, 0, 0, 0.64);
+  --surface-overlay-blur: 6px;
+  --surface-dialog-bg: #171717;
+  --surface-dialog-border: #3d3d3d;
+  --surface-dialog-shadow: 0 18px 42px rgba(0, 0, 0, 0.58);
+  --surface-confirm-bg: #171717;
+  --surface-confirm-border: #3d3d3d;
+  --surface-confirm-shadow: 0 18px 42px rgba(0, 0, 0, 0.58);
+  --control-confirm-btn-bg: #2a2a2a;
+  --control-confirm-btn-border: #4a4a4a;
+  --control-confirm-btn-hover-bg: #343434;
+  --control-confirm-btn-text: #ededed;
+}
+
+body.dark-mode.theme-retro .confirm-dialog,
+body.dark-mode.theme-retro .modal-content {
+  background: var(--surface-confirm-bg) !important;
+  border-color: var(--surface-confirm-border) !important;
+  box-shadow: var(--surface-confirm-shadow) !important;
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode.theme-retro .modal-title,
+body.dark-mode.theme-retro .confirm-dialog-title,
+body.dark-mode.theme-retro .confirm-dialog-message,
+body.dark-mode.theme-retro .confirm-dialog h3,
+body.dark-mode.theme-retro .confirm-dialog p {
+  color: var(--text-primary) !important;
 }

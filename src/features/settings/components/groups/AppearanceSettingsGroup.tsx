@@ -54,7 +54,7 @@ const buildRangeStyle = (value: number, min: number, max: number) =>
 
 const themeCssModules = import.meta.glob("../../../../styles/themes/*.css");
 const hiddenThemeIds = new Set(["dark", "index"]);
-const preferredThemeOrder = ["retro", "mica", "acrylic"];
+const preferredThemeOrder = ["retro", "mica", "acrylic", "liquid-glass"];
 const discoveredThemeIds = Object.keys(themeCssModules)
     .map(path => path.split("/").pop()?.replace(".css", "") ?? "")
     .filter(id => id && !hiddenThemeIds.has(id));
@@ -278,7 +278,7 @@ const AppearanceSettingsGroup = ({
                     />
                 </div>
 
-                {(theme === 'mica' || theme === 'acrylic') && (
+                {(theme === 'mica' || theme === 'acrylic' || theme === 'liquid-glass') && (
                     <>
                         <div className="setting-item column no-border">
                             <div className="item-label-group" style={{ marginBottom: '8px' }}>

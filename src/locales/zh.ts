@@ -93,6 +93,7 @@ export const zh = {
         theme_acrylic: "亚克力",
         theme_macos: "macOS",
         theme_scifi: "科幻",
+        theme_liquid_glass: "液态玻璃",
         color_mode: "颜色模式",
         mode_system: "跟随系统",
         mode_light: "浅色",
