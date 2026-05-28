@@ -1181,7 +1181,6 @@ body.theme-liquid-glass:not(.hide-app-border) {
 
 .themed-tag-manager.theme-liquid-glass .confirm-dialog-button {
   border-radius: 10px !important;
-  border: none !important;
   box-shadow:
     inset 0 1px 0 var(--glass-edge-top),
     inset 0 -1px 0 var(--glass-edge-bottom) !important;
