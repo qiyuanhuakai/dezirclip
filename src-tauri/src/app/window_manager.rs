@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Manager, Emitter};
 use std::sync::atomic::Ordering;
 use crate::app_state::SettingsState;
+use crate::app::idle_destroyer;
 use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
@@ -11,6 +12,9 @@ use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
 
 pub fn toggle_window(app: &AppHandle) {
+    // The idle destroyer may have torn down the webview while the window was
+    // hidden. Recreate it from tauri.conf.json before deciding what to do.
+    idle_destroyer::ensure_main_window(app);
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(windows)]
         let mut active_center: Option<(i32, i32)> = None;
@@ -22,9 +26,10 @@ pub fn toggle_window(app: &AppHandle) {
             WindowExt::release_win_keys();
             let _ = window.set_focusable(false);
             let _ = window.hide();
-            
+            idle_destroyer::mark_hidden();
+
             let _ = restore_last_focus(app.clone());
-            
+
             IS_HIDDEN.store(false, Ordering::Relaxed);
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
             NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
@@ -214,6 +219,7 @@ pub fn toggle_window(app: &AppHandle) {
         WindowExt::release_win_keys();
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
         LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+        idle_destroyer::mark_shown();
 
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(pinned);
@@ -290,6 +296,7 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
         WindowExt::release_win_keys();
         let _ = window.set_focusable(false);
         let _ = window.hide();
+        idle_destroyer::mark_hidden();
         NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
         NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
         let _ = restore_last_focus(app_handle.clone());
@@ -305,9 +312,11 @@ pub fn toggle_window_cmd(app_handle: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
+    idle_destroyer::ensure_main_window(&app_handle);
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_focusable(true);
         let _ = window.show();
+        idle_destroyer::mark_shown();
         
         #[cfg(windows)]
         {

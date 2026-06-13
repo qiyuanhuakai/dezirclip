@@ -74,6 +74,10 @@ interface SettingsPanelProps {
     setFollowMouse: (val: boolean) => void;
     disableWebviewGpu: boolean;
     setDisableWebviewGpu: (val: boolean) => void;
+    idleDestroyEnabled: boolean;
+    setIdleDestroyEnabled: (val: boolean) => void;
+    idleDestroySeconds: number;
+    setIdleDestroySeconds: (val: number) => void;
     customBackground: string;
     setCustomBackground: (val: string) => void;
     customBackgroundOpacity: number;
@@ -138,6 +142,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         edgeDocking, setEdgeDocking,
         followMouse, setFollowMouse,
         disableWebviewGpu, setDisableWebviewGpu,
+        idleDestroyEnabled, setIdleDestroyEnabled,
+        idleDestroySeconds, setIdleDestroySeconds,
         customBackground, setCustomBackground,
         customBackgroundOpacity, setCustomBackgroundOpacity,
         surfaceOpacity, setSurfaceOpacity,
@@ -225,6 +231,10 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setFollowMouse={setFollowMouse}
                 disableWebviewGpu={disableWebviewGpu}
                 setDisableWebviewGpu={setDisableWebviewGpu}
+                idleDestroyEnabled={idleDestroyEnabled}
+                setIdleDestroyEnabled={setIdleDestroyEnabled}
+                idleDestroySeconds={idleDestroySeconds}
+                setIdleDestroySeconds={setIdleDestroySeconds}
                 soundEnabled={soundEnabled}
                 setSoundEnabled={setSoundEnabled}
                 soundVolume={soundVolume}

@@ -75,6 +75,8 @@ export const useAppState = (): AppState => {
   const [edgeDocking, setEdgeDocking] = useState(false);
   const [followMouse, setFollowMouse] = useState(true);
   const [disableWebviewGpu, setDisableWebviewGpu] = useState(false);
+  const [idleDestroyEnabled, setIdleDestroyEnabled] = useState(false);
+  const [idleDestroySeconds, setIdleDestroySeconds] = useState<number>(60);
   const [customBackground, setCustomBackground] = useState<string>("");
   const [customBackgroundOpacity, setCustomBackgroundOpacity] = useState(45);
   const [surfaceOpacity, setSurfaceOpacity] = useState(50);
@@ -212,6 +214,10 @@ export const useAppState = (): AppState => {
     setFollowMouse,
     disableWebviewGpu,
     setDisableWebviewGpu,
+    idleDestroyEnabled,
+    setIdleDestroyEnabled,
+    idleDestroySeconds,
+    setIdleDestroySeconds,
     customBackground,
     setCustomBackground,
     customBackgroundOpacity,

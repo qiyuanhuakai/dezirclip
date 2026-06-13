@@ -25,6 +25,10 @@ interface GeneralSettingsGroupProps {
     setFollowMouse: (val: boolean) => void;
     disableWebviewGpu: boolean;
     setDisableWebviewGpu: (val: boolean) => void;
+    idleDestroyEnabled: boolean;
+    setIdleDestroyEnabled: (val: boolean) => void;
+    idleDestroySeconds: number;
+    setIdleDestroySeconds: (val: number) => void;
     soundEnabled: boolean;
     setSoundEnabled: (val: boolean) => void;
     soundVolume: number;
@@ -61,6 +65,10 @@ const GeneralSettingsGroup = ({
     setFollowMouse,
     disableWebviewGpu,
     setDisableWebviewGpu,
+    idleDestroyEnabled,
+    setIdleDestroyEnabled,
+    idleDestroySeconds,
+    setIdleDestroySeconds,
     soundEnabled,
     setSoundEnabled,
     soundVolume,
@@ -184,6 +192,57 @@ const GeneralSettingsGroup = ({
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
                 </div>
+
+                <div className="setting-item">
+                    <LabelWithHint
+                        label={t('idle_destroy_enabled')}
+                        hint={t('idle_destroy_enabled_hint')}
+                        hintKey="idle_destroy_enabled"
+                    />
+                    <label className="switch">
+                        <input
+                            className="cb"
+                            type="checkbox"
+                            checked={idleDestroyEnabled}
+                            onChange={(e) => {
+                                const enabled = e.target.checked;
+                                setIdleDestroyEnabled(enabled);
+                                invoke("set_idle_destroy_enabled", { enabled }).catch(console.error);
+                            }}
+                        />
+                        <div className="toggle"><div className="left" /><div className="right" /></div>
+                    </label>
+                </div>
+                {idleDestroyEnabled && (
+                    <div className="setting-item" style={{ marginLeft: '18px' }}>
+                        <LabelWithHint
+                            label={t('idle_destroy_seconds')}
+                            hint={t('idle_destroy_seconds_hint')}
+                            hintKey="idle_destroy_seconds"
+                        />
+                        <input
+                            type="number"
+                            min={5}
+                            max={3600}
+                            step={5}
+                            value={idleDestroySeconds}
+                            onChange={(e) => {
+                                const next = Math.max(5, Math.min(3600, Number(e.target.value) || 60));
+                                setIdleDestroySeconds(next);
+                                invoke("set_idle_destroy_seconds", { seconds: next }).catch(console.error);
+                            }}
+                            style={{
+                                width: '90px',
+                                padding: '4px 8px',
+                                fontSize: '12px',
+                                borderRadius: '6px',
+                                border: '1px solid rgba(128, 128, 128, 0.4)',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)'
+                            }}
+                        />
+                    </div>
+                )}
 
                 <div className="setting-item">
                     <div className="item-label-group">

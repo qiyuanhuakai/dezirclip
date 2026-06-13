@@ -99,6 +99,9 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // 9. Theme Initial Application
     apply_initial_theme(app);
 
+    // 9a. Idle Webview Destroyer (low-memory optimization)
+    crate::app::idle_destroyer::spawn_idle_destroyer(app_handle.clone());
+
     // 10. Win32 Hook Initialization
     #[cfg(target_os = "windows")]
     init_win32_hooks(app);
@@ -211,6 +214,8 @@ pub struct StartupSettings {
     pub window_height: Option<u32>,
     pub main_hotkey: String,
     pub arrow_key_selection: bool,
+    pub idle_destroy_enabled: bool,
+    pub idle_destroy_seconds: u64,
 }
 
 fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
@@ -323,6 +328,18 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(Some("false".to_string()))
             .map(|v| v == "true")
             .unwrap_or(false),
+        idle_destroy_enabled: repo
+            .get("app.idle_destroy_enabled")
+            .unwrap_or(Some("false".to_string()))
+            .map(|v| v == "true")
+            .unwrap_or(false),
+        idle_destroy_seconds: repo
+            .get("app.idle_destroy_seconds")
+            .ok()
+            .flatten()
+            .and_then(|v| v.parse::<u64>().ok())
+            .map(crate::app::idle_destroyer::clamp_idle_seconds)
+            .unwrap_or(crate::app::idle_destroyer::DEFAULT_IDLE_DESTROY_SECONDS),
     }
 }
 
@@ -374,6 +391,8 @@ fn setup_state(
         arrow_key_selection: AtomicBool::new(s.arrow_key_selection),
         main_hotkey: std::sync::Mutex::new(s.main_hotkey.clone()),
         monitors: std::sync::Mutex::new(Vec::new()),
+        idle_destroy_enabled: AtomicBool::new(s.idle_destroy_enabled),
+        idle_destroy_seconds: AtomicU64::new(s.idle_destroy_seconds),
     });
 
     app.manage(SessionHistory(std::sync::Mutex::new(
@@ -431,6 +450,7 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
     if should_show_window {
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.show();
+            crate::app::idle_destroyer::mark_shown();
         }
     }
 }
@@ -506,6 +526,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 if IS_HIDDEN.load(Ordering::Relaxed) {
                     if let Some(window) = app_handle.get_webview_window("main") {
                         let _ = window.show();
+                        crate::app::idle_destroyer::mark_shown();
                         IS_HIDDEN.store(false, Ordering::Relaxed);
                         CURRENT_DOCK.store(0, Ordering::Relaxed);
                     }
@@ -649,6 +670,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
                         if dock_actual != DockPosition::None {
                             let _ = window.show();
+                            crate::app::idle_destroyer::mark_shown();
                             match dock_actual {
                                 DockPosition::Top => {
                                     let _ = window.set_position(tauri::Position::Physical(
@@ -806,8 +828,10 @@ fn setup_tray(app: &App, hide_tray: bool) {
         .menu(&menu)
         .on_menu_event(|app, event| {
             if event.id.as_ref() == "show" {
+                crate::app::idle_destroyer::ensure_main_window(app);
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
+                    crate::app::idle_destroyer::mark_shown();
                 }
             } else if event.id.as_ref() == "quit" {
                 app.exit(0);
@@ -819,8 +843,11 @@ fn setup_tray(app: &App, hide_tray: bool) {
                 ..
             } = event
             {
-                if let Some(window) = tray.app_handle().get_webview_window("main") {
+                let app = tray.app_handle();
+                crate::app::idle_destroyer::ensure_main_window(app);
+                if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
+                    crate::app::idle_destroyer::mark_shown();
                     let _ = window.set_focus();
                     let now = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1013,6 +1040,7 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
             api.prevent_close();
             let _ = window.hide();
+            crate::app::idle_destroyer::mark_hidden();
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
             NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
         }
@@ -1123,6 +1151,7 @@ fn handle_blur(window: &tauri::Window) {
         if !down && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
                 let _ = w.hide();
+                crate::app::idle_destroyer::mark_hidden();
                 NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
                 release_win_keys();
                 let _ = restore_last_focus(w.app_handle().clone());

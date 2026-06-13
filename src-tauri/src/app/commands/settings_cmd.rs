@@ -54,6 +54,18 @@ fn apply_setting_state_update(settings_state: &crate::app_state::SettingsState, 
         "app.hide_tray_icon" => {
             settings_state.hide_tray_icon.store(value == "true", Ordering::Relaxed);
         },
+        "app.idle_destroy_enabled" => {
+            settings_state
+                .idle_destroy_enabled
+                .store(value == "true", Ordering::Relaxed);
+        }
+        "app.idle_destroy_seconds" => {
+            if let Ok(secs) = value.parse::<u64>() {
+                settings_state
+                    .idle_destroy_seconds
+                    .store(crate::app::idle_destroyer::clamp_idle_seconds(secs), Ordering::Relaxed);
+            }
+        }
         _ => {}
     }
 }
@@ -332,4 +344,29 @@ pub fn set_follow_mouse(
     state.follow_mouse.store(enabled, Ordering::Relaxed);
     let db_state = app_handle.state::<DbState>();
     save_bool_setting(&db_state, "app.follow_mouse", enabled)
+}
+
+
+#[tauri::command]
+pub fn set_idle_destroy_enabled(
+    state: State<'_, crate::app_state::SettingsState>,
+    db_state: State<'_, DbState>,
+    enabled: bool,
+) -> AppResult<()> {
+    state.idle_destroy_enabled.store(enabled, Ordering::Relaxed);
+    save_bool_setting(&db_state, "app.idle_destroy_enabled", enabled)
+}
+
+#[tauri::command]
+pub fn set_idle_destroy_seconds(
+    state: State<'_, crate::app_state::SettingsState>,
+    db_state: State<'_, DbState>,
+    seconds: u64,
+) -> AppResult<()> {
+    let clamped = crate::app::idle_destroyer::clamp_idle_seconds(seconds);
+    state.idle_destroy_seconds.store(clamped, Ordering::Relaxed);
+    db_state
+        .settings_repo
+        .set("app.idle_destroy_seconds", &clamped.to_string())
+        .map_err(AppError::from)
 }

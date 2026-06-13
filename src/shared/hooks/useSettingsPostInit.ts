@@ -25,6 +25,8 @@ interface UseSettingsPostInitOptions {
   setMoveToTopAfterPaste: (val: boolean) => void;
   setHideTrayIcon: (val: boolean) => void;
   setEdgeDocking: (val: boolean) => void;
+  setIdleDestroyEnabled: (val: boolean) => void;
+  setIdleDestroySeconds: (val: number) => void;
   setShowSearchBox: (val: boolean) => void;
   setScrollTopButtonEnabled: (val: boolean) => void;
   setArrowKeySelection: (val: boolean) => void;
@@ -71,6 +73,8 @@ export const useSettingsPostInit = ({
   setMoveToTopAfterPaste,
   setHideTrayIcon,
   setEdgeDocking,
+  setIdleDestroyEnabled,
+  setIdleDestroySeconds,
   setShowSearchBox,
   setScrollTopButtonEnabled,
   setArrowKeySelection,
@@ -156,6 +160,13 @@ export const useSettingsPostInit = ({
     setHideTrayIcon(settings["app.hide_tray_icon"] === "true");
     setEdgeDocking(settings["app.edge_docking"] === "true");
     setDisableWebviewGpu(settings["app.disable_webview_gpu"] === "true");
+    setIdleDestroyEnabled(settings["app.idle_destroy_enabled"] === "true");
+    if (settings["app.idle_destroy_seconds"]) {
+      const parsed = parseInt(settings["app.idle_destroy_seconds"], 10);
+      if (Number.isFinite(parsed) && parsed >= 5 && parsed <= 3600) {
+        setIdleDestroySeconds(parsed);
+      }
+    }
     if (settings["app.show_search_box"] === "false") setShowSearchBox(false);
     setScrollTopButtonEnabled(settings["app.show_scroll_top_button"] !== "false");
     if (settings["app.arrow_key_selection"] === "false") setArrowKeySelection(false);
@@ -202,6 +213,8 @@ export const useSettingsPostInit = ({
     setMoveToTopAfterPaste,
     setHideTrayIcon,
     setEdgeDocking,
+    setIdleDestroyEnabled,
+    setIdleDestroySeconds,
     setShowSearchBox,
     setScrollTopButtonEnabled,
     setArrowKeySelection,

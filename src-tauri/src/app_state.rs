@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
 use crate::domain::models::ClipboardEntry;
 use crate::services::encryption_queue::EncryptionQueue;
@@ -26,6 +26,8 @@ pub struct SettingsState {
     pub arrow_key_selection: AtomicBool,
     pub main_hotkey: Mutex<String>,
     pub monitors: Mutex<Vec<tauri::Monitor>>,
+    pub idle_destroy_enabled: AtomicBool,
+    pub idle_destroy_seconds: AtomicU64,
 }
 
 #[derive(Default)]

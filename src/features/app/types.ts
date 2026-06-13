@@ -129,6 +129,10 @@ export interface AppState {
   setFollowMouse: StateSetter<boolean>;
   disableWebviewGpu: boolean;
   setDisableWebviewGpu: StateSetter<boolean>;
+  idleDestroyEnabled: boolean;
+  setIdleDestroyEnabled: StateSetter<boolean>;
+  idleDestroySeconds: number;
+  setIdleDestroySeconds: StateSetter<number>;
   customBackground: string;
   setCustomBackground: StateSetter<string>;
   customBackgroundOpacity: number;
