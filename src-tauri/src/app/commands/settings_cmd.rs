@@ -80,6 +80,7 @@ fn apply_setting_state_update(
             crate::app::gpu_switcher::apply_gpu_disable_env(enabled);
             if let Some(win) = app_handle.get_webview_window("main") {
                 let _ = win.destroy();
+                crate::app::idle_destroyer::mark_destroyed_after_managed_destroy();
                 crate::app::idle_destroyer::mark_shown();
                 crate::info!(
                     "[settings] disable_webview_gpu toggled to {}; webview destroyed to apply on next show",

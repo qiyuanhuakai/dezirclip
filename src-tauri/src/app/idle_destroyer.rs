@@ -222,6 +222,12 @@ pub fn request_recreate_after_destroy() {
     RECREATE_PENDING.store(true, Ordering::SeqCst);
 }
 
+pub fn mark_destroyed_after_managed_destroy() {
+    WINDOW_LIFECYCLE.store(LIFECYCLE_CLOSED, Ordering::SeqCst);
+    IS_DESTROYED.store(true, Ordering::SeqCst);
+    LAST_HIDDEN_TIMESTAMP.store(0, Ordering::SeqCst);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
