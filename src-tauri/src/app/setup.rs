@@ -466,6 +466,7 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
     let should_show_window = cfg!(debug_assertions) || (!is_autostart && !s.silent_start);
     if should_show_window {
         if let Some(window) = app.get_webview_window("main") {
+            crate::app::webview_memory::restore_window_memory(&window, "startup-show");
             let _ = window.show();
             crate::app::idle_destroyer::mark_shown();
         }
@@ -554,6 +555,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
             if !settings.edge_docking.load(Ordering::Relaxed) {
                 if IS_HIDDEN.load(Ordering::Relaxed) {
                     if let Some(window) = app_handle.get_webview_window("main") {
+                        crate::app::webview_memory::restore_window_memory(
+                            &window,
+                            "edge-docking-disabled-show",
+                        );
                         let _ = window.show();
                         crate::app::idle_destroyer::mark_shown();
                         IS_HIDDEN.store(false, Ordering::Relaxed);
@@ -698,6 +703,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         };
 
                         if dock_actual != DockPosition::None {
+                            crate::app::webview_memory::restore_window_memory(
+                                &window,
+                                "edge-dock-show",
+                            );
                             let _ = window.show();
                             crate::app::idle_destroyer::mark_shown();
                             match dock_actual {
@@ -791,6 +800,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                             }
                             _ => {}
                         }
+                        crate::app::webview_memory::lower_window_memory(&window, "edge-dock-hide");
                         IS_HIDDEN.store(true, Ordering::Relaxed);
                     }
                 } else if IS_HIDDEN.load(Ordering::Relaxed) {
@@ -868,6 +878,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
             if !settings.edge_docking.load(Ordering::Relaxed) {
                 if IS_HIDDEN.load(Ordering::Relaxed) {
                     if let Some(window) = app_handle.get_webview_window("main") {
+                        crate::app::webview_memory::restore_window_memory(
+                            &window,
+                            "linux-edge-docking-disabled-show",
+                        );
                         let _ = window.show();
                         IS_HIDDEN.store(false, Ordering::Relaxed);
                         CURRENT_DOCK.store(0, Ordering::Relaxed);
@@ -1003,6 +1017,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         };
 
                         if dock_actual != DockPosition::None {
+                            crate::app::webview_memory::restore_window_memory(
+                                &window,
+                                "linux-edge-dock-show",
+                            );
                             let _ = window.show();
                             let _ = window.set_always_on_top(true);
                             match dock_actual {
@@ -1060,6 +1078,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         }
                         IS_HIDDEN.store(true, Ordering::Relaxed);
                         let _ = window.hide();
+                        crate::app::webview_memory::lower_window_memory(
+                            &window,
+                            "linux-edge-dock-hide",
+                        );
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap()
@@ -1108,6 +1130,7 @@ fn setup_tray(app: &App, hide_tray: bool) {
             if event.id.as_ref() == "show" {
                 crate::app::idle_destroyer::ensure_main_window(app);
                 if let Some(window) = app.get_webview_window("main") {
+                    crate::app::webview_memory::restore_window_memory(&window, "tray-menu-show");
                     let _ = window.show();
                     crate::app::idle_destroyer::mark_shown();
                 }
@@ -1124,6 +1147,7 @@ fn setup_tray(app: &App, hide_tray: bool) {
                 let app = tray.app_handle();
                 crate::app::idle_destroyer::ensure_main_window(app);
                 if let Some(window) = app.get_webview_window("main") {
+                    crate::app::webview_memory::restore_window_memory(&window, "tray-click-show");
                     let _ = window.show();
                     crate::app::idle_destroyer::mark_shown();
                     let _ = window.set_focus();
@@ -1318,6 +1342,12 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
             api.prevent_close();
             let _ = window.hide();
+            if let Some(webview_window) = window.app_handle().get_webview_window("main") {
+                crate::app::webview_memory::lower_window_memory(
+                    &webview_window,
+                    "close-request-hide",
+                );
+            }
             crate::app::idle_destroyer::mark_hidden();
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
             NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
@@ -1429,6 +1459,9 @@ fn handle_blur(window: &tauri::Window) {
         if !down && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
                 let _ = w.hide();
+                if let Some(webview_window) = w.app_handle().get_webview_window("main") {
+                    crate::app::webview_memory::lower_window_memory(&webview_window, "blur-hide");
+                }
                 crate::app::idle_destroyer::mark_hidden();
                 NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
                 release_win_keys();

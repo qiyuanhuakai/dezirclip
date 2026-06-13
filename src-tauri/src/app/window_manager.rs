@@ -1,5 +1,6 @@
-use crate::app_state::SettingsState;
 use crate::app::idle_destroyer;
+use crate::app::webview_memory;
+use crate::app_state::SettingsState;
 use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
@@ -78,6 +79,7 @@ pub fn toggle_window(app: &AppHandle) {
                 }
                 let _ = window.set_focusable(false);
                 let _ = window.hide();
+                webview_memory::lower_window_memory(&window, "edge-dock-hide");
                 idle_destroyer::mark_hidden();
                 hide_compact_preview_window(app);
                 IS_HIDDEN.store(true, Ordering::Relaxed);
@@ -91,6 +93,7 @@ pub fn toggle_window(app: &AppHandle) {
             WindowExt::release_win_keys();
             let _ = window.set_focusable(false);
             let _ = window.hide();
+            webview_memory::lower_window_memory(&window, "toggle-hide");
             idle_destroyer::mark_hidden();
             hide_compact_preview_window(app);
 
@@ -423,6 +426,7 @@ pub fn toggle_window(app: &AppHandle) {
             .as_millis() as u64;
         LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
         idle_destroyer::mark_shown();
+        webview_memory::restore_window_memory(&window, "toggle-show");
 
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(pinned);
@@ -506,6 +510,7 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
         WindowExt::release_win_keys();
         let _ = window.set_focusable(false);
         let _ = window.hide();
+        webview_memory::lower_window_memory(&window, "command-hide");
         idle_destroyer::mark_hidden();
         hide_compact_preview_window(&app_handle);
         NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
@@ -525,6 +530,7 @@ pub fn toggle_window_cmd(app_handle: AppHandle) -> Result<(), String> {
 pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     idle_destroyer::ensure_main_window(&app_handle);
     if let Some(window) = app_handle.get_webview_window("main") {
+        webview_memory::restore_window_memory(&window, "focus-show");
         let _ = window.set_focusable(true);
         let _ = window.show();
         idle_destroyer::mark_shown();
