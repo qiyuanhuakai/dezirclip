@@ -13,7 +13,12 @@ fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<
         .map_err(AppError::from)
 }
 
-fn apply_setting_state_update(settings_state: &crate::app_state::SettingsState, key: &str, value: &str) {
+fn apply_setting_state_update(
+    app_handle: &AppHandle,
+    settings_state: &crate::app_state::SettingsState,
+    key: &str,
+    value: &str,
+) {
     match key {
         "app.arrow_key_selection" => {
             settings_state.arrow_key_selection.store(value == "true", Ordering::Relaxed);
@@ -64,6 +69,23 @@ fn apply_setting_state_update(settings_state: &crate::app_state::SettingsState, 
                 settings_state
                     .idle_destroy_seconds
                     .store(crate::app::idle_destroyer::clamp_idle_seconds(secs), Ordering::Relaxed);
+            }
+        }
+        "app.disable_webview_gpu" => {
+            // Live toggle. The env var is inherited by every WebView process
+            // spawned afterwards, so changes only take effect on the next
+            // webview creation. If the webview is alive we destroy it now so
+            // the very next show uses the new value.
+            let enabled = value == "true";
+            crate::app::gpu_switcher::apply_gpu_disable_env(enabled);
+            if let Some(win) = app_handle.get_webview_window("main") {
+                let _ = win.destroy();
+                crate::app::webview_proc::kill_our_webview_helpers();
+                crate::app::idle_destroyer::mark_shown();
+                crate::info!(
+                    "[settings] disable_webview_gpu toggled to {}; webview destroyed to apply on next show",
+                    enabled
+                );
             }
         }
         _ => {}
@@ -137,12 +159,13 @@ pub fn set_deduplication(app_handle: AppHandle, state: State<'_, crate::app_stat
 
 #[tauri::command]
 pub fn save_setting(
+    app_handle: AppHandle,
     db_state: State<'_, DbState>,
     settings_state: State<'_, crate::app_state::SettingsState>,
     key: String,
     value: String,
 ) -> AppResult<()> {
-    apply_setting_state_update(&settings_state, &key, &value);
+    apply_setting_state_update(&app_handle, &settings_state, &key, &value);
     persist_setting_with_legacy(&db_state, &key, &value)
 }
 

@@ -203,7 +203,7 @@ export const tw = {
         edge_docking_hint: "視窗靠近螢幕邊緣時自動縮進，滑鼠懸停時滑出",
         follow_mouse: "跟隨滑鼠位置呼出",
         disable_webview_gpu: "停用 WebView GPU",
-        disable_webview_gpu_hint: "可降低 GPU 佔用但會增加 CPU 佔用，需重啟應用生效",
+        disable_webview_gpu_hint: "完全停用 GPU 渲染，改用純 CPU 渲染。可大幅降低記憶體佔用但會增加 CPU 佔用並可能導致動畫/捲動卡頓。注意：閒置銷毀已會自動釋放 WebView2 GPU 行程（Windows 上節省約 300MB），大部分使用者無需開啟此選項",
         idle_destroy_enabled: "閒置釋放渲染執行緒",
         idle_destroy_enabled_hint: "前台視窗隱藏超過設定時長後，自動銷毀渲染執行緒以釋放 WebView 程序佔用的記憶體。再次呼出時會自動重建",
         idle_destroy_seconds: "閒置銷毀時長",

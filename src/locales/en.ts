@@ -204,7 +204,7 @@ export const en = {
         edge_docking_hint: "Auto-hide window when near screen edges, slide out on hover",
         follow_mouse: "Follow Mouse Position",
         disable_webview_gpu: "Disable WebView GPU",
-        disable_webview_gpu_hint: "Reduces GPU memory but increases CPU usage, requires app restart",
+        disable_webview_gpu_hint: "Fully disable GPU rendering and fall back to pure CPU. Saves more memory but raises CPU usage and can stutter animations and scrolling. Note: idle destruction already releases the WebView2 GPU process on Windows (~300MB) so most users do not need to enable this",
         idle_destroy_enabled: "Release renderer on idle",
         idle_destroy_enabled_hint: "After the front window has been hidden for the configured duration, the renderer process is automatically destroyed to free WebView memory. It is recreated on the next show",
         idle_destroy_seconds: "Idle destroy duration",

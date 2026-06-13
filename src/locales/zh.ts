@@ -203,7 +203,7 @@ export const zh = {
         edge_docking_hint: "窗口靠近屏幕边缘时自动缩进，鼠标悬停时滑出",
         follow_mouse: "跟随鼠标位置呼出",
         disable_webview_gpu: "禁用 WebView GPU",
-        disable_webview_gpu_hint: "降低 GPU 占用但会增加 CPU 占用，重启应用后生效",
+        disable_webview_gpu_hint: "完全禁用 GPU 渲染，使用纯 CPU 渲染。可大幅降低内存占用但会增加 CPU 占用并导致动画/滚动卡顿。注意：闲置销毁已经会自动释放 WebView2 GPU 进程（Windows 上节省约 300MB），无需开启此选项即可获得大部分收益",
         idle_destroy_enabled: "闲置释放渲染线程",
         idle_destroy_enabled_hint: "前台窗口隐藏超过设定时长后，自动销毁渲染线程以释放 WebView 进程占用的内存。再次呼出时会自动重建",
         idle_destroy_seconds: "闲置销毁时长",

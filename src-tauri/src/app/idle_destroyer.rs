@@ -111,6 +111,18 @@ pub fn try_destroy_idle(app: &AppHandle) -> bool {
         let _ = win.destroy();
     }
 
+    // WebView2's GPU helper process is a singleton that survives the
+    // renderer destruction. On Linux WebKitGTK the GPU lives inside the
+    // WebKitWebProcess we just killed. Without this follow-up, Windows
+    // users keep paying ~300MB for a renderer they cannot see.
+    let killed_helpers = crate::app::webview_proc::kill_our_webview_helpers();
+    if killed_helpers > 0 {
+        crate::info!(
+            "[idle-destroyer] Released {} WebView helper process(es)",
+            killed_helpers
+        );
+    }
+
     // We can't guarantee the runtime has freed the label yet, but we mark intent
     // so the recreate path polls correctly.
     WINDOW_LIFECYCLE.store(LIFECYCLE_CLOSED, Ordering::SeqCst);

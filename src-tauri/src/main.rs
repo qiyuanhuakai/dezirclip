@@ -101,22 +101,13 @@ fn should_disable_webview_gpu() -> bool {
 }
 
 fn apply_webview2_gpu_switch() {
-    if !should_disable_webview_gpu() {
-        return;
-    }
-    let key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
-    let extra = "--disable-gpu";
-    let merged = match std::env::var(key) {
-        Ok(existing) if !existing.trim().is_empty() => {
-            if existing.contains(extra) {
-                existing
-            } else {
-                format!("{existing} {extra}")
-            }
-        }
-        _ => extra.to_string(),
-    };
-    std::env::set_var(key, merged);
+    // Default keeps the GPU enabled so theme animations and scrolling stay
+    // smooth. Users who want the full memory win can opt in via the
+    // Settings panel; the change then re-applies the env var through the
+    // `save_setting` command and forces a webview recreate so it takes
+    // effect without an app restart.
+    let enabled = should_disable_webview_gpu();
+    app::gpu_switcher::apply_gpu_disable_env(enabled);
 }
 
 fn main() {
