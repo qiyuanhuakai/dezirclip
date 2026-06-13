@@ -22,5 +22,7 @@ Thumbs.db
 .vscode/
 .trae
 .claude/
+.opencode/
+.omo/
 CLAUDE.md
 AGENTS.md
