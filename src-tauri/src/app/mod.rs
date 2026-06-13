@@ -1,4 +1,5 @@
 pub mod window_manager;
+pub mod app_exit;
 pub mod hooks;
 pub mod commands;
 pub mod system;
