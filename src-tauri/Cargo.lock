@@ -4209,6 +4209,7 @@ dependencies = [
  "tokio",
  "urlencoding",
  "uuid",
+ "webview2-com",
  "window-vibrancy 0.7.1",
  "windows",
  "windows-core 0.61.2",
