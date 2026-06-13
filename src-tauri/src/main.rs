@@ -11,6 +11,7 @@ pub mod global_state;
 pub mod logger;
 pub mod migration;
 
+#[cfg(target_os = "windows")]
 use std::sync::atomic::{Ordering};
 use crate::global_state::*;
 use crate::app::setup;
@@ -209,6 +210,7 @@ fn main() {
 
             app::commands::set_theme,
             app::commands::get_platform_info,
+            app::commands::get_system_theme_mode,
             app::commands::register_hotkey,
             app::commands::test_hotkey_available,
 
@@ -237,7 +239,16 @@ fn main() {
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::scan_installed_apps,
             #[cfg(target_os = "windows")]
-            infrastructure::windows_api::apps::get_associated_apps
+            infrastructure::windows_api::apps::get_associated_apps,
+
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::get_system_default_app,
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::get_executable_icon,
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::scan_installed_apps,
+            #[cfg(target_os = "linux")]
+            infrastructure::linux_api::apps::get_associated_apps
         ])
         .on_window_event(|window, event| {
             setup::handle_window_event(window, event);

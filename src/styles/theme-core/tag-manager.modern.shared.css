@@ -99,3 +99,122 @@
   background: var(--modern-tag-card-bg);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-sidebar,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .content-toolbar {
+  background: var(--tag-manager-panel-bg, rgba(255, 255, 255, 0.09)) !important;
+  border-color: var(--tag-manager-border, rgba(255, 255, 255, 0.11)) !important;
+  backdrop-filter: blur(18px) saturate(140%) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-search-box {
+  background: var(--tag-manager-input-bg, rgba(255, 255, 255, 0.12)) !important;
+  border-color: var(--tag-manager-strong-border, rgba(255, 255, 255, 0.16)) !important;
+  backdrop-filter: blur(14px) saturate(135%) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .items-area {
+  background: var(--tag-manager-content-bg, rgba(255, 255, 255, 0.035)) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-item.active {
+  color: #ffffff;
+  background: var(--accent-color);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .themed-card {
+  background: var(--tag-manager-card-bg, rgba(255, 255, 255, 0.105)) !important;
+  color: var(--tag-manager-text-primary, var(--text-primary)) !important;
+  border-color: var(--tag-manager-strong-border, rgba(255, 255, 255, 0.16)) !important;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(16px) saturate(135%) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .themed-card:hover {
+  background: var(--tag-manager-card-hover-bg, rgba(255, 255, 255, 0.15)) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-content,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .sidebar-header {
+  background: transparent !important;
+  color: var(--tag-manager-text-primary, var(--text-primary)) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-search-box input,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-name,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .selected-tag-indicator,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .breadcrumb-text,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-body-text {
+  color: var(--tag-manager-text-primary, var(--text-primary)) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-search-box input::placeholder,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-badge,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-footer,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .meta-time,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .meta-usage,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog p {
+  color: var(--tag-manager-text-muted, var(--text-muted, #c7ccd8)) !important;
+  opacity: 0.9 !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .tag-color-dot {
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-media {
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-action-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .del-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .sort-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .toggle-btn,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .add-item-btn {
+  background: var(--tag-manager-button-bg, rgba(255, 255, 255, 0.11)) !important;
+  color: var(--tag-manager-text-primary, var(--text-primary)) !important;
+  border-color: var(--tag-manager-strong-border, rgba(255, 255, 255, 0.15)) !important;
+  backdrop-filter: blur(12px) saturate(135%) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .card-action-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .del-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .sort-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .toggle-btn:hover,
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .add-item-btn:hover {
+  background: var(--tag-manager-button-hover-bg, rgba(255, 255, 255, 0.16)) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .modal-overlay {
+  background: rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog h3 {
+  color: var(--tag-manager-text-primary, var(--text-primary)) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog-button {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: var(--tag-manager-text-primary, var(--text-primary)) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .confirm-dialog-button.primary {
+  background: var(--accent-color) !important;
+  border-color: var(--accent-color) !important;
+  color: #ffffff !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .modal-input-field .modal-textarea {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  color: var(--tag-manager-text-primary, var(--text-primary)) !important;
+}
+
+body.dark-mode .themed-tag-manager:is(.theme-mica, .theme-acrylic) .modal-input-field .modal-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.45) !important;
+}

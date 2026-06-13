@@ -2,12 +2,6 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, currentMonitor } from "@tauri-apps/api/window";
 import {
-    FileText,
-    Image as ImageIcon,
-    Link as LinkIcon,
-    Code,
-    File,
-    Video,
     AppWindow,
     Clock
 } from "lucide-react";
@@ -16,7 +10,10 @@ import { getConciseTime } from "../../../shared/lib/utils";
 import type { Locale } from "../../../shared/types";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
+import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
+import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
+import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 
 type PreviewPayload = {
     contentType: string;
@@ -33,74 +30,9 @@ type PreviewPayload = {
     clipboardTagFontSize?: number;
 };
 
-const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
-const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
+import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
-const extractRichImageFallback = (html?: string): { cleanHtml?: string; imagePayload?: string } => {
-    if (!html) return {};
-    const start = html.lastIndexOf(RICH_IMAGE_FALLBACK_PREFIX);
-    if (start < 0) return { cleanHtml: html };
-
-    const markerStart = start + RICH_IMAGE_FALLBACK_PREFIX.length;
-    const endRel = html.slice(markerStart).indexOf(RICH_IMAGE_FALLBACK_SUFFIX);
-    if (endRel < 0) return { cleanHtml: html };
-
-    const markerEnd = markerStart + endRel;
-    const payload = html.slice(markerStart, markerEnd).trim();
-    const cleanHtml = `${html.slice(0, start)}${html.slice(markerEnd + RICH_IMAGE_FALLBACK_SUFFIX.length)}`.trim();
-    return {
-        cleanHtml: cleanHtml || html,
-        imagePayload: payload || undefined
-    };
-};
-
-const resolveRichImageSrc = (payload: string): string | null => {
-    const value = payload.trim();
-    if (!value) return null;
-    if (value.startsWith("data:image/")) return value;
-    if (/^https?:\/\/asset\.localhost\//i.test(value)) return value;
-    return toTauriLocalImageSrc(value);
-};
-
-const COMPACT_PREVIEW_DEBUG = false;
-const RICH_PREVIEW_DEBUG = import.meta.env.DEV;
-const compactPreviewLog = (...args: unknown[]) => {
-    if (!COMPACT_PREVIEW_DEBUG) return;
-    const ts = new Date().toISOString();
-    console.log(`[CompactPreview][Preview][${ts}]`, ...args);
-};
-const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) => {
-    if (!RICH_PREVIEW_DEBUG) return;
-    console.warn("[RichTextPreview][CompactWindow]", stage, detail || {});
-};
-
-const getIcon = (type: string) => {
-    switch (type) {
-        case "text": return <FileText size={14} />;
-        case "image": return <ImageIcon size={14} />;
-        case "url": return <LinkIcon size={14} />;
-        case "code": return <Code size={14} />;
-        case "file": return <File size={14} />;
-        case "video": return <Video size={14} />;
-        default: return <FileText size={14} />;
-    }
-};
-
-const seekVideoPreviewFrame = (video: HTMLVideoElement | null) => {
-    if (!video) return;
-    const duration = video.duration;
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    const maxSeek = Math.max(duration - 0.05, 0);
-    if (maxSeek <= 0) return;
-    const preferred = Math.min(duration * 0.1, 2);
-    const target = Math.min(Math.max(preferred, 0.1), maxSeek);
-    if (target <= 0) return;
-    try {
-        video.currentTime = target;
-    } catch {
-        // Ignore seek errors; fallback will just show the first frame.
-    }
-};
+const getIcon = (type: string) => getContentTypeIcon(type);
 
 const applyTheme = (payload: PreviewPayload) => {
     const theme = payload.theme || "mica";
@@ -142,24 +74,17 @@ const CompactPreviewWindow = () => {
     const requestResizeRef = useRef<() => void>(() => {});
     const previewBoundsRef = useRef({ width: 560, height: 560, mediaWidth: 520, mediaHeight: 360 });
     const lastSentSizeRef = useRef<{ width: number; height: number } | null>(null);
-    const richImageFallbackSrc = useMemo(() => {
-        if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
-        const { imagePayload } = extractRichImageFallback(payload.htmlContent);
-        if (!imagePayload) return null;
-        const src = resolveRichImageSrc(imagePayload);
-        if (!src) return null;
-        return src;
-    }, [payload]);
+    const richPreviewData = useMemo(() => getRichPreviewData(payload), [payload?.contentType, payload?.htmlContent]);
+    const richImageFallbackSrc = richPreviewData.imageSrc;
+    const richTextSnapshotHtml = richPreviewData.cleanHtml || payload?.htmlContent || "";
     const richTextSnapshotSrc = useMemo(() => {
         if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
         if (!payload.richTextSnapshotPreview) return null;
-        const { cleanHtml } = extractRichImageFallback(payload.htmlContent);
-        const htmlForSnapshot = cleanHtml || payload.htmlContent;
-        return getRichTextSnapshotDataUrl(htmlForSnapshot, {
+        return getRichTextSnapshotDataUrl(richTextSnapshotHtml, {
             width: 560,
             maxHeight: 1200
         });
-    }, [payload]);
+    }, [payload?.contentType, payload?.htmlContent, payload?.richTextSnapshotPreview, richTextSnapshotHtml]);
     const effectiveRichTextSnapshotSrc = snapshotFailed ? null : richTextSnapshotSrc;
     const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
     const useSnapshotPreviewImage = !effectiveRichImageFallbackSrc && !!effectiveRichTextSnapshotSrc;
@@ -253,7 +178,11 @@ const CompactPreviewWindow = () => {
         let timerB: number | null = null;
         let timerC: number | null = null;
         const updateSize = () => {
+            if (raf) {
+                window.cancelAnimationFrame(raf);
+            }
             raf = window.requestAnimationFrame(() => {
+                raf = 0;
                 const container = containerRef.current;
                 if (!container) {
                     compactPreviewLog("skip measure: container missing");
@@ -482,11 +411,10 @@ const CompactPreviewWindow = () => {
                     />
                 );
             }
-            const { cleanHtml } = extractRichImageFallback(payload.htmlContent);
             return (
                 <HtmlContent
                     className="rich-text-preview"
-                    htmlContent={cleanHtml || payload.htmlContent}
+                    htmlContent={richPreviewData.cleanHtml || payload.htmlContent}
                     fallbackText={payload.preview || payload.content}
                     preview={false}
                     style={{
@@ -500,7 +428,7 @@ const CompactPreviewWindow = () => {
             );
         }
         return payload.content || payload.preview || "";
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml]);
 
     return (
         <div className="compact-preview-root">

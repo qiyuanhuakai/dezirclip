@@ -1,7 +1,7 @@
 import Select from "react-select";
 import type { SingleValue } from "react-select";
 
-export interface ThemedSelectOption {
+interface ThemedSelectOption {
   value: string;
   label: string;
   disabled?: boolean;

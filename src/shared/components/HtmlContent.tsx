@@ -149,7 +149,7 @@ const HtmlContent = ({ htmlContent, fallbackText, className, style, preview }: H
     return "40px";
   })();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (preview) return;
     if (!contentRef.current) return;
 
@@ -167,7 +167,7 @@ const HtmlContent = ({ htmlContent, fallbackText, className, style, preview }: H
     return () => observer.disconnect();
   }, [preview]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!isVisible || !contentRef.current) return;
     const prev = processedRef.current;
     if (prev && prev.htmlContent === htmlContent && prev.preview === preview && prev.fallbackText === fallbackText) {

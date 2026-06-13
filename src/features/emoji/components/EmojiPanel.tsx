@@ -75,7 +75,7 @@ const isImageFile = (file: File) => {
   return IMAGE_EXTS.has(ext);
 };
 
-const fileToDataUrl = (file: File) =>
+const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -83,8 +83,10 @@ const fileToDataUrl = (file: File) =>
       else reject(new Error("Invalid file result"));
     };
     reader.onerror = () => reject(reader.error || new Error("File read failed"));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
+
+const fileToDataUrl = (file: File) => blobToDataUrl(file);
 
 const parseSrcset = (srcset: string) => {
   const first = srcset.split(",")[0]?.trim() || "";
@@ -345,6 +347,17 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     await addFavoriteFiles(fileList);
   };
 
+  const urlToDataUrl = async (url: string): Promise<string | null> => {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return blobToDataUrl(blob);
+    } catch {
+      return null;
+    }
+  };
+
   const handleDomDropDataTransfer = async (dt: DataTransfer | null) => {
     const files = getFilesFromDataTransfer(dt);
     if (files.length > 0) {
@@ -356,6 +369,15 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     const dataUrls = urls.filter((url) => url.startsWith("data:"));
     if (dataUrls.length > 0) {
       await addFavoriteDataUrls(dataUrls);
+    }
+    const httpUrls = urls.filter((url) => url.startsWith("http://") || url.startsWith("https://"));
+    if (httpUrls.length > 0) {
+      const fetchedDataUrls = (await Promise.all(httpUrls.map(urlToDataUrl))).filter(
+        (u): u is string => u !== null
+      );
+      if (fetchedDataUrls.length > 0) {
+        await addFavoriteDataUrls(fetchedDataUrls);
+      }
     }
   };
 

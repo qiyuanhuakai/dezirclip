@@ -1,20 +1,54 @@
+use crate::database::{
+    calc_image_hash, calc_text_hash, has_sensitive_tag, is_text_type, save_image_to_file,
+    ENCRYPT_PREFIX,
+};
+use crate::domain::models::ClipboardEntry;
+use crate::infrastructure::encryption;
+use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
+use rusqlite::params;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::encryption;
-use crate::database::{
-    calc_text_hash, calc_image_hash, 
-    ENCRYPT_PREFIX, save_image_to_file,
-    is_text_type, has_sensitive_tag
-};
-use rusqlite::params;
-use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
 use urlencoding::decode;
 
 const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
+const HISTORY_CONTENT_PREVIEW_CHARS: usize = 2_000;
+const HISTORY_PREVIEW_CHARS: usize = 500;
+const HISTORY_HTML_PREVIEW_CHARS: usize = 5_000;
+const HISTORY_LIST_SELECT_COLUMNS: &str = "id, content_type, \
+    CASE WHEN content LIKE 'linux:%' OR content LIKE 'dpapi:%' THEN content ELSE substr(content, 1, 2004) END, \
+    CASE WHEN html_content LIKE 'linux:%' OR html_content LIKE 'dpapi:%' THEN html_content ELSE substr(html_content, 1, 5004) END, \
+    source_app, timestamp, \
+    CASE WHEN preview LIKE 'linux:%' OR preview LIKE 'dpapi:%' THEN preview ELSE substr(preview, 1, 504) END, \
+    is_pinned, tags, use_count, is_external, pinned_order, source_app_path";
+
+fn truncate_chars_with_suffix(input: &str, limit: usize, suffix: &str) -> String {
+    let Some((cut, _)) = input.char_indices().nth(limit) else {
+        return input.to_string();
+    };
+    let mut out = String::with_capacity(cut + suffix.len());
+    out.push_str(&input[..cut]);
+    out.push_str(suffix);
+    out
+}
+
+fn history_content_preview(value: &str) -> String {
+    truncate_chars_with_suffix(
+        value,
+        HISTORY_CONTENT_PREVIEW_CHARS,
+        "... [Truncated for speed]",
+    )
+}
+
+fn history_preview(value: &str) -> String {
+    truncate_chars_with_suffix(value, HISTORY_PREVIEW_CHARS, "...")
+}
+
+fn history_html_preview(value: &str) -> String {
+    truncate_chars_with_suffix(value, HISTORY_HTML_PREVIEW_CHARS, "... [HTML Truncated]")
+}
 
 struct SimpleLruCache<T: Clone> {
     map: HashMap<String, T>,
@@ -69,10 +103,18 @@ impl<T: Clone> SimpleLruCache<T> {
     }
 }
 
-
 pub trait ClipboardRepository {
-    fn save(&self, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>) -> Result<i64, String>;
-    fn get_history(&self, limit: i32, offset: i32, content_type: Option<&str>) -> Result<Vec<ClipboardEntry>, String>;
+    fn save(
+        &self,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<i64, String>;
+    fn get_history(
+        &self,
+        limit: i32,
+        offset: i32,
+        content_type: Option<&str>,
+    ) -> Result<Vec<ClipboardEntry>, String>;
     fn search(&self, query: &str, limit: i32) -> Result<Vec<ClipboardEntry>, String>;
     fn delete(&self, id: i64, data_dir: Option<&std::path::Path>) -> Result<(), String>;
     fn clear(&self, data_dir: Option<&std::path::Path>) -> Result<(), String>;
@@ -82,11 +124,18 @@ pub trait ClipboardRepository {
     fn toggle_pin(&self, id: i64, is_pinned: bool) -> Result<(), String>;
     fn update_pinned_order(&self, orders: Vec<(i64, i64)>) -> Result<(), String>;
     fn get_entry_by_id(&self, id: i64) -> Result<Option<ClipboardEntry>, String>;
-    fn get_entry_by_content(&self, content: &str, content_type: Option<&str>) -> Result<Option<i64>, String>;
+    fn get_entry_by_content(
+        &self,
+        content: &str,
+        content_type: Option<&str>,
+    ) -> Result<Option<i64>, String>;
     fn update_entry_content(&self, id: i64, content: &str, preview: &str) -> Result<(), String>;
     fn get_entry_content(&self, id: i64) -> Result<Option<String>, String>;
     fn get_entry_content_full(&self, id: i64) -> Result<Option<(String, String)>, String>;
-    fn get_entry_content_with_html(&self, id: i64) -> Result<Option<(String, String, Option<String>)>, String>;
+    fn get_entry_content_with_html(
+        &self,
+        id: i64,
+    ) -> Result<Option<(String, String, Option<String>)>, String>;
 }
 
 pub struct SqliteClipboardRepository {
@@ -95,7 +144,6 @@ pub struct SqliteClipboardRepository {
     search_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     content_cache: Arc<Mutex<SimpleLruCache<(String, String, Option<String>)>>>,
 }
-
 
 impl SqliteClipboardRepository {
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
@@ -127,11 +175,11 @@ impl SqliteClipboardRepository {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2).ok(), row.get(3)?, row.get(4)?)),
             ).map_err(|e| e.to_string())?;
 
-        let already_encrypted = content_raw.starts_with(ENCRYPT_PREFIX)
-            && preview_raw.starts_with(ENCRYPT_PREFIX)
+        let already_encrypted = encryption::is_encrypted_value(&content_raw)
+            && encryption::is_encrypted_value(&preview_raw)
             && html_raw
                 .as_ref()
-                .map(|h| h.starts_with(ENCRYPT_PREFIX))
+                .map(|h| encryption::is_encrypted_value(h))
                 .unwrap_or(true);
         if already_encrypted {
             return Ok(());
@@ -165,11 +213,11 @@ impl SqliteClipboardRepository {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2).ok(), row.get(3)?, row.get(4)?)),
             ).map_err(|e| e.to_string())?;
 
-        let any_encrypted = content_raw.starts_with(ENCRYPT_PREFIX)
-            || preview_raw.starts_with(ENCRYPT_PREFIX)
+        let any_encrypted = encryption::is_encrypted_value(&content_raw)
+            || encryption::is_encrypted_value(&preview_raw)
             || html_raw
                 .as_ref()
-                .map(|h| h.starts_with(ENCRYPT_PREFIX))
+                .map(|h| encryption::is_encrypted_value(h))
                 .unwrap_or(false);
         if !any_encrypted {
             return Ok(());
@@ -197,8 +245,11 @@ impl SqliteClipboardRepository {
         entry_id: i64,
         tags: &[String],
     ) -> Result<(), String> {
-        conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", params![entry_id])
-            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "DELETE FROM entry_tags WHERE entry_id = ?",
+            params![entry_id],
+        )
+        .map_err(|e| e.to_string())?;
         for tag in tags {
             let clean = tag.trim();
             if clean.is_empty() {
@@ -216,7 +267,7 @@ impl SqliteClipboardRepository {
     fn maybe_encrypt_text(&self, value: &str) -> String {
         #[cfg(not(feature = "portable"))]
         {
-            if value.starts_with(ENCRYPT_PREFIX) {
+            if encryption::is_encrypted_value(value) {
                 return value.to_string();
             }
             encryption::encrypt_value(value).unwrap_or_else(|| value.to_string())
@@ -228,7 +279,7 @@ impl SqliteClipboardRepository {
     }
 
     fn maybe_decrypt_text(&self, value: &str) -> String {
-        if value.starts_with(ENCRYPT_PREFIX) {
+        if encryption::is_encrypted_value(value) {
             encryption::decrypt_value(value).unwrap_or_else(|| value.to_string())
         } else {
             value.to_string()
@@ -309,7 +360,12 @@ impl SqliteClipboardRepository {
         paths.into_iter().collect()
     }
 
-    pub fn save_with_conn(&self, conn: &Connection, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>) -> Result<i64, String> {
+    pub fn save_with_conn(
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<i64, String> {
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&entry.tags);
 
@@ -331,18 +387,18 @@ impl SqliteClipboardRepository {
                 calc_image_hash(&entry.content).unwrap_or(0)
             } else {
                 if let Ok(img) = image::open(&entry.content) {
-                     let thumb = img.resize_exact(32, 32, image::imageops::FilterType::Nearest);
-                     use std::collections::hash_map::DefaultHasher;
-                     use std::hash::{Hash, Hasher};
-                     let mut hasher = DefaultHasher::new();
-                     thumb.as_bytes().hash(&mut hasher);
-                     hasher.finish() as i64
+                    let thumb = img.resize_exact(32, 32, image::imageops::FilterType::Nearest);
+                    use std::collections::hash_map::DefaultHasher;
+                    use std::hash::{Hash, Hasher};
+                    let mut hasher = DefaultHasher::new();
+                    thumb.as_bytes().hash(&mut hasher);
+                    hasher.finish() as i64
                 } else {
                     0
                 }
             }
         } else {
-                calc_text_hash(&final_content) as i64
+            calc_text_hash(&final_content) as i64
         };
 
         let (content, preview, content_hash, html_content) = if should_encrypt {
@@ -352,9 +408,19 @@ impl SqliteClipboardRepository {
                 .html_content
                 .as_ref()
                 .map(|html| self.maybe_encrypt_text(html));
-            (encrypted_content, encrypted_preview, calculated_hash, encrypted_html)
+            (
+                encrypted_content,
+                encrypted_preview,
+                calculated_hash,
+                encrypted_html,
+            )
         } else {
-            (final_content, entry.preview.clone(), calculated_hash, entry.html_content.clone())
+            (
+                final_content,
+                entry.preview.clone(),
+                calculated_hash,
+                entry.html_content.clone(),
+            )
         };
 
         let mut seen: HashSet<String> = HashSet::new();
@@ -399,7 +465,8 @@ impl SqliteClipboardRepository {
                     entry.source_app_path.as_deref(),
                     entry.id
                 ],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
             self.sync_entry_tags_with_conn(conn, entry.id, &cleaned_tags)?;
             self.invalidate_caches();
             Ok(entry.id)
@@ -431,48 +498,65 @@ impl SqliteClipboardRepository {
         }
     }
 
-    pub fn delete_with_conn(&self, conn: &Connection, id: i64, data_dir: Option<&std::path::Path>) -> Result<(), String> {
+    pub fn delete_with_conn(
+        &self,
+        conn: &Connection,
+        id: i64,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<(), String> {
         // Check for external files to delete
         if let Some(dir) = data_dir {
-             let attachments_dir = dir.join("attachments");
-             let mut stmt = conn
-                 .prepare("SELECT content, html_content, is_external FROM clipboard_history WHERE id = ?")
-                 .map_err(|e| e.to_string())?;
-             
-             if let Ok(entry) = stmt.query_row([id], |row| {
-                 let content_raw: String = row.get(0)?;
-                 let html_raw: Option<String> = row.get(1).ok();
-                 let is_ext: i32 = row.get(2)?;
-                 Ok((content_raw, html_raw, is_ext == 1))
-             }) {
-                 let files_to_remove = self.collect_attachment_paths_for_cleanup(
-                     &entry.0,
-                     entry.1.as_deref(),
-                     entry.2,
-                     &attachments_dir,
-                 );
-                 for path in files_to_remove {
-                     if path.exists() {
-                         let _ = std::fs::remove_file(path);
-                     }
-                 }
-             }
+            let attachments_dir = dir.join("attachments");
+            let mut stmt = conn
+                .prepare(
+                    "SELECT content, html_content, is_external FROM clipboard_history WHERE id = ?",
+                )
+                .map_err(|e| e.to_string())?;
+
+            if let Ok(entry) = stmt.query_row([id], |row| {
+                let content_raw: String = row.get(0)?;
+                let html_raw: Option<String> = row.get(1).ok();
+                let is_ext: i32 = row.get(2)?;
+                Ok((content_raw, html_raw, is_ext == 1))
+            }) {
+                let files_to_remove = self.collect_attachment_paths_for_cleanup(
+                    &entry.0,
+                    entry.1.as_deref(),
+                    entry.2,
+                    &attachments_dir,
+                );
+                for path in files_to_remove {
+                    if path.exists() {
+                        let _ = std::fs::remove_file(path);
+                    }
+                }
+            }
         }
 
-        conn.execute("DELETE FROM clipboard_history WHERE id = ?", [id]).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM clipboard_history WHERE id = ?", [id])
+            .map_err(|e| e.to_string())?;
         let _ = conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", params![id]);
         self.invalidate_caches();
         Ok(())
     }
 
-    pub fn find_by_content_with_conn(&self, conn: &Connection, content: &str, content_type: Option<&str>) -> Result<Option<i64>, String> {
+    pub fn find_by_content_with_conn(
+        &self,
+        conn: &Connection,
+        content: &str,
+        content_type: Option<&str>,
+    ) -> Result<Option<i64>, String> {
         if content_type == Some("image") {
             if let Some(hash) = calc_image_hash(content) {
-                let mut stmt = conn.prepare(
-                    "SELECT id FROM clipboard_history \
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id FROM clipboard_history \
                      WHERE (content_type = 'image' AND content_hash = ?) OR content = ?",
-                ).map_err(|e| e.to_string())?;
-                let mut rows = stmt.query(params![hash, content]).map_err(|e| e.to_string())?;
+                    )
+                    .map_err(|e| e.to_string())?;
+                let mut rows = stmt
+                    .query(params![hash, content])
+                    .map_err(|e| e.to_string())?;
                 if let Some(row) = rows.next().map_err(|e| e.to_string())? {
                     return Ok(Some(row.get(0).map_err(|e| e.to_string())?));
                 }
@@ -481,13 +565,15 @@ impl SqliteClipboardRepository {
         }
 
         let hash = calc_text_hash(content) as i64;
-        
+
         if let Some(ct) = content_type {
             let mut stmt = conn.prepare(
                 "SELECT id FROM clipboard_history \
                  WHERE (content_type = ? AND content_hash = ?) OR (content_type = ? AND content = ?)",
             ).map_err(|e| e.to_string())?;
-            let mut rows = stmt.query(params![ct, hash, ct, content]).map_err(|e| e.to_string())?;
+            let mut rows = stmt
+                .query(params![ct, hash, ct, content])
+                .map_err(|e| e.to_string())?;
             if let Some(row) = rows.next().map_err(|e| e.to_string())? {
                 Ok(Some(row.get(0).map_err(|e| e.to_string())?))
             } else {
@@ -498,7 +584,9 @@ impl SqliteClipboardRepository {
                 "SELECT id FROM clipboard_history \
                  WHERE ((content_type IN ('text', 'rich_text', 'code', 'url')) AND content_hash = ?) OR content = ?",
             ).map_err(|e| e.to_string())?;
-            let mut rows = stmt.query(params![hash, content]).map_err(|e| e.to_string())?;
+            let mut rows = stmt
+                .query(params![hash, content])
+                .map_err(|e| e.to_string())?;
             if let Some(row) = rows.next().map_err(|e| e.to_string())? {
                 Ok(Some(row.get(0).map_err(|e| e.to_string())?))
             } else {
@@ -507,16 +595,23 @@ impl SqliteClipboardRepository {
         }
     }
 
-    pub fn enforce_limit_with_conn(&self, conn: &Connection, data_dir: Option<&std::path::Path>) -> Result<Vec<i64>, String> {
+    pub fn enforce_limit_with_conn(
+        &self,
+        conn: &Connection,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<Vec<i64>, String> {
         // Check if storage limit is enabled
-        if let Ok(Some(limit_enabled_str)) = SqliteSettingsRepository::get_raw(conn, "app.persistent_limit_enabled") {
+        if let Ok(Some(limit_enabled_str)) =
+            SqliteSettingsRepository::get_raw(conn, "app.persistent_limit_enabled")
+        {
             if limit_enabled_str == "false" {
                 return Ok(Vec::new());
             }
         }
-        
+
         // Get the storage limit
-        if let Ok(Some(limit_str)) = SqliteSettingsRepository::get_raw(conn, "app.persistent_limit") {
+        if let Ok(Some(limit_str)) = SqliteSettingsRepository::get_raw(conn, "app.persistent_limit")
+        {
             if let Ok(limit) = limit_str.parse::<i32>() {
                 // Count non-pinned entries that have no tags
                 let count: i32 = conn.query_row(
@@ -524,19 +619,23 @@ impl SqliteClipboardRepository {
                     [],
                     |row| row.get(0)
                 ).map_err(|e| e.to_string())?;
-                
+
                 if count > limit {
                     // First, get the IDs that will be deleted
                     let to_delete = count - limit;
                     let deleted_ids: Vec<i64> = {
-                        let mut stmt = conn.prepare(
-                            "SELECT id FROM clipboard_history 
+                        let mut stmt = conn
+                            .prepare(
+                                "SELECT id FROM clipboard_history
                              WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)
-                             ORDER BY timestamp ASC 
-                             LIMIT ?"
-                        ).map_err(|e| e.to_string())?;
-                        
-                        let rows = stmt.query_map([to_delete], |row| row.get(0)).map_err(|e| e.to_string())?;
+                             ORDER BY timestamp ASC
+                             LIMIT ?",
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        let rows = stmt
+                            .query_map([to_delete], |row| row.get(0))
+                            .map_err(|e| e.to_string())?;
                         rows.filter_map(|r| r.ok()).collect()
                     };
                     // Actually delete records (and files if needed)
@@ -547,10 +646,15 @@ impl SqliteClipboardRepository {
                 }
             }
         }
-        
+
         Ok(Vec::new())
     }
-    pub fn toggle_pin_with_conn(&self, conn: &Connection, id: i64, is_pinned: bool) -> Result<(), String> {
+    pub fn toggle_pin_with_conn(
+        &self,
+        conn: &Connection,
+        id: i64,
+        is_pinned: bool,
+    ) -> Result<(), String> {
         if is_pinned {
             // Set pinned_order to max + 1 so it appears at top
             conn.execute(
@@ -564,24 +668,34 @@ impl SqliteClipboardRepository {
             conn.execute(
                 "UPDATE clipboard_history SET is_pinned = 0, pinned_order = 0 WHERE id = ?",
                 params![id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
         }
         self.invalidate_caches();
         Ok(())
     }
 
-    pub fn update_pinned_order_with_conn(&self, conn: &Connection, orders: Vec<(i64, i64)>) -> Result<(), String> {
+    pub fn update_pinned_order_with_conn(
+        &self,
+        conn: &Connection,
+        orders: Vec<(i64, i64)>,
+    ) -> Result<(), String> {
         for (id, order) in orders {
             conn.execute(
                 "UPDATE clipboard_history SET pinned_order = ? WHERE id = ?",
                 params![order, id],
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
         }
         self.invalidate_caches();
         Ok(())
     }
 
-    pub fn get_entry_by_id_with_conn(&self, conn: &Connection, id: i64) -> Result<Option<ClipboardEntry>, String> {
+    pub fn get_entry_by_id_with_conn(
+        &self,
+        conn: &Connection,
+        id: i64,
+    ) -> Result<Option<ClipboardEntry>, String> {
         let mut stmt = conn.prepare(
             "SELECT id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path 
              FROM clipboard_history 
@@ -592,14 +706,14 @@ impl SqliteClipboardRepository {
         if let Some(row) = rows.next().map_err(|e| e.to_string())? {
             let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
             let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-    
+
             let content_raw: String = row.get(2).map_err(|e| e.to_string())?;
             let html_raw: Option<String> = row.get(3).map_err(|e| e.to_string()).unwrap_or(None);
             let preview_raw: String = row.get(6).map_err(|e| e.to_string())?;
             let content = self.maybe_decrypt_text(&content_raw);
             let preview = self.maybe_decrypt_text(&preview_raw);
             let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
-    
+
             Ok(Some(ClipboardEntry {
                 id: row.get(0).map_err(|e| e.to_string())?,
                 content_type: row.get(1).map_err(|e| e.to_string())?,
@@ -632,7 +746,13 @@ impl SqliteClipboardRepository {
             .query_row(
                 "SELECT content, content_type, tags FROM clipboard_history WHERE id = ?",
                 params![id],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
             )
             .map_err(|e| e.to_string())?;
 
@@ -646,7 +766,11 @@ impl SqliteClipboardRepository {
 
         if is_text_type(&content_type) {
             let hash = calc_text_hash(content) as i64;
-            let new_type = if content_type == "rich_text" { "text" } else { &content_type };
+            let new_type = if content_type == "rich_text" {
+                "text"
+            } else {
+                &content_type
+            };
             if should_encrypt {
                 let encrypted_content = self.maybe_encrypt_text(content);
                 let encrypted_preview = self.maybe_encrypt_text(preview);
@@ -680,9 +804,14 @@ impl SqliteClipboardRepository {
         Ok(())
     }
 
-    pub fn get_entry_content_full_with_conn(&self, conn: &Connection, id: i64) -> Result<Option<(String, String)>, String> {
-        let mut stmt =
-            conn.prepare("SELECT content, content_type FROM clipboard_history WHERE id = ?").map_err(|e| e.to_string())?;
+    pub fn get_entry_content_full_with_conn(
+        &self,
+        conn: &Connection,
+        id: i64,
+    ) -> Result<Option<(String, String)>, String> {
+        let mut stmt = conn
+            .prepare("SELECT content, content_type FROM clipboard_history WHERE id = ?")
+            .map_err(|e| e.to_string())?;
         let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
         if let Some(row) = rows.next().map_err(|e| e.to_string())? {
             let content: String = row.get(0).map_err(|e| e.to_string())?;
@@ -704,16 +833,22 @@ impl SqliteClipboardRepository {
                 return Ok(Some(cached));
             }
         }
-        let mut stmt = conn.prepare(
-            "SELECT content, content_type, html_content FROM clipboard_history WHERE id = ?",
-        ).map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT content, content_type, html_content FROM clipboard_history WHERE id = ?",
+            )
+            .map_err(|e| e.to_string())?;
         let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
         if let Some(row) = rows.next().map_err(|e| e.to_string())? {
             let content: String = row.get(0).map_err(|e| e.to_string())?;
             let content_type: String = row.get(1).map_err(|e| e.to_string())?;
             let html_raw: Option<String> = row.get(2).map_err(|e| e.to_string()).unwrap_or(None);
             let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
-            let value = (self.maybe_decrypt_text(&content), content_type, html_content);
+            let value = (
+                self.maybe_decrypt_text(&content),
+                content_type,
+                html_content,
+            );
             if let Ok(mut cache) = self.content_cache.lock() {
                 cache.put(cache_key, value.clone());
             }
@@ -725,12 +860,21 @@ impl SqliteClipboardRepository {
 }
 
 impl ClipboardRepository for SqliteClipboardRepository {
-    fn save(&self, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>) -> Result<i64, String> {
+    fn save(
+        &self,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<i64, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         self.save_with_conn(&conn, entry, data_dir)
     }
 
-    fn get_history(&self, limit: i32, offset: i32, content_type: Option<&str>) -> Result<Vec<ClipboardEntry>, String> {
+    fn get_history(
+        &self,
+        limit: i32,
+        offset: i32,
+        content_type: Option<&str>,
+    ) -> Result<Vec<ClipboardEntry>, String> {
         let cache_key = format!("{}:{}:{}", content_type.unwrap_or("*"), limit, offset);
         if let Ok(mut cache) = self.history_cache.lock() {
             if let Some(cached) = cache.get(&cache_key) {
@@ -745,9 +889,11 @@ impl ClipboardRepository for SqliteClipboardRepository {
             let content_raw: String = row.get(2)?;
             let html_raw: Option<String> = row.get(3).ok();
             let preview_raw: String = row.get(6)?;
-            let content = self.maybe_decrypt_text(&content_raw);
-            let preview = self.maybe_decrypt_text(&preview_raw);
-            let html_content = html_raw.as_ref().map(|v| self.maybe_decrypt_text(v));
+            let content = history_content_preview(&self.maybe_decrypt_text(&content_raw));
+            let preview = history_preview(&self.maybe_decrypt_text(&preview_raw));
+            let html_content = html_raw
+                .as_ref()
+                .map(|v| history_html_preview(&self.maybe_decrypt_text(v)));
 
             Ok((
                 ClipboardEntry {
@@ -782,13 +928,14 @@ impl ClipboardRepository for SqliteClipboardRepository {
 
         let mut mapped_rows = Vec::new();
         if let Some(ct) = content_type {
-            let mut stmt = conn.prepare(
-                "SELECT id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path 
-                 FROM clipboard_history 
-                 WHERE content_type = ? 
-                 ORDER BY is_pinned DESC, pinned_order DESC, timestamp DESC, id DESC 
+            let sql = format!(
+                "SELECT {} FROM clipboard_history \
+                 WHERE content_type = ? \
+                 ORDER BY is_pinned DESC, pinned_order DESC, timestamp DESC, id DESC \
                  LIMIT ? OFFSET ?",
-            ).map_err(|e| e.to_string())?;
+                HISTORY_LIST_SELECT_COLUMNS
+            );
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             let rows = stmt
                 .query_map(params![ct, limit, offset], map_row)
                 .map_err(|e| e.to_string())?;
@@ -796,12 +943,13 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 mapped_rows.push(row.map_err(|e| e.to_string())?);
             }
         } else {
-            let mut stmt = conn.prepare(
-                "SELECT id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path 
-                 FROM clipboard_history 
-                 ORDER BY is_pinned DESC, pinned_order DESC, timestamp DESC, id DESC 
+            let sql = format!(
+                "SELECT {} FROM clipboard_history \
+                 ORDER BY is_pinned DESC, pinned_order DESC, timestamp DESC, id DESC \
                  LIMIT ? OFFSET ?",
-            ).map_err(|e| e.to_string())?;
+                HISTORY_LIST_SELECT_COLUMNS
+            );
+            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
             let rows = stmt
                 .query_map([limit, offset], map_row)
                 .map_err(|e| e.to_string())?;
@@ -815,20 +963,23 @@ impl ClipboardRepository for SqliteClipboardRepository {
             #[cfg(not(feature = "portable"))]
             {
                 let is_sensitive = has_sensitive_tag(&entry.tags);
-                let content_encrypted = content_raw.starts_with(ENCRYPT_PREFIX);
-                let preview_encrypted = preview_raw.starts_with(ENCRYPT_PREFIX);
+                let content_encrypted = encryption::is_encrypted_value(&content_raw);
+                let preview_encrypted = encryption::is_encrypted_value(&preview_raw);
                 let html_encrypted = html_raw
                     .as_ref()
-                    .map(|h| h.starts_with(ENCRYPT_PREFIX))
+                    .map(|h| encryption::is_encrypted_value(h))
                     .unwrap_or(false);
                 let html_needs_encrypt = html_raw
                     .as_ref()
-                    .map(|h| !h.starts_with(ENCRYPT_PREFIX))
+                    .map(|h| !encryption::is_encrypted_value(h))
                     .unwrap_or(false);
 
-                if is_sensitive && (!content_encrypted || !preview_encrypted || html_needs_encrypt) {
+                if is_sensitive && (!content_encrypted || !preview_encrypted || html_needs_encrypt)
+                {
                     let _ = self.encrypt_entry_with_conn(&conn, entry.id);
-                } else if !is_sensitive && (content_encrypted || preview_encrypted || html_encrypted) {
+                } else if !is_sensitive
+                    && (content_encrypted || preview_encrypted || html_encrypted)
+                {
                     let _ = self.decrypt_entry_with_conn(&conn, entry.id);
                 }
             }
@@ -843,7 +994,9 @@ impl ClipboardRepository for SqliteClipboardRepository {
 
     fn search(&self, query: &str, limit: i32) -> Result<Vec<ClipboardEntry>, String> {
         let term = query.trim().to_lowercase();
-        if term.is_empty() { return Ok(Vec::new()); }
+        if term.is_empty() {
+            return Ok(Vec::new());
+        }
         let cache_key = format!("{}:{}", term, limit);
         if let Ok(mut cache) = self.search_cache.lock() {
             if let Some(cached) = cache.get(&cache_key) {
@@ -866,25 +1019,28 @@ impl ClipboardRepository for SqliteClipboardRepository {
                  LIMIT ?",
             ).map_err(|e| e.to_string())?;
 
-            let rows = stmt.query_map(params![term, term, term, limit], |row| {
-                 let tags_str: String = row.get::<_, String>(8).unwrap_or_else(|_| "[]".to_string());
-                 Ok(ClipboardEntry {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: row.get(2)?,
-                    html_content: row.get(3).ok(),
-                    source_app: row.get(4)?,
-                    timestamp: row.get(5)?,
-                    preview: row.get(6)?,
-                    is_pinned: row.get::<_, i32>(7)? == 1,
-                    tags: serde_json::from_str(&tags_str).unwrap_or_default(),
-                    use_count: row.get(9).unwrap_or(0),
-                    is_external: row.get::<_, i32>(10)? == 1,
-                    pinned_order: row.get(11).unwrap_or(0),
-                    source_app_path: row.get(12).unwrap_or(None),
-                    file_preview_exists: true // Simplified for search
-                 })
-            }).map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![term, term, term, limit], |row| {
+                    let tags_str: String =
+                        row.get::<_, String>(8).unwrap_or_else(|_| "[]".to_string());
+                    Ok(ClipboardEntry {
+                        id: row.get(0)?,
+                        content_type: row.get(1)?,
+                        content: row.get(2)?,
+                        html_content: row.get(3).ok(),
+                        source_app: row.get(4)?,
+                        timestamp: row.get(5)?,
+                        preview: row.get(6)?,
+                        is_pinned: row.get::<_, i32>(7)? == 1,
+                        tags: serde_json::from_str(&tags_str).unwrap_or_default(),
+                        use_count: row.get(9).unwrap_or(0),
+                        is_external: row.get::<_, i32>(10)? == 1,
+                        pinned_order: row.get(11).unwrap_or(0),
+                        source_app_path: row.get(12).unwrap_or(None),
+                        file_preview_exists: true, // Simplified for search
+                    })
+                })
+                .map_err(|e| e.to_string())?;
 
             let mut results = Vec::new();
             for row in rows {
@@ -930,34 +1086,38 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 sensitive_tags_sql
             );
 
-            let mut stmt = conn.prepare(&sql_non_sensitive).map_err(|e| e.to_string())?;
-            let rows = stmt.query_map(params![term, limit], |row| {
-                let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
-                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-                let content_raw: String = row.get(2)?;
-                let preview_raw: String = row.get(6)?;
-                let html_raw: Option<String> = row.get(3).ok();
-                let content = self.maybe_decrypt_text(&content_raw);
-                let preview = self.maybe_decrypt_text(&preview_raw);
-                let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
+            let mut stmt = conn
+                .prepare(&sql_non_sensitive)
+                .map_err(|e| e.to_string())?;
+            let rows = stmt
+                .query_map(params![term, limit], |row| {
+                    let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
+                    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+                    let content_raw: String = row.get(2)?;
+                    let preview_raw: String = row.get(6)?;
+                    let html_raw: Option<String> = row.get(3).ok();
+                    let content = self.maybe_decrypt_text(&content_raw);
+                    let preview = self.maybe_decrypt_text(&preview_raw);
+                    let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
 
-                Ok(ClipboardEntry {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content,
-                    html_content,
-                    source_app: row.get(4)?,
-                    timestamp: row.get(5)?,
-                    preview,
-                    is_pinned: row.get::<_, i32>(7)? == 1,
-                    tags,
-                    use_count: row.get(9).unwrap_or(0),
-                    is_external: row.get::<_, i32>(10)? == 1,
-                    pinned_order: row.get(11).unwrap_or(0),
-                    source_app_path: row.get(12).unwrap_or(None),
-                    file_preview_exists: true,
+                    Ok(ClipboardEntry {
+                        id: row.get(0)?,
+                        content_type: row.get(1)?,
+                        content,
+                        html_content,
+                        source_app: row.get(4)?,
+                        timestamp: row.get(5)?,
+                        preview,
+                        is_pinned: row.get::<_, i32>(7)? == 1,
+                        tags,
+                        use_count: row.get(9).unwrap_or(0),
+                        is_external: row.get::<_, i32>(10)? == 1,
+                        pinned_order: row.get(11).unwrap_or(0),
+                        source_app_path: row.get(12).unwrap_or(None),
+                        file_preview_exists: true,
+                    })
                 })
-            }).map_err(|e| e.to_string())?;
+                .map_err(|e| e.to_string())?;
 
             for row in rows {
                 if let Ok(entry) = row {
@@ -994,9 +1154,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
 
                 loop {
                     let mut stmt = conn.prepare(&sql_sensitive).map_err(|e| e.to_string())?;
-                    let rows = stmt.query_map(
-                        params![enc_like, cursor_ts, cursor_id, batch_size],
-                        |row| {
+                    let rows = stmt
+                        .query_map(params![enc_like, cursor_ts, cursor_id, batch_size], |row| {
                             let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
                             Ok(ClipboardEntry {
                                 id: row.get(0)?,
@@ -1014,8 +1173,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                                 source_app_path: row.get(12).unwrap_or(None),
                                 file_preview_exists: true,
                             })
-                        },
-                    ).map_err(|e| e.to_string())?;
+                        })
+                        .map_err(|e| e.to_string())?;
 
                     let mut batch: Vec<ClipboardEntry> = Vec::new();
                     for row in rows {
@@ -1036,10 +1195,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     for entry in batch.iter() {
                         let matches = entry.content.to_lowercase().contains(&term)
                             || entry.source_app.to_lowercase().contains(&term)
-                            || entry
-                                .tags
-                                .iter()
-                                .any(|t| t.to_lowercase().contains(&term));
+                            || entry.tags.iter().any(|t| t.to_lowercase().contains(&term));
 
                         if matches && seen.insert(entry.id) {
                             results.push(entry.clone());
@@ -1082,12 +1238,16 @@ impl ClipboardRepository for SqliteClipboardRepository {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
 
         // Get IDs of unpinned items without tags.
-        let mut stmt = conn.prepare(
-            "SELECT id FROM clipboard_history 
-             WHERE is_pinned = 0 
+        let mut stmt = conn
+            .prepare(
+                "SELECT id FROM clipboard_history
+             WHERE is_pinned = 0
                AND NOT EXISTS (SELECT 1 FROM entry_tags WHERE entry_id = clipboard_history.id)",
-        ).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |row| row.get::<_, i64>(0)).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, i64>(0))
+            .map_err(|e| e.to_string())?;
         let ids: Vec<i64> = rows.filter_map(Result::ok).collect();
 
         // Delete one-by-one so tombstones are recorded for cloud deletion sync.
@@ -1102,8 +1262,12 @@ impl ClipboardRepository for SqliteClipboardRepository {
 
     fn get_count(&self) -> Result<i64, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn.prepare("SELECT COUNT(*) FROM clipboard_history").map_err(|e| e.to_string())?;
-        let count: i64 = stmt.query_row([], |row| row.get(0)).map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT COUNT(*) FROM clipboard_history")
+            .map_err(|e| e.to_string())?;
+        let count: i64 = stmt
+            .query_row([], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
         Ok(count)
     }
 
@@ -1112,7 +1276,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
         conn.execute(
             "UPDATE clipboard_history SET use_count = use_count + 1 WHERE id = ?",
             params![id],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
         self.invalidate_caches();
         Ok(())
     }
@@ -1122,7 +1287,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
         conn.execute(
             "UPDATE clipboard_history SET timestamp = ? WHERE id = ?",
             params![timestamp, id],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
         self.invalidate_caches();
         Ok(())
     }
@@ -1145,7 +1311,11 @@ impl ClipboardRepository for SqliteClipboardRepository {
         self.get_entry_by_id_with_conn(&conn, id)
     }
 
-    fn get_entry_by_content(&self, content: &str, content_type: Option<&str>) -> Result<Option<i64>, String> {
+    fn get_entry_by_content(
+        &self,
+        content: &str,
+        content_type: Option<&str>,
+    ) -> Result<Option<i64>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         self.find_by_content_with_conn(&conn, content, content_type)
     }
@@ -1167,7 +1337,10 @@ impl ClipboardRepository for SqliteClipboardRepository {
             .map(|(content, content_type, _)| (content, content_type)))
     }
 
-    fn get_entry_content_with_html(&self, id: i64) -> Result<Option<(String, String, Option<String>)>, String> {
+    fn get_entry_content_with_html(
+        &self,
+        id: i64,
+    ) -> Result<Option<(String, String, Option<String>)>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         self.get_entry_content_with_html_with_conn(&conn, id)
     }

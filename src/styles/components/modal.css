@@ -5,7 +5,9 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--surface-overlay-bg, rgba(0, 0, 0, 0.5));
+  backdrop-filter: blur(var(--surface-overlay-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--surface-overlay-blur, 0px));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -14,12 +16,14 @@
 }
 
 .modal-content{
-  background: var(--bg-window);
+  background: var(--surface-dialog-bg, var(--bg-window));
   padding: 16px;
-  border: 4px solid var(--border-dark);
-  box-shadow: 10px 10px 0 var(--shadow-color);
+  border: 4px solid var(--surface-dialog-border, var(--border-dark));
+  box-shadow: var(--surface-dialog-shadow, 10px 10px 0 var(--shadow-color));
+  border-radius: var(--surface-dialog-radius, 0);
   width: 100%;
   max-width: 500px;
+  color: var(--text-primary);
 }
 
 .modal-title{
@@ -73,10 +77,13 @@
 
 /* Confirmation Dialog Styles */
 .confirm-dialog{
-  background: var(--bg-panel);
+  background: var(--surface-confirm-bg, var(--bg-panel));
   padding: 24px;
-  border: 4px solid var(--border-dark);
-  box-shadow: 10px 10px 0 var(--shadow-color);
+  border: 4px solid var(--surface-confirm-border, var(--border-dark));
+  box-shadow: var(--surface-confirm-shadow, 10px 10px 0 var(--shadow-color));
+  border-radius: var(--surface-confirm-radius, 0);
+  backdrop-filter: blur(var(--surface-confirm-blur, var(--surface-overlay-blur, 0px)));
+  -webkit-backdrop-filter: blur(var(--surface-confirm-blur, var(--surface-overlay-blur, 0px)));
   width: 100%;
   max-width: 400px;
   color: var(--text-primary);
@@ -110,18 +117,18 @@
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  border: 2px solid var(--border-dark);
-  background: var(--bg-button);
-  color: var(--text-primary);
+  border: 2px solid var(--control-confirm-btn-border, var(--border-dark));
+  background: var(--control-confirm-btn-bg, var(--bg-button));
+  color: var(--control-confirm-btn-text, var(--text-primary));
   transition: all 0.1s ease;
-  box-shadow: 3px 3px 0 var(--shadow-color);
+  box-shadow: var(--control-confirm-btn-shadow, 3px 3px 0 var(--shadow-color));
   text-transform: uppercase;
 }
 
 .confirm-dialog-button:hover{
-  background: var(--bg-input);
+  background: var(--control-confirm-btn-hover-bg, var(--bg-input));
   transform: translate(-1px, -1px);
-  box-shadow: 4px 4px 0 var(--shadow-color);
+  box-shadow: var(--control-confirm-btn-hover-shadow, 4px 4px 0 var(--shadow-color));
 }
 
 .confirm-dialog-button:active{
@@ -130,12 +137,12 @@
 }
 
 .confirm-dialog-button.primary{
-  background: var(--text-primary);
-  color: var(--bg-window);
-  border-color: var(--text-primary);
+  background: var(--accent-color, var(--text-primary));
+  color: #ffffff;
+  border-color: var(--accent-color, var(--text-primary));
 }
 
 .confirm-dialog-button.primary:hover{
-  background: var(--text-primary);
+  background: var(--accent-hover, var(--accent-color, var(--text-primary)));
   opacity: 0.9;
 }

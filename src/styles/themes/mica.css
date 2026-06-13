@@ -13,6 +13,43 @@ body.theme-mica {
   --shadow-color: transparent !important;
 }
 
+:root.dark-mode.theme-mica,
+body.dark-mode.theme-mica {
+  --bg-panel: rgba(255, 255, 255, 0.09);
+  --bg-input: rgba(255, 255, 255, 0.12);
+  --bg-element: rgba(255, 255, 255, 0.105);
+  --bg-button: rgba(255, 255, 255, 0.11);
+  --text-primary: #f6f7fb;
+  --text-secondary: #c7ccd8;
+  --text-muted: #c7ccd8;
+  --tag-manager-text-primary: #f6f7fb;
+  --tag-manager-text-muted: #d4d8e2;
+  --border-dark: rgba(255, 255, 255, 0.14) !important;
+  --border-light: rgba(255, 255, 255, 0.1);
+  --shadow-color: rgba(0, 0, 0, 0.22) !important;
+  --tag-manager-panel-bg: rgba(255, 255, 255, 0.1);
+  --tag-manager-content-bg: rgba(255, 255, 255, 0.04);
+  --tag-manager-card-bg: rgba(255, 255, 255, 0.12);
+  --tag-manager-card-hover-bg: rgba(255, 255, 255, 0.16);
+  --tag-manager-input-bg: rgba(255, 255, 255, 0.13);
+  --tag-manager-button-bg: rgba(255, 255, 255, 0.12);
+  --tag-manager-button-hover-bg: rgba(255, 255, 255, 0.17);
+  --tag-manager-border: rgba(255, 255, 255, 0.12);
+  --tag-manager-strong-border: rgba(255, 255, 255, 0.17);
+  --surface-overlay-bg: rgba(0, 0, 0, 0.58);
+  --surface-overlay-blur: 18px;
+  --surface-dialog-bg: rgba(24, 26, 32, 0.88);
+  --surface-dialog-border: rgba(255, 255, 255, 0.14);
+  --surface-dialog-shadow: 0 22px 54px rgba(0, 0, 0, 0.46), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --surface-confirm-bg: rgba(24, 26, 32, 0.9);
+  --surface-confirm-border: rgba(255, 255, 255, 0.14);
+  --surface-confirm-shadow: 0 22px 54px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --control-confirm-btn-bg: rgba(255, 255, 255, 0.1);
+  --control-confirm-btn-border: rgba(255, 255, 255, 0.15);
+  --control-confirm-btn-hover-bg: rgba(255, 255, 255, 0.16);
+  --control-confirm-btn-text: #f6f7fb;
+}
+
 /* Custom background image support */
 body.theme-mica::before {
   content: '';
@@ -42,7 +79,6 @@ body.has-custom-bg.theme-mica::before {
   border: none !important;
   box-shadow: var(--surface-shell-root-shadow) !important;
   border-radius: 8px;
-  backdrop-filter: none !important;
   position: relative;
 }
 
@@ -60,16 +96,8 @@ body.has-custom-bg.theme-mica::before {
   opacity: 0.22;
 }
 
-.theme-mica #root {
-  background-color: var(--surface-shell-root-bg) !important;
-  border: none !important;
-  border-radius: 8px;
-  box-shadow: var(--surface-shell-root-shadow) !important;
-}
-
 /* ---- Moved from index.css (theme overrides) ---- */
 
-/* Mica/Acrylic theme adjustments */
 .theme-mica .video-file-card {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(128, 128, 128, 0.2);
@@ -296,7 +324,60 @@ body:not(.compact-mode) .theme-mica .btn-icon.active {
   box-shadow: var(--modern-btn-active-shadow) !important;
 }
 
-/* Shared modern mica/acrylic component styles moved to:
-   src/styles/theme-core/modern-mica-acrylic.shared.css */
-/* Shared modern mica/acrylic shell styles moved to:
-   src/styles/theme-core/modern-mica-acrylic.shell.shared.css */
+body.dark-mode.theme-mica .modal-overlay,
+body.dark-mode.theme-mica .theme-mica .modal-overlay,
+body.dark-mode .themed-tag-manager.theme-mica .modal-overlay {
+  background: var(--surface-overlay-bg) !important;
+  backdrop-filter: blur(var(--surface-overlay-blur)) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(var(--surface-overlay-blur)) saturate(145%) !important;
+}
+
+body.dark-mode.theme-mica .modal-content,
+body.dark-mode.theme-mica .confirm-dialog,
+body.dark-mode.theme-mica .confirm-dialog.theme-mica,
+body.dark-mode .theme-mica .modal-content,
+body.dark-mode .theme-mica .confirm-dialog,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog {
+  background: var(--surface-confirm-bg) !important;
+  border: 1px solid var(--surface-confirm-border) !important;
+  box-shadow: var(--surface-confirm-shadow) !important;
+  color: var(--text-primary) !important;
+  backdrop-filter: blur(22px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(150%) !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-title,
+body.dark-mode.theme-mica .confirm-dialog-message,
+body.dark-mode.theme-mica .confirm-dialog h3,
+body.dark-mode.theme-mica .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog h3,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog p {
+  color: var(--text-primary) !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-message,
+body.dark-mode.theme-mica .confirm-dialog p,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog p {
+  color: var(--text-secondary) !important;
+  opacity: 1 !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-button,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog-button {
+  background: var(--control-confirm-btn-bg) !important;
+  border: 1px solid var(--control-confirm-btn-border) !important;
+  color: var(--control-confirm-btn-text) !important;
+  box-shadow: none !important;
+}
+
+body.dark-mode.theme-mica .confirm-dialog-button:hover,
+body.dark-mode .themed-tag-manager.theme-mica .confirm-dialog-button:hover {
+  background: var(--control-confirm-btn-hover-bg) !important;
+}
+
+body.dark-mode.theme-mica .modal-input-field .modal-textarea,
+body.dark-mode .themed-tag-manager.theme-mica .modal-input-field .modal-textarea {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: var(--text-primary) !important;
+}

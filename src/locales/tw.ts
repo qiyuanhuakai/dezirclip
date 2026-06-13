@@ -93,6 +93,7 @@ export const tw = {
         theme_acrylic: "壓克力",
         theme_macos: "macOS",
         theme_scifi: "科幻",
+        theme_liquid_glass: "液態玻璃",
         color_mode: "顏色模式",
         mode_system: "跟隨系統",
         mode_light: "淺色",

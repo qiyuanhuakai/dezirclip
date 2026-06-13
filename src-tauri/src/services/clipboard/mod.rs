@@ -25,7 +25,9 @@ use crate::infrastructure::linux_api::clipboard as clipboard_api;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_api::win_clipboard as clipboard_api;
 
-use utils::*;
+use utils::attach_rich_image_fallback;
+#[cfg(target_os = "windows")]
+use utils::parse_cf_html;
 
 enum ClipboardProcessPayload {
     Pipeline {
@@ -33,6 +35,7 @@ enum ClipboardProcessPayload {
         source_override: Option<String>,
         source_snapshot: Option<ActiveAppInfo>,
     },
+    #[cfg(target_os = "windows")]
     GifImage {
         bytes: Vec<u8>,
         source_snapshot: Option<ActiveAppInfo>,
@@ -71,6 +74,7 @@ fn clipboard_process_sender() -> &'static Sender<ClipboardProcessTask> {
                                 source_snapshot,
                             );
                         }
+                        #[cfg(target_os = "windows")]
                         ClipboardProcessPayload::GifImage {
                             bytes,
                             source_snapshot,
@@ -151,6 +155,28 @@ fn build_png_data_url_from_rgba(width: u32, height: u32, bytes: Vec<u8>) -> Opti
     None
 }
 
+#[cfg(not(target_os = "windows"))]
+fn image_file_to_data_url(path: &str) -> Option<String> {
+    let lower = path.to_lowercase();
+    if !(lower.ends_with(".png")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".bmp")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".gif"))
+    {
+        return None;
+    }
+
+    let image = image::open(path).ok()?;
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut bytes);
+    image.write_to(&mut cursor, image::ImageFormat::Png).ok()?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Some(format!("data:image/png;base64,{}", b64))
+}
+
+#[cfg(target_os = "windows")]
 fn process_gif_entry_async(
     app_handle: AppHandle,
     bytes: Vec<u8>,
@@ -274,7 +300,8 @@ fn clipboard_image_fallback_data_url() -> Option<String> {
 
 #[cfg(not(target_os = "windows"))]
 fn clipboard_image_fallback_data_url() -> Option<String> {
-    None
+    let image = clipboard_api::get_clipboard_image()?;
+    build_png_data_url_from_rgba(image.width as u32, image.height as u32, image.bytes)
 }
 
 pub fn start_clipboard_monitor(app_handle: AppHandle) {
@@ -440,6 +467,24 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         if let Some(files) = files_opt {
             let content = files.join("\n");
             if !content.is_empty() {
+                #[cfg(not(target_os = "windows"))]
+                if files.len() == 1 {
+                    if let Some(data_url) = image_file_to_data_url(&files[0]) {
+                        monitor_state.last_text = String::new();
+                        process_new_entry_async(
+                            app.clone(),
+                            ClipboardData::Image { data_url },
+                            None,
+                            Some(source_snapshot.clone()),
+                        );
+                        handled = true;
+                    }
+                }
+
+                if handled {
+                    return;
+                }
+
                 let is_new = content != monitor_state.last_text;
                 let mut should_process = is_new;
                 if !is_new {
@@ -482,7 +527,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                         monitor_state.last_text = content.clone();
 
                         let settings = app.state::<SettingsState>();
-                        if settings.capture_files.load(Ordering::Relaxed) || files.len() == 1 {
+                        if settings.capture_files.load(Ordering::Relaxed) {
                             process_new_entry_async(
                                 app.clone(),
                                 ClipboardData::Files(files),
@@ -499,14 +544,14 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         // 2. Check Image
         if !handled {
             let settings = app.state::<SettingsState>();
-            let rich_text_enabled = settings.capture_rich_text.load(Ordering::Relaxed);
-            let has_text = clipboard
+            let _rich_text_enabled = settings.capture_rich_text.load(Ordering::Relaxed);
+            let _has_text = clipboard
                 .get_text()
                 .map(|t| !t.trim().is_empty())
                 .unwrap_or(false);
 
             #[cfg(target_os = "windows")]
-            let has_rich_html = if rich_text_enabled && has_text {
+            let has_rich_html = if _rich_text_enabled && _has_text {
                 unsafe {
                     clipboard_api::get_clipboard_raw_format("HTML Format")
                         .and_then(|raw| parse_cf_html(&raw))
@@ -518,7 +563,13 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             };
 
             #[cfg(not(target_os = "windows"))]
-            let has_rich_html = false;
+            let has_rich_html = if _rich_text_enabled && _has_text {
+                clipboard_api::get_clipboard_html()
+                    .map(|html| !html.trim().is_empty())
+                    .unwrap_or(false)
+            } else {
+                false
+            };
 
             // Rich text wins over image when rich HTML exists; image remains fallback for pure image content.
             if !has_rich_html {
@@ -717,7 +768,28 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 
                         #[cfg(not(target_os = "windows"))]
                         {
-                            // Linux: Rich text HTML not supported via native Windows API
+                            if let Some(html) = clipboard_api::get_clipboard_html() {
+                                if !html.trim().is_empty() {
+                                    let mut html_to_store = html;
+
+                                    if let Some(data_url) = clipboard_image_fallback_data_url() {
+                                        html_to_store =
+                                            attach_rich_image_fallback(&html_to_store, &data_url);
+                                    }
+
+                                    monitor_state.last_text = text.clone();
+                                    process_new_entry_async(
+                                        app.clone(),
+                                        ClipboardData::RichText {
+                                            text: text.clone(),
+                                            html: html_to_store,
+                                        },
+                                        None,
+                                        Some(source_snapshot.clone()),
+                                    );
+                                    handled = true;
+                                }
+                            }
                         }
                     }
 

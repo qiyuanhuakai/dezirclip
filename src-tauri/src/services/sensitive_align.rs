@@ -2,7 +2,7 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
-use crate::database::{DbState, ENCRYPT_PREFIX, SENSITIVE_TAGS};
+use crate::database::{DbState, SENSITIVE_TAGS};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 
 pub fn spawn_sensitive_alignment(app_handle: AppHandle) {
@@ -62,18 +62,15 @@ fn run_alignment(app_handle: AppHandle) {
                 Err(_) => break,
             };
 
-            let rows = match stmt.query_map(
-                [cursor_ts, cursor_id, batch_size],
-                |row| {
-                    let id: i64 = row.get(0)?;
-                    let ts: i64 = row.get(1)?;
-                    let content: String = row.get(2)?;
-                    let preview: String = row.get(3)?;
-                    let html: Option<String> = row.get(4)?;
-                    let is_sensitive: i32 = row.get(5)?;
-                    Ok((id, ts, content, preview, html, is_sensitive == 1))
-                },
-            ) {
+            let rows = match stmt.query_map([cursor_ts, cursor_id, batch_size], |row| {
+                let id: i64 = row.get(0)?;
+                let ts: i64 = row.get(1)?;
+                let content: String = row.get(2)?;
+                let preview: String = row.get(3)?;
+                let html: Option<String> = row.get(4)?;
+                let is_sensitive: i32 = row.get(5)?;
+                Ok((id, ts, content, preview, html, is_sensitive == 1))
+            }) {
                 Ok(r) => r,
                 Err(_) => break,
             };
@@ -90,14 +87,16 @@ fn run_alignment(app_handle: AppHandle) {
         }
 
         for (id, _ts, content, preview, html, is_sensitive) in batch.iter() {
-            let content_encrypted = content.starts_with(ENCRYPT_PREFIX);
-            let preview_encrypted = preview.starts_with(ENCRYPT_PREFIX);
+            let content_encrypted = crate::infrastructure::encryption::is_encrypted_value(&content);
+            let preview_encrypted = crate::infrastructure::encryption::is_encrypted_value(&preview);
             let html_encrypted = html
                 .as_ref()
-                .map(|h| h.starts_with(ENCRYPT_PREFIX))
+                .map(|h| crate::infrastructure::encryption::is_encrypted_value(h))
                 .unwrap_or(false);
 
-            if *is_sensitive && (!content_encrypted || !preview_encrypted || (html.is_some() && !html_encrypted)) {
+            if *is_sensitive
+                && (!content_encrypted || !preview_encrypted || (html.is_some() && !html_encrypted))
+            {
                 let _ = db_state.repo.encrypt_entry_with_conn(&conn_guard, *id);
             } else if !*is_sensitive && (content_encrypted || preview_encrypted || html_encrypted) {
                 let _ = db_state.repo.decrypt_entry_with_conn(&conn_guard, *id);

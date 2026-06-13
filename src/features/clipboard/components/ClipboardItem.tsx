@@ -12,9 +12,6 @@ import {
     Tag,
     X,
     FileText,
-    Image as ImageIcon,
-    Link as LinkIcon,
-    Code,
     File,
     Plus,
     Video,
@@ -32,54 +29,35 @@ import type { ClipboardItemProps } from "../types";
 import { getConciseTime, getTagColor } from "../../../shared/lib/utils";
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
+import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
+import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
+import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
-const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
-const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
-const COMPACT_PREVIEW_DEBUG = false;
-const RICH_PREVIEW_DEBUG = import.meta.env.DEV;
-const compactPreviewLog = (...args: unknown[]) => {
-    if (!COMPACT_PREVIEW_DEBUG) return;
-    const ts = new Date().toISOString();
-    console.log(`[CompactPreview][Main][${ts}]`, ...args);
+
+let linuxChecked = false;
+let isLinuxPlatform = false;
+
+const checkLinuxPlatform = async (): Promise<boolean> => {
+    if (linuxChecked) return isLinuxPlatform;
+    try {
+        const info = await invoke<{ is_linux: boolean }>("get_platform_info");
+        isLinuxPlatform = !!info?.is_linux;
+    } catch {
+        isLinuxPlatform = false;
+    }
+    linuxChecked = true;
+    return isLinuxPlatform;
 };
-const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) => {
-    if (!RICH_PREVIEW_DEBUG) return;
-    console.warn("[RichTextPreview][MainList]", stage, detail || {});
-};
+
+import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
+
 type CompactPreviewAnchor = {
     clientX: number;
     clientY: number;
     screenX: number;
     screenY: number;
-};
-
-const extractRichImageFallback = (html?: string): { cleanHtml?: string; imagePayload?: string } => {
-    if (!html) return {};
-    const start = html.lastIndexOf(RICH_IMAGE_FALLBACK_PREFIX);
-    if (start < 0) return { cleanHtml: html };
-
-    const markerStart = start + RICH_IMAGE_FALLBACK_PREFIX.length;
-    const endRel = html.slice(markerStart).indexOf(RICH_IMAGE_FALLBACK_SUFFIX);
-    if (endRel < 0) return { cleanHtml: html };
-
-    const markerEnd = markerStart + endRel;
-    const payload = html.slice(markerStart, markerEnd).trim();
-    const cleanHtml = `${html.slice(0, start)}${html.slice(markerEnd + RICH_IMAGE_FALLBACK_SUFFIX.length)}`.trim();
-    return {
-        cleanHtml: cleanHtml || html,
-        imagePayload: payload || undefined
-    };
-};
-
-const resolveRichImageSrc = (payload?: string): string | null => {
-    if (!payload) return null;
-    const value = payload.trim();
-    if (!value) return null;
-    if (value.startsWith("data:image/")) return value;
-    if (/^https?:\/\/asset\.localhost\//i.test(value)) return value;
-    return toTauriLocalImageSrc(value);
 };
 
 let compactPreviewWindow: WebviewWindow | null = null;
@@ -308,22 +286,6 @@ const hideCompactPreviewGlobal = async () => {
     }
 };
 
-const seekVideoPreviewFrame = (video: HTMLVideoElement | null) => {
-    if (!video) return;
-    const duration = video.duration;
-    if (!Number.isFinite(duration) || duration <= 0) return;
-    const maxSeek = Math.max(duration - 0.05, 0);
-    if (maxSeek <= 0) return;
-    const preferred = Math.min(duration * 0.1, 2);
-    const target = Math.min(Math.max(preferred, 0.1), maxSeek);
-    if (target <= 0) return;
-    try {
-        video.currentTime = target;
-    } catch {
-        // Ignore seek errors; fallback will just show the first frame.
-    }
-};
-
 const waitForCompactPreviewMounted = async (): Promise<boolean> => {
     if (compactPreviewMounted) {
         compactPreviewLog("mounted already true, skip wait");
@@ -424,7 +386,9 @@ const tryReuseExistingCompactPreviewWindow = async (): Promise<WebviewWindow | n
         compactPreviewMounted = true;
         compactPreviewMountedPromise = Promise.resolve(true);
         try {
-            await existing.setIgnoreCursorEvents(true);
+            if (!(await checkLinuxPlatform())) {
+                await existing.setIgnoreCursorEvents(true);
+            }
         } catch {}
         try {
             await existing.setAlwaysOnTop(true);
@@ -501,7 +465,9 @@ const ensureCompactPreviewWindow = async (): Promise<WebviewWindow | null> => {
             }
 
             try {
-                await previewWindow.setIgnoreCursorEvents(true);
+                if (!(await checkLinuxPlatform())) {
+                    await previewWindow.setIgnoreCursorEvents(true);
+                }
             } catch (err) {
                 console.error("Failed to enable ignore cursor events:", err);
             }
@@ -521,17 +487,7 @@ const ensureCompactPreviewWindow = async (): Promise<WebviewWindow | null> => {
     return compactPreviewReady;
 };
 
-const getIcon = (type: string) => {
-    switch (type) {
-        case "text": return <FileText size={14} />;
-        case "image": return <ImageIcon size={14} />;
-        case "url": return <LinkIcon size={14} />;
-        case "code": return <Code size={14} />;
-        case "file": return <File size={14} />;
-        case "video": return <Video size={14} />;
-        default: return <FileText size={14} />;
-    }
-};
+const getIcon = (type: string) => getContentTypeIcon(type);
 
 const renderSourceAppIcon = (iconSrc: string | null, contentType: string, sourceApp: string) => {
     if (!iconSrc) {

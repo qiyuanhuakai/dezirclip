@@ -18,6 +18,7 @@ use crate::infrastructure::repository::tag_repo::SqliteTagRepository;
 use crate::infrastructure::windows_ext::WindowExt;
 use crate::services::encryption_queue::init_encryption_queue;
 use crate::services::sensitive_align::spawn_sensitive_alignment;
+#[cfg(target_os = "windows")]
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -38,6 +39,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
 static WINDOW_SIZE_SAVE_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
+
+#[cfg(target_os = "linux")]
+fn linux_service_disabled(service: &str) -> bool {
+    std::env::var("TIEZ_DISABLE_LINUX_SERVICES")
+        .ok()
+        .map(|value| {
+            value
+                .split([',', ';', ' '])
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .any(|item| item.eq_ignore_ascii_case(service) || item.eq_ignore_ascii_case("all"))
+        })
+        .unwrap_or(false)
+}
 
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle = app.handle().clone();
@@ -108,7 +123,9 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // 10a. Linux Mouse Hotkey Listener (for MouseMiddle global shortcut)
     #[cfg(target_os = "linux")]
-    crate::infrastructure::linux_api::mouse_hotkey::start_mouse_hotkey_listener();
+    if !linux_service_disabled("mouse_hotkey") {
+        crate::infrastructure::linux_api::mouse_hotkey::start_mouse_hotkey_listener();
+    }
 
     // 11. TaskbarCreated & Subclass
     #[cfg(target_os = "windows")]
@@ -261,8 +278,8 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(true),
         privacy_kinds: repo
             .get("app.privacy_protection_kinds")
-            .unwrap_or(Some("phone,idcard,email,secret".to_string()))
-            .unwrap_or("phone,idcard,email,secret".to_string()),
+            .unwrap_or(Some("phone,idcard,email,secret,password".to_string()))
+            .unwrap_or("phone,idcard,email,secret,password".to_string()),
         privacy_custom: repo
             .get("app.privacy_protection_custom_rules")
             .unwrap_or(Some("".to_string()))
@@ -462,8 +479,22 @@ fn start_core_background_services(app_handle: &AppHandle) {
             app_handle.clone(),
         );
     }
-    // Non-Windows: skip window tracking
+    #[cfg(target_os = "linux")]
+    {
+        if !linux_service_disabled("window_tracker") {
+            crate::infrastructure::linux_api::window_tracker::start_window_tracking(
+                app_handle.clone(),
+            );
+        }
+    }
     crate::services::clipboard::start_clipboard_monitor(app_handle.clone());
+    #[cfg(target_os = "linux")]
+    {
+        if !linux_service_disabled("edge_docking") {
+            start_edge_docking_monitor(app_handle.clone());
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
     start_edge_docking_monitor(app_handle.clone());
 }
 
@@ -471,7 +502,6 @@ fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
     start_core_background_services(&app_handle);
 
     let db_state = app.state::<DbState>();
-
 
     #[cfg(target_os = "linux")]
     {
@@ -492,7 +522,6 @@ fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
             );
         }
     }
-
 
     let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(&app_handle);
 
@@ -808,8 +837,257 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
     });
 }
 
-#[cfg(not(target_os = "windows"))]
-fn start_edge_docking_monitor(_app_handle: AppHandle) {}
+#[cfg(target_os = "linux")]
+fn start_edge_docking_monitor(app_handle: AppHandle) {
+    use std::thread;
+    use std::time::Duration;
+    use tauri::PhysicalPosition;
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::ConnectionExt;
+    use x11rb::protocol::xproto::KeyButMask;
+
+    thread::spawn(move || {
+        let (conn, screen_num) = match x11rb::connect(None) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let screen = match conn.setup().roots.get(screen_num) {
+            Some(s) => s,
+            None => return,
+        };
+        let root = screen.root;
+
+        loop {
+            thread::sleep(Duration::from_millis(150));
+
+            let settings = match app_handle.try_state::<SettingsState>() {
+                Some(s) => s,
+                None => continue,
+            };
+
+            if !settings.edge_docking.load(Ordering::Relaxed) {
+                if IS_HIDDEN.load(Ordering::Relaxed) {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        IS_HIDDEN.store(false, Ordering::Relaxed);
+                        CURRENT_DOCK.store(0, Ordering::Relaxed);
+                    }
+                }
+                continue;
+            }
+
+            if let Some(window) = app_handle.get_webview_window("main") {
+                if window.is_minimized().unwrap_or(false) {
+                    continue;
+                }
+
+                let is_window_visible = window.is_visible().unwrap_or(true);
+                let is_hidden_by_edge = IS_HIDDEN.load(Ordering::Relaxed);
+
+                if !is_window_visible && !is_hidden_by_edge {
+                    continue;
+                }
+
+                let last_show = LAST_SHOW_TIMESTAMP.load(Ordering::Relaxed);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+
+                if !is_hidden_by_edge
+                    && NAVIGATION_ENABLED.load(Ordering::SeqCst)
+                    && now.saturating_sub(last_show) < 800
+                {
+                    continue;
+                }
+
+                if now.saturating_sub(last_show) < 500 {
+                    continue;
+                }
+
+                let reply = match conn.query_pointer(root) {
+                    Ok(cookie) => match cookie.reply() {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    },
+                    Err(_) => continue,
+                };
+                let point_x = reply.root_x as i32;
+                let point_y = reply.root_y as i32;
+                let pointer_buttons = u16::from(reply.mask)
+                    & (u16::from(KeyButMask::BUTTON1)
+                        | u16::from(KeyButMask::BUTTON2)
+                        | u16::from(KeyButMask::BUTTON3));
+                let is_pointer_button_down = pointer_buttons != 0;
+
+                let win_pos = match window.outer_position() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let win_size = match window.outer_size() {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
+
+                let rect_left = win_pos.x;
+                let rect_top = win_pos.y;
+                let rect_right = win_pos.x + win_size.width as i32;
+                let rect_bottom = win_pos.y + win_size.height as i32;
+
+                let monitor = match window.current_monitor() {
+                    Ok(Some(m)) => m,
+                    _ => continue,
+                };
+                let screen_size = monitor.size();
+                let screen_pos = monitor.position();
+
+                let screen_left = screen_pos.x;
+                let screen_top = screen_pos.y;
+                let screen_right = screen_pos.x + screen_size.width as i32;
+                let screen_bottom = screen_pos.y + screen_size.height as i32;
+
+                let threshold = 5;
+                let is_mouse_near_edge = if is_hidden_by_edge {
+                    let current_dock = CURRENT_DOCK.load(Ordering::Relaxed);
+                    match current_dock {
+                        1 => point_y <= screen_top + threshold,
+                        2 => point_x <= screen_left + threshold,
+                        3 => point_x >= screen_right - threshold,
+                        _ => false,
+                    }
+                } else {
+                    false
+                };
+
+                let is_mouse_in = if is_hidden_by_edge {
+                    is_mouse_near_edge
+                } else {
+                    point_x >= rect_left
+                        && point_x <= rect_right
+                        && point_y >= rect_top
+                        && point_y <= rect_bottom
+                };
+
+                let window_center_x = (rect_left + rect_right) / 2;
+                let window_center_y = (rect_top + rect_bottom) / 2;
+                let is_on_current_monitor = window_center_x >= screen_left
+                    && window_center_x < screen_right
+                    && window_center_y >= screen_top
+                    && window_center_y < screen_bottom;
+
+                if !is_hidden_by_edge && !is_on_current_monitor {
+                    if IS_HIDDEN.load(Ordering::Relaxed) {
+                        IS_HIDDEN.store(false, Ordering::Relaxed);
+                        CURRENT_DOCK.store(0, Ordering::Relaxed);
+                    }
+                    continue;
+                }
+
+                let mut dock = DockPosition::None;
+                if rect_top <= screen_top + threshold {
+                    dock = DockPosition::Top;
+                } else if rect_left <= screen_left + threshold {
+                    dock = DockPosition::Left;
+                } else if rect_right >= screen_right - threshold {
+                    dock = DockPosition::Right;
+                }
+
+                if is_hidden_by_edge {
+                    if is_mouse_in {
+                        let current_dock = CURRENT_DOCK.load(Ordering::Relaxed);
+                        let dock_actual = match current_dock {
+                            1 => DockPosition::Top,
+                            2 => DockPosition::Left,
+                            3 => DockPosition::Right,
+                            _ => DockPosition::None,
+                        };
+
+                        if dock_actual != DockPosition::None {
+                            let _ = window.show();
+                            let _ = window.set_always_on_top(true);
+                            match dock_actual {
+                                DockPosition::Top => {
+                                    let _ = window
+                                        .set_position(PhysicalPosition::new(rect_left, screen_top));
+                                }
+                                DockPosition::Left => {
+                                    let _ = window
+                                        .set_position(PhysicalPosition::new(screen_left, rect_top));
+                                }
+                                DockPosition::Right => {
+                                    let w = rect_right - rect_left;
+                                    let _ = window.set_position(PhysicalPosition::new(
+                                        screen_right - w,
+                                        rect_top,
+                                    ));
+                                }
+                                _ => {}
+                            }
+
+                            IS_HIDDEN.store(false, Ordering::Relaxed);
+                            CURRENT_DOCK.store(0, Ordering::Relaxed);
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis() as u64;
+                            LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+                        }
+                    }
+                } else if dock != DockPosition::None {
+                    if is_pointer_button_down {
+                        continue;
+                    }
+
+                    if !IS_HIDDEN.load(Ordering::Relaxed) {
+                        if !WINDOW_PINNED.load(Ordering::Relaxed) {
+                            WINDOW_PINNED.store(true, Ordering::Relaxed);
+                            let _ = window.set_always_on_top(true);
+                            let _ = window.set_focusable(false);
+                            let _ = app_handle.emit("window-pinned-changed", true);
+                        }
+
+                        match dock {
+                            DockPosition::Top => {
+                                CURRENT_DOCK.store(1, Ordering::Relaxed);
+                            }
+                            DockPosition::Left => {
+                                CURRENT_DOCK.store(2, Ordering::Relaxed);
+                            }
+                            DockPosition::Right => {
+                                CURRENT_DOCK.store(3, Ordering::Relaxed);
+                            }
+                            _ => {}
+                        }
+                        IS_HIDDEN.store(true, Ordering::Relaxed);
+                        let _ = window.hide();
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64;
+                        LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+                    }
+                } else if IS_HIDDEN.load(Ordering::Relaxed) {
+                    IS_HIDDEN.store(false, Ordering::Relaxed);
+                    CURRENT_DOCK.store(0, Ordering::Relaxed);
+
+                    let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
+                    if let Some(db_state) = app_handle.try_state::<DbState>() {
+                        if let Ok(val) = db_state.settings_repo.get("app.window_pinned") {
+                            user_pinned = val.as_deref() == Some("true");
+                        }
+                    }
+
+                    let prev = WINDOW_PINNED.swap(user_pinned, Ordering::Relaxed);
+                    if prev != user_pinned {
+                        let _ = window.set_always_on_top(user_pinned);
+                        let _ = window.set_focusable(!user_pinned);
+                        let _ = app_handle.emit("window-pinned-changed", user_pinned);
+                    }
+                }
+            }
+        }
+    });
+}
 
 fn setup_tray(app: &App, hide_tray: bool) {
     use tauri::menu::{Menu, MenuItem};
