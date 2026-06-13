@@ -1135,6 +1135,7 @@ fn setup_tray(app: &App, hide_tray: bool) {
                     crate::app::idle_destroyer::mark_shown();
                 }
             } else if event.id.as_ref() == "quit" {
+                crate::app::app_exit::request_app_exit();
                 app.exit(0);
             }
         })

@@ -332,6 +332,7 @@ pub fn relaunch(app: AppHandle) {
     if let Ok(exe) = std::env::current_exe() {
         let _ = Command::new(exe).spawn();
     }
+    crate::app::app_exit::request_app_exit();
     app.exit(0);
 }
 
@@ -376,6 +377,7 @@ pub fn restart_as_admin(app_handle: AppHandle) -> AppResult<()> {
             }
         }
 
+        crate::app::app_exit::request_app_exit();
         app_handle.exit(0);
         Ok(())
     }
@@ -388,6 +390,7 @@ pub fn restart_as_admin(app_handle: AppHandle) -> AppResult<()> {
 
         match Command::new("pkexec").arg(&exe_path).spawn() {
             Ok(_) => {
+                crate::app::app_exit::request_app_exit();
                 app_handle.exit(0);
                 Ok(())
             }

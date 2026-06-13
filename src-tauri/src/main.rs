@@ -249,7 +249,16 @@ fn main() {
     match app {
         Ok(app) => {
             info!(">>> [STARTUP] Tauri app built successfully.");
-            app.run(|_app_handle, _event| {});
+            app.run(|_app_handle, event| {
+                if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                    if crate::app::app_exit::should_prevent_current_exit_requested() {
+                        crate::info!(
+                            "[app-exit] Prevented runtime exit after managed webview teardown"
+                        );
+                        api.prevent_exit();
+                    }
+                }
+            });
         },
         Err(e) => {
              error!(">>> [STARTUP] Failed to build tauri app: {}", e);
