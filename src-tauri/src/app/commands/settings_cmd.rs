@@ -79,13 +79,20 @@ fn apply_setting_state_update(
             let enabled = value == "true";
             crate::app::gpu_switcher::apply_gpu_disable_env(enabled);
             if let Some(win) = app_handle.get_webview_window("main") {
-                let _ = win.destroy();
-                crate::app::idle_destroyer::mark_destroyed_after_managed_destroy();
-                crate::app::idle_destroyer::mark_shown();
-                crate::info!(
-                    "[settings] disable_webview_gpu toggled to {}; webview destroyed to apply on next show",
-                    enabled
-                );
+                match win.destroy() {
+                    Ok(()) => {
+                        crate::app::idle_destroyer::mark_destroyed_after_managed_destroy();
+                        crate::app::idle_destroyer::mark_shown();
+                        crate::info!(
+                            "[settings] disable_webview_gpu toggled to {}; webview destroyed to apply on next show",
+                            enabled
+                        );
+                    }
+                    Err(err) => crate::warn!(
+                        "[settings] Failed to destroy webview after disable_webview_gpu toggle: {}",
+                        err
+                    ),
+                }
             }
         }
         _ => {}
@@ -165,8 +172,9 @@ pub fn save_setting(
     key: String,
     value: String,
 ) -> AppResult<()> {
+    persist_setting_with_legacy(&db_state, &key, &value)?;
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
-    persist_setting_with_legacy(&db_state, &key, &value)
+    Ok(())
 }
 
 #[tauri::command]
