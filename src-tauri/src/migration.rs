@@ -225,6 +225,9 @@ pub fn cleanup_old_start_menu() {
 
 /// v0.2.8 Rename Migration: Clean up old installation directory
 pub fn cleanup_old_install_folder(custom_path: Option<PathBuf>) {
+    #[cfg(not(windows))]
+    let _ = custom_path;
+
     #[cfg(windows)]
     {
         // Try to find and delete old installation folder
