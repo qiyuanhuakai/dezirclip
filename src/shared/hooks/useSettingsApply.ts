@@ -87,9 +87,24 @@ export const useSettingsApply = ({
       applyExplicitMode(resolveThemeMode("system", isDark));
     };
 
-    ensureThemeCssLoaded(theme).catch(console.error);
+    let ensureDisposed = false;
+    let ensureFallbackTimer: number | null = window.setTimeout(() => {
+      if (ensureDisposed) return;
+      applyThemeClass(root, body, theme);
+    }, 200);
 
-    applyThemeClass(root, body, theme);
+    ensureThemeCssLoaded(theme)
+      .catch((err) => {
+        if (!ensureDisposed) console.error(err);
+      })
+      .finally(() => {
+        if (ensureDisposed) return;
+        if (ensureFallbackTimer !== null) {
+          window.clearTimeout(ensureFallbackTimer);
+          ensureFallbackTimer = null;
+        }
+        applyThemeClass(root, body, theme);
+      });
     invoke<PlatformInfo>("get_platform_info")
       .then((info) => {
         if (disposed) return;
@@ -179,6 +194,11 @@ export const useSettingsApply = ({
 
     return () => {
       disposed = true;
+      ensureDisposed = true;
+      if (ensureFallbackTimer !== null) {
+        window.clearTimeout(ensureFallbackTimer);
+        ensureFallbackTimer = null;
+      }
       if (unlistenThemeChanged) unlistenThemeChanged();
       if (cleanupMedia) cleanupMedia();
       if (cleanupPoll) cleanupPoll();
@@ -190,7 +210,7 @@ export const useSettingsApply = ({
     const root = document.documentElement;
     root.style.setProperty("--clipboard-item-font-size", `${clipboardItemFontSize}px`);
     root.style.setProperty("--clipboard-tag-font-size", `${clipboardTagFontSize}px`);
-    const scale = Math.min(2, Math.max(0, surfaceOpacity / 50));
+    const scale = Math.min(3, Math.max(0, surfaceOpacity / 33));
     root.style.setProperty("--surface-opacity-scale", scale.toString());
   }, [clipboardItemFontSize, clipboardTagFontSize, surfaceOpacity, settingsLoaded]);
 };
