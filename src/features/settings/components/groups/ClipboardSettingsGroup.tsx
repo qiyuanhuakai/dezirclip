@@ -201,7 +201,10 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         hintKey="persistent_limit"
                                     />
                                     <input
-                                        type="number"
+                                        className="numeric-input"
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                         value={persistentLimitDraft}
                                         onFocus={(e) => {
                                             e.target.select();
@@ -224,15 +227,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                                 commitPersistentLimit(e.currentTarget.value);
                                                 e.currentTarget.blur();
                                             }
-                                        }}
-                                        style={{
-                                            width: '90px',
-                                            padding: '4px 8px',
-                                            borderRadius: '4px',
-                                            border: '1px solid var(--border-color)',
-                                            background: 'var(--input-bg)',
-                                            color: 'var(--text-color)',
-                                            fontSize: '14px'
                                         }}
                                     />
                                 </div>

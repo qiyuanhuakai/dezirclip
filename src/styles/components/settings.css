@@ -7,6 +7,34 @@
   width: 100%;
 }
 
+.numeric-input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  width: 90px;
+  text-align: right;
+  border: 1px solid var(--border-dark);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+  border-radius: 4px;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.06);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.numeric-input::-webkit-outer-spin-button,
+.numeric-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.numeric-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 24%, transparent);
+}
+
 .settings-group {
   border: 2px solid var(--border-dark);
   background: var(--bg-element);

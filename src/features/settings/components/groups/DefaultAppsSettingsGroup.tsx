@@ -1,6 +1,9 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
+import ThemedSelect from "../ThemedSelect";
 import type { DefaultAppsMap, InstalledAppOption } from "../../../app/types";
 import { getClipboardTypeName } from "../../../../shared/lib/clipboardTypeName";
+
+const SYSTEM_DEFAULT_VALUE = "__system_default__";
 
 interface DefaultAppsSettingsGroupProps {
     t: (key: string) => string;
@@ -9,8 +12,13 @@ interface DefaultAppsSettingsGroupProps {
     installedApps: InstalledAppOption[];
     appSettings: Record<string, string>;
     defaultApps: DefaultAppsMap;
-    setShowAppSelector: (val: string | null) => void;
+    saveAppSetting: (key: string, val: string) => void;
 }
+
+const stripExe = (path: string) => {
+    const filename = path.split(/[/\\]/).pop() || path;
+    return filename.replace(/\.exe$/i, "");
+};
 
 const DefaultAppsSettingsGroup = ({
     t,
@@ -19,9 +27,35 @@ const DefaultAppsSettingsGroup = ({
     installedApps,
     appSettings,
     defaultApps,
-    setShowAppSelector
+    saveAppSetting
 }: DefaultAppsSettingsGroupProps) => {
     const APP_TYPES = ['text', 'image', 'video', 'code', 'url'] as const;
+
+    const buildOptions = (type: string) => {
+        const seen = new Set<string>();
+        const opts: { value: string; label: string }[] = [];
+        if (defaultApps[type]) {
+            const sysValue = `${SYSTEM_DEFAULT_VALUE}::${type}`;
+            opts.push({
+                value: sysValue,
+                label: `${t('system_default')} (${stripExe(defaultApps[type])})`
+            });
+            seen.add(sysValue);
+        }
+        for (const app of installedApps) {
+            if (!seen.has(app.value)) {
+                seen.add(app.value);
+                opts.push({ value: app.value, label: app.label });
+            }
+        }
+        return opts;
+    };
+
+    const currentValue = (type: string) => {
+        const path = appSettings[`app.${type}`];
+        if (path) return path;
+        return `${SYSTEM_DEFAULT_VALUE}::${type}`;
+    };
 
     return (
         <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
@@ -31,35 +65,38 @@ const DefaultAppsSettingsGroup = ({
             </div>
             {!collapsed && (
                 <div className="group-content">
-                    {APP_TYPES.map((type, idx, arr) => (
-                        <div key={type} className={`setting-item column ${idx === arr.length - 1 ? 'no-border' : ''}`}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                <span className="item-label" style={{ textTransform: 'uppercase', fontSize: '11px', opacity: 0.8 }}>{getClipboardTypeName(type, t)}</span>
-                                <button
-                                    className="btn-icon"
-                                    onClick={() => setShowAppSelector(type)}
-                                    title={t('change_app')}
-                                    style={{ width: 'auto', padding: '4px 12px', fontSize: '10px', textTransform: 'uppercase', height: '24px' }}
-                                >
-                                    {t('change_app')}
-                                </button>
+                    {APP_TYPES.map((type, idx, arr) => {
+                        const systemDefault = defaultApps[type];
+                        const userPath = appSettings[`app.${type}`];
+                        const value = currentValue(type);
+                        return (
+                            <div key={type} className={`setting-item column ${idx === arr.length - 1 ? 'no-border' : ''}`}>
+                                <div className="item-label-group" style={{ marginBottom: '8px' }}>
+                                    <span className="item-label" style={{ textTransform: 'uppercase', fontSize: '11px', opacity: 0.8 }}>
+                                        {getClipboardTypeName(type, t)}
+                                    </span>
+                                </div>
+                                <ThemedSelect
+                                    options={buildOptions(type)}
+                                    value={value}
+                                    width="100%"
+                                    placeholder={!systemDefault ? t('not_configured') : undefined}
+                                    onChange={(val) => {
+                                        if (val.startsWith(SYSTEM_DEFAULT_VALUE)) {
+                                            saveAppSetting(`app.${type}`, '');
+                                        } else {
+                                            saveAppSetting(`app.${type}`, val);
+                                        }
+                                    }}
+                                />
+                                {userPath && (
+                                    <span className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px', wordBreak: 'break-all' }}>
+                                        {stripExe(userPath)}
+                                    </span>
+                                )}
                             </div>
-
-                            <div onClick={() => setShowAppSelector(type)} className="data-panel" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {appSettings[`app.${type}`]
-                                    ? (() => {
-                                        const path = appSettings[`app.${type}`];
-                                        // Try to find friendly name from installed apps list
-                                        const found = installedApps.find(app => app.value === path);
-                                        if (found) return found.label;
-                                        // Fallback: extract filename without .exe
-                                        const filename = path.split(/[/\\]/).pop() || path;
-                                        return filename.replace(/\.exe$/i, '');
-                                    })()
-                                    : (defaultApps[type] ? `${t('system_default')} (${defaultApps[type].replace(/\.exe$/i, '')})` : t('not_configured'))}
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>

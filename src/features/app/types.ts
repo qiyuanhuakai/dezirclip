@@ -49,8 +49,6 @@ export interface AppState {
   setAppSettings: StateSetter<Record<string, string>>;
   defaultApps: DefaultAppsMap;
   setDefaultApps: StateSetter<DefaultAppsMap>;
-  showAppSelector: string | null;
-  setShowAppSelector: StateSetter<string | null>;
   installedApps: InstalledAppOption[];
   setInstalledApps: StateSetter<InstalledAppOption[]>;
   dataPath: string;

@@ -110,6 +110,7 @@ body.theme-liquid-glass {
   --lg-range-thumb-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.22);
 
   --lg-tag-chip-border: rgba(60, 60, 67, 0.10);
+  --lg-tag-chip-text: #ffffff;
 
   /* Settings group — light mode */
   --lg-settings-bg: rgba(255, 255, 255, 0.35);
@@ -330,6 +331,7 @@ body.dark-mode.theme-liquid-glass {
   --lg-range-thumb-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.26);
 
   --lg-tag-chip-border: rgba(255, 255, 255, 0.08);
+  --lg-tag-chip-text: #ffffff;
 
   /* Settings group — dark */
   --lg-settings-bg: rgba(30, 33, 42, 0.35);
@@ -631,7 +633,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
 }
 
 .theme-liquid-glass .search-input,
-.theme-liquid-glass .setting-input {
+.theme-liquid-glass .setting-input,
+.theme-liquid-glass .numeric-input {
   border: 1px solid var(--lg-input-border) !important;
   border-radius: 10px !important;
   background: var(--lg-input-bg) !important;
@@ -640,7 +643,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
 }
 
 .theme-liquid-glass .search-input:focus,
-.theme-liquid-glass .setting-input:focus {
+.theme-liquid-glass .setting-input:focus,
+.theme-liquid-glass .numeric-input:focus {
   border-color: rgba(10, 132, 255, 0.56) !important;
   box-shadow: var(--lg-input-focus-shadow) !important;
 }
@@ -870,9 +874,25 @@ body.theme-liquid-glass:not(.hide-app-border) {
    10. Tag chips
    ============================================================ */
 .theme-liquid-glass .tag-chip {
-  border-radius: 999px !important;
+  background: var(--lg-tag-chip-bg) !important;
+  color: var(--lg-tag-chip-text) !important;
   border: 1px solid var(--lg-tag-chip-border) !important;
-  box-shadow: none !important;
+  border-radius: 999px !important;
+  padding: 3px 10px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 2px rgba(20, 30, 60, 0.06) !important;
+  transition: transform 0.12s ease, box-shadow 0.12s ease !important;
+}
+
+.theme-liquid-glass .tag-chip:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 3px 8px rgba(20, 30, 60, 0.14) !important;
+}
+
+.theme-liquid-glass .tag-chip:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 1px 2px rgba(20, 30, 60, 0.06) !important;
 }
 
 /* ============================================================
@@ -1046,6 +1066,104 @@ body.theme-liquid-glass:not(.hide-app-border) {
   background: rgba(0, 0, 0, 0.18) !important;
   backdrop-filter: blur(20px) saturate(130%);
   -webkit-backdrop-filter: blur(20px) saturate(130%);
+}
+
+.theme-liquid-glass .confirm-dialog,
+.theme-liquid-glass .modal-content {
+  background: var(--lg-dialog-bg) !important;
+  border: 1px solid var(--lg-dialog-border) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--lg-dialog-shadow) !important;
+  padding: 20px 22px !important;
+  backdrop-filter: blur(20px) saturate(135%);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+}
+
+.theme-liquid-glass .confirm-dialog-title {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  padding: 0 0 8px 0 !important;
+  margin: 0 !important;
+}
+
+.theme-liquid-glass .confirm-dialog-message {
+  color: var(--text-primary) !important;
+  opacity: 0.82 !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 1.55 !important;
+  margin-bottom: 18px !important;
+}
+
+.theme-liquid-glass .confirm-dialog-buttons {
+  gap: 10px !important;
+  justify-content: flex-end !important;
+}
+
+.theme-liquid-glass .confirm-dialog-button {
+  border-radius: 10px !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  padding: 8px 18px !important;
+  background: var(--lg-dialog-button-bg) !important;
+  border: 1px solid var(--lg-dialog-button-border) !important;
+  color: var(--lg-dialog-button-text) !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
+}
+
+.theme-liquid-glass .confirm-dialog-button:hover {
+  background: var(--lg-dialog-button-hover-bg) !important;
+  border-color: var(--lg-dialog-button-hover-border) !important;
+  transform: none !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+}
+
+.theme-liquid-glass .confirm-dialog-button:active {
+  transform: scale(0.97) !important;
+}
+
+.theme-liquid-glass .confirm-dialog-button.primary {
+  background: var(--lg-dialog-button-primary-bg) !important;
+  border-color: var(--lg-dialog-button-primary-border) !important;
+  color: var(--lg-dialog-button-primary-text) !important;
+}
+
+.theme-liquid-glass .confirm-dialog-button.primary:hover {
+  background: var(--lg-dialog-button-primary-hover-bg) !important;
+  border-color: var(--lg-dialog-button-primary-hover-border) !important;
+  opacity: 1 !important;
+}
+
+.theme-liquid-glass .tags-dropdown {
+  background: var(--glass-sidebar-bg) !important;
+  border: 1px solid var(--border-dark) !important;
+  border-radius: 14px !important;
+  padding: 12px 14px !important;
+  box-shadow:
+    0 12px 36px rgba(20, 30, 60, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32) !important;
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+}
+
+.theme-liquid-glass .tags-label {
+  color: var(--text-secondary) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  font-size: 10px !important;
+  opacity: 0.9 !important;
+  margin-bottom: 6px !important;
 }
 
 .theme-liquid-glass .app-selector-modal {

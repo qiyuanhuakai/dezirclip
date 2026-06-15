@@ -30,7 +30,6 @@ export const useAppState = (): AppState => {
   const [persistentLimit, setPersistentLimit] = useState<number>(1000);
   const [appSettings, setAppSettings] = useState<Record<string, string>>({});
   const [defaultApps, setDefaultApps] = useState<DefaultAppsMap>({});
-  const [showAppSelector, setShowAppSelector] = useState<string | null>(null);
   const [installedApps, setInstalledApps] = useState<InstalledAppOption[]>([]);
   const [dataPath, setDataPath] = useState<string>("");
   const [hotkey, setHotkey] = useState<string>("Alt+C");
@@ -134,8 +133,6 @@ export const useAppState = (): AppState => {
     setAppSettings,
     defaultApps,
     setDefaultApps,
-    showAppSelector,
-    setShowAppSelector,
     installedApps,
     setInstalledApps,
     dataPath,

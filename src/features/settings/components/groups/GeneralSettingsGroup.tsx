@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -86,7 +87,27 @@ const GeneralSettingsGroup = ({
     arrowKeySelection,
     setArrowKeySelection,
     saveAppSetting
-}: GeneralSettingsGroupProps) => (
+}: GeneralSettingsGroupProps) => {
+    const [idleDestroyDraft, setIdleDestroyDraft] = useState(idleDestroySeconds.toString());
+    useEffect(() => {
+        setIdleDestroyDraft(idleDestroySeconds.toString());
+    }, [idleDestroySeconds]);
+    const commitIdleDestroy = (rawValue?: string) => {
+        const source = rawValue ?? idleDestroyDraft;
+        if (!/^\d+$/.test(source)) {
+            setIdleDestroyDraft(idleDestroySeconds.toString());
+            return;
+        }
+        const parsed = parseInt(source, 10);
+        const clamped = Math.max(5, Math.min(3600, parsed));
+        setIdleDestroyDraft(clamped.toString());
+        if (clamped !== idleDestroySeconds) {
+            setIdleDestroySeconds(clamped);
+            invoke("set_idle_destroy_seconds", { seconds: clamped }).catch(console.error);
+        }
+    };
+
+    return (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
         <div className="group-header" onClick={onToggle}>
             <h3 style={{ margin: 0 }}>{t('general_settings')}</h3>
@@ -221,24 +242,24 @@ const GeneralSettingsGroup = ({
                             hintKey="idle_destroy_seconds"
                         />
                         <input
-                            type="number"
-                            min={5}
-                            max={3600}
-                            step={5}
-                            value={idleDestroySeconds}
+                            className="numeric-input"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={idleDestroyDraft}
+                            onFocus={(e) => e.target.select()}
                             onChange={(e) => {
-                                const next = Math.max(5, Math.min(3600, Number(e.target.value) || 60));
-                                setIdleDestroySeconds(next);
-                                invoke("set_idle_destroy_seconds", { seconds: next }).catch(console.error);
+                                const next = e.target.value;
+                                if (next === "" || /^\d+$/.test(next)) {
+                                    setIdleDestroyDraft(next);
+                                }
                             }}
-                            style={{
-                                width: '90px',
-                                padding: '4px 8px',
-                                fontSize: '12px',
-                                borderRadius: '6px',
-                                border: '1px solid rgba(128, 128, 128, 0.4)',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)'
+                            onBlur={(e) => commitIdleDestroy(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    commitIdleDestroy(e.currentTarget.value);
+                                    e.currentTarget.blur();
+                                }
                             }}
                         />
                     </div>
@@ -456,6 +477,7 @@ const GeneralSettingsGroup = ({
             </div>
         )}
     </div>
-);
+    );
+};
 
 export default GeneralSettingsGroup;

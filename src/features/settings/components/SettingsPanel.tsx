@@ -4,7 +4,6 @@ import { HelpCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Locale } from "../../../shared/types";
 import type { DefaultAppsMap, InstalledAppOption } from "../../app/types";
-import AppSelectorModal from "./AppSelectorModal";
 import GeneralSettingsGroup from "./groups/GeneralSettingsGroup";
 import ClipboardSettingsGroup from "./groups/ClipboardSettingsGroup";
 import AppearanceSettingsGroup from "./groups/AppearanceSettingsGroup";
@@ -87,7 +86,6 @@ interface SettingsPanelProps {
     installedApps: InstalledAppOption[];
     appSettings: Record<string, string>;
     defaultApps: DefaultAppsMap;
-    showAppSelector: string | null;
     dataPath: string;
     toggleGroup: (group: string) => void;
     setAutoStart: (val: boolean) => void;
@@ -124,7 +122,6 @@ interface SettingsPanelProps {
     compactMode: boolean;
     setCompactMode: (val: boolean) => void;
     checkHotkeyConflict: (newHotkey: string, mode: "main" | "sequential" | "rich" | "search") => boolean;
-    setShowAppSelector: (val: string | null) => void;
     handleResetSettings: () => void;
 }
 
@@ -147,7 +144,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         customBackground, setCustomBackground,
         customBackgroundOpacity, setCustomBackgroundOpacity,
         surfaceOpacity, setSurfaceOpacity,
-        installedApps, appSettings, defaultApps, showAppSelector, dataPath,
+        installedApps, appSettings, defaultApps, dataPath,
         toggleGroup, setAutoStart, setSilentStart, setPersistent, setPersistentLimitEnabled, setPersistentLimit, setDeduplicate, setCaptureFiles, setCaptureRichText, setRichTextSnapshotPreview, setDeleteAfterPaste, setMoveToTopAfterPaste, saveAppSetting,
         setSequentialModeState, setIsRecordingSequential, updateSequentialHotkey,
         setIsRecordingRich, updateRichPasteHotkey,
@@ -157,7 +154,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         setTheme, setColorMode, setLanguage, showAppBorder, setShowAppBorder, compactMode, setCompactMode, checkHotkeyConflict,
         clipboardItemFontSize, setClipboardItemFontSize, clipboardTagFontSize, setClipboardTagFontSize,
         emojiPanelEnabled, setEmojiPanelEnabled, tagManagerEnabled, setTagManagerEnabled,
-        setShowAppSelector, handleResetSettings
+        handleResetSettings
     } = props;
 
     const [emailCopied, setEmailCopied] = useState(false);
@@ -354,7 +351,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 installedApps={installedApps}
                 appSettings={appSettings}
                 defaultApps={defaultApps}
-                setShowAppSelector={setShowAppSelector}
+                saveAppSetting={saveAppSetting}
             />
 
             <DataSettingsGroup
@@ -370,14 +367,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 onResetSettings={handleResetSettings}
                 emailCopied={emailCopied}
                 setEmailCopied={setEmailCopied}
-            />
-
-            <AppSelectorModal
-                show={showAppSelector}
-                installedApps={installedApps}
-                t={t}
-                onClose={() => setShowAppSelector(null)}
-                onSave={saveAppSetting}
             />
 
         </motion.div>
