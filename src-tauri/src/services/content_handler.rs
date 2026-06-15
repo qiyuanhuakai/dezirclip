@@ -116,14 +116,14 @@ async fn handle_url_content(app_path: &Option<String>, content: &str) -> Result<
             }
 
             println!("Attempting to launch URL handler: {}", app);
-            let ps_script = format!(
-                "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
-                app,
-                content.replace("'", "''")
-            );
 
             #[cfg(target_os = "windows")]
             {
+                let ps_script = format!(
+                    "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
+                    app,
+                    content.replace("'", "''")
+                );
                 let mut cmd = Command::new("powershell");
                 cmd.args(["-NoProfile", "-Command", &ps_script])
                     .creation_flags(0x08000000);
