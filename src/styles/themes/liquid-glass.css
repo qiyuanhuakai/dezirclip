@@ -218,7 +218,7 @@ body.theme-liquid-glass {
   --select-single-value-color: var(--text-primary);
   --select-placeholder-color: rgba(60, 60, 67, 0.5);
   --select-indicator-color: #636366;
-  --select-menu-bg: rgba(255, 255, 255, 0.82);
+  --select-menu-bg: rgba(255, 255, 255, calc(0.62 * var(--surface-opacity-scale, 1)));
   --select-menu-border: 1px solid rgba(60, 60, 67, 0.14);
   --select-menu-shadow:
     0 8px 32px rgba(20, 30, 60, 0.18),
@@ -439,7 +439,7 @@ body.dark-mode.theme-liquid-glass {
   --select-single-value-color: var(--text-primary);
   --select-placeholder-color: rgba(245, 245, 247, 0.55);
   --select-indicator-color: #a1a1a6;
-  --select-menu-bg: rgba(38, 41, 52, 0.86);
+  --select-menu-bg: rgba(38, 41, 52, calc(0.66 * var(--surface-opacity-scale, 1)));
   --select-menu-border: 1px solid rgba(255, 255, 255, 0.10);
   --select-menu-shadow:
     0 8px 32px rgba(0, 0, 0, 0.40),

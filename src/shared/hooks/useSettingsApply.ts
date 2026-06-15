@@ -210,7 +210,7 @@ export const useSettingsApply = ({
     const root = document.documentElement;
     root.style.setProperty("--clipboard-item-font-size", `${clipboardItemFontSize}px`);
     root.style.setProperty("--clipboard-tag-font-size", `${clipboardTagFontSize}px`);
-    const scale = Math.min(3, Math.max(0, surfaceOpacity / 33));
+    const scale = Math.min(1, Math.max(0, surfaceOpacity / 100));
     root.style.setProperty("--surface-opacity-scale", scale.toString());
   }, [clipboardItemFontSize, clipboardTagFontSize, surfaceOpacity, settingsLoaded]);
 };

@@ -4,6 +4,7 @@ use crate::database::DbState;
 use crate::error::AppError;
 use crate::error::AppResult;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
+use crate::app::webview_memory;
 use serde::Serialize;
 use std::process::Command;
 use tauri::{Emitter, State, Theme, WebviewWindow};
@@ -220,5 +221,8 @@ pub fn set_theme(
     }
 
     let _ = window.emit("theme-changed", theme);
+
+    webview_memory::force_transparent_background(&window);
+
     Ok(())
 }
