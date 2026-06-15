@@ -62,7 +62,6 @@ pub fn apply_gpu_disable_env(disabled: bool) {
 #[cfg(target_os = "windows")]
 fn apply_disable_flags() {
     let key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
-    let current = std::env::var(key).ok();
     for flag in WEBVIEW2_GPU_DISABLE_FLAGS.split_whitespace() {
         let merged = merge_flag(std::env::var(key).ok(), flag);
         std::env::set_var(key, merged);
@@ -122,7 +121,7 @@ fn clear_disable_flags() {
     crate::info!("[gpu-switcher] GPU re-enabled; WebKitGTK env vars cleared");
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::*;
 
