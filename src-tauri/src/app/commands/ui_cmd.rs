@@ -1,11 +1,12 @@
 use crate::app_state::SettingsState;
+use crate::app::webview_memory;
 use crate::database::DbState;
 #[cfg(target_os = "windows")]
 use crate::error::AppError;
 use crate::error::AppResult;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
-use crate::app::webview_memory;
 use serde::Serialize;
+#[cfg(target_os = "linux")]
 use std::process::Command;
 use tauri::{Emitter, State, Theme, WebviewWindow};
 
@@ -84,6 +85,47 @@ pub fn get_system_theme_mode() -> String {
     "system".to_string()
 }
 
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowsBackdropEffect {
+    None,
+    Mica,
+    Acrylic,
+}
+
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WindowsThemePlan {
+    effect: WindowsBackdropEffect,
+    clear_native_backdrop: bool,
+    force_transparent_webview: bool,
+    shadow: bool,
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn windows_theme_plan(theme: &str, build: u32, show_border: bool) -> WindowsThemePlan {
+    let is_win11 = build >= 22000;
+    let is_win10_1803 = build >= 17134;
+    let effect = match theme {
+        "mica" if is_win11 => WindowsBackdropEffect::Mica,
+        "acrylic" if is_win10_1803 => WindowsBackdropEffect::Acrylic,
+        _ => WindowsBackdropEffect::None,
+    };
+
+    WindowsThemePlan {
+        effect,
+        clear_native_backdrop: true,
+        force_transparent_webview: true,
+        shadow: show_border && (theme != "mica" && theme != "acrylic" || is_win11),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn clear_windows_backdrop(window: &WebviewWindow) {
+    let _ = window_vibrancy::clear_mica(window);
+    let _ = window_vibrancy::clear_acrylic(window);
+}
+
 #[tauri::command]
 pub fn set_theme(
     window: WebviewWindow,
@@ -113,6 +155,8 @@ pub fn set_theme(
             .map(|v| v != "false");
     }
     let show_border = effective_show_app_border.unwrap_or(true);
+    #[cfg(not(target_os = "windows"))]
+    let _ = show_border;
 
     if let Ok(mut guard) = state.theme.lock() {
         *guard = theme.clone();
@@ -134,7 +178,6 @@ pub fn set_theme(
             .hwnd()
             .map_err(|e| AppError::Internal(e.to_string()))?;
         let hwnd = HWND(hwnd.0 as _);
-        let _ = window_vibrancy::clear_vibrancy(&window);
 
         let is_dark = match effective_color_mode.as_deref() {
             Some("light") => false,
@@ -175,15 +218,18 @@ pub fn set_theme(
         }
 
         let build = windows_version::OsVersion::current().build;
-        let is_win11 = build >= 22000;
-        let is_win10_1803 = build >= 17134;
+        let plan = windows_theme_plan(&theme, build, show_border);
 
-        match theme.as_str() {
-            "mica" if is_win11 => {
+        if plan.clear_native_backdrop {
+            clear_windows_backdrop(&window);
+        }
+
+        match plan.effect {
+            WindowsBackdropEffect::Mica => {
                 let _ = window_vibrancy::apply_mica(&window, Some(is_dark));
                 let _ = window.set_shadow(show_border);
             }
-            "acrylic" if is_win10_1803 => {
+            WindowsBackdropEffect::Acrylic => {
                 let _ = window_vibrancy::apply_acrylic(
                     &window,
                     Some(if is_dark {
@@ -194,10 +240,13 @@ pub fn set_theme(
                 );
                 let _ = window.set_shadow(show_border);
             }
-            _ => {
-                let _ = window
-                    .set_shadow(show_border && (theme != "mica" && theme != "acrylic" || is_win11));
+            WindowsBackdropEffect::None => {
+                let _ = window.set_shadow(plan.shadow);
             }
+        }
+
+        if plan.force_transparent_webview {
+            webview_memory::force_transparent_background(&window);
         }
     }
 
@@ -222,7 +271,43 @@ pub fn set_theme(
 
     let _ = window.emit("theme-changed", theme);
 
+    #[cfg(not(target_os = "windows"))]
     webview_memory::force_transparent_background(&window);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_liquid_glass_clears_previous_native_backdrop() {
+        let plan = windows_theme_plan("liquid-glass", 22631, true);
+
+        assert_eq!(plan.effect, WindowsBackdropEffect::None);
+        assert!(plan.clear_native_backdrop);
+        assert!(plan.force_transparent_webview);
+        assert!(plan.shadow);
+    }
+
+    #[test]
+    fn windows_mica_on_win11_keeps_webview_transparent_for_material_pass_through() {
+        let plan = windows_theme_plan("mica", 22631, true);
+
+        assert_eq!(plan.effect, WindowsBackdropEffect::Mica);
+        assert!(plan.clear_native_backdrop);
+        assert!(plan.force_transparent_webview);
+        assert!(plan.shadow);
+    }
+
+    #[test]
+    fn windows_acrylic_on_win10_clears_existing_backdrop_before_applying_acrylic() {
+        let plan = windows_theme_plan("acrylic", 19045, true);
+
+        assert_eq!(plan.effect, WindowsBackdropEffect::Acrylic);
+        assert!(plan.clear_native_backdrop);
+        assert!(plan.force_transparent_webview);
+        assert!(!plan.shadow);
+    }
 }

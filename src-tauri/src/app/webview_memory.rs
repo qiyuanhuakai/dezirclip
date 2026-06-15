@@ -33,6 +33,10 @@ pub fn force_transparent_background(window: &tauri::WebviewWindow) {
 
 #[cfg(target_os = "windows")]
 fn apply_transparent_background(window: &tauri::WebviewWindow) {
+    let _ = window
+        .as_ref()
+        .set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         COREWEBVIEW2_COLOR, ICoreWebView2Controller2,
     };
