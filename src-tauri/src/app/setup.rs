@@ -502,6 +502,9 @@ fn start_core_background_services(app_handle: &AppHandle) {
 fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
     start_core_background_services(&app_handle);
 
+    #[cfg(not(target_os = "windows"))]
+    let _ = app;
+    #[cfg(target_os = "windows")]
     let db_state = app.state::<DbState>();
 
     #[cfg(target_os = "linux")]
