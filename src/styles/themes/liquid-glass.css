@@ -113,14 +113,14 @@ body.theme-liquid-glass {
   --lg-tag-chip-text: #ffffff;
 
   /* Settings group — light mode */
-  --lg-settings-bg: rgba(255, 255, 255, 0.35);
+  --lg-settings-bg: rgba(255, 255, 255, calc(0.50 * var(--surface-opacity-scale, 1)));
   --lg-settings-border: rgba(60, 60, 67, 0.10);
   --lg-settings-shadow:
     0 2px 10px rgba(20, 30, 60, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.40);
-  --lg-settings-header-bg: rgba(255, 255, 255, 0.28);
+  --lg-settings-header-bg: rgba(255, 255, 255, calc(0.45 * var(--surface-opacity-scale, 1)));
   --lg-settings-header-border: rgba(60, 60, 67, 0.08);
-  --lg-settings-open-header-bg: rgba(255, 255, 255, 0.22);
+  --lg-settings-open-header-bg: rgba(255, 255, 255, calc(0.36 * var(--surface-opacity-scale, 1)));
   --lg-settings-open-header-border: rgba(60, 60, 67, 0.08);
 
   /* Data panel — light mode */
@@ -262,13 +262,13 @@ body.dark-mode.theme-liquid-glass {
   --shadow-color: rgba(0, 0, 0, 0.25);
 
   /* Glass surfaces — dark (layered depth), alpha scaled by --surface-opacity-scale */
-  --glass-shell-bg: rgba(25, 28, 38, calc(0.25 * var(--surface-opacity-scale, 1)));
-  --glass-header-bg: rgba(30, 33, 42, calc(0.42 * var(--surface-opacity-scale, 1)));
-  --glass-modal-bg: rgba(35, 38, 48, calc(0.52 * var(--surface-opacity-scale, 1)));
-  --glass-card-bg: rgba(30, 33, 42, calc(0.36 * var(--surface-opacity-scale, 1)));
-  --glass-sidebar-bg: rgba(28, 31, 40, calc(0.44 * var(--surface-opacity-scale, 1)));
-  --glass-toolbar-bg: rgba(32, 35, 44, calc(0.46 * var(--surface-opacity-scale, 1)));
-  --glass-dialog-bg: rgba(38, 41, 52, calc(0.58 * var(--surface-opacity-scale, 1)));
+  --glass-shell-bg: rgba(25, 28, 38, calc(0.45 * var(--surface-opacity-scale, 1)));
+  --glass-header-bg: rgba(30, 33, 42, calc(0.62 * var(--surface-opacity-scale, 1)));
+  --glass-modal-bg: rgba(35, 38, 48, calc(0.72 * var(--surface-opacity-scale, 1)));
+  --glass-card-bg: rgba(30, 33, 42, calc(0.55 * var(--surface-opacity-scale, 1)));
+  --glass-sidebar-bg: rgba(28, 31, 40, calc(0.62 * var(--surface-opacity-scale, 1)));
+  --glass-toolbar-bg: rgba(32, 35, 44, calc(0.65 * var(--surface-opacity-scale, 1)));
+  --glass-dialog-bg: rgba(38, 41, 52, calc(0.78 * var(--surface-opacity-scale, 1)));
 
   /* Glass edge highlights — dark mode */
   --glass-edge-top: rgba(255, 255, 255, 0.08);
@@ -334,24 +334,24 @@ body.dark-mode.theme-liquid-glass {
   --lg-tag-chip-text: #ffffff;
 
   /* Settings group — dark */
-  --lg-settings-bg: rgba(30, 33, 42, 0.35);
+  --lg-settings-bg: rgba(30, 33, 42, calc(0.55 * var(--surface-opacity-scale, 1)));
   --lg-settings-border: rgba(255, 255, 255, 0.06);
   --lg-settings-shadow:
     0 2px 10px rgba(0, 0, 0, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --lg-settings-header-bg: rgba(35, 38, 48, 0.30);
+  --lg-settings-header-bg: rgba(35, 38, 48, calc(0.50 * var(--surface-opacity-scale, 1)));
   --lg-settings-header-border: rgba(255, 255, 255, 0.05);
-  --lg-settings-open-header-bg: rgba(35, 38, 48, 0.24);
+  --lg-settings-open-header-bg: rgba(35, 38, 48, calc(0.42 * var(--surface-opacity-scale, 1)));
   --lg-settings-open-header-border: rgba(255, 255, 255, 0.06);
 
   /* Data panel — dark */
   --lg-data-border: rgba(255, 255, 255, 0.06);
-  --lg-data-bg: rgba(25, 28, 38, 0.30);
+  --lg-data-bg: rgba(25, 28, 38, calc(0.48 * var(--surface-opacity-scale, 1)));
   --lg-data-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
 
   /* Input — dark */
   --lg-input-border: rgba(255, 255, 255, 0.08);
-  --lg-input-bg: rgba(45, 48, 58, 0.55);
+  --lg-input-bg: rgba(45, 48, 58, calc(0.72 * var(--surface-opacity-scale, 1)));
   --lg-input-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -377,7 +377,7 @@ body.dark-mode.theme-liquid-glass {
   --lg-history-action-btn-active-shadow: none;
 
   /* Dialog / Modal — dark */
-  --lg-dialog-bg: rgba(38, 41, 52, 0.58);
+  --lg-dialog-bg: rgba(38, 41, 52, calc(0.78 * var(--surface-opacity-scale, 1)));
   --lg-dialog-border: rgba(255, 255, 255, 0.08);
   --lg-dialog-shadow:
     0 16px 48px rgba(0, 0, 0, 0.38),
@@ -398,16 +398,16 @@ body.dark-mode.theme-liquid-glass {
   --lg-tag-item-active-bg: rgba(10, 132, 255, 0.14);
   --lg-tag-item-active-border: rgba(10, 132, 255, 0.38);
   --lg-tag-item-hover-bg: rgba(255, 255, 255, 0.04);
-  --lg-tag-card-bg: rgba(32, 35, 44, 0.34);
+  --lg-tag-card-bg: rgba(32, 35, 44, calc(0.55 * var(--surface-opacity-scale, 1)));
   --lg-tag-card-border: rgba(255, 255, 255, 0.06);
   --lg-tag-card-shadow:
     0 2px 10px rgba(0, 0, 0, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --lg-tag-card-hover-bg: rgba(45, 48, 58, 0.48);
+  --lg-tag-card-hover-bg: rgba(45, 48, 58, calc(0.65 * var(--surface-opacity-scale, 1)));
   --lg-tag-card-hover-shadow:
     0 4px 14px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --lg-tag-toolbar-bg: rgba(32, 35, 44, 0.44);
+  --lg-tag-toolbar-bg: rgba(32, 35, 44, calc(0.62 * var(--surface-opacity-scale, 1)));
   --lg-tag-toolbar-border: rgba(255, 255, 255, 0.06);
   --lg-tag-sort-border: rgba(255, 255, 255, 0.05);
   --lg-tag-btn-bg: rgba(50, 53, 63, 0.42);
@@ -428,7 +428,7 @@ body.dark-mode.theme-liquid-glass {
   --lg-select-option-checked-text: #ffffff;
 
   /* ThemedSelect (react-select) — dark mode: glass pill control */
-  --select-control-bg: rgba(45, 48, 58, calc(0.55 * var(--surface-opacity-scale, 1)));
+  --select-control-bg: rgba(45, 48, 58, calc(0.72 * var(--surface-opacity-scale, 1)));
   --select-control-border: 1px solid rgba(255, 255, 255, 0.08);
   --select-control-radius: 10px;
   --select-control-shadow:
@@ -439,7 +439,7 @@ body.dark-mode.theme-liquid-glass {
   --select-single-value-color: var(--text-primary);
   --select-placeholder-color: rgba(245, 245, 247, 0.55);
   --select-indicator-color: #a1a1a6;
-  --select-menu-bg: rgba(38, 41, 52, calc(0.66 * var(--surface-opacity-scale, 1)));
+  --select-menu-bg: rgba(38, 41, 52, calc(0.82 * var(--surface-opacity-scale, 1)));
   --select-menu-border: 1px solid rgba(255, 255, 255, 0.10);
   --select-menu-shadow:
     0 8px 32px rgba(0, 0, 0, 0.40),
