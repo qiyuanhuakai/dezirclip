@@ -363,7 +363,6 @@ body.theme-macos {
   --macos-settings-shadow: 0 6px 18px rgba(16, 21, 34, 0.08);
   --macos-settings-header-bg: rgba(255, 255, 255, 0.68);
   --macos-settings-header-border: rgba(60, 60, 67, 0.14);
-  --macos-settings-open-header-bg: rgba(255, 255, 255, 0.56);
   --macos-settings-open-header-border: rgba(60, 60, 67, 0.12);
   --macos-data-bg: rgba(255, 255, 255, 0.82);
   --macos-data-border: rgba(60, 60, 67, 0.2);
@@ -518,7 +517,6 @@ body.dark-mode.theme-macos {
   --macos-settings-shadow: 0 8px 22px rgba(0, 0, 0, 0.22);
   --macos-settings-header-bg: rgba(72, 74, 86, 0.78);
   --macos-settings-header-border: rgba(255, 255, 255, 0.12);
-  --macos-settings-open-header-bg: rgba(82, 84, 96, 0.72);
   --macos-settings-open-header-border: rgba(255, 255, 255, 0.18);
   --macos-data-bg: rgba(255, 255, 255, 0.05);
   --macos-data-border: rgba(255, 255, 255, 0.1);

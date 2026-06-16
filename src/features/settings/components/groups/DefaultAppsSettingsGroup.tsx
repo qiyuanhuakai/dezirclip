@@ -83,9 +83,9 @@ const DefaultAppsSettingsGroup = ({
                                     placeholder={!systemDefault ? t('not_configured') : undefined}
                                     onChange={(val) => {
                                         if (val.startsWith(SYSTEM_DEFAULT_VALUE)) {
-                                            saveAppSetting(`app.${type}`, '');
+                                            saveAppSetting(type, '');
                                         } else {
-                                            saveAppSetting(`app.${type}`, val);
+                                            saveAppSetting(type, val);
                                         }
                                     }}
                                 />

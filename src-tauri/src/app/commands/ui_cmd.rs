@@ -116,7 +116,7 @@ fn windows_theme_plan(theme: &str, build: u32, show_border: bool) -> WindowsThem
         effect,
         clear_native_backdrop: true,
         force_transparent_webview: true,
-        shadow: show_border && (theme != "mica" && theme != "acrylic" || is_win11),
+        shadow: show_border && ((theme != "mica" && theme != "acrylic") || is_win11),
     }
 }
 
@@ -227,7 +227,7 @@ pub fn set_theme(
         match plan.effect {
             WindowsBackdropEffect::Mica => {
                 let _ = window_vibrancy::apply_mica(&window, Some(is_dark));
-                let _ = window.set_shadow(show_border);
+                let _ = window.set_shadow(plan.shadow);
             }
             WindowsBackdropEffect::Acrylic => {
                 let _ = window_vibrancy::apply_acrylic(
@@ -238,7 +238,7 @@ pub fn set_theme(
                         (240, 240, 240, 40)
                     }),
                 );
-                let _ = window.set_shadow(show_border);
+                let _ = window.set_shadow(plan.shadow);
             }
             WindowsBackdropEffect::None => {
                 let _ = window.set_shadow(plan.shadow);
