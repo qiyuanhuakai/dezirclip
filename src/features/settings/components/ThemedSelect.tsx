@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import Select from "react-select";
 import type { FilterOptionOption, SingleValue } from "react-select";
 import { FuzzyIndex } from "../../../shared/lib/fuzzy";
@@ -45,13 +45,26 @@ const ThemedSelect = ({
     [options]
   );
 
+  const allowCacheRef = useRef<{ input: string; values: Set<string> | null }>({
+    input: "",
+    values: null
+  });
+
   const filterOption = useMemo(
     () =>
       searchable
         ? (option: FilterOptionOption<ThemedSelectOption>, rawInput: string) => {
-            if (!rawInput) return true;
-            const matches = index.search(rawInput, options.length);
-            return matches.some((m) => m.item === option.data);
+            const input = rawInput ?? "";
+            if (!input) return true;
+            const cached = allowCacheRef.current;
+            if (cached.input !== input) {
+              const matches = index.search(input, options.length);
+              cached.input = input;
+              cached.values = new Set(
+                matches.map((m) => (m.item as ThemedSelectOption).value)
+              );
+            }
+            return cached.values!.has(option.value);
           }
         : undefined,
     [searchable, index, options]

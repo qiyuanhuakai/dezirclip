@@ -1,5 +1,6 @@
+import { useMemo } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import ThemedSelect from "../ThemedSelect";
+import ThemedSelect, { type ThemedSelectOption } from "../ThemedSelect";
 import type { DefaultAppsMap, InstalledAppOption } from "../../../app/types";
 import { getClipboardTypeName } from "../../../../shared/lib/clipboardTypeName";
 
@@ -31,25 +32,29 @@ const DefaultAppsSettingsGroup = ({
 }: DefaultAppsSettingsGroupProps) => {
     const APP_TYPES = ['text', 'image', 'video', 'code', 'url'] as const;
 
-    const buildOptions = (type: string) => {
-        const seen = new Set<string>();
-        const opts: { value: string; label: string }[] = [];
-        if (defaultApps[type]) {
-            const sysValue = `${SYSTEM_DEFAULT_VALUE}::${type}`;
-            opts.push({
-                value: sysValue,
-                label: `${t('system_default')} (${stripExe(defaultApps[type])})`
-            });
-            seen.add(sysValue);
-        }
-        for (const app of installedApps) {
-            if (!seen.has(app.value)) {
-                seen.add(app.value);
-                opts.push({ value: app.value, label: app.label });
+    const optionsByType = useMemo(() => {
+        const map: Record<string, ThemedSelectOption[]> = {};
+        for (const type of APP_TYPES) {
+            const seen = new Set<string>();
+            const opts: ThemedSelectOption[] = [];
+            if (defaultApps[type]) {
+                const sysValue = `${SYSTEM_DEFAULT_VALUE}::${type}`;
+                opts.push({
+                    value: sysValue,
+                    label: `${t('system_default')} (${stripExe(defaultApps[type])})`
+                });
+                seen.add(sysValue);
             }
+            for (const app of installedApps) {
+                if (!seen.has(app.value)) {
+                    seen.add(app.value);
+                    opts.push({ value: app.value, label: app.label });
+                }
+            }
+            map[type] = opts;
         }
-        return opts;
-    };
+        return map;
+    }, [installedApps, defaultApps, t]);
 
     const currentValue = (type: string) => {
         const path = appSettings[`app.${type}`];
@@ -69,6 +74,7 @@ const DefaultAppsSettingsGroup = ({
                         const systemDefault = defaultApps[type];
                         const userPath = appSettings[`app.${type}`];
                         const value = currentValue(type);
+                        const options = optionsByType[type];
                         return (
                             <div key={type} className={`setting-item column ${idx === arr.length - 1 ? 'no-border' : ''}`}>
                                 <div className="item-label-group" style={{ marginBottom: '8px' }}>
@@ -77,7 +83,7 @@ const DefaultAppsSettingsGroup = ({
                                     </span>
                                 </div>
                                 <ThemedSelect
-                                    options={buildOptions(type)}
+                                    options={options}
                                     value={value}
                                     width="100%"
                                     placeholder={!systemDefault ? t('not_configured') : undefined}
