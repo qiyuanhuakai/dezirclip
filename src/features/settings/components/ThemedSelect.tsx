@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import Select from "react-select";
 import type { FilterOptionOption, SingleValue } from "react-select";
-import { fuzzyFilter } from "../../../shared/lib/fuzzy";
+import { FuzzyIndex } from "../../../shared/lib/fuzzy";
 
 export interface ThemedSelectOption {
   value: string;
@@ -19,16 +20,6 @@ interface ThemedSelectProps {
   isDisabled?: boolean;
 }
 
-const filterOption = (
-  option: FilterOptionOption<ThemedSelectOption>,
-  rawInput: string
-): boolean => {
-  if (!rawInput) return true;
-  const target = `${option.data.label} ${option.data.value}`;
-  const matches = fuzzyFilter([option.data], rawInput, () => target);
-  return matches.length > 0;
-};
-
 const ThemedSelect = ({
   options,
   value,
@@ -40,6 +31,31 @@ const ThemedSelect = ({
   isDisabled = false
 }: ThemedSelectProps) => {
   const selected = options.find((option) => option.value === value) ?? null;
+
+  const index = useMemo(
+    () =>
+      new FuzzyIndex(options, {
+        keys: [
+          { name: "label", weight: 2 },
+          { name: "value", weight: 1 }
+        ],
+        threshold: 0.4,
+        minMatchCharLength: 1
+      }),
+    [options]
+  );
+
+  const filterOption = useMemo(
+    () =>
+      searchable
+        ? (option: FilterOptionOption<ThemedSelectOption>, rawInput: string) => {
+            if (!rawInput) return true;
+            const matches = index.search(rawInput, options.length);
+            return matches.some((m) => m.item === option.data);
+          }
+        : undefined,
+    [searchable, index, options]
+  );
 
   return (
     <div style={{ width }}>
@@ -55,7 +71,7 @@ const ThemedSelect = ({
         noOptionsMessage={() => noOptionsMessage ?? "无匹配项"}
         menuPortalTarget={document.body}
         menuPosition="fixed"
-        filterOption={searchable ? filterOption : undefined}
+        filterOption={filterOption}
         onChange={(option: SingleValue<ThemedSelectOption>) => {
           if (!option) return;
           void onChange(option.value);
