@@ -680,6 +680,21 @@ body.theme-liquid-glass:not(.hide-app-border) {
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease !important;
 }
 
+.theme-liquid-glass .tiez-select__input-container,
+.theme-liquid-glass .tiez-select__input {
+  color: var(--select-single-value-color) !important;
+  font-weight: 500 !important;
+}
+
+.theme-liquid-glass .tiez-select__input {
+  caret-color: var(--accent-color) !important;
+}
+
+.theme-liquid-glass .tiez-select__placeholder {
+  color: var(--select-placeholder-color) !important;
+  font-weight: 500 !important;
+}
+
 .theme-liquid-glass .tiez-select__control--is-focused {
   box-shadow: var(--select-control-focus-shadow) !important;
   border-color: var(--select-control-focus-border) !important;

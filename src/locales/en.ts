@@ -124,6 +124,7 @@ export const en = {
         change_app: "Change",
         system_default: "[System Default]",
         not_configured: "Not Configured (Click to select)",
+        no_matching_apps: "No matching apps",
 
         // Settings - Data
         data_path: "DB Path",

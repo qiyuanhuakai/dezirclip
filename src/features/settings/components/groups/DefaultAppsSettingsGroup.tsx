@@ -81,6 +81,8 @@ const DefaultAppsSettingsGroup = ({
                                     value={value}
                                     width="100%"
                                     placeholder={!systemDefault ? t('not_configured') : undefined}
+                                    searchable
+                                    noOptionsMessage={t('no_matching_apps') || '无匹配应用'}
                                     onChange={(val) => {
                                         if (val.startsWith(SYSTEM_DEFAULT_VALUE)) {
                                             saveAppSetting(type, '');

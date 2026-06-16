@@ -122,6 +122,7 @@ export const tw = {
         change_app: "更改",
         system_default: "[系統預設]",
         not_configured: "未配置 (點擊選擇)",
+        no_matching_apps: "無符合的應用程式",
 
         // Settings - Data
         data_path: "資料儲存路徑",

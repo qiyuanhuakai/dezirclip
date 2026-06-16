@@ -122,6 +122,7 @@ export const zh = {
         change_app: "更改",
         system_default: "[系统默认]",
         not_configured: "未配置（点击选择）",
+        no_matching_apps: "无匹配应用",
 
         // Settings - Data
         data_path: "数据存储路径",

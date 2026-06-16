@@ -1,7 +1,8 @@
 import Select from "react-select";
-import type { SingleValue } from "react-select";
+import type { FilterOptionOption, SingleValue } from "react-select";
+import { fuzzyFilter } from "../../../shared/lib/fuzzy";
 
-interface ThemedSelectOption {
+export interface ThemedSelectOption {
   value: string;
   label: string;
   disabled?: boolean;
@@ -13,14 +14,30 @@ interface ThemedSelectProps {
   onChange: (value: string) => void | Promise<void>;
   width?: string;
   placeholder?: string;
+  searchable?: boolean;
+  noOptionsMessage?: string;
+  isDisabled?: boolean;
 }
+
+const filterOption = (
+  option: FilterOptionOption<ThemedSelectOption>,
+  rawInput: string
+): boolean => {
+  if (!rawInput) return true;
+  const target = `${option.data.label} ${option.data.value}`;
+  const matches = fuzzyFilter([option.data], rawInput, () => target);
+  return matches.length > 0;
+};
 
 const ThemedSelect = ({
   options,
   value,
   onChange,
   width = "160px",
-  placeholder
+  placeholder,
+  searchable = false,
+  noOptionsMessage,
+  isDisabled = false
 }: ThemedSelectProps) => {
   const selected = options.find((option) => option.value === value) ?? null;
 
@@ -31,10 +48,14 @@ const ThemedSelect = ({
         options={options}
         value={selected}
         placeholder={placeholder}
-        isSearchable={false}
+        isSearchable={searchable}
+        isClearable={false}
+        isDisabled={isDisabled}
         isOptionDisabled={(option) => !!option.disabled}
+        noOptionsMessage={() => noOptionsMessage ?? "无匹配项"}
         menuPortalTarget={document.body}
         menuPosition="fixed"
+        filterOption={searchable ? filterOption : undefined}
         onChange={(option: SingleValue<ThemedSelectOption>) => {
           if (!option) return;
           void onChange(option.value);
