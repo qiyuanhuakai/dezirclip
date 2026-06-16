@@ -73,13 +73,14 @@ body.theme-macos:not(.hide-app-border) {
 }
 
 .theme-macos .settings-group:not(.collapsed) .group-header {
-  border-radius: 0 !important;
+  border-top-left-radius: 14px !important;
+  border-top-right-radius: 14px !important;
   border-top: none !important;
   border-left: none !important;
   border-right: none !important;
   border-bottom: 1px solid var(--macos-settings-open-header-border) !important;
-  background: var(--macos-settings-open-header-bg) !important;
-  padding: 12px 14px !important;
+  background: transparent !important;
+  padding: 14px 16px 10px 16px !important;
 }
 
 .theme-macos .settings-group.collapsed .group-header {
