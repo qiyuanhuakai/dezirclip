@@ -1,4 +1,5 @@
 import { useMemo, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import Select from "react-select";
 import type { FilterOptionOption, SingleValue } from "react-select";
 import { FuzzyIndex } from "../../../shared/lib/fuzzy";
@@ -71,7 +72,15 @@ const ThemedSelect = ({
   );
 
   return (
-    <div style={{ width }}>
+    <div
+      style={{ width }}
+      onMouseDown={() => {
+        invoke("activate_window_focus").catch(console.error);
+      }}
+      onFocus={() => {
+        invoke("activate_window_focus").catch(console.error);
+      }}
+    >
       <Select
         classNamePrefix="tiez-select"
         options={options}
