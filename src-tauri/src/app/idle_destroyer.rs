@@ -55,6 +55,14 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+fn should_recreate_main_window(window_exists: bool, is_destroyed: bool, lifecycle: u8) -> bool {
+    !window_exists || is_destroyed || lifecycle != LIFECYCLE_OPEN
+}
+
+fn main_window_ready(window_exists: bool, is_destroyed: bool, lifecycle: u8) -> bool {
+    window_exists && !is_destroyed && lifecycle == LIFECYCLE_OPEN
+}
+
 /// Record that the main window is currently hidden.
 /// Safe to call multiple times; latest timestamp wins.
 pub fn mark_hidden() {
@@ -191,11 +199,25 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
 
 /// Public entry for callers (hotkey handler, tray, frontend) that want to
 /// guarantee the main window exists before showing it. Idempotent.
-pub fn ensure_main_window(app: &AppHandle) {
-    if app.get_webview_window("main").is_some() {
-        return;
+pub fn ensure_main_window(app: &AppHandle) -> bool {
+    let window_exists = app.get_webview_window("main").is_some();
+    let is_destroyed = IS_DESTROYED.load(Ordering::SeqCst);
+    let lifecycle = WINDOW_LIFECYCLE.load(Ordering::SeqCst);
+
+    if lifecycle == LIFECYCLE_CLOSING {
+        request_recreate_after_destroy();
+        return false;
+    }
+
+    if !should_recreate_main_window(window_exists, is_destroyed, lifecycle) {
+        return true;
     }
     let _ = recreate_main_window(app);
+    main_window_ready(
+        app.get_webview_window("main").is_some(),
+        IS_DESTROYED.load(Ordering::SeqCst),
+        WINDOW_LIFECYCLE.load(Ordering::SeqCst),
+    )
 }
 
 /// Spawn the background ticker that calls `try_destroy_idle` once per second.
@@ -315,5 +337,29 @@ mod tests {
         // consistently if called with smaller values.
         assert!(should_destroy_now(1_000, 1_001, 0, true, false));
         assert!(!should_destroy_now(0, 0, 0, true, false));
+    }
+
+    #[test]
+    fn should_recreate_when_destroyed_state_keeps_stale_label() {
+        assert!(should_recreate_main_window(
+            true,
+            true,
+            LIFECYCLE_CLOSED
+        ));
+    }
+
+    #[test]
+    fn main_window_not_ready_when_destroyed_state_keeps_stale_label() {
+        assert!(!main_window_ready(true, true, LIFECYCLE_CLOSED));
+    }
+
+    #[test]
+    fn should_not_recreate_when_open_state_has_window() {
+        assert!(!should_recreate_main_window(
+            true,
+            false,
+            LIFECYCLE_OPEN
+        ));
+        assert!(main_window_ready(true, false, LIFECYCLE_OPEN));
     }
 }

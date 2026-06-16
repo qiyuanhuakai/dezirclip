@@ -28,7 +28,9 @@ fn hide_compact_preview_window(app: &AppHandle) {
 pub fn toggle_window(app: &AppHandle) {
     // The idle destroyer may have torn down the webview while the window was
     // hidden. Recreate it from tauri.conf.json before deciding what to do.
-    idle_destroyer::ensure_main_window(app);
+    if !idle_destroyer::ensure_main_window(app) {
+        return;
+    }
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(windows)]
         let mut active_center: Option<(i32, i32)> = None;
@@ -529,7 +531,9 @@ pub fn toggle_window_cmd(app_handle: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
-    idle_destroyer::ensure_main_window(&app_handle);
+    if !idle_destroyer::ensure_main_window(&app_handle) {
+        return Err("Main window is still being recreated".to_string());
+    }
     if let Some(window) = app_handle.get_webview_window("main") {
         webview_memory::restore_window_memory(&window, "focus-show");
         let _ = window.set_focusable(true);

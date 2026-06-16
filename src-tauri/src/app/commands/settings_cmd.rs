@@ -14,7 +14,7 @@ fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<
 }
 
 fn apply_setting_state_update(
-    app_handle: &AppHandle,
+    _app_handle: &AppHandle,
     settings_state: &crate::app_state::SettingsState,
     key: &str,
     value: &str,
@@ -72,28 +72,11 @@ fn apply_setting_state_update(
             }
         }
         "app.disable_webview_gpu" => {
-            // Live toggle. The env var is inherited by every WebView process
-            // spawned afterwards, so changes only take effect on the next
-            // webview creation. If the webview is alive we destroy it now so
-            // the very next show uses the new value.
             let enabled = value == "true";
-            crate::app::gpu_switcher::apply_gpu_disable_env(enabled);
-            if let Some(win) = app_handle.get_webview_window("main") {
-                match win.destroy() {
-                    Ok(()) => {
-                        crate::app::idle_destroyer::mark_destroyed_after_managed_destroy();
-                        crate::app::idle_destroyer::mark_shown();
-                        crate::info!(
-                            "[settings] disable_webview_gpu toggled to {}; webview destroyed to apply on next show",
-                            enabled
-                        );
-                    }
-                    Err(err) => crate::warn!(
-                        "[settings] Failed to destroy webview after disable_webview_gpu toggle: {}",
-                        err
-                    ),
-                }
-            }
+            crate::info!(
+                "[settings] disable_webview_gpu set to {}; restart required for WebView environment flags",
+                enabled
+            );
         }
         _ => {}
     }

@@ -195,7 +195,7 @@ const GeneralSettingsGroup = ({
 
                 <div className="setting-item">
                     <LabelWithHint
-                        label={t('disable_webview_gpu')}
+                        label={`${t('disable_webview_gpu')} · ${t('restart_required')}`}
                         hint={t('disable_webview_gpu_hint')}
                         hintKey="disable_webview_gpu"
                     />

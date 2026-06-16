@@ -1131,7 +1131,9 @@ fn setup_tray(app: &App, hide_tray: bool) {
         .menu(&menu)
         .on_menu_event(|app, event| {
             if event.id.as_ref() == "show" {
-                crate::app::idle_destroyer::ensure_main_window(app);
+                if !crate::app::idle_destroyer::ensure_main_window(app) {
+                    return;
+                }
                 if let Some(window) = app.get_webview_window("main") {
                     crate::app::webview_memory::restore_window_memory(&window, "tray-menu-show");
                     let _ = window.show();
@@ -1149,7 +1151,9 @@ fn setup_tray(app: &App, hide_tray: bool) {
             } = event
             {
                 let app = tray.app_handle();
-                crate::app::idle_destroyer::ensure_main_window(app);
+                if !crate::app::idle_destroyer::ensure_main_window(app) {
+                    return;
+                }
                 if let Some(window) = app.get_webview_window("main") {
                     crate::app::webview_memory::restore_window_memory(&window, "tray-click-show");
                     let _ = window.show();

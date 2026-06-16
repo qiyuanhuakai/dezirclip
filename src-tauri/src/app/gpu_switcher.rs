@@ -19,10 +19,10 @@
 //! WebKitGTK into a non-compositing mode that runs entirely inside the
 //! renderer process — which our existing idle-destroyer can then tear down.
 //!
-//! The setting is applied via environment variables so it is picked up by
-//! every WebView2 / WebKitWebProcess the runtime spawns after the call.
-//! Apply once at startup, and again before every webview recreate so
-//! changes take effect on the next show without restarting the app.
+//! The setting is applied via environment variables before Tauri creates the
+//! WebView environment. WebView2 reads Chromium browser arguments when the
+//! environment/browser process starts, so changing this setting while the app
+//! is running requires an app restart.
 
 #[cfg(target_os = "windows")]
 const WEBVIEW2_GPU_DISABLE_FLAGS: &str =
