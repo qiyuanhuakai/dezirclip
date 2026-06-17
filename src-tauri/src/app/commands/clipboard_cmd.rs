@@ -139,6 +139,8 @@ pub async fn add_manual_item(
         is_external: false,
         pinned_order: 0,
         file_preview_exists: true,
+        content_kinds: Vec::new(),
+        ocr_text: None,
     };
     
     let app_data_dir = app_handle.state::<AppDataDir>();

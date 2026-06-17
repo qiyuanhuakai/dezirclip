@@ -399,6 +399,8 @@ mod tests {
             is_external: false,
             pinned_order: 0,
             file_preview_exists: true,
+            content_kinds: Vec::new(),
+            ocr_text: None,
         };
 
         let conn_arc = Arc::new(Mutex::new(conn));

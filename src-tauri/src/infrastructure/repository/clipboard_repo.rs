@@ -729,6 +729,8 @@ impl SqliteClipboardRepository {
                 pinned_order: row.get(11).unwrap_or(0),
                 source_app_path: row.get(12).unwrap_or(None),
                 file_preview_exists: true,
+                content_kinds: Vec::new(),
+                ocr_text: None,
             }))
         } else {
             Ok(None)
@@ -919,6 +921,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                             true
                         }
                     },
+                    content_kinds: Vec::new(),
+                    ocr_text: None,
                 },
                 content_raw,
                 preview_raw,
@@ -1038,6 +1042,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         pinned_order: row.get(11).unwrap_or(0),
                         source_app_path: row.get(12).unwrap_or(None),
                         file_preview_exists: true, // Simplified for search
+                        content_kinds: Vec::new(),
+                        ocr_text: None,
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -1115,6 +1121,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         pinned_order: row.get(11).unwrap_or(0),
                         source_app_path: row.get(12).unwrap_or(None),
                         file_preview_exists: true,
+                        content_kinds: Vec::new(),
+                        ocr_text: None,
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -1172,6 +1180,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                                 pinned_order: row.get(11).unwrap_or(0),
                                 source_app_path: row.get(12).unwrap_or(None),
                                 file_preview_exists: true,
+                                content_kinds: Vec::new(),
+                                ocr_text: None,
                             })
                         })
                         .map_err(|e| e.to_string())?;
