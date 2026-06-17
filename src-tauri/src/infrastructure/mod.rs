@@ -2,6 +2,7 @@
 pub mod windows_ext;
 pub mod encryption;
 pub mod repository;
+pub mod webview_environment;
 
 #[cfg(target_os = "windows")]
 pub mod windows_api;
