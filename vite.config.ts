@@ -43,6 +43,18 @@ export default defineConfig(async ({ mode }) => {
               return "compact-preview";
             }
 
+            if (id.includes("/src/features/quick-paste/")) return "vendor-quick-paste";
+            if (id.includes("/src/features/region-select/")) return "vendor-region-select";
+            if (id.includes("/src/features/clipboard/components/FilterChips"))
+              return "vendor-filter-chips";
+            if (
+              id.includes("/src/features/clipboard/components/ItemContextMenu") ||
+              id.includes("/src/features/clipboard/components/transforms/")
+            )
+              return "vendor-transforms";
+            if (id.includes("/src/features/clipboard/hooks/useSearch")) return "vendor-search";
+            if (id.includes("/src/features/clipboard/hooks/useFilterChips")) return "vendor-filter";
+
             if (!id.includes("node_modules")) return;
 
             if (
