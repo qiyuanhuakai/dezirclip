@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "test:e2e": "playwright test",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "build": "tsc && vite build",
     "i18n:check": "node scripts/i18n-check.mjs",
     "preview": "vite preview",
@@ -30,13 +32,17 @@
   "devDependencies": {
     "@playwright/test": "^1.40.0",
     "@tauri-apps/cli": "2.10.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@types/react-select": "^5.0.0",
     "@vitejs/plugin-react": "^4.6.0",
+    "jsdom": "^29.1.1",
     "playwright": "^1.40.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "react": "$react",
