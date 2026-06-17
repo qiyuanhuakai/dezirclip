@@ -14,7 +14,7 @@ fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<
 }
 
 fn apply_setting_state_update(
-    _app_handle: &AppHandle,
+    app_handle: &AppHandle,
     settings_state: &crate::app_state::SettingsState,
     key: &str,
     value: &str,
@@ -73,10 +73,15 @@ fn apply_setting_state_update(
         }
         "app.disable_webview_gpu" => {
             let enabled = value == "true";
-            crate::info!(
-                "[settings] disable_webview_gpu set to {}; restart required for WebView environment flags",
-                enabled
-            );
+            let app = app_handle.clone();
+            std::thread::spawn(move || {
+                if !crate::app::idle_destroyer::restart_main_window_for_gpu_switch(&app, enabled) {
+                    crate::warn!(
+                        "[settings] disable_webview_gpu set to {}; WebView restart is still pending",
+                        enabled
+                    );
+                }
+            });
         }
         _ => {}
     }
