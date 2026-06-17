@@ -17,7 +17,7 @@ pub fn watch_main_browser_process_exit(window: &tauri::WebviewWindow) -> bool {
                     let handler = BrowserProcessExitedEventHandler::create(Box::new(|_, args| {
                         if let Some(args) = args {
                             let mut pid = 0;
-                            let _ = unsafe { args.BrowserProcessId(&mut pid) };
+                            let _ = args.BrowserProcessId(&mut pid);
                             crate::info!(
                                 "[webview-environment] WebView2 browser process exited: pid={}",
                                 pid

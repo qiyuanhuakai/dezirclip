@@ -123,12 +123,12 @@ pub fn try_destroy_idle(app: &AppHandle) -> bool {
         now_ms().saturating_sub(hidden_since) / 1000
     );
 
-    if !destroy_current_main_window(app) {
+    if !destroy_main_window(app, false) {
         WINDOW_LIFECYCLE.store(LIFECYCLE_OPEN, Ordering::SeqCst);
         return false;
     }
 
-    finish_main_destroy(app);
+    finish_main_destroy(app, false);
 
     if WINDOW_LIFECYCLE.load(Ordering::SeqCst) == LIFECYCLE_CLOSED
         && RECREATE_PENDING.swap(false, Ordering::SeqCst)
@@ -138,21 +138,20 @@ pub fn try_destroy_idle(app: &AppHandle) -> bool {
     true
 }
 
-fn destroy_current_main_window(app: &AppHandle) -> bool {
-    if let Some(preview) = app.get_webview_window("compact-preview") {
-        let _ = preview.destroy();
-    }
-
+fn destroy_main_window(app: &AppHandle, wait_for_browser_exit: bool) -> bool {
     if let Some(win) = app.get_webview_window("main") {
-        webview_environment::reset_main_browser_process_exit();
-        if !webview_environment::watch_main_browser_process_exit(&win) {
+        if wait_for_browser_exit {
+            webview_environment::reset_main_browser_process_exit();
+            if !webview_environment::watch_main_browser_process_exit(&win) {
+                webview_environment::mark_main_browser_process_exited();
+                return false;
+            }
+        } else {
             webview_environment::mark_main_browser_process_exited();
-            return false;
         }
         let _ = win.destroy();
         true
     } else {
-        webview_environment::reset_main_browser_process_exit();
         webview_environment::mark_main_browser_process_exited();
         true
     }
@@ -170,16 +169,18 @@ fn wait_for_label_release(app: &AppHandle, timeout: Duration) -> bool {
     true
 }
 
-fn finish_main_destroy(app: &AppHandle) -> bool {
+fn finish_main_destroy(app: &AppHandle, wait_for_browser_exit: bool) -> bool {
     let label_released = wait_for_label_release(app, LABEL_RELEASE_TIMEOUT);
-    let browser_exited = webview_environment::wait_for_main_browser_process_exit(
-        BROWSER_PROCESS_EXIT_TIMEOUT,
-    );
+    let browser_exited = if wait_for_browser_exit {
+        webview_environment::wait_for_main_browser_process_exit(BROWSER_PROCESS_EXIT_TIMEOUT)
+    } else {
+        true
+    };
 
     if !label_released {
         crate::warn!("[idle-destroyer] Timed out waiting for label to be freed after destroy.");
     }
-    if !browser_exited {
+    if wait_for_browser_exit && !browser_exited {
         crate::warn!("[idle-destroyer] Timed out waiting for WebView2 browser process exit after destroy.");
     }
 
@@ -319,11 +320,15 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
         .and_then(|window| window.is_visible().ok())
         .unwrap_or(false);
 
-    if !destroy_current_main_window(app) {
+    if let Some(preview) = app.get_webview_window("compact-preview") {
+        let _ = preview.destroy();
+    }
+
+    if !destroy_main_window(app, true) {
         WINDOW_LIFECYCLE.store(LIFECYCLE_OPEN, Ordering::SeqCst);
         return false;
     }
-    let teardown_completed = finish_main_destroy(app);
+    let teardown_completed = finish_main_destroy(app, true);
     if !teardown_completed {
         if was_visible {
             request_recreate_after_destroy();
