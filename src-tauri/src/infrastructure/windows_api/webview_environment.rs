@@ -14,21 +14,22 @@ pub fn watch_main_browser_process_exit(window: &tauri::WebviewWindow) -> bool {
                 .cast::<ICoreWebView2Environment5>()
                 .and_then(|environment| {
                     let mut token = 0;
+                    let handler = BrowserProcessExitedEventHandler::create(Box::new(|_, args| {
+                        if let Some(args) = args {
+                            let mut pid = 0;
+                            let _ = unsafe { args.BrowserProcessId(&mut pid) };
+                            crate::info!(
+                                "[webview-environment] WebView2 browser process exited: pid={}",
+                                pid
+                            );
+                        } else {
+                            crate::info!("[webview-environment] WebView2 browser process exited");
+                        }
+                        crate::infrastructure::webview_environment::mark_main_browser_process_exited();
+                        Ok(())
+                    }));
                     environment.add_BrowserProcessExited(
-                        BrowserProcessExitedEventHandler::create(Box::new(|_, args| {
-                            if let Some(args) = args {
-                                let mut pid = 0;
-                                let _ = unsafe { args.BrowserProcessId(&mut pid) };
-                                crate::info!(
-                                    "[webview-environment] WebView2 browser process exited: pid={}",
-                                    pid
-                                );
-                            } else {
-                                crate::info!("[webview-environment] WebView2 browser process exited");
-                            }
-                            crate::infrastructure::webview_environment::mark_main_browser_process_exited();
-                            Ok(())
-                        })),
+                        &handler,
                         &mut token,
                     )
                 })
