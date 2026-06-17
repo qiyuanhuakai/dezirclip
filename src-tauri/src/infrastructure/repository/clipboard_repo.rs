@@ -859,6 +859,71 @@ impl SqliteClipboardRepository {
             Ok(None)
         }
     }
+
+    pub fn search_fts(&self, query: &str, limit: u32) -> Result<Vec<ClipboardEntry>, String> {
+        let term = query.trim();
+        if term.is_empty() {
+            return Ok(Vec::new());
+        }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+
+        let limit_i64 = limit as i64;
+        let mut stmt = conn
+            .prepare(
+                "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app,
+                        ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count,
+                        ch.is_external, ch.pinned_order, ch.source_app_path,
+                        snippet(clipboard_fts, 0, '<mark>', '</mark>', '...', 16),
+                        highlight(clipboard_fts, 0, '<mark>', '</mark>')
+                 FROM clipboard_fts
+                 INNER JOIN clipboard_history ch ON ch.id = clipboard_fts.rowid
+                 WHERE clipboard_fts MATCH ?1
+                 ORDER BY rank
+                 LIMIT ?2",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map(params![term, limit_i64], |row| {
+                let tags_str: String = row.get::<_, String>(8).unwrap_or_else(|_| "[]".to_string());
+                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+                let content_raw: String = row.get(2)?;
+                let preview_raw: String = row.get(6)?;
+                let html_raw: Option<String> = row.get(3).ok();
+                let content = self.maybe_decrypt_text(&content_raw);
+                let preview = self.maybe_decrypt_text(&preview_raw);
+                let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
+
+                let _snippet: String = row.get(13)?;
+                let _highlight: String = row.get(14)?;
+
+                Ok(ClipboardEntry {
+                    id: row.get(0)?,
+                    content_type: row.get(1)?,
+                    content,
+                    html_content,
+                    source_app: row.get(4)?,
+                    timestamp: row.get(5)?,
+                    preview,
+                    is_pinned: row.get::<_, i32>(7)? == 1,
+                    tags,
+                    use_count: row.get(9).unwrap_or(0),
+                    is_external: row.get::<_, i32>(10)? == 1,
+                    pinned_order: row.get(11).unwrap_or(0),
+                    source_app_path: row.get(12).ok().flatten(),
+                    file_preview_exists: true,
+                    content_kinds: Vec::new(),
+                    ocr_text: None,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(results)
+    }
 }
 
 impl ClipboardRepository for SqliteClipboardRepository {
@@ -1353,5 +1418,137 @@ impl ClipboardRepository for SqliteClipboardRepository {
     ) -> Result<Option<(String, String, Option<String>)>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         self.get_entry_content_with_html_with_conn(&conn, id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::infrastructure::repository::migrations::run_migrations;
+
+    fn setup_fts_db() -> Arc<Mutex<Connection>> {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations failed");
+        Arc::new(Mutex::new(conn))
+    }
+
+    fn insert_entry(conn: &Connection, content: &str, app: &str, ts: i64) {
+        let preview: String = content.chars().take(50).collect();
+        conn.execute(
+            "INSERT INTO clipboard_history
+             (content_type, content, html_content, source_app, timestamp, preview,
+              is_pinned, content_hash, tags, is_external, pinned_order, source_app_path)
+             VALUES ('text', ?1, NULL, ?2, ?3, ?4, 0, 0, '[]', 0, 0, NULL)",
+            params![content, app, ts, preview],
+        )
+        .expect("insert failed");
+    }
+
+    #[test]
+    fn test_fts5_creation() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations failed");
+
+        let row: String = conn
+            .query_row(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='clipboard_fts'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("clipboard_fts VIRTUAL TABLE must exist after run_migrations");
+        assert_eq!(row, "clipboard_fts");
+
+        let trigger_count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type='trigger' AND name LIKE 'clipboard_history_a%'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("trigger count query failed");
+        assert_eq!(
+            trigger_count, 3,
+            "expected INSERT/UPDATE/DELETE triggers on clipboard_history"
+        );
+    }
+
+    #[test]
+    fn test_fts5_insert_trigger() {
+        let arc = setup_fts_db();
+        let conn = arc.lock().expect("lock");
+
+        insert_entry(&conn, "the quick brown fox jumps over the lazy dog", "Browser", 1_700_000_000);
+
+        let fts_count: i32 = conn
+            .query_row("SELECT COUNT(*) FROM clipboard_fts", [], |r| r.get(0))
+            .expect("clipboard_fts count failed");
+        assert_eq!(fts_count, 1, "INSERT trigger must mirror to clipboard_fts");
+
+        let mirrored_content: String = conn
+            .query_row("SELECT content FROM clipboard_fts LIMIT 1", [], |r| r.get(0))
+            .expect("mirror query failed");
+        assert_eq!(mirrored_content, "the quick brown fox jumps over the lazy dog");
+    }
+
+    #[test]
+    fn test_fts5_search() {
+        let arc = setup_fts_db();
+        {
+            let conn = arc.lock().expect("lock");
+            insert_entry(&conn, "alpha apple banana foo cherry", "App1", 1_700_000_000);
+            insert_entry(&conn, "delta elephant falcon grape", "App2", 1_700_000_001);
+            insert_entry(&conn, "hello foo world baz qux", "App3", 1_700_000_002);
+        }
+
+        let repo = SqliteClipboardRepository::new(arc);
+        let results = repo.search_fts("foo", 10).expect("search_fts failed");
+
+        assert_eq!(results.len(), 2, "expected exactly 2 entries containing 'foo'");
+        let contents: Vec<&str> = results.iter().map(|e| e.content.as_str()).collect();
+        assert!(contents.iter().any(|c| c.contains("apple banana foo")));
+        assert!(contents.iter().any(|c| c.contains("hello foo world")));
+    }
+
+    #[test]
+    fn test_fts5_unicode() {
+        let arc = setup_fts_db();
+        {
+            let conn = arc.lock().expect("lock");
+            insert_entry(&conn, "Rust 是一门系统编程语言", "AppRust", 1_700_000_000);
+            insert_entry(&conn, "你好世界 欢迎使用 TieZ", "AppCJK", 1_700_000_001);
+            insert_entry(
+                &conn,
+                "Memory safety 🎉 zero-cost abstractions",
+                "AppEmoji",
+                1_700_000_002,
+            );
+            insert_entry(&conn, "plain ascii clipboard entry", "AppAscii", 1_700_000_003);
+        }
+
+        let repo = SqliteClipboardRepository::new(arc);
+
+        let cjk_results = repo
+            .search_fts("你好世", 10)
+            .expect("CJK search_fts failed");
+        assert_eq!(
+            cjk_results.len(),
+            1,
+            "CJK 3-char query '你好世' (trigram minimum) must match exactly 1 row"
+        );
+        assert!(cjk_results[0].content.contains("你好世界"));
+
+        let ascii_results = repo
+            .search_fts("Rust", 10)
+            .expect("ASCII search_fts failed");
+        assert!(
+            ascii_results.iter().any(|e| e.content.contains("Rust 是一门")),
+            "ASCII 'Rust' should match the CJK+ASCII row"
+        );
+
+        let emoji_results = repo
+            .search_fts("safety", 10)
+            .expect("emoji-row search_fts failed");
+        assert_eq!(emoji_results.len(), 1);
+        assert!(emoji_results[0].content.contains("🎉"));
     }
 }

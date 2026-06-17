@@ -196,6 +196,43 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (11)", [])?;
     }
 
+    // Migration 12: FTS5 virtual table + triggers for full-text search.
+    // The trigram tokenizer supports both ASCII substrings and CJK 3+ char queries.
+    if current_version < 12 {
+        conn.execute_batch(
+            "
+            CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_fts USING fts5(
+                content,
+                preview,
+                source_app,
+                content='clipboard_history',
+                content_rowid='id',
+                tokenize='trigram'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS clipboard_history_ai AFTER INSERT ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(rowid, content, preview, source_app)
+                VALUES (new.id, new.content, new.preview, new.source_app);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS clipboard_history_ad AFTER DELETE ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app)
+                VALUES ('delete', old.id, old.content, old.preview, old.source_app);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS clipboard_history_au AFTER UPDATE ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app)
+                VALUES ('delete', old.id, old.content, old.preview, old.source_app);
+                INSERT INTO clipboard_fts(rowid, content, preview, source_app)
+                VALUES (new.id, new.content, new.preview, new.source_app);
+            END;
+
+            INSERT INTO clipboard_fts(clipboard_fts) VALUES ('rebuild');
+        ",
+        )?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (12)", [])?;
+    }
+
     Ok(())
 }
 
