@@ -154,4 +154,6 @@
   --compact-btn-active-border: 1px solid color-mix(in srgb, var(--accent-color) 50%, transparent);
   --compact-btn-active-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 30%, transparent), 0 2px 8px color-mix(in srgb, var(--accent-color) 22%, transparent);
   --compact-btn-active-hover-transform: translateY(-1px);
+
+  --color-error: #dc3545;
 }

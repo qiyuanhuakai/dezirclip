@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import ToastContainer from "./shared/components/ToastContainer";
 import ConfirmDialog from "./shared/components/ConfirmDialog";
+import ProgressToast from "./features/shared/components/ProgressToast";
+import { useProgress } from "./features/shared/hooks/useProgress";
 
 import { translations } from "./locales";
 import AppHeader from "./features/app/components/AppHeader";
@@ -220,6 +222,7 @@ const App = () => {
   const debouncedSearch = useDebounce(search, 400);
   const searchInputRef = useInputFocus<HTMLInputElement>();
   const tagColors = useTagColors();
+  const { toasts: progressToasts, dismiss: dismissProgress } = useProgress();
   const virtualListRef = useRef<VirtualClipboardListHandle | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const PAGE_SIZE = HISTORY_PAGE_SIZE;
@@ -753,6 +756,8 @@ const App = () => {
       </main>
 
       <ToastContainer toasts={toasts} />
+
+      <ProgressToast toasts={progressToasts} onDismiss={dismissProgress} />
 
       <ConfirmDialog
         open={confirmDialog.show}
