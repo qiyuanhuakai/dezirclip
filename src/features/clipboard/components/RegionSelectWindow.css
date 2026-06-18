@@ -1,0 +1,64 @@
+/* Region Select Window — fullscreen transparent overlay for region capture */
+
+body.region-select {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body.region-select #root {
+  height: 100vh !important;
+  width: 100vw !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body.region-select #root::before {
+  content: none !important;
+  display: none !important;
+}
+
+/* ── Overlay ─────────────────────────────────────────────────── */
+
+.region-select-window {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: var(--surface-overlay-bg);
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  z-index: 9999;
+}
+
+/* ── Selection rectangle ────────────────────────────────────── */
+
+.region-select-window__selection {
+  position: absolute;
+  border: 2px dashed var(--accent-color);
+  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
+  pointer-events: none;
+}
+
+/* ── Dimension label ────────────────────────────────────────── */
+
+.region-select-window__dimensions {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  background: var(--surface-dialog-bg);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+  border-radius: var(--radius-panel);
+  pointer-events: none;
+}
