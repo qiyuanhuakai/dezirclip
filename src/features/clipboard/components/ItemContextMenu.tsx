@@ -1,22 +1,33 @@
-import { forwardRef, useEffect, useState, useCallback, useRef } from "react";
+import { forwardRef, useEffect, useState, useCallback, useRef, useMemo } from "react";
+import type { ClipboardEntry } from "../../../shared/types";
+
+export interface TransformKindDto {
+  id: string;
+  label_zh: string;
+  label_en: string;
+}
 
 export interface ItemContextMenuProps {
   x: number;
   y: number;
-  onSelect: (index: number) => void;
+  entry?: ClipboardEntry | null;
+  onSelect: (key: string) => void;
   onClose: () => void;
+  onCopy?: () => void;
+  onEditTags?: () => void;
+  onQRCode?: () => void;
+  onDelete?: () => void;
+  onPin?: () => void;
+  onShare?: () => void;
+  onTransform?: (kind: string) => void;
+  transformKinds?: TransformKindDto[];
+  language?: "zh" | "en" | "tw";
 }
-
-const MENU_ITEMS = [
-  { key: "copy", label: "复制" },
-  { key: "editTags", label: "编辑标签" },
-  { key: "transforms", label: "文本转换 \u2192" },
-  { key: "delete", label: "删除" },
-] as const;
 
 const MENU_WIDTH = 180;
 const MENU_ITEM_HEIGHT = 36;
 const MENU_PADDING = 4;
+const SUBMENU_MAX_HEIGHT = 320;
 
 function clampPosition(
   x: number,
@@ -36,30 +47,134 @@ function clampPosition(
 }
 
 const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
-  ({ x, y, onSelect, onClose }, ref) => {
+  (
+    {
+      x,
+      y,
+      entry,
+      onSelect,
+      onClose,
+      onCopy,
+      onEditTags,
+      onQRCode,
+      onDelete,
+      onPin,
+      onShare,
+      onTransform,
+      transformKinds = [],
+      language = "zh",
+    },
+    ref
+  ) => {
     const [activeIndex, setActiveIndex] = useState(0);
+    const [submenuOpen, setSubmenuOpen] = useState(false);
+    const [submenuActiveIndex, setSubmenuActiveIndex] = useState(0);
     const internalRef = useRef<HTMLDivElement>(null);
     const resolvedRef = ref || internalRef;
 
-    const menuHeight = MENU_ITEMS.length * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
+    const menuItems = useMemo(() => [
+      { key: "copy", label: "复制" },
+      { key: "editTags", label: "编辑标签" },
+      { key: "qrCode", label: "QR 码" },
+      { key: "delete", label: "删除" },
+      { key: "pin", label: entry?.is_pinned ? "取消固定" : "固定" },
+      { key: "share", label: "分享" },
+      { key: "transforms", label: "文本转换 →", hasSubmenu: true },
+    ], [entry?.is_pinned]);
+
+    const totalItems = menuItems.length;
+    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
     const pos = clampPosition(x, y, MENU_WIDTH, menuHeight);
+
+    const handleAction = useCallback(
+      (key: string) => {
+        onSelect(key);
+        switch (key) {
+          case "copy":
+            onCopy?.();
+            break;
+          case "editTags":
+            onEditTags?.();
+            break;
+          case "qrCode":
+            onQRCode?.();
+            break;
+          case "delete":
+            onDelete?.();
+            break;
+          case "pin":
+            onPin?.();
+            break;
+          case "share":
+            onShare?.();
+            break;
+        }
+        onClose();
+      },
+      [onSelect, onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onClose]
+    );
+
+    const handleTransformSelect = useCallback(
+      (kind: string) => {
+        onSelect("transforms");
+        onTransform?.(kind);
+        onClose();
+      },
+      [onSelect, onTransform, onClose]
+    );
 
     const handleKeyDown = useCallback(
       (e: KeyboardEvent) => {
         switch (e.key) {
           case "ArrowDown":
             e.preventDefault();
-            setActiveIndex((prev) => (prev + 1) % MENU_ITEMS.length);
+            if (submenuOpen) {
+              setSubmenuActiveIndex(
+                (prev) => (prev + 1) % Math.max(transformKinds.length, 1)
+              );
+            } else {
+              setActiveIndex((prev) => (prev + 1) % totalItems);
+            }
             break;
           case "ArrowUp":
             e.preventDefault();
-            setActiveIndex(
-              (prev) => (prev - 1 + MENU_ITEMS.length) % MENU_ITEMS.length
-            );
+            if (submenuOpen) {
+              setSubmenuActiveIndex(
+                (prev) =>
+                  (prev - 1 + Math.max(transformKinds.length, 1)) %
+                  Math.max(transformKinds.length, 1)
+              );
+            } else {
+              setActiveIndex(
+                (prev) => (prev - 1 + totalItems) % totalItems
+              );
+            }
+            break;
+          case "ArrowRight":
+            e.preventDefault();
+            if (!submenuOpen && menuItems[activeIndex]?.hasSubmenu) {
+              setSubmenuOpen(true);
+              setSubmenuActiveIndex(0);
+            }
+            break;
+          case "ArrowLeft":
+            e.preventDefault();
+            if (submenuOpen) {
+              setSubmenuOpen(false);
+            }
             break;
           case "Enter":
             e.preventDefault();
-            onSelect(activeIndex);
+            if (submenuOpen && transformKinds.length > 0) {
+              handleTransformSelect(
+                transformKinds[submenuActiveIndex]?.id ?? ""
+              );
+            } else if (menuItems[activeIndex]?.hasSubmenu) {
+              setSubmenuOpen(true);
+              setSubmenuActiveIndex(0);
+            } else {
+              handleAction(menuItems[activeIndex]?.key ?? "");
+            }
             break;
           case "Escape":
             e.preventDefault();
@@ -67,7 +182,17 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
             break;
         }
       },
-      [activeIndex, onSelect, onClose]
+      [
+        activeIndex,
+        submenuOpen,
+        submenuActiveIndex,
+        totalItems,
+        transformKinds,
+        menuItems,
+        handleAction,
+        handleTransformSelect,
+        onClose,
+      ]
     );
 
     useEffect(() => {
@@ -90,44 +215,75 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         role="menu"
         tabIndex={0}
         data-test-item-context-menu
+        className="item-context-menu"
         style={{
-          position: "fixed",
           left: pos.left,
           top: pos.top,
           width: MENU_WIDTH,
-          background: "var(--select-menu-bg)",
-          border: "1px solid var(--select-menu-border)",
-          boxShadow: "var(--select-menu-shadow)",
-          borderRadius: "var(--surface-dialog-radius, 8px)",
-          padding: `${MENU_PADDING}px 0`,
-          outline: "none",
-          zIndex: 9999,
-          fontFamily: "var(--font-main)",
-          fontSize: "var(--font-size-sm, 12px)",
         }}
       >
-        {MENU_ITEMS.map((item, index) => (
+        {menuItems.map((item, index) => (
           <div
             key={item.key}
             role="menuitem"
             data-test-context-menu-item
-            onMouseEnter={() => setActiveIndex(index)}
-            onClick={() => onSelect(index)}
-            style={{
-              padding: "8px 12px",
-              cursor: "pointer",
-              color:
-                index === activeIndex
-                  ? "var(--select-option-focus-color, var(--text-primary))"
-                  : "var(--select-option-color, var(--text-primary))",
-              background:
-                index === activeIndex
-                  ? "var(--select-option-focus-bg, var(--surface-history-selected-bg))"
-                  : "transparent",
-              transition: "background 0.1s ease",
+            data-test-action={item.key}
+            className={`item-context-menu__item ${
+              index === activeIndex ? "item-context-menu__item--active" : ""
+            } ${item.hasSubmenu ? "item-context-menu__item--has-submenu" : ""}`}
+            onMouseEnter={() => {
+              setActiveIndex(index);
+              if (item.hasSubmenu) {
+                setSubmenuOpen(true);
+                setSubmenuActiveIndex(0);
+              } else {
+                setSubmenuOpen(false);
+              }
+            }}
+            onClick={() => {
+              setActiveIndex(index);
+              if (item.hasSubmenu) {
+                setSubmenuOpen(true);
+                setSubmenuActiveIndex(0);
+              } else {
+                handleAction(item.key);
+              }
             }}
           >
-            {item.label}
+            <span className="item-context-menu__item-label">{item.label}</span>
+            {item.hasSubmenu && (
+              <>
+                <span className="item-context-menu__item-arrow">▶</span>
+                <div
+                  className={`item-context-menu__submenu ${
+                    submenuOpen ? "item-context-menu__submenu--open" : ""
+                  }`}
+                  style={{ maxHeight: SUBMENU_MAX_HEIGHT }}
+                  data-testid="transform-submenu"
+                >
+                  {transformKinds.map((kind, tIdx) => (
+                    <div
+                      key={kind.id}
+                      role="menuitem"
+                      data-testid="transform-item"
+                      data-test-transform-kind={kind.id}
+                      className={`item-context-menu__submenu-item ${
+                        tIdx === submenuActiveIndex
+                          ? "item-context-menu__submenu-item--active"
+                          : ""
+                      }`}
+                      onMouseEnter={() => setSubmenuActiveIndex(tIdx)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleTransformSelect(kind.id);
+                      }}
+                    >
+                      {language === "en" ? kind.label_en : kind.label_zh}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         ))}
       </div>

@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo, memo } from "react";
+import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
@@ -33,6 +33,8 @@ import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/l
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
+import { ItemContextMenu } from "./ItemContextMenu";
+import type { TransformKindDto } from "./ItemContextMenu";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
 
@@ -577,14 +579,17 @@ const ClipboardItem = ({
     id,
     compactMode,
     className,
-    disableLayout
-}: ClipboardItemProps & { compactMode?: boolean, className?: string }) => {
+    disableLayout,
+    onQRCode,
+}: ClipboardItemProps & { compactMode?: boolean, className?: string, onQRCode?: () => void }) => {
     const tagInputRef = useRef<HTMLInputElement>(null);
     const [localTagInput, setLocalTagInput] = useState(tagInput);
     const [snapshotFailed, setSnapshotFailed] = useState(false);
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
     const [richTextSnapshotSrc, setRichTextSnapshotSrc] = useState<string | null>(null);
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
+    const [contextMenuState, setContextMenuState] = useState<{ x: number; y: number } | null>(null);
+    const [transformKinds, setTransformKinds] = useState<TransformKindDto[]>([]);
     const isComposing = useRef(false);
     const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
     const richSnapshotFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -863,6 +868,55 @@ const ClipboardItem = ({
         };
     }, []);
 
+    useEffect(() => {
+        invoke<TransformKindDto[]>("list_transform_kinds")
+            .then((kinds) => {
+                if (kinds && Array.isArray(kinds)) {
+                    setTransformKinds(kinds);
+                }
+            })
+            .catch(() => {});
+    }, []);
+
+    const handleContextMenuAction = useCallback((action: string) => {
+        switch (action) {
+            case "copy":
+                onCopy(false, false);
+                break;
+            case "editTags":
+                onToggleTagEditor(new MouseEvent("contextmenu") as never);
+                break;
+            case "qrCode":
+                onQRCode?.();
+                break;
+            case "delete":
+                onDelete(new MouseEvent("contextmenu") as never);
+                break;
+            case "pin":
+                onTogglePin(new MouseEvent("contextmenu") as never);
+                break;
+            case "share":
+                break;
+        }
+    }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin]);
+
+    const handleTransform = useCallback((kind: string) => {
+        invoke<string>("transform_text", { text: item.content, kind })
+            .then((result) => {
+                if (result) {
+                    invoke("copy_to_clipboard", { content: result }).catch(() => {});
+                }
+            })
+            .catch(() => {});
+    }, [item.content]);
+
+    useEffect(() => {
+        if (!contextMenuState) return;
+        const handleClick = () => setContextMenuState(null);
+        document.addEventListener("click", handleClick);
+        return () => document.removeEventListener("click", handleClick);
+    }, [contextMenuState]);
+
     const renderFilePreview = () => {
         if (item.file_preview_exists === false) {
             return (
@@ -951,13 +1005,8 @@ const ClipboardItem = ({
                 }
                 void hideCompactPreviewGlobal();
                 e.preventDefault();
-                // Prevent link navigation on right-click too
-                if (target.closest('a')) {
-                    e.stopPropagation();
-                }
-                const pasteImageAsBase64 = item.content_type === "image";
-                onCopy(!pasteImageAsBase64, pasteImageAsBase64);
-                onSelect();
+                e.stopPropagation();
+                setContextMenuState({ x: e.clientX, y: e.clientY });
             }}
             onMouseEnter={(e) => {
                 if (!compactMode) return;
@@ -1306,6 +1355,24 @@ const ClipboardItem = ({
                         </div>
                     )}
                 </div>
+            )}
+            {contextMenuState && (
+                <ItemContextMenu
+                    x={contextMenuState.x}
+                    y={contextMenuState.y}
+                    entry={item}
+                    onSelect={handleContextMenuAction}
+                    onClose={() => setContextMenuState(null)}
+                    onCopy={() => handleContextMenuAction("copy")}
+                    onEditTags={() => handleContextMenuAction("editTags")}
+                    onQRCode={() => handleContextMenuAction("qrCode")}
+                    onDelete={() => handleContextMenuAction("delete")}
+                    onPin={() => handleContextMenuAction("pin")}
+                    onShare={() => handleContextMenuAction("share")}
+                    onTransform={handleTransform}
+                    transformKinds={transformKinds}
+                    language={language === "zh" ? "zh" : language === "en" ? "en" : "zh"}
+                />
             )}
         </motion.div>
     );

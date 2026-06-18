@@ -1,0 +1,120 @@
+/* ItemContextMenu — right-click context menu for clipboard items */
+
+.item-context-menu {
+  position: fixed;
+  min-width: 180px;
+  background: var(--select-menu-bg);
+  border: 1px solid var(--select-menu-border);
+  box-shadow: var(--select-menu-shadow);
+  border-radius: var(--surface-dialog-radius, 8px);
+  padding: 4px 0;
+  outline: none;
+  z-index: 9999;
+  font-family: var(--font-main);
+  font-size: var(--font-size-sm, 12px);
+}
+
+.item-context-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--select-option-color, var(--text-primary));
+  background: transparent;
+  transition: background 0.1s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.item-context-menu__item--active {
+  color: var(--select-option-focus-color, var(--text-primary));
+  background: var(--select-option-focus-bg, var(--surface-history-selected-bg));
+}
+
+.item-context-menu__item--has-submenu {
+  position: relative;
+}
+
+.item-context-menu__item-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-context-menu__item-arrow {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-left: 16px;
+  transition: transform 0.15s ease;
+}
+
+.item-context-menu__item--active > .item-context-menu__item-arrow,
+.item-context-menu__item--has-submenu:hover > .item-context-menu__item-arrow {
+  transform: translateX(2px);
+}
+
+.item-context-menu__separator {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 0;
+  opacity: 0.5;
+}
+
+.item-context-menu__submenu {
+  position: absolute;
+  left: 100%;
+  top: -4px;
+  min-width: 160px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--select-menu-bg);
+  border: 1px solid var(--select-menu-border);
+  box-shadow: var(--select-menu-shadow);
+  border-radius: var(--surface-dialog-radius, 8px);
+  padding: 4px 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 10000;
+}
+
+.item-context-menu__item--has-submenu:hover > .item-context-menu__submenu,
+.item-context-menu__submenu--open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.item-context-menu__submenu-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--select-option-color, var(--text-primary));
+  background: transparent;
+  transition: background 0.1s ease;
+  user-select: none;
+  white-space: nowrap;
+  font-size: var(--font-size-sm, 12px);
+}
+
+.item-context-menu__submenu-item--active {
+  color: var(--select-option-focus-color, var(--text-primary));
+  background: var(--select-option-focus-bg, var(--surface-history-selected-bg));
+}
+
+/* Scrollbar styling for submenu overflow */
+.item-context-menu__submenu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.item-context-menu__submenu::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-bg);
+  border-radius: 2px;
+}
+
+.item-context-menu__submenu::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover-bg);
+}
