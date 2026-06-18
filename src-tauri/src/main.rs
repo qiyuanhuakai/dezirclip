@@ -222,6 +222,11 @@ fn main() {
             
             app::commands::get_tag_colors,
             app::commands::set_tag_color,
+            app::commands::qr_cmd::generate_qr_png,
+            app::commands::qr_cmd::generate_qr_svg,
+
+            app::commands::transform_text,
+            app::commands::list_transform_kinds,
             
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::get_system_default_app,

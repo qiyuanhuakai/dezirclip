@@ -1,4 +1,5 @@
 pub mod history_cmd;
+pub mod qr_cmd;
 pub mod settings_cmd;
 pub mod tag_color_cmd;
 pub mod system_cmd;
@@ -17,3 +18,4 @@ pub use ui_cmd::*;
 pub use hotkey_cmd::*;
 pub use clipboard_cmd::*;
 pub use file_cmd::*;
+pub use transform_cmd::*;
