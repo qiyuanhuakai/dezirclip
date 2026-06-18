@@ -227,7 +227,12 @@ fn main() {
 
             app::commands::transform_text,
             app::commands::list_transform_kinds,
-            
+
+            app::commands::search_fts,
+            app::commands::search_fuzzy,
+            app::commands::search_regex,
+            app::commands::get_search_history,
+
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::get_system_default_app,
             #[cfg(target_os = "windows")]

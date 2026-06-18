@@ -1,0 +1,119 @@
+/* QR Code Dialog — theme-token-only, zero hardcoded colors */
+
+.qr-dialog-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--surface-overlay-bg);
+  backdrop-filter: blur(var(--surface-overlay-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--surface-overlay-blur, 0px));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: var(--spacing-md, 16px);
+}
+
+.qr-dialog {
+  background: var(--surface-dialog-bg, var(--bg-window));
+  border: 4px solid var(--surface-dialog-border, var(--border-dark));
+  box-shadow: var(--surface-dialog-shadow, 0 16px 48px rgba(0, 0, 0, 0.2));
+  border-radius: var(--surface-dialog-radius, 16px);
+  padding: var(--spacing-md, 16px);
+  max-width: 400px;
+  width: 100%;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+}
+
+.qr-dialog__title {
+  font-size: var(--font-size-lg, 16px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.qr-dialog__image {
+  padding: var(--spacing-md, 16px);
+  border: 2px solid var(--border-light, var(--border-dark));
+  border-radius: var(--radius-panel, 2px);
+  background: var(--bg-input);
+}
+
+.qr-dialog__image img {
+  display: block;
+  width: 256px;
+  height: 256px;
+  image-rendering: pixelated;
+}
+
+.qr-dialog__content {
+  font-size: var(--font-size-sm, 12px);
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.qr-dialog__loading {
+  font-size: var(--font-size-md, 14px);
+  color: var(--text-secondary);
+  padding: var(--spacing-md, 16px);
+}
+
+.qr-dialog__error {
+  font-size: var(--font-size-sm, 12px);
+  color: var(--color-error);
+  text-align: center;
+}
+
+.qr-dialog__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: var(--spacing-sm, 8px);
+}
+
+.qr-dialog__btn {
+  padding: 10px 20px;
+  font-size: var(--font-size-md, 14px);
+  font-weight: 700;
+  cursor: pointer;
+  border: 2px solid var(--control-confirm-btn-border, var(--border-dark));
+  background: var(--control-confirm-btn-bg, var(--bg-button));
+  color: var(--control-confirm-btn-text, var(--text-primary));
+  transition: all 0.1s ease;
+  box-shadow: var(--control-confirm-btn-shadow, 0 2px 4px rgba(0, 0, 0, 0.05));
+  text-transform: uppercase;
+}
+
+.qr-dialog__btn:hover {
+  background: var(--control-confirm-btn-hover-bg, var(--bg-input));
+  transform: translate(-1px, -1px);
+  box-shadow: var(--control-confirm-btn-hover-shadow, 0 4px 8px rgba(0, 0, 0, 0.1));
+}
+
+.qr-dialog__btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--shadow-color);
+}
+
+.qr-dialog__btn--primary {
+  background: var(--accent-color, var(--text-primary));
+  color: var(--bg-input);
+  border-color: var(--accent-color, var(--text-primary));
+}
+
+.qr-dialog__btn--primary:hover {
+  background: var(--accent-hover, var(--accent-color));
+}
