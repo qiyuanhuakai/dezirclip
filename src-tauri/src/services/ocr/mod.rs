@@ -1,3 +1,4 @@
+pub mod linux;
 pub mod windows;
 
 #[derive(Debug)]
@@ -11,7 +12,10 @@ pub enum OcrError {
 impl std::fmt::Display for OcrError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OcrError::NoOcrEngine => write!(f, "No OCR engine available on this platform"),
+            OcrError::NoOcrEngine => write!(
+                f,
+                "OCR is not supported on this platform (No OCR engine available)"
+            ),
             OcrError::NoLanguages => write!(f, "No OCR language pack installed"),
             OcrError::ImageError(e) => write!(f, "Image decode error: {e}"),
             OcrError::OcrFailed(msg) => write!(f, "OCR failed: {msg}"),
@@ -34,4 +38,8 @@ impl From<image::ImageError> for OcrError {
     }
 }
 
+#[cfg(target_os = "linux")]
+pub use linux::OcrService;
+
+#[cfg(target_os = "windows")]
 pub use windows::OcrService;
