@@ -45,3 +45,31 @@ pub struct SessionHistory(pub Mutex<VecDeque<ClipboardEntry>>);
 pub struct AppDataDir(pub Mutex<std::path::PathBuf>);
 
 pub struct EncryptionQueueState(pub EncryptionQueue);
+
+const SEARCH_HISTORY_MAX: usize = 20;
+
+#[derive(Default)]
+pub struct SearchHistory(pub Mutex<VecDeque<String>>);
+
+impl SearchHistory {
+    pub fn push(&self, query: String) {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if let Ok(mut guard) = self.0.lock() {
+            guard.retain(|existing| existing != trimmed);
+            guard.push_front(trimmed.to_string());
+            while guard.len() > SEARCH_HISTORY_MAX {
+                guard.pop_back();
+            }
+        }
+    }
+
+    pub fn snapshot(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .map(|guard| guard.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+}

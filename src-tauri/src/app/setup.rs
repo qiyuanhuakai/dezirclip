@@ -4,7 +4,7 @@ use crate::app::hooks::{keyboard_proc, mouse_proc};
 use crate::app::system::tray_subclass_proc;
 use crate::app::window_manager::{release_win_keys, restore_last_focus, toggle_window};
 use crate::app_state::{
-    AppDataDir, EncryptionQueueState, PasteQueue, SessionHistory, SettingsState,
+    AppDataDir, EncryptionQueueState, PasteQueue, SearchHistory, SessionHistory, SettingsState,
 };
 use crate::database::{self, DbState};
 use crate::global_state::*;
@@ -417,6 +417,7 @@ fn setup_state(
     )));
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));
     app.manage(PasteQueue::default());
+    app.manage(SearchHistory::default());
 }
 
 fn setup_main_window(app: &App, s: &StartupSettings) {
