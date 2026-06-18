@@ -265,6 +265,24 @@ export const tw = {
         filter_chips_empty: "沒有符合的內容",
         filter_chips_disabled_hint: "智慧分類已關閉",
 
+        // Settings - Export/Import
+        data_export: "匯出歷史",
+        data_import: "匯入歷史",
+        data_export_title: "匯出剪貼簿歷史",
+        data_import_title: "匯入剪貼簿歷史",
+        data_export_format: "匯出格式",
+        data_export_format_json: "JSON (純文字)",
+        data_export_format_encrypted: "加密備份",
+        data_export_passphrase: "加密密碼",
+        data_export_passphrase_confirm: "確認密碼",
+        data_export_passphrase_error: "密碼至少需要12個字元",
+        data_export_passphrase_mismatch: "兩次密碼不一致",
+        data_import_mode: "匯入模式",
+        data_import_mode_merge: "合併 (保留現有)",
+        data_import_mode_replace: "替換 (覆蓋現有)",
+        data_import_passphrase: "解密密碼",
+        data_import_preview: "預覽 (前10筆)",
+
         // clipboard.ocr keys
         ocr_processing: "OCR 辨識中...",
         ocr_done_label: "OCR 文字",

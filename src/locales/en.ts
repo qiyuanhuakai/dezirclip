@@ -266,6 +266,24 @@ export const en = {
         filter_chips_empty: "No matching content",
         filter_chips_disabled_hint: "Classification disabled",
 
+        // Settings - Export/Import
+        data_export: "Export History",
+        data_import: "Import History",
+        data_export_title: "Export Clipboard History",
+        data_import_title: "Import Clipboard History",
+        data_export_format: "Export Format",
+        data_export_format_json: "JSON (plain text)",
+        data_export_format_encrypted: "Encrypted backup",
+        data_export_passphrase: "Passphrase",
+        data_export_passphrase_confirm: "Confirm passphrase",
+        data_export_passphrase_error: "Passphrase must be at least 12 characters",
+        data_export_passphrase_mismatch: "Passphrases do not match",
+        data_import_mode: "Import mode",
+        data_import_mode_merge: "Merge (keep existing)",
+        data_import_mode_replace: "Replace (overwrite)",
+        data_import_passphrase: "Decryption passphrase",
+        data_import_preview: "Preview (first 10)",
+
         // clipboard.ocr keys
         ocr_processing: "OCR Processing...",
         ocr_done_label: "OCR Text",

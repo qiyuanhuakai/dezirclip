@@ -265,6 +265,24 @@ export const zh = {
         filter_chips_empty: "没有匹配的内容",
         filter_chips_disabled_hint: "智能分类已关闭",
 
+        // Settings - Export/Import
+        data_export: "导出历史",
+        data_import: "导入历史",
+        data_export_title: "导出剪贴板历史",
+        data_import_title: "导入剪贴板历史",
+        data_export_format: "导出格式",
+        data_export_format_json: "JSON (纯文本)",
+        data_export_format_encrypted: "加密备份",
+        data_export_passphrase: "加密密码",
+        data_export_passphrase_confirm: "确认密码",
+        data_export_passphrase_error: "密码至少需要12个字符",
+        data_export_passphrase_mismatch: "两次密码不一致",
+        data_import_mode: "导入模式",
+        data_import_mode_merge: "合并 (保留现有)",
+        data_import_mode_replace: "替换 (覆盖现有)",
+        data_import_passphrase: "解密密码",
+        data_import_preview: "预览 (前10条)",
+
         // clipboard.ocr keys
         ocr_processing: "OCR 识别中...",
         ocr_done_label: "OCR 文本",
