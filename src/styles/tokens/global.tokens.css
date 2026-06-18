@@ -164,4 +164,12 @@
   --search-history-item-hover-bg: var(--control-segment-bg);
   --search-history-text: var(--text-primary);
   --search-history-empty-text: var(--text-muted);
+  --chip-bg: transparent;
+  --chip-text: var(--text-primary);
+  --chip-border: var(--border-dark);
+  --chip-active-bg: var(--accent-color);
+  --chip-active-text: #ffffff;
+  --chip-active-border: var(--accent-color);
+  --chip-hover-bg: var(--bg-element);
+  --chip-hover-border: var(--border-dark);
 }
