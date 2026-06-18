@@ -8,7 +8,7 @@
 
 .match-highlight mark {
   background: var(--highlight-bg, rgba(72, 123, 219, 0.22));
-  color: var(--highlight-text, var(--text-primary, #373737));
+  color: var(--highlight-text, var(--text-primary));
   padding: 0 1px;
   border-radius: 2px;
   border: none;
@@ -23,8 +23,8 @@
   left: 0;
   right: 0;
   z-index: 20;
-  background: var(--search-history-bg, var(--bg-input, #ffffff));
-  border: 1px solid var(--search-history-border, var(--border-light, #f3f3f3));
+  background: var(--search-history-bg, var(--bg-input));
+  border: 1px solid var(--search-history-border, var(--border-light));
   border-radius: var(--radius-panel, 2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   max-height: 200px;
@@ -35,7 +35,7 @@
 .search-history__item {
   padding: 6px var(--spacing-md, 16px);
   font-size: var(--font-size-sm, 12px);
-  color: var(--search-history-text, var(--text-primary, #373737));
+  color: var(--search-history-text, var(--text-primary));
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -55,13 +55,13 @@
 }
 
 .search-history__icon {
-  color: var(--text-secondary, #707070);
+  color: var(--text-secondary);
   flex-shrink: 0;
 }
 
 .search-history__empty {
   padding: 8px var(--spacing-md, 16px);
   font-size: var(--font-size-sm, 12px);
-  color: var(--search-history-empty-text, var(--text-muted, #999999));
+  color: var(--search-history-empty-text, var(--text-muted));
   text-align: center;
 }
