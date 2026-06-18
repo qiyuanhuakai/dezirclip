@@ -1,3 +1,4 @@
+pub mod classification_cmd;
 pub mod history_cmd;
 pub mod qr_cmd;
 pub mod search_cmd;
@@ -13,6 +14,7 @@ pub mod quick_paste_cmd;
 
 // Re-export all commands for convenience in main.rs if needed,
 // though tauri usually expects them to be referenced via module path in generate_handler!
+pub use classification_cmd::*;
 pub use history_cmd::*;
 pub use qr_cmd::*;
 pub use search_cmd::*;

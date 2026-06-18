@@ -233,6 +233,9 @@ fn main() {
             app::commands::transform_text,
             app::commands::list_transform_kinds,
 
+            app::commands::classify_text,
+            app::commands::get_supported_kinds,
+
             app::commands::search_fts,
             app::commands::search_fuzzy,
             app::commands::search_regex,
