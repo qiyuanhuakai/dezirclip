@@ -6,6 +6,7 @@
 @import "./compact-preview.css";
 @import "./empty-state.css";
 @import "./emoji.css";
+@import "./item-context-menu.css";
 @import "./layout.css";
 @import "./modal.css";
 @import "./progress-toast.css";
@@ -13,6 +14,7 @@
 @import "./QrCodeDialog.css";
 @import "./rich-text-preview.css";
 @import "./scrollbar.css";
+@import "./SearchBar.css";
 @import "./settings.css";
 @import "./tags.css";
 @import "./toast.css";

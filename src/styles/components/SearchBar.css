@@ -1,0 +1,183 @@
+/* SearchBar - search input with mode indicator and history dropdown */
+
+.search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm, 8px);
+  width: 100%;
+  position: relative;
+}
+
+.search-bar__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+}
+
+.search-bar__input-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.search-bar__icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary, #707070);
+  pointer-events: none;
+}
+
+.search-bar__input {
+  width: 100%;
+  background: var(--bg-input, #ffffff);
+  border: 2px solid var(--border-light, #f3f3f3);
+  border-radius: var(--radius-panel, 2px);
+  padding: 8px 32px 8px 34px;
+  color: var(--text-primary, #373737);
+  font-family: var(--font-main, inherit);
+  font-size: var(--font-size-md, 14px);
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.search-bar__input::placeholder {
+  color: var(--text-muted, #999999);
+}
+
+.search-bar__input:focus {
+  border-color: var(--accent-color, #487bdb);
+  background: var(--bg-input, #ffffff);
+}
+
+.search-bar__clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-secondary, #707070);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: var(--font-size-md, 14px);
+}
+
+.search-bar__clear:hover {
+  color: var(--text-primary, #373737);
+}
+
+/* Mode indicator */
+.search-bar__mode {
+  display: flex;
+  gap: 2px;
+  background: var(--control-segment-bg, rgba(128, 128, 128, 0.08));
+  border: 1px solid var(--control-segment-border, rgba(128, 128, 128, 0.1));
+  border-radius: var(--radius-panel, 2px);
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.search-bar__mode-btn {
+  background: none;
+  border: none;
+  padding: 4px 10px;
+  font-size: var(--font-size-sm, 12px);
+  font-family: var(--font-main, inherit);
+  color: var(--text-secondary, #707070);
+  cursor: pointer;
+  border-radius: var(--radius-panel, 2px);
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.search-bar__mode-btn:hover {
+  color: var(--text-primary, #373737);
+}
+
+.search-bar__mode-btn--active {
+  background: var(--control-segment-active-bg, rgba(255, 255, 255, 0.8));
+  color: var(--control-segment-active-text, #000000);
+  box-shadow: var(--surface-segment-active-shadow, none);
+}
+
+/* Loading spinner */
+.search-bar__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  color: var(--text-secondary, #707070);
+  font-size: var(--font-size-sm, 12px);
+}
+
+.search-bar__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-light, #f3f3f3);
+  border-top-color: var(--accent-color, #487bdb);
+  border-radius: 50%;
+  animation: search-bar-spin 0.6s linear infinite;
+}
+
+@keyframes search-bar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Error message */
+.search-bar__error {
+  color: var(--color-error, #dc3545);
+  font-size: var(--font-size-sm, 12px);
+  padding: 0 var(--spacing-sm, 8px);
+}
+
+/* Recent searches dropdown */
+.search-bar__history {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--search-input-dropdown-open-bg, var(--bg-input, #ffffff));
+  border: 1px solid var(--search-input-dropdown-open-border, var(--border-light, #f3f3f3));
+  border-radius: var(--radius-panel, 2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 2px;
+}
+
+.search-bar__history-item {
+  padding: 6px var(--spacing-md, 16px);
+  font-size: var(--font-size-sm, 12px);
+  color: var(--search-input-text, var(--text-primary, #373737));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-bar__history-item:hover {
+  background: var(--control-segment-bg, rgba(128, 128, 128, 0.08));
+}
+
+.search-bar__history-icon {
+  color: var(--text-secondary, #707070);
+  flex-shrink: 0;
+}
+
+/* Result count */
+.search-bar__count {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--text-secondary, #707070);
+  padding: 0 var(--spacing-sm, 8px);
+}
