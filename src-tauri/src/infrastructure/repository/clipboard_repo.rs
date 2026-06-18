@@ -1551,4 +1551,119 @@ mod tests {
         assert_eq!(emoji_results.len(), 1);
         assert!(emoji_results[0].content.contains("🎉"));
     }
+
+    fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({})", table))
+            .expect("table_info prepare");
+        let mut rows = stmt.query([]).expect("table_info query");
+        while let Some(row) = rows.next().expect("row iter") {
+            let name: String = row.get(1).expect("name col");
+            if name == column {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn has_index(conn: &Connection, index_name: &str) -> bool {
+        conn.query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+            [index_name],
+            |_| Ok(()),
+        )
+        .is_ok()
+    }
+
+    #[test]
+    fn test_v13_adds_content_kinds_column() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("initial migrations failed");
+
+        conn.execute("DROP INDEX IF EXISTS idx_clipboard_history_content_kinds", [])
+            .expect("drop index");
+        conn.execute("DROP TRIGGER IF EXISTS clipboard_history_ai", [])
+            .expect("drop ai trigger");
+        conn.execute("DROP TRIGGER IF EXISTS clipboard_history_ad", [])
+            .expect("drop ad trigger");
+        conn.execute("DROP TRIGGER IF EXISTS clipboard_history_au", [])
+            .expect("drop au trigger");
+        conn.execute("DROP TABLE IF EXISTS clipboard_fts", [])
+            .expect("drop fts table");
+        conn.execute(
+            "DELETE FROM schema_migrations WHERE version = 13",
+            [],
+        )
+        .expect("version reset failed");
+        conn.execute(
+            "ALTER TABLE clipboard_history DROP COLUMN content_kinds",
+            [],
+        )
+        .expect("DROP COLUMN requires SQLite >= 3.35; rusqlite 0.31 bundled satisfies this");
+
+        assert!(
+            !has_column(&conn, "clipboard_history", "content_kinds"),
+            "pre-v13 state: content_kinds column must be missing"
+        );
+
+        run_migrations(&mut conn).expect("re-applied migrations failed");
+
+        assert!(
+            has_column(&conn, "clipboard_history", "content_kinds"),
+            "post-v13 state: content_kinds column must exist after migration"
+        );
+
+        let dflt_value: String = conn
+            .query_row(
+                "SELECT dflt_value FROM pragma_table_info('clipboard_history') WHERE name='content_kinds'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("column metadata query");
+        assert_eq!(
+            dflt_value, "'[]'",
+            "content_kinds default must be the JSON array literal '[]'"
+        );
+    }
+
+    #[test]
+    fn test_v13_indexes_exist() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations failed");
+
+        assert!(
+            has_index(&conn, "idx_clipboard_history_content_kinds"),
+            "idx_clipboard_history_content_kinds must exist after v13"
+        );
+    }
+
+    #[test]
+    fn test_v13_fts5_rebuild() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations failed");
+
+        assert!(
+            has_column(&conn, "clipboard_fts", "content_kinds"),
+            "v13 FTS5 schema must include content_kinds column"
+        );
+
+        let arc = Arc::new(Mutex::new(conn));
+        {
+            let conn = arc.lock().expect("lock");
+            insert_entry(&conn, "alpha apple banana foo cherry", "App1", 1_700_000_000);
+            insert_entry(&conn, "delta elephant falcon grape", "App2", 1_700_000_001);
+            insert_entry(&conn, "hello foo world baz qux", "App3", 1_700_000_002);
+        }
+
+        let repo = SqliteClipboardRepository::new(arc);
+        let results = repo.search_fts("foo", 10).expect("search_fts failed");
+        assert_eq!(
+            results.len(),
+            2,
+            "v13 FTS5 must still match both 'foo'-bearing entries after rebuild"
+        );
+        let contents: Vec<&str> = results.iter().map(|e| e.content.as_str()).collect();
+        assert!(contents.iter().any(|c| c.contains("apple banana foo")));
+        assert!(contents.iter().any(|c| c.contains("hello foo world")));
+    }
 }

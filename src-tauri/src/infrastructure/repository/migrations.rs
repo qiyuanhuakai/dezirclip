@@ -233,6 +233,77 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (12)", [])?;
     }
 
+    // Migration 13: Add content_kinds column for classification results and
+    // extend the FTS5 virtual table to index it. content_kinds is a JSON array
+    // string (e.g. '["text","code"]') produced by services::classification::classify().
+    // The FTS5 schema from v12 is rebuilt because FTS5 virtual tables do not
+    // support ALTER TABLE — we must drop + recreate to add a column.
+    if current_version < 13 {
+        conn.execute("BEGIN", [])?;
+        let migration_result = (|| -> Result<()> {
+            if !has_column(conn, "clipboard_history", "content_kinds")? {
+                conn.execute(
+                    "ALTER TABLE clipboard_history ADD COLUMN content_kinds TEXT NOT NULL DEFAULT '[]'",
+                    [],
+                )?;
+            }
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_clipboard_history_content_kinds
+                    ON clipboard_history (content_kinds)",
+                [],
+            )?;
+            if !has_column(conn, "clipboard_fts", "content_kinds")? {
+                conn.execute_batch(
+                    "
+                    DROP TRIGGER IF EXISTS clipboard_history_ai;
+                    DROP TRIGGER IF EXISTS clipboard_history_ad;
+                    DROP TRIGGER IF EXISTS clipboard_history_au;
+                    DROP TABLE IF EXISTS clipboard_fts;
+
+                    CREATE VIRTUAL TABLE clipboard_fts USING fts5(
+                        content,
+                        preview,
+                        source_app,
+                        content_kinds,
+                        content='clipboard_history',
+                        content_rowid='id',
+                        tokenize='trigram'
+                    );
+
+                    CREATE TRIGGER clipboard_history_ai AFTER INSERT ON clipboard_history BEGIN
+                        INSERT INTO clipboard_fts(rowid, content, preview, source_app, content_kinds)
+                        VALUES (new.id, new.content, new.preview, new.source_app, new.content_kinds);
+                    END;
+
+                    CREATE TRIGGER clipboard_history_ad AFTER DELETE ON clipboard_history BEGIN
+                        INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app, content_kinds)
+                        VALUES ('delete', old.id, old.content, old.preview, old.source_app, old.content_kinds);
+                    END;
+
+                    CREATE TRIGGER clipboard_history_au AFTER UPDATE ON clipboard_history BEGIN
+                        INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app, content_kinds)
+                        VALUES ('delete', old.id, old.content, old.preview, old.source_app, old.content_kinds);
+                        INSERT INTO clipboard_fts(rowid, content, preview, source_app, content_kinds)
+                        VALUES (new.id, new.content, new.preview, new.source_app, new.content_kinds);
+                    END;
+                    ",
+                )?;
+            }
+            conn.execute(
+                "INSERT INTO clipboard_fts(clipboard_fts) VALUES ('rebuild')",
+                [],
+            )?;
+            Ok(())
+        })();
+
+        if let Err(err) = migration_result {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(err);
+        }
+        conn.execute("COMMIT", [])?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (13)", [])?;
+    }
+
     Ok(())
 }
 

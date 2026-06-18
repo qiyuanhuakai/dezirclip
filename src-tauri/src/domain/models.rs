@@ -24,8 +24,8 @@ pub struct ClipboardEntry {
     #[serde(default = "default_true")]
     pub file_preview_exists: bool, // Transient field: does the file exist on disk?
     /// Classification result populated by `services::classification::classify()`.
-    /// Stored as CSV (e.g., "text,code") in `clipboard_history.content_kinds` (added in v13).
-    /// Empty for pre-v12 data; new entries get the value computed at write time.
+    /// Stored as a JSON array string (e.g., '["text","code"]') in `clipboard_history.content_kinds`
+    /// (added in v13). Empty for pre-v13 data; new entries get the value computed at write time.
     #[serde(default)]
     pub content_kinds: Vec<String>,
     /// OCR-extracted text populated by `services::ocr::windows::extract_text()`.
