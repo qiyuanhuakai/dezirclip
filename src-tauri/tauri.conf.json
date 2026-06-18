@@ -42,6 +42,21 @@
         "visible": false,
         "focus": false,
         "shadow": false
+      },
+      {
+        "label": "region-select",
+        "title": "",
+        "url": "index.html?window=region-select",
+        "width": 1920,
+        "height": 1080,
+        "fullscreen": true,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "shadow": false
       }
     ],
     "security": {

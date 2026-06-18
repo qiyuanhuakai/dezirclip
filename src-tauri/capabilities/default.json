@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "compact-preview",
-    "quick-paste"
+    "quick-paste",
+    "region-select"
   ],
   "permissions": [
     "core:default",
