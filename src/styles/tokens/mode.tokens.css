@@ -119,4 +119,9 @@ body.dark-mode {
   --compact-btn-active-bg: color-mix(in srgb, var(--accent-color) 30%, transparent);
   --compact-btn-active-border: 1px solid color-mix(in srgb, var(--accent-color) 62%, transparent);
   --compact-btn-active-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-color) 40%, transparent), 0 2px 12px color-mix(in srgb, var(--accent-color) 25%, transparent);
+
+  --highlight-bg: rgba(72, 123, 219, 0.35);
+  --search-history-bg: var(--bg-input);
+  --search-history-border: rgba(255, 255, 255, 0.1);
+  --search-history-item-hover-bg: rgba(255, 255, 255, 0.08);
 }

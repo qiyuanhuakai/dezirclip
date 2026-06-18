@@ -156,4 +156,12 @@
   --compact-btn-active-hover-transform: translateY(-1px);
 
   --color-error: #dc3545;
+
+  --highlight-bg: rgba(72, 123, 219, 0.22);
+  --highlight-text: var(--text-primary);
+  --search-history-bg: var(--bg-input);
+  --search-history-border: var(--border-light);
+  --search-history-item-hover-bg: var(--control-segment-bg);
+  --search-history-text: var(--text-primary);
+  --search-history-empty-text: var(--text-muted);
 }

@@ -8,6 +8,7 @@
 @import "./emoji.css";
 @import "./item-context-menu.css";
 @import "./layout.css";
+@import "./MatchHighlight.css";
 @import "./modal.css";
 @import "./progress-toast.css";
 @import "./queue-bar.css";

@@ -133,6 +133,11 @@ body:is(.theme-mica, .theme-acrylic) {
   --compact-btn-active-bg: color-mix(in srgb, var(--accent-color) 25%, transparent);
   --compact-btn-active-border: 1px solid color-mix(in srgb, var(--accent-color) 62%, transparent);
   --compact-btn-active-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 30%, transparent), 0 4px 12px color-mix(in srgb, var(--accent-color) 25%, transparent);
+
+  --highlight-bg: color-mix(in srgb, var(--accent-color) 18%, transparent);
+  --search-history-bg: var(--modern-input-bg);
+  --search-history-border: var(--modern-input-border);
+  --search-history-item-hover-bg: var(--control-segment-bg);
 }
 
 :root.theme-acrylic,
@@ -252,6 +257,11 @@ body.dark-mode:is(.theme-mica, .theme-acrylic) {
   --compact-btn-hover-bg: color-mix(in srgb, var(--bg-input) 88%, transparent);
   --compact-btn-active-bg: color-mix(in srgb, var(--accent-color) 35%, transparent);
   --compact-btn-active-border: 1px solid color-mix(in srgb, var(--accent-color) 72%, transparent);
+
+  --highlight-bg: color-mix(in srgb, var(--accent-color) 28%, transparent);
+  --search-history-bg: var(--modern-input-bg);
+  --search-history-border: var(--modern-input-border);
+  --search-history-item-hover-bg: rgba(255, 255, 255, 0.08);
 }
 
 :root.dark-mode.theme-acrylic,
@@ -270,6 +280,11 @@ body.dark-mode.theme-acrylic {
   --modern-data-bg: rgba(255, 255, 255, 0.04);
   --modern-btn-bg: rgba(255, 255, 255, 0.04);
   --modern-btn-hover-bg: rgba(255, 255, 255, 0.1);
+
+  --highlight-bg: color-mix(in srgb, var(--accent-color) 30%, transparent);
+  --search-history-bg: var(--modern-input-bg);
+  --search-history-border: var(--modern-input-border);
+  --search-history-item-hover-bg: rgba(255, 255, 255, 0.1);
 }
 
 :root:is(.theme-macos, .theme-scifi, .theme-retro),
