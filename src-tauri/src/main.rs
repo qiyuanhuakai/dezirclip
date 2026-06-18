@@ -215,6 +215,11 @@ fn main() {
             app::commands::list_emoji_favorites,
             app::commands::save_emoji_favorite_data_url,
             app::commands::get_file_size,
+
+            app::commands::show_quick_paste,
+            app::commands::hide_quick_paste,
+            app::commands::is_quick_paste_visible,
+            app::commands::paste_quick_paste_selection,
             
             services::paste_queue::get_paste_queue,
             services::paste_queue::set_paste_queue,
