@@ -264,4 +264,11 @@ export const tw = {
         filter_chips_kind_json: "JSON",
         filter_chips_empty: "沒有符合的內容",
         filter_chips_disabled_hint: "智慧分類已關閉",
+
+        // clipboard.ocr keys
+        ocr_processing: "OCR 辨識中...",
+        ocr_done_label: "OCR 文字",
+        ocr_failed_label: "OCR 失敗",
+        ocr_unsupported_label: "OCR 不支援",
+        ocr_toggle_label: "展開/收起 OCR 文字",
 };

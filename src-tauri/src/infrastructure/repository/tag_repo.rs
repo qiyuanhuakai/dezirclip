@@ -300,6 +300,7 @@ impl TagRepository for SqliteTagRepository {
                     file_preview_exists: true, // simplified
                     content_kinds: Vec::new(),
                     ocr_text: None,
+                    ocr_status: None,
                 })
             })
             .map_err(|e| e.to_string())?;

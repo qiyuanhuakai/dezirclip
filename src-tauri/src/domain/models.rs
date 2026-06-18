@@ -33,6 +33,10 @@ pub struct ClipboardEntry {
     /// or non-image entries.
     #[serde(default)]
     pub ocr_text: Option<String>,
+    /// OCR processing status: "pending" | "processing" | "done" | "failed" | "unsupported".
+    /// Stored in `clipboard_history.ocr_status` (added in v14).
+    #[serde(default)]
+    pub ocr_status: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -62,12 +66,14 @@ mod tests {
             file_preview_exists: true,
             content_kinds: vec!["text".to_string()],
             ocr_text: Some("ocr result".to_string()),
+            ocr_status: Some("done".to_string()),
         };
         let json = serde_json::to_string(&entry).expect("serialize");
         let parsed: ClipboardEntry = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.id, 1);
         assert_eq!(parsed.content_kinds, vec!["text".to_string()]);
         assert_eq!(parsed.ocr_text, Some("ocr result".to_string()));
+        assert_eq!(parsed.ocr_status, Some("done".to_string()));
     }
 
     #[test]
@@ -76,5 +82,6 @@ mod tests {
         let parsed: ClipboardEntry = serde_json::from_str(json).expect("deserialize");
         assert_eq!(parsed.content_kinds, Vec::<String>::new());
         assert_eq!(parsed.ocr_text, None);
+        assert_eq!(parsed.ocr_status, None);
     }
 }

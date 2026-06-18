@@ -7,6 +7,7 @@ use crate::database::DbState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrResult {
+    pub item_id: i64,
     pub text: String,
     pub confidence: Option<f32>,
     pub status: String,
@@ -80,6 +81,7 @@ pub async fn recognize_clipboard_image(
         drop(conn);
 
         let result = OcrResult {
+            item_id,
             text: text.clone(),
             confidence: None,
             status: "done".to_string(),
@@ -118,12 +120,14 @@ mod tests {
     #[test]
     fn test_ocr_result_serialize_roundtrip() {
         let result = OcrResult {
+            item_id: 1,
             text: "Hello World".to_string(),
             confidence: Some(0.95),
             status: "done".to_string(),
         };
         let json = serde_json::to_string(&result).expect("serialize");
         let parsed: OcrResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(parsed.item_id, 1);
         assert_eq!(parsed.text, "Hello World");
         assert_eq!(parsed.confidence, Some(0.95));
         assert_eq!(parsed.status, "done");
@@ -146,6 +150,7 @@ mod tests {
     #[test]
     fn test_ocr_result_none_confidence_serializes_as_null() {
         let result = OcrResult {
+            item_id: 2,
             text: "x".to_string(),
             confidence: None,
             status: "failed".to_string(),

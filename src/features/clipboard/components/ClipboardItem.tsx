@@ -590,6 +590,9 @@ const ClipboardItem = ({
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
     const [contextMenuState, setContextMenuState] = useState<{ x: number; y: number } | null>(null);
     const [transformKinds, setTransformKinds] = useState<TransformKindDto[]>([]);
+    const [ocrText, setOcrText] = useState<string | null>(item.ocr_text ?? null);
+    const [ocrStatus, setOcrStatus] = useState<string | null>(item.ocr_status ?? null);
+    const [ocrTextExpanded, setOcrTextExpanded] = useState(false);
     const isComposing = useRef(false);
     const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
     const richSnapshotFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -878,6 +881,27 @@ const ClipboardItem = ({
             .catch(() => {});
     }, []);
 
+    useEffect(() => {
+        const unlisten = listen<{ item_id: number; text: string; status: string }>(
+            "ocr:complete",
+            (event) => {
+                if (event.payload.item_id === item.id) {
+                    setOcrStatus(event.payload.status);
+                    setOcrText(event.payload.text || null);
+                }
+            }
+        );
+        return () => {
+            unlisten.then((fn) => fn());
+        };
+    }, [item.id]);
+
+    useEffect(() => {
+        setOcrText(item.ocr_text ?? null);
+        setOcrStatus(item.ocr_status ?? null);
+        setOcrTextExpanded(false);
+    }, [item.id, item.ocr_text, item.ocr_status]);
+
     const handleContextMenuAction = useCallback((action: string) => {
         switch (action) {
             case "copy":
@@ -1109,6 +1133,34 @@ const ClipboardItem = ({
                         </button>
                     </div>
                     <div className="app-info" style={{ opacity: 0.6, fontSize: '10px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                        {ocrStatus && ocrStatus !== "pending" && (
+                            <span
+                                data-testid="ocr-badge"
+                                className="ocr-badge"
+                                style={{
+                                    fontSize: '9px',
+                                    padding: '1px 4px',
+                                    borderRadius: '3px',
+                                    background: ocrStatus === "done"
+                                        ? 'var(--accent-color, #4a9eff)'
+                                        : ocrStatus === "processing"
+                                            ? 'var(--text-secondary, #888)'
+                                            : ocrStatus === "failed"
+                                                ? 'var(--error-color, #e74c3c)'
+                                                : 'var(--text-tertiary, #666)',
+                                    color: '#fff',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
+                                {ocrStatus === "processing"
+                                    ? t('ocr_processing')
+                                    : ocrStatus === "done"
+                                        ? t('ocr_done_label')
+                                        : ocrStatus === "failed"
+                                            ? t('ocr_failed_label')
+                                            : t('ocr_unsupported_label')}
+                            </span>
+                        )}
                         <span>{getConciseTime(item.timestamp, language)}</span>
                     </div>
                 </div>
@@ -1258,6 +1310,63 @@ const ClipboardItem = ({
                 )}
             </div>
 
+            {ocrStatus === "done" && ocrText && (
+                <div
+                    data-testid="ocr-section"
+                    className="ocr-text-section"
+                    style={{
+                        marginTop: '4px',
+                        borderTop: '1px solid var(--border-color, rgba(128,128,128,0.2))',
+                        paddingTop: '4px',
+                    }}
+                >
+                    <button
+                        data-testid="ocr-toggle"
+                        className="btn-icon"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setOcrTextExpanded((prev) => !prev);
+                        }}
+                        title={t('ocr_toggle_label')}
+                        style={{
+                            fontSize: '9px',
+                            padding: '1px 4px',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--text-secondary, #888)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                        }}
+                    >
+                        {ocrTextExpanded ? '▼' : '▶'} {t('ocr_done_label')}
+                    </button>
+                    {ocrTextExpanded && (
+                        <div
+                            data-testid="ocr-text"
+                            className="ocr-text-content"
+                            style={{
+                                fontSize: '11px',
+                                color: 'var(--text-secondary, #888)',
+                                fontFamily: 'var(--font-mono, monospace)',
+                                lineHeight: '1.4',
+                                maxHeight: '80px',
+                                overflow: 'auto',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                padding: '2px 4px',
+                                marginTop: '2px',
+                                borderRadius: '3px',
+                                background: 'var(--bg-tertiary, rgba(128,128,128,0.05))',
+                            }}
+                        >
+                            {ocrText}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {(item.tags?.length > 0 || isEditingTags) && (
                 <div
                     className="item-tags-container"
@@ -1392,6 +1501,8 @@ export default memo(ClipboardItem, (prevProps, nextProps) => {
         prevProps.item.is_external === nextProps.item.is_external &&
         prevProps.item.file_preview_exists === nextProps.item.file_preview_exists &&
         prevProps.item.tags === nextProps.item.tags &&
+        prevProps.item.ocr_text === nextProps.item.ocr_text &&
+        prevProps.item.ocr_status === nextProps.item.ocr_status &&
         prevProps.isRevealed === nextProps.isRevealed &&
         prevProps.isEditingTags === nextProps.isEditingTags &&
         prevProps.richTextSnapshotPreview === nextProps.richTextSnapshotPreview &&

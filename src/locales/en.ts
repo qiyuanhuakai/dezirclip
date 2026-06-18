@@ -265,4 +265,11 @@ export const en = {
         filter_chips_kind_json: "JSON",
         filter_chips_empty: "No matching content",
         filter_chips_disabled_hint: "Classification disabled",
+
+        // clipboard.ocr keys
+        ocr_processing: "OCR Processing...",
+        ocr_done_label: "OCR Text",
+        ocr_failed_label: "OCR Failed",
+        ocr_unsupported_label: "OCR Unsupported",
+        ocr_toggle_label: "Show/Hide OCR Text",
 };

@@ -15,4 +15,6 @@ export interface ClipboardEntry {
   is_external?: boolean;
   pinned_order?: number;
   file_preview_exists?: boolean;
+  ocr_text?: string | null;
+  ocr_status?: string | null;
 }

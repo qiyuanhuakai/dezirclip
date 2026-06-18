@@ -165,7 +165,8 @@ impl PipelineStage for DiscoveryStage {
             pinned_order: 0,
             file_preview_exists: true,
             content_kinds: Vec::new(),
-            ocr_text: None,
+                    ocr_text: None,
+                    ocr_status: None,
         });
     }
 }

@@ -264,4 +264,11 @@ export const zh = {
         filter_chips_kind_json: "JSON",
         filter_chips_empty: "没有匹配的内容",
         filter_chips_disabled_hint: "智能分类已关闭",
+
+        // clipboard.ocr keys
+        ocr_processing: "OCR 识别中...",
+        ocr_done_label: "OCR 文本",
+        ocr_failed_label: "OCR 失败",
+        ocr_unsupported_label: "OCR 不支持",
+        ocr_toggle_label: "展开/收起 OCR 文本",
 };

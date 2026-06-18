@@ -1252,6 +1252,7 @@ pub async fn trigger_ocr_for_image_item(
                 let _ = app.emit(
                     "ocr:complete",
                     crate::app::commands::ocr_cmd::OcrResult {
+                        item_id,
                         text,
                         confidence: None,
                         status: "done".to_string(),
@@ -1272,6 +1273,7 @@ pub async fn trigger_ocr_for_image_item(
                 let _ = app.emit(
                     "ocr:complete",
                     crate::app::commands::ocr_cmd::OcrResult {
+                        item_id,
                         text: String::new(),
                         confidence: None,
                         status: "failed".to_string(),

@@ -22,7 +22,7 @@ const HISTORY_LIST_SELECT_COLUMNS: &str = "id, content_type, \
     CASE WHEN html_content LIKE 'linux:%' OR html_content LIKE 'dpapi:%' THEN html_content ELSE substr(html_content, 1, 5004) END, \
     source_app, timestamp, \
     CASE WHEN preview LIKE 'linux:%' OR preview LIKE 'dpapi:%' THEN preview ELSE substr(preview, 1, 504) END, \
-    is_pinned, tags, use_count, is_external, pinned_order, source_app_path";
+    is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status";
 
 fn truncate_chars_with_suffix(input: &str, limit: usize, suffix: &str) -> String {
     let Some((cut, _)) = input.char_indices().nth(limit) else {
@@ -729,8 +729,9 @@ impl SqliteClipboardRepository {
                 pinned_order: row.get(11).unwrap_or(0),
                 source_app_path: row.get(12).unwrap_or(None),
                 file_preview_exists: true,
-                content_kinds: Vec::new(),
-                ocr_text: None,
+                    content_kinds: Vec::new(),
+                    ocr_text: row.get(13).ok(),
+                    ocr_status: row.get(14).ok(),
             }))
         } else {
             Ok(None)
@@ -955,6 +956,7 @@ impl SqliteClipboardRepository {
                     file_preview_exists: true,
                     content_kinds: Vec::new(),
                     ocr_text: None,
+                    ocr_status: None,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -1150,6 +1152,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         file_preview_exists: true, // Simplified for search
                         content_kinds: Vec::new(),
                         ocr_text: None,
+                        ocr_status: None,
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -1229,6 +1232,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         file_preview_exists: true,
                         content_kinds: Vec::new(),
                         ocr_text: None,
+                        ocr_status: None,
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -1288,6 +1292,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                                 file_preview_exists: true,
                                 content_kinds: Vec::new(),
                                 ocr_text: None,
+                                ocr_status: None,
                             })
                         })
                         .map_err(|e| e.to_string())?;
