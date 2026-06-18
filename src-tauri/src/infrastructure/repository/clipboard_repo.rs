@@ -473,8 +473,8 @@ impl SqliteClipboardRepository {
         } else {
             // Insert new entry
             conn.execute(
-                "INSERT INTO clipboard_history (content_type, content, html_content, source_app, timestamp, preview, is_pinned, content_hash, tags, is_external, pinned_order, source_app_path) 
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                "INSERT INTO clipboard_history (content_type, content, html_content, source_app, timestamp, preview, is_pinned, content_hash, tags, is_external, pinned_order, source_app_path, ocr_text, ocr_status)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, 'pending')",
                 params![
                     entry.content_type,
                     content,
@@ -1437,8 +1437,9 @@ mod tests {
         conn.execute(
             "INSERT INTO clipboard_history
              (content_type, content, html_content, source_app, timestamp, preview,
-              is_pinned, content_hash, tags, is_external, pinned_order, source_app_path)
-             VALUES ('text', ?1, NULL, ?2, ?3, ?4, 0, 0, '[]', 0, 0, NULL)",
+              is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+              ocr_text, ocr_status)
+             VALUES ('text', ?1, NULL, ?2, ?3, ?4, 0, 0, '[]', 0, 0, NULL, NULL, 'pending')",
             params![content, app, ts, preview],
         )
         .expect("insert failed");
@@ -1591,7 +1592,7 @@ mod tests {
         conn.execute("DROP TABLE IF EXISTS clipboard_fts", [])
             .expect("drop fts table");
         conn.execute(
-            "DELETE FROM schema_migrations WHERE version = 13",
+            "DELETE FROM schema_migrations WHERE version IN (13, 14)",
             [],
         )
         .expect("version reset failed");

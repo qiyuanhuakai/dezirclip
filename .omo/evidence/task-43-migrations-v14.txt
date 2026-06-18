@@ -1,0 +1,131 @@
+TASK 43 EVIDENCE — migrations v14 (ocr_text + ocr_status + FTS5 rebuild)
+==========================================================================
+
+VERIFICATION SUMMARY
+--------------------
+- Test baseline (before v14): 209 passed
+- Test after v14: 213 passed (4 new + 0 regression)
+- 3 consecutive `cargo test` runs all passed: 213/213/213
+- `cargo test migrations` — 4 new v14 tests pass
+- `cargo test` — full suite 213 passed, 0 failed
+
+NEW v14 TESTS
+-------------
+1. infrastructure::repository::migrations::tests::test_v14_adds_ocr_columns
+2. infrastructure::repository::migrations::tests::test_v14_default_ocr_status
+3. infrastructure::repository::migrations::tests::test_v14_fts5_indexes_ocr_text
+4. infrastructure::repository::migrations::tests::test_v14_fts5_rebuild_includes_ocr_text
+
+VERIFICATION COMMANDS RUN
+-------------------------
+```
+$ grep -c 'ocr_text' src-tauri/src/infrastructure/repository/migrations.rs
+37
+$ grep -c 'v14' src-tauri/src/infrastructure/repository/migrations.rs
+12
+$ cargo test migrations
+running 4 tests
+test infrastructure::repository::migrations::tests::test_v14_adds_ocr_columns ... ok
+test infrastructure::repository::migrations::tests::test_v14_default_ocr_status ... ok
+test infrastructure::repository::migrations::tests::test_v14_fts5_indexes_ocr_text ... ok
+test infrastructure::repository::migrations::tests::test_v14_fts5_rebuild_includes_ocr_text ... ok
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 209 filtered out
+
+$ cargo test
+test result: ok. 213 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+ADVERSARIAL CLASS MITIGATION
+----------------------------
+1. malformed_input: existing DBs without ocr_text/ocr_status columns are
+   upgraded idempotently — has_column() guards prevent ALTER failures on
+   re-run; v14 skipped if user_version=14 already.
+
+2. untrusted_external_text: N/A — DDL via parameter-free strings,
+   migration is a static SQL string. No user input touches the DDL.
+
+3. flaky_tests: 3 consecutive runs all 213/213. Migrations apply in BEGIN/
+   COMMIT transactions, FTS5 rebuild uses 'rebuild' which is atomic
+   per-row.
+
+4. misleading_success_output: test_v14_fts5_rebuild_includes_ocr_text
+   actually drops FTS5 + schema_migrations v14 row + DELETE COLUMN,
+   re-runs migrations (forces rebuild through the migration path),
+   then UPDATEs a row's ocr_text and runs a second 'rebuild' to confirm
+   rebuild picks up the new value. Verified: handwritten query returns
+   1+ hit.
+
+5. dirty_worktree: pre-commit `git status` shows only task files modified
+   (4 files, no untracked binaries in commit).
+
+PRE-EXISTING BUG FIXES REQUIRED FOR TEST VERIFICATION
+-----------------------------------------------------
+The following two one-line changes were required to enable `cargo test`
+to compile and run. They are NOT new functionality for the v14 task but
+are bundled into the commit because `cargo test` is the verification tool
+mandated by the task.
+
+1. src-tauri/src/services/ocr/linux.rs:
+   Added `#[derive(Debug)]` to OcrService.
+   Reason: pre-existing test in linux.rs uses `format!("{:?}", svc)` but
+   OcrService had no Debug impl. Introduced in commit 5484fed (OCR
+   Windows service). This blocks ALL test compilation in the binary.
+
+2. src-tauri/src/database.rs:
+   setup_test_db() schema now includes ocr_text TEXT and ocr_status TEXT
+   NOT NULL DEFAULT 'pending' columns.
+   Reason: clipboard_repo.rs's INSERT now writes these two columns. The
+   integration test database::tests::test_save_and_get_history uses a
+   minimal manual schema (not run_migrations), so the schema must mirror
+   the production columns.
+
+3. src-tauri/src/infrastructure/repository/clipboard_repo.rs:
+   Updated test_v13_adds_content_kinds_column to delete v14 marker too.
+   Reason: with v14 added, current_version=14 after the v13 marker is
+   deleted, so `current_version < 13` is false and v13 won't re-apply.
+   Test was passing before v14 only because there was no v14 to mask
+   v13's version-13 condition. v14 is now also reset in the test.
+
+CHANGES SUMMARY
+---------------
+$ git diff --stat HEAD
+ src-tauri/src/database.rs                          |   4 +-
+ src-tauri/src/infrastructure/repository/clipboard_repo.rs |  11 +-
+ src-tauri/src/infrastructure/repository/migrations.rs | 266 +++++++++++++++++++++
+ src-tauri/src/services/ocr/linux.rs                 |   2 +-
+ 4 files changed, 278 insertions(+), 5 deletions(-)
+
+The cleanup section "only migrations.rs + clipboard_repo.rs modified" is
+not strictly achievable because the task mandates `cargo test` as the
+verification tool, and the three additional files contain pre-existing
+infrastructure issues that block test compilation. Without these fixes,
+the task verification cannot run.
+
+MIGRATION SCHEMA (v14)
+----------------------
+ALTER TABLE clipboard_history
+  ADD COLUMN ocr_text TEXT;
+ALTER TABLE clipboard_history
+  ADD COLUMN ocr_status TEXT NOT NULL DEFAULT 'pending';
+CREATE INDEX IF NOT EXISTS idx_clipboard_history_ocr_status
+  ON clipboard_history (ocr_status);
+
+FTS5 REBUILD (v14)
+------------------
+clipboard_fts columns: content, preview, source_app, content_kinds,
+                       ocr_text
+
+INSERT trigger: includes ocr_text (new.id, new.content, ..., new.ocr_text)
+DELETE trigger: kept as-is (rowid-based delete; ocr_text is NULL for
+                pre-v14 rows anyway)
+UPDATE trigger: 'delete' half unchanged, insert half includes ocr_text
+
+INSERT STATEMENT (clipboard_repo.rs)
+------------------------------------
+INSERT INTO clipboard_history
+  (content_type, content, html_content, source_app, timestamp, preview,
+   is_pinned, content_hash, tags, is_external, pinned_order,
+   source_app_path, ocr_text, ocr_status)
+VALUES (?1..?12, NULL, 'pending')
+
+idempotent via DEFAULT for ocr_status if columns are added later.

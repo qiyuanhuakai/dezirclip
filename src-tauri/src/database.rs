@@ -361,7 +361,9 @@ mod tests {
                 tags TEXT NOT NULL DEFAULT '[]',
                 use_count INTEGER NOT NULL DEFAULT 0,
                 is_external INTEGER NOT NULL DEFAULT 0,
-                pinned_order INTEGER NOT NULL DEFAULT 0
+                pinned_order INTEGER NOT NULL DEFAULT 0,
+                ocr_text TEXT,
+                ocr_status TEXT NOT NULL DEFAULT 'pending'
             )",
             [],
         ).unwrap();
