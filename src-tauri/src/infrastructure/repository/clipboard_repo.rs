@@ -860,6 +860,47 @@ impl SqliteClipboardRepository {
         }
     }
 
+    pub fn update_ocr_text_with_conn(
+        &self,
+        conn: &Connection,
+        id: i64,
+        ocr_text: &str,
+        ocr_status: &str,
+    ) -> Result<usize, String> {
+        let rows = conn
+            .execute(
+                "UPDATE clipboard_history
+                 SET ocr_text = ?1, ocr_status = ?2
+                 WHERE id = ?3",
+                params![ocr_text, ocr_status, id],
+            )
+            .map_err(|e| e.to_string())?;
+        self.invalidate_caches();
+        Ok(rows)
+    }
+
+    pub fn get_ocr_status_with_conn(
+        &self,
+        conn: &Connection,
+        id: i64,
+    ) -> Result<Option<(String, Option<String>)>, String> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT ocr_status, ocr_text FROM clipboard_history WHERE id = ? LIMIT 1",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut rows = stmt
+            .query(params![id])
+            .map_err(|e| e.to_string())?;
+        if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let status: String = row.get(0).map_err(|e| e.to_string())?;
+            let text: Option<String> = row.get(1).ok();
+            Ok(Some((status, text)))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn search_fts(&self, query: &str, limit: u32) -> Result<Vec<ClipboardEntry>, String> {
         let term = query.trim();
         if term.is_empty() {

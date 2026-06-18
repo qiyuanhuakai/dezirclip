@@ -14,7 +14,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
-use tauri::{Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use urlencoding::decode;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
@@ -51,6 +51,10 @@ fn split_rich_html_and_image_fallback(html: &str) -> (String, Option<String>) {
         }
     }
     (html.to_string(), None)
+}
+
+pub fn resolve_image_bytes(content: &str) -> Option<Vec<u8>> {
+    resolve_rich_image_fallback_bytes(content)
 }
 
 fn resolve_rich_image_fallback_bytes(payload: &str) -> Option<Vec<u8>> {
@@ -1177,6 +1181,102 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
                     None,
                     None,
                 ).await;
+            }
+        }
+    });
+}
+
+#[cfg_attr(
+    not(target_os = "windows"),
+    allow(unused_variables, reason = "Linux OCR is stubbed; bytes only consumed on Windows")
+)]
+pub async fn trigger_ocr_for_image_item(
+    item_id: i64,
+    png_bytes: Vec<u8>,
+    app: AppHandle,
+) {
+    let db_state = app.state::<DbState>();
+    {
+        let conn = match db_state.conn.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                crate::error!("[ocr-trigger] DB lock failed for id={}: {}", item_id, e);
+                return;
+            }
+        };
+        if let Err(e) = db_state
+            .repo
+            .update_ocr_text_with_conn(&conn, item_id, "", "processing")
+        {
+            crate::error!("[ocr-trigger] Failed to set processing status for id={}: {}", item_id, e);
+            return;
+        }
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let result: Result<String, String> = async {
+            #[cfg(target_os = "linux")]
+            {
+                Err("OCR is not supported on this platform (Linux OCR engine not available)".to_string())
+            }
+            #[cfg(target_os = "windows")]
+            {
+                let service = crate::services::ocr::OcrService::new()
+                    .map_err(|e| format!("OCR engine init failed: {e}"))?;
+                service
+                    .recognize(&png_bytes)
+                    .map_err(|e| format!("OCR recognition failed: {e}"))
+            }
+        }
+        .await;
+
+        let db_state = app.state::<DbState>();
+        let conn = match db_state.conn.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                crate::error!("[ocr-trigger] DB lock failed on completion for id={}: {}", item_id, e);
+                return;
+            }
+        };
+
+        match result {
+            Ok(text) => {
+                if let Err(e) = db_state
+                    .repo
+                    .update_ocr_text_with_conn(&conn, item_id, &text, "done")
+                {
+                    crate::error!("[ocr-trigger] Failed to persist OCR text for id={}: {}", item_id, e);
+                    return;
+                }
+                drop(conn);
+                let _ = app.emit(
+                    "ocr:complete",
+                    crate::app::commands::ocr_cmd::OcrResult {
+                        text,
+                        confidence: None,
+                        status: "done".to_string(),
+                    },
+                );
+            }
+            Err(e) => {
+                let msg = e;
+                if let Err(e2) = db_state
+                    .repo
+                    .update_ocr_text_with_conn(&conn, item_id, "", "failed")
+                {
+                    crate::error!("[ocr-trigger] Failed to set failed status for id={}: {}", item_id, e2);
+                    return;
+                }
+                drop(conn);
+                crate::error!("[ocr-trigger] OCR failed for id={}: {}", item_id, msg);
+                let _ = app.emit(
+                    "ocr:complete",
+                    crate::app::commands::ocr_cmd::OcrResult {
+                        text: String::new(),
+                        confidence: None,
+                        status: "failed".to_string(),
+                    },
+                );
             }
         }
     });

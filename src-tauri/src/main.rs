@@ -230,6 +230,9 @@ fn main() {
             app::commands::qr_cmd::generate_qr_png,
             app::commands::qr_cmd::generate_qr_svg,
 
+            app::commands::ocr_cmd::recognize_clipboard_image,
+            app::commands::ocr_cmd::get_ocr_status,
+
             app::commands::transform_text,
             app::commands::list_transform_kinds,
 
