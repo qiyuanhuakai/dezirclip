@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod clipboard;
 pub mod paste_queue;
 pub mod content_handler;
@@ -11,3 +12,5 @@ pub mod qr;
 pub mod classification;
 pub mod ocr;
 pub mod screenshot;
+
+pub use backup::{BackupError, ExportEntry, ExportFile, ImportMode, ImportSummary, EXPORT_VERSION};
