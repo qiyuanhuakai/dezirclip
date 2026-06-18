@@ -210,6 +210,8 @@ fn main() {
             app::commands::add_manual_item,
             app::commands::update_item_content,
 
+            app::commands::export_to_file,
+
             app::commands::save_emoji_favorite,
             app::commands::remove_emoji_favorite,
             app::commands::list_emoji_favorites,
