@@ -27,6 +27,21 @@
         "visible": false,
         "dragDropEnabled": true,
         "focusable": false
+      },
+      {
+        "label": "quick-paste",
+        "title": "",
+        "url": "index.html?window=quick-paste",
+        "width": 480,
+        "height": 360,
+        "resizable": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "skipTaskbar": true,
+        "visible": false,
+        "focus": false,
+        "shadow": false
       }
     ],
     "security": {
