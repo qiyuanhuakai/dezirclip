@@ -241,6 +241,10 @@ fn main() {
             app::commands::search_regex,
             app::commands::get_search_history,
 
+            app::commands::screenshot_cmd::capture_full_screen,
+            app::commands::screenshot_cmd::capture_region,
+            app::commands::screenshot_cmd::list_monitors,
+
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::get_system_default_app,
             #[cfg(target_os = "windows")]

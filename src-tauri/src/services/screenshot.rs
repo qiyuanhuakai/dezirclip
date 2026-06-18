@@ -8,11 +8,12 @@
 // Service layer is platform-agnostic; all cfg(target_os = ...) blocks live inside
 // xcap and are not duplicated here.
 
+use serde::Serialize;
 use xcap::image::{ExtendedColorType, ImageEncoder};
 use xcap::Monitor;
 
 /// Captured screenshot in PNG form.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ScreenshotResult {
     pub width: u32,
     pub height: u32,
@@ -20,7 +21,7 @@ pub struct ScreenshotResult {
 }
 
 /// One physical display reported by the OS.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MonitorInfo {
     pub id: u32,
     pub name: String,
