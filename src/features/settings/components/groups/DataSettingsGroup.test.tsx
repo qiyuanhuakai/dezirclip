@@ -31,46 +31,46 @@ describe("DataSettingsGroup", () => {
 
   it("test_renders_export_button: Export button is visible", () => {
     render(<DataSettingsGroup {...defaultProps} />);
-    expect(screen.getByText("data_export")).toBeInTheDocument();
+    expect(screen.getByText("data.export.title")).toBeInTheDocument();
   });
 
   it("test_renders_import_button: Import button is visible", () => {
     render(<DataSettingsGroup {...defaultProps} />);
-    expect(screen.getByText("data_import")).toBeInTheDocument();
+    expect(screen.getByText("data.import.title")).toBeInTheDocument();
   });
 
   it("test_clicking_export_opens_modal: clicking Export opens the modal", () => {
     render(<DataSettingsGroup {...defaultProps} />);
-    fireEvent.click(screen.getByText("data_export"));
-    expect(screen.getByText("data_export_title")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("data.export.title"));
+    expect(screen.getAllByText("data.export.title").length).toBeGreaterThan(1);
   });
 
   it("test_clicking_import_opens_modal: clicking Import opens the modal", () => {
     render(<DataSettingsGroup {...defaultProps} />);
-    fireEvent.click(screen.getByText("data_import"));
-    expect(screen.getByText("data_import_title")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("data.import.title"));
+    expect(screen.getAllByText("data.import.title").length).toBeGreaterThan(1);
   });
 
   it("test_export_modal_has_format_selection: JSON and Encrypted options", () => {
     render(<DataSettingsGroup {...defaultProps} />);
-    fireEvent.click(screen.getByText("data_export"));
-    expect(screen.getByText("data_export_format_json")).toBeInTheDocument();
-    expect(screen.getByText("data_export_format_encrypted")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("data.export.title"));
+    expect(screen.getByText("data.export.json")).toBeInTheDocument();
+    expect(screen.getByText("data.export.encrypted")).toBeInTheDocument();
   });
 
   it("test_import_modal_has_mode_selection: Merge and Replace options", () => {
     render(<DataSettingsGroup {...defaultProps} />);
-    fireEvent.click(screen.getByText("data_import"));
-    expect(screen.getByText("data_import_mode_merge")).toBeInTheDocument();
-    expect(screen.getByText("data_import_mode_replace")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("data.import.title"));
+    expect(screen.getByText("data.import.merge")).toBeInTheDocument();
+    expect(screen.getByText("data.import.replace")).toBeInTheDocument();
   });
 
   it("test_export_modal_validates_passphrase: encrypted format requires 12+ char passphrase", async () => {
     mockSave.mockResolvedValue("/tmp/export.json");
     render(<DataSettingsGroup {...defaultProps} />);
-    fireEvent.click(screen.getByText("data_export"));
+    fireEvent.click(screen.getByText("data.export.title"));
 
-    const encryptedRadio = screen.getByText("data_export_format_encrypted");
+    const encryptedRadio = screen.getByText("data.export.encrypted");
     fireEvent.click(encryptedRadio);
 
     const passphraseInputs = screen.getAllByPlaceholderText("••••••••••••");
@@ -88,15 +88,15 @@ describe("DataSettingsGroup", () => {
     const submitBtn = document.querySelector(".data-btn-primary") as HTMLButtonElement;
     fireEvent.click(submitBtn);
 
-    expect(screen.getByText("data_export_passphrase_error")).toBeInTheDocument();
+    expect(screen.getByText("data.export.passphrase_too_short")).toBeInTheDocument();
   });
 
   it("test_export_modal_validates_passphrase_confirm: passphrase confirm must match", async () => {
     mockSave.mockResolvedValue("/tmp/export.json");
     render(<DataSettingsGroup {...defaultProps} />);
-    fireEvent.click(screen.getByText("data_export"));
+    fireEvent.click(screen.getByText("data.export.title"));
 
-    const encryptedRadio = screen.getByText("data_export_format_encrypted");
+    const encryptedRadio = screen.getByText("data.export.encrypted");
     fireEvent.click(encryptedRadio);
 
     const passphraseInputs = screen.getAllByPlaceholderText("••••••••••••");
@@ -114,6 +114,6 @@ describe("DataSettingsGroup", () => {
     const submitBtn = document.querySelector(".data-btn-primary") as HTMLButtonElement;
     fireEvent.click(submitBtn);
 
-    expect(screen.getByText("data_export_passphrase_mismatch")).toBeInTheDocument();
+    expect(screen.getByText("data.export.passphrase_mismatch")).toBeInTheDocument();
   });
 });

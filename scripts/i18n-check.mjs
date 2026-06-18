@@ -32,10 +32,11 @@ const collectFiles = async (dir) => {
 
 const extractLocaleKeys = (content) => {
   const keys = new Set();
-  const keyRegex = /^\s*([A-Za-z0-9_]+)\s*:/gm;
+  const keyRegex = /^\s*("([^"]+)"|'([^']+)'|[A-Za-z0-9_.]+)\s*:/gm;
   let match = keyRegex.exec(content);
   while (match) {
-    keys.add(match[1]);
+    const key = match[2] ?? match[3] ?? match[1];
+    keys.add(key);
     match = keyRegex.exec(content);
   }
   return keys;

@@ -46,11 +46,11 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
 
         if (format === "encrypted") {
             if (passphrase.length < 12) {
-                setPassphraseError(t("data_export_passphrase_error"));
+                setPassphraseError(t("data.export.passphrase_too_short"));
                 valid = false;
             }
             if (passphrase !== passphraseConfirm) {
-                setPassphraseMismatchError(t("data_export_passphrase_mismatch"));
+                setPassphraseMismatchError(t("data.export.passphrase_mismatch"));
                 valid = false;
             }
         }
@@ -77,10 +77,10 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
     return (
         <div className="data-modal-overlay" onClick={onClose}>
             <div className="data-modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="data-modal-title">{t("data_export_title")}</div>
+                <div className="data-modal-title">{t("data.export.title")}</div>
 
                 <div className="data-form-group">
-                    <label className="data-label">{t("data_export_format")}</label>
+                    <label className="data-label">{t("data.export.choose_format")}</label>
                     <div className="data-radio-group">
                         <label className="data-radio-item">
                             <input
@@ -90,7 +90,7 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
                                 checked={format === "json"}
                                 onChange={() => setFormat("json")}
                             />
-                            <span>{t("data_export_format_json")}</span>
+                            <span>{t("data.export.json")}</span>
                         </label>
                         <label className="data-radio-item">
                             <input
@@ -100,14 +100,14 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
                                 checked={format === "encrypted"}
                                 onChange={() => setFormat("encrypted")}
                             />
-                            <span>{t("data_export_format_encrypted")}</span>
+                            <span>{t("data.export.encrypted")}</span>
                         </label>
                     </div>
                 </div>
 
                 {format === "encrypted" && (
                     <div className="data-form-group">
-                        <label className="data-label">{t("data_export_passphrase")}</label>
+                        <label className="data-label">{t("data.export.passphrase_prompt")}</label>
                         <input
                             type="password"
                             className="data-input"
@@ -118,7 +118,7 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
                         {passphraseError && (
                             <span className="data-error">{passphraseError}</span>
                         )}
-                        <label className="data-label">{t("data_export_passphrase_confirm")}</label>
+                        <label className="data-label">{t("data.export.confirm_passphrase")}</label>
                         <input
                             type="password"
                             className="data-input"
@@ -159,7 +159,7 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
                         onClick={handleExport}
                         disabled={exporting || !filePath}
                     >
-                        {exporting ? t("processing") : t("data_export")}
+                        {exporting ? t("processing") : t("data.export.title")}
                     </button>
                 </div>
             </div>
@@ -224,10 +224,10 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
     return (
         <div className="data-modal-overlay" onClick={onClose}>
             <div className="data-modal-content" onClick={(e) => e.stopPropagation()}>
-                <div className="data-modal-title">{t("data_import_title")}</div>
+                <div className="data-modal-title">{t("data.import.title")}</div>
 
                 <div className="data-form-group">
-                    <label className="data-label">{t("data_import_mode")}</label>
+                    <label className="data-label">{t("data.import.mode")}</label>
                     <div className="data-radio-group">
                         <label className="data-radio-item">
                             <input
@@ -237,7 +237,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
                                 checked={mode === "merge"}
                                 onChange={() => setMode("merge")}
                             />
-                            <span>{t("data_import_mode_merge")}</span>
+                            <span>{t("data.import.merge")}</span>
                         </label>
                         <label className="data-radio-item">
                             <input
@@ -247,7 +247,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
                                 checked={mode === "replace"}
                                 onChange={() => setMode("replace")}
                             />
-                            <span>{t("data_import_mode_replace")}</span>
+                            <span>{t("data.import.replace")}</span>
                         </label>
                     </div>
                 </div>
@@ -272,7 +272,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
 
                 {filePath.endsWith(".tiez") && (
                     <div className="data-form-group">
-                        <label className="data-label">{t("data_import_passphrase")}</label>
+                        <label className="data-label">{t("data.import.passphrase_prompt")}</label>
                         <input
                             type="password"
                             className="data-input"
@@ -285,7 +285,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
 
                 {showPreview && previewEntries.length > 0 && (
                     <div className="data-form-group">
-                        <label className="data-label">{t("data_import_preview")}</label>
+                        <label className="data-label">{t("data.import.preview")}</label>
                         <div className="data-preview-list">
                             {previewEntries.map((entry, i) => (
                                 <div key={i} className="data-preview-item">
@@ -305,7 +305,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
                         onClick={handleImport}
                         disabled={importing || !filePath}
                     >
-                        {importing ? t("processing") : t("data_import")}
+                        {importing ? t("processing") : t("data.import.title")}
                     </button>
                 </div>
             </div>
@@ -389,14 +389,14 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
                             onClick={() => setShowExportModal(true)}
                         >
                             <Download size={14} />
-                            <span>{t("data_export")}</span>
+                            <span>{t("data.export.title")}</span>
                         </button>
                         <button
                             className="btn-icon btn-icon-data-action"
                             onClick={() => setShowImportModal(true)}
                         >
                             <Upload size={14} />
-                            <span>{t("data_import")}</span>
+                            <span>{t("data.import.title")}</span>
                         </button>
                     </div>
                 </div>
