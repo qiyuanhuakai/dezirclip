@@ -10,3 +10,4 @@ pub mod search;
 pub mod qr;
 pub mod classification;
 pub mod ocr;
+pub mod screenshot;
