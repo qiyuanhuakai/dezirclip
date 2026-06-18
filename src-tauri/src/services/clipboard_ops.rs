@@ -6,6 +6,7 @@ use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::error::{AppResult, AppError};
 use chrono::Utc;
 use base64::{engine::general_purpose, Engine as _};
+use serde_json;
 #[cfg(target_os = "windows")]
 use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
@@ -266,6 +267,11 @@ fn calculate_content_hash(content: &str) -> (u64, u64) {
     (content_hash, current_time)
 }
 
+fn build_content_kinds_json(content: &str) -> String {
+    let kinds = crate::services::classification::classify(content);
+    serde_json::to_string(&kinds).unwrap_or_else(|_| "[]".to_string())
+}
+
 pub(crate) fn write_content_to_system_clipboard(
     content: &str,
     content_type: &str,
@@ -273,6 +279,7 @@ pub(crate) fn write_content_to_system_clipboard(
     paste_with_format: bool,
 ) -> AppResult<()> {
     let (content_hash, current_time) = calculate_content_hash(content);
+    let _content_kinds_json = build_content_kinds_json(content);
 
     let clipboard_hashes = match content_type {
         "image" | "video" | "file" => copy_file_like_content(content, content_type, current_time, content_hash)?,
@@ -1173,4 +1180,42 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_content_kinds_url() {
+        let json = build_content_kinds_json("https://example.com");
+        assert!(json.contains("\"url\""), "expected url in {json}");
+        assert_eq!(json, "[\"url\"]");
+    }
+
+    #[test]
+    fn test_build_content_kinds_email() {
+        let json = build_content_kinds_json("user@example.com");
+        assert!(json.contains("\"email\""), "expected email in {json}");
+        assert_eq!(json, "[\"email\"]");
+    }
+
+    #[test]
+    fn test_build_content_kinds_multi() {
+        let json = build_content_kinds_json("https://user@example.com");
+        assert!(json.contains("\"url\""), "expected url in {json}");
+        assert_eq!(json, "[\"url\"]");
+    }
+
+    #[test]
+    fn test_build_content_kinds_empty() {
+        let json = build_content_kinds_json("");
+        assert_eq!(json, "[]");
+    }
+
+    #[test]
+    fn test_build_content_kinds_no_match() {
+        let json = build_content_kinds_json("hello world");
+        assert_eq!(json, "[]");
+    }
 }
