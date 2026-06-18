@@ -1031,6 +1031,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     },
                     content_kinds: Vec::new(),
                     ocr_text: None,
+                    ocr_status: None,
                 },
                 content_raw,
                 preview_raw,
