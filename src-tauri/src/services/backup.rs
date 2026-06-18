@@ -250,6 +250,55 @@ pub fn import_from_json(json: &str, mode: ImportMode) -> Result<ImportSummary, B
     })
 }
 
+/// 从 JSON 字符串直接解析 `Vec<ExportEntry>`，不校验 version。
+/// 用于 `import_cmd` 在拿到 summary 后还需要条目列表落库的场景。
+pub fn entries_from_json(json: &str) -> Result<Vec<ExportEntry>, BackupError> {
+    let file: ExportFile = serde_json::from_str(json)?;
+    Ok(file.entries)
+}
+
+/// 解密加密 blob，返回解密后的 UTF-8 JSON 字符串。
+/// 与 `import_from_encrypted` 的区别：不解析 JSON，只负责解密+转码，
+/// 调用方可以额外调用 `entries_from_json` 拿到条目列表。
+pub fn decrypt_to_json(data: &[u8], passphrase: &str) -> Result<String, BackupError> {
+    if data.len() < NONCE_LEN + SALT_LEN {
+        return Err(BackupError::InvalidFormat(format!(
+            "blob too short: {} < {}",
+            data.len(),
+            NONCE_LEN + SALT_LEN
+        )));
+    }
+    let ciphertext = &data[NONCE_LEN + SALT_LEN..];
+    if ciphertext.len() < 16 {
+        return Err(BackupError::InvalidFormat(format!(
+            "blob missing auth tag: ciphertext length {} < 16",
+            ciphertext.len()
+        )));
+    }
+
+    let nonce_bytes = &data[..NONCE_LEN];
+    let salt = &data[NONCE_LEN..NONCE_LEN + SALT_LEN];
+
+    let mut key = derive_key(passphrase.as_bytes(), salt)?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    let plaintext = match cipher.decrypt(nonce, ciphertext) {
+        Ok(p) => p,
+        Err(_) => {
+            key.zeroize();
+            return Err(BackupError::WrongPassphrase);
+        }
+    };
+
+    key.zeroize();
+
+    let json = std::str::from_utf8(&plaintext).map_err(|_| {
+        BackupError::InvalidFormat("decrypted payload is not valid UTF-8".to_string())
+    })?;
+    Ok(json.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Public API — Encrypted
 // ---------------------------------------------------------------------------
