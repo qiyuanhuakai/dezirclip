@@ -1,0 +1,234 @@
+/* Filter Chips — content kind filter bar */
+
+/* === Container === */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.filter-chips::-webkit-scrollbar {
+  display: none;
+}
+
+/* === Base chip === */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--chip-border);
+  background: var(--chip-bg);
+  color: var(--chip-text);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-main);
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.filter-chip:hover {
+  background: var(--chip-hover-bg);
+  border-color: var(--chip-hover-border);
+}
+
+.filter-chip:active {
+  transform: scale(0.97);
+}
+
+/* === Active state === */
+.filter-chip--active {
+  background: var(--chip-active-bg);
+  color: var(--chip-active-text);
+  border-color: var(--chip-active-border);
+  font-weight: 600;
+}
+
+.filter-chip--active:hover {
+  opacity: 0.9;
+}
+
+/* === Action buttons (All / Clear) === */
+.filter-chip--action {
+  font-weight: 600;
+}
+
+/* === Count badge === */
+.filter-chip__count {
+  font-size: var(--font-size-xs);
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+/* ===================================================================
+   Theme-specific overrides
+   =================================================================== */
+
+/* --- Retro: warm brutalist chip with inset shadow --- */
+.theme-retro .filter-chip {
+  border: 1px solid var(--chip-border);
+  border-radius: 2px;
+  box-shadow: 1px 1px 0 0 var(--shadow-color);
+}
+
+.theme-retro .filter-chip:hover {
+  box-shadow: 2px 2px 0 0 var(--shadow-color);
+  transform: translateY(-1px);
+}
+
+.theme-retro .filter-chip:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+.theme-retro .filter-chip--active {
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+/* --- Modern glass (mica / acrylic): semi-transparent chips --- */
+:is(.theme-mica, .theme-acrylic) .filter-chip {
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 8px;
+  box-shadow: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+:is(.theme-mica, .theme-acrylic) .filter-chip:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+:is(.theme-mica, .theme-acrylic) .filter-chip--active {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+:is(.theme-mica, .theme-acrylic) .filter-chips {
+  gap: 6px;
+}
+
+/* Dark mode adjustments for mica / acrylic */
+:is(.dark-mode.theme-mica, .dark-mode.theme-acrylic) .filter-chip {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+:is(.dark-mode.theme-mica, .dark-mode.theme-acrylic) .filter-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+
+/* --- macOS: clean pill chips with subtle shadow --- */
+.theme-macos .filter-chip {
+  border: 1px solid var(--chip-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.theme-macos .filter-chip:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.theme-macos .filter-chip--active {
+  box-shadow: 0 0 0 1px rgba(10, 132, 255, 0.2) inset, 0 2px 8px rgba(10, 132, 255, 0.16);
+}
+
+/* macOS dark mode */
+body.dark-mode.theme-macos .filter-chip {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+body.dark-mode.theme-macos .filter-chip:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.24);
+}
+
+body.dark-mode.theme-macos .filter-chip--active {
+  box-shadow: 0 0 0 1px rgba(112, 191, 255, 0.24) inset, 0 2px 8px rgba(10, 132, 255, 0.2);
+}
+
+/* --- Sci-fi: neon-bordered chips with glow --- */
+.theme-scifi .filter-chip {
+  border: 1px solid color-mix(in srgb, var(--border-dark) 60%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent-color) 12%, transparent);
+}
+
+.theme-scifi .filter-chip:hover {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent-color) 20%, transparent);
+  border-color: color-mix(in srgb, var(--border-dark) 80%, transparent);
+}
+
+.theme-scifi .filter-chip--active {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent-color) 28%, transparent),
+    inset 0 0 8px color-mix(in srgb, var(--accent-color) 10%, transparent);
+}
+
+/* Sci-fi light mode */
+body.light-mode.theme-scifi .filter-chip {
+  border: 1px solid rgba(45, 233, 184, 0.3);
+  box-shadow: 0 0 6px rgba(45, 233, 184, 0.1);
+}
+
+body.light-mode.theme-scifi .filter-chip:hover {
+  box-shadow: 0 0 10px rgba(45, 233, 184, 0.18);
+}
+
+body.light-mode.theme-scifi .filter-chip--active {
+  box-shadow: 0 0 12px rgba(45, 233, 184, 0.24),
+    inset 0 0 8px rgba(45, 233, 184, 0.08);
+}
+
+/* --- Liquid Glass: glassmorphic translucent chips --- */
+.theme-liquid-glass .filter-chip {
+  border: 1px solid rgba(60, 60, 67, 0.10);
+  border-radius: 10px;
+  box-shadow:
+    0 1px 3px rgba(20, 30, 60, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.02);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+}
+
+.theme-liquid-glass .filter-chip:hover {
+  box-shadow:
+    0 2px 8px rgba(20, 30, 60, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.02);
+}
+
+.theme-liquid-glass .filter-chip--active {
+  box-shadow:
+    0 0 0 1px rgba(10, 132, 255, 0.20) inset,
+    0 2px 8px rgba(10, 132, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Liquid Glass dark mode */
+body.dark-mode.theme-liquid-glass .filter-chip {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.02);
+}
+
+body.dark-mode.theme-liquid-glass .filter-chip:hover {
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode.theme-liquid-glass .filter-chip--active {
+  box-shadow:
+    0 0 0 1px rgba(112, 191, 255, 0.20) inset,
+    0 2px 8px rgba(10, 132, 255, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
