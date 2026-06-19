@@ -152,6 +152,12 @@
   <img src="docs/images/qq.jpeg" alt="QQ 群二维码" width="220" />
 </div>
 
+## 开发者
+
+### Agent Skill
+
+本项目提供 tiez-c-cli 的 Agent Skill，详见 [skills/tiez-c-cli/](./skills/tiez-c-cli/)。安装方法：`bash skills/tiez-c-cli/install.sh`（Linux/macOS）或 `powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1`（Windows）。
+
 ---
 
 <div align="center">

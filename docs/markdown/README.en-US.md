@@ -148,6 +148,12 @@ If TieZ is useful to you, sponsorship helps keep the project moving.
   <img src="docs/images/qq.jpeg" alt="QQ group QR" width="220" />
 </div>
 
+## Developer
+
+### Agent Skill
+
+This project provides an Agent Skill for tiez-c-cli at [skills/tiez-c-cli/](./skills/tiez-c-cli/). Install with: `bash skills/tiez-c-cli/install.sh` (Linux/macOS) or `powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1` (Windows).
+
 ---
 
 <div align="center">

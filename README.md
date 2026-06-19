@@ -64,6 +64,12 @@ npm run tauri:build
 
 构建完成后，安装包位于 `src-tauri/target/release/bundle/` 目录下。
 
+## 开发者
+
+### Agent Skill
+
+本项目提供 tiez-c-cli 的 Agent Skill，详见 [skills/tiez-c-cli/](./skills/tiez-c-cli/)。安装方法：`bash skills/tiez-c-cli/install.sh`（Linux/macOS）或 `powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1`（Windows）。
+
 本 fork 主要基于个人需求进行维护，后续更新频率不作保证。
 
 如需查看当前仓库文档，可参考 [README.en-US](docs/markdown/README.en-US.md) 与 [README.zh-CN](docs/markdown/README.zh-CN.md)
