@@ -37,6 +37,7 @@ import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
+const CONTEXT_MENU_OPEN_EVENT = "tiez:context-menu-open";
 
 let linuxChecked = false;
 let isLinuxPlatform = false;
@@ -934,6 +935,27 @@ const ClipboardItem = ({
         }
     }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin]);
 
+    const [ocrRunning, setOcrRunning] = useState(false);
+
+    const handleOcr = useCallback(() => {
+        if (ocrRunning || item.content_type !== "image") return;
+        setOcrRunning(true);
+        setOcrStatus("processing");
+        invoke("recognize_clipboard_image", { itemId: item.id })
+            .then((result: unknown) => {
+                const res = result as { text: string; status: string };
+                setOcrText(res.text || null);
+                setOcrStatus(res.status);
+            })
+            .catch((err) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                setOcrStatus("failed");
+                setContextMenuState(null);
+                console.error("OCR failed:", msg);
+            })
+            .finally(() => setOcrRunning(false));
+    }, [item.id, item.content_type, ocrRunning]);
+
     const handleTransform = useCallback((kind: string) => {
         const proceed = (text: string) => {
             invoke("copy_to_clipboard", { content: text })
@@ -968,6 +990,17 @@ const ClipboardItem = ({
             setIgnoreBlurSafe(false);
         };
     }, [contextMenuState]);
+
+    useEffect(() => {
+        const handleOtherMenuOpen = (e: Event) => {
+            const customEvent = e as CustomEvent<{ id: string }>;
+            if (customEvent.detail?.id !== String(item.id) && contextMenuState) {
+                setContextMenuState(null);
+            }
+        };
+        window.addEventListener(CONTEXT_MENU_OPEN_EVENT, handleOtherMenuOpen);
+        return () => window.removeEventListener(CONTEXT_MENU_OPEN_EVENT, handleOtherMenuOpen);
+    }, [contextMenuState, item.id]);
 
     const renderFilePreview = () => {
         if (item.file_preview_exists === false) {
@@ -1062,6 +1095,7 @@ const ClipboardItem = ({
                 void hideCompactPreviewGlobal();
                 e.preventDefault();
                 e.stopPropagation();
+                window.dispatchEvent(new CustomEvent(CONTEXT_MENU_OPEN_EVENT, { detail: { id: item.id } }));
                 setContextMenuState({ x: e.clientX, y: e.clientY });
             }}
             onMouseEnter={(e) => {
@@ -1511,8 +1545,10 @@ const ClipboardItem = ({
                     onPin={() => handleContextMenuAction("pin")}
                     onShare={() => handleContextMenuAction("share")}
                     onTransform={handleTransform}
+                    onOcr={handleOcr}
                     transformKinds={transformKinds}
                     language={language === "zh" ? "zh" : language === "en" ? "en" : "zh"}
+                    ocrRunning={ocrRunning}
                 />
             )}
         </motion.div>

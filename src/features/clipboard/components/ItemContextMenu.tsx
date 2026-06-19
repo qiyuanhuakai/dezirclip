@@ -1,6 +1,8 @@
 import { forwardRef, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import type { ClipboardEntry } from "../../../shared/types";
 
+const SUBMENU_CLOSE_DELAY_MS = 120;
+
 export interface TransformKindDto {
   id: string;
   label_zh: string;
@@ -20,8 +22,10 @@ export interface ItemContextMenuProps {
   onPin?: () => void;
   onShare?: () => void;
   onTransform?: (kind: string) => void;
+  onOcr?: () => void;
   transformKinds?: TransformKindDto[];
   language?: "zh" | "en" | "tw";
+  ocrRunning?: boolean;
 }
 
 const MENU_WIDTH = 180;
@@ -61,8 +65,10 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       onPin,
       onShare,
       onTransform,
+      onOcr,
       transformKinds = [],
       language = "zh",
+      ocrRunning = false,
     },
     ref
   ) => {
@@ -71,17 +77,35 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
     const [submenuActiveIndex, setSubmenuActiveIndex] = useState(0);
     const internalRef = useRef<HTMLDivElement>(null);
     const resolvedRef = ref || internalRef;
+    const submenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearSubmenuCloseTimer = useCallback(() => {
+      if (submenuCloseTimerRef.current) {
+        clearTimeout(submenuCloseTimerRef.current);
+        submenuCloseTimerRef.current = null;
+      }
+    }, []);
+
+    useEffect(() => {
+      return () => {
+        if (submenuCloseTimerRef.current) clearTimeout(submenuCloseTimerRef.current);
+      };
+    }, []);
 
     const menuItems = useMemo(() => {
       const ct = entry?.content_type;
       const isText = ct === "text" || ct === "rich_text" || ct === undefined;
       const isBinary = ct === "image" || ct === "video" || ct === "file";
+      const isImage = ct === "image";
       const items: { key: string; label: string; hasSubmenu?: boolean }[] = [
         { key: "copy", label: "复制" },
         { key: "editTags", label: "编辑标签" },
       ];
       if (!isBinary) {
         items.push({ key: "qrCode", label: "QR 码" });
+      }
+      if (isImage) {
+        items.push({ key: "ocr", label: ocrRunning ? "OCR 识别中..." : "OCR 识别" });
       }
       items.push({ key: "delete", label: "删除" });
       items.push({ key: "pin", label: entry?.is_pinned ? "取消固定" : "固定" });
@@ -90,7 +114,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
       return items;
-    }, [entry?.is_pinned, entry?.content_type]);
+    }, [entry?.is_pinned, entry?.content_type, ocrRunning]);
 
     const totalItems = menuItems.length;
     const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
@@ -118,10 +142,15 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
           case "share":
             onShare?.();
             break;
+          case "ocr":
+            onOcr?.();
+            break;
         }
-        onClose();
+        if (key !== "ocr") {
+          onClose();
+        }
       },
-      [onSelect, onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onClose]
+      [onSelect, onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onOcr, onClose]
     );
 
     const handleTransformSelect = useCallback(
@@ -242,6 +271,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
               index === activeIndex ? "item-context-menu__item--active" : ""
             } ${item.hasSubmenu ? "item-context-menu__item--has-submenu" : ""}`}
             onMouseEnter={() => {
+              clearSubmenuCloseTimer();
               setActiveIndex(index);
               if (item.hasSubmenu) {
                 setSubmenuOpen(true);
@@ -270,6 +300,15 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
                   }`}
                   style={{ maxHeight: SUBMENU_MAX_HEIGHT }}
                   data-testid="transform-submenu"
+                  onMouseEnter={() => {
+                    clearSubmenuCloseTimer();
+                    setSubmenuOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    submenuCloseTimerRef.current = setTimeout(() => {
+                      setSubmenuOpen(false);
+                    }, SUBMENU_CLOSE_DELAY_MS);
+                  }}
                 >
                   {transformKinds.map((kind, tIdx) => (
                     <div

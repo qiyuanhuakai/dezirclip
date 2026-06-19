@@ -82,6 +82,16 @@
   z-index: 10000;
 }
 
+/* Invisible bridge between parent menu item and submenu to prevent hover gap */
+.item-context-menu__submenu::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+}
+
 .item-context-menu__item--has-submenu:hover > .item-context-menu__submenu,
 .item-context-menu__submenu--open {
   opacity: 1;
