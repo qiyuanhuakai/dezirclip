@@ -15,6 +15,7 @@ pub mod hotkey_cmd;
 pub mod clipboard_cmd;
 pub mod file_cmd;
 pub mod quick_paste_cmd;
+pub mod tools_cmd;
 
 // Re-export all commands for convenience in main.rs if needed,
 // though tauri usually expects them to be referenced via module path in generate_handler!
@@ -34,3 +35,4 @@ pub use hotkey_cmd::*;
 pub use clipboard_cmd::*;
 pub use file_cmd::*;
 pub use quick_paste_cmd::*;
+pub use tools_cmd::*;
