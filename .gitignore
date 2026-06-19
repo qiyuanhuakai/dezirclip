@@ -30,3 +30,4 @@ backup-e2e/
 src-tauri/src/bin/
 src-tauri/tests/
 tiez-c-standalone/
+src-tauri/binaries/
