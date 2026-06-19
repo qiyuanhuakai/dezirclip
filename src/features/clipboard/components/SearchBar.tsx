@@ -3,6 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { useSearch } from "../../../shared/hooks/useSearch";
 import type { SearchMode } from "../../../shared/hooks/useSearch";
 
+const MODE_ICONS: Record<SearchMode, string> = {
+  fts: "FTS5",
+  fuzzy: "≈",
+  regex: ".*",
+};
+
 const MODE_LABELS: Record<SearchMode, string> = {
   fts: "FTS5",
   fuzzy: "模糊",
@@ -127,7 +133,7 @@ export const SearchBar = () => {
             </div>
           )}
         </div>
-        <div className="search-bar__mode" role="radiogroup" aria-label="搜索模式">
+        <div className="search-bar__mode" role="radiogroup" aria-label="搜索模式" title="模糊/正则搜索模式">
           {enabledModes.map((m) => (
             <button
               key={m}
@@ -135,9 +141,12 @@ export const SearchBar = () => {
               onClick={() => setMode(m)}
               role="radio"
               aria-checked={mode === m}
+              aria-label={MODE_LABELS[m]}
+              title={MODE_LABELS[m]}
               data-test-mode-btn
             >
-              {MODE_LABELS[m]}
+              <span className="search-bar__mode-icon">{MODE_ICONS[m]}</span>
+              {m !== "fts" && <span className="search-bar__mode-label">{MODE_LABELS[m]}</span>}
             </button>
           ))}
         </div>

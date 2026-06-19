@@ -311,6 +311,11 @@ export const tw = {
         ocr_engine_windows: "Windows: Media.Ocr",
         ocr_engine_linux: "Linux: 尚未實作",
 
+        capture_now: "立即截圖",
+        ocr_engine_available: "可用",
+        ocr_engine_unavailable: "暫不可用",
+        search_mode_hint: "模糊/正則搜尋模式",
+
         // Search mode toggles
         search_fuzzy_enabled: "模糊搜尋",
         search_regex_enabled: "正則搜尋",

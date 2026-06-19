@@ -100,7 +100,7 @@ const ToolsSettingsGroup = ({
 
                     <div className="setting-item" style={{ marginLeft: "18px" }}>
                         <button
-                            className="btn-secondary"
+                            className="setting-btn"
                             onClick={handleCopyInstallCommand}
                             style={{ fontSize: "12px" }}
                         >

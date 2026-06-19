@@ -312,6 +312,11 @@ export const en = {
         ocr_engine_windows: "Windows: Media.Ocr",
         ocr_engine_linux: "Linux: Not available",
 
+        capture_now: "Capture Now",
+        ocr_engine_available: "Available",
+        ocr_engine_unavailable: "Not available",
+        search_mode_hint: "Fuzzy/Regex search mode",
+
         // Search mode toggles
         search_fuzzy_enabled: "Fuzzy Search",
         search_regex_enabled: "Regex Search",

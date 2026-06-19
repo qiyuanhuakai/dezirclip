@@ -1,5 +1,6 @@
-import { type ComponentType, type ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useState, useEffect, useCallback, type ComponentType, type ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { ChevronDown, ChevronRight, Camera } from "lucide-react";
 
 interface LabelWithHintProps {
     label: string;
@@ -30,14 +31,91 @@ const CaptureSettingsGroup = ({
     LabelWithHint,
     screenshotEnabled,
     setScreenshotEnabled,
-    screenshotHotkey,
+    screenshotHotkey: initialScreenshotHotkey,
     quickPasteEnabled,
     setQuickPasteEnabled,
-    quickPasteHotkey,
+    quickPasteHotkey: initialQuickPasteHotkey,
     ocrEnabled,
     setOcrEnabled,
     saveAppSetting,
 }: CaptureSettingsGroupProps) => {
+    const [screenshotHotkey, setScreenshotHotkey] = useState(initialScreenshotHotkey);
+    const [quickPasteHotkey, setQuickPasteHotkey] = useState(initialQuickPasteHotkey);
+    const [isRecordingScreenshot, setIsRecordingScreenshot] = useState(false);
+    const [isRecordingQuickPaste, setIsRecordingQuickPaste] = useState(false);
+    const [isWindows, setIsWindows] = useState(false);
+
+    useEffect(() => {
+        setIsWindows(navigator.platform.startsWith("Win"));
+    }, []);
+
+    useEffect(() => {
+        setScreenshotHotkey(initialScreenshotHotkey);
+    }, [initialScreenshotHotkey]);
+
+    useEffect(() => {
+        setQuickPasteHotkey(initialQuickPasteHotkey);
+    }, [initialQuickPasteHotkey]);
+
+    const handleScreenshotHotkeyKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (!isRecordingScreenshot) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (e.key === "Escape") {
+            setIsRecordingScreenshot(false);
+            return;
+        }
+
+        const modifiers = [];
+        if (e.ctrlKey) modifiers.push("Ctrl");
+        if (e.shiftKey) modifiers.push("Shift");
+        if (e.altKey) modifiers.push("Alt");
+        if (e.metaKey) modifiers.push("Win");
+
+        const key = e.key.toUpperCase();
+        if (["CONTROL", "SHIFT", "ALT", "META"].includes(key)) return;
+
+        const newHotkey = [...modifiers, key].join("+");
+        setScreenshotHotkey(newHotkey);
+        saveAppSetting("app.screenshot_hotkey", newHotkey);
+        setIsRecordingScreenshot(false);
+    }, [isRecordingScreenshot, saveAppSetting]);
+
+    const handleQuickPasteHotkeyKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (!isRecordingQuickPaste) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (e.key === "Escape") {
+            setIsRecordingQuickPaste(false);
+            return;
+        }
+
+        const modifiers = [];
+        if (e.ctrlKey) modifiers.push("Ctrl");
+        if (e.shiftKey) modifiers.push("Shift");
+        if (e.altKey) modifiers.push("Alt");
+        if (e.metaKey) modifiers.push("Win");
+
+        const key = e.key.toUpperCase();
+        if (["CONTROL", "SHIFT", "ALT", "META"].includes(key)) return;
+
+        const newHotkey = [...modifiers, key].join("+");
+        setQuickPasteHotkey(newHotkey);
+        saveAppSetting("app.quick_paste_hotkey", newHotkey);
+        setIsRecordingQuickPaste(false);
+    }, [isRecordingQuickPaste, saveAppSetting]);
+
+    const handleCaptureNow = useCallback(() => {
+        invoke("capture_full_screen").catch((err) => {
+            console.error("Screenshot failed:", err);
+        });
+    }, []);
+
+    const screenshotHotkeyParts = screenshotHotkey ? screenshotHotkey.split("+") : [];
+    const quickPasteHotkeyParts = quickPasteHotkey ? quickPasteHotkey.split("+") : [];
+
     return (
         <div className={`settings-group ${collapsed ? "collapsed" : ""}`}>
             <div className="group-header" onClick={onToggle}>
@@ -71,17 +149,75 @@ const CaptureSettingsGroup = ({
                     </div>
 
                     {screenshotEnabled && (
-                        <div className="setting-item" style={{ marginLeft: "18px" }}>
-                            <div className="item-label-group">
-                                <span className="item-label">{t("screenshot_hotkey")}</span>
+                        <>
+                            <div className="setting-item" style={{ marginLeft: "18px" }}>
+                                <div className="item-label-group">
+                                    <span className="item-label">{t("screenshot_hotkey")}</span>
+                                    <span className="hint">
+                                        {isRecordingScreenshot ? (
+                                            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                                <span style={{ color: "#ff9800", fontWeight: "bold" }}>
+                                                    {t("win_key_not_recommended")}
+                                                </span>
+                                                <span style={{ fontSize: "11px", opacity: 0.8 }}>
+                                                    {t("hotkey_recording_esc")}
+                                                </span>
+                                            </div>
+                                        ) : t("hotkey_click_hint")}
+                                    </span>
+                                </div>
+                                <div
+                                    className={`key-group ${isRecordingScreenshot ? "recording" : ""}`}
+                                    onClick={(e) => {
+                                        setIsRecordingScreenshot(true);
+                                        invoke("focus_clipboard_window").catch(console.error);
+                                        e.currentTarget.focus();
+                                    }}
+                                    tabIndex={0}
+                                    onKeyDown={handleScreenshotHotkeyKeyDown}
+                                >
+                                    {isRecordingScreenshot ? (
+                                        <div className="key-cap" style={{ width: "8em" }}>
+                                            {t("waiting_for_input")}
+                                        </div>
+                                    ) : screenshotHotkeyParts.length > 0 ? (
+                                        screenshotHotkeyParts.map((k, i) => (
+                                            <div key={i} className="key-cap">{k}</div>
+                                        ))
+                                    ) : (
+                                        <div className="key-cap" style={{ width: "8em", opacity: 0.5 }}>
+                                            {t("not_set")}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                            <div
-                                className="hotkey-display"
-                                style={{ cursor: "pointer" }}
-                            >
-                                <span>{screenshotHotkey || t("not_set")}</span>
+
+                            <div className="setting-item" style={{ marginLeft: "18px" }}>
+                                <div className="item-label-group">
+                                    <span className="item-label">{t("capture_now")}</span>
+                                </div>
+                                <button
+                                    className="setting-btn"
+                                    onClick={handleCaptureNow}
+                                    style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "6px",
+                                        padding: "4px 12px",
+                                        fontSize: "12px",
+                                        cursor: "pointer",
+                                        borderRadius: "6px",
+                                        border: "1px solid rgba(128, 128, 128, 0.4)",
+                                        background: "var(--bg-secondary)",
+                                        color: "var(--text-primary)",
+                                        boxShadow: "0 1px 2px rgba(0, 0, 0, 0.1)",
+                                    }}
+                                >
+                                    <Camera size={14} />
+                                    {t("capture_now")}
+                                </button>
                             </div>
-                        </div>
+                        </>
                     )}
 
                     <div className="setting-item">
@@ -112,8 +248,43 @@ const CaptureSettingsGroup = ({
                         <div className="setting-item" style={{ marginLeft: "18px" }}>
                             <div className="item-label-group">
                                 <span className="item-label">{t("quick_paste_hotkey_label")}</span>
+                                <span className="hint">
+                                    {isRecordingQuickPaste ? (
+                                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                            <span style={{ color: "#ff9800", fontWeight: "bold" }}>
+                                                {t("win_key_not_recommended")}
+                                            </span>
+                                            <span style={{ fontSize: "11px", opacity: 0.8 }}>
+                                                {t("hotkey_recording_esc")}
+                                            </span>
+                                        </div>
+                                    ) : t("hotkey_click_hint")}
+                                </span>
                             </div>
-                            <span>{quickPasteHotkey || t("not_set")}</span>
+                            <div
+                                className={`key-group ${isRecordingQuickPaste ? "recording" : ""}`}
+                                onClick={(e) => {
+                                    setIsRecordingQuickPaste(true);
+                                    invoke("focus_clipboard_window").catch(console.error);
+                                    e.currentTarget.focus();
+                                }}
+                                tabIndex={0}
+                                onKeyDown={handleQuickPasteHotkeyKeyDown}
+                            >
+                                {isRecordingQuickPaste ? (
+                                    <div className="key-cap" style={{ width: "8em" }}>
+                                        {t("waiting_for_input")}
+                                    </div>
+                                ) : quickPasteHotkeyParts.length > 0 ? (
+                                    quickPasteHotkeyParts.map((k, i) => (
+                                        <div key={i} className="key-cap">{k}</div>
+                                    ))
+                                ) : (
+                                    <div className="key-cap" style={{ width: "8em", opacity: 0.5 }}>
+                                        {t("not_set")}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
 
@@ -145,11 +316,17 @@ const CaptureSettingsGroup = ({
                         <div className="item-label-group">
                             <span className="item-label">{t("ocr_status_label")}</span>
                         </div>
-                        <span style={{ fontSize: "12px", opacity: 0.7 }}>
-                            {navigator.platform.startsWith("Win")
-                                ? t("ocr_engine_windows")
-                                : t("ocr_engine_linux")}
-                        </span>
+                        {isWindows ? (
+                            <span className="capture-engine-badge capture-engine-badge--available">
+                                <span className="capture-engine-badge__dot" />
+                                Windows Media.Ocr ({t("ocr_engine_available")})
+                            </span>
+                        ) : (
+                            <span className="capture-engine-badge capture-engine-badge--unavailable">
+                                <span className="capture-engine-badge__dot" />
+                                Linux ({t("ocr_engine_unavailable")})
+                            </span>
+                        )}
                     </div>
                 </div>
             )}

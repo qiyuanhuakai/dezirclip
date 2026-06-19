@@ -311,6 +311,11 @@ export const zh = {
         ocr_engine_windows: "Windows: Media.Ocr",
         ocr_engine_linux: "Linux: 暂未实现",
 
+        capture_now: "立即截图",
+        ocr_engine_available: "可用",
+        ocr_engine_unavailable: "暂不可用",
+        search_mode_hint: "模糊/正则搜索模式",
+
         // Search mode toggles
         search_fuzzy_enabled: "模糊搜索",
         search_regex_enabled: "正则搜索",
