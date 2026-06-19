@@ -3,13 +3,13 @@ use image::DynamicImage;
 use crate::services::ocr::OcrError;
 
 #[cfg(target_os = "windows")]
-use windows::Windows::Globalization::Language;
+use windows::Globalization::Language;
 #[cfg(target_os = "windows")]
-use windows::Windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
+use windows::Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap};
 #[cfg(target_os = "windows")]
-use windows::Windows::Media::Ocr::OcrEngine;
+use windows::Media::Ocr::OcrEngine;
 #[cfg(target_os = "windows")]
-use windows::Windows::Storage::Streams::DataWriter;
+use windows::Storage::Streams::DataWriter;
 #[cfg(target_os = "windows")]
 use windows_core::HSTRING;
 

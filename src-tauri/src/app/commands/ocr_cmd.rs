@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
 use tauri::Manager;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::database::DbState;
 

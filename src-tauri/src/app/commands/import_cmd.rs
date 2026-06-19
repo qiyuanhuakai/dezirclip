@@ -1,8 +1,8 @@
 use tauri::{AppHandle, Manager};
 use crate::database::DbState;
 use crate::services::backup::{
-    import_from_encrypted, import_from_json, entries_from_json, decrypt_to_json,
-    ImportMode, ImportSummary, ExportEntry,
+    import_from_json, entries_from_json, decrypt_to_json,
+    ImportMode, ExportEntry,
 };
 
 const ENCRYPTED_HEADER_LEN: usize = 12 + 16;

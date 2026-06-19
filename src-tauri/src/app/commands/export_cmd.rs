@@ -21,14 +21,13 @@ pub fn export_to_file(
     passphrase: Option<String>,
 ) -> Result<ExportSummary, String> {
     match format.as_str() {
-        "json" => export_json(app, state, path, format),
-        "encrypted" => export_encrypted(app, state, path, format, passphrase),
+        "json" => export_json(state, path, format),
+        "encrypted" => export_encrypted(state, path, format, passphrase),
         _ => Err("format must be 'json' or 'encrypted'".to_string()),
     }
 }
 
 fn export_json(
-    app: AppHandle,
     state: State<'_, DbState>,
     path: String,
     format: String,
@@ -38,7 +37,6 @@ fn export_json(
 }
 
 fn export_encrypted(
-    app: AppHandle,
     state: State<'_, DbState>,
     path: String,
     format: String,
