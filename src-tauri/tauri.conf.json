@@ -156,6 +156,9 @@
       "appimage",
       "rpm"
     ],
+    "externalBin": [
+      "binaries/tiez-c"
+    ],
     "windows": {
       "nsis": {
         "installMode": "currentUser",

@@ -1,0 +1,4 @@
+#!/bin/bash
+echo "tiez-c binary placeholder. Build via: cd src-tauri && cargo build --bin tiez-c --release"
+echo "Then copy to: src-tauri/binaries/tiez-c-x86_64-unknown-linux-gnu"
+exit 1
