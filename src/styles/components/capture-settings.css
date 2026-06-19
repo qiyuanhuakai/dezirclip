@@ -1,0 +1,37 @@
+.capture-engine-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.capture-engine-badge--available {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34c759;
+  border: 1px solid rgba(52, 199, 89, 0.24);
+}
+
+.capture-engine-badge--unavailable {
+  background: rgba(142, 142, 147, 0.12);
+  color: #8e8e93;
+  border: 1px solid rgba(142, 142, 147, 0.24);
+}
+
+.capture-engine-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.capture-engine-badge--available .capture-engine-badge__dot {
+  background: #34c759;
+}
+
+.capture-engine-badge--unavailable .capture-engine-badge__dot {
+  background: #8e8e93;
+}

@@ -1987,3 +1987,26 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button.pri
 .theme-liquid-glass ::-webkit-scrollbar-corner {
   background: transparent !important;
 }
+
+/* ============================================================
+   21. Context menu — opaque glass to avoid transparency bleed
+   ============================================================ */
+.theme-liquid-glass .item-context-menu,
+.theme-liquid-glass .item-context-menu__submenu {
+  background: rgba(245, 245, 250, 0.95) !important;
+  backdrop-filter: blur(20px) saturate(130%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(130%) !important;
+  border: 1px solid rgba(60, 60, 67, 0.12) !important;
+  box-shadow:
+    0 8px 32px rgba(20, 30, 60, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.50) !important;
+}
+
+body.dark-mode.theme-liquid-glass .item-context-menu,
+body.dark-mode.theme-liquid-glass .item-context-menu__submenu {
+  background: rgba(20, 20, 30, 0.95) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.40),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}

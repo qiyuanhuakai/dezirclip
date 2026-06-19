@@ -3,7 +3,7 @@
 .item-context-menu {
   position: fixed;
   min-width: 180px;
-  max-height: calc(100vh - 16px);
+  max-height: 480px;
   overflow-y: auto;
   background: var(--select-menu-bg);
   border: 1px solid var(--select-menu-border);
@@ -36,6 +36,7 @@
 
 .item-context-menu__item--has-submenu {
   position: relative;
+  padding-right: 16px;
 }
 
 .item-context-menu__item-label {
@@ -86,13 +87,14 @@
 .item-context-menu__submenu::before {
   content: '';
   position: absolute;
-  left: -12px;
+  left: -16px;
   top: 0;
   bottom: 0;
-  width: 12px;
+  width: 16px;
 }
 
 .item-context-menu__item--has-submenu:hover > .item-context-menu__submenu,
+.item-context-menu__submenu:hover,
 .item-context-menu__submenu--open {
   opacity: 1;
   pointer-events: auto;
