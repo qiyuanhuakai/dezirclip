@@ -292,4 +292,8 @@ export const tw = {
         ocr_failed_label: "OCR 失敗",
         ocr_unsupported_label: "OCR 不支援",
         ocr_toggle_label: "展開/收起 OCR 文字",
+
+        // clipboard context menu: transforms + QR feedback
+        transform_applied: "已套用轉換並複製",
+        transform_failed: "轉換失敗: {message}",
 };

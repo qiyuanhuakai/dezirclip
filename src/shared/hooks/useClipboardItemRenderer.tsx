@@ -34,6 +34,9 @@ interface UseClipboardItemRendererOptions {
   setEditingTagsId: Dispatch<SetStateAction<number | null>>;
   setTagInput: Dispatch<SetStateAction<string>>;
   handleUpdateTags: (id: number, tags: string[]) => void;
+  onQRCode: (item: ClipboardEntry) => void;
+  onTransformError: (item: ClipboardEntry, kind: string, message: string) => void;
+  onTransformSuccess: (item: ClipboardEntry, kind: string) => void;
 }
 
 type RenderItemContent = (
@@ -65,7 +68,10 @@ export const useClipboardItemRenderer = ({
   deleteEntry,
   setEditingTagsId,
   setTagInput,
-  handleUpdateTags
+  handleUpdateTags,
+  onQRCode,
+  onTransformError,
+  onTransformSuccess
 }: UseClipboardItemRendererOptions): { renderItemContent: RenderItemContent } => {
   const renderItemContent = useCallback(
     (item: ClipboardEntry, index: number, dragControls?: DragControls, disableLayout?: boolean) => {
@@ -136,6 +142,9 @@ export const useClipboardItemRenderer = ({
           }}
           dragControls={dragControls}
           disableLayout={disableLayout}
+          onQRCode={() => onQRCode(item)}
+          onTransformItemError={(kind, message) => onTransformError(item, kind, message)}
+          onTransformItemSuccess={(kind) => onTransformSuccess(item, kind)}
         />
       );
     },
@@ -161,7 +170,10 @@ export const useClipboardItemRenderer = ({
       deleteEntry,
       setEditingTagsId,
       setTagInput,
-      handleUpdateTags
+      handleUpdateTags,
+      onQRCode,
+      onTransformError,
+      onTransformSuccess
     ]
   );
 

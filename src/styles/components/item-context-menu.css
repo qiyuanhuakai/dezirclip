@@ -3,6 +3,8 @@
 .item-context-menu {
   position: fixed;
   min-width: 180px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   background: var(--select-menu-bg);
   border: 1px solid var(--select-menu-border);
   box-shadow: var(--select-menu-shadow);
@@ -116,5 +118,19 @@
 }
 
 .item-context-menu__submenu::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover-bg);
+}
+
+/* Scrollbar styling for main menu overflow (lower-card reachability) */
+.item-context-menu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.item-context-menu::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-bg);
+  border-radius: 2px;
+}
+
+.item-context-menu::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover-bg);
 }

@@ -72,15 +72,25 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
     const internalRef = useRef<HTMLDivElement>(null);
     const resolvedRef = ref || internalRef;
 
-    const menuItems = useMemo(() => [
-      { key: "copy", label: "复制" },
-      { key: "editTags", label: "编辑标签" },
-      { key: "qrCode", label: "QR 码" },
-      { key: "delete", label: "删除" },
-      { key: "pin", label: entry?.is_pinned ? "取消固定" : "固定" },
-      { key: "share", label: "分享" },
-      { key: "transforms", label: "文本转换 →", hasSubmenu: true },
-    ], [entry?.is_pinned]);
+    const menuItems = useMemo(() => {
+      const ct = entry?.content_type;
+      const isText = ct === "text" || ct === "rich_text" || ct === undefined;
+      const isBinary = ct === "image" || ct === "video" || ct === "file";
+      const items: { key: string; label: string; hasSubmenu?: boolean }[] = [
+        { key: "copy", label: "复制" },
+        { key: "editTags", label: "编辑标签" },
+      ];
+      if (!isBinary) {
+        items.push({ key: "qrCode", label: "QR 码" });
+      }
+      items.push({ key: "delete", label: "删除" });
+      items.push({ key: "pin", label: entry?.is_pinned ? "取消固定" : "固定" });
+      items.push({ key: "share", label: "分享" });
+      if (isText) {
+        items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
+      }
+      return items;
+    }, [entry?.is_pinned, entry?.content_type]);
 
     const totalItems = menuItems.length;
     const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;

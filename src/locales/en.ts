@@ -293,4 +293,8 @@ export const en = {
         ocr_failed_label: "OCR Failed",
         ocr_unsupported_label: "OCR Unsupported",
         ocr_toggle_label: "Show/Hide OCR Text",
+
+        // clipboard context menu: transforms + QR feedback
+        transform_applied: "Transform applied and copied",
+        transform_failed: "Transform failed: {message}",
 };

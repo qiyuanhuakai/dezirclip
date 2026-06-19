@@ -43,6 +43,7 @@ import { useSearchFetchTrigger } from "./shared/hooks/useSearchFetchTrigger";
 import { useScrollToSelection } from "./shared/hooks/useScrollToSelection";
 import { useClipboardItemRenderer } from "./shared/hooks/useClipboardItemRenderer";
 import { useOverlays } from "./shared/hooks/useOverlays";
+import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
 
@@ -225,6 +226,7 @@ const App = () => {
   const { toasts: progressToasts, dismiss: dismissProgress } = useProgress();
   const virtualListRef = useRef<VirtualClipboardListHandle | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [qrEntry, setQrEntry] = useState<ClipboardEntry | null>(null);
   const PAGE_SIZE = HISTORY_PAGE_SIZE;
   const { fetchHistory, loadMoreHistory } = useHistoryFetch({
     debouncedSearch,
@@ -657,7 +659,15 @@ const App = () => {
     deleteEntry,
     setEditingTagsId,
     setTagInput,
-    handleUpdateTags
+    handleUpdateTags,
+    onQRCode: (item) => setQrEntry(item),
+    onTransformError: (_item, _kind, message) => {
+      const msg = message || "unknown error";
+      pushToast(t("transform_failed").replace("{message}", msg));
+    },
+    onTransformSuccess: (_item, _kind) => {
+      pushToast(t("transform_applied"));
+    }
   });
 
   const settingsPanelProps = useSettingsPanelProps({
@@ -769,6 +779,13 @@ const App = () => {
         onClose={closeConfirm}
         onConfirm={confirmDialog.onConfirm}
       />
+
+      {qrEntry && (
+        <QrCodeDialog
+          entry={qrEntry}
+          onClose={() => setQrEntry(null)}
+        />
+      )}
 
     </div >
   );

@@ -581,7 +581,17 @@ const ClipboardItem = ({
     className,
     disableLayout,
     onQRCode,
-}: ClipboardItemProps & { compactMode?: boolean, className?: string, onQRCode?: () => void }) => {
+    onTransformItem,
+    onTransformItemError,
+    onTransformItemSuccess,
+}: ClipboardItemProps & {
+    compactMode?: boolean;
+    className?: string;
+    onQRCode?: () => void;
+    onTransformItem?: (kind: string) => void;
+    onTransformItemError?: (kind: string, message: string) => void;
+    onTransformItemSuccess?: (kind: string) => void;
+}) => {
     const tagInputRef = useRef<HTMLInputElement>(null);
     const [localTagInput, setLocalTagInput] = useState(tagInput);
     const [snapshotFailed, setSnapshotFailed] = useState(false);
@@ -925,20 +935,38 @@ const ClipboardItem = ({
     }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin]);
 
     const handleTransform = useCallback((kind: string) => {
+        const proceed = (text: string) => {
+            invoke("copy_to_clipboard", { content: text })
+                .then(() => onTransformItemSuccess?.(kind))
+                .catch((err) => {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    onTransformItemError?.(kind, msg);
+                });
+        };
+        onTransformItem?.(kind);
         invoke<string>("transform_text", { text: item.content, kind })
             .then((result) => {
                 if (result) {
-                    invoke("copy_to_clipboard", { content: result }).catch(() => {});
+                    proceed(result);
+                } else {
+                    onTransformItemError?.(kind, "transform returned empty result");
                 }
             })
-            .catch(() => {});
-    }, [item.content]);
+            .catch((err) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                onTransformItemError?.(kind, msg);
+            });
+    }, [item.content, onTransformItem, onTransformItemError, onTransformItemSuccess]);
 
     useEffect(() => {
         if (!contextMenuState) return;
+        setIgnoreBlurSafe(true);
         const handleClick = () => setContextMenuState(null);
         document.addEventListener("click", handleClick);
-        return () => document.removeEventListener("click", handleClick);
+        return () => {
+            document.removeEventListener("click", handleClick);
+            setIgnoreBlurSafe(false);
+        };
     }, [contextMenuState]);
 
     const renderFilePreview = () => {
@@ -1026,6 +1054,10 @@ const ClipboardItem = ({
                 const target = e.target as HTMLElement;
                 if (target.closest('button') || target.closest('input') || target.closest('textarea')) {
                     return;
+                }
+                if (hoverTimerRef.current) {
+                    clearTimeout(hoverTimerRef.current);
+                    hoverTimerRef.current = null;
                 }
                 void hideCompactPreviewGlobal();
                 e.preventDefault();
