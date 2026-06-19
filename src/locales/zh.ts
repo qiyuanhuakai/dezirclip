@@ -296,4 +296,43 @@ export const zh = {
         // clipboard context menu: transforms + QR feedback
         transform_applied: "已应用转换并复制",
         transform_failed: "转换失败: {message}",
+
+        // Capture settings group
+        capture_settings: "捕获设置",
+        screenshot_enabled: "区域截图",
+        screenshot_enabled_hint: "开启后可通过快捷键进行区域截图并自动保存到剪贴板",
+        screenshot_hotkey: "截图快捷键",
+        quick_paste_enabled: "快速粘贴",
+        quick_paste_enabled_hint: "开启后可通过快捷键呼出快速粘贴浮层",
+        quick_paste_hotkey_label: "快速粘贴快捷键",
+        ocr_enabled: "OCR 文字识别",
+        ocr_enabled_hint: "复制图片时自动识别其中的文字",
+        ocr_status_label: "OCR 引擎状态",
+        ocr_engine_windows: "Windows: Media.Ocr",
+        ocr_engine_linux: "Linux: 暂未实现",
+
+        // Search mode toggles
+        search_fuzzy_enabled: "模糊搜索",
+        search_regex_enabled: "正则搜索",
+
+        // Context menu OCR
+        context_ocr: "OCR 识别",
+        context_ocr_running: "OCR 识别中...",
+
+        // Tools settings group
+        tools_settings: "工具",
+        tiez_c_cli: "tiez-c 命令行工具",
+        cli_path: "命令行路径",
+        cli_version: "版本",
+        open_docs: "打开文档",
+        copy_install_command: "复制安装命令",
+        agent_skill: "Agent Skill 插件",
+        skill_path: "插件路径",
+        skill_docs: "插件文档",
+        build_info: "构建信息",
+        app_version: "应用版本",
+        platform_label: "运行平台",
+        build_date: "构建日期",
+        platform_windows: "Windows",
+        platform_linux: "Linux",
 };

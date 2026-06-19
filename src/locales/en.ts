@@ -297,4 +297,43 @@ export const en = {
         // clipboard context menu: transforms + QR feedback
         transform_applied: "Transform applied and copied",
         transform_failed: "Transform failed: {message}",
+
+        // Capture settings group
+        capture_settings: "Capture Settings",
+        screenshot_enabled: "Screenshot",
+        screenshot_enabled_hint: "Enable region screenshot via hotkey, saved to clipboard",
+        screenshot_hotkey: "Screenshot Hotkey",
+        quick_paste_enabled: "Quick Paste",
+        quick_paste_enabled_hint: "Enable the quick-paste overlay via hotkey",
+        quick_paste_hotkey_label: "Quick Paste Hotkey",
+        ocr_enabled: "OCR Text Recognition",
+        ocr_enabled_hint: "Automatically recognize text in copied images",
+        ocr_status_label: "OCR Engine Status",
+        ocr_engine_windows: "Windows: Media.Ocr",
+        ocr_engine_linux: "Linux: Not available",
+
+        // Search mode toggles
+        search_fuzzy_enabled: "Fuzzy Search",
+        search_regex_enabled: "Regex Search",
+
+        // Context menu OCR
+        context_ocr: "OCR Recognize",
+        context_ocr_running: "OCR processing...",
+
+        // Tools settings group
+        tools_settings: "Tools",
+        tiez_c_cli: "tiez-c CLI Tool",
+        cli_path: "CLI Path",
+        cli_version: "Version",
+        open_docs: "Open Docs",
+        copy_install_command: "Copy Install Command",
+        agent_skill: "Agent Skill Plugin",
+        skill_path: "Skill Path",
+        skill_docs: "Skill Docs",
+        build_info: "Build Info",
+        app_version: "App Version",
+        platform_label: "Platform",
+        build_date: "Build Date",
+        platform_windows: "Windows",
+        platform_linux: "Linux",
 };

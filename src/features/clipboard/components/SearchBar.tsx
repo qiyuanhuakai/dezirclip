@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useSearch } from "../../../shared/hooks/useSearch";
 import type { SearchMode } from "../../../shared/hooks/useSearch";
 
@@ -8,7 +9,7 @@ const MODE_LABELS: Record<SearchMode, string> = {
   regex: "正则",
 };
 
-const MODES: SearchMode[] = ["fts", "fuzzy", "regex"];
+const ALL_MODES: SearchMode[] = ["fts", "fuzzy", "regex"];
 
 export const SearchBar = () => {
   const {
@@ -24,8 +25,34 @@ export const SearchBar = () => {
   } = useSearch();
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [enabledModes, setEnabledModes] = useState<SearchMode[]>(ALL_MODES);
   const inputRef = useRef<HTMLInputElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const settings = await invoke<Record<string, string>>("get_settings");
+        const modes: SearchMode[] = ["fts"];
+        if (settings["app.search_fuzzy_enabled"] !== "false") {
+          modes.push("fuzzy");
+        }
+        if (settings["app.search_regex_enabled"] !== "false") {
+          modes.push("regex");
+        }
+        setEnabledModes(modes);
+      } catch {
+        setEnabledModes(ALL_MODES);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  useEffect(() => {
+    if (!enabledModes.includes(mode)) {
+      setMode("fts");
+    }
+  }, [enabledModes, mode, setMode]);
 
   const handleClear = useCallback(() => {
     setQuery("");
@@ -101,7 +128,7 @@ export const SearchBar = () => {
           )}
         </div>
         <div className="search-bar__mode" role="radiogroup" aria-label="搜索模式">
-          {MODES.map((m) => (
+          {enabledModes.map((m) => (
             <button
               key={m}
               className={`search-bar__mode-btn${mode === m ? " search-bar__mode-btn--active" : ""}`}

@@ -83,6 +83,10 @@ fn apply_setting_state_update(
                 }
             });
         }
+        "app.screenshot_enabled" | "app.screenshot_hotkey" |
+        "app.quick_paste_enabled" | "app.quick_paste_hotkey" |
+        "app.ocr_enabled" | "app.search_fuzzy_enabled" | "app.search_regex_enabled" => {
+        }
         _ => {}
     }
 }

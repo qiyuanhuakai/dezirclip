@@ -9,6 +9,8 @@ import ClipboardSettingsGroup from "./groups/ClipboardSettingsGroup";
 import AppearanceSettingsGroup from "./groups/AppearanceSettingsGroup";
 import DefaultAppsSettingsGroup from "./groups/DefaultAppsSettingsGroup";
 import DataSettingsGroup from "./groups/DataSettingsGroup";
+import CaptureSettingsGroup from "./groups/CaptureSettingsGroup";
+import ToolsSettingsGroup from "./groups/ToolsSettingsGroup";
 import SettingsFooter from "./SettingsFooter";
 
 interface SettingsPanelProps {
@@ -162,6 +164,22 @@ const SettingsPanel = (props: SettingsPanelProps) => {
     const [openHints, setOpenHints] = useState<Set<string>>(new Set());
     const [privacyKindsOpen, setPrivacyKindsOpen] = useState(false);
     const [privacyRulesOpen, setPrivacyRulesOpen] = useState(false);
+
+    const [screenshotEnabled, setScreenshotEnabled] = useState(() => {
+        const val = props.appSettings?.["app.screenshot_enabled"];
+        return val !== "false";
+    });
+    const [screenshotHotkey] = useState(() => {
+        return props.appSettings?.["app.screenshot_hotkey"] || "Ctrl+Shift+A";
+    });
+    const [quickPasteEnabled, setQuickPasteEnabled] = useState(() => {
+        const val = props.appSettings?.["app.quick_paste_enabled"];
+        return val !== "false";
+    });
+    const [ocrEnabled, setOcrEnabled] = useState(() => {
+        const val = props.appSettings?.["app.ocr_enabled"];
+        return val !== "false";
+    });
 
     const toggleHint = (key: string) => {
         setOpenHints(prev => {
@@ -359,6 +377,29 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 collapsed={collapsedGroups["data"]}
                 onToggle={() => toggleGroup("data")}
                 dataPath={dataPath}
+            />
+
+            <CaptureSettingsGroup
+                t={t}
+                collapsed={collapsedGroups["capture"]}
+                onToggle={() => toggleGroup("capture")}
+                LabelWithHint={LabelWithHint}
+                screenshotEnabled={screenshotEnabled}
+                setScreenshotEnabled={setScreenshotEnabled}
+                screenshotHotkey={screenshotHotkey}
+                quickPasteEnabled={quickPasteEnabled}
+                setQuickPasteEnabled={setQuickPasteEnabled}
+                quickPasteHotkey={props.appSettings?.["app.quick_paste_hotkey"] || "Ctrl+Shift+V"}
+                ocrEnabled={ocrEnabled}
+                setOcrEnabled={setOcrEnabled}
+                saveAppSetting={saveAppSetting}
+            />
+
+            <ToolsSettingsGroup
+                t={t}
+                collapsed={collapsedGroups["tools"]}
+                onToggle={() => toggleGroup("tools")}
+                LabelWithHint={LabelWithHint}
             />
 
             <SettingsFooter
