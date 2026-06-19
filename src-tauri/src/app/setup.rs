@@ -101,6 +101,10 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // 6. Window Initialization (Pinned/Focus)
     setup_main_window(app, &settings);
 
+    // 6.0a Hide auxiliary windows on startup (Windows-only regression: fullscreen
+    // region-select flashes above all other windows even with visible:false).
+    hide_auxiliary_windows(app);
+
     // 6.1 External Drag-Drop (Web Images)
     #[cfg(windows)]
     crate::infrastructure::windows_api::drag_drop::register_emoji_drag_drop(app_handle.clone());
@@ -418,6 +422,15 @@ fn setup_state(
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));
     app.manage(PasteQueue::default());
     app.manage(SearchHistory::default());
+}
+
+fn hide_auxiliary_windows(app: &App) {
+    for label in ["quick-paste", "region-select"] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.hide();
+            let _ = window.set_focusable(false);
+        }
+    }
 }
 
 fn setup_main_window(app: &App, s: &StartupSettings) {
