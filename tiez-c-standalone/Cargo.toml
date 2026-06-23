@@ -1,0 +1,11 @@
+[package]
+name = "tiez-c-standalone"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+
+[[bin]]
+name = "tiez-c"
+path = "src/bin/tiez-c.rs"
