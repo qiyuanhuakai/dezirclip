@@ -12,6 +12,14 @@ use serde::Serialize;
 use xcap::image::{ExtendedColorType, ImageEncoder};
 use xcap::Monitor;
 
+#[cfg(test)]
+const RUN_SCREENSHOT_SMOKE: &str = "TIEZ_RUN_SCREENSHOT_SMOKE_TESTS";
+
+#[cfg(test)]
+pub(crate) fn screenshot_smoke_enabled() -> bool {
+    std::env::var_os(RUN_SCREENSHOT_SMOKE).is_some()
+}
+
 /// Captured screenshot in PNG form.
 #[derive(Debug, Clone, Serialize)]
 pub struct ScreenshotResult {
@@ -183,6 +191,10 @@ mod tests {
 
     #[test]
     fn test_capture_full_screen_smoke() -> Result<(), ScreenshotError> {
+        if !screenshot_smoke_enabled() {
+            return Ok(());
+        }
+
         match capture_full_screen() {
             Ok(result) => {
                 assert!(result.width > 0, "primary monitor width must be positive");
@@ -204,6 +216,10 @@ mod tests {
 
     #[test]
     fn test_capture_region_basic() -> Result<(), ScreenshotError> {
+        if !screenshot_smoke_enabled() {
+            return Ok(());
+        }
+
         // Pick a known-good region on the primary monitor (or skip on no-display CI).
         let monitors = match list_monitors() {
             Ok(m) if !m.is_empty() => m,
@@ -234,6 +250,10 @@ mod tests {
 
     #[test]
     fn test_list_monitors_returns_at_least_one() -> Result<(), ScreenshotError> {
+        if !screenshot_smoke_enabled() {
+            return Ok(());
+        }
+
         match list_monitors() {
             Ok(list) => assert!(!list.is_empty(), "expected at least one monitor"),
             Err(_) => {
@@ -245,6 +265,10 @@ mod tests {
 
     #[test]
     fn test_monitor_info_fields() -> Result<(), ScreenshotError> {
+        if !screenshot_smoke_enabled() {
+            return Ok(());
+        }
+
         let list = match list_monitors() {
             Ok(l) => l,
             Err(_) => return Ok(()),
@@ -268,6 +292,10 @@ mod tests {
 
     #[test]
     fn test_screenshot_result_is_png() -> Result<(), ScreenshotError> {
+        if !screenshot_smoke_enabled() {
+            return Ok(());
+        }
+
         let result = match capture_full_screen() {
             Ok(r) => r,
             Err(_) => return Ok(()), // headless CI: nothing to validate

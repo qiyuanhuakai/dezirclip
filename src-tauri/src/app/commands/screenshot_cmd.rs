@@ -53,11 +53,16 @@ pub async fn list_monitors(_app: AppHandle) -> Result<Vec<MonitorInfo>, String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::screenshot::screenshot_smoke_enabled;
 
     const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
     #[test]
     fn test_capture_full_screen_returns_png() {
+        if !screenshot_smoke_enabled() {
+            return;
+        }
+
         match screenshot::capture_full_screen() {
             Ok(result) => {
                 assert!(result.png_bytes.len() >= PNG_MAGIC.len());
@@ -112,6 +117,10 @@ mod tests {
         assert_eq!(monitor.width, 1920);
         assert_eq!(monitor.height, 1080);
         assert!(monitor.is_primary);
+
+        if !screenshot_smoke_enabled() {
+            return;
+        }
 
         match screenshot::list_monitors() {
             Ok(list) => {

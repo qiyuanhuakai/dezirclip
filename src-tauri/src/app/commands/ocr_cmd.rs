@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "windows")]
+use tauri::Emitter;
+#[cfg(target_os = "windows")]
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
