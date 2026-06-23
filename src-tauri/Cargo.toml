@@ -39,6 +39,7 @@ uuid = { version = "1.19.0", features = ["v4"] }
 urlencoding = "2.1.3"
 machine-uid = "0.5"
 sha2 = "0.10"
+hex = "0.4"
 dotenvy = "0.15"
 
 dirs = "5.0"

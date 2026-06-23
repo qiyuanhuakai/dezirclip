@@ -226,6 +226,11 @@ pub struct StartupSettings {
     pub sequential_hotkey: String,
     pub rich_paste_hotkey: String,
     pub search_hotkey: String,
+    pub screenshot_enabled: bool,
+    pub screenshot_hotkey: String,
+    pub quick_paste_enabled: bool,
+    pub quick_paste_hotkey: String,
+    pub ocr_enabled: bool,
     pub sound_enabled: bool,
     pub hide_tray_icon: bool,
     pub edge_docking: bool,
@@ -305,6 +310,29 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .get("app.search_hotkey")
             .unwrap_or(Some("Alt+F".to_string()))
             .unwrap_or("Alt+F".to_string()),
+        screenshot_enabled: repo
+            .get("app.screenshot_enabled")
+            .unwrap_or(Some("true".to_string()))
+            .map(|v| v == "true")
+            .unwrap_or(true),
+        screenshot_hotkey: repo
+            .get("app.screenshot_hotkey")
+            .unwrap_or(Some("Ctrl+Shift+A".to_string()))
+            .unwrap_or("Ctrl+Shift+A".to_string()),
+        quick_paste_enabled: repo
+            .get("app.quick_paste_enabled")
+            .unwrap_or(Some("true".to_string()))
+            .map(|v| v == "true")
+            .unwrap_or(true),
+        quick_paste_hotkey: repo
+            .get("app.quick_paste_hotkey")
+            .unwrap_or(Some("Ctrl+Shift+V".to_string()))
+            .unwrap_or("Ctrl+Shift+V".to_string()),
+        ocr_enabled: repo
+            .get("app.ocr_enabled")
+            .unwrap_or(Some("true".to_string()))
+            .map(|v| v == "true")
+            .unwrap_or(true),
         sound_enabled: repo
             .get("app.sound_enabled")
             .unwrap_or(Some("false".to_string()))
@@ -405,6 +433,11 @@ fn setup_state(
         sequential_paste_hotkey: std::sync::Mutex::new(s.sequential_hotkey.clone()),
         rich_paste_hotkey: std::sync::Mutex::new(s.rich_paste_hotkey.clone()),
         search_hotkey: std::sync::Mutex::new(s.search_hotkey.clone()),
+        screenshot_enabled: AtomicBool::new(s.screenshot_enabled),
+        screenshot_hotkey: std::sync::Mutex::new(s.screenshot_hotkey.clone()),
+        quick_paste_enabled: AtomicBool::new(s.quick_paste_enabled),
+        quick_paste_hotkey: std::sync::Mutex::new(s.quick_paste_hotkey.clone()),
+        ocr_enabled: AtomicBool::new(s.ocr_enabled),
         sound_enabled: AtomicBool::new(s.sound_enabled),
         hide_tray_icon: AtomicBool::new(s.hide_tray_icon),
         edge_docking: AtomicBool::new(s.edge_docking),

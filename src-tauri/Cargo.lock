@@ -4977,6 +4977,7 @@ dependencies = [
  "ctrlc",
  "dirs 5.0.1",
  "dotenvy",
+ "hex",
  "image",
  "keyring",
  "machine-uid",

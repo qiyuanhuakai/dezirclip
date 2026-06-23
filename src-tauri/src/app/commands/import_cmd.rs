@@ -153,9 +153,8 @@ fn apply_import(app: AppHandle, mode: ImportMode, entries: &[ExportEntry]) -> Re
 mod tests {
     use super::*;
     use crate::services::backup::{
-        export_to_json, import_from_encrypted, BackupError, ExportEntry,
+        export_to_json, import_from_encrypted, BackupError, ExportEntry, ImportSummary,
     };
-    use std::io::Write;
 
     fn make_entry(id: i64) -> ExportEntry {
         ExportEntry {
@@ -196,12 +195,13 @@ mod tests {
 
     #[test]
     fn test_import_from_file_json_roundtrip() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmp = std::env::temp_dir().join("tiez-import-json-roundtrip.json");
         let entries = vec![make_entry(1), make_entry(2)];
         let json = export_to_json(entries.clone()).unwrap();
-        std::fs::write(tmp.path(), json).unwrap();
+        std::fs::write(&tmp, json).unwrap();
 
-        let data = std::fs::read(tmp.path()).unwrap();
+        let data = std::fs::read(&tmp).unwrap();
+        let _ = std::fs::remove_file(&tmp);
         let json_str = std::str::from_utf8(&data).unwrap();
         let parsed = entries_from_json(json_str).unwrap();
         assert_eq!(parsed.len(), 2);
@@ -211,12 +211,13 @@ mod tests {
 
     #[test]
     fn test_import_from_file_replace_clears() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmp = std::env::temp_dir().join("tiez-import-replace.json");
         let entries = vec![make_entry(1), make_entry(2)];
         let json = export_to_json(entries).unwrap();
-        std::fs::write(tmp.path(), json).unwrap();
+        std::fs::write(&tmp, json).unwrap();
 
-        let data = std::fs::read(tmp.path()).unwrap();
+        let data = std::fs::read(&tmp).unwrap();
+        let _ = std::fs::remove_file(&tmp);
         let json_str = std::str::from_utf8(&data).unwrap();
         let parsed = entries_from_json(json_str).unwrap();
         assert_eq!(parsed.len(), 2);
@@ -226,12 +227,13 @@ mod tests {
 
     #[test]
     fn test_import_from_file_merge_preserves() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let tmp = std::env::temp_dir().join("tiez-import-merge.json");
         let entries = vec![make_entry(10), make_entry(20)];
         let json = export_to_json(entries).unwrap();
-        std::fs::write(tmp.path(), json).unwrap();
+        std::fs::write(&tmp, json).unwrap();
 
-        let data = std::fs::read(tmp.path()).unwrap();
+        let data = std::fs::read(&tmp).unwrap();
+        let _ = std::fs::remove_file(&tmp);
         let json_str = std::str::from_utf8(&data).unwrap();
         let parsed = entries_from_json(json_str).unwrap();
         assert_eq!(parsed.len(), 2);

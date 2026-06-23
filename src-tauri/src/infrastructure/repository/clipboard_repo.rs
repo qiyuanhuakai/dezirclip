@@ -115,6 +115,7 @@ pub trait ClipboardRepository {
         offset: i32,
         content_type: Option<&str>,
     ) -> Result<Vec<ClipboardEntry>, String>;
+    fn search_fts(&self, query: &str, limit: u32) -> Result<Vec<ClipboardEntry>, String>;
     fn search(&self, query: &str, limit: i32) -> Result<Vec<ClipboardEntry>, String>;
     fn delete(&self, id: i64, data_dir: Option<&std::path::Path>) -> Result<(), String>;
     fn clear(&self, data_dir: Option<&std::path::Path>) -> Result<(), String>;
@@ -1025,9 +1026,12 @@ impl ClipboardRepository for SqliteClipboardRepository {
                             true
                         }
                     },
-                    content_kinds: Vec::new(),
-                    ocr_text: None,
-                    ocr_status: None,
+                    content_kinds: serde_json::from_str(
+                        &row.get::<_, String>(15).unwrap_or_else(|_| "[]".to_string()),
+                    )
+                    .unwrap_or_default(),
+                    ocr_text: row.get(13).ok(),
+                    ocr_status: row.get(14).ok(),
                 },
                 content_raw,
                 preview_raw,
@@ -1099,6 +1103,10 @@ impl ClipboardRepository for SqliteClipboardRepository {
             cache.put(cache_key, history.clone());
         }
         Ok(history)
+    }
+
+    fn search_fts(&self, query: &str, limit: u32) -> Result<Vec<ClipboardEntry>, String> {
+        Self::search_fts(self, query, limit)
     }
 
     fn search(&self, query: &str, limit: i32) -> Result<Vec<ClipboardEntry>, String> {

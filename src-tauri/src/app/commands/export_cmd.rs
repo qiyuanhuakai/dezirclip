@@ -14,7 +14,7 @@ pub struct ExportSummary {
 
 #[tauri::command]
 pub fn export_to_file(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, DbState>,
     path: String,
     format: String,
@@ -59,13 +59,14 @@ pub(crate) fn export_entries(
     format: String,
     passphrase: Option<String>,
 ) -> Result<ExportSummary, String> {
+    let count = entries.len();
     let export_entries: Vec<ExportEntry> = entries.into_iter().map(into_export_entry).collect();
     match format.as_str() {
         "json" => {
             let json = export_to_json(export_entries).map_err(|e| e.to_string())?;
             std::fs::write(&path, json).map_err(|e| e.to_string())?;
             Ok(ExportSummary {
-                count: 0,
+                count,
                 format,
                 encrypted: false,
                 path,
@@ -81,7 +82,7 @@ pub(crate) fn export_entries(
                 export_to_encrypted(export_entries, &passphrase).map_err(|e| e.to_string())?;
             std::fs::write(&path, blob).map_err(|e| e.to_string())?;
             Ok(ExportSummary {
-                count: 0,
+                count,
                 format,
                 encrypted: true,
                 path,
