@@ -275,7 +275,8 @@ impl TagRepository for SqliteTagRepository {
         let rows = stmt
             .query_map([tag], |row| {
                 let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
-                let tags = self.maybe_decrypt_tags(serde_json::from_str(&tags_str).unwrap_or_default());
+                let tags =
+                    self.maybe_decrypt_tags(serde_json::from_str(&tags_str).unwrap_or_default());
                 let content_raw: String = row.get(2)?;
                 let html_raw: Option<String> = row.get(3).ok();
                 let preview_raw: String = row.get(6)?;

@@ -1,6 +1,8 @@
 // Global state module
 use std::ptr::null_mut;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, AtomicPtr, AtomicI32};
+use std::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicPtr, AtomicU32, AtomicU64, AtomicU8, AtomicUsize,
+};
 
 pub static GLOBAL_APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 pub static HOOK_HANDLE: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(null_mut());
@@ -19,7 +21,6 @@ pub struct HookHotkey {
 pub static TARGET_HOTKEY: std::sync::Mutex<Option<HookHotkey>> = std::sync::Mutex::new(None);
 
 // Win+ hotkeys are now handled via tauri-plugin-global-shortcut.
-
 
 pub static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 pub static IGNORE_BLUR: AtomicBool = AtomicBool::new(false);
@@ -43,8 +44,8 @@ pub enum DockPosition {
 }
 
 pub static CURRENT_DOCK: AtomicI32 = AtomicI32::new(0); // 0: None, 1: Top, 2: Left, 3: Right
-// Tracks whether the main window is hidden specifically by edge docking.
-// Other hide paths should clear it so the next toggle is treated as a normal show.
+                                                        // Tracks whether the main window is hidden specifically by edge docking.
+                                                        // Other hide paths should clear it so the next toggle is treated as a normal show.
 pub static IS_HIDDEN: AtomicBool = AtomicBool::new(false);
 pub static IS_MOUSE_BUTTON_DOWN: AtomicBool = AtomicBool::new(false);
 pub static NAVIGATION_ENABLED: AtomicBool = AtomicBool::new(false);

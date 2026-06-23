@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import type { ClipboardEntry } from "../../../shared/types";
 
 const SUBMENU_CLOSE_DELAY_MS = 120;
@@ -32,6 +33,8 @@ const MENU_WIDTH = 180;
 const MENU_ITEM_HEIGHT = 36;
 const MENU_PADDING = 4;
 const SUBMENU_MAX_HEIGHT = 320;
+const SUBMENU_WIDTH = 168;
+const SUBMENU_GAP = 4;
 
 function clampPosition(
   x: number,
@@ -48,6 +51,23 @@ function clampPosition(
   if (left < 0) left = 8;
   if (top < 0) top = 8;
   return { left, top };
+}
+
+function submenuPosition(
+  menuLeft: number,
+  menuTop: number,
+  itemIndex: number,
+  itemCount: number
+): { left: number; top: number } {
+  const submenuHeight = Math.min(
+    SUBMENU_MAX_HEIGHT,
+    itemCount * MENU_ITEM_HEIGHT + MENU_PADDING * 2
+  );
+  const itemTop = menuTop + MENU_PADDING + itemIndex * MENU_ITEM_HEIGHT - MENU_PADDING;
+  const rightLeft = menuLeft + MENU_WIDTH + SUBMENU_GAP;
+  const leftLeft = menuLeft - SUBMENU_WIDTH - SUBMENU_GAP;
+  const left = rightLeft + SUBMENU_WIDTH <= window.innerWidth - 8 ? rightLeft : Math.max(8, leftLeft);
+  return clampPosition(left, itemTop, SUBMENU_WIDTH, submenuHeight);
 }
 
 const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
@@ -116,9 +136,13 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       return items;
     }, [entry?.is_pinned, entry?.content_type, ocrRunning]);
 
-    const totalItems = menuItems.length;
-    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
-    const pos = clampPosition(x, y, MENU_WIDTH, menuHeight);
+	    const totalItems = menuItems.length;
+	    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
+	    const pos = clampPosition(x, y, MENU_WIDTH, menuHeight);
+	    const transformIndex = menuItems.findIndex((item) => item.key === "transforms");
+	    const submenuPos = transformIndex >= 0
+	      ? submenuPosition(pos.left, pos.top, transformIndex, transformKinds.length)
+	      : { left: pos.left + MENU_WIDTH + SUBMENU_GAP, top: pos.top };
 
     const handleAction = useCallback(
       (key: string) => {
@@ -248,8 +272,53 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       return () => el.removeEventListener("keydown", handleKeyDown);
     }, [handleKeyDown, resolvedRef]);
 
-    return (
-      <div
+	    const transformSubmenu = submenuOpen && transformKinds.length > 0 && createPortal(
+	      <div
+	        className="item-context-menu__submenu item-context-menu__submenu--open"
+	        style={{
+	          left: submenuPos.left,
+	          top: submenuPos.top,
+	          width: SUBMENU_WIDTH,
+	          maxHeight: SUBMENU_MAX_HEIGHT,
+	        }}
+	        data-testid="transform-submenu"
+	        onMouseEnter={() => {
+	          clearSubmenuCloseTimer();
+	          setSubmenuOpen(true);
+	        }}
+	        onMouseLeave={() => {
+	          submenuCloseTimerRef.current = setTimeout(() => {
+	            setSubmenuOpen(false);
+	          }, SUBMENU_CLOSE_DELAY_MS);
+	        }}
+	      >
+	        {transformKinds.map((kind, tIdx) => (
+	          <div
+	            key={kind.id}
+	            role="menuitem"
+	            data-testid="transform-item"
+	            data-test-transform-kind={kind.id}
+	            className={`item-context-menu__submenu-item ${
+	              tIdx === submenuActiveIndex
+	                ? "item-context-menu__submenu-item--active"
+	                : ""
+	            }`}
+	            onMouseEnter={() => setSubmenuActiveIndex(tIdx)}
+	            onClick={(e) => {
+	              e.stopPropagation();
+	              handleTransformSelect(kind.id);
+	            }}
+	          >
+	            {language === "en" ? kind.label_en : kind.label_zh}
+	          </div>
+	        ))}
+	      </div>,
+	      document.body
+	    );
+
+	    return (
+	      <>
+	      <div
         ref={resolvedRef}
         role="menu"
         tabIndex={0}
@@ -291,52 +360,15 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
             }}
           >
             <span className="item-context-menu__item-label">{item.label}</span>
-            {item.hasSubmenu && (
-              <>
-                <span className="item-context-menu__item-arrow">▶</span>
-                <div
-                  className={`item-context-menu__submenu ${
-                    submenuOpen ? "item-context-menu__submenu--open" : ""
-                  }`}
-                  style={{ maxHeight: SUBMENU_MAX_HEIGHT }}
-                  data-testid="transform-submenu"
-                  onMouseEnter={() => {
-                    clearSubmenuCloseTimer();
-                    setSubmenuOpen(true);
-                  }}
-                  onMouseLeave={() => {
-                    submenuCloseTimerRef.current = setTimeout(() => {
-                      setSubmenuOpen(false);
-                    }, SUBMENU_CLOSE_DELAY_MS);
-                  }}
-                >
-                  {transformKinds.map((kind, tIdx) => (
-                    <div
-                      key={kind.id}
-                      role="menuitem"
-                      data-testid="transform-item"
-                      data-test-transform-kind={kind.id}
-                      className={`item-context-menu__submenu-item ${
-                        tIdx === submenuActiveIndex
-                          ? "item-context-menu__submenu-item--active"
-                          : ""
-                      }`}
-                      onMouseEnter={() => setSubmenuActiveIndex(tIdx)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleTransformSelect(kind.id);
-                      }}
-                    >
-                      {language === "en" ? kind.label_en : kind.label_zh}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        ))}
-      </div>
-    );
+	            {item.hasSubmenu && (
+	              <span className="item-context-menu__item-arrow">▶</span>
+	            )}
+	          </div>
+	        ))}
+	      </div>
+	      {transformSubmenu}
+	      </>
+	    );
   }
 );
 

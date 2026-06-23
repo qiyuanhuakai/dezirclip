@@ -1324,6 +1324,33 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
             let _ = app.emit("focus-search-input", ());
         }
     }
+
+    if settings.screenshot_enabled.load(Ordering::Relaxed) {
+        if let Ok(screenshot_s) = {
+            let val = settings.screenshot_hotkey.lock().unwrap().clone();
+            val.replace("Win", "Super").parse::<Shortcut>()
+        } {
+            if shortcut == &screenshot_s {
+                let _ = crate::app::commands::screenshot_cmd::show_region_selector(app.clone());
+                return;
+            }
+        }
+    }
+
+    if settings.quick_paste_enabled.load(Ordering::Relaxed) {
+        if let Ok(quick_s) = {
+            let val = settings.quick_paste_hotkey.lock().unwrap().clone();
+            val.replace("Win", "Super").parse::<Shortcut>()
+        } {
+            if shortcut == &quick_s {
+                if crate::app::commands::quick_paste_cmd::is_quick_paste_visible(app.clone()) {
+                    let _ = crate::app::commands::quick_paste_cmd::hide_quick_paste(app.clone());
+                } else {
+                    let _ = crate::app::commands::quick_paste_cmd::show_quick_paste(app.clone());
+                }
+            }
+        }
+    }
 }
 
 pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {

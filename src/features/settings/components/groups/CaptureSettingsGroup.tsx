@@ -108,7 +108,7 @@ const CaptureSettingsGroup = ({
     }, [isRecordingQuickPaste, saveAppSetting]);
 
     const handleCaptureNow = useCallback(() => {
-        invoke("capture_full_screen").catch((err) => {
+        invoke("show_region_selector").catch((err) => {
             console.error("Screenshot failed:", err);
         });
     }, []);

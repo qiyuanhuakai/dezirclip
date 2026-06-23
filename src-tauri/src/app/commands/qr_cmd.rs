@@ -1,5 +1,5 @@
-use base64::Engine;
 use crate::services::qr;
+use base64::Engine;
 
 /// Generate a QR code PNG for `content` at the given pixel size and return
 /// the image as a `data:image/png;base64,...` data-URL string.
@@ -49,6 +49,9 @@ mod tests {
     #[test]
     fn test_generate_qr_png_empty_content() {
         let result = generate_qr_png(String::new(), 256);
-        assert!(result.is_ok(), "empty content should still produce a QR code");
+        assert!(
+            result.is_ok(),
+            "empty content should still produce a QR code"
+        );
     }
 }

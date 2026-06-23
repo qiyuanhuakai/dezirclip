@@ -78,7 +78,9 @@
           "description": "Main window capabilities",
           "windows": [
             "main",
-            "compact-preview"
+            "compact-preview",
+            "quick-paste",
+            "region-select"
           ],
           "permissions": [
             "core:window:allow-start-dragging",

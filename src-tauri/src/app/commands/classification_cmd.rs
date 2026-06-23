@@ -14,7 +14,7 @@
 //! therefore both commands return their result directly and never need
 //! `Result<_, String>`.
 
-use crate::services::classification::{CONTENT_KINDS, classify};
+use crate::services::classification::{classify, CONTENT_KINDS};
 
 /// Run every classifier in dispatcher order and return the names of all
 /// matches. Empty input yields an empty vector; the frontend renders an
@@ -37,7 +37,10 @@ pub fn classify_text(text: String) -> Vec<String> {
 /// pick it up automatically.
 #[tauri::command]
 pub fn get_supported_kinds() -> Vec<String> {
-    CONTENT_KINDS.iter().map(|kind| (*kind).to_string()).collect()
+    CONTENT_KINDS
+        .iter()
+        .map(|kind| (*kind).to_string())
+        .collect()
 }
 
 #[cfg(test)]
@@ -64,13 +67,19 @@ mod tests {
     #[test]
     fn test_classify_text_empty() {
         let kinds = classify_text("".to_string());
-        assert!(kinds.is_empty(), "empty input must yield no kinds, got {kinds:?}");
+        assert!(
+            kinds.is_empty(),
+            "empty input must yield no kinds, got {kinds:?}"
+        );
     }
 
     #[test]
     fn test_classify_text_no_match() {
         let kinds = classify_text("hello world".to_string());
-        assert!(kinds.is_empty(), "plain prose must not match, got {kinds:?}");
+        assert!(
+            kinds.is_empty(),
+            "plain prose must not match, got {kinds:?}"
+        );
     }
 
     #[test]

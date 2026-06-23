@@ -17,24 +17,17 @@ pub struct DbState {
     pub tag_repo: SqliteTagRepository,
 }
 
-const SENSITIVE_KEYS: &[&str] = &[
-];
+const SENSITIVE_KEYS: &[&str] = &[];
 
-pub const SENSITIVE_TAGS: &[&str] = &[
-    "sensitive",
-    "密码",
-];
+pub const SENSITIVE_TAGS: &[&str] = &["sensitive", "密码"];
 
 pub fn is_sensitive_key(key: &str) -> bool {
     SENSITIVE_KEYS.iter().any(|k| k.eq_ignore_ascii_case(key))
 }
 
 pub fn has_sensitive_tag(tags: &[String]) -> bool {
-    tags.iter().any(|t| {
-        SENSITIVE_TAGS
-            .iter()
-            .any(|s| s.eq_ignore_ascii_case(t))
-    })
+    tags.iter()
+        .any(|t| SENSITIVE_TAGS.iter().any(|s| s.eq_ignore_ascii_case(t)))
 }
 
 pub fn is_text_type(content_type: &str) -> bool {
@@ -56,15 +49,21 @@ pub fn calc_text_hash(content: &str) -> u64 {
 
 pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
     let parts: Vec<&str> = base64_data.splitn(2, ',').collect();
-    let payload = if parts.len() == 2 { parts[1] } else { base64_data };
+    let payload = if parts.len() == 2 {
+        parts[1]
+    } else {
+        base64_data
+    };
     let payload_clean = payload.replace("\r", "").replace("\n", "");
-    
+
     use base64::Engine;
-    let decoded = base64::engine::general_purpose::STANDARD.decode(payload_clean.trim()).ok()?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(payload_clean.trim())
+        .ok()?;
 
     let img = image::load_from_memory(&decoded).ok()?;
     let thumb = img.resize_exact(32, 32, image::imageops::FilterType::Nearest);
-    
+
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let mut hasher = DefaultHasher::new();
@@ -75,18 +74,22 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
 pub fn init_db(path: &str) -> Result<Connection> {
     fn init_db_once(path: &str) -> Result<Connection> {
         let mut conn = Connection::open(path)?;
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             PRAGMA auto_vacuum = FULL;
-        ")?;
+        ",
+        )?;
         crate::infrastructure::repository::migrations::run_migrations(&mut conn)?;
         seed_defaults(&conn)?;
         Ok(conn)
     }
 
     fn is_disk_io_error(err: &rusqlite::Error) -> bool {
-        err.to_string().to_ascii_lowercase().contains("disk i/o error")
+        err.to_string()
+            .to_ascii_lowercase()
+            .contains("disk i/o error")
     }
 
     fn quarantine_corrupted_db(path: &str) {
@@ -111,13 +114,19 @@ pub fn init_db(path: &str) -> Result<Connection> {
         let mut wal_path = db_path.clone();
         wal_path.set_file_name(format!(
             "{}-wal",
-            db_path.file_name().and_then(|s| s.to_str()).unwrap_or("clipboard.db")
+            db_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("clipboard.db")
         ));
         if wal_path.exists() {
             let mut wal_backup = backup.clone();
             wal_backup.set_file_name(format!(
                 "{}-wal",
-                backup.file_name().and_then(|s| s.to_str()).unwrap_or("clipboard.corrupt.db")
+                backup
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("clipboard.corrupt.db")
             ));
             let _ = std::fs::rename(&wal_path, &wal_backup);
         }
@@ -125,13 +134,19 @@ pub fn init_db(path: &str) -> Result<Connection> {
         let mut shm_path = db_path.clone();
         shm_path.set_file_name(format!(
             "{}-shm",
-            db_path.file_name().and_then(|s| s.to_str()).unwrap_or("clipboard.db")
+            db_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("clipboard.db")
         ));
         if shm_path.exists() {
             let mut shm_backup = backup.clone();
             shm_backup.set_file_name(format!(
                 "{}-shm",
-                backup.file_name().and_then(|s| s.to_str()).unwrap_or("clipboard.corrupt.db")
+                backup
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("clipboard.corrupt.db")
             ));
             let _ = std::fs::rename(&shm_path, &shm_backup);
         }
@@ -152,28 +167,32 @@ pub fn init_db(path: &str) -> Result<Connection> {
 pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<String> {
     use std::io::Write;
     let parts: Vec<&str> = data_url.splitn(2, ',').collect();
-    if parts.len() < 2 { return None; }
-    
-    let decoded = base64::engine::general_purpose::STANDARD.decode(parts[1]).ok()?;
-    
+    if parts.len() < 2 {
+        return None;
+    }
+
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(parts[1])
+        .ok()?;
+
     let attachments_dir = data_dir.join("attachments");
     if !attachments_dir.exists() {
         let _ = std::fs::create_dir_all(&attachments_dir);
     }
-    
+
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     use std::hash::{Hash, Hasher};
     decoded.hash(&mut hasher);
     let hash = hasher.finish();
-    
+
     let file_name = format!("img_{:x}.png", hash);
     let file_path = attachments_dir.join(&file_name);
-    
+
     if !file_path.exists() {
         let mut file = std::fs::File::create(&file_path).ok()?;
         file.write_all(&decoded).ok()?;
     }
-    
+
     Some(file_path.to_string_lossy().to_string())
 }
 
@@ -258,6 +277,26 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
         [],
     );
     let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.screenshot_enabled', 'true')",
+        [],
+    );
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.screenshot_hotkey', 'Ctrl+Shift+A')",
+        [],
+    );
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.quick_paste_enabled', 'true')",
+        [],
+    );
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.quick_paste_hotkey', 'Ctrl+Shift+V')",
+        [],
+    );
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.ocr_enabled', 'true')",
+        [],
+    );
+    let _ = conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.sound_enabled', 'false')",
         [],
     );
@@ -330,17 +369,20 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-// Migrated to repositories: toggle_pin, update_pinned_order, get_entry_by_content, 
-// update_entry_content, insert_entry, get_entry_content, get_entry_content_full, 
-// get_entry_content_with_html, get_entry_by_id, update_entry_tags, get_all_tags, 
+// Migrated to repositories: toggle_pin, update_pinned_order, get_entry_by_content,
+// update_entry_content, insert_entry, get_entry_content, get_entry_content_full,
+// get_entry_content_with_html, get_entry_by_id, update_entry_tags, get_all_tags,
 // create_tag, rename_tag, delete_tag_globally, get_entries_by_tag, set_tag_color, get_tag_colors
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::repository::clipboard_repo::{SqliteClipboardRepository, ClipboardRepository};
-    use crate::infrastructure::repository::settings_repo::{SqliteSettingsRepository, SettingsRepository};
+    use crate::infrastructure::repository::clipboard_repo::{
+        ClipboardRepository, SqliteClipboardRepository,
+    };
+    use crate::infrastructure::repository::settings_repo::{
+        SettingsRepository, SqliteSettingsRepository,
+    };
 
     // 辅助函数：创建一个内存中的临时测试数据库
     fn setup_test_db() -> Connection {
@@ -366,11 +408,13 @@ mod tests {
                 ocr_status TEXT NOT NULL DEFAULT 'pending'
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "CREATE TABLE entry_tags (
                 entry_id INTEGER NOT NULL,
@@ -378,14 +422,15 @@ mod tests {
                 PRIMARY KEY (entry_id, tag)
             )",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         conn
     }
 
     #[test]
     fn test_save_and_get_history() {
         let conn = setup_test_db();
-        
+
         let entry = ClipboardEntry {
             id: 0,
             content_type: "text".to_string(),
@@ -402,8 +447,8 @@ mod tests {
             pinned_order: 0,
             file_preview_exists: true,
             content_kinds: Vec::new(),
-                    ocr_text: None,
-                    ocr_status: None,
+            ocr_text: None,
+            ocr_status: None,
         };
 
         let conn_arc = Arc::new(Mutex::new(conn));
@@ -425,10 +470,10 @@ mod tests {
         let conn = setup_test_db();
         let conn_arc = Arc::new(Mutex::new(conn));
         let repo = SqliteSettingsRepository::new(conn_arc);
-        
+
         // 测试设置保存
         repo.set("test_key", "test_value").unwrap();
-        
+
         // 测试设置读取
         let val = repo.get("test_key").unwrap();
         assert_eq!(val, Some("test_value".to_string()));

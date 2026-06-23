@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeClass, applyModeClass } from "../../../shared/lib/themeRuntime";
 import "./RegionSelectWindow.css";
 
@@ -16,6 +17,11 @@ type RegionSelectWindowProps = {
 };
 
 const MIN_SELECTION_SIZE = 10;
+
+const hideRegionSelectWindow = async () => {
+  await getCurrentWindow().setFocusable(false);
+  await getCurrentWindow().hide();
+};
 
 const normalizeRect = (sel: Selection) => {
   const x = Math.min(sel.startX, sel.endX);
@@ -82,6 +88,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     }
 
     setSelection(null);
+    await hideRegionSelectWindow().catch(() => undefined);
   }, [dragging, selection, onSelect]);
 
   // ESC key handler
@@ -91,6 +98,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         setSelection(null);
         setDragging(false);
         onCancel?.();
+        hideRegionSelectWindow().catch(() => undefined);
       }
     };
     window.addEventListener("keydown", handleKeyDown);

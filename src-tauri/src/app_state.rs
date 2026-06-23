@@ -1,8 +1,8 @@
+use crate::domain::models::ClipboardEntry;
+use crate::services::encryption_queue::EncryptionQueue;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
-use crate::domain::models::ClipboardEntry;
-use crate::services::encryption_queue::EncryptionQueue;
 
 pub struct SettingsState {
     pub deduplicate: AtomicBool,
@@ -19,6 +19,11 @@ pub struct SettingsState {
     pub sequential_paste_hotkey: Mutex<String>,
     pub rich_paste_hotkey: Mutex<String>,
     pub search_hotkey: Mutex<String>,
+    pub screenshot_enabled: AtomicBool,
+    pub screenshot_hotkey: Mutex<String>,
+    pub quick_paste_enabled: AtomicBool,
+    pub quick_paste_hotkey: Mutex<String>,
+    pub ocr_enabled: AtomicBool,
     pub sound_enabled: AtomicBool,
     pub hide_tray_icon: AtomicBool,
     pub edge_docking: AtomicBool,

@@ -1,8 +1,23 @@
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::services::screenshot::{self, MonitorInfo, ScreenshotResult};
 
 const EVENT_SCREENSHOT_COMPLETE: &str = "screenshot:complete";
+
+#[tauri::command]
+pub fn show_region_selector(app: AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("region-select")
+        .ok_or_else(|| "Region selector window is not configured".to_string())?;
+    let _ = window.set_focusable(true);
+    window
+        .show()
+        .map_err(|e| format!("Failed to show region selector: {e}"))?;
+    window
+        .set_focus()
+        .map_err(|e| format!("Failed to focus region selector: {e}"))?;
+    Ok(())
+}
 
 /// Capture the primary monitor as a PNG and broadcast a `screenshot:complete`
 /// event with the same payload the command returns to the caller.

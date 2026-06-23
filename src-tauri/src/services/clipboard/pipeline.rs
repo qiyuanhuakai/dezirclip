@@ -165,8 +165,8 @@ impl PipelineStage for DiscoveryStage {
             pinned_order: 0,
             file_preview_exists: true,
             content_kinds: Vec::new(),
-                    ocr_text: None,
-                    ocr_status: None,
+            ocr_text: None,
+            ocr_status: None,
         });
     }
 }
@@ -420,8 +420,12 @@ impl PipelineStage for PersistenceStage {
             }
             drop(conn);
 
-            if let Some(content) = image_content {
-                if let Some(png_bytes) = crate::services::clipboard_ops::resolve_image_bytes(&content) {
+            if let Some(content) =
+                image_content.filter(|_| settings.ocr_enabled.load(Ordering::Relaxed))
+            {
+                if let Some(png_bytes) =
+                    crate::services::clipboard_ops::resolve_image_bytes(&content)
+                {
                     let app = ctx.app_handle.clone();
                     tauri::async_runtime::spawn(
                         crate::services::clipboard_ops::trigger_ocr_for_image_item(

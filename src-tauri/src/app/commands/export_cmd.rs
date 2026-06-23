@@ -1,8 +1,8 @@
-use tauri::{AppHandle, State};
 use crate::database::DbState;
-use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
+use tauri::{AppHandle, State};
 
 #[derive(Debug, serde::Serialize)]
 pub struct ExportSummary {
@@ -32,7 +32,10 @@ fn export_json(
     path: String,
     format: String,
 ) -> Result<ExportSummary, String> {
-    let entries = state.repo.get_history(i32::MAX, 0, None).map_err(|e| e.to_string())?;
+    let entries = state
+        .repo
+        .get_history(i32::MAX, 0, None)
+        .map_err(|e| e.to_string())?;
     export_entries(entries, path, format, None)
 }
 
@@ -42,7 +45,10 @@ fn export_encrypted(
     format: String,
     passphrase: Option<String>,
 ) -> Result<ExportSummary, String> {
-    let entries = state.repo.get_history(i32::MAX, 0, None).map_err(|e| e.to_string())?;
+    let entries = state
+        .repo
+        .get_history(i32::MAX, 0, None)
+        .map_err(|e| e.to_string())?;
     export_entries(entries, path, format, passphrase)
 }
 
@@ -66,11 +72,13 @@ pub(crate) fn export_entries(
             })
         }
         "encrypted" => {
-            let passphrase = passphrase.ok_or_else(|| "passphrase is required for encrypted format".to_string())?;
+            let passphrase = passphrase
+                .ok_or_else(|| "passphrase is required for encrypted format".to_string())?;
             if passphrase.is_empty() {
                 return Err("passphrase must not be empty".to_string());
             }
-            let blob = export_to_encrypted(export_entries, &passphrase).map_err(|e| e.to_string())?;
+            let blob =
+                export_to_encrypted(export_entries, &passphrase).map_err(|e| e.to_string())?;
             std::fs::write(&path, blob).map_err(|e| e.to_string())?;
             Ok(ExportSummary {
                 count: 0,
@@ -164,12 +172,22 @@ mod tests {
 
         let entries = repo.get_history(i32::MAX, 0, None).expect("load history");
         let result = export_entries(entries, tmp_path.to_string(), "json".to_string(), None);
-        assert!(result.is_ok(), "json export should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "json export should succeed: {:?}",
+            result.err()
+        );
         assert!(std::path::Path::new(tmp_path).exists(), "file should exist");
         let content = std::fs::read_to_string(tmp_path).expect("read file");
         let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid json");
-        assert!(parsed.get("version").is_some(), "export file should have version");
-        assert!(parsed.get("entries").is_some(), "export file should have entries");
+        assert!(
+            parsed.get("version").is_some(),
+            "export file should have version"
+        );
+        assert!(
+            parsed.get("entries").is_some(),
+            "export file should have entries"
+        );
         let _ = std::fs::remove_file(tmp_path);
     }
 
@@ -179,7 +197,12 @@ mod tests {
         seed_entry(&repo);
         let entries = repo.get_history(i32::MAX, 0, None).expect("load history");
 
-        let result = export_entries(entries, "/tmp/test.enc".to_string(), "encrypted".to_string(), None);
+        let result = export_entries(
+            entries,
+            "/tmp/test.enc".to_string(),
+            "encrypted".to_string(),
+            None,
+        );
         assert!(result.is_err(), "missing passphrase should error");
         let err_msg = result.unwrap_err();
         assert!(

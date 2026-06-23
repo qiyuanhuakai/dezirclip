@@ -10,15 +10,15 @@
 }
 
 .capture-engine-badge--available {
-  background: rgba(52, 199, 89, 0.12);
-  color: #34c759;
-  border: 1px solid rgba(52, 199, 89, 0.24);
+  background: color-mix(in srgb, var(--color-success, #34c759) 14%, transparent);
+  color: var(--color-success, #34c759);
+  border: 1px solid color-mix(in srgb, var(--color-success, #34c759) 28%, transparent);
 }
 
 .capture-engine-badge--unavailable {
-  background: rgba(142, 142, 147, 0.12);
-  color: #8e8e93;
-  border: 1px solid rgba(142, 142, 147, 0.24);
+  background: color-mix(in srgb, var(--text-muted, #8e8e93) 14%, transparent);
+  color: var(--text-muted, #8e8e93);
+  border: 1px solid color-mix(in srgb, var(--text-muted, #8e8e93) 28%, transparent);
 }
 
 .capture-engine-badge__dot {
@@ -29,9 +29,9 @@
 }
 
 .capture-engine-badge--available .capture-engine-badge__dot {
-  background: #34c759;
+  background: var(--color-success, #34c759);
 }
 
 .capture-engine-badge--unavailable .capture-engine-badge__dot {
-  background: #8e8e93;
+  background: var(--text-muted, #8e8e93);
 }

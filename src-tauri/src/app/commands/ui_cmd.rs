@@ -1,5 +1,5 @@
-use crate::app_state::SettingsState;
 use crate::app::webview_memory;
+use crate::app_state::SettingsState;
 use crate::database::DbState;
 #[cfg(target_os = "windows")]
 use crate::error::AppError;

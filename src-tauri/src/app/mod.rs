@@ -1,9 +1,9 @@
-pub mod window_manager;
 pub mod app_exit;
-pub mod hooks;
 pub mod commands;
-pub mod system;
-pub mod setup;
-pub mod idle_destroyer;
 pub mod gpu_switcher;
+pub mod hooks;
+pub mod idle_destroyer;
+pub mod setup;
+pub mod system;
 pub mod webview_memory;
+pub mod window_manager;

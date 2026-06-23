@@ -38,7 +38,7 @@ fn apply_transparent_background(window: &tauri::WebviewWindow) {
         .set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
 
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        COREWEBVIEW2_COLOR, ICoreWebView2Controller2,
+        ICoreWebView2Controller2, COREWEBVIEW2_COLOR,
     };
     use windows::core::Interface;
 

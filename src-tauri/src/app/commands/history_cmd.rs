@@ -1,11 +1,11 @@
-use tauri::State;
-use crate::app_state::{SessionHistory, AppDataDir};
+use crate::app_state::{AppDataDir, SessionHistory};
 use crate::database::DbState;
+use crate::domain::models::ClipboardEntry;
+use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::tag_repo::TagRepository;
-use crate::domain::models::ClipboardEntry;
-use crate::error::{AppResult, AppError};
 use crate::services::clipboard::truncate_html_for_preview;
+use tauri::State;
 
 const UI_CONTENT_LIMIT: usize = 2000;
 const UI_PREVIEW_LIMIT: usize = 500;
@@ -30,8 +30,10 @@ fn truncate_with_suffix(input: &str, limit: usize, suffix: &str) -> String {
 fn normalize_entries_for_ui(entries: &mut [ClipboardEntry]) {
     for item in entries {
         if is_text_like_content_type(&item.content_type) {
-            item.content = truncate_with_suffix(&item.content, UI_CONTENT_LIMIT, "... [Truncated for speed]");
-            item.preview = truncate_with_suffix(&item.content, UI_PREVIEW_LIMIT.saturating_sub(3), "...");
+            item.content =
+                truncate_with_suffix(&item.content, UI_CONTENT_LIMIT, "... [Truncated for speed]");
+            item.preview =
+                truncate_with_suffix(&item.content, UI_PREVIEW_LIMIT.saturating_sub(3), "...");
         }
 
         if let Some(ref html) = item.html_content {
@@ -59,7 +61,7 @@ pub fn get_clipboard_history(
     let mut history = state
         .repo
         .get_history(limit, offset, content_type.as_deref())?;
-    
+
     // 2. Add session history items (non-persisted) ONLY on the first page
     if offset == 0 {
         let session_items = session.inner().0.lock().unwrap();
@@ -75,23 +77,24 @@ pub fn get_clipboard_history(
             }
         }
     }
-    
+
     // 3. Apply stable sorting: Pinned -> Pinned Order -> Timestamp -> ID
     // This MUST match the repository's logic to maintain pagination stability
     history.sort_by(|a, b| {
-        b.is_pinned.cmp(&a.is_pinned)
+        b.is_pinned
+            .cmp(&a.is_pinned)
             .then_with(|| b.pinned_order.cmp(&a.pinned_order))
             .then_with(|| b.timestamp.cmp(&a.timestamp))
             .then_with(|| b.id.cmp(&a.id))
     });
-    
+
     // 4. Truncate to limit
     if history.len() > limit as usize {
         history.truncate(limit as usize);
     }
-    
+
     normalize_entries_for_ui(&mut history);
-    
+
     Ok(history)
 }
 
@@ -108,10 +111,10 @@ pub fn search_clipboard_history(
     let term = search_term.to_lowercase();
     let session_items = session.inner().0.lock().unwrap();
     for item in session_items.iter().rev() {
-        let matches = item.content.to_lowercase().contains(&term) || 
-                      item.source_app.to_lowercase().contains(&term) ||
-                      item.tags.iter().any(|t| t.to_lowercase().contains(&term));
-        
+        let matches = item.content.to_lowercase().contains(&term)
+            || item.source_app.to_lowercase().contains(&term)
+            || item.tags.iter().any(|t| t.to_lowercase().contains(&term));
+
         if matches {
             if !history.iter().any(|h| h.id == item.id && item.id != 0) {
                 history.push(item.clone());
@@ -140,7 +143,7 @@ pub fn delete_clipboard_entry(
         let mut session_items = session.inner().0.lock().unwrap();
         session_items.retain(|item| item.id != id);
     }
-    
+
     if id > 0 {
         let data_dir = app_data.0.lock().unwrap();
         state.repo.delete(id, Some(&data_dir))?;
@@ -152,7 +155,7 @@ pub fn delete_clipboard_entry(
 pub fn clear_clipboard_history(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
-    app_data: State<'_, AppDataDir>
+    app_data: State<'_, AppDataDir>,
 ) -> AppResult<()> {
     {
         let mut session_items = session.inner().0.lock().unwrap();
@@ -164,24 +167,35 @@ pub fn clear_clipboard_history(
 
 #[tauri::command]
 pub fn get_tag_items(state: State<'_, DbState>, tag: String) -> AppResult<Vec<ClipboardEntry>> {
-    let mut history = state.tag_repo.get_entries_by_tag(&tag).map_err(AppError::from)?;
-    
+    let mut history = state
+        .tag_repo
+        .get_entries_by_tag(&tag)
+        .map_err(AppError::from)?;
+
     for item in &mut history {
         if is_text_like_content_type(&item.content_type) {
-            item.content = truncate_with_suffix(&item.content, TAG_CONTENT_LIMIT, "... [Content Truncated]");
+            item.content =
+                truncate_with_suffix(&item.content, TAG_CONTENT_LIMIT, "... [Content Truncated]");
         }
     }
-    
+
     Ok(history)
 }
 
 #[tauri::command]
-pub fn get_all_tags_info(state: State<'_, DbState>) -> AppResult<std::collections::HashMap<String, i32>> {
+pub fn get_all_tags_info(
+    state: State<'_, DbState>,
+) -> AppResult<std::collections::HashMap<String, i32>> {
     state.tag_repo.get_all_with_counts().map_err(AppError::from)
 }
 
 #[tauri::command]
-pub fn rename_tag_globally(state: State<'_, DbState>, session: State<'_, SessionHistory>, old_name: String, new_name: String) -> AppResult<()> {
+pub fn rename_tag_globally(
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
+    old_name: String,
+    new_name: String,
+) -> AppResult<()> {
     {
         let mut session_items = session.inner().0.lock().unwrap();
         for item in session_items.iter_mut() {
@@ -194,8 +208,11 @@ pub fn rename_tag_globally(state: State<'_, DbState>, session: State<'_, Session
             item.tags.dedup();
         }
     }
-    
-    state.tag_repo.rename(&old_name, &new_name).map_err(AppError::from)
+
+    state
+        .tag_repo
+        .rename(&old_name, &new_name)
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -209,9 +226,12 @@ pub fn delete_tag_from_all(
         let mut session_items = session.inner().0.lock().unwrap();
         session_items.retain(|item| !item.tags.contains(&tag_name));
     }
-    
+
     let data_dir = app_data.0.lock().unwrap();
-    state.tag_repo.delete_globally(&tag_name, Some(&data_dir)).map_err(AppError::from)
+    state
+        .tag_repo
+        .delete_globally(&tag_name, Some(&data_dir))
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -232,16 +252,19 @@ pub fn get_clipboard_content(
         }
     }
 
-    state.repo.get_entry_content(id).map_err(AppError::from)?
+    state
+        .repo
+        .get_entry_content(id)
+        .map_err(AppError::from)?
         .ok_or_else(|| AppError::Validation("Entry not found".to_string()))
 }
 
 #[tauri::command]
-pub fn update_pinned_order(
-    state: State<'_, DbState>,
-    orders: Vec<(i64, i64)>,
-) -> AppResult<()> {
-    state.repo.update_pinned_order(orders).map_err(AppError::from)
+pub fn update_pinned_order(state: State<'_, DbState>, orders: Vec<(i64, i64)>) -> AppResult<()> {
+    state
+        .repo
+        .update_pinned_order(orders)
+        .map_err(AppError::from)
 }
 
 #[tauri::command]

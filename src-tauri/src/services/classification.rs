@@ -220,17 +220,14 @@ pub fn is_path_windows(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    let drive_re = Regex::new(
-        r#"^[A-Za-z]:[\\/][^<>:"|?*\r\n]*$"#,
-    );
+    let drive_re = Regex::new(r#"^[A-Za-z]:[\\/][^<>:"|?*\r\n]*$"#);
     if let Ok(re) = drive_re {
         if re.is_match(trimmed) {
             return true;
         }
     }
-    let unc_re = Regex::new(
-        r#"^\\\\[^<>:"|?*\r\n]+[\\/][^<>:"|?*\r\n]+(?:[\\/][^<>:"|?*\r\n]+)*$"#,
-    );
+    let unc_re =
+        Regex::new(r#"^\\\\[^<>:"|?*\r\n]+[\\/][^<>:"|?*\r\n]+(?:[\\/][^<>:"|?*\r\n]+)*$"#);
     if let Ok(re) = unc_re {
         if re.is_match(trimmed) {
             return true;
@@ -284,9 +281,7 @@ pub fn is_color_rgb(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    let rgb_re = match Regex::new(
-        r"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$",
-    ) {
+    let rgb_re = match Regex::new(r"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$") {
         Ok(re) => re,
         Err(_) => return false,
     };
@@ -753,7 +748,10 @@ mod tests {
     fn classify_handles_cjk_and_emoji_input() {
         // CJK / emoji content is not URL, email, or any other shape.
         let kinds = classify("你好，世界 🎉");
-        assert!(kinds.is_empty(), "CJK / emoji should match nothing, got {kinds:?}");
+        assert!(
+            kinds.is_empty(),
+            "CJK / emoji should match nothing, got {kinds:?}"
+        );
     }
 
     #[test]

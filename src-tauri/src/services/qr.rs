@@ -53,19 +53,13 @@ fn choose_ec_level(content_len: usize) -> EcLevel {
 
 fn encode_qr(content: &str) -> Result<QrCode, QrError> {
     let ec = choose_ec_level(content.len());
-    Ok(QrCode::with_error_correction_level(
-        content.as_bytes(),
-        ec,
-    )?)
+    Ok(QrCode::with_error_correction_level(content.as_bytes(), ec)?)
 }
 
 pub fn generate_qr_png(content: &str, size_px: u32) -> Result<Vec<u8>, QrError> {
     let code = encode_qr(content)?;
     let size = size_px.clamp(MIN_SIZE_PX, MAX_SIZE_PX);
-    let image = code
-        .render::<Luma<u8>>()
-        .min_dimensions(size, size)
-        .build();
+    let image = code.render::<Luma<u8>>().min_dimensions(size, size).build();
     let mut bytes = Vec::new();
     let encoder = image::codecs::png::PngEncoder::new(&mut bytes);
     encoder.write_image(
@@ -91,7 +85,11 @@ mod tests {
     #[test]
     fn test_generate_qr_png_short() {
         let bytes = generate_qr_png("https://example.com/abc", 280).unwrap();
-        assert!(bytes.len() > 100, "PNG should be > 100 bytes, got {}", bytes.len());
+        assert!(
+            bytes.len() > 100,
+            "PNG should be > 100 bytes, got {}",
+            bytes.len()
+        );
         assert_eq!(
             &bytes[..8],
             &PNG_MAGIC,

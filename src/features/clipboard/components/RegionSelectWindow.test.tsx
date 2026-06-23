@@ -6,6 +6,15 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+const mockHide = vi.fn();
+const mockSetFocusable = vi.fn();
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    hide: mockHide,
+    setFocusable: mockSetFocusable,
+  }),
+}));
+
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
 
@@ -17,6 +26,8 @@ vi.mock("../../../shared/lib/themeRuntime", () => ({
 describe("RegionSelectWindow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockHide.mockResolvedValue(undefined);
+    mockSetFocusable.mockResolvedValue(undefined);
     Storage.prototype.getItem = vi.fn(() => null);
   });
 
@@ -82,17 +93,21 @@ describe("RegionSelectWindow", () => {
       height: 200,
     });
     expect(onSelect).toHaveBeenCalledWith({ x: 100, y: 100, width: 320, height: 200 });
+    expect(mockSetFocusable).toHaveBeenCalledWith(false);
+    expect(mockHide).toHaveBeenCalledTimes(1);
   });
 
-  it("escape cancels and fires onCancel", () => {
+  it("escape cancels, hides window, and fires onCancel", async () => {
     const onCancel = vi.fn();
     render(<RegionSelectWindow onCancel={onCancel} />);
 
-    act(() => {
+    await act(async () => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(mockSetFocusable).toHaveBeenCalledWith(false);
+    expect(mockHide).toHaveBeenCalledTimes(1);
   });
 
   it("small selection is ignored (below MIN_SELECTION_SIZE)", async () => {

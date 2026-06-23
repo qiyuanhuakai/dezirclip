@@ -1,10 +1,10 @@
+use crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings;
 use crate::app_state::SettingsState;
 use crate::database::DbState;
+use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
-use crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager, State};
-use crate::error::{AppResult, AppError};
 
 fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<()> {
     db_state
@@ -21,44 +21,70 @@ fn apply_setting_state_update(
 ) {
     match key {
         "app.arrow_key_selection" => {
-            settings_state.arrow_key_selection.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .arrow_key_selection
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.sequential_mode" => {
-            settings_state.sequential_mode.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .sequential_mode
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.sound_enabled" => {
-            settings_state.sound_enabled.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .sound_enabled
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.sound_paste_enabled" => {
-            settings_state.delete_after_paste.store(value != "false", Ordering::Relaxed);
-        },
+            settings_state
+                .delete_after_paste
+                .store(value != "false", Ordering::Relaxed);
+        }
         "app.persistent" => {
-            settings_state.persistent.store(value != "false", Ordering::Relaxed);
-        },
+            settings_state
+                .persistent
+                .store(value != "false", Ordering::Relaxed);
+        }
         "app.capture_files" => {
-            settings_state.capture_files.store(value != "false", Ordering::Relaxed);
-        },
+            settings_state
+                .capture_files
+                .store(value != "false", Ordering::Relaxed);
+        }
         "app.capture_rich_text" => {
-            settings_state.capture_rich_text.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .capture_rich_text
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.silent_start" => {
-            settings_state.silent_start.store(value != "false", Ordering::Relaxed);
-        },
+            settings_state
+                .silent_start
+                .store(value != "false", Ordering::Relaxed);
+        }
         "app.delete_after_paste" => {
-            settings_state.delete_after_paste.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .delete_after_paste
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.privacy_protection" => {
-            settings_state.privacy_protection.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .privacy_protection
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.edge_docking" => {
-            settings_state.edge_docking.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .edge_docking
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.follow_mouse" => {
-            settings_state.follow_mouse.store(value != "false", Ordering::Relaxed);
-        },
+            settings_state
+                .follow_mouse
+                .store(value != "false", Ordering::Relaxed);
+        }
         "app.hide_tray_icon" => {
-            settings_state.hide_tray_icon.store(value == "true", Ordering::Relaxed);
-        },
+            settings_state
+                .hide_tray_icon
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.idle_destroy_enabled" => {
             settings_state
                 .idle_destroy_enabled
@@ -66,10 +92,40 @@ fn apply_setting_state_update(
         }
         "app.idle_destroy_seconds" => {
             if let Ok(secs) = value.parse::<u64>() {
-                settings_state
-                    .idle_destroy_seconds
-                    .store(crate::app::idle_destroyer::clamp_idle_seconds(secs), Ordering::Relaxed);
+                settings_state.idle_destroy_seconds.store(
+                    crate::app::idle_destroyer::clamp_idle_seconds(secs),
+                    Ordering::Relaxed,
+                );
             }
+        }
+        "app.screenshot_enabled" => {
+            settings_state
+                .screenshot_enabled
+                .store(value != "false", Ordering::Relaxed);
+            let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(app_handle);
+        }
+        "app.screenshot_hotkey" => {
+            if let Ok(mut guard) = settings_state.screenshot_hotkey.lock() {
+                *guard = value.to_string();
+            }
+            let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(app_handle);
+        }
+        "app.quick_paste_enabled" => {
+            settings_state
+                .quick_paste_enabled
+                .store(value != "false", Ordering::Relaxed);
+            let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(app_handle);
+        }
+        "app.quick_paste_hotkey" => {
+            if let Ok(mut guard) = settings_state.quick_paste_hotkey.lock() {
+                *guard = value.to_string();
+            }
+            let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(app_handle);
+        }
+        "app.ocr_enabled" => {
+            settings_state
+                .ocr_enabled
+                .store(value != "false", Ordering::Relaxed);
         }
         "app.disable_webview_gpu" => {
             let enabled = value == "true";
@@ -83,25 +139,31 @@ fn apply_setting_state_update(
                 }
             });
         }
-        "app.screenshot_enabled" | "app.screenshot_hotkey" |
-        "app.quick_paste_enabled" | "app.quick_paste_hotkey" |
-        "app.ocr_enabled" | "app.search_fuzzy_enabled" | "app.search_regex_enabled" => {
-        }
+        "app.search_fuzzy_enabled" | "app.search_regex_enabled" => {}
         _ => {}
     }
 }
 
 fn persist_setting_with_legacy(db_state: &DbState, key: &str, value: &str) -> AppResult<()> {
-    db_state.settings_repo.set(key, value).map_err(AppError::from)?;
+    db_state
+        .settings_repo
+        .set(key, value)
+        .map_err(AppError::from)?;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_sequential_mode(app_handle: AppHandle, state: State<'_, crate::app_state::SettingsState>, enabled: bool) {
+pub fn set_sequential_mode(
+    app_handle: AppHandle,
+    state: State<'_, crate::app_state::SettingsState>,
+    enabled: bool,
+) {
     state.sequential_mode.store(enabled, Ordering::Relaxed);
     let db_state = app_handle.state::<DbState>();
-    let _ = db_state.settings_repo.set("app.sequential_mode", &enabled.to_string());
+    let _ = db_state
+        .settings_repo
+        .set("app.sequential_mode", &enabled.to_string());
 }
 
 #[tauri::command]
@@ -115,7 +177,10 @@ pub fn set_sequential_hotkey(
     }
 
     let db_state = app_handle.state::<DbState>();
-    db_state.settings_repo.set("app.sequential_hotkey", &hotkey).map_err(AppError::from)?;
+    db_state
+        .settings_repo
+        .set("app.sequential_hotkey", &hotkey)
+        .map_err(AppError::from)?;
     sync_hotkeys_from_settings(&app_handle)
 }
 
@@ -130,7 +195,10 @@ pub fn set_rich_paste_hotkey(
     }
 
     let db_state = app_handle.state::<DbState>();
-    db_state.settings_repo.set("app.rich_paste_hotkey", &hotkey).map_err(AppError::from)?;
+    db_state
+        .settings_repo
+        .set("app.rich_paste_hotkey", &hotkey)
+        .map_err(AppError::from)?;
     sync_hotkeys_from_settings(&app_handle)
 }
 
@@ -145,15 +213,24 @@ pub fn set_search_hotkey(
     }
 
     let db_state = app_handle.state::<DbState>();
-    db_state.settings_repo.set("app.search_hotkey", &hotkey).map_err(AppError::from)?;
+    db_state
+        .settings_repo
+        .set("app.search_hotkey", &hotkey)
+        .map_err(AppError::from)?;
     sync_hotkeys_from_settings(&app_handle)
 }
 
 #[tauri::command]
-pub fn set_deduplication(app_handle: AppHandle, state: State<'_, crate::app_state::SettingsState>, enabled: bool) {
+pub fn set_deduplication(
+    app_handle: AppHandle,
+    state: State<'_, crate::app_state::SettingsState>,
+    enabled: bool,
+) {
     state.deduplicate.store(enabled, Ordering::Relaxed);
     let db_state = app_handle.state::<DbState>();
-    let _ = db_state.settings_repo.set("app.deduplicate", &enabled.to_string());
+    let _ = db_state
+        .settings_repo
+        .set("app.deduplicate", &enabled.to_string());
 }
 
 #[tauri::command]
@@ -183,16 +260,24 @@ pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinne
         #[cfg(windows)]
         {
             use windows::Win32::Foundation::HWND;
-            use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE};
+            use windows::Win32::UI::WindowsAndMessaging::{
+                GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
+            };
             if let Ok(hwnd) = window.hwnd() {
                 unsafe {
                     let ex_style = GetWindowLongPtrW(HWND(hwnd.0), GWL_EXSTYLE);
-                    let _ = SetWindowLongPtrW(HWND(hwnd.0), GWL_EXSTYLE, ex_style | WS_EX_NOACTIVATE.0 as isize);
+                    let _ = SetWindowLongPtrW(
+                        HWND(hwnd.0),
+                        GWL_EXSTYLE,
+                        ex_style | WS_EX_NOACTIVATE.0 as isize,
+                    );
                 }
             }
         }
     }
-    let _ = state.settings_repo.set("app.window_pinned", &pinned.to_string());
+    let _ = state
+        .settings_repo
+        .set("app.window_pinned", &pinned.to_string());
 }
 
 #[tauri::command]
@@ -280,7 +365,10 @@ pub fn set_privacy_protection_kinds(
     let mut guard = state.privacy_protection_kinds.lock().unwrap();
     *guard = kinds.clone();
     let serialized = kinds.join(",");
-    db_state.settings_repo.set("app.privacy_protection_kinds", &serialized).map_err(AppError::from)
+    db_state
+        .settings_repo
+        .set("app.privacy_protection_kinds", &serialized)
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -289,10 +377,17 @@ pub fn set_privacy_protection_custom_rules(
     db_state: State<'_, DbState>,
     rules: String,
 ) -> AppResult<()> {
-    let list = rules.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect::<Vec<_>>();
+    let list = rules
+        .lines()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
     let mut guard = state.privacy_protection_custom_rules.lock().unwrap();
     *guard = list;
-    db_state.settings_repo.set("app.privacy_protection_custom_rules", &rules).map_err(AppError::from)
+    db_state
+        .settings_repo
+        .set("app.privacy_protection_custom_rules", &rules)
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -311,7 +406,7 @@ pub fn reset_settings(
     state: State<'_, DbState>,
     settings_state: State<'_, crate::app_state::SettingsState>,
 ) -> AppResult<()> {
-    use crate::database::{seed_defaults};
+    use crate::database::seed_defaults;
 
     state.settings_repo.clear().map_err(AppError::from)?;
     {
@@ -321,17 +416,73 @@ pub fn reset_settings(
 
     let machine_id = crate::app::system::get_machine_id();
     let new_id = format!("{}-0000-0000-0000-000000000000", machine_id);
-    state.settings_repo.set("app.anon_id", &new_id).map_err(AppError::from)?;
+    state
+        .settings_repo
+        .set("app.anon_id", &new_id)
+        .map_err(AppError::from)?;
 
-    let main_hotkey = state.settings_repo.get("app.hotkey").unwrap_or(Some("Alt+C".to_string())).unwrap_or("Alt+C".to_string());
-    let seq_hotkey = state.settings_repo.get("app.sequential_hotkey").unwrap_or(Some("Alt+V".to_string())).unwrap_or("Alt+V".to_string());
-    let rich_hotkey = state.settings_repo.get("app.rich_paste_hotkey").unwrap_or(Some("Ctrl+Shift+Z".to_string())).unwrap_or("Ctrl+Shift+Z".to_string());
-    let search_hotkey = state.settings_repo.get("app.search_hotkey").unwrap_or(Some("Alt+F".to_string())).unwrap_or("Alt+F".to_string());
+    let main_hotkey = state
+        .settings_repo
+        .get("app.hotkey")
+        .unwrap_or(Some("Alt+C".to_string()))
+        .unwrap_or("Alt+C".to_string());
+    let seq_hotkey = state
+        .settings_repo
+        .get("app.sequential_hotkey")
+        .unwrap_or(Some("Alt+V".to_string()))
+        .unwrap_or("Alt+V".to_string());
+    let rich_hotkey = state
+        .settings_repo
+        .get("app.rich_paste_hotkey")
+        .unwrap_or(Some("Ctrl+Shift+Z".to_string()))
+        .unwrap_or("Ctrl+Shift+Z".to_string());
+    let search_hotkey = state
+        .settings_repo
+        .get("app.search_hotkey")
+        .unwrap_or(Some("Alt+F".to_string()))
+        .unwrap_or("Alt+F".to_string());
+    let screenshot_hotkey = state
+        .settings_repo
+        .get("app.screenshot_hotkey")
+        .unwrap_or(Some("Ctrl+Shift+A".to_string()))
+        .unwrap_or("Ctrl+Shift+A".to_string());
+    let quick_paste_hotkey = state
+        .settings_repo
+        .get("app.quick_paste_hotkey")
+        .unwrap_or(Some("Ctrl+Shift+V".to_string()))
+        .unwrap_or("Ctrl+Shift+V".to_string());
 
-    { let mut guard = settings_state.main_hotkey.lock().unwrap(); *guard = main_hotkey.clone(); }
-    { let mut guard = settings_state.sequential_paste_hotkey.lock().unwrap(); *guard = seq_hotkey.clone(); }
-    { let mut guard = settings_state.rich_paste_hotkey.lock().unwrap(); *guard = rich_hotkey.clone(); }
-    { let mut guard = settings_state.search_hotkey.lock().unwrap(); *guard = search_hotkey.clone(); }
+    {
+        let mut guard = settings_state.main_hotkey.lock().unwrap();
+        *guard = main_hotkey.clone();
+    }
+    {
+        let mut guard = settings_state.sequential_paste_hotkey.lock().unwrap();
+        *guard = seq_hotkey.clone();
+    }
+    {
+        let mut guard = settings_state.rich_paste_hotkey.lock().unwrap();
+        *guard = rich_hotkey.clone();
+    }
+    {
+        let mut guard = settings_state.search_hotkey.lock().unwrap();
+        *guard = search_hotkey.clone();
+    }
+    {
+        let mut guard = settings_state.screenshot_hotkey.lock().unwrap();
+        *guard = screenshot_hotkey.clone();
+    }
+    {
+        let mut guard = settings_state.quick_paste_hotkey.lock().unwrap();
+        *guard = quick_paste_hotkey.clone();
+    }
+    settings_state
+        .screenshot_enabled
+        .store(true, Ordering::Relaxed);
+    settings_state
+        .quick_paste_enabled
+        .store(true, Ordering::Relaxed);
+    settings_state.ocr_enabled.store(true, Ordering::Relaxed);
     sync_hotkeys_from_settings(&app)
 }
 
@@ -342,7 +493,9 @@ pub fn set_tray_visible(
     visible: bool,
 ) -> AppResult<()> {
     state.hide_tray_icon.store(!visible, Ordering::Relaxed);
-    if let Some(tray) = app_handle.tray_by_id("main_tray") { let _ = tray.set_visible(visible); }
+    if let Some(tray) = app_handle.tray_by_id("main_tray") {
+        let _ = tray.set_visible(visible);
+    }
     let db_state = app_handle.state::<DbState>();
     save_bool_setting(&db_state, "app.hide_tray_icon", !visible)
 }
@@ -368,7 +521,6 @@ pub fn set_follow_mouse(
     let db_state = app_handle.state::<DbState>();
     save_bool_setting(&db_state, "app.follow_mouse", enabled)
 }
-
 
 #[tauri::command]
 pub fn set_idle_destroy_enabled(

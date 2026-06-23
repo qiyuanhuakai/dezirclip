@@ -42,6 +42,8 @@ pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
     let sequential_hotkey = settings.sequential_paste_hotkey.lock().unwrap().clone();
     let rich_hotkey = settings.rich_paste_hotkey.lock().unwrap().clone();
     let search_hotkey = settings.search_hotkey.lock().unwrap().clone();
+    let screenshot_hotkey = settings.screenshot_hotkey.lock().unwrap().clone();
+    let quick_paste_hotkey = settings.quick_paste_hotkey.lock().unwrap().clone();
 
     {
         let mut guard = HOTKEY_STRING.lock().unwrap();
@@ -55,6 +57,8 @@ pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
     register_shortcut_if_valid(app, &sequential_hotkey);
     register_shortcut_if_valid(app, &rich_hotkey);
     register_shortcut_if_valid(app, &search_hotkey);
+    register_shortcut_if_valid(app, &screenshot_hotkey);
+    register_shortcut_if_valid(app, &quick_paste_hotkey);
     Ok(())
 }
 

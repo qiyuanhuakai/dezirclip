@@ -26,10 +26,9 @@ impl OcrService {
         if let Ok(engine) = OcrEngine::TryCreateFromUserProfileLanguages() {
             return Ok(Self { engine });
         }
-        let lang = Language::CreateLanguage(&HSTRING::from("en-US"))
-            .map_err(|_| OcrError::NoLanguages)?;
-        let engine = OcrEngine::TryCreateFromLanguage(&lang)
-            .map_err(|_| OcrError::NoOcrEngine)?;
+        let lang =
+            Language::CreateLanguage(&HSTRING::from("en-US")).map_err(|_| OcrError::NoLanguages)?;
+        let engine = OcrEngine::TryCreateFromLanguage(&lang).map_err(|_| OcrError::NoOcrEngine)?;
         Ok(Self { engine })
     }
 

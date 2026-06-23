@@ -316,10 +316,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("BEGIN", [])?;
         let migration_result = (|| -> Result<()> {
             if !has_column(conn, "clipboard_history", "ocr_text")? {
-                conn.execute(
-                    "ALTER TABLE clipboard_history ADD COLUMN ocr_text TEXT",
-                    [],
-                )?;
+                conn.execute("ALTER TABLE clipboard_history ADD COLUMN ocr_text TEXT", [])?;
             }
             if !has_column(conn, "clipboard_history", "ocr_status")? {
                 conn.execute(
@@ -420,7 +417,8 @@ fn repair_encrypted_tags(conn: &mut Connection) -> Result<()> {
         if let Some(plain_tag) = maybe_decrypt_metadata(&encrypted_tag) {
             let entry_ids: Vec<i64> = {
                 let mut id_stmt = tx.prepare("SELECT entry_id FROM entry_tags WHERE tag = ?")?;
-                let rows = id_stmt.query_map(params![&encrypted_tag], |row| row.get::<_, i64>(0))?;
+                let rows =
+                    id_stmt.query_map(params![&encrypted_tag], |row| row.get::<_, i64>(0))?;
                 let ids = rows.filter_map(|row| row.ok()).collect();
                 ids
             };
@@ -491,7 +489,8 @@ fn repair_encrypted_tags(conn: &mut Connection) -> Result<()> {
         }
 
         if changed {
-            let repaired_json = serde_json::to_string(&repaired).unwrap_or_else(|_| "[]".to_string());
+            let repaired_json =
+                serde_json::to_string(&repaired).unwrap_or_else(|_| "[]".to_string());
             tx.execute(
                 "UPDATE clipboard_history SET tags = ? WHERE id = ?",
                 params![repaired_json, id],
@@ -577,7 +576,10 @@ mod tests {
             )
             .expect("query");
         assert_eq!(ocr_text, None, "ocr_text default must be NULL");
-        assert_eq!(ocr_status, "pending", "ocr_status default must be 'pending'");
+        assert_eq!(
+            ocr_status, "pending",
+            "ocr_status default must be 'pending'"
+        );
     }
 
     #[test]

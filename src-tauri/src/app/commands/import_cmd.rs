@@ -1,9 +1,8 @@
-use tauri::{AppHandle, Manager};
 use crate::database::DbState;
 use crate::services::backup::{
-    import_from_json, entries_from_json, decrypt_to_json,
-    ImportMode, ExportEntry,
+    decrypt_to_json, entries_from_json, import_from_json, ExportEntry, ImportMode,
 };
+use tauri::{AppHandle, Manager};
 
 const ENCRYPTED_HEADER_LEN: usize = 12 + 16;
 
@@ -33,7 +32,8 @@ pub fn import_from_file(
     }
 
     let (entries, summary) = if looks_encrypted(&data) {
-        let passphrase = passphrase.ok_or_else(|| "passphrase is required for encrypted files".to_string())?;
+        let passphrase =
+            passphrase.ok_or_else(|| "passphrase is required for encrypted files".to_string())?;
         if passphrase.is_empty() {
             return Err("passphrase must not be empty".to_string());
         }
@@ -42,7 +42,8 @@ pub fn import_from_file(
         let summary = import_from_json(&json, import_mode).map_err(|e| e.to_string())?;
         (entries, summary)
     } else {
-        let json = std::str::from_utf8(&data).map_err(|e| format!("file is not valid UTF-8: {e}"))?;
+        let json =
+            std::str::from_utf8(&data).map_err(|e| format!("file is not valid UTF-8: {e}"))?;
         let entries = entries_from_json(json).map_err(|e| e.to_string())?;
         let summary = import_from_json(json, import_mode).map_err(|e| e.to_string())?;
         (entries, summary)
@@ -151,7 +152,9 @@ fn apply_import(app: AppHandle, mode: ImportMode, entries: &[ExportEntry]) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::backup::{export_to_json, import_from_encrypted, ExportEntry, BackupError};
+    use crate::services::backup::{
+        export_to_json, import_from_encrypted, BackupError, ExportEntry,
+    };
     use std::io::Write;
 
     fn make_entry(id: i64) -> ExportEntry {
@@ -239,7 +242,8 @@ mod tests {
     #[test]
     fn test_import_from_file_encrypted_wrong_passphrase() {
         let entries = vec![make_entry(1)];
-        let blob = crate::services::backup::export_to_encrypted(entries, "correct password").unwrap();
+        let blob =
+            crate::services::backup::export_to_encrypted(entries, "correct password").unwrap();
         let result = import_from_encrypted(&blob, "wrong password 456");
         assert!(matches!(result, Err(BackupError::WrongPassphrase)));
     }

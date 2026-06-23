@@ -451,27 +451,18 @@ mod tests {
 
     #[test]
     fn remove_extra_spaces_collapses_runs() {
-        assert_eq!(
-            remove_extra_spaces("hello   world").unwrap(),
-            "hello world"
-        );
+        assert_eq!(remove_extra_spaces("hello   world").unwrap(), "hello world");
     }
 
     #[test]
     fn remove_extra_spaces_collapses_tabs() {
-        assert_eq!(
-            remove_extra_spaces("a\t\tb").unwrap(),
-            "a b"
-        );
+        assert_eq!(remove_extra_spaces("a\t\tb").unwrap(), "a b");
     }
 
     #[test]
     fn remove_extra_spaces_preserves_newlines() {
         // Newlines are vertical whitespace, not horizontal.
-        assert_eq!(
-            remove_extra_spaces("a  \n  b").unwrap(),
-            "a \n b"
-        );
+        assert_eq!(remove_extra_spaces("a  \n  b").unwrap(), "a \n b");
     }
 
     #[test]
@@ -551,10 +542,7 @@ mod tests {
 
     #[test]
     fn deduplicate_lines_basic() {
-        assert_eq!(
-            deduplicate_lines("a\nb\na\nc\nb").unwrap(),
-            "a\nb\nc"
-        );
+        assert_eq!(deduplicate_lines("a\nb\na\nc\nb").unwrap(), "a\nb\nc");
     }
 
     #[test]
@@ -889,6 +877,9 @@ mod tests {
     #[test]
     fn transform_kind_display_uses_snake_case() {
         assert_eq!(TransformKind::ToUppercase.to_string(), "to_uppercase");
-        assert_eq!(TransformKind::AddLineNumbers.to_string(), "add_line_numbers");
+        assert_eq!(
+            TransformKind::AddLineNumbers.to_string(),
+            "add_line_numbers"
+        );
     }
 }

@@ -8,7 +8,7 @@
 //!   the React settings panel can render a localized menu without hardcoding
 //!   the list on the frontend.
 
-use crate::services::transforms::{TransformError, TransformKind, apply_transform};
+use crate::services::transforms::{apply_transform, TransformError, TransformKind};
 use serde::Serialize;
 
 /// JSON-safe description of a single transform kind. Returned in batches by
@@ -149,16 +149,14 @@ mod tests {
     #[test]
     fn test_transform_unicode_cjk_emoji() {
         // CJK characters have no case mapping — uppercase is a no-op.
-        let upper =
-            transform_text("你好 こんにちは 🚀".to_string(), "to_uppercase".to_string())
-                .expect("uppercase should not fail");
+        let upper = transform_text("你好 こんにちは 🚀".to_string(), "to_uppercase".to_string())
+            .expect("uppercase should not fail");
         assert_eq!(upper, "你好 こんにちは 🚀");
 
         // reverse_text is char-wise, not byte-wise, so multi-byte CJK stays
         // intact and the order of `char`s is flipped.
-        let reversed =
-            transform_text("你好abc".to_string(), "reverse_text".to_string())
-                .expect("reverse should not fail");
+        let reversed = transform_text("你好abc".to_string(), "reverse_text".to_string())
+            .expect("reverse should not fail");
         assert_eq!(reversed, "cba好你");
     }
 }

@@ -112,7 +112,12 @@ pub fn try_destroy_idle(app: &AppHandle) -> bool {
 
     // Transition Open → Closing atomically; bail if someone else is mid-transition.
     if WINDOW_LIFECYCLE
-        .compare_exchange(LIFECYCLE_OPEN, LIFECYCLE_CLOSING, Ordering::SeqCst, Ordering::Relaxed)
+        .compare_exchange(
+            LIFECYCLE_OPEN,
+            LIFECYCLE_CLOSING,
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+        )
         .is_err()
     {
         return false;
@@ -181,7 +186,9 @@ fn finish_main_destroy(app: &AppHandle, wait_for_browser_exit: bool) -> bool {
         crate::warn!("[idle-destroyer] Timed out waiting for label to be freed after destroy.");
     }
     if wait_for_browser_exit && !browser_exited {
-        crate::warn!("[idle-destroyer] Timed out waiting for WebView2 browser process exit after destroy.");
+        crate::warn!(
+            "[idle-destroyer] Timed out waiting for WebView2 browser process exit after destroy."
+        );
     }
 
     LAST_HIDDEN_TIMESTAMP.store(0, Ordering::SeqCst);
@@ -239,7 +246,9 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
     }
 
     if !wait_for_label_release(app, LABEL_RELEASE_TIMEOUT) {
-        crate::warn!("[idle-destroyer] Timed out waiting for label to be freed; aborting recreate.");
+        crate::warn!(
+            "[idle-destroyer] Timed out waiting for label to be freed; aborting recreate."
+        );
         WINDOW_LIFECYCLE.store(LIFECYCLE_CLOSED, Ordering::SeqCst);
         return false;
     }
@@ -253,9 +262,7 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
         }
     };
 
-    match WebviewWindowBuilder::from_config(app, config)
-        .and_then(|b| b.build())
-    {
+    match WebviewWindowBuilder::from_config(app, config).and_then(|b| b.build()) {
         Ok(_) => {
             WINDOW_LIFECYCLE.store(LIFECYCLE_OPEN, Ordering::SeqCst);
             IS_DESTROYED.store(false, Ordering::SeqCst);
@@ -308,7 +315,12 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
     crate::app::gpu_switcher::apply_gpu_disable_env(disabled);
 
     if WINDOW_LIFECYCLE
-        .compare_exchange(LIFECYCLE_OPEN, LIFECYCLE_CLOSING, Ordering::SeqCst, Ordering::Relaxed)
+        .compare_exchange(
+            LIFECYCLE_OPEN,
+            LIFECYCLE_CLOSING,
+            Ordering::SeqCst,
+            Ordering::Relaxed,
+        )
         .is_err()
     {
         request_recreate_after_destroy();
@@ -471,11 +483,7 @@ mod tests {
 
     #[test]
     fn should_recreate_when_destroyed_state_keeps_stale_label() {
-        assert!(should_recreate_main_window(
-            true,
-            true,
-            LIFECYCLE_CLOSED
-        ));
+        assert!(should_recreate_main_window(true, true, LIFECYCLE_CLOSED));
     }
 
     #[test]
@@ -485,11 +493,7 @@ mod tests {
 
     #[test]
     fn should_not_recreate_when_open_state_has_window() {
-        assert!(!should_recreate_main_window(
-            true,
-            false,
-            LIFECYCLE_OPEN
-        ));
+        assert!(!should_recreate_main_window(true, false, LIFECYCLE_OPEN));
         assert!(main_window_ready(true, false, LIFECYCLE_OPEN));
     }
 

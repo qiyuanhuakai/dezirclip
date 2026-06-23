@@ -24,15 +24,13 @@ use windows::{
             DataExchange::RegisterClipboardFormatW,
             Memory::{GlobalLock, GlobalSize, GlobalUnlock},
             Ole::{
-                CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE, IDropTarget,
-                IDropTarget_Impl, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
+                IDropTarget, IDropTarget_Impl, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
+                CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE,
             },
             SystemServices::MODIFIERKEYS_FLAGS,
         },
         UI::{
-            Shell::{
-                DragFinish, DragQueryFileW, HDROP, CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW,
-            },
+            Shell::{DragFinish, DragQueryFileW, CFSTR_FILECONTENTS, CFSTR_FILEDESCRIPTORW, HDROP},
             WindowsAndMessaging::EnumChildWindows,
         },
     },
@@ -44,7 +42,6 @@ use crate::app::commands::file_cmd::image_ext_from_bytes;
 struct DropPayload {
     paths: Vec<String>,
 }
-
 
 #[repr(C)]
 #[allow(non_snake_case)]
@@ -206,15 +203,13 @@ impl EmojiDropTarget {
         Some(out)
     }
 
-    unsafe fn read_file_contents(
-        data_obj: &IDataObject,
-        index: i32,
-    ) -> Option<Vec<u8>> {
+    unsafe fn read_file_contents(data_obj: &IDataObject, index: i32) -> Option<Vec<u8>> {
         let cf_file_contents = RegisterClipboardFormatW(CFSTR_FILECONTENTS);
         if cf_file_contents == 0 {
             return None;
         }
-        let format_stream = Self::format_etc(cf_file_contents as u16, index, TYMED_ISTREAM.0 as u32);
+        let format_stream =
+            Self::format_etc(cf_file_contents as u16, index, TYMED_ISTREAM.0 as u32);
         if let Ok(mut medium) = data_obj.GetData(&format_stream) {
             let stream_ptr = &medium.u.pstm as *const _ as *const Option<IStream>;
             let stream = unsafe { &*stream_ptr };
@@ -225,7 +220,8 @@ impl EmojiDropTarget {
             }
         }
 
-        let format_hglobal = Self::format_etc(cf_file_contents as u16, index, TYMED_HGLOBAL.0 as u32);
+        let format_hglobal =
+            Self::format_etc(cf_file_contents as u16, index, TYMED_HGLOBAL.0 as u32);
         if let Ok(mut medium) = data_obj.GetData(&format_hglobal) {
             let bytes = Self::read_hglobal_bytes(medium.u.hGlobal);
             ReleaseStgMedium(&mut medium);
@@ -341,7 +337,6 @@ impl EmojiDropTarget {
         }
         Some(path.to_string_lossy().to_string())
     }
-
 }
 
 #[allow(non_snake_case)]
@@ -358,7 +353,12 @@ impl IDropTarget_Impl for EmojiDropTarget_Impl {
         let valid = unsafe {
             EmojiDropTarget::has_format(data_obj, CF_HDROP.0, TYMED_HGLOBAL.0 as u32, -1)
                 || (cf_file_descriptor != 0
-                    && EmojiDropTarget::has_format(data_obj, cf_file_descriptor as u16, TYMED_HGLOBAL.0 as u32, -1))
+                    && EmojiDropTarget::has_format(
+                        data_obj,
+                        cf_file_descriptor as u16,
+                        TYMED_HGLOBAL.0 as u32,
+                        -1,
+                    ))
         };
 
         unsafe {

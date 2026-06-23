@@ -63,7 +63,10 @@ pub fn build_search_query(mode: &SearchMode, limit: u32) -> SearchPlan {
                 params: vec![escape_fts5_term(query), limit_str],
             }
         }
-        SearchMode::Fuzzy { pattern, threshold: _ } => {
+        SearchMode::Fuzzy {
+            pattern,
+            threshold: _,
+        } => {
             if pattern.trim().is_empty() {
                 return SearchPlan::Empty;
             }
@@ -189,7 +192,10 @@ mod tests {
         );
         match plan {
             SearchPlan::Sql { sql, params } => {
-                assert!(!sql.contains("\"world\""), "raw user quote leaked into SQL: {sql}");
+                assert!(
+                    !sql.contains("\"world\""),
+                    "raw user quote leaked into SQL: {sql}"
+                );
                 assert_eq!(
                     params,
                     vec!["\"hello\" \"\"\"world\"\"\"".to_string(), "10".to_string()]
@@ -269,7 +275,10 @@ mod tests {
         match plan {
             SearchPlan::Sql { sql, params } => {
                 assert!(sql.contains("REGEXP"), "expected REGEXP in: {sql}");
-                assert!(!sql.contains("^https?://"), "user pattern leaked into SQL: {sql}");
+                assert!(
+                    !sql.contains("^https?://"),
+                    "user pattern leaked into SQL: {sql}"
+                );
                 assert!(sql.contains("LIMIT ?2"));
                 assert_eq!(params, vec!["^https?://".to_string(), "20".to_string()]);
             }

@@ -56,9 +56,7 @@ fn get_cli_version(cli_path: &Option<String>) -> String {
     std::process::Command::new(path)
         .arg("--version")
         .output()
-        .map(|output| {
-            String::from_utf8_lossy(&output.stdout).trim().to_string()
-        })
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
         .unwrap_or_else(|_| "unknown".to_string())
 }
 

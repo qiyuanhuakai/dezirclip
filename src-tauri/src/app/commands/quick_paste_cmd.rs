@@ -350,12 +350,24 @@ mod tests {
         let content_type = "text";
         let (content_out, type_out, plan) =
             build_paste_dispatch_plan(entry_id, content, content_type);
-        assert_eq!(content_out, content, "content must be passed through verbatim");
-        assert_eq!(type_out, "text", "content_type must be passed through verbatim");
+        assert_eq!(
+            content_out, content,
+            "content must be passed through verbatim"
+        );
+        assert_eq!(
+            type_out, "text",
+            "content_type must be passed through verbatim"
+        );
         assert_eq!(plan.id, entry_id, "plan must carry the entry id");
         assert!(plan.paste, "plan must request the paste action");
-        assert!(!plan.delete_after_use, "quick-paste must not delete after use");
-        assert!(plan.move_to_top, "quick-paste must move the entry to the top");
+        assert!(
+            !plan.delete_after_use,
+            "quick-paste must not delete after use"
+        );
+        assert!(
+            plan.move_to_top,
+            "quick-paste must move the entry to the top"
+        );
         assert!(
             !plan.paste_with_format,
             "plain text must skip the rich-text formatting path"
@@ -380,7 +392,10 @@ mod tests {
         // helper below is the exact resolver it uses.
         assert!(resolve_visibility_flag(Some(true)));
         assert!(!resolve_visibility_flag(Some(false)));
-        assert!(!resolve_visibility_flag(None), "missing window must read as hidden");
+        assert!(
+            !resolve_visibility_flag(None),
+            "missing window must read as hidden"
+        );
     }
 
     // -- pure helpers for the tests above -----------------------------------

@@ -29,11 +29,12 @@
   font-size: 14px;
   font-weight: 900;
   text-transform: uppercase;
-  background: var(--text-primary);
-  color: var(--bg-window);
+  background: var(--accent-color);
+  color: var(--accent-contrast, #ffffff);
   padding: 4px 8px;
   display: inline-block;
   margin-bottom: 16px;
+  border-radius: var(--radius-sm, 4px);
 }
 
 .data-form-group {
@@ -52,6 +53,7 @@
 .data-radio-group {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .data-radio-item {
@@ -61,6 +63,16 @@
   font-size: var(--font-size-sm);
   color: var(--text-primary);
   cursor: pointer;
+  padding: 6px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--surface-control-radius, 6px);
+  background: var(--bg-input);
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.data-radio-item:hover {
+  border-color: var(--accent-color);
+  background: var(--surface-history-hover-bg, var(--bg-button));
 }
 
 .data-radio-item input[type="radio"] {
@@ -73,10 +85,11 @@
   padding: 6px 8px;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  border: 2px solid var(--border-dark);
+  border: 1px solid var(--select-menu-border, var(--border-dark));
+  border-radius: var(--surface-control-radius, 6px);
   background: var(--bg-input);
   color: var(--text-primary);
-  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.06);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
   outline: none;
 }
 
@@ -112,8 +125,9 @@
 .data-preview-list {
   max-height: 150px;
   overflow-y: auto;
-  border: 2px solid var(--border-dark);
-  background: var(--bg-body);
+  border: 1px solid var(--select-menu-border, var(--border-dark));
+  border-radius: var(--surface-control-radius, 6px);
+  background: var(--bg-input);
 }
 
 .data-preview-item {
@@ -142,10 +156,11 @@
   font-size: var(--font-size-sm);
   font-weight: 700;
   text-transform: uppercase;
-  border: 2px solid var(--border-dark);
+  border: 1px solid var(--select-menu-border, var(--border-dark));
+  border-radius: var(--surface-control-radius, 6px);
   cursor: pointer;
-  box-shadow: 2px 2px 0 var(--shadow-color);
-  transition: all 0.1s;
+  box-shadow: var(--surface-control-shadow, 0 2px 6px rgba(0, 0, 0, 0.16));
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
 .data-btn:active {
@@ -164,7 +179,7 @@
 
 .data-btn-primary {
   background: var(--accent-color);
-  color: #ffffff;
+  color: var(--accent-contrast, #ffffff);
   border-color: var(--accent-color);
 }
 

@@ -1,20 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 pub mod app;
+pub mod app_state;
 pub mod database;
 pub mod domain;
 pub mod error;
-pub mod infrastructure;
-pub mod services;
-pub mod app_state;
 pub mod global_state;
+pub mod infrastructure;
 pub mod logger;
 pub mod migration;
+pub mod services;
 
-#[cfg(target_os = "windows")]
-use std::sync::atomic::{Ordering};
-use crate::global_state::*;
 use crate::app::setup;
+use crate::global_state::*;
+#[cfg(target_os = "windows")]
+use std::sync::atomic::Ordering;
 
 const APP_IDENTIFIER: &str = "com.tiez.clipboard";
 const GPU_SETTING_KEY: &str = "app.disable_webview_gpu";
@@ -30,7 +30,11 @@ fn resolve_default_app_data_dir() -> Option<std::path::PathBuf> {
     {
         std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
-            .map(|path| path.join("Library").join("Application Support").join(APP_IDENTIFIER))
+            .map(|path| {
+                path.join("Library")
+                    .join("Application Support")
+                    .join(APP_IDENTIFIER)
+            })
     }
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     {
@@ -93,7 +97,10 @@ fn read_disable_webview_gpu_setting() -> bool {
     let value = stmt
         .query_row([GPU_SETTING_KEY], |row| row.get::<_, String>(0))
         .ok();
-    matches!(value.as_deref(), Some("true") | Some("1") | Some("TRUE") | Some("True"))
+    matches!(
+        value.as_deref(),
+        Some("true") | Some("1") | Some("TRUE") | Some("True")
+    )
 }
 
 fn should_disable_webview_gpu() -> bool {
@@ -117,12 +124,16 @@ fn main() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
-            if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                crate::info!("[global-shortcut] Handler invoked: {:?}", shortcut);
-                setup::handle_global_shortcut(app, shortcut);
-            }
-        }).build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        crate::info!("[global-shortcut] Handler invoked: {:?}", shortcut);
+                        setup::handle_global_shortcut(app, shortcut);
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_window_state::Builder::default().build());
 
     if !cfg!(debug_assertions) {
@@ -142,11 +153,9 @@ fn main() {
             app::window_manager::set_navigation_enabled,
             app::window_manager::set_navigation_mode,
             app::hooks::set_recording_mode,
-            
             services::content_handler::open_content,
             services::clipboard_ops::copy_to_clipboard,
             services::clipboard_ops::paste_latest_rich,
-            
             app::commands::get_clipboard_history,
             app::commands::search_clipboard_history,
             app::commands::delete_clipboard_entry,
@@ -159,7 +168,6 @@ fn main() {
             app::commands::update_pinned_order,
             app::commands::get_db_count,
             app::commands::get_clipboard_content,
-            
             app::commands::set_sequential_mode,
             app::commands::set_sequential_hotkey,
             app::commands::set_rich_paste_hotkey,
@@ -185,7 +193,6 @@ fn main() {
             app::commands::set_follow_mouse,
             app::commands::set_idle_destroy_enabled,
             app::commands::set_idle_destroy_seconds,
-
             app::commands::get_data_path,
             app::commands::open_data_folder,
             app::commands::set_data_path,
@@ -198,62 +205,48 @@ fn main() {
             app::commands::restart_as_admin,
             app::commands::check_is_admin,
             app::commands::relaunch,
-
             app::commands::set_theme,
             app::commands::get_platform_info,
             app::commands::get_system_theme_mode,
             app::commands::register_hotkey,
             app::commands::test_hotkey_available,
-
             app::commands::toggle_clipboard_pin,
             app::commands::update_tags,
             app::commands::add_manual_item,
             app::commands::update_item_content,
-
             app::commands::export_to_file,
-
             app::commands::save_emoji_favorite,
             app::commands::remove_emoji_favorite,
             app::commands::list_emoji_favorites,
             app::commands::save_emoji_favorite_data_url,
             app::commands::get_file_size,
-
             app::commands::show_quick_paste,
             app::commands::hide_quick_paste,
             app::commands::is_quick_paste_visible,
             app::commands::paste_quick_paste_selection,
-            
             services::paste_queue::get_paste_queue,
             services::paste_queue::set_paste_queue,
             services::paste_queue::paste_next_step,
-            
             app::commands::get_tag_colors,
             app::commands::set_tag_color,
             app::commands::qr_cmd::generate_qr_png,
             app::commands::qr_cmd::generate_qr_svg,
-
             app::commands::ocr_cmd::recognize_clipboard_image,
             app::commands::ocr_cmd::get_ocr_status,
-
             app::commands::transform_text,
             app::commands::list_transform_kinds,
-
             app::commands::classify_text,
             app::commands::get_supported_kinds,
-
             app::commands::search_fts,
             app::commands::search_fuzzy,
             app::commands::search_regex,
             app::commands::get_search_history,
-
             app::commands::get_cli_info,
-
             app::commands::import_cmd::import_from_file,
-
             app::commands::screenshot_cmd::capture_full_screen,
             app::commands::screenshot_cmd::capture_region,
             app::commands::screenshot_cmd::list_monitors,
-
+            app::commands::screenshot_cmd::show_region_selector,
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::get_system_default_app,
             #[cfg(target_os = "windows")]
@@ -262,7 +255,6 @@ fn main() {
             infrastructure::windows_api::apps::scan_installed_apps,
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::get_associated_apps,
-
             #[cfg(target_os = "linux")]
             infrastructure::linux_api::apps::get_system_default_app,
             #[cfg(target_os = "linux")]
@@ -290,9 +282,9 @@ fn main() {
                     }
                 }
             });
-        },
+        }
         Err(e) => {
-             error!(">>> [STARTUP] Failed to build tauri app: {}", e);
+            error!(">>> [STARTUP] Failed to build tauri app: {}", e);
         }
     }
 
@@ -301,11 +293,15 @@ fn main() {
     unsafe {
         let h_hook = HOOK_HANDLE.swap(std::ptr::null_mut(), Ordering::SeqCst);
         if !h_hook.is_null() {
-            let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(windows::Win32::UI::WindowsAndMessaging::HHOOK(h_hook as _));
+            let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(
+                windows::Win32::UI::WindowsAndMessaging::HHOOK(h_hook as _),
+            );
         }
         let h_mouse = HOOK_MOUSE_HANDLE.swap(std::ptr::null_mut(), Ordering::SeqCst);
         if !h_mouse.is_null() {
-            let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(windows::Win32::UI::WindowsAndMessaging::HHOOK(h_mouse as _));
+            let _ = windows::Win32::UI::WindowsAndMessaging::UnhookWindowsHookEx(
+                windows::Win32::UI::WindowsAndMessaging::HHOOK(h_mouse as _),
+            );
         }
     }
 }

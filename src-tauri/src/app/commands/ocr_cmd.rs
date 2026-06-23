@@ -23,17 +23,16 @@ pub struct OcrStatusResponse {
 #[tauri::command]
 #[cfg_attr(
     not(target_os = "windows"),
-    allow(unused_variables, reason = "Linux returns early; params reserved for Windows path")
+    allow(
+        unused_variables,
+        reason = "Linux returns early; params reserved for Windows path"
+    )
 )]
-pub async fn recognize_clipboard_image(
-    item_id: i64,
-    app: AppHandle,
-) -> Result<OcrResult, String> {
+pub async fn recognize_clipboard_image(item_id: i64, app: AppHandle) -> Result<OcrResult, String> {
     #[cfg(target_os = "linux")]
     {
         return Err(
-            "OCR is not supported on this platform (Linux OCR engine not available)"
-                .to_string(),
+            "OCR is not supported on this platform (Linux OCR engine not available)".to_string(),
         );
     }
 

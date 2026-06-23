@@ -347,10 +347,7 @@ pub fn export_to_encrypted(
 /// 错误的 passphrase 会产生 AES-GCM 认证 tag 校验失败 →
 /// `aes_gcm::Error` → `BackupError::WrongPassphrase`。
 /// 其他解析/版本错误走对应变体。
-pub fn import_from_encrypted(
-    data: &[u8],
-    passphrase: &str,
-) -> Result<ImportSummary, BackupError> {
+pub fn import_from_encrypted(data: &[u8], passphrase: &str) -> Result<ImportSummary, BackupError> {
     if data.len() < NONCE_LEN + SALT_LEN {
         return Err(BackupError::InvalidFormat(format!(
             "blob too short: {} < {}",
@@ -405,8 +402,13 @@ pub fn import_from_encrypted(
 /// `Params::new` 是 `const fn` 且参数都已通过编译期检查，
 /// 所以 `Result` 路径只会在 `output_len > 2^32` 等极端情况下触发。
 fn derive_key(passphrase: &[u8], salt: &[u8]) -> Result<[u8; KEY_LEN], BackupError> {
-    let params = Params::new(ARGON2_M_COST_KIB, ARGON2_T_COST, ARGON2_P_COST, Some(KEY_LEN))
-        .map_err(|e| BackupError::InvalidFormat(format!("argon2 params invalid: {e}")))?;
+    let params = Params::new(
+        ARGON2_M_COST_KIB,
+        ARGON2_T_COST,
+        ARGON2_P_COST,
+        Some(KEY_LEN),
+    )
+    .map_err(|e| BackupError::InvalidFormat(format!("argon2 params invalid: {e}")))?;
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = [0u8; KEY_LEN];
     argon2.hash_password_into(passphrase, salt, &mut key)?;
@@ -450,7 +452,11 @@ mod tests {
     fn make_entry(i: usize) -> ExportEntry {
         ExportEntry {
             id: i as i64,
-            content_type: if i % 2 == 0 { "text".into() } else { "code".into() },
+            content_type: if i % 2 == 0 {
+                "text".into()
+            } else {
+                "code".into()
+            },
             content: format!("entry #{i} content 你好 🎉"),
             preview: Some(format!("entry #{i}")),
             html_content: if i % 3 == 0 {
@@ -524,8 +530,8 @@ mod tests {
         let json = export_to_json(entries).expect("re-export for size check");
         assert!(blob.len() >= NONCE_LEN + SALT_LEN + json.len() + 16);
 
-        let summary = import_from_encrypted(&blob, "correct horse battery staple")
-            .expect("import encrypted");
+        let summary =
+            import_from_encrypted(&blob, "correct horse battery staple").expect("import encrypted");
         assert_eq!(summary.imported, 100);
         assert_eq!(summary.skipped, 0);
         assert_eq!(summary.mode, "merge");
@@ -664,9 +670,8 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let cases: Vec<(BackupError, &str)> = vec![
-            (BackupError::WrongPassphrase, "wrong passphrase"),
-        ];
+        let cases: Vec<(BackupError, &str)> =
+            vec![(BackupError::WrongPassphrase, "wrong passphrase")];
         for (err, expected_substr) in cases {
             let s = err.to_string();
             assert!(

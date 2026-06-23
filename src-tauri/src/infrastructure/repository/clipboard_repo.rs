@@ -697,7 +697,7 @@ impl SqliteClipboardRepository {
         id: i64,
     ) -> Result<Option<ClipboardEntry>, String> {
         let mut stmt = conn.prepare(
-            "SELECT id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path 
+            "SELECT id, content_type, content, html_content, source_app, timestamp, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path, ocr_text, ocr_status 
              FROM clipboard_history 
              WHERE id = ? 
              LIMIT 1",
@@ -729,9 +729,9 @@ impl SqliteClipboardRepository {
                 pinned_order: row.get(11).unwrap_or(0),
                 source_app_path: row.get(12).unwrap_or(None),
                 file_preview_exists: true,
-                    content_kinds: Vec::new(),
-                    ocr_text: row.get(13).ok(),
-                    ocr_status: row.get(14).ok(),
+                content_kinds: Vec::new(),
+                ocr_text: row.get(13).ok(),
+                ocr_status: row.get(14).ok(),
             }))
         } else {
             Ok(None)
@@ -886,13 +886,9 @@ impl SqliteClipboardRepository {
         id: i64,
     ) -> Result<Option<(String, Option<String>)>, String> {
         let mut stmt = conn
-            .prepare(
-                "SELECT ocr_status, ocr_text FROM clipboard_history WHERE id = ? LIMIT 1",
-            )
+            .prepare("SELECT ocr_status, ocr_text FROM clipboard_history WHERE id = ? LIMIT 1")
             .map_err(|e| e.to_string())?;
-        let mut rows = stmt
-            .query(params![id])
-            .map_err(|e| e.to_string())?;
+        let mut rows = stmt.query(params![id]).map_err(|e| e.to_string())?;
         if let Some(row) = rows.next().map_err(|e| e.to_string())? {
             let status: String = row.get(0).map_err(|e| e.to_string())?;
             let text: Option<String> = row.get(1).ok();
@@ -1525,7 +1521,12 @@ mod tests {
         let arc = setup_fts_db();
         let conn = arc.lock().expect("lock");
 
-        insert_entry(&conn, "the quick brown fox jumps over the lazy dog", "Browser", 1_700_000_000);
+        insert_entry(
+            &conn,
+            "the quick brown fox jumps over the lazy dog",
+            "Browser",
+            1_700_000_000,
+        );
 
         let fts_count: i32 = conn
             .query_row("SELECT COUNT(*) FROM clipboard_fts", [], |r| r.get(0))
@@ -1533,9 +1534,14 @@ mod tests {
         assert_eq!(fts_count, 1, "INSERT trigger must mirror to clipboard_fts");
 
         let mirrored_content: String = conn
-            .query_row("SELECT content FROM clipboard_fts LIMIT 1", [], |r| r.get(0))
+            .query_row("SELECT content FROM clipboard_fts LIMIT 1", [], |r| {
+                r.get(0)
+            })
             .expect("mirror query failed");
-        assert_eq!(mirrored_content, "the quick brown fox jumps over the lazy dog");
+        assert_eq!(
+            mirrored_content,
+            "the quick brown fox jumps over the lazy dog"
+        );
     }
 
     #[test]
@@ -1543,7 +1549,12 @@ mod tests {
         let arc = setup_fts_db();
         {
             let conn = arc.lock().expect("lock");
-            insert_entry(&conn, "alpha apple banana foo cherry", "App1", 1_700_000_000);
+            insert_entry(
+                &conn,
+                "alpha apple banana foo cherry",
+                "App1",
+                1_700_000_000,
+            );
             insert_entry(&conn, "delta elephant falcon grape", "App2", 1_700_000_001);
             insert_entry(&conn, "hello foo world baz qux", "App3", 1_700_000_002);
         }
@@ -1551,7 +1562,11 @@ mod tests {
         let repo = SqliteClipboardRepository::new(arc);
         let results = repo.search_fts("foo", 10).expect("search_fts failed");
 
-        assert_eq!(results.len(), 2, "expected exactly 2 entries containing 'foo'");
+        assert_eq!(
+            results.len(),
+            2,
+            "expected exactly 2 entries containing 'foo'"
+        );
         let contents: Vec<&str> = results.iter().map(|e| e.content.as_str()).collect();
         assert!(contents.iter().any(|c| c.contains("apple banana foo")));
         assert!(contents.iter().any(|c| c.contains("hello foo world")));
@@ -1570,7 +1585,12 @@ mod tests {
                 "AppEmoji",
                 1_700_000_002,
             );
-            insert_entry(&conn, "plain ascii clipboard entry", "AppAscii", 1_700_000_003);
+            insert_entry(
+                &conn,
+                "plain ascii clipboard entry",
+                "AppAscii",
+                1_700_000_003,
+            );
         }
 
         let repo = SqliteClipboardRepository::new(arc);
@@ -1589,7 +1609,9 @@ mod tests {
             .search_fts("Rust", 10)
             .expect("ASCII search_fts failed");
         assert!(
-            ascii_results.iter().any(|e| e.content.contains("Rust 是一门")),
+            ascii_results
+                .iter()
+                .any(|e| e.content.contains("Rust 是一门")),
             "ASCII 'Rust' should match the CJK+ASCII row"
         );
 
@@ -1628,8 +1650,11 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         run_migrations(&mut conn).expect("initial migrations failed");
 
-        conn.execute("DROP INDEX IF EXISTS idx_clipboard_history_content_kinds", [])
-            .expect("drop index");
+        conn.execute(
+            "DROP INDEX IF EXISTS idx_clipboard_history_content_kinds",
+            [],
+        )
+        .expect("drop index");
         conn.execute("DROP TRIGGER IF EXISTS clipboard_history_ai", [])
             .expect("drop ai trigger");
         conn.execute("DROP TRIGGER IF EXISTS clipboard_history_ad", [])
@@ -1698,7 +1723,12 @@ mod tests {
         let arc = Arc::new(Mutex::new(conn));
         {
             let conn = arc.lock().expect("lock");
-            insert_entry(&conn, "alpha apple banana foo cherry", "App1", 1_700_000_000);
+            insert_entry(
+                &conn,
+                "alpha apple banana foo cherry",
+                "App1",
+                1_700_000_000,
+            );
             insert_entry(&conn, "delta elephant falcon grape", "App2", 1_700_000_001);
             insert_entry(&conn, "hello foo world baz qux", "App3", 1_700_000_002);
         }

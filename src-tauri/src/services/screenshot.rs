@@ -50,7 +50,9 @@ impl std::fmt::Display for ScreenshotError {
         match self {
             ScreenshotError::NoMonitor => write!(f, "No monitor available for capture"),
             ScreenshotError::XcapError(msg) => write!(f, "xcap error: {msg}"),
-            ScreenshotError::RegionOutOfBounds => write!(f, "Capture region is outside monitor bounds"),
+            ScreenshotError::RegionOutOfBounds => {
+                write!(f, "Capture region is outside monitor bounds")
+            }
             ScreenshotError::EncodeError => write!(f, "Failed to encode PNG from captured image"),
         }
     }
@@ -88,7 +90,11 @@ pub fn capture_full_screen() -> Result<ScreenshotResult, ScreenshotError> {
     let rgba = monitor.capture_image().map_err(map_xcap)?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
-    Ok(ScreenshotResult { width, height, png_bytes })
+    Ok(ScreenshotResult {
+        width,
+        height,
+        png_bytes,
+    })
 }
 
 /// Capture a region at absolute screen coordinates `(x, y)` with size `(w, h)`.
@@ -118,10 +124,16 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
         return Err(ScreenshotError::RegionOutOfBounds);
     }
 
-    let rgba = monitor.capture_region(rel_x, rel_y, w, h).map_err(map_xcap)?;
+    let rgba = monitor
+        .capture_region(rel_x, rel_y, w, h)
+        .map_err(map_xcap)?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
-    Ok(ScreenshotResult { width, height, png_bytes })
+    Ok(ScreenshotResult {
+        width,
+        height,
+        png_bytes,
+    })
 }
 
 pub fn capture_monitor(id: u32) -> Result<ScreenshotResult, ScreenshotError> {
@@ -133,7 +145,11 @@ pub fn capture_monitor(id: u32) -> Result<ScreenshotResult, ScreenshotError> {
     let rgba = monitor.capture_image().map_err(map_xcap)?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
-    Ok(ScreenshotResult { width, height, png_bytes })
+    Ok(ScreenshotResult {
+        width,
+        height,
+        png_bytes,
+    })
 }
 
 /// Enumerate all attached monitors.
@@ -238,8 +254,14 @@ mod tests {
             .find(|m| m.is_primary)
             .or(list.first())
             .expect("non-empty list implies at least one element");
-        assert!(monitor.width > 0, "monitor width must be populated and non-zero");
-        assert!(monitor.height > 0, "monitor height must be populated and non-zero");
+        assert!(
+            monitor.width > 0,
+            "monitor width must be populated and non-zero"
+        );
+        assert!(
+            monitor.height > 0,
+            "monitor height must be populated and non-zero"
+        );
         assert!(!monitor.name.is_empty(), "monitor name must be populated");
         Ok(())
     }

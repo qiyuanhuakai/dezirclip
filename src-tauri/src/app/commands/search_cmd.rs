@@ -18,10 +18,7 @@ fn normalize_limit(limit: u32) -> u32 {
     }
 }
 
-fn run_plan_against_db(
-    conn: &Connection,
-    plan: SearchPlan,
-) -> Result<Vec<i64>, String> {
+fn run_plan_against_db(conn: &Connection, plan: SearchPlan) -> Result<Vec<i64>, String> {
     match plan {
         SearchPlan::Empty => Ok(Vec::new()),
         SearchPlan::Sql { sql, params } => {
@@ -43,7 +40,10 @@ fn run_plan_against_db(
 fn patch_fuzzy_sql_placeholders(plan: SearchPlan) -> SearchPlan {
     match plan {
         SearchPlan::Empty => SearchPlan::Empty,
-        SearchPlan::Sql { mut sql, mut params } => {
+        SearchPlan::Sql {
+            mut sql,
+            mut params,
+        } => {
             if sql.contains("?1*") {
                 sql = sql.replacen("?1*", "?1", 1);
                 if let Some(first) = params.first_mut() {
@@ -174,11 +174,7 @@ mod tests {
         .expect("insert failed");
     }
 
-    fn execute_plan(
-        arc: &Arc<Mutex<Connection>>,
-        mode: SearchMode,
-        limit: u32,
-    ) -> Vec<i64> {
+    fn execute_plan(arc: &Arc<Mutex<Connection>>, mode: SearchMode, limit: u32) -> Vec<i64> {
         let plan = patch_fuzzy_sql_placeholders(build_search_query(&mode, limit));
         let conn = arc.lock().expect("lock");
         run_plan_against_db(&conn, plan).expect("run_plan_against_db failed")
@@ -189,12 +185,21 @@ mod tests {
         let (arc, repo) = setup_test_db();
         {
             let conn = arc.lock().expect("lock");
-            insert_entry(&conn, "alpha apple banana foo cherry", "App1", 1_700_000_000);
+            insert_entry(
+                &conn,
+                "alpha apple banana foo cherry",
+                "App1",
+                1_700_000_000,
+            );
             insert_entry(&conn, "delta elephant falcon grape", "App2", 1_700_000_001);
             insert_entry(&conn, "hello world baz qux", "App3", 1_700_000_002);
         }
         let results = repo.search_fts("foo", 10).expect("search_fts failed");
-        assert_eq!(results.len(), 1, "expected exactly 1 entry containing 'foo'");
+        assert_eq!(
+            results.len(),
+            1,
+            "expected exactly 1 entry containing 'foo'"
+        );
         assert!(results[0].content.contains("foo"));
         assert!(results[0].content.contains("apple"));
     }
@@ -227,7 +232,12 @@ mod tests {
         let (arc, _repo) = setup_test_db();
         {
             let conn = arc.lock().expect("lock");
-            insert_entry(&conn, "contact user@example.com for details", "App1", 1_700_000_000);
+            insert_entry(
+                &conn,
+                "contact user@example.com for details",
+                "App1",
+                1_700_000_000,
+            );
             insert_entry(&conn, "no email here at all", "App2", 1_700_000_001);
         }
         {
