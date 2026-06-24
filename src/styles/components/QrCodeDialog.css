@@ -95,6 +95,7 @@
   transition: all 0.1s ease;
   box-shadow: var(--control-confirm-btn-shadow, 0 2px 4px rgba(0, 0, 0, 0.05));
   text-transform: uppercase;
+  border-radius: var(--radius-panel, 4px);
 }
 
 .qr-dialog__btn:hover {
@@ -109,11 +110,12 @@
 }
 
 .qr-dialog__btn--primary {
-  background: var(--accent-color, var(--text-primary));
-  color: var(--bg-input);
-  border-color: var(--accent-color, var(--text-primary));
+  background: var(--control-confirm-btn-bg, var(--bg-button));
+  color: var(--control-confirm-btn-text, var(--text-primary));
+  border-color: var(--control-confirm-btn-border, var(--border-dark));
+  box-shadow: var(--control-confirm-btn-shadow, 0 2px 4px rgba(0, 0, 0, 0.05));
 }
 
 .qr-dialog__btn--primary:hover {
-  background: var(--accent-hover, var(--accent-color));
+  background: var(--control-confirm-btn-hover-bg, var(--bg-input));
 }

@@ -59,9 +59,6 @@ describe("QrCodeDialog", () => {
   });
 
   it("copy SVG button writes SVG to clipboard", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-
     const entry = makeEntry("test content");
     render(<QrCodeDialog entry={entry} onClose={vi.fn()} />);
 
@@ -72,7 +69,16 @@ describe("QrCodeDialog", () => {
       expect(mockInvoke).toHaveBeenCalledWith("generate_qr_svg", {
         content: "test content",
       });
-      expect(writeText).toHaveBeenCalledWith(MOCK_SVG);
+      expect(mockInvoke).toHaveBeenCalledWith("copy_to_clipboard", {
+        content: MOCK_SVG,
+        contentType: "text",
+        paste: false,
+        id: 0,
+        deleteAfterUse: false,
+        pasteWithFormat: false,
+        moveToTop: false,
+        pasteImageAsBase64: false,
+      });
     });
   });
 

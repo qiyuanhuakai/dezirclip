@@ -39,7 +39,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     invoke<ClipboardEntry[]>("get_clipboard_history", {
       limit: MAX_ENTRIES,
       offset: 0,
-      content_type: null,
+      contentType: null,
     })
       .then((data) => setEntries(data ?? []))
       .catch(() => setEntries([]));
@@ -61,7 +61,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
 
   const handlePaste = useCallback(async (entryId: number) => {
     try {
-      await invoke("paste_quick_paste_selection", { entry_id: entryId });
+      await invoke("paste_quick_paste_selection", { entryId });
       await invoke("hide_quick_paste");
     } catch {
       // paste failed — window stays open

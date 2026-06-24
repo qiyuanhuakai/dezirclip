@@ -111,6 +111,18 @@ fn convert_image_content_to_base64(content: &str) -> AppResult<String> {
     ))
 }
 
+pub fn copy_image_bytes_to_system_clipboard(bytes: Vec<u8>) -> AppResult<()> {
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let hashes = copy_image_bytes_to_clipboard(bytes, current_time)?;
+    crate::LAST_APP_SET_HASH.store(hashes.0, Ordering::SeqCst);
+    crate::LAST_APP_SET_HASH_ALT.store(hashes.1, Ordering::SeqCst);
+    crate::LAST_APP_SET_TIMESTAMP.store(current_time, Ordering::SeqCst);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn copy_to_clipboard(
     app_handle: tauri::AppHandle,

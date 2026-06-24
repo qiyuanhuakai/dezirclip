@@ -152,6 +152,35 @@
   opacity: 0.85;
 }
 
+.setting-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--control-confirm-btn-text, var(--text-primary));
+  background: var(--control-confirm-btn-bg, var(--bg-button));
+  border: 2px solid var(--control-confirm-btn-border, var(--border-dark));
+  border-radius: var(--radius-panel, 4px);
+  box-shadow: var(--control-confirm-btn-shadow, 2px 2px 0 var(--shadow-color));
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.setting-btn:hover {
+  background: var(--control-confirm-btn-hover-bg, var(--bg-input));
+  box-shadow: var(--control-confirm-btn-hover-shadow, 3px 3px 0 var(--shadow-color));
+  transform: translate(-1px, -1px);
+}
+
+.setting-btn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--shadow-color);
+}
+
+.setting-btn--compact {
+  padding: 5px 10px;
+}
+
 .setting-item {
   display: flex;
   justify-content: space-between;

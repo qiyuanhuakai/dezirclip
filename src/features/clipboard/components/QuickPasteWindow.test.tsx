@@ -50,6 +50,11 @@ describe("QuickPasteWindow", () => {
     expect(items).toHaveLength(10);
     expect(items[0]).toHaveTextContent("entry 1");
     expect(items[9]).toHaveTextContent("entry 10");
+    expect(mockInvoke).toHaveBeenCalledWith("get_clipboard_history", {
+      limit: 10,
+      offset: 0,
+      contentType: null,
+    });
   });
 
   it("keyboard nav arrow down increments activeIndex", async () => {
@@ -80,7 +85,7 @@ describe("QuickPasteWindow", () => {
     });
 
     expect(mockInvoke).toHaveBeenCalledWith("paste_quick_paste_selection", {
-      entry_id: 1,
+      entryId: 1,
     });
     expect(mockInvoke).toHaveBeenCalledWith("hide_quick_paste");
   });

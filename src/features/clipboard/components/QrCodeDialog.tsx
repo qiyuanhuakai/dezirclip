@@ -42,7 +42,16 @@ const QrCodeDialog = forwardRef<HTMLDivElement, QrCodeDialogProps>(
         const svg = await invoke<string>("generate_qr_svg", {
           content: entry.content,
         });
-        await navigator.clipboard.writeText(svg);
+        await invoke("copy_to_clipboard", {
+          content: svg,
+          contentType: "text",
+          paste: false,
+          id: 0,
+          deleteAfterUse: false,
+          pasteWithFormat: false,
+          moveToTop: false,
+          pasteImageAsBase64: false,
+        });
       } catch {
         // clipboard write failure is non-critical
       }

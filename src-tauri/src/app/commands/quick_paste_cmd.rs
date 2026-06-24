@@ -239,9 +239,10 @@ pub fn is_quick_paste_visible(app: AppHandle) -> bool {
 /// restore, hotkey dispatch, sound cues, and post-paste bookkeeping all
 /// stay on the same code path the main window uses.
 #[tauri::command]
-pub fn paste_quick_paste_selection(
+pub async fn paste_quick_paste_selection(
     app: AppHandle,
     state: tauri::State<'_, DbState>,
+    session: tauri::State<'_, SessionHistory>,
     entry_id: i64,
 ) -> Result<(), String> {
     if entry_id <= 0 {
@@ -263,32 +264,24 @@ pub fn paste_quick_paste_selection(
     let (content, content_type, plan) =
         build_paste_dispatch_plan(entry.id, &entry.content, &entry.content_type);
 
-    // The actual paste runs on the Tauri async runtime. We record the
-    // dispatch up-front so the inline test can assert the command would
-    // have invoked the paste pipeline; the test resets the flag before
-    // exercising, and the real call still flows through `copy_to_clipboard`
-    // below.
     reset_dispatch();
     record_dispatch(plan.id);
 
-    let app_clone = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let _ = clipboard_ops::copy_to_clipboard(
-            app_clone.clone(),
-            app_clone.state::<DbState>(),
-            app_clone.state::<SessionHistory>(),
-            content,
-            content_type,
-            plan.paste,
-            plan.id,
-            plan.delete_after_use,
-            Some(plan.paste_with_format),
-            Some(plan.move_to_top),
-            Some(plan.paste_image_as_base64),
-        )
-        .await;
-    });
-    Ok(())
+    clipboard_ops::copy_to_clipboard(
+        app,
+        state,
+        session,
+        content,
+        content_type,
+        plan.paste,
+        plan.id,
+        plan.delete_after_use,
+        Some(plan.paste_with_format),
+        Some(plan.move_to_top),
+        Some(plan.paste_image_as_base64),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -319,11 +312,6 @@ mod tests {
 
     #[test]
     fn test_paste_selection_calls_paste_ops() {
-        // `paste_quick_paste_selection` records a dispatch via the
-        // global counter right before spawning `copy_to_clipboard`.
-        // The test simulates the record step and verifies the captured
-        // id matches the entry that was about to be pasted, which is
-        // the exact contract the production code honors.
         reset_dispatch();
         assert!(
             !PASTE_DISPATCH_INVOKED.load(Ordering::SeqCst),

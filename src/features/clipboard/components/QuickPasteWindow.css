@@ -24,14 +24,16 @@ body.quick-paste #root::before {
 /* ── Root container ─────────────────────────────────────────── */
 
 .quick-paste-window {
-  width: 480px;
-  height: 360px;
+  width: 100vw;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--surface-dialog-bg);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-window);
+  border: 1px solid var(--surface-dialog-border, var(--border-light));
+  border-radius: var(--surface-dialog-radius, var(--radius-window));
+  box-shadow: var(--surface-dialog-shadow, none);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 /* ── Search ─────────────────────────────────────────────────── */

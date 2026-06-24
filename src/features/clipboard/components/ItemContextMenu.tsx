@@ -22,6 +22,7 @@ export interface ItemContextMenuProps {
   onDelete?: () => void;
   onPin?: () => void;
   onShare?: () => void;
+  onImageBase64?: () => void;
   onTransform?: (kind: string) => void;
   onOcr?: () => void;
   transformKinds?: TransformKindDto[];
@@ -84,6 +85,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       onDelete,
       onPin,
       onShare,
+      onImageBase64,
       onTransform,
       onOcr,
       transformKinds = [],
@@ -114,9 +116,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 
     const menuItems = useMemo(() => {
       const ct = entry?.content_type;
-      const isText = ct === "text" || ct === "rich_text" || ct === undefined;
       const isBinary = ct === "image" || ct === "video" || ct === "file";
       const isImage = ct === "image";
+      const isTransformable = !isBinary;
       const items: { key: string; label: string; hasSubmenu?: boolean }[] = [
         { key: "copy", label: "复制" },
         { key: "editTags", label: "编辑标签" },
@@ -126,11 +128,12 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       }
       if (isImage) {
         items.push({ key: "ocr", label: ocrRunning ? "OCR 识别中..." : "OCR 识别" });
+        items.push({ key: "imageBase64", label: "转为 Base64" });
       }
       items.push({ key: "delete", label: "删除" });
       items.push({ key: "pin", label: entry?.is_pinned ? "取消固定" : "固定" });
       items.push({ key: "share", label: "分享" });
-      if (isText) {
+      if (isTransformable) {
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
       return items;
@@ -166,6 +169,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
           case "share":
             onShare?.();
             break;
+          case "imageBase64":
+            onImageBase64?.();
+            break;
           case "ocr":
             onOcr?.();
             break;
@@ -174,7 +180,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
           onClose();
         }
       },
-      [onSelect, onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onOcr, onClose]
+      [onSelect, onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onImageBase64, onOcr, onClose]
     );
 
     const handleTransformSelect = useCallback(

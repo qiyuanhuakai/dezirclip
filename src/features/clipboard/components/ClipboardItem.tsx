@@ -913,28 +913,6 @@ const ClipboardItem = ({
         setOcrTextExpanded(false);
     }, [item.id, item.ocr_text, item.ocr_status]);
 
-    const handleContextMenuAction = useCallback((action: string) => {
-        switch (action) {
-            case "copy":
-                onCopy(false, false);
-                break;
-            case "editTags":
-                onToggleTagEditor(new MouseEvent("contextmenu") as never);
-                break;
-            case "qrCode":
-                onQRCode?.();
-                break;
-            case "delete":
-                onDelete(new MouseEvent("contextmenu") as never);
-                break;
-            case "pin":
-                onTogglePin(new MouseEvent("contextmenu") as never);
-                break;
-            case "share":
-                break;
-        }
-    }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin]);
-
     const [ocrRunning, setOcrRunning] = useState(false);
 
     const handleOcr = useCallback(() => {
@@ -958,7 +936,16 @@ const ClipboardItem = ({
 
     const handleTransform = useCallback((kind: string) => {
         const proceed = (text: string) => {
-            invoke("copy_to_clipboard", { content: text })
+            invoke("copy_to_clipboard", {
+                content: text,
+                contentType: "text",
+                paste: false,
+                id: 0,
+                deleteAfterUse: false,
+                pasteWithFormat: false,
+                moveToTop: false,
+                pasteImageAsBase64: false
+            })
                 .then(() => onTransformItemSuccess?.(kind))
                 .catch((err) => {
                     const msg = err instanceof Error ? err.message : String(err);
@@ -979,6 +966,65 @@ const ClipboardItem = ({
                 onTransformItemError?.(kind, msg);
             });
     }, [item.content, onTransformItem, onTransformItemError, onTransformItemSuccess]);
+
+    const handleImageBase64Copy = useCallback(async () => {
+        if (item.content_type !== "image") return;
+        try {
+            await invoke("copy_to_clipboard", {
+                content: item.content,
+                contentType: "image",
+                paste: false,
+                id: item.id,
+                deleteAfterUse: false,
+                pasteWithFormat: false,
+                moveToTop: false,
+                pasteImageAsBase64: true
+            });
+            onTransformItemSuccess?.("image_base64");
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            onTransformItemError?.("image_base64", msg);
+        }
+    }, [item.content, item.content_type, item.id, onTransformItemError, onTransformItemSuccess]);
+
+    const handleShare = useCallback(async () => {
+        try {
+            if (navigator.share) {
+                await navigator.share({ text: item.content });
+                return;
+            }
+            await navigator.clipboard.writeText(item.content);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            onTransformItemError?.("share", msg);
+        }
+    }, [item.content, onTransformItemError]);
+
+    const handleContextMenuAction = useCallback((action: string) => {
+        switch (action) {
+            case "copy":
+                onCopy(false, false);
+                break;
+            case "editTags":
+                onToggleTagEditor(new MouseEvent("contextmenu") as never);
+                break;
+            case "qrCode":
+                onQRCode?.();
+                break;
+            case "delete":
+                onDelete(new MouseEvent("contextmenu") as never);
+                break;
+            case "pin":
+                onTogglePin(new MouseEvent("contextmenu") as never);
+                break;
+            case "share":
+                void handleShare();
+                break;
+            case "imageBase64":
+                void handleImageBase64Copy();
+                break;
+        }
+    }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin, handleShare, handleImageBase64Copy]);
 
     useEffect(() => {
         if (!contextMenuState) return;
@@ -1100,6 +1146,7 @@ const ClipboardItem = ({
             }}
             onMouseEnter={(e) => {
                 if (!compactMode) return;
+                if (contextMenuState) return;
                 compactPreviewLog("mouseenter schedule preview", { itemId: item.id });
                 hoverAnchorRef.current = {
                     clientX: e.clientX,
@@ -1123,6 +1170,7 @@ const ClipboardItem = ({
             }}
             onMouseMove={(e) => {
                 if (!compactMode) return;
+                if (contextMenuState) return;
                 hoverAnchorRef.current = {
                     clientX: e.clientX,
                     clientY: e.clientY,
@@ -1544,6 +1592,7 @@ const ClipboardItem = ({
                     onDelete={() => handleContextMenuAction("delete")}
                     onPin={() => handleContextMenuAction("pin")}
                     onShare={() => handleContextMenuAction("share")}
+                    onImageBase64={() => handleContextMenuAction("imageBase64")}
                     onTransform={handleTransform}
                     onOcr={handleOcr}
                     transformKinds={transformKinds}

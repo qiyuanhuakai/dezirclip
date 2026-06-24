@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::services::clipboard_ops;
 use crate::services::screenshot::{self, MonitorInfo, ScreenshotResult};
 
 const EVENT_SCREENSHOT_COMPLETE: &str = "screenshot:complete";
@@ -24,6 +25,7 @@ pub fn show_region_selector(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn capture_full_screen(app: AppHandle) -> Result<ScreenshotResult, String> {
     let result = screenshot::capture_full_screen().map_err(|e| e.to_string())?;
+    copy_screenshot_to_clipboard(&result)?;
     let _ = app.emit(EVENT_SCREENSHOT_COMPLETE, &result);
     Ok(result)
 }
@@ -40,6 +42,7 @@ pub async fn capture_region(
     app: AppHandle,
 ) -> Result<ScreenshotResult, String> {
     let result = screenshot::capture_region(x, y, width, height).map_err(|e| e.to_string())?;
+    copy_screenshot_to_clipboard(&result)?;
     let _ = app.emit(EVENT_SCREENSHOT_COMPLETE, &result);
     Ok(result)
 }
@@ -48,6 +51,11 @@ pub async fn capture_region(
 #[tauri::command]
 pub async fn list_monitors(_app: AppHandle) -> Result<Vec<MonitorInfo>, String> {
     screenshot::list_monitors().map_err(|e| e.to_string())
+}
+
+fn copy_screenshot_to_clipboard(result: &ScreenshotResult) -> Result<(), String> {
+    clipboard_ops::copy_image_bytes_to_system_clipboard(result.png_bytes.clone())
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
