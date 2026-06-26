@@ -912,6 +912,7 @@ impl SqliteClipboardRepository {
                 "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app,
                         ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count,
                         ch.is_external, ch.pinned_order, ch.source_app_path,
+                        ch.content_kinds, ch.ocr_text, ch.ocr_status,
                         snippet(clipboard_fts, 0, '<mark>', '</mark>', '...', 16),
                         highlight(clipboard_fts, 0, '<mark>', '</mark>')
                  FROM clipboard_fts
@@ -933,8 +934,8 @@ impl SqliteClipboardRepository {
                 let preview = self.maybe_decrypt_text(&preview_raw);
                 let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
 
-                let _snippet: String = row.get(13)?;
-                let _highlight: String = row.get(14)?;
+                let _snippet: String = row.get(16)?;
+                let _highlight: String = row.get(17)?;
 
                 Ok(ClipboardEntry {
                     id: row.get(0)?,
@@ -951,9 +952,12 @@ impl SqliteClipboardRepository {
                     pinned_order: row.get(11).unwrap_or(0),
                     source_app_path: row.get(12).ok().flatten(),
                     file_preview_exists: true,
-                    content_kinds: Vec::new(),
-                    ocr_text: None,
-                    ocr_status: None,
+                    content_kinds: serde_json::from_str(
+                        &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                    )
+                    .unwrap_or_default(),
+                    ocr_text: row.get(14).ok(),
+                    ocr_status: row.get(15).ok(),
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -1126,18 +1130,19 @@ impl ClipboardRepository for SqliteClipboardRepository {
         {
             // Portable version: Data is NOT encrypted, use conventional SQL LIKE search (fastest)
             let mut stmt = conn.prepare(
-                "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
-                 FROM clipboard_history ch
-                 LEFT JOIN entry_tags et ON ch.id = et.entry_id
-                 WHERE ch.content LIKE '%' || ? || '%' 
-                    OR ch.source_app LIKE '%' || ? || '%' 
-                    OR et.tag LIKE '%' || ? || '%'
+                "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.ocr_text, ch.ocr_status
+	                 FROM clipboard_history ch
+	                 LEFT JOIN entry_tags et ON ch.id = et.entry_id
+	                 WHERE ch.content LIKE '%' || ? || '%'
+	                    OR ch.source_app LIKE '%' || ? || '%'
+	                    OR COALESCE(ch.ocr_text, '') LIKE '%' || ? || '%'
+	                    OR et.tag LIKE '%' || ? || '%'
                  ORDER BY ch.timestamp DESC 
                  LIMIT ?",
             ).map_err(|e| e.to_string())?;
 
             let rows = stmt
-                .query_map(params![term, term, term, limit], |row| {
+                .query_map(params![term, term, term, term, limit], |row| {
                     let tags_str: String =
                         row.get::<_, String>(8).unwrap_or_else(|_| "[]".to_string());
                     Ok(ClipboardEntry {
@@ -1156,8 +1161,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         source_app_path: row.get(12).unwrap_or(None),
                         file_preview_exists: true, // Simplified for search
                         content_kinds: Vec::new(),
-                        ocr_text: None,
-                        ocr_status: None,
+                        ocr_text: row.get(13).ok(),
+                        ocr_status: row.get(14).ok(),
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -1188,18 +1193,19 @@ impl ClipboardRepository for SqliteClipboardRepository {
 
             // 1) SQL search for non-sensitive (plaintext) entries
             let sql_non_sensitive = format!(
-                "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
-                 FROM clipboard_history ch
-                 LEFT JOIN entry_tags et ON ch.id = et.entry_id
+                "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.content_kinds, ch.ocr_text, ch.ocr_status
+	                 FROM clipboard_history ch
+	                 LEFT JOIN entry_tags et ON ch.id = et.entry_id
                  WHERE NOT EXISTS (
                      SELECT 1 FROM entry_tags se 
                      WHERE se.entry_id = ch.id 
                        AND se.tag COLLATE NOCASE IN {}
                  )
                    AND (
-                     ch.content LIKE '%' || ?1 || '%' 
-                     OR ch.source_app LIKE '%' || ?1 || '%' 
-                     OR et.tag LIKE '%' || ?1 || '%'
+	                     ch.content LIKE '%' || ?1 || '%'
+	                     OR ch.source_app LIKE '%' || ?1 || '%'
+	                     OR COALESCE(ch.ocr_text, '') LIKE '%' || ?1 || '%'
+	                     OR et.tag LIKE '%' || ?1 || '%'
                    )
                  ORDER BY ch.timestamp DESC, ch.id DESC
                  LIMIT ?2",
@@ -1235,9 +1241,12 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         pinned_order: row.get(11).unwrap_or(0),
                         source_app_path: row.get(12).unwrap_or(None),
                         file_preview_exists: true,
-                        content_kinds: Vec::new(),
-                        ocr_text: None,
-                        ocr_status: None,
+                        content_kinds: serde_json::from_str(
+                            &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                        )
+                        .unwrap_or_default(),
+                        ocr_text: row.get(14).ok(),
+                        ocr_status: row.get(15).ok(),
                     })
                 })
                 .map_err(|e| e.to_string())?;
@@ -1257,8 +1266,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 let batch_size = 500;
                 let enc_like = format!("{}%", ENCRYPT_PREFIX);
                 let sql_sensitive = format!(
-                    "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
-                     FROM clipboard_history ch
+                    "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.content_kinds, ch.ocr_text, ch.ocr_status
+	                     FROM clipboard_history ch
                      WHERE (
                          EXISTS (
                              SELECT 1 FROM entry_tags se 
@@ -1267,7 +1276,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                          )
                          OR ch.content LIKE ?1 
                          OR ch.preview LIKE ?1 
-                         OR ch.html_content LIKE ?1
+	                         OR ch.html_content LIKE ?1
+	                         OR ch.ocr_text LIKE ?1
                      )
                        AND ((ch.timestamp < ?2) OR (ch.timestamp = ?2 AND ch.id < ?3))
                      ORDER BY ch.timestamp DESC, ch.id DESC
@@ -1295,9 +1305,12 @@ impl ClipboardRepository for SqliteClipboardRepository {
                                 pinned_order: row.get(11).unwrap_or(0),
                                 source_app_path: row.get(12).unwrap_or(None),
                                 file_preview_exists: true,
-                                content_kinds: Vec::new(),
-                                ocr_text: None,
-                                ocr_status: None,
+                                content_kinds: serde_json::from_str(
+                                    &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                                )
+                                .unwrap_or_default(),
+                                ocr_text: row.get(14).ok(),
+                                ocr_status: row.get(15).ok(),
                             })
                         })
                         .map_err(|e| e.to_string())?;
@@ -1321,6 +1334,11 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     for entry in batch.iter() {
                         let matches = entry.content.to_lowercase().contains(&term)
                             || entry.source_app.to_lowercase().contains(&term)
+                            || entry
+                                .ocr_text
+                                .as_deref()
+                                .map(|text| text.to_lowercase().contains(&term))
+                                .unwrap_or(false)
                             || entry.tags.iter().any(|t| t.to_lowercase().contains(&term));
 
                         if matches && seen.insert(entry.id) {
@@ -1581,6 +1599,37 @@ mod tests {
     }
 
     #[test]
+    fn test_fts5_search_returns_image_by_ocr_text() {
+        let arc = setup_fts_db();
+        {
+            let conn = arc.lock().expect("lock");
+            conn.execute(
+                "INSERT INTO clipboard_history
+                 (content_type, content, html_content, source_app, timestamp, preview,
+                  is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+                  content_kinds, ocr_text, ocr_status)
+                 VALUES ('image', 'data:image/png;base64,AAAA', NULL, 'Screenshot', 1700000003,
+                         'screenshot image', 0, 0, '[]', 0, 0, NULL, '[]',
+                         'Bryobacterales bacterium annotation panel', 'done')",
+                [],
+            )
+            .expect("insert image row");
+        }
+
+        let repo = SqliteClipboardRepository::new(arc);
+        let results = repo
+            .search_fts("Bryobacterales", 10)
+            .expect("search_fts failed");
+
+        assert_eq!(results.len(), 1, "OCR text must make image searchable");
+        assert_eq!(results[0].content_type, "image");
+        assert_eq!(
+            results[0].ocr_text.as_deref(),
+            Some("Bryobacterales bacterium annotation panel")
+        );
+    }
+
+    #[test]
     fn test_fts5_unicode() {
         let arc = setup_fts_db();
         {
@@ -1672,7 +1721,7 @@ mod tests {
         conn.execute("DROP TABLE IF EXISTS clipboard_fts", [])
             .expect("drop fts table");
         conn.execute(
-            "DELETE FROM schema_migrations WHERE version IN (13, 14)",
+            "DELETE FROM schema_migrations WHERE version IN (13, 14, 15)",
             [],
         )
         .expect("version reset failed");

@@ -1,6 +1,8 @@
+use base64::{engine::general_purpose, Engine as _};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::services::clipboard_ops;
+use crate::services::clipboard::{process_new_entry, ClipboardData};
 use crate::services::screenshot::{self, MonitorInfo, ScreenshotResult};
 
 const EVENT_SCREENSHOT_COMPLETE: &str = "screenshot:complete";
@@ -26,6 +28,7 @@ pub fn show_region_selector(app: AppHandle) -> Result<(), String> {
 pub async fn capture_full_screen(app: AppHandle) -> Result<ScreenshotResult, String> {
     let result = screenshot::capture_full_screen().map_err(|e| e.to_string())?;
     copy_screenshot_to_clipboard(&result)?;
+    save_screenshot_to_history(&app, &result);
     let _ = app.emit(EVENT_SCREENSHOT_COMPLETE, &result);
     Ok(result)
 }
@@ -43,6 +46,7 @@ pub async fn capture_region(
 ) -> Result<ScreenshotResult, String> {
     let result = screenshot::capture_region(x, y, width, height).map_err(|e| e.to_string())?;
     copy_screenshot_to_clipboard(&result)?;
+    save_screenshot_to_history(&app, &result);
     let _ = app.emit(EVENT_SCREENSHOT_COMPLETE, &result);
     Ok(result)
 }
@@ -56,6 +60,24 @@ pub async fn list_monitors(_app: AppHandle) -> Result<Vec<MonitorInfo>, String> 
 fn copy_screenshot_to_clipboard(result: &ScreenshotResult) -> Result<(), String> {
     clipboard_ops::copy_image_bytes_to_system_clipboard(result.png_bytes.clone())
         .map_err(|e| e.to_string())
+}
+
+fn screenshot_data_url(result: &ScreenshotResult) -> String {
+    format!(
+        "data:image/png;base64,{}",
+        general_purpose::STANDARD.encode(&result.png_bytes)
+    )
+}
+
+fn save_screenshot_to_history(app: &AppHandle, result: &ScreenshotResult) {
+    process_new_entry(
+        app,
+        ClipboardData::Image {
+            data_url: screenshot_data_url(result),
+        },
+        Some("TieZ Screenshot".to_string()),
+        None,
+    );
 }
 
 #[cfg(test)]
@@ -140,5 +162,19 @@ mod tests {
                 // Headless CI: the service tolerates a missing display.
             }
         }
+    }
+
+    #[test]
+    fn test_screenshot_data_url_wraps_png_bytes() {
+        let result = ScreenshotResult {
+            width: 1,
+            height: 1,
+            png_bytes: PNG_MAGIC.to_vec(),
+        };
+
+        assert_eq!(
+            screenshot_data_url(&result),
+            "data:image/png;base64,iVBORw=="
+        );
     }
 }

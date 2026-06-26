@@ -161,9 +161,12 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
 
             if crate::services::clipboard_ops::write_content_to_system_clipboard(
                 &content,
-                &c_type,
-                html_content.as_deref(),
-                paste_with_format,
+                crate::services::clipboard_ops::ClipboardWriteOptions {
+                    content_type: &c_type,
+                    html_content: html_content.as_deref(),
+                    paste_with_format,
+                    mark_as_self_copy: true,
+                },
             )
             .is_err()
             {

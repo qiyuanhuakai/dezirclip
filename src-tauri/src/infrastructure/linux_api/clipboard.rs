@@ -4,6 +4,7 @@ use std::sync::{Mutex, OnceLock};
 
 static SEQ: AtomicU32 = AtomicU32::new(1);
 static FILE_CLIPBOARD_OWNER: OnceLock<Mutex<Option<x11_clipboard::Clipboard>>> = OnceLock::new();
+static SYSTEM_CLIPBOARD_OWNER: OnceLock<Mutex<Option<arboard::Clipboard>>> = OnceLock::new();
 
 pub struct ImageData {
     pub width: usize,
@@ -130,6 +131,10 @@ pub fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
 }
 
 pub fn set_clipboard_text_and_html(text: String, html: Option<String>) -> AppResult<()> {
+    let owner_store = SYSTEM_CLIPBOARD_OWNER.get_or_init(|| Mutex::new(None));
+    let mut owner = owner_store
+        .lock()
+        .map_err(|_| AppError::Internal("系统剪贴板所有权状态已损坏".to_string()))?;
     let mut clipboard = arboard::Clipboard::new()
         .map_err(|e| AppError::Internal(format!("初始化剪贴板失败: {}", e)))?;
     if let Some(html) = html {
@@ -141,10 +146,15 @@ pub fn set_clipboard_text_and_html(text: String, html: Option<String>) -> AppRes
             .set_text(text)
             .map_err(|e| AppError::Internal(format!("设置剪贴板失败: {}", e)))?;
     }
+    *owner = Some(clipboard);
     Ok(())
 }
 
 pub fn set_clipboard_image_with_formats(data: ImageData) -> Result<(), String> {
+    let owner_store = SYSTEM_CLIPBOARD_OWNER.get_or_init(|| Mutex::new(None));
+    let mut owner = owner_store
+        .lock()
+        .map_err(|_| "系统剪贴板所有权状态已损坏".to_string())?;
     let mut clipboard =
         arboard::Clipboard::new().map_err(|e| format!("初始化剪贴板失败: {}", e))?;
     let image = arboard::ImageData {
@@ -155,6 +165,7 @@ pub fn set_clipboard_image_with_formats(data: ImageData) -> Result<(), String> {
     clipboard
         .set_image(image)
         .map_err(|e| format!("设置图像到剪贴板失败: {}", e))?;
+    *owner = Some(clipboard);
     Ok(())
 }
 
@@ -275,9 +286,21 @@ fn store_file_payload(
 #[cfg(test)]
 mod tests {
     use super::{
-        file_uri_to_path, parse_gnome_copied_files_payload, parse_uri_list_payload,
-        path_to_file_uri,
+        file_uri_to_path, get_clipboard_image, parse_gnome_copied_files_payload,
+        parse_uri_list_payload, path_to_file_uri, set_clipboard_image_with_formats,
+        set_clipboard_text_and_html, ImageData,
     };
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SMOKE_ID: AtomicU64 = AtomicU64::new(1);
+
+    fn run_linux_clipboard_smoke_tests() -> bool {
+        std::env::var("TIEZ_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() == Ok("1")
+    }
+
+    fn system_clipboard_is_reachable() -> bool {
+        arboard::Clipboard::new().is_ok()
+    }
 
     #[test]
     fn parses_gnome_copied_files_payload() {
@@ -332,5 +355,41 @@ mod tests {
             None
         );
         assert_eq!(file_uri_to_path("https://example.com/demo.txt"), None);
+    }
+
+    #[test]
+    fn linux_clipboard_owner_keeps_text_available_after_setter_returns() {
+        if !run_linux_clipboard_smoke_tests() || !system_clipboard_is_reachable() {
+            return;
+        }
+        let id = SMOKE_ID.fetch_add(1, Ordering::Relaxed);
+        let expected = format!("tiez-linux-clipboard-smoke-{id}");
+
+        set_clipboard_text_and_html(expected.clone(), None).expect("write clipboard text");
+        let actual = arboard::Clipboard::new()
+            .expect("open clipboard for readback")
+            .get_text()
+            .expect("read clipboard text");
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn linux_clipboard_owner_keeps_image_available_after_setter_returns() {
+        if !run_linux_clipboard_smoke_tests() || !system_clipboard_is_reachable() {
+            return;
+        }
+
+        set_clipboard_image_with_formats(ImageData {
+            width: 1,
+            height: 1,
+            bytes: vec![255, 0, 0, 255],
+        })
+        .expect("write clipboard image");
+        let image = get_clipboard_image().expect("read clipboard image");
+
+        assert_eq!(image.width, 1);
+        assert_eq!(image.height, 1);
+        assert_eq!(image.bytes, vec![255, 0, 0, 255]);
     }
 }

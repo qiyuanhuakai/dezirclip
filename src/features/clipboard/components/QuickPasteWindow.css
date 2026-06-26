@@ -29,9 +29,9 @@ body.quick-paste #root::before {
   display: flex;
   flex-direction: column;
   background: var(--surface-dialog-bg);
-  border: 1px solid var(--surface-dialog-border, var(--border-light));
+  border: none;
   border-radius: var(--surface-dialog-radius, var(--radius-window));
-  box-shadow: var(--surface-dialog-shadow, none);
+  box-shadow: none;
   overflow: hidden;
   box-sizing: border-box;
 }

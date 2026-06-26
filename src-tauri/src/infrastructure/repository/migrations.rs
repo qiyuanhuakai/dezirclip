@@ -382,6 +382,74 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (14)", [])?;
     }
 
+    if current_version < 15 {
+        conn.execute("BEGIN", [])?;
+        let migration_result = (|| -> Result<()> {
+            if !has_column(conn, "clipboard_history", "ocr_text")? {
+                conn.execute("ALTER TABLE clipboard_history ADD COLUMN ocr_text TEXT", [])?;
+            }
+            if !has_column(conn, "clipboard_history", "ocr_status")? {
+                conn.execute(
+                    "ALTER TABLE clipboard_history ADD COLUMN ocr_status TEXT NOT NULL DEFAULT 'pending'",
+                    [],
+                )?;
+            }
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_clipboard_history_ocr_status
+                    ON clipboard_history (ocr_status)",
+                [],
+            )?;
+            conn.execute_batch(
+                "
+                DROP TRIGGER IF EXISTS clipboard_history_ai;
+                DROP TRIGGER IF EXISTS clipboard_history_ad;
+                DROP TRIGGER IF EXISTS clipboard_history_au;
+                DROP TABLE IF EXISTS clipboard_fts;
+
+                CREATE VIRTUAL TABLE clipboard_fts USING fts5(
+                    content,
+                    preview,
+                    source_app,
+                    content_kinds,
+                    ocr_text,
+                    content='clipboard_history',
+                    content_rowid='id',
+                    tokenize='trigram'
+                );
+
+                CREATE TRIGGER clipboard_history_ai AFTER INSERT ON clipboard_history BEGIN
+                    INSERT INTO clipboard_fts(rowid, content, preview, source_app, content_kinds, ocr_text)
+                    VALUES (new.id, new.content, new.preview, new.source_app, new.content_kinds, new.ocr_text);
+                END;
+
+                CREATE TRIGGER clipboard_history_ad AFTER DELETE ON clipboard_history BEGIN
+                    INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app, content_kinds, ocr_text)
+                    VALUES ('delete', old.id, old.content, old.preview, old.source_app, old.content_kinds, old.ocr_text);
+                END;
+
+                CREATE TRIGGER clipboard_history_au AFTER UPDATE ON clipboard_history BEGIN
+                    INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app, content_kinds, ocr_text)
+                    VALUES ('delete', old.id, old.content, old.preview, old.source_app, old.content_kinds, old.ocr_text);
+                    INSERT INTO clipboard_fts(rowid, content, preview, source_app, content_kinds, ocr_text)
+                    VALUES (new.id, new.content, new.preview, new.source_app, new.content_kinds, new.ocr_text);
+                END;
+                ",
+            )?;
+            conn.execute(
+                "INSERT INTO clipboard_fts(clipboard_fts) VALUES ('rebuild')",
+                [],
+            )?;
+            Ok(())
+        })();
+
+        if let Err(err) = migration_result {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(err);
+        }
+        conn.execute("COMMIT", [])?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (15)", [])?;
+    }
+
     Ok(())
 }
 
@@ -652,7 +720,7 @@ mod tests {
             .expect("drop au");
         conn.execute("DROP TABLE IF EXISTS clipboard_fts", [])
             .expect("drop fts");
-        conn.execute("DELETE FROM schema_migrations WHERE version = 14", [])
+        conn.execute("DELETE FROM schema_migrations WHERE version IN (14, 15)", [])
             .expect("delete v14 row");
 
         // Re-apply migrations: this must re-add columns (already there but the
@@ -698,5 +766,88 @@ mod tests {
             handwritten >= 1,
             "FTS5 rebuild must include ocr_text for updated rows (got count={handwritten})"
         );
+    }
+
+    #[test]
+    fn test_v15_rebuilds_existing_v14_fts_without_ocr_text() {
+        let mut conn = fresh_db();
+        conn.execute("DELETE FROM schema_migrations WHERE version = 15", [])
+            .expect("remove v15 marker");
+        conn.execute_batch(
+            "
+            DROP TRIGGER IF EXISTS clipboard_history_ai;
+            DROP TRIGGER IF EXISTS clipboard_history_ad;
+            DROP TRIGGER IF EXISTS clipboard_history_au;
+            DROP TABLE IF EXISTS clipboard_fts;
+
+            CREATE VIRTUAL TABLE clipboard_fts USING fts5(
+                content,
+                preview,
+                source_app,
+                content_kinds,
+                content='clipboard_history',
+                content_rowid='id',
+                tokenize='trigram'
+            );
+
+            CREATE TRIGGER clipboard_history_ai AFTER INSERT ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(rowid, content, preview, source_app, content_kinds)
+                VALUES (new.id, new.content, new.preview, new.source_app, new.content_kinds);
+            END;
+
+            CREATE TRIGGER clipboard_history_ad AFTER DELETE ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app, content_kinds)
+                VALUES ('delete', old.id, old.content, old.preview, old.source_app, old.content_kinds);
+            END;
+
+            CREATE TRIGGER clipboard_history_au AFTER UPDATE ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(clipboard_fts, rowid, content, preview, source_app, content_kinds)
+                VALUES ('delete', old.id, old.content, old.preview, old.source_app, old.content_kinds);
+                INSERT INTO clipboard_fts(rowid, content, preview, source_app, content_kinds)
+                VALUES (new.id, new.content, new.preview, new.source_app, new.content_kinds);
+            END;
+            ",
+        )
+        .expect("restore old v14 fts surface");
+        conn.execute(
+            "INSERT INTO clipboard_history
+             (content_type, content, html_content, source_app, timestamp, preview,
+              is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+              content_kinds, ocr_text, ocr_status)
+             VALUES ('image', 'data:image/png;base64,old', NULL, 'Screenshot', 1700000000,
+                     'image', 0, 0, '[]', 0, 0, NULL, '[\"image\"]',
+                     'receipt total one hundred yuan', 'done')",
+            [],
+        )
+        .expect("insert old v14 image row");
+
+        let before: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_fts WHERE clipboard_fts MATCH ?1",
+                params!["receipt"],
+                |row| row.get(0),
+            )
+            .expect("old fts count");
+        assert_eq!(before, 0, "old v14 FTS surface should miss OCR text");
+
+        run_migrations(&mut conn).expect("apply v15 migration");
+
+        let version: i32 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .expect("schema version");
+        assert_eq!(version, 15, "v15 migration marker must be written");
+
+        let after: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_fts WHERE clipboard_fts MATCH ?1",
+                params!["receipt"],
+                |row| row.get(0),
+            )
+            .expect("new fts count");
+        assert!(after >= 1, "v15 rebuild must index existing OCR text");
     }
 }

@@ -265,7 +265,7 @@ impl TagRepository for SqliteTagRepository {
     fn get_entries_by_tag(&self, tag: &str) -> Result<Vec<ClipboardEntry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
+            "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.content_kinds, ch.ocr_text, ch.ocr_status
              FROM clipboard_history ch
              INNER JOIN entry_tags et ON ch.id = et.entry_id
              WHERE et.tag = ?
@@ -299,9 +299,12 @@ impl TagRepository for SqliteTagRepository {
                     pinned_order: row.get(11).unwrap_or(0),
                     source_app_path: row.get(12).unwrap_or(None),
                     file_preview_exists: true, // simplified
-                    content_kinds: Vec::new(),
-                    ocr_text: None,
-                    ocr_status: None,
+                    content_kinds: serde_json::from_str(
+                        &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                    )
+                    .unwrap_or_default(),
+                    ocr_text: row.get(14).ok(),
+                    ocr_status: row.get(15).ok(),
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -349,5 +352,38 @@ impl TagRepository for SqliteTagRepository {
         )
         .map_err(|e| e.to_string())?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SqliteTagRepository, TagRepository};
+    use crate::infrastructure::repository::migrations::run_migrations;
+    use rusqlite::{params, Connection};
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn get_entries_by_tag_preserves_ocr_fields() {
+        let mut conn = Connection::open_in_memory().expect("open memory db");
+        run_migrations(&mut conn).expect("run migrations");
+        conn.execute(
+            "INSERT INTO clipboard_history (id, content_type, content, source_app, timestamp, preview, tags, content_kinds, ocr_text, ocr_status)
+             VALUES (?1, 'image', 'data:image/png;base64,AA==', 'test', 1, 'image', '[\"ocr\"]', '[\"image\"]', 'receipt total', 'done')",
+            params![7_i64],
+        )
+        .expect("insert history");
+        conn.execute(
+            "INSERT INTO entry_tags (entry_id, tag) VALUES (?1, ?2)",
+            params![7_i64, "ocr"],
+        )
+        .expect("insert tag");
+
+        let repo = SqliteTagRepository::new(Arc::new(Mutex::new(conn)));
+        let entries = repo.get_entries_by_tag("ocr").expect("entries by tag");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].content_kinds, vec!["image".to_string()]);
+        assert_eq!(entries[0].ocr_text.as_deref(), Some("receipt total"));
+        assert_eq!(entries[0].ocr_status.as_deref(), Some("done"));
     }
 }

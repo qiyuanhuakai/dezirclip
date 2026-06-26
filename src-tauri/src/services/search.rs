@@ -92,6 +92,7 @@ pub fn build_search_query(mode: &SearchMode, limit: u32) -> SearchPlan {
             SearchPlan::Sql {
                 sql: "SELECT id FROM clipboard_history \
                       WHERE content REGEXP ?1 \
+                         OR COALESCE(ocr_text, '') REGEXP ?1 \
                       ORDER BY timestamp DESC \
                       LIMIT ?2"
                     .to_string(),

@@ -196,10 +196,13 @@ pub fn show_quick_paste(app: AppHandle) -> Result<(), String> {
         }
     }
 
+    let _ = window.set_ignore_cursor_events(false);
+    let _ = window.set_always_on_top(true);
     let _ = window.set_focusable(true);
     window
         .show()
         .map_err(|e| format!("Failed to show quick-paste window: {e}"))?;
+    let _ = window.set_always_on_top(true);
     window
         .set_focus()
         .map_err(|e| format!("Failed to focus quick-paste window: {e}"))?;

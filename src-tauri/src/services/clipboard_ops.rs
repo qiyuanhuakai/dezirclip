@@ -167,8 +167,9 @@ pub async fn copy_to_clipboard(
         }
     }
 
+    let paste_image_as_base64_requested = paste_image_as_base64.unwrap_or(false);
     let mut effective_content_type = content_type.clone();
-    if content_type == "image" && paste_image_as_base64.unwrap_or(false) {
+    if content_type == "image" && paste_image_as_base64_requested {
         content = convert_image_content_to_base64(&content)?;
         effective_content_type = "text".to_string();
     }
@@ -181,10 +182,18 @@ pub async fn copy_to_clipboard(
     // 2. Copy to system clipboard
     write_content_to_system_clipboard(
         &content,
-        &effective_content_type,
-        html_content.as_deref(),
-        paste_with_format
-            .unwrap_or(effective_content_type == "rich_text" && html_content.as_deref().is_some()),
+        ClipboardWriteOptions {
+            content_type: &effective_content_type,
+            html_content: html_content.as_deref(),
+            paste_with_format: paste_with_format.unwrap_or(
+                effective_content_type == "rich_text" && html_content.as_deref().is_some(),
+            ),
+            mark_as_self_copy: should_mark_clipboard_write_as_self_copy(
+                id,
+                paste,
+                paste_image_as_base64_requested,
+            ),
+        },
     )?;
 
     // 4. Perform paste action if requested
@@ -205,9 +214,11 @@ pub async fn copy_to_clipboard(
 }
 
 async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResult<()> {
+    let quick_paste_was_focused = hide_quick_paste_before_paste(app_handle).await;
+
     // 1. Only restore focus if our window actually took focus; avoids unnecessary focus flips
     // that can force fullscreen apps into windowed mode.
-    if crate::IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed) {
+    if !quick_paste_was_focused && crate::IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed) {
         let _ = restore_focus_before_paste(app_handle).await;
     }
 
@@ -231,6 +242,21 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
     }
     Ok(())
+}
+
+async fn hide_quick_paste_before_paste(app_handle: &tauri::AppHandle) -> bool {
+    let Some(window) = app_handle.get_webview_window("quick-paste") else {
+        return false;
+    };
+    if !window.is_visible().unwrap_or(false) {
+        return false;
+    }
+
+    let _ = window.set_focusable(false);
+    let _ = window.hide();
+    let _ = restore_focus_before_paste(app_handle).await;
+    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+    true
 }
 
 async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult<()> {
@@ -310,21 +336,39 @@ fn build_content_kinds_json(content: &str) -> String {
     serde_json::to_string(&kinds).unwrap_or_else(|_| "[]".to_string())
 }
 
+pub(crate) struct ClipboardWriteOptions<'a> {
+    pub content_type: &'a str,
+    pub html_content: Option<&'a str>,
+    pub paste_with_format: bool,
+    pub mark_as_self_copy: bool,
+}
+
+pub(crate) fn should_mark_clipboard_write_as_self_copy(
+    id: i64,
+    paste: bool,
+    paste_image_as_base64: bool,
+) -> bool {
+    paste || (id != 0 && !paste_image_as_base64)
+}
+
 pub(crate) fn write_content_to_system_clipboard(
     content: &str,
-    content_type: &str,
-    html_content: Option<&str>,
-    paste_with_format: bool,
+    options: ClipboardWriteOptions<'_>,
 ) -> AppResult<()> {
     let (content_hash, current_time) = calculate_content_hash(content);
     let _content_kinds_json = build_content_kinds_json(content);
 
-    let clipboard_hashes = match content_type {
+    let clipboard_hashes = match options.content_type {
         "image" | "video" | "file" => {
-            copy_file_like_content(content, content_type, current_time, content_hash)?
+            copy_file_like_content(content, options.content_type, current_time, content_hash)?
         }
-        ct if ct == "rich_text" || (paste_with_format && html_content.is_some()) => {
-            copy_rich_text_content(content, html_content, paste_with_format, current_time)?
+        ct if ct == "rich_text" || (options.paste_with_format && options.html_content.is_some()) => {
+            copy_rich_text_content(
+                content,
+                options.html_content,
+                options.paste_with_format,
+                current_time,
+            )?
         }
         _ => {
             copy_text_with_retry(content)?;
@@ -332,9 +376,11 @@ pub(crate) fn write_content_to_system_clipboard(
         }
     };
 
-    crate::LAST_APP_SET_HASH.store(clipboard_hashes.0, Ordering::SeqCst);
-    crate::LAST_APP_SET_HASH_ALT.store(clipboard_hashes.1, Ordering::SeqCst);
-    crate::LAST_APP_SET_TIMESTAMP.store(current_time, Ordering::SeqCst);
+    if options.mark_as_self_copy {
+        crate::LAST_APP_SET_HASH.store(clipboard_hashes.0, Ordering::SeqCst);
+        crate::LAST_APP_SET_HASH_ALT.store(clipboard_hashes.1, Ordering::SeqCst);
+        crate::LAST_APP_SET_TIMESTAMP.store(current_time, Ordering::SeqCst);
+    }
 
     Ok(())
 }
@@ -456,11 +502,10 @@ fn copy_rich_text_content(
             }
             #[cfg(not(target_os = "windows"))]
             {
-                // Linux fallback: copy as plain text
-                let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
-                clipboard
-                    .set_text(content.to_string())
-                    .map_err(AppError::from)?;
+                crate::infrastructure::linux_api::clipboard::set_clipboard_text_and_html(
+                    content.to_string(),
+                    None,
+                )?;
                 return Ok((content_hash.max(1), 0));
             }
         }
@@ -475,11 +520,10 @@ fn copy_rich_text_content(
     }
     #[cfg(not(target_os = "windows"))]
     {
-        // Linux fallback: copy as plain text
-        let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
-        clipboard
-            .set_text(content.to_string())
-            .map_err(AppError::from)?;
+        crate::infrastructure::linux_api::clipboard::set_clipboard_text_and_html(
+            content.to_string(),
+            None,
+        )?;
     }
     let (content_hash, _) = calculate_content_hash(content);
     Ok((content_hash.max(1), 0))
@@ -648,30 +692,43 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
 
 fn copy_text_with_retry(content: &str) -> AppResult<()> {
     println!("[DEBUG] Copying text to clipboard: {} chars", content.len());
-    let mut retries = 3;
-    while retries > 0 {
-        let res = {
-            let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-            clipboard.set_text(content.to_string())
-        };
-
-        match res {
-            Ok(_) => {
-                println!("[DEBUG] Text copied to clipboard successfully");
-                return Ok(());
-            }
-            Err(_e) if retries > 1 => {
-                retries -= 1;
-                println!(
-                    "[DEBUG] Clipboard set failed, retrying... ({} left)",
-                    retries
-                );
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            Err(e) => return Err(AppError::Internal(format!("Clipboard error: {}", e))),
-        }
+    #[cfg(target_os = "linux")]
+    {
+        crate::infrastructure::linux_api::clipboard::set_clipboard_text_and_html(
+            content.to_string(),
+            None,
+        )?;
+        println!("[DEBUG] Text copied to clipboard successfully");
+        return Ok(());
     }
-    Ok(())
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut retries = 3;
+        while retries > 0 {
+            let res = {
+                let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+                clipboard.set_text(content.to_string())
+            };
+
+            match res {
+                Ok(_) => {
+                    println!("[DEBUG] Text copied to clipboard successfully");
+                    return Ok(());
+                }
+                Err(_e) if retries > 1 => {
+                    retries -= 1;
+                    println!(
+                        "[DEBUG] Clipboard set failed, retrying... ({} left)",
+                        retries
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => return Err(AppError::Internal(format!("Clipboard error: {}", e))),
+            }
+        }
+        Ok(())
+    }
 }
 
 async fn perform_paste_action(
@@ -1472,5 +1529,25 @@ mod tests {
     fn test_build_content_kinds_no_match() {
         let json = build_content_kinds_json("hello world");
         assert_eq!(json, "[]");
+    }
+
+    #[test]
+    fn test_generated_clipboard_writes_are_not_marked_as_self_copy() {
+        assert!(
+            should_mark_clipboard_write_as_self_copy(7, true, false),
+            "pasting an existing entry must suppress re-capture"
+        );
+        assert!(
+            should_mark_clipboard_write_as_self_copy(7, false, false),
+            "copying an existing entry must suppress duplicate history rows"
+        );
+        assert!(
+            !should_mark_clipboard_write_as_self_copy(0, false, false),
+            "generated text such as transforms must be visible to the clipboard monitor"
+        );
+        assert!(
+            !should_mark_clipboard_write_as_self_copy(7, false, true),
+            "image-to-base64 creates new text and must be visible to the clipboard monitor"
+        );
     }
 }
