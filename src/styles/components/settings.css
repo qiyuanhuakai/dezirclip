@@ -183,8 +183,60 @@
   box-shadow: 1px 1px 0 var(--shadow-color);
 }
 
+.setting-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+}
+
 .setting-btn--compact {
   padding: 5px 10px;
+}
+
+.tools-action-row {
+  gap: 10px;
+}
+
+.tools-note-item {
+  justify-content: flex-start;
+  min-height: 0;
+}
+
+.tools-note,
+.tools-skill-method,
+.tools-path-text {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+}
+
+.tools-skill-card {
+  align-items: stretch;
+}
+
+.tools-skill-command {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--surface-control-border, var(--border-dark));
+  border-radius: var(--surface-control-radius, 6px);
+  background: var(--surface-control-bg, var(--bg-body));
+  color: var(--text-primary);
+  box-shadow: var(--surface-control-shadow, inset 2px 2px 0 rgba(0, 0, 0, 0.05));
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-path-text {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .setting-item {

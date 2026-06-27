@@ -1,3 +1,4 @@
+use crate::infrastructure::cli_path;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -6,10 +7,20 @@ pub struct CliInfo {
     pub cli_path: Option<String>,
     pub cli_version: String,
     pub skill_path: Option<String>,
+    pub cli_on_path: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CliPathResult {
+    pub installed_path: String,
+    pub path_entry: String,
+    pub already_linked: bool,
+    pub requires_new_terminal: bool,
 }
 
 #[tauri::command]
 pub fn get_cli_info() -> Result<CliInfo, String> {
+    let cli_on_path = find_cli_on_path().is_some();
     let cli_path = find_cli_binary();
     let cli_version = get_cli_version(&cli_path);
     let skill_path = find_skill_path();
@@ -18,33 +29,73 @@ pub fn get_cli_info() -> Result<CliInfo, String> {
         cli_path,
         cli_version,
         skill_path,
+        cli_on_path,
+    })
+}
+
+#[tauri::command]
+pub fn add_cli_to_path() -> Result<CliPathResult, String> {
+    let cli_path = find_bundled_cli_binary()
+        .or_else(|| find_cli_on_path().map(PathBuf::from))
+        .ok_or_else(|| "tiez-c executable not found".to_string())?;
+    let result = cli_path::add_cli_to_path(&cli_path)?;
+    Ok(CliPathResult {
+        installed_path: result.installed_path.to_string_lossy().to_string(),
+        path_entry: result.path_entry.to_string_lossy().to_string(),
+        already_linked: result.already_linked,
+        requires_new_terminal: result.requires_new_terminal,
     })
 }
 
 fn find_cli_binary() -> Option<String> {
+    find_bundled_cli_binary()
+        .map(|path| path.to_string_lossy().to_string())
+        .or_else(find_cli_on_path)
+}
+
+fn find_bundled_cli_binary() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let win_path = dir.join("tiez-c.exe");
             if win_path.exists() {
-                return Some(win_path.to_string_lossy().to_string());
+                return Some(win_path);
             }
             let unix_path = dir.join("tiez-c");
             if unix_path.exists() {
-                return Some(unix_path.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    if let Ok(output) = std::process::Command::new("which").arg("tiez-c").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
+                return Some(unix_path);
             }
         }
     }
 
     None
+}
+
+fn find_cli_on_path() -> Option<String> {
+    let (command, arg) = path_lookup_command();
+    let output = std::process::Command::new(command).arg(arg).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let path = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+fn path_lookup_command() -> (&'static str, &'static str) {
+    if cfg!(target_os = "windows") {
+        ("where", "tiez-c.exe")
+    } else {
+        ("which", "tiez-c")
+    }
 }
 
 fn get_cli_version(cli_path: &Option<String>) -> String {
@@ -82,4 +133,21 @@ fn find_skill_path() -> Option<String> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_path_lookup_command_uses_platform_binary_name() {
+        let (command, arg) = path_lookup_command();
+        if cfg!(target_os = "windows") {
+            assert_eq!(command, "where");
+            assert_eq!(arg, "tiez-c.exe");
+        } else {
+            assert_eq!(command, "which");
+            assert_eq!(arg, "tiez-c");
+        }
+    }
 }

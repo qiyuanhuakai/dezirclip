@@ -12,6 +12,14 @@ interface CliInfo {
     cli_path: string | null;
     cli_version: string;
     skill_path: string | null;
+    cli_on_path: boolean;
+}
+
+interface CliPathResult {
+    installed_path: string;
+    path_entry: string;
+    already_linked: boolean;
+    requires_new_terminal: boolean;
 }
 
 interface ToolsSettingsGroupProps {
@@ -29,7 +37,10 @@ const ToolsSettingsGroup = ({
 }: ToolsSettingsGroupProps) => {
     const [cliInfo, setCliInfo] = useState<CliInfo | null>(null);
     const [appVersion, setAppVersion] = useState("");
-    const [platform, setPlatform] = useState("");
+    const [platformKey, setPlatformKey] = useState("");
+    const [pathUpdating, setPathUpdating] = useState(false);
+    const [pathStatusKey, setPathStatusKey] = useState<string | null>(null);
+    const [pathStatusDetail, setPathStatusDetail] = useState("");
     const [buildDate] = useState(() => {
         try {
             return new Date().toISOString().split("T")[0];
@@ -38,26 +49,58 @@ const ToolsSettingsGroup = ({
         }
     });
 
-    useEffect(() => {
+    const refreshCliInfo = () => {
         invoke<CliInfo>("get_cli_info")
             .then(setCliInfo)
             .catch(() => {});
-    }, []);
+    };
 
     useEffect(() => {
+        refreshCliInfo();
         import("@tauri-apps/api/app").then(({ getVersion }) => {
             getVersion().then(setAppVersion).catch(() => {});
         });
         invoke<{ is_linux: boolean }>("get_platform_info")
-            .then((info) => setPlatform(info.is_linux ? "linux" : "windows"))
-            .catch(() => setPlatform(navigator.platform.startsWith("Win") ? "windows" : "linux"));
+            .then((info) => setPlatformKey(info.is_linux ? "platform_linux" : "platform_windows"))
+            .catch(() => setPlatformKey(""));
     }, []);
 
-    const handleCopyInstallCommand = () => {
-        const cmd = platform === "windows"
-            ? "powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1"
-            : "bash skills/tiez-c-cli/install.sh";
-        navigator.clipboard.writeText(cmd).catch(console.error);
+    const handleAddCliToPath = async () => {
+        setPathUpdating(true);
+        setPathStatusKey(null);
+        setPathStatusDetail("");
+        try {
+            const result = await invoke<CliPathResult>("add_cli_to_path");
+            refreshCliInfo();
+            if (result.already_linked) {
+                setPathStatusKey("cli_path_already_linked");
+            } else if (result.requires_new_terminal) {
+                setPathStatusKey("cli_path_added_restart");
+            } else {
+                setPathStatusKey("cli_path_added");
+            }
+            setPathStatusDetail(result.path_entry);
+        } catch (e: unknown) {
+            setPathStatusKey("cli_path_add_failed");
+            setPathStatusDetail(e instanceof Error ? e.message : String(e));
+        } finally {
+            setPathUpdating(false);
+        }
+    };
+
+    const pathStatusText = () => {
+        switch (pathStatusKey) {
+            case "cli_path_added":
+                return t("cli_path_added");
+            case "cli_path_added_restart":
+                return t("cli_path_added_restart");
+            case "cli_path_already_linked":
+                return t("cli_path_already_linked");
+            case "cli_path_add_failed":
+                return t("cli_path_add_failed");
+            default:
+                return "";
+        }
     };
 
     return (
@@ -98,21 +141,46 @@ const ToolsSettingsGroup = ({
                         </div>
                     )}
 
-                    <div className="setting-item" style={{ marginLeft: "18px" }}>
-                        <button
-                            className="setting-btn"
-                            onClick={handleCopyInstallCommand}
-                        >
-                            {t("copy_install_command")}
-                        </button>
+                    <div className="setting-item tools-action-row" style={{ marginLeft: "18px" }}>
+                        <div className="item-label-group">
+                            <span className="item-label">{t("cli_path_status")}</span>
+                            <span className="hint">
+                                {cliInfo?.cli_on_path
+                                    ? t("cli_path_ready")
+                                    : cliInfo?.cli_path
+                                        ? t("cli_path_missing_hint")
+                                        : t("cli_not_found")}
+                            </span>
+                        </div>
+                        {cliInfo?.cli_path && !cliInfo.cli_on_path && (
+                            <button
+                                className="setting-btn setting-btn--compact"
+                                onClick={handleAddCliToPath}
+                                disabled={pathUpdating}
+                            >
+                                {pathUpdating ? t("processing") : t("add_to_path")}
+                            </button>
+                        )}
                     </div>
 
-                    <div className="setting-item">
+                    {pathStatusKey && (
+                        <div className="setting-item tools-note-item" style={{ marginLeft: "18px" }}>
+                            <span className="tools-note">
+                                {pathStatusText()}{pathStatusDetail ? ` ${pathStatusDetail}` : ""}
+                            </span>
+                        </div>
+                    )}
+
+                    <div className="setting-item column tools-skill-card">
                         <LabelWithHint
                             label={t("agent_skill")}
                             hint={t("agent_skill")}
                             hintKey="agent_skill"
                         />
+                        <div className="tools-skill-method">
+                            {t("skill_acquire_method")}
+                        </div>
+                        <code className="tools-skill-command">skills/tiez-c-cli</code>
                     </div>
 
                     {cliInfo?.skill_path && (
@@ -120,7 +188,7 @@ const ToolsSettingsGroup = ({
                             <div className="item-label-group">
                                 <span className="item-label">{t("skill_path")}</span>
                             </div>
-                            <span style={{ fontSize: "12px", opacity: 0.7, maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span className="tools-path-text">
                                 {cliInfo.skill_path}
                             </span>
                         </div>
@@ -148,7 +216,7 @@ const ToolsSettingsGroup = ({
                             <span className="item-label">{t("platform_label")}</span>
                         </div>
                         <span style={{ fontSize: "12px", opacity: 0.7 }}>
-                            {platform === "linux" ? t("platform_linux") : t("platform_windows")}
+                            {platformKey ? t(platformKey) : "-"}
                         </span>
                     </div>
 

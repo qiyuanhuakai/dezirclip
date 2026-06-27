@@ -1,4 +1,5 @@
 pub mod encryption;
+pub mod cli_path;
 pub mod repository;
 pub mod webview_environment;
 #[cfg(target_os = "windows")]

@@ -29,3 +29,4 @@ AGENTS.md
 tiez-c-standalone/target/
 backup-e2e/
 src-tauri/binaries/
+.cortexkit/
