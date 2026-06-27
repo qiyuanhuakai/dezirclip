@@ -155,6 +155,10 @@
 .setting-btn {
   appearance: none;
   -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-family: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -166,17 +170,6 @@
   padding: 7px 12px;
   cursor: pointer;
   transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
-}
-
-.tools-install-copy-btn {
-  color: var(--text-primary);
-  background: var(--bg-button);
-  border-color: var(--border-dark);
-  box-shadow: var(--surface-control-shadow, 2px 2px 0 var(--shadow-color));
-}
-
-.tools-install-copy-btn:hover {
-  background: var(--surface-history-hover-bg, var(--bg-input));
 }
 
 .setting-btn:hover {

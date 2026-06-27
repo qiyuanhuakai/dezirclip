@@ -46,7 +46,8 @@
   border-radius: var(--surface-confirm-radius);
 }
 
-:is(.theme-mica, .theme-acrylic) .confirm-dialog-button {
+:is(.theme-mica, .theme-acrylic) .confirm-dialog-button,
+:is(.theme-mica, .theme-acrylic) .setting-btn {
   border: 1px solid var(--control-confirm-btn-border);
   background: var(--control-confirm-btn-bg);
   box-shadow: var(--control-confirm-btn-shadow);
@@ -57,13 +58,15 @@
   color: var(--control-confirm-btn-text);
 }
 
-:is(.theme-mica, .theme-acrylic) .confirm-dialog-button:hover {
+:is(.theme-mica, .theme-acrylic) .confirm-dialog-button:hover,
+:is(.theme-mica, .theme-acrylic) .setting-btn:hover {
   background: var(--control-confirm-btn-hover-bg);
   transform: translateY(-1px);
   box-shadow: var(--control-confirm-btn-hover-shadow);
 }
 
-:is(.theme-mica, .theme-acrylic) .confirm-dialog-button:active {
+:is(.theme-mica, .theme-acrylic) .confirm-dialog-button:active,
+:is(.theme-mica, .theme-acrylic) .setting-btn:active {
   transform: translateY(0);
   box-shadow: none;
 }
