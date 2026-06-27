@@ -51,7 +51,7 @@
   border: 1px solid var(--control-confirm-btn-border);
   background: var(--control-confirm-btn-bg);
   box-shadow: var(--control-confirm-btn-shadow);
-  border-radius: 6px;
+  border-radius: var(--surface-control-radius, 6px);
   transform: none;
   font-weight: 600;
   text-transform: none;

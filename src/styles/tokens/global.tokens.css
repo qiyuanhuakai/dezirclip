@@ -39,6 +39,7 @@
   --surface-confirm-border: rgba(255, 255, 255, 0.5);
   --surface-confirm-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   --surface-confirm-radius: 12px;
+  --surface-control-radius: 6px;
   --surface-settings-group-bg: rgba(255, 255, 255, 0.5);
   --surface-settings-group-border: rgba(255, 255, 255, 0.3);
   --surface-settings-group-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
