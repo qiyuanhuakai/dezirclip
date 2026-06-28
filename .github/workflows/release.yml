@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish-tauri:
+    name: Tauri release (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: windows-latest
+            args: ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            libpipewire-0.3-dev \
+            libgbm-dev \
+            libx11-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxtst-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Publish Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: DezirClip ${{ github.ref_name }}
+          releaseBody: Download the matching installer or standalone dzc archive for your platform.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  publish-dzc:
+    name: dzc standalone release (${{ matrix.platform }})
+    needs: publish-tauri
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            archive: dzc-linux-x86_64.tar.gz
+          - platform: windows-latest
+            archive: dzc-windows-x86_64.zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: dzc-standalone -> target
+
+      - name: Build dzc standalone
+        working-directory: dzc-standalone
+        run: cargo build --release
+
+      - name: Package dzc for Linux
+        if: runner.os == 'Linux'
+        working-directory: dzc-standalone/target/release
+        run: tar -czf ../../../${{ matrix.archive }} dzc
+
+      - name: Package dzc for Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dzc-standalone/target/release/dzc.exe -DestinationPath ${{ matrix.archive }} -Force
+
+      - name: Upload dzc archive to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.ref_name }} ${{ matrix.archive }} --clobber

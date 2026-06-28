@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  DEZIRCLIP_DISABLE_LINUX_SERVICES: window_tracker,edge_docking,mouse_hotkey
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Check i18n keys
+        run: npm run i18n:check
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Build frontend
+        run: npm run build
+
+  tauri:
+    name: Tauri backend (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - ubuntu-22.04
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            libpipewire-0.3-dev \
+            libgbm-dev \
+            libx11-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxtst-dev
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Test Tauri crate
+        working-directory: src-tauri
+        run: cargo test
+
+      - name: Build Tauri crate
+        working-directory: src-tauri
+        run: cargo build
+
+  dzc-standalone:
+    name: dzc standalone
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: dzc-standalone -> target
+
+      - name: Test dzc standalone
+        working-directory: dzc-standalone
+        run: cargo test
+
+      - name: Build dzc standalone
+        working-directory: dzc-standalone
+        run: cargo build
