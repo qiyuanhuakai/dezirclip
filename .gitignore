@@ -29,3 +29,4 @@ dzc-standalone/target/
 backup-e2e/
 src-tauri/binaries/
 .cortexkit/
+icon.png
