@@ -64,13 +64,13 @@ git clone https://github.com/yourusername/dezirclip.git
 cd dezirclip
 
 # 安装前端依赖
-npm install
+pnpm install
 
 # 开发模式运行
-npm run tauri:dev
+pnpm run tauri:dev
 
 # 构建发布版本
-npm run tauri:build
+pnpm run tauri:build
 ```
 
 构建完成后，安装包位于 `src-tauri/target/release/bundle/` 目录：

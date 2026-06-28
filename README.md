@@ -21,17 +21,17 @@ It focuses on desktop-local clipboard history, quick paste, region screenshots, 
 ### Development
 
 ```bash
-npm install
-npm run tauri:dev
-npm run tauri:build
+pnpm install
+pnpm run tauri:dev
+pnpm run tauri:build
 ```
 
 Useful checks:
 
 ```bash
-npm run test:unit
-npm run build
-npm run i18n:check
+pnpm run test:unit
+pnpm run build
+pnpm run i18n:check
 cd src-tauri && cargo test
 cd ../dzc-standalone && cargo test
 ```
@@ -108,17 +108,17 @@ DezirClip 是一个面向 Windows 和 Linux 的本地剪贴板工作台，使用
 ### 开发
 
 ```bash
-npm install
-npm run tauri:dev
-npm run tauri:build
+pnpm install
+pnpm run tauri:dev
+pnpm run tauri:build
 ```
 
 常用检查：
 
 ```bash
-npm run test:unit
-npm run build
-npm run i18n:check
+pnpm run test:unit
+pnpm run build
+pnpm run i18n:check
 cd src-tauri && cargo test
 cd ../dzc-standalone && cargo test
 ```

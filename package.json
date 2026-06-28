@@ -2,6 +2,7 @@
   "name": "dezirclip",
   "private": true,
   "version": "0.0.1",
+  "packageManager": "pnpm@11.0.9",
   "type": "module",
   "scripts": {
     "dev": "vite",

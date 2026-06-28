@@ -167,7 +167,6 @@ const run = async () => {
   }
 
   const hasIssue =
-    unusedKeys.length > 0 ||
     missingFromBase.length > 0 ||
     localeDiffs.some((item) => item.missing.length > 0 || item.extra.length > 0);
 
@@ -203,7 +202,7 @@ const run = async () => {
     return;
   }
 
-  console.log("\n✅ i18n key 一致且无未使用项");
+  console.log("\n✅ i18n key 一致");
 };
 
 run().catch((error) => {

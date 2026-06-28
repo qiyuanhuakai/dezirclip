@@ -427,7 +427,7 @@ dzc list --tag todo --ids | xargs -I {} sh -c 'dzc get {} --preview | grep -i "f
 从命令行快速将文本加入剪贴板历史：
 
 ```bash
-dzc add "npm run build"
+dzc add "pnpm run build"
 dzc add "docker compose up -d"
 ```
 

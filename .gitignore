@@ -4,6 +4,7 @@
 
 # Node / frontend
 node_modules/
+package-lock.json
 dist/
 
 # Tauri / Rust build outputs
@@ -29,4 +30,3 @@ dzc-standalone/target/
 backup-e2e/
 src-tauri/binaries/
 .cortexkit/
-icon.png
