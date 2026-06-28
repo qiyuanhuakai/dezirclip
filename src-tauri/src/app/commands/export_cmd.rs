@@ -166,20 +166,28 @@ mod tests {
 
     #[test]
     fn test_export_to_file_json_writes_valid_file() {
-        let tmp_path = "/tmp/test_export_cmd.json";
-        let _ = std::fs::remove_file(tmp_path);
+        let tmp_path = std::env::temp_dir().join(format!(
+            "dezirclip-export-cmd-{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&tmp_path);
         let repo = setup_test_repo();
         seed_entry(&repo);
 
         let entries = repo.get_history(i32::MAX, 0, None).expect("load history");
-        let result = export_entries(entries, tmp_path.to_string(), "json".to_string(), None);
+        let result = export_entries(
+            entries,
+            tmp_path.to_string_lossy().to_string(),
+            "json".to_string(),
+            None,
+        );
         assert!(
             result.is_ok(),
             "json export should succeed: {:?}",
             result.err()
         );
-        assert!(std::path::Path::new(tmp_path).exists(), "file should exist");
-        let content = std::fs::read_to_string(tmp_path).expect("read file");
+        assert!(tmp_path.exists(), "file should exist");
+        let content = std::fs::read_to_string(&tmp_path).expect("read file");
         let parsed: serde_json::Value = serde_json::from_str(&content).expect("valid json");
         assert!(
             parsed.get("version").is_some(),
