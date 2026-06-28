@@ -295,7 +295,7 @@ mod tests {
     static SMOKE_ID: AtomicU64 = AtomicU64::new(1);
 
     fn run_linux_clipboard_smoke_tests() -> bool {
-        std::env::var("TIEZ_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() == Ok("1")
+        std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() == Ok("1")
     }
 
     fn system_clipboard_is_reachable() -> bool {
@@ -363,7 +363,7 @@ mod tests {
             return;
         }
         let id = SMOKE_ID.fetch_add(1, Ordering::Relaxed);
-        let expected = format!("tiez-linux-clipboard-smoke-{id}");
+        let expected = format!("dezirclip-linux-clipboard-smoke-{id}");
 
         set_clipboard_text_and_html(expected.clone(), None).expect("write clipboard text");
         let actual = arboard::Clipboard::new()

@@ -727,7 +727,7 @@ pub unsafe fn set_clipboard_image_with_formats(
     let gif_temp_path: Option<String> = if let Some(gif_bytes) = gif_data {
         let temp_dir = std::env::temp_dir();
         let filename = format!(
-            "TieZ_GIF_{}.gif",
+            "DezirClip_GIF_{}.gif",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

@@ -1,8 +1,8 @@
 #!/bin/bash
-# Symlink tiez-c-cli skill to ~/.claude/skills/tiez-c-cli
+# Symlink dzc-cli skill to ~/.claude/skills/dzc-cli
 set -e
 SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
-TARGET="$HOME/.claude/skills/tiez-c-cli"
+TARGET="$HOME/.claude/skills/dzc-cli"
 if [[ "$1" == "--uninstall" ]]; then
     rm -f "$TARGET"
     echo "Uninstalled: $TARGET"

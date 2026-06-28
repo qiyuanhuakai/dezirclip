@@ -75,7 +75,7 @@ fn save_screenshot_to_history(app: &AppHandle, result: &ScreenshotResult) {
         ClipboardData::Image {
             data_url: screenshot_data_url(result),
         },
-        Some("TieZ Screenshot".to_string()),
+        Some("DezirClip Screenshot".to_string()),
         None,
     );
 }

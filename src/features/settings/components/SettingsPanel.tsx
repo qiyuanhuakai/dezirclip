@@ -159,7 +159,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         handleResetSettings
     } = props;
 
-    const [emailCopied, setEmailCopied] = useState(false);
     const [appVersion, setAppVersion] = useState("");
     const [openHints, setOpenHints] = useState<Set<string>>(new Set());
     const [privacyKindsOpen, setPrivacyKindsOpen] = useState(false);
@@ -406,8 +405,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 t={t}
                 appVersion={appVersion}
                 onResetSettings={handleResetSettings}
-                emailCopied={emailCopied}
-                setEmailCopied={setEmailCopied}
             />
 
         </motion.div>

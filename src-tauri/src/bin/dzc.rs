@@ -1,4 +1,4 @@
-//! `tiez-c` — clipboard manager CLI binary.
+//! `dzc` — clipboard manager CLI binary.
 //!
 //! Wire-up:
 //! * clap parses `Cli` → `Commands::*` (each variant owns its `*Args`).
@@ -9,7 +9,7 @@
 //!   placeholder `println!` for now — Task 58 fills them in.
 //!
 //! DB initialization:
-//! This binary lives in the `tiez-app` crate and shares its
+//! This binary lives in the `dezirclip` crate and shares its
 //! `database::init_db` + `repository::migrations::run` plumbing. The
 //! repo handles are built lazily on first use (see `open_repos`) so
 //! `--help` and parse-error paths don't touch the filesystem.
@@ -19,17 +19,18 @@ use std::sync::{Arc, Mutex};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use tiez_app::cli;
-use tiez_app::cli::search::SearchMode;
-use tiez_app::domain::models::ClipboardEntry;
-use tiez_app::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-use tiez_app::infrastructure::repository::migrations;
-use tiez_app::infrastructure::repository::tag_repo::SqliteTagRepository;
+use dezirclip::cli;
+use dezirclip::cli::search::SearchMode;
+use dezirclip::domain::models::ClipboardEntry;
+use dezirclip::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+use dezirclip::infrastructure::repository::migrations;
+use dezirclip::infrastructure::repository::tag_repo::SqliteTagRepository;
 
-const APP_IDENTIFIER: &str = "com.tiez.clipboard";
+const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
+const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
 
 #[derive(Parser)]
-#[command(name = "tiez-c", version, about = "tiez-clipboard CLI")]
+#[command(name = "dzc", version, about = "DezirClip CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -181,11 +182,11 @@ enum CliTagCommand {
 #[derive(Args)]
 struct ExportArgs {
     path: String,
-    /// Force encrypted output. Auto-detected when `path` ends in `.tiez`.
+    /// Force encrypted output. Auto-detected when `path` ends in `.dzc` or `.tiez`.
     #[arg(long)]
     encrypted: bool,
     /// Passphrase for encrypted output. Required when `--encrypted` is
-    /// set or the path is `.tiez`; must be at least 12 characters.
+    /// set or the path is encrypted; must be at least 12 characters.
     #[arg(long)]
     passphrase: Option<String>,
     /// Suppress the success summary; emit only an exit code.
@@ -200,7 +201,7 @@ struct ImportArgs {
     /// `replace` clears the table first.
     #[arg(long, default_value = "merge")]
     mode: String,
-    /// Passphrase for `.tiez` files. Required when the input is
+    /// Passphrase for encrypted backup files. Required when the input is
     /// encrypted; ignored for plaintext JSON.
     #[arg(long)]
     passphrase: Option<String>,
@@ -414,17 +415,30 @@ fn open_repos() -> Result<(Arc<SqliteClipboardRepository>, Arc<SqliteTagReposito
 }
 
 fn database_path() -> Result<PathBuf, String> {
-    database_path_from_override(std::env::var_os("TIEZ_DB_PATH").map(PathBuf::from))
+    database_path_from_override(
+        std::env::var_os("DEZIRCLIP_DB_PATH")
+            .or_else(|| std::env::var_os("TIEZ_DB_PATH"))
+            .map(PathBuf::from),
+    )
 }
 
 fn database_path_from_override(path: Option<PathBuf>) -> Result<PathBuf, String> {
     if let Some(path) = path {
         if path.as_os_str().is_empty() {
-            return Err("TIEZ_DB_PATH is empty".to_string());
+            return Err("database path override is empty".to_string());
         }
         return Ok(path);
     }
-    Ok(data_dir()?.join("clipboard.db"))
+    let dir = data_dir()?;
+    let db_path = dir.join("clipboard.db");
+    if db_path.exists() {
+        return Ok(db_path);
+    }
+    let legacy_db_path = legacy_data_dir()?.join("clipboard.db");
+    if legacy_db_path.exists() {
+        return Ok(legacy_db_path);
+    }
+    Ok(db_path)
 }
 
 fn data_dir() -> Result<PathBuf, String> {
@@ -448,6 +462,29 @@ fn data_dir() -> Result<PathBuf, String> {
 
 fn app_data_dir(base: PathBuf) -> PathBuf {
     base.join(APP_IDENTIFIER)
+}
+
+fn legacy_app_data_dir(base: PathBuf) -> PathBuf {
+    base.join(LEGACY_APP_IDENTIFIER)
+}
+
+fn legacy_data_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(p) = std::env::var_os("XDG_DATA_HOME") {
+            return Ok(legacy_app_data_dir(PathBuf::from(p)));
+        }
+        if let Some(home) = std::env::var_os("HOME") {
+            return Ok(legacy_app_data_dir(PathBuf::from(home).join(".local/share")));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(p) = std::env::var_os("APPDATA") {
+            return Ok(legacy_app_data_dir(PathBuf::from(p)));
+        }
+    }
+    Ok(legacy_app_data_dir(std::env::temp_dir()))
 }
 
 // Re-export so the placeholder `add` etc. can use the domain types
@@ -477,17 +514,17 @@ mod tests {
     }
 
     #[test]
-    fn test_database_path_honors_tiez_db_path() {
+    fn test_database_path_honors_dezirclip_db_path() {
         let path =
-            database_path_from_override(Some(PathBuf::from("/tmp/tiez-test.db"))).expect("db path");
-        assert_eq!(path, PathBuf::from("/tmp/tiez-test.db"));
+            database_path_from_override(Some(PathBuf::from("/tmp/dezirclip-test.db"))).expect("db path");
+        assert_eq!(path, PathBuf::from("/tmp/dezirclip-test.db"));
     }
 
     #[test]
     fn test_data_dir_uses_tauri_identifier() {
         assert_eq!(
-            app_data_dir(PathBuf::from("/tmp/tiez-xdg")),
-            PathBuf::from("/tmp/tiez-xdg").join(APP_IDENTIFIER)
+            app_data_dir(PathBuf::from("/tmp/dezirclip-xdg")),
+            PathBuf::from("/tmp/dezirclip-xdg").join(APP_IDENTIFIER)
         );
     }
 }

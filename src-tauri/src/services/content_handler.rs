@@ -46,7 +46,7 @@ pub async fn open_content(
 
     let app_path = get_app_path_for_content_type(&state, &content_type)?;
     let mut temp_path = std::env::temp_dir();
-    let filename = format!("TieZ_Clip_{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+    let filename = format!("DezirClip_Clip_{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
     let mut use_direct_path = false;
 
     // Handle links/URLs
@@ -170,15 +170,7 @@ async fn launch_default_handler(content: &str) -> Result<(), AppError> {
             .map_err(|e| AppError::Internal(format!("启动默认浏览器失败: {}", e)))?;
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(content)
-            .spawn()
-            .map_err(|e| AppError::Internal(format!("启动默认浏览器失败: {}", e)))?;
-    }
-
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    #[cfg(not(target_os = "windows"))]
     {
         Command::new("xdg-open")
             .arg(content)
@@ -293,15 +285,7 @@ async fn launch_file_with_app(
                     }
                 }
             }
-            // Non-Windows fallback
-            #[cfg(target_os = "macos")]
-            {
-                Command::new("open").arg(safe_path).spawn().map_err(|e| {
-                    AppError::Internal(format!("启动 UWP 程序失败 (Fallback): {}", e))
-                })?;
-            }
-
-            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+            #[cfg(not(target_os = "windows"))]
             {
                 Command::new("xdg-open")
                     .arg(safe_path)
@@ -350,15 +334,7 @@ fn launch_with_default_app(
         }
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(path_str)
-            .spawn()
-            .map_err(|e| AppError::Internal(format!("Failed to open file: {}", e)))?;
-    }
-
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    #[cfg(not(target_os = "windows"))]
     {
         Command::new("xdg-open")
             .arg(path_str)

@@ -3,7 +3,6 @@
 // Platform selection is delegated entirely to xcap:
 //   - Linux: X11 + Xrandr + pipewire (xcap picks the right backend at runtime)
 //   - Windows: Win32 GDI
-//   - macOS: CoreGraphics (not used by this project, but supported upstream)
 //
 // Service layer is platform-agnostic; all cfg(target_os = ...) blocks live inside
 // xcap and are not duplicated here.
@@ -13,7 +12,7 @@ use xcap::image::{ExtendedColorType, ImageEncoder};
 use xcap::Monitor;
 
 #[cfg(test)]
-const RUN_SCREENSHOT_SMOKE: &str = "TIEZ_RUN_SCREENSHOT_SMOKE_TESTS";
+const RUN_SCREENSHOT_SMOKE: &str = "DEZIRCLIP_RUN_SCREENSHOT_SMOKE_TESTS";
 
 #[cfg(test)]
 pub(crate) fn screenshot_smoke_enabled() -> bool {

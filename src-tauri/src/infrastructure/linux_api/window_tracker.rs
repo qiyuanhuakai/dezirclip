@@ -360,7 +360,7 @@ pub fn raise_own_window() -> AppResult<()> {
 
     let target_pid = std::process::id() as u32;
     let window_id = find_window_by_pid(&conn, screen_num, target_pid)
-        .ok_or_else(|| AppError::Internal("Failed to find TieZ window on X11".to_string()))?;
+        .ok_or_else(|| AppError::Internal("Failed to find DezirClip window on X11".to_string()))?;
 
     let _ = send_net_active_window(&conn, root, window_id);
 

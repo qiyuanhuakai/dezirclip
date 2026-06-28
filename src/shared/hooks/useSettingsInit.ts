@@ -42,10 +42,10 @@ export const useSettingsInit = ({
         setCompactMode(result["app.compact_mode"] === "true");
 
         try {
-          localStorage.setItem("tiez_theme", loadedTheme);
-          localStorage.setItem("tiez_color_mode", loadedColorMode);
+          localStorage.setItem("dezirclip_theme", loadedTheme);
+          localStorage.setItem("dezirclip_color_mode", loadedColorMode);
           localStorage.setItem(
-            "tiez_compact_mode",
+            "dezirclip_compact_mode",
             result["app.compact_mode"] === "true" ? "true" : "false"
           );
         } catch {

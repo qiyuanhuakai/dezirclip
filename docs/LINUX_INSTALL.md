@@ -1,4 +1,4 @@
-# TieZ Linux 安装指南
+# DezirClip Linux 安装指南
 
 ## 系统要求
 
@@ -60,8 +60,8 @@ sudo zypper install gtk3-devel webkit2gtk3-devel libappindicator3-devel xdotool
 
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/tiez-clipboard.git
-cd tiez-clipboard
+git clone https://github.com/yourusername/dezirclip.git
+cd dezirclip
 
 # 安装前端依赖
 npm install
@@ -84,26 +84,26 @@ npm run tauri:build
 
 ```bash
 # 赋予执行权限
-chmod +x TieZ_0.3.1_amd64.AppImage
+chmod +x DezirClip_0.3.1_amd64.AppImage
 
 # 运行
-./TieZ_0.3.1_amd64.AppImage
+./DezirClip_0.3.1_amd64.AppImage
 
 # 可选: 移动到系统目录
-sudo mv TieZ_0.3.1_amd64.AppImage /usr/local/bin/tiez
+sudo mv DezirClip_0.3.1_amd64.AppImage /usr/local/bin/dezirclip
 ```
 
 ### 方法 2: Debian/Ubuntu (.deb)
 
 ```bash
-sudo dpkg -i tiez_0.3.1_amd64.deb
+sudo dpkg -i dezirclip_0.3.1_amd64.deb
 sudo apt-get install -f  # 修复依赖
 ```
 
 ### 方法 3: Fedora/openSUSE (.rpm)
 
 ```bash
-sudo rpm -i tiez-0.3.1-1.x86_64.rpm
+sudo rpm -i dezirclip-0.3.1-1.x86_64.rpm
 ```
 
 ## 已知问题
@@ -122,7 +122,7 @@ sudo rpm -i tiez-0.3.1-1.x86_64.rpm
 
 检查依赖是否完整：
 ```bash
-ldd src-tauri/target/release/tiez-app | grep "not found"
+ldd src-tauri/target/release/dezirclip | grep "not found"
 ```
 
 ### 粘贴不工作

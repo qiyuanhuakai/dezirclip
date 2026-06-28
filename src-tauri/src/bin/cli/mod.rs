@@ -1,4 +1,4 @@
-//! `tiez-c` subcommand implementations.
+//! `dzc` subcommand implementations.
 //!
 //! Each submodule owns a single subcommand's `run` function that takes
 //! a typed args struct (defined in the binary) and a `&dyn

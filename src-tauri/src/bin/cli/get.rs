@@ -1,4 +1,4 @@
-//! `tiez-c get` — fetch a single entry by ID or `latest`.
+//! `dzc get` — fetch a single entry by ID or `latest`.
 //!
 //! Two ID forms:
 //! * numeric (e.g. `42`): looked up via `repo.get_entry_by_id`.

@@ -1,7 +1,7 @@
 //! Wave D E2E backup round-trip integration test.
 //!
 //! **Build env note**: this integration test target is part of the
-//! `tiez-app` package, so it shares Cargo.toml deps. Running it requires
+//! `dezirclip` package, so it shares Cargo.toml deps. Running it requires
 //! the full Tauri build env (xcap + libpipewire-0.3-dev on Linux). For
 //! a build that does NOT need those system libs, see `backup-e2e/tests/`
 //! (the standalone sub-crate that copies `services/backup.rs` verbatim
@@ -18,7 +18,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
 
-use tiez_app::services::backup::{
+use dezirclip::services::backup::{
     decrypt_to_json, entries_from_json, export_to_encrypted, export_to_json, import_from_encrypted,
     import_from_json, BackupError, ExportEntry, ImportMode,
 };
@@ -109,7 +109,7 @@ fn assert_entries_equal(a: &[ExportEntry], b: &[ExportEntry], ctx: &str) {
 fn tmp_path(suffix: &str) -> std::path::PathBuf {
     let mut p = std::env::temp_dir();
     p.push(format!(
-        "tiez-backup-e2e-{}-{}.{}",
+        "dezirclip-backup-e2e-{}-{}.{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -129,7 +129,7 @@ fn e2e_10_entries_json_roundtrip() {
 
     let file_contents = fs::read_to_string(&path).expect("read back");
     assert!(
-        file_contents.contains("\"version\": \"tiez-export-v1\""),
+        file_contents.contains("\"version\": \"dezirclip-export-v1\""),
         "header version missing"
     );
     let reimported = entries_from_json(&file_contents).expect("reimport");
@@ -147,7 +147,7 @@ fn e2e_10_entries_json_roundtrip() {
 #[test]
 fn e2e_10_entries_encrypted_roundtrip_correct_pw() {
     let original = make_10_entries();
-    let passphrase = "tiez-export-2026-correct-horse-battery-staple";
+    let passphrase = "dezirclip-export-2026-correct-horse-battery-staple";
     let path = tmp_path("enc");
     let blob = export_to_encrypted(original.clone(), passphrase).expect("encrypt");
     fs::write(&path, &blob).expect("write encrypted");

@@ -1,19 +1,19 @@
 <div align="center">
 
-<img src="docs/images/show.png" alt="TieZ Logo" />
+<img src="docs/images/show.png" alt="DezirClip Logo" />
 
-# TieZ
+# DezirClip
 
 轻量、快速、常驻后台的跨平台剪贴板管理器，专注于把复制、搜索、粘贴、同步和传输这几件事做顺手。
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](https://github.com/jimuzhe/tiez-clipboard/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)](https://github.com/jimuzhe/tiez-clipboard/releases)
+[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](https://github.com/qiyuanhuakai/dezirclip/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/qiyuanhuakai/dezirclip/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-4a90d9.svg)](https://tauri.app/)
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-[下载 Releases](https://github.com/jimuzhe/tiez-clipboard/releases) · [反馈问题](https://github.com/jimuzhe/tiez-clipboard/issues)
+[下载 Releases](https://github.com/qiyuanhuakai/dezirclip/releases) · [反馈问题](https://github.com/qiyuanhuakai/dezirclip/issues)
 
 </div>
 
@@ -22,12 +22,12 @@
 ## 预览
 
 <div align="center">
-  <img src="docs/images/ui预览.png" alt="TieZ 界面预览" width="860" />
+  <img src="docs/images/ui预览.png" alt="DezirClip 界面预览" width="860" />
 </div>
 
 ## 简介
 
-**TieZ** 是一款基于 [Tauri 2](https://tauri.app/) 构建的跨平台桌面剪贴板管理工具，支持 **Windows** 和 **macOS**。它常驻系统托盘，可通过全局快捷键快速呼出，帮助你更高效地管理文字、图片、富文本与标签。
+**DezirClip** 是一款基于 [Tauri 2](https://tauri.app/) 构建的跨平台桌面剪贴板管理工具，支持 **Windows** 和 **Linux**。它常驻系统托盘，可通过全局快捷键快速呼出，帮助你更高效地管理文字、图片、富文本与标签。
 
 ## 亮点
 
@@ -117,22 +117,22 @@
 | 平台 | 要求 |
 | --- | --- |
 | Windows | Windows 10/11（x64）；Windows 10 需安装 [Microsoft Edge WebView2](https://developer.microsoft.com/zh-cn/microsoft-edge/webview2/) |
-| macOS | macOS 10.15 Catalina 及以上（Apple Silicon / Intel） |
+| Linux | Linux 10.15 Catalina 及以上（Apple Silicon / Intel） |
 
 ## 快速开始
 
-前往 [Releases 页面](https://github.com/jimuzhe/tiez-clipboard/releases) 下载对应平台的安装包。
+前往 [Releases 页面](https://github.com/qiyuanhuakai/dezirclip/releases) 下载对应平台的安装包。
 
 | 平台 | 安装包 |
 | --- | --- |
 | Windows | `.exe` 安装包 / `.zip` 便携包 |
-| macOS | `.dmg` 安装镜像 |
+| Linux | `.dmg` 安装镜像 |
 
 ## 赞助与交流
 
-如果 TieZ 对你有帮助，欢迎赞助支持项目持续更新。
+如果 DezirClip 对你有帮助，欢迎赞助支持项目持续更新。
 
-- 打赏后记得备注昵称或称呼，会添加到我们的[打赏名单](https://tiez.name666.top/zh/sponsors.html)
+- 打赏后记得备注昵称或称呼，会添加到我们的[打赏名单](https://github.com/qiyuanhuakai/dezirclip/zh/sponsors.html)
 - QQ 群可扫描下方二维码加入
 
 <div align="center">
@@ -156,12 +156,12 @@
 
 ### Agent Skill
 
-本项目提供 tiez-c-cli 的 Agent Skill，详见 [skills/tiez-c-cli/](./skills/tiez-c-cli/)。安装方法：`bash skills/tiez-c-cli/install.sh`（Linux/macOS）或 `powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1`（Windows）。
+本项目提供 dzc-cli 的 Agent Skill，详见 [skills/dzc-cli/](./skills/dzc-cli/)。安装方法：`bash skills/dzc-cli/install.sh`（Linux/Linux）或 `powershell -ExecutionPolicy Bypass -File skills/dzc-cli/install.ps1`（Windows）。
 
 ---
 
 <div align="center">
 
-如果 TieZ 对你有帮助，欢迎点个 Star。
+如果 DezirClip 对你有帮助，欢迎点个 Star。
 
 </div>

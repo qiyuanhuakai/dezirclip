@@ -1,82 +1,64 @@
-# 分叉说明
+# DezirClip
 
-本项目是从 [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard) fork 而来的版本。
+DezirClip is a local clipboard workspace for Windows and Linux, built with Tauri 2, Rust, React, and TypeScript.
 
-创建此 fork 的主要目的是围绕个人使用需求，持续推进一些与上游维护方向不同的改进。
+It focuses on desktop-local clipboard history, quick paste, screenshots, OCR-assisted image search, text transforms, tags, backup import/export, and the `dzc` command-line tool.
 
-包括：
+## Highlights
 
-- 更精简的项目
-  - 移除了对`MacOS`的支持，因为没有测试条件
-  - 移除了所有联网功能（包括云同步，MQTT，ai助手），因为个人不需要
-  - 移除了一些冗余代码
-- **新增 Linux X11 支持**
-  - 添加 Linux 平台基础支持（X11 环境）
-  - 使用 x11-clipboard 实现剪贴板监听
-  - 使用 xdotool 实现粘贴模拟
-  - 支持 deb、AppImage、rpm 打包格式
-- 更易扩展的主题支持
-  - 尽可能减少主题设置在代码中的硬编码，以便于后续的主题定制
-  - 增加`macos`，由AI辅助设计的MacOS风格新主题
-  - 增加`scifi`, 由AI辅助设计的科幻风格新主题；这两套主题使用同一个base框架
-  - 扩展主题能定制的控件的范围：例如，现在下拉栏的风格会随主题改变了
-- 简单且有用的新功能
-  - 新增右键图片时粘贴`base64`编码的支持
-  - 新增对多个呼出快捷键的支持
-- 若干问题修复与可维护性优化
-  - 修复`tauri:dev`模式不可用的问题，加快开发速度
-  - 修复上游在合并pr时因未删除冗余代码，导致拖拽功能偶现失效的问题
+- Windows and Linux support
+- Local SQLite clipboard history
+- Quick-paste overlay and multiple hotkeys
+- Region screenshot capture
+- OCR text storage and search for copied images
+- Rich text, image, file, URL, code, and tag-aware clipboard entries
+- Theme engine with six bundled themes
+- `dzc` CLI for add/list/search/get/tag/import/export workflows
+- Agent Skill under [`skills/dzc-cli`](./skills/dzc-cli/)
 
-## Linux 安装
+## Linux dependencies
 
-### 依赖
+Ubuntu/Debian:
 
-在 Linux 上运行需要安装以下依赖：
-
-**Ubuntu/Debian:**
 ```bash
 sudo apt update
 sudo apt install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev xdotool
 ```
 
-**Arch Linux:**
+Arch Linux:
+
 ```bash
 sudo pacman -S gtk3 webkit2gtk libappindicator-gtk3 xdotool
 ```
 
-**Fedora:**
+Fedora:
+
 ```bash
 sudo dnf install gtk3-devel webkit2gtk3-devel libappindicator-gtk3-devel xdotool
 ```
 
-### 构建
+## Development
 
 ```bash
-# 安装前端依赖
 npm install
-
-# 开发模式
 npm run tauri:dev
-
-# 构建 Linux 版本
 npm run tauri:build
 ```
 
-构建完成后，安装包位于 `src-tauri/target/release/bundle/` 目录下。
+Build artifacts are written under `src-tauri/target/release/bundle/`.
 
-## 开发者
+## CLI and Agent Skill
 
-### Agent Skill
+The CLI binary is named `dzc`.
 
-本项目提供 tiez-c-cli 的 Agent Skill，详见 [skills/tiez-c-cli/](./skills/tiez-c-cli/)。安装方法：`bash skills/tiez-c-cli/install.sh`（Linux/macOS）或 `powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1`（Windows）。
+```bash
+dzc --help
+```
 
-本 fork 主要基于个人需求进行维护，后续更新频率不作保证。
+The Agent Skill is available in [`skills/dzc-cli`](./skills/dzc-cli/). Copy or link that directory into your Agent skills directory.
 
-如需查看当前仓库文档，可参考 [README.en-US](docs/markdown/README.en-US.md) 与 [README.zh-CN](docs/markdown/README.zh-CN.md)
+## License and attribution
 
-如需查看上游仓库文档：
+DezirClip is licensed under GPL-3.0.
 
-- [English README](https://github.com/jimuzhe/tiez-clipboard/blob/master/README.md)
-- [中文 README](https://github.com/jimuzhe/tiez-clipboard/blob/master/README.zh-CN.md)
-- [上游仓库](https://github.com/jimuzhe/tiez-clipboard)
-
+This project is derived from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard), which is also GPL-3.0 licensed. Original copyright and license notices are retained where applicable.

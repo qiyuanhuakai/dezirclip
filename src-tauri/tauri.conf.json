@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "TieZ",
+  "productName": "DezirClip",
   "version": "0.3.1",
-  "identifier": "com.tiez.clipboard",
+  "identifier": "io.github.qiyuanhuakai.dezirclip",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "TieZ",
+        "title": "DezirClip",
         "label": "main",
         "width": 352,
         "height": 380,
@@ -131,10 +131,7 @@
               "identifier": "opener:allow-open-url",
               "allow": [
                 {
-                  "url": "https://tiez.name666.top/**"
-                },
-                {
-                  "url": "https://github.com/jimuzhe/tie-z/**"
+                  "url": "https://github.com/qiyuanhuakai/dezirclip/**"
                 }
               ]
             },
@@ -171,7 +168,7 @@
           "TradChinese"
         ],
         "displayLanguageSelector": true,
-        "startMenuFolder": "TieZ"
+        "startMenuFolder": "DezirClip"
       }
     }
   }

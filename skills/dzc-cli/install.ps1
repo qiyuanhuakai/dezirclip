@@ -1,7 +1,7 @@
-# Junction tiez-c-cli skill to $env:USERPROFILE\.claude\skills\tiez-c-cli
+# Junction dzc-cli skill to $env:USERPROFILE\.claude\skills\dzc-cli
 $ErrorActionPreference = "Stop"
 $SkillDir = (Resolve-Path "$PSScriptRoot").Path
-$Target = Join-Path $env:USERPROFILE ".claude\skills\tiez-c-cli"
+$Target = Join-Path $env:USERPROFILE ".claude\skills\dzc-cli"
 
 if ($args[0] -eq "--uninstall") {
     if (Test-Path $Target) {

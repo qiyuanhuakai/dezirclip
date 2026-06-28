@@ -19,7 +19,7 @@ pub fn listen_clipboard(callback: Arc<dyn Fn() + Send + Sync + 'static>) {
     std::thread::spawn(move || {
         unsafe {
             let instance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None).unwrap();
-            let window_class = "TieZClipboardListener";
+            let window_class = "DezirClipClipboardListener";
             let window_class_w: Vec<u16> = window_class
                 .encode_utf16()
                 .chain(std::iter::once(0))

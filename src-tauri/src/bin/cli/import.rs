@@ -1,10 +1,10 @@
-//! `tiez-c import` — import clipboard history from a file.
+//! `dzc import` — import clipboard history from a file.
 //!
 //! Two input formats, decided by file extension:
 //! * `.json` (or any other extension): plaintext JSON produced by
-//!   `tiez-c export` or by the in-app `File > Import` dialog. Parsed
+//!   `dzc export` or by the in-app `File > Import` dialog. Parsed
 //!   via `services::backup::entries_from_json`.
-//! * `.tiez`: AES-256-GCM encrypted binary blob. Decrypted via
+//! * `.dzc` / `.tiez`: AES-256-GCM encrypted binary blob. Decrypted via
 //!   `services::backup::decrypt_to_json` (which transparently returns
 //!   `BackupError::WrongPassphrase` on tag mismatch — the CLI surfaces
 //!   that as "wrong passphrase").
@@ -18,15 +18,15 @@
 //!     content/tags).
 //!   * `replace` — clear the table first, then insert every row from
 //!     the file. Destructive.
-//! * `--passphrase <PW>` — required for `.tiez` files. The CLI
-//!   rejects `.tiez` imports without `--passphrase` early so the user
+//! * `--passphrase <PW>` — required for encrypted backup files. The CLI
+//!   rejects encrypted imports without `--passphrase` early so the user
 //!   doesn't waste time on a 19-MiB Argon2id derivation.
 //!
 //! ## Flow
 //!
-//! 1. Validate args (mode spelling, passphrase for `.tiez`).
+//! 1. Validate args (mode spelling, passphrase for encrypted backups).
 //! 2. Read the file.
-//! 3. For `.tiez`: decrypt with `--passphrase`. For `.json`: parse
+//! 3. For encrypted backups: decrypt with `--passphrase`. For `.json`: parse
 //!    JSON directly.
 //! 4. Resolve `ImportMode` from the `--mode` arg.
 //! 5. For each entry: `repo.save(...)` in `merge` mode, or
@@ -51,7 +51,7 @@ pub struct ImportArgs {
     /// Either the literal `"merge"` or `"replace"` (case-insensitive).
     /// Anything else returns an error at validate time.
     pub mode: String,
-    /// Passphrase for `.tiez` files. Required when the file is
+    /// Passphrase for encrypted backup files. Required when the file is
     /// encrypted; ignored for JSON.
     pub passphrase: Option<String>,
     /// Emit only an exit code; suppress the success summary.
@@ -74,13 +74,13 @@ pub fn run(
     let is_encrypted = path
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case("tiez"))
+        .map(|e| e.eq_ignore_ascii_case("dzc") || e.eq_ignore_ascii_case("tiez"))
         .unwrap_or(false);
 
-    // 3. .tiez requires a passphrase up-front. Fail fast before doing
+    // 3. encrypted backups require a passphrase up-front. Fail fast before doing
     //    the (expensive) Argon2id KDF derivation.
     if is_encrypted && args.passphrase.as_deref().map(str::is_empty).unwrap_or(true) {
-        return Err("import: passphrase required for .tiez files".to_string());
+        return Err("import: passphrase required for encrypted backups".to_string());
     }
 
     // 4. Read the file. Surface the underlying IO error verbatim —
@@ -122,7 +122,15 @@ pub fn run(
 
     let mut imported = 0usize;
     for exp in &export_entries {
-        let entry = to_clipboard_entry(exp);
+        let mut entry = to_clipboard_entry(exp);
+        if entry.id > 0
+            && repo
+                .get_entry_by_id(entry.id)
+                .map_err(|e| format!("import: lookup entry {}: {e}", entry.id))?
+                .is_none()
+        {
+            entry.id = 0;
+        }
         repo.save(&entry, None)
             .map_err(|e| format!("import: save entry {}: {e}", exp.id))?;
         imported += 1;

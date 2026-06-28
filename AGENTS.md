@@ -81,7 +81,7 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 
 4. **NO macOS code.** `cfg(target_os = "macos")` is forbidden. README states macOS support was deliberately removed. Any re-introduction = fork principle violation.
 
-5. **NO networking features.** Cloud sync, MQTT, AI assistant — all removed per fork. `services/` has no HTTP client, no WebSocket, no DNS. `tauri.conf.json` external URL whitelist is exactly 2 origins (`tiez.name666.top`, `github.com/jimuzhe/tie-z`).
+5. **NO networking features.** Cloud sync, MQTT, AI assistant — all removed per fork. `services/` has no HTTP client, no WebSocket, no DNS. `tauri.conf.json` external URL whitelist is exactly 2 origins (`github.com/qiyuanhuakai/dezirclip`, `github.com/jimuzhe/tie-z`).
 
 6. **NO inline theme CSS.** All styles must live under `src/styles/`. No `<style>` blocks in components.
 

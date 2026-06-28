@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in TieZ
+description: Report a reproducible problem in DezirClip
 title: "[Bug] "
 labels:
   - bug
@@ -25,7 +25,7 @@ body:
       label: Steps to reproduce
       description: Tell us how to reproduce the issue.
       placeholder: |
-        1. Open TieZ
+        1. Open DezirClip
         2. Copy ...
         3. Click ...
         4. See error ...

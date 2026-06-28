@@ -1,4 +1,4 @@
-//! Behavioral tests for `tiez-c` export/import/stats/watch subcommands.
+//! Behavioral tests for `dzc` export/import/stats/watch subcommands.
 //!
 //! Four required tests + extras:
 //! 1. `export → import` round-trip preserves entry count.
@@ -16,7 +16,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use tiez_c_standalone::{
+use dzc_standalone::{
     run_add, run_export, run_import, run_stats, run_watch, AddArgs, Entry, ExportArgs,
     ImportArgs, MockRepo, StatsArgs, WatchArgs,
 };
@@ -39,7 +39,7 @@ fn setup_repo_with_5_entries() -> MockRepo {
 #[test]
 fn test_export_import_roundtrip() {
     let repo = setup_repo_with_5_entries();
-    let tmp = std::env::temp_dir().join("tiez-test-export.json");
+    let tmp = std::env::temp_dir().join("dezirclip-test-export.json");
     let path = tmp.to_string_lossy().to_string();
 
     run_export(
@@ -170,7 +170,7 @@ fn test_watch_outputs_new_entries() {
 #[test]
 fn export_without_passphrase_errors_for_encrypted() {
     let repo = setup_repo_with_5_entries();
-    let tmp = std::env::temp_dir().join("tiez-test-no-pass.tiez");
+    let tmp = std::env::temp_dir().join("dezirclip-test-no-pass.dzc");
     let res = run_export(
         &ExportArgs {
             path: tmp.to_string_lossy().to_string(),
@@ -191,7 +191,7 @@ fn export_without_passphrase_errors_for_encrypted() {
 #[test]
 fn export_with_short_passphrase_errors() {
     let repo = setup_repo_with_5_entries();
-    let tmp = std::env::temp_dir().join("tiez-test-short-pw.tiez");
+    let tmp = std::env::temp_dir().join("dezirclip-test-short-pw.dzc");
     let res = run_export(
         &ExportArgs {
             path: tmp.to_string_lossy().to_string(),
@@ -212,7 +212,7 @@ fn export_with_short_passphrase_errors() {
 #[test]
 fn export_with_long_passphrase_succeeds() {
     let repo = setup_repo_with_5_entries();
-    let tmp = std::env::temp_dir().join("tiez-test-long-pw.tiez");
+    let tmp = std::env::temp_dir().join("dezirclip-test-long-pw.dzc");
     run_export(
         &ExportArgs {
             path: tmp.to_string_lossy().to_string(),
@@ -235,7 +235,7 @@ fn import_replace_mode_clears_existing_entries() {
 
     // Export 5 from a fresh repo, then import with --mode replace.
     let src = setup_repo_with_5_entries();
-    let tmp = std::env::temp_dir().join("tiez-test-replace.json");
+    let tmp = std::env::temp_dir().join("dezirclip-test-replace.json");
     let path = tmp.to_string_lossy().to_string();
     run_export(
         &ExportArgs {
@@ -291,7 +291,7 @@ fn import_invalid_mode_errors() {
 
 #[test]
 fn watch_default_interval_is_500ms() {
-    // G32 hard constraint: the default interval for `tiez-c watch`
+    // G32 hard constraint: the default interval for `dzc watch`
     // is 500ms. Verify by passing `interval_ms: None` and confirming
     // the startup banner mentions 500ms.
     let repo = Arc::new(Mutex::new(MockRepo::default()));

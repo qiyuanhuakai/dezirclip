@@ -11,37 +11,37 @@ shared exports or logs.
 1. List recent text entries and grab their IDs.
 
 ```bash
-tiez-c list --kind text --ids
+dzc list --kind text --ids
 ```
 
 2. Search for secret-like patterns using regex and return only IDs.
 
 ```bash
-tiez-c search "password|api[_-]?key|secret|token|auth" --mode regex --ids
+dzc search "password|api[_-]?key|secret|token|auth" --mode regex --ids
 ```
 
 3. Pipe the matching IDs into the tag command to add the `sensitive` label.
 
 ```bash
-tiez-c search "password|api[_-]?key|secret|token|auth" --mode regex --ids \
-  | xargs -I {} tiez-c tag add {} sensitive
+dzc search "password|api[_-]?key|secret|token|auth" --mode regex --ids \
+  | xargs -I {} dzc tag add {} sensitive
 ```
 
 4. Confirm the tag was applied by listing entries with the new tag.
 
 ```bash
-tiez-c list --tag sensitive --json | jq '.[].preview'
+dzc list --tag sensitive --json | jq '.[].preview'
 ```
 
 5. (Optional) Verify the total count of newly tagged items.
 
 ```bash
-tiez-c list --tag sensitive --json | jq 'length'
+dzc list --tag sensitive --json | jq 'length'
 ```
 
 ## Expected output
 
-`tiez-c search ... --ids` prints one ID per line, e.g.:
+`dzc search ... --ids` prints one ID per line, e.g.:
 
 ```
 c3a1b2
@@ -49,7 +49,7 @@ f4e5d6
 a7b8c9
 ```
 
-After tagging, `tiez-c list --tag sensitive --json | jq '.[].preview'` returns
+After tagging, `dzc list --tag sensitive --json | jq '.[].preview'` returns
 an array of preview strings whose content matched the original regex.
 
 `jq 'length'` shows the number of entries now carrying the `sensitive` tag.
@@ -64,6 +64,6 @@ single `--tag sensitive` flag.
 
 - Narrow the regex to a specific service: `"github_pat|slack_token"`.
 - Tag with multiple labels at once by running the command repeatedly or
-  extending the script to call `tiez-c tag add` twice per ID.
+  extending the script to call `dzc tag add` twice per ID.
 - Exclude already-tagged entries by adding `--not-tag sensitive` to the
   `search` call if your CLI supports it.

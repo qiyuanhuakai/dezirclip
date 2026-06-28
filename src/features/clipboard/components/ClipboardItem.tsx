@@ -37,7 +37,7 @@ import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
-const CONTEXT_MENU_OPEN_EVENT = "tiez:context-menu-open";
+const CONTEXT_MENU_OPEN_EVENT = "dezirclip:context-menu-open";
 
 let linuxChecked = false;
 let isLinuxPlatform = false;

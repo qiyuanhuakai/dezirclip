@@ -1,4 +1,4 @@
-//! `tiez-c delete` — remove an entry by id.
+//! `dzc delete` — remove an entry by id.
 //!
 //! Safety: requires `--yes` to confirm. Without it, `run` returns
 //! `Err(...)` rather than prompting. The CLI is designed for

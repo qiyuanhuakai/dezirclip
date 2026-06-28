@@ -33,20 +33,10 @@ pub fn get_platform_info() -> PlatformInfo {
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(not(target_os = "windows"))]
     {
         PlatformInfo {
-            platform: "macos".to_string(),
-            is_windows_10: false,
-            is_windows_11: false,
-            is_linux: false,
-        }
-    }
-
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-    {
-        PlatformInfo {
-            platform: "other".to_string(),
+            platform: "linux".to_string(),
             is_windows_10: false,
             is_windows_11: false,
             is_linux: true,

@@ -63,10 +63,10 @@ pub fn toggle_autostart(enabled: bool) -> AppResult<()> {
         let cmd = format!("\"{}\" --minimized", app_path);
 
         if enabled {
-            key.set_value("TieZ", &cmd)
+            key.set_value("DezirClip", &cmd)
                 .map_err(|e| AppError::Internal(e.to_string()))?;
         } else {
-            let _ = key.delete_value("TieZ");
+            let _ = key.delete_value("DezirClip");
             let _ = key.delete_value("tie-z");
         }
     }
@@ -79,10 +79,10 @@ pub fn toggle_autostart(enabled: bool) -> AppResult<()> {
             .join("autostart");
         std::fs::create_dir_all(&autostart_dir).map_err(|e| AppError::Internal(e.to_string()))?;
 
-        let desktop_file = autostart_dir.join("tiez-clipboard.desktop");
+        let desktop_file = autostart_dir.join("dezirclip.desktop");
         if enabled {
             let content = format!(
-                "[Desktop Entry]\nType=Application\nName=TieZ Clipboard\nExec=\"{}\" --minimized\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\nStartupNotify=false\nStartupWMClass=TieZ\n",
+                "[Desktop Entry]\nType=Application\nName=DezirClip\nExec=\"{}\" --minimized\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\nStartupNotify=false\nStartupWMClass=DezirClip\n",
                 app_path.to_string_lossy()
             );
             std::fs::write(&desktop_file, content)
@@ -106,7 +106,7 @@ pub fn is_autostart_enabled() -> AppResult<bool> {
         let key = hkcu
             .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Run")
             .map_err(|e| AppError::Internal(e.to_string()))?;
-        Ok(key.get_value::<String, _>("TieZ").is_ok()
+        Ok(key.get_value::<String, _>("DezirClip").is_ok()
             || key.get_value::<String, _>("tie-z").is_ok())
     }
 
@@ -115,7 +115,7 @@ pub fn is_autostart_enabled() -> AppResult<bool> {
         let autostart_dir = dirs::config_dir()
             .ok_or_else(|| AppError::Internal("Failed to get config dir".to_string()))?
             .join("autostart");
-        Ok(autostart_dir.join("tiez-clipboard.desktop").exists())
+        Ok(autostart_dir.join("dezirclip.desktop").exists())
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]

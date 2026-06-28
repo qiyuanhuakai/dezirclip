@@ -1,18 +1,18 @@
-//! `tiez-c export` — export clipboard history to a file.
+//! `dzc export` — export clipboard history to a file.
 //!
 //! Two output formats:
 //! * `JSON` (default, `.json`): plaintext pretty-printed JSON via
 //!   `services::backup::export_to_json`. Stable schema, version-tagged.
-//! * `ENCRYPTED` (`.tiez`, opt-in via `--encrypted`): AES-256-GCM
+//! * `ENCRYPTED` (`.dzc`, opt-in via `--encrypted`): AES-256-GCM
 //!   binary blob via `services::backup::export_to_encrypted`. Argon2id
 //!   KDF with the user's passphrase.
 //!
 //! ## Args
 //!
 //! * `path` — output file path. Extension drives default format
-//!   detection: `.tiez` → encrypted, anything else → JSON.
+//!   detection: `.dzc` / `.tiez` → encrypted, anything else → JSON.
 //! * `--encrypted` — force encrypted output. Auto-set when `path` ends
-//!   in `.tiez`. Requires `--passphrase`.
+//!   in `.dzc` / `.tiez`. Requires `--passphrase`.
 //! * `--passphrase <PW>` — passphrase for `--encrypted`. Must be at
 //!   least 12 characters (G32 hard constraint, matches the in-app
 //!   backup dialog).
@@ -53,7 +53,7 @@ pub const MIN_PASSPHRASE_LEN: usize = 12;
 pub struct ExportArgs {
     pub path: String,
     /// Force encrypted output. Auto-detected when `path` ends in
-    /// `.tiez`, but the flag lets the user write to any extension.
+    /// `.dzc`, but the flag lets the user write to any extension.
     pub encrypted: bool,
     /// Passphrase for encrypted output. Required when `encrypted` is
     /// `true`; ignored otherwise (so the user can use the same flag
@@ -122,7 +122,7 @@ pub fn run(args: &ExportArgs, repo: &dyn ClipboardRepository) -> Result<(), Stri
     };
 
     // 6. Write. Create parent dirs so the user can point at
-    //    `/tmp/backup/2026/tiez.tiez` without mkdir first.
+    //    `/tmp/backup/2026/dezirclip.dzc` without mkdir first.
     let path = Path::new(&args.path);
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
@@ -146,10 +146,10 @@ pub fn run(args: &ExportArgs, repo: &dyn ClipboardRepository) -> Result<(), Stri
 
 /// Pick the output format. Rules:
 /// 1. `--encrypted` → `Encrypted`.
-/// 2. `path` ends in `.tiez` → `Encrypted` (auto-detect).
+/// 2. `path` ends in `.dzc` or `.tiez` → `Encrypted` (auto-detect).
 /// 3. Otherwise → `Json`.
 ///
-/// `.tiez` auto-detection is what makes `tiez-c export foo.tiez`
+/// encrypted extension auto-detection is what makes `dzc export foo.dzc`
 /// "just work" without an extra flag, matching the in-app
 /// `File > Export` dialog behavior.
 fn resolve_format(path: &str, encrypted: bool) -> Result<ExportFormat, String> {
@@ -157,7 +157,7 @@ fn resolve_format(path: &str, encrypted: bool) -> Result<ExportFormat, String> {
         return Ok(ExportFormat::Encrypted);
     }
     let lower = path.to_ascii_lowercase();
-    if lower.ends_with(".tiez") {
+    if lower.ends_with(".dzc") || lower.ends_with(".tiez") {
         return Ok(ExportFormat::Encrypted);
     }
     Ok(ExportFormat::Json)
@@ -218,14 +218,14 @@ mod tests {
     }
 
     #[test]
-    fn resolve_format_tiez_extension_is_encrypted() {
+    fn resolve_format_dezirclip_extension_is_encrypted() {
         assert_eq!(
-            resolve_format("/tmp/out.tiez", false).unwrap(),
+            resolve_format("/tmp/out.dzc", false).unwrap(),
             ExportFormat::Encrypted
         );
         // Case-insensitive.
         assert_eq!(
-            resolve_format("/tmp/out.TIEZ", false).unwrap(),
+            resolve_format("/tmp/out.DZC", false).unwrap(),
             ExportFormat::Encrypted
         );
     }

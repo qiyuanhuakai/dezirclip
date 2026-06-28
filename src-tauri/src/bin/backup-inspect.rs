@@ -1,4 +1,4 @@
-//! Standalone inspect tool for .tiez backup files (plain JSON or AES-GCM encrypted).
+//! Standalone inspect tool for .dzc backup files (plain JSON or AES-GCM encrypted).
 //!
 //! Companion to `services/backup.rs`. Use for cross-platform verification:
 //! decrypt a file produced on any OS without needing the Tauri runtime.
@@ -19,7 +19,7 @@
 //!
 //! ## Build env note
 //!
-//! This bin target is part of the `tiez-app` package, so it shares
+//! This bin target is part of the `dezirclip` package, so it shares
 //! Cargo.toml deps. Building it still requires the full Tauri build env
 //! (xcap + libpipewire-0.3-dev on Linux). For a build that does NOT need
 //! those, see `backup-e2e/` (the standalone sub-crate that copies

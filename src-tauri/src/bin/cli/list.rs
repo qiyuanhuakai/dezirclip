@@ -1,4 +1,4 @@
-//! `tiez-c list` — list clipboard history with optional filters.
+//! `dzc list` — list clipboard history with optional filters.
 //!
 //! All persistence goes through `ClipboardRepository::get_history`; the
 //! `--tag` and `--pinned` filters are applied in-memory after the repo
@@ -18,7 +18,7 @@ use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 
 /// CLI-shaped view of a `ClipboardEntry`. Only the fields surfaced via
-/// `tiez-c` are serialized; internal fields (`html_content`,
+/// `dzc` are serialized; internal fields (`html_content`,
 /// `source_app_path`, OCR, etc.) are deliberately omitted so the JSON
 /// shape stays small and stable across schema changes.
 #[derive(Debug, Serialize)]

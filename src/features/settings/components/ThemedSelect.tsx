@@ -82,7 +82,7 @@ const ThemedSelect = ({
       }}
     >
       <Select
-        classNamePrefix="tiez-select"
+        classNamePrefix="dezirclip-select"
         options={options}
         value={selected}
         placeholder={placeholder}

@@ -1,9 +1,9 @@
-# tiez-c-cli skill — Developer Notes
+# dzc-cli skill — Developer Notes
 
 ## Layout
 
 ```
-skills/tiez-c-cli/
+skills/dzc-cli/
 ├── SKILL.md              # Skill manifest (commands, parameters, examples)
 ├── install.sh            # Linux/macOS installer (symlink)
 ├── install.ps1           # Windows installer (junction)
@@ -16,27 +16,27 @@ skills/tiez-c-cli/
 
 **Linux / macOS:**
 ```bash
-bash skills/tiez-c-cli/install.sh
+bash skills/dzc-cli/install.sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1
+powershell -ExecutionPolicy Bypass -File skills/dzc-cli/install.ps1
 ```
 
 **Uninstall:**
 ```bash
-bash skills/tiez-c-cli/install.sh --uninstall
+bash skills/dzc-cli/install.sh --uninstall
 ```
 ```powershell
-powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1 --uninstall
+powershell -ExecutionPolicy Bypass -File skills/dzc-cli/install.ps1 --uninstall
 ```
 
 ## Updating the skill
 
 This skill uses a **symlink/junction model** for installation.
 
-- **Symlink model (default):** The installer creates a symlink (or junction on Windows) from `~/.claude/skills/tiez-c-cli` back to the source directory in the repository. To update, pull the latest changes in the repo — no re-install needed because the symlink always points to the current tree.
+- **Symlink model (default):** The installer creates a symlink (or junction on Windows) from `~/.claude/skills/dzc-cli` back to the source directory in the repository. To update, pull the latest changes in the repo — no re-install needed because the symlink always points to the current tree.
 - **Copy model:** If you instead copy the skill directory manually into `~/.claude/skills/`, re-run the installer after pulling updates to refresh the copy.
 
 ## Local development
@@ -51,7 +51,7 @@ Verify the YAML frontmatter is well-formed and the body describes the expected w
 
 ## Versioning
 
-This skill has **no version field** of its own. It mirrors the in-tree `tiez-c` CLI version, so there is nothing to bump here. When the CLI version changes, update the skill content and rely on the symlink for propagation.
+This skill has **no version field** of its own. It mirrors the in-tree `dzc` CLI version, so there is nothing to bump here. When the CLI version changes, update the skill content and rely on the symlink for propagation.
 
 ## Contributing
 

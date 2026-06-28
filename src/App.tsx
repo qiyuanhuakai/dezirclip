@@ -496,9 +496,9 @@ const App = () => {
 
     // Sync theme-related settings to localStorage for instant startup (prevents flash)
     try {
-      if (type === 'theme') localStorage.setItem('tiez_theme', path);
-      if (type === 'color_mode') localStorage.setItem('tiez_color_mode', path);
-      if (type === 'compact_mode') localStorage.setItem('tiez_compact_mode', path);
+      if (type === 'theme') localStorage.setItem('dezirclip_theme', path);
+      if (type === 'color_mode') localStorage.setItem('dezirclip_color_mode', path);
+      if (type === 'compact_mode') localStorage.setItem('dezirclip_compact_mode', path);
     } catch (e) {
       // Ignore localStorage errors
     }

@@ -1,4 +1,4 @@
-//! `tiez-c stats` — show aggregate statistics about clipboard history.
+//! `dzc stats` — show aggregate statistics about clipboard history.
 //!
 //! Two output modes:
 //! * Human (default): multi-line text block. Easy to eyeball in a

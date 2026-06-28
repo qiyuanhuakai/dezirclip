@@ -31,10 +31,10 @@ const ExportModal = ({ t, onClose }: ExportModalProps) => {
 
     const handleBrowse = async () => {
         const path = await save({
-            defaultPath: format === "json" ? "clipboard-export.json" : "clipboard-export.tiez",
+            defaultPath: format === "json" ? "clipboard-export.json" : "clipboard-export.dzc",
             filters: format === "json"
                 ? [{ name: "JSON", extensions: ["json"] }]
-                : [{ name: "Encrypted Backup", extensions: ["tiez"] }],
+                : [{ name: "Encrypted Backup", extensions: ["dzc"] }],
         });
         if (path) setFilePath(path);
     };
@@ -178,7 +178,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
     const handleBrowse = async () => {
         const selected = await open({
             multiple: false,
-            filters: [{ name: "Backup", extensions: ["json", "tiez"] }],
+            filters: [{ name: "Backup", extensions: ["json", "dzc", "tiez"] }],
         });
         if (selected) {
             const path = selected as string;
@@ -186,7 +186,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
             setPreviewEntries([]);
             setShowPreview(false);
 
-            if (path.endsWith(".tiez")) {
+            if (path.endsWith(".dzc") || path.endsWith(".tiez")) {
                 setPassphrase("");
             } else {
                 try {
@@ -211,7 +211,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
             await invoke("import_from_file", {
                 path: filePath,
                 mode,
-                passphrase: filePath.endsWith(".tiez") ? passphrase : undefined,
+                passphrase: filePath.endsWith(".dzc") || filePath.endsWith(".tiez") ? passphrase : undefined,
             });
             onClose();
         } catch (e: unknown) {
@@ -270,7 +270,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
                     </div>
                 </div>
 
-                {filePath.endsWith(".tiez") && (
+                {(filePath.endsWith(".dzc") || filePath.endsWith(".tiez")) && (
                     <div className="data-form-group">
                         <label className="data-label">{t("data.import.passphrase_prompt")}</label>
                         <input

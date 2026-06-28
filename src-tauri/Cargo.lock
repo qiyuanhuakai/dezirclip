@@ -1055,6 +1055,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "dezirclip"
+version = "0.3.1"
+dependencies = [
+ "aes-gcm",
+ "arboard",
+ "argon2",
+ "base64 0.22.1",
+ "chrono",
+ "clap",
+ "ctrlc",
+ "dirs 5.0.1",
+ "dotenvy",
+ "hex",
+ "image",
+ "keyring",
+ "machine-uid",
+ "qrcode2",
+ "rand 0.8.6",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-window-state",
+ "tokio",
+ "urlencoding",
+ "uuid",
+ "webview2-com",
+ "window-vibrancy 0.7.1",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
+ "windows-future 0.2.1",
+ "windows-version",
+ "winreg",
+ "x11-clipboard",
+ "x11rb",
+ "xcap",
+ "zeroize",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4962,53 +5009,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "tiez-app"
-version = "0.3.1"
-dependencies = [
- "aes-gcm",
- "arboard",
- "argon2",
- "base64 0.22.1",
- "chrono",
- "clap",
- "ctrlc",
- "dirs 5.0.1",
- "dotenvy",
- "hex",
- "image",
- "keyring",
- "machine-uid",
- "qrcode2",
- "rand 0.8.6",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tauri-plugin-window-state",
- "tokio",
- "urlencoding",
- "uuid",
- "webview2-com",
- "window-vibrancy 0.7.1",
- "windows 0.61.3",
- "windows-core 0.61.2",
- "windows-future 0.2.1",
- "windows-version",
- "winreg",
- "x11-clipboard",
- "x11rb",
- "xcap",
- "zeroize",
 ]
 
 [[package]]

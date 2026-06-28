@@ -42,7 +42,8 @@ static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
 
 #[cfg(target_os = "linux")]
 fn linux_service_disabled(service: &str) -> bool {
-    std::env::var("TIEZ_DISABLE_LINUX_SERVICES")
+    std::env::var("DEZIRCLIP_DISABLE_LINUX_SERVICES")
+        .or_else(|_| std::env::var("TIEZ_DISABLE_LINUX_SERVICES"))
         .ok()
         .map(|value| {
             value
@@ -64,8 +65,8 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let app_dir = resolve_data_dir(app)?;
 
     // 2. Logger Initialization
-    crate::logger::init(app_dir.join("tiez.log"));
-    info!(">>> [STARTUP] TieZ starting up...");
+    crate::logger::init(app_dir.join("dezirclip.log"));
+    info!(">>> [STARTUP] DezirClip starting up...");
 
     // 3. Database Initialization
     let db_path = app_dir.join("clipboard.db");
@@ -74,7 +75,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         let err_msg = format!("数据库初始化失败: {}", e);
         #[cfg(target_os = "windows")]
         {
-            WindowExt::show_error_box("TieZ 启动错误", &err_msg);
+            WindowExt::show_error_box("DezirClip 启动错误", &err_msg);
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -140,6 +141,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let default_app_dir = app.path().app_data_dir()?;
+    migrate_legacy_identifier_data_dir(&default_app_dir);
 
     // Perform migration if needed
     crate::migration::perform_migration_v028(&default_app_dir);
@@ -150,7 +152,7 @@ fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error:
         if let Ok(entries) = std::fs::read_dir(&temp_dir) {
             for entry in entries.flatten() {
                 if let Ok(name) = entry.file_name().into_string() {
-                    if name.starts_with("TieZ_Clip_") {
+                    if name.starts_with("DezirClip_Clip_") {
                         let _ = std::fs::remove_file(entry.path());
                     }
                 }
@@ -189,13 +191,66 @@ fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error:
         Err(err) => {
             if cfg!(debug_assertions) {
                 if let Ok(cwd) = std::env::current_dir() {
-                    let fallback = cwd.join(".tiez-dev-data");
+                    let fallback = cwd.join(".dezirclip-dev-data");
                     if std::fs::create_dir_all(&fallback).is_ok() {
                         return Ok(fallback);
                     }
                 }
             }
             Err(Box::new(err))
+        }
+    }
+}
+
+fn migrate_legacy_identifier_data_dir(default_app_dir: &std::path::Path) {
+    if default_app_dir.join("clipboard.db").exists() || default_app_dir.join("datapath.txt").exists() {
+        return;
+    }
+    let Some(legacy_dir) = legacy_identifier_app_data_dir() else {
+        return;
+    };
+    if !legacy_dir.exists() {
+        return;
+    }
+    if !default_app_dir.exists() {
+        if let Some(parent) = default_app_dir.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if std::fs::rename(&legacy_dir, default_app_dir).is_ok() {
+            return;
+        }
+    }
+    let _ = std::fs::create_dir_all(default_app_dir);
+    for file_name in ["clipboard.db", "datapath.txt", "dezirclip.log"] {
+        let source = legacy_dir.join(file_name);
+        let target = default_app_dir.join(file_name);
+        if source.exists() && !target.exists() {
+            let _ = std::fs::copy(source, target);
+        }
+    }
+    let old_log = legacy_dir.join("tiez.log");
+    let new_log = default_app_dir.join("dezirclip.log");
+    if old_log.exists() && !new_log.exists() {
+        let _ = std::fs::copy(old_log, new_log);
+    }
+}
+
+fn legacy_identifier_app_data_dir() -> Option<std::path::PathBuf> {
+    const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("APPDATA")
+            .map(std::path::PathBuf::from)
+            .map(|path| path.join(LEGACY_APP_IDENTIFIER))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+            Some(std::path::PathBuf::from(xdg).join(LEGACY_APP_IDENTIFIER))
+        } else {
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .map(|path| path.join(".local").join("share").join(LEGACY_APP_IDENTIFIER))
         }
     }
 }
@@ -1166,14 +1221,14 @@ fn setup_tray(app: &App, hide_tray: bool) {
     use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 
     let show_i = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>).unwrap();
-    let quit_i = MenuItem::with_id(app, "quit", "退出 贴汁", true, None::<&str>).unwrap();
+    let quit_i = MenuItem::with_id(app, "quit", "Quit DezirClip", true, None::<&str>).unwrap();
     let menu = Menu::with_items(app, &[&show_i, &quit_i]).unwrap();
     let icon =
         tauri::image::Image::from_bytes(include_bytes!("../../icons/tray-icon.png")).unwrap();
 
     let tray = TrayIconBuilder::with_id("main_tray")
         .icon(icon)
-        .tooltip("TieZ")
+        .tooltip("DezirClip")
         .show_menu_on_left_click(false)
         .menu(&menu)
         .on_menu_event(|app, event| {

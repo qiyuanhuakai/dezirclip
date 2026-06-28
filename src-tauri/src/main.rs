@@ -16,36 +16,31 @@ use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use std::sync::atomic::Ordering;
 
-const APP_IDENTIFIER: &str = "com.tiez.clipboard";
+const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
+const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
 const GPU_SETTING_KEY: &str = "app.disable_webview_gpu";
 
-fn resolve_default_app_data_dir() -> Option<std::path::PathBuf> {
+fn resolve_default_app_data_dir_for(identifier: &str) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     {
         std::env::var_os("APPDATA")
             .map(std::path::PathBuf::from)
-            .map(|path| path.join(APP_IDENTIFIER))
+            .map(|path| path.join(identifier))
     }
-    #[cfg(target_os = "macos")]
-    {
-        std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .map(|path| {
-                path.join("Library")
-                    .join("Application Support")
-                    .join(APP_IDENTIFIER)
-            })
-    }
-    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    #[cfg(not(target_os = "windows"))]
     {
         if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
-            Some(std::path::PathBuf::from(xdg).join(APP_IDENTIFIER))
+            Some(std::path::PathBuf::from(xdg).join(identifier))
         } else {
             std::env::var_os("HOME")
                 .map(std::path::PathBuf::from)
-                .map(|path| path.join(".local").join("share").join(APP_IDENTIFIER))
+                .map(|path| path.join(".local").join("share").join(identifier))
         }
     }
+}
+
+fn resolve_default_app_data_dir() -> Option<std::path::PathBuf> {
+    resolve_default_app_data_dir_for(APP_IDENTIFIER)
 }
 
 fn resolve_startup_db_path() -> Option<std::path::PathBuf> {
@@ -58,6 +53,17 @@ fn resolve_startup_db_path() -> Option<std::path::PathBuf> {
         }
     }
     let default_dir = resolve_default_app_data_dir()?;
+    if !default_dir.join("clipboard.db").exists() {
+        if let Some(legacy_dir) = resolve_default_app_data_dir_for(LEGACY_APP_IDENTIFIER) {
+            if legacy_dir.join("clipboard.db").exists() || legacy_dir.join("datapath.txt").exists() {
+                return resolve_db_path_from_app_dir(legacy_dir);
+            }
+        }
+    }
+    resolve_db_path_from_app_dir(default_dir)
+}
+
+fn resolve_db_path_from_app_dir(default_dir: std::path::PathBuf) -> Option<std::path::PathBuf> {
     let redirect_file = default_dir.join("datapath.txt");
     let app_dir = if redirect_file.exists() {
         if let Ok(content) = std::fs::read_to_string(&redirect_file) {

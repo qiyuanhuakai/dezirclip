@@ -1,4 +1,4 @@
-//! `tiez-c search` — search history with mode-specific matching.
+//! `dzc search` — search history with mode-specific matching.
 //!
 //! Modes:
 //! * `contains` (default): case-insensitive substring match. Uses

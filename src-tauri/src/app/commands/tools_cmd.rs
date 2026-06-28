@@ -37,7 +37,7 @@ pub fn get_cli_info() -> Result<CliInfo, String> {
 pub fn add_cli_to_path() -> Result<CliPathResult, String> {
     let cli_path = find_bundled_cli_binary()
         .or_else(|| find_cli_on_path().map(PathBuf::from))
-        .ok_or_else(|| "tiez-c executable not found".to_string())?;
+        .ok_or_else(|| "dzc executable not found".to_string())?;
     let result = cli_path::add_cli_to_path(&cli_path)?;
     Ok(CliPathResult {
         installed_path: result.installed_path.to_string_lossy().to_string(),
@@ -56,11 +56,11 @@ fn find_cli_binary() -> Option<String> {
 fn find_bundled_cli_binary() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let win_path = dir.join("tiez-c.exe");
+            let win_path = dir.join("dzc.exe");
             if win_path.exists() {
                 return Some(win_path);
             }
-            let unix_path = dir.join("tiez-c");
+            let unix_path = dir.join("dzc");
             if unix_path.exists() {
                 return Some(unix_path);
             }
@@ -92,9 +92,9 @@ fn find_cli_on_path() -> Option<String> {
 
 fn path_lookup_command() -> (&'static str, &'static str) {
     if cfg!(target_os = "windows") {
-        ("where", "tiez-c.exe")
+        ("where", "dzc.exe")
     } else {
-        ("which", "tiez-c")
+        ("which", "dzc")
     }
 }
 
@@ -115,9 +115,9 @@ fn find_skill_path() -> Option<String> {
     let candidates: Vec<PathBuf> = if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             vec![
-                dir.join("skills").join("tiez-c-cli"),
-                dir.join("../skills").join("tiez-c-cli"),
-                dir.join("../../skills").join("tiez-c-cli"),
+                dir.join("skills").join("dzc-cli"),
+                dir.join("../skills").join("dzc-cli"),
+                dir.join("../../skills").join("dzc-cli"),
             ]
         } else {
             vec![]
@@ -144,10 +144,10 @@ mod tests {
         let (command, arg) = path_lookup_command();
         if cfg!(target_os = "windows") {
             assert_eq!(command, "where");
-            assert_eq!(arg, "tiez-c.exe");
+            assert_eq!(arg, "dzc.exe");
         } else {
             assert_eq!(command, "which");
-            assert_eq!(arg, "tiez-c");
+            assert_eq!(arg, "dzc");
         }
     }
 }

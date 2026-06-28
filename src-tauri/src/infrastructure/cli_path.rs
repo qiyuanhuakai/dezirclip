@@ -54,7 +54,7 @@ fn add_linux_cli_to_path(
     std::fs::create_dir_all(&bin_dir)
         .map_err(|e| format!("create {} failed: {e}", bin_dir.display()))?;
 
-    let link_path = bin_dir.join("tiez-c");
+    let link_path = bin_dir.join("dzc");
     let mut already_linked = false;
     if link_path.exists() {
         let existing = std::fs::canonicalize(&link_path)
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_path_contains_entry_matches_existing_path() {
-        let entry = PathBuf::from("/tmp/tiez-bin");
+        let entry = PathBuf::from("/tmp/dezirclip-bin");
         let path_value = std::env::join_paths([PathBuf::from("/usr/bin"), entry.clone()])
             .expect("path value")
             .to_string_lossy()
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn test_append_path_entry_preserves_existing_entries() {
         let first = PathBuf::from("/usr/bin");
-        let second = PathBuf::from("/tmp/tiez-bin");
+        let second = PathBuf::from("/tmp/dezirclip-bin");
         let path_value = std::env::join_paths([first.clone()])
             .expect("path value")
             .to_string_lossy()
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn test_linux_add_cli_to_path_creates_local_bin_link() {
         let base = std::env::temp_dir().join(format!(
-            "tiez-cli-path-test-{}",
+            "dzc-cli-path-test-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&base);
@@ -160,11 +160,11 @@ mod tests {
         let home_dir = base.join("home");
         std::fs::create_dir_all(&app_dir).expect("app dir");
         std::fs::create_dir_all(&home_dir).expect("home dir");
-        let cli_path = app_dir.join("tiez-c");
+        let cli_path = app_dir.join("dzc");
         std::fs::write(&cli_path, b"#!/bin/sh\n").expect("cli file");
 
         let result = add_linux_cli_to_path(&cli_path, &home_dir, "/usr/bin").expect("install path");
-        assert_eq!(result.installed_path, home_dir.join(".local/bin/tiez-c"));
+        assert_eq!(result.installed_path, home_dir.join(".local/bin/dzc"));
         assert_eq!(result.path_entry, home_dir.join(".local/bin"));
         assert!(!result.already_linked);
         assert!(result.requires_new_terminal);

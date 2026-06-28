@@ -1,4 +1,4 @@
-//! `tiez-c watch` — stream new clipboard entries as they arrive.
+//! `dzc watch` — stream new clipboard entries as they arrive.
 //!
 //! ## Polling model (G32 hard constraint)
 //!

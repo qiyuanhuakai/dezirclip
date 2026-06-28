@@ -4,7 +4,7 @@
 
 Throughout the day you copy dozens of links: documentation pages, pull requests,
 and vendor dashboards. At the end of the day you want every URL entry to carry
-the `web` tag so you can filter them later with `tiez-c list --tag web`.
+the `web` tag so you can filter them later with `dzc list --tag web`.
 
 ## Steps
 
@@ -19,7 +19,7 @@ echo $TODAY_START
    with `http` or `https`, then extract their IDs.
 
 ```bash
-tiez-c list --json \
+dzc list --json \
   | jq -r ".[] \
     | select(.timestamp >= $TODAY_START) \
     | select(.content | test(\"https?://\")) \
@@ -29,24 +29,24 @@ tiez-c list --json \
 3. Pipe the IDs into the tag command to add the `web` label to each one.
 
 ```bash
-tiez-c list --json \
+dzc list --json \
   | jq -r ".[] \
     | select(.timestamp >= $TODAY_START) \
     | select(.content | test(\"https?://\")) \
     | .id" \
-  | xargs -I {} tiez-c tag add {} web
+  | xargs -I {} dzc tag add {} web
 ```
 
 4. Verify that the tag was applied by counting entries with `web`.
 
 ```bash
-tiez-c list --tag web --json | jq 'length'
+dzc list --tag web --json | jq 'length'
 ```
 
 5. Spot-check the first few tagged entries.
 
 ```bash
-tiez-c list --tag web --json | jq '.[0:3] | .[].preview'
+dzc list --tag web --json | jq '.[0:3] | .[].preview'
 ```
 
 ## Expected output
@@ -71,12 +71,12 @@ can confirm the filter caught actual links and not random text.
 - Narrow to a specific domain:
 
 ```bash
-tiez-c list --json \
+dzc list --json \
   | jq -r ".[] \
     | select(.timestamp >= $TODAY_START) \
     | select(.content | test(\"https?://github.com\")) \
     | .id" \
-  | xargs -I {} tiez-c tag add {} github
+  | xargs -I {} dzc tag add {} github
 ```
 
 - Tag all images from today by switching the regex to `test("\\.(png|jpg|jpeg|gif|webp)")`.

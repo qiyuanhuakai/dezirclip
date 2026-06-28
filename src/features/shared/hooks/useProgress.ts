@@ -19,7 +19,7 @@ export const useProgress = () => {
 
   useEffect(() => {
     const unlisten = listen<ProgressToastItem>(
-      "tiez://progress",
+      "dezirclip://progress",
       (event) => {
         const payload = event.payload;
         if (!payload || !payload.id) return;

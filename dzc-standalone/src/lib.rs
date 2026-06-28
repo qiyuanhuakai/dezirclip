@@ -1,12 +1,12 @@
-//! `tiez-c-standalone` library surface.
+//! `dzc-standalone` library surface.
 //!
 //! This crate exposes the data types (`Entry`, `MockRepo`), the
 //! subcommand `run_*` functions, and the formatting helpers that the
-//! `tiez-c` binary uses. Putting them here lets the integration tests
+//! `dzc` binary uses. Putting them here lets the integration tests
 //! drive the same code paths the CLI does, without depending on
 //! `println!` capture or `stdout` redirection.
 //!
-//! The `bin/tiez-c.rs` file is a thin clap wrapper that calls into
+//! The `bin/dzc.rs` file is a thin clap wrapper that calls into
 //! `run_list`, `run_search`, `run_get`, etc.
 
 use std::sync::Mutex;
@@ -665,7 +665,8 @@ pub fn run_get(args: &GetArgs, repo: &MockRepo) -> Result<Output, String> {
 /// `services::backup::ExportFile` shape (version + exported_at +
 /// entries) but uses a manual `serde`-free serializer so the
 /// standalone crate has no extra deps.
-pub const EXPORT_VERSION: &str = "tiez-export-v1";
+pub const EXPORT_VERSION: &str = "dezirclip-export-v1";
+pub const LEGACY_EXPORT_VERSION: &str = "tiez-export-v1";
 
 /// Minimum passphrase length. Mirrors the in-tree
 /// `cli::export::MIN_PASSPHRASE_LEN` so the two code paths share
@@ -682,7 +683,7 @@ pub const MIN_PASSPHRASE_LEN: usize = 12;
 /// `aes-gcm` + `argon2` without the full Tauri dependency chain.
 pub fn run_export(args: &ExportArgs, repo: &MockRepo) -> Result<(), String> {
     let lower = args.path.to_ascii_lowercase();
-    let format = if args.encrypted || lower.ends_with(".tiez") {
+    let format = if args.encrypted || lower.ends_with(".dzc") || lower.ends_with(".dzc") {
         ExportFormat::Encrypted
     } else {
         ExportFormat::Json
@@ -717,7 +718,7 @@ pub fn run_export(args: &ExportArgs, repo: &MockRepo) -> Result<(), String> {
             // The magic bytes make the import path's format detection
             // robust without the standalone needing AES-GCM.
             let mut buf = Vec::new();
-            buf.extend_from_slice(b"TIEZ-ENC-STUB-v1\n");
+            buf.extend_from_slice(b"DEZIRCLIP-ENC-STUB-v1\n");
             buf.extend_from_slice(format!("passphrase_used={}\n", args.passphrase.as_deref().unwrap()).as_bytes());
             buf.extend_from_slice(format!("count={count}\n").as_bytes());
             buf
@@ -754,9 +755,9 @@ pub fn run_import(args: &ImportArgs, repo: &mut MockRepo) -> Result<(), String> 
     };
 
     let lower = args.path.to_ascii_lowercase();
-    let is_encrypted = lower.ends_with(".tiez");
+    let is_encrypted = lower.ends_with(".dzc") || lower.ends_with(".dzc");
     if is_encrypted && args.passphrase.as_deref().map(str::is_empty).unwrap_or(true) {
-        return Err("import: passphrase required for .tiez files".to_string());
+        return Err("import: passphrase required for encrypted backup files".to_string());
     }
 
     let bytes = std::fs::read(&args.path)
@@ -767,8 +768,8 @@ pub fn run_import(args: &ImportArgs, repo: &mut MockRepo) -> Result<(), String> 
         // A real import would call `services::backup::decrypt_to_json`
         // + `entries_from_json` and then `repo.save()` per row.
         let header = String::from_utf8_lossy(&bytes);
-        if !header.starts_with("TIEZ-ENC-STUB-v1") {
-            return Err("import: not a recognized .tiez file".to_string());
+        if !header.starts_with("DEZIRCLIP-ENC-STUB-v1") && !header.starts_with("TIEZ-ENC-STUB-v1") {
+            return Err("import: not a recognized encrypted backup file".to_string());
         }
         if !args.quiet {
             println!(
@@ -783,7 +784,7 @@ pub fn run_import(args: &ImportArgs, repo: &mut MockRepo) -> Result<(), String> 
         .map_err(|e| format!("import: file is not valid UTF-8: {e}"))?;
     let envelope: ExportEnvelope = serde_noop::deserialize_envelope(json)
         .map_err(|e| format!("import: parse json: {e}"))?;
-    if envelope.version != EXPORT_VERSION {
+    if envelope.version != EXPORT_VERSION && envelope.version != LEGACY_EXPORT_VERSION {
         return Err(format!(
             "import: unsupported export version '{}' (expected {EXPORT_VERSION})",
             envelope.version

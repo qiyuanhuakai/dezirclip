@@ -26,7 +26,7 @@ Thumbs.db
 .omo/
 CLAUDE.md
 AGENTS.md
-tiez-c-standalone/target/
+dzc-standalone/target/
 backup-e2e/
 src-tauri/binaries/
 .cortexkit/

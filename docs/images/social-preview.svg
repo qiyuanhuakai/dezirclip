@@ -34,7 +34,7 @@
   <path d="M137 143H161.5C182.763 143 200 160.237 200 181.5V181.5C200 202.763 182.763 220 161.5 220H137V143Z" fill="white"/>
   <path d="M128 129H155C178.196 129 197 147.804 197 171V171C197 194.196 178.196 213 155 213H128V129Z" fill="white" fill-opacity="0.22"/>
 
-  <text x="96" y="275" fill="#10203A" font-family="Segoe UI, Arial, sans-serif" font-size="74" font-weight="700">TieZ</text>
+  <text x="96" y="275" fill="#10203A" font-family="Segoe UI, Arial, sans-serif" font-size="74" font-weight="700">DezirClip</text>
   <text x="96" y="332" fill="#42536D" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="500">Cross-platform clipboard manager for fast daily workflows</text>
 
   <g fill="#173053" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="600">
@@ -51,7 +51,7 @@
     <circle cx="74" cy="560" r="8"/>
   </g>
 
-  <text x="96" y="604" fill="#56708F" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="600">tiez.name666.top</text>
+  <text x="96" y="604" fill="#56708F" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="600">github.com/qiyuanhuakai/dezirclip</text>
 
   <g filter="url(#shadow)">
     <rect x="702" y="102" width="413" height="417" rx="30" fill="url(#card)"/>

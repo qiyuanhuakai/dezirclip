@@ -1,4 +1,4 @@
-//! Behavioral tests for `tiez-c` add/delete/tag subcommands.
+//! Behavioral tests for `dzc` add/delete/tag subcommands.
 //!
 //! Three required tests + extras covering the `add` / `delete` / `tag`
 //! paths end-to-end against the in-memory `MockRepo`.
@@ -24,7 +24,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use tiez_c_standalone::{
+use dzc_standalone::{
     run_add, run_delete, run_search, run_tag, AddArgs, DeleteArgs, MockRepo, Output, SearchArgs,
     SearchMode, TagArgs, TagCommand,
 };
@@ -182,7 +182,7 @@ fn test_add_kind_alias_normalization() {
 fn test_add_from_file() {
     let mut repo = MockRepo::default();
     let dir = std::env::temp_dir();
-    let path = dir.join("tiez_c_add_delete_tag_test.txt");
+    let path = dir.join("dezirclip_c_add_delete_tag_test.txt");
     {
         let mut f = std::fs::File::create(&path).expect("create file");
         f.write_all(b"contents from file").expect("write");
@@ -339,11 +339,11 @@ fn test_tag_add_is_idempotent() {
 
 #[test]
 fn cli_add_text_succeeds() {
-    let bin = env!("CARGO_BIN_EXE_tiez-c");
+    let bin = env!("CARGO_BIN_EXE_dzc");
     let out = Command::new(bin)
         .args(["add", "hello from cli"])
         .output()
-        .expect("spawn tiez-c add");
+        .expect("spawn dzc add");
     assert!(out.status.success(), "exit non-zero: {:?}", out.status);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -354,14 +354,14 @@ fn cli_add_text_succeeds() {
 
 #[test]
 fn cli_add_from_stdin_succeeds() {
-    let bin = env!("CARGO_BIN_EXE_tiez-c");
+    let bin = env!("CARGO_BIN_EXE_dzc");
     let mut child = Command::new(bin)
         .args(["add", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn tiez-c add -");
+        .expect("spawn dzc add -");
     child
         .stdin
         .as_mut()
@@ -380,16 +380,16 @@ fn cli_add_from_stdin_succeeds() {
 #[test]
 fn cli_add_from_file_succeeds() {
     let dir = std::env::temp_dir();
-    let path = dir.join("tiez_c_cli_add_file.txt");
+    let path = dir.join("dzc_cli_add_file.txt");
     std::fs::write(&path, "file payload\n").expect("write");
-    let bin = env!("CARGO_BIN_EXE_tiez-c");
+    let bin = env!("CARGO_BIN_EXE_dzc");
     let out = Command::new(bin)
         .args([
             "add",
             &format!("@{}", path.to_string_lossy()),
         ])
         .output()
-        .expect("spawn tiez-c add @file");
+        .expect("spawn dzc add @file");
     let _ = std::fs::remove_file(&path);
     assert!(out.status.success(), "exit non-zero: {:?}", out.status);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -401,11 +401,11 @@ fn cli_add_from_file_succeeds() {
 
 #[test]
 fn cli_delete_without_yes_fails() {
-    let bin = env!("CARGO_BIN_EXE_tiez-c");
+    let bin = env!("CARGO_BIN_EXE_dzc");
     let out = Command::new(bin)
         .args(["delete", "999"])
         .output()
-        .expect("spawn tiez-c delete");
+        .expect("spawn dzc delete");
     assert!(!out.status.success(), "exit must be non-zero: {:?}", out.status);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -424,7 +424,7 @@ fn cli_tag_add_and_list_smoke() {
     // state-mutation paths end-to-end; these CLI smoke tests just
     // confirm each subcommand parses and dispatches without error
     // on the demo seed (id=1 is the first demo entry).
-    let bin = env!("CARGO_BIN_EXE_tiez-c");
+    let bin = env!("CARGO_BIN_EXE_dzc");
 
     // tag add 1 work
     let out = Command::new(bin)

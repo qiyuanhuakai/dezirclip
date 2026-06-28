@@ -113,9 +113,9 @@ const ToolsSettingsGroup = ({
                 <div className="group-content">
                     <div className="setting-item">
                         <LabelWithHint
-                            label={t("tiez_c_cli")}
-                            hint={t("tiez_c_cli")}
-                            hintKey="tiez_c_cli"
+                            label={t("dzc_cli")}
+                            hint={t("dzc_cli")}
+                            hintKey="dzc_cli"
                         />
                     </div>
 
@@ -180,7 +180,7 @@ const ToolsSettingsGroup = ({
                         <div className="tools-skill-method">
                             {t("skill_acquire_method")}
                         </div>
-                        <code className="tools-skill-command">skills/tiez-c-cli</code>
+                        <code className="tools-skill-command">skills/dzc-cli</code>
                     </div>
 
                     {cliInfo?.skill_path && (

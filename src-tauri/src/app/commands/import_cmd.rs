@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_import_from_file_json_roundtrip() {
-        let tmp = std::env::temp_dir().join("tiez-import-json-roundtrip.json");
+        let tmp = std::env::temp_dir().join("dezirclip-import-json-roundtrip.json");
         let entries = vec![make_entry(1), make_entry(2)];
         let json = export_to_json(entries.clone()).unwrap();
         std::fs::write(&tmp, json).unwrap();
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_import_from_file_replace_clears() {
-        let tmp = std::env::temp_dir().join("tiez-import-replace.json");
+        let tmp = std::env::temp_dir().join("dezirclip-import-replace.json");
         let entries = vec![make_entry(1), make_entry(2)];
         let json = export_to_json(entries).unwrap();
         std::fs::write(&tmp, json).unwrap();
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_import_from_file_merge_preserves() {
-        let tmp = std::env::temp_dir().join("tiez-import-merge.json");
+        let tmp = std::env::temp_dir().join("dezirclip-import-merge.json");
         let entries = vec![make_entry(10), make_entry(20)];
         let json = export_to_json(entries).unwrap();
         std::fs::write(&tmp, json).unwrap();

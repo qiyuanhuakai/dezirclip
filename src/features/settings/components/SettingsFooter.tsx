@@ -5,16 +5,12 @@ interface SettingsFooterProps {
     t: (key: string) => string;
     appVersion: string;
     onResetSettings: () => void;
-    emailCopied: boolean;
-    setEmailCopied: (val: boolean) => void;
 }
 
 const SettingsFooter = ({
     t,
     appVersion,
-    onResetSettings,
-    emailCopied,
-    setEmailCopied
+    onResetSettings
 }: SettingsFooterProps) => (
     <>
         {/* Footer Actions */}
@@ -39,16 +35,12 @@ const SettingsFooter = ({
                     justifyContent: 'center',
                     marginBottom: '0'
                 }}
-                onClick={() => {
-                    navigator.clipboard.writeText('tiez@name666.top');
-                    setEmailCopied(true);
-                    setTimeout(() => setEmailCopied(false), 2000);
-                }}
+                onClick={() => openUrl('https://github.com/qiyuanhuakai/dezirclip/issues')}
             >
                 <div className="settings-footer-action-content" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <MessageSquare size={16} />
                     <span className="settings-footer-action-label" style={{ fontSize: '13px', fontWeight: 600 }}>
-                        {emailCopied ? t('email_copied') : t('feedback')}
+                        {t('feedback')}
                     </span>
                 </div>
             </div>
@@ -94,7 +86,7 @@ const SettingsFooter = ({
                 justifyContent: 'center',
                 gap: '8px'
             }}>
-                <span>TieZ {appVersion ? `v${appVersion}` : "v0.2.0"}</span>
+                <span>DezirClip {appVersion ? `v${appVersion}` : "v0.2.0"}</span>
             </div>
             <div style={{
                 fontSize: '11px',
@@ -112,7 +104,7 @@ const SettingsFooter = ({
                 flexWrap: 'wrap'
             }}>
                 <button
-                    onClick={() => openUrl('https://tiez.name666.top/')}
+                    onClick={() => openUrl('https://github.com/qiyuanhuakai/dezirclip/')}
                     style={{
                         fontSize: '11px',
                         color: 'var(--accent-color)',
@@ -130,7 +122,7 @@ const SettingsFooter = ({
                     {t('official_website')}
                 </button>
                 <button
-                    onClick={() => openUrl('https://github.com/jimuzhe/tiez-clipboard')}
+                    onClick={() => openUrl('https://github.com/qiyuanhuakai/dezirclip')}
                     style={{
                         fontSize: '11px',
                         color: 'var(--accent-color)',

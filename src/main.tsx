@@ -12,7 +12,7 @@ const themeCssLoaders = import.meta.glob("./styles/themes/*.css");
 
 const preloadBootTheme = () => {
   const defaultTheme = "mica";
-  const bootTheme = localStorage.getItem("tiez_theme") || defaultTheme;
+  const bootTheme = localStorage.getItem("dezirclip_theme") || localStorage.getItem("tiez_theme") || defaultTheme;
   const bootThemePath = `./styles/themes/${bootTheme}.css`;
   const bootLoader = themeCssLoaders[bootThemePath];
   if (bootLoader) {

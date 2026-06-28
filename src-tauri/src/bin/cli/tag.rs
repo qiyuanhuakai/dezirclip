@@ -1,4 +1,4 @@
-//! `tiez-c tag` — manage tags on an entry.
+//! `dzc tag` — manage tags on an entry.
 //!
 //! Subcommands:
 //! * `add <ID> <TAG>`    — append `<TAG>` to the entry's tag list

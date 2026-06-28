@@ -1,4 +1,4 @@
-//! `tiez-c` CLI binary — thin clap wrapper around the lib's `run_*`
+//! `dzc` CLI binary — thin clap wrapper around the lib's `run_*`
 //! functions.
 //!
 //! The bulk of the logic lives in `src/lib.rs` so the integration tests
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use tiez_c_standalone::{
+use dzc_standalone::{
     emit_output, run_add, run_delete, run_export, run_get, run_import, run_list, run_search,
     run_stats, run_tag, run_watch, AddArgs, DeleteArgs, Entry, ExportArgs, GetArgs, ImportArgs,
     ListArgs, MockRepo, Output, SearchArgs, SearchMode, StatsArgs, TagArgs, TagCommand,
@@ -19,7 +19,7 @@ use tiez_c_standalone::{
 };
 
 #[derive(Parser)]
-#[command(name = "tiez-c", version, about = "tiez-clipboard CLI")]
+#[command(name = "dzc", version, about = "DezirClip CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

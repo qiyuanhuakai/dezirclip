@@ -673,90 +673,90 @@ body.theme-liquid-glass:not(.hide-app-border) {
   color: var(--lg-select-option-checked-text);
 }
 
-.theme-liquid-glass .tiez-select__control {
+.theme-liquid-glass .dezirclip-select__control {
   border-radius: var(--select-control-radius) !important;
   backdrop-filter: blur(12px) saturate(135%);
   -webkit-backdrop-filter: blur(12px) saturate(135%);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease !important;
 }
 
-.theme-liquid-glass .tiez-select__input-container,
-.theme-liquid-glass .tiez-select__input {
+.theme-liquid-glass .dezirclip-select__input-container,
+.theme-liquid-glass .dezirclip-select__input {
   color: var(--select-single-value-color) !important;
   font-weight: 500 !important;
 }
 
-.theme-liquid-glass .tiez-select__input {
+.theme-liquid-glass .dezirclip-select__input {
   caret-color: var(--accent-color) !important;
 }
 
-.theme-liquid-glass .tiez-select__placeholder {
+.theme-liquid-glass .dezirclip-select__placeholder {
   color: var(--select-placeholder-color) !important;
   font-weight: 500 !important;
 }
 
-.theme-liquid-glass .tiez-select__control--is-focused {
+.theme-liquid-glass .dezirclip-select__control--is-focused {
   box-shadow: var(--select-control-focus-shadow) !important;
   border-color: var(--select-control-focus-border) !important;
 }
 
-.theme-liquid-glass .tiez-select__value-container {
+.theme-liquid-glass .dezirclip-select__value-container {
   padding: 2px 10px !important;
 }
 
-.theme-liquid-glass .tiez-select__single-value {
+.theme-liquid-glass .dezirclip-select__single-value {
   color: var(--select-single-value-color) !important;
 }
 
-.theme-liquid-glass .tiez-select__placeholder {
+.theme-liquid-glass .dezirclip-select__placeholder {
   color: var(--select-placeholder-color) !important;
   font-weight: 500 !important;
 }
 
-.theme-liquid-glass .tiez-select__dropdown-indicator {
+.theme-liquid-glass .dezirclip-select__dropdown-indicator {
   color: var(--select-indicator-color) !important;
   padding: 0 8px !important;
   transition: color 0.18s ease, transform 0.18s ease !important;
 }
 
-.theme-liquid-glass .tiez-select__dropdown-indicator:hover {
+.theme-liquid-glass .dezirclip-select__dropdown-indicator:hover {
   color: var(--accent-color) !important;
 }
 
-.theme-liquid-glass .tiez-select__indicator-separator {
+.theme-liquid-glass .dezirclip-select__indicator-separator {
   display: none !important;
 }
 
-.theme-liquid-glass .tiez-select__menu {
+.theme-liquid-glass .dezirclip-select__menu {
   border-radius: 10px !important;
   overflow: hidden !important;
   backdrop-filter: blur(22px) saturate(140%);
   -webkit-backdrop-filter: blur(22px) saturate(140%);
 }
 
-.theme-liquid-glass .tiez-select__menu-list {
+.theme-liquid-glass .dezirclip-select__menu-list {
   padding: 4px !important;
 }
 
-.theme-liquid-glass .tiez-select__option {
+.theme-liquid-glass .dezirclip-select__option {
   border-radius: 6px !important;
   margin: 1px 0 !important;
   font-size: 12px !important;
   transition: background-color 0.12s ease, color 0.12s ease !important;
 }
 
-.theme-liquid-glass .tiez-select__option--is-focused {
+.theme-liquid-glass .dezirclip-select__option--is-focused {
   background: var(--select-option-focus-bg) !important;
   color: var(--select-option-focus-color) !important;
 }
 
-.theme-liquid-glass .tiez-select__option--is-selected {
+.theme-liquid-glass .dezirclip-select__option--is-selected {
   background: var(--select-option-selected-bg) !important;
   color: var(--select-option-selected-color) !important;
   font-weight: 600 !important;
 }
 
-.theme-liquid-glass .tiez-select__group-heading {
+.theme-liquid-glass .dezirclip-select__group-heading {
   color: var(--select-group-heading-color) !important;
   font-size: 10px !important;
   font-weight: 700 !important;
@@ -767,12 +767,12 @@ body.theme-liquid-glass:not(.hide-app-border) {
   border-bottom: 1px solid var(--select-group-heading-border) !important;
 }
 
-.theme-liquid-glass .tiez-select__clear-indicator {
+.theme-liquid-glass .dezirclip-select__clear-indicator {
   color: var(--select-indicator-color) !important;
   padding: 0 4px !important;
 }
 
-.theme-liquid-glass .tiez-select__clear-indicator:hover {
+.theme-liquid-glass .dezirclip-select__clear-indicator:hover {
   color: var(--accent-color) !important;
 }
 

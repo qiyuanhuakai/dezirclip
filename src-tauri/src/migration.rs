@@ -2,7 +2,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-/// v0.2.8 Rename Migration: 贴汁 -> TieZ
+/// v0.2.8 legacy data folder migration.
 pub fn perform_migration_v028(default_app_dir: &PathBuf) {
     // Check multiple possible locations for old data folder
     let mut old_app_dirs_to_check = Vec::new();
@@ -49,16 +49,16 @@ pub fn perform_migration_v028(default_app_dir: &PathBuf) {
 
             // 2. Data Migration Logic
             if !default_app_dir.exists() && !success {
-                println!(">>> [MIGRATION] Renaming old data folder '贴汁' to 'TieZ'...");
+                println!(">>> [MIGRATION] Renaming legacy data folder to DezirClip...");
                 success = std::fs::rename(&old_app_dir, &default_app_dir).is_ok();
             } else if old_db.exists() && !new_db.exists() {
-                println!(">>> [MIGRATION] Pulling old data from '贴汁' to 'TieZ'...");
+                println!(">>> [MIGRATION] Pulling legacy data into DezirClip...");
                 let _ = std::fs::create_dir_all(&default_app_dir);
                 if std::fs::copy(&old_db, &new_db).is_ok() {
                     success = true;
-                    let old_log = old_app_dir.join("tiez.log");
+                    let old_log = old_app_dir.join("dezirclip.log");
                     if old_log.exists() {
-                        let _ = std::fs::copy(&old_log, default_app_dir.join("tiez.log"));
+                        let _ = std::fs::copy(&old_log, default_app_dir.join("dezirclip.log"));
                     }
                 }
             } else if old_db.exists() && new_db.exists() {
@@ -72,7 +72,7 @@ pub fn perform_migration_v028(default_app_dir: &PathBuf) {
 
                     if std::fs::copy(&old_db, &new_db).is_ok() {
                         success = true;
-                        println!(">>> [MIGRATION] Successfully migrated old database to TieZ.");
+                        println!(">>> [MIGRATION] Successfully migrated old database to DezirClip.");
                         let old_redirect = old_app_dir.join("datapath.txt");
                         if old_redirect.exists() {
                             let _ =
@@ -89,7 +89,7 @@ pub fn perform_migration_v028(default_app_dir: &PathBuf) {
             }
 
             if success {
-                println!(">>> [CLEANUP] Cleaning up residues of old '贴汁' version...");
+                println!(">>> [CLEANUP] Cleaning up legacy app residues...");
                 if old_app_dir.exists() {
                     let _ = std::fs::remove_dir_all(&old_app_dir);
                 }

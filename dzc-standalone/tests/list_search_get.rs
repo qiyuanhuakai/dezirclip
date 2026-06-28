@@ -1,4 +1,4 @@
-//! Behavioral tests for `tiez-c` list/search/get subcommands.
+//! Behavioral tests for `dzc` list/search/get subcommands.
 //!
 //! Three required tests + extras:
 //! 1. `list --json` produces a valid JSON array with all required fields.
@@ -13,7 +13,7 @@
 
 use std::process::Command;
 
-use tiez_c_standalone::{
+use dzc_standalone::{
     run_get, run_list, run_search, Entry, GetArgs, ListArgs, MockRepo, Output, SearchArgs,
     SearchMode,
 };
@@ -150,11 +150,11 @@ fn get_returns_content_by_id() {
 
 #[test]
 fn cli_list_ids_outputs_ids_one_per_line() {
-    let bin = env!("CARGO_BIN_EXE_tiez-c");
+    let bin = env!("CARGO_BIN_EXE_dzc");
     let out = Command::new(bin)
         .args(["list", "--ids"])
         .output()
-        .expect("spawn tiez-c list --ids");
+        .expect("spawn dzc list --ids");
     assert!(out.status.success(), "exit non-zero: {:?}", out.status);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let lines: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
@@ -169,11 +169,11 @@ fn cli_list_ids_outputs_ids_one_per_line() {
 
 #[test]
 fn cli_get_latest_with_demo_data_returns_first() {
-    let bin = env!("CARGO_BIN_EXE_tiez-c");
+    let bin = env!("CARGO_BIN_EXE_dzc");
     let out = Command::new(bin)
         .args(["get", "latest"])
         .output()
-        .expect("spawn tiez-c get latest");
+        .expect("spawn dzc get latest");
     assert!(
         out.status.success(),
         "get latest with non-empty store should succeed: {:?}",

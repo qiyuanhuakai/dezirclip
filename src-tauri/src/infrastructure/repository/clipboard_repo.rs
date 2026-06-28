@@ -1635,7 +1635,7 @@ mod tests {
         {
             let conn = arc.lock().expect("lock");
             insert_entry(&conn, "Rust 是一门系统编程语言", "AppRust", 1_700_000_000);
-            insert_entry(&conn, "你好世界 欢迎使用 TieZ", "AppCJK", 1_700_000_001);
+            insert_entry(&conn, "你好世界 欢迎使用 DezirClip", "AppCJK", 1_700_000_001);
             insert_entry(
                 &conn,
                 "Memory safety 🎉 zero-cost abstractions",

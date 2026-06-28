@@ -46,7 +46,8 @@ use zeroize::Zeroize;
 // ---------------------------------------------------------------------------
 
 /// 导出版本号。导入时校验。后续破坏性 schema 升级时递增到 `v2`。
-pub const EXPORT_VERSION: &str = "tiez-export-v1";
+pub const EXPORT_VERSION: &str = "dezirclip-export-v1";
+const LEGACY_EXPORT_VERSION: &str = "tiez-export-v1";
 
 /// AES-GCM nonce 长度（字节）。标准 96-bit nonce。
 const NONCE_LEN: usize = 12;
@@ -157,7 +158,7 @@ pub enum BackupError {
     /// 校验失败 → 走到 `CryptoError`）。这里显式覆盖为 `WrongPassphrase`，
     /// 提示 UI "密码错误" 而非 "数据损坏"。
     WrongPassphrase,
-    /// 导出文件头 `version` 不匹配（不是 `tiez-export-v1`）。
+    /// 导出文件头 `version` 不匹配。
     InvalidFormat(String),
     /// `IoError` 变体保留为对外契约一部分，**当前模块不直接做 I/O**，
     /// 调用方（`import_cmd` / 写入文件那一步）可能用得到。
@@ -423,7 +424,7 @@ fn fill_random(buf: &mut [u8]) -> Result<(), BackupError> {
 
 /// 校验导出文件头的 `version` 字段。
 fn validate_version(version: &str) -> Result<(), BackupError> {
-    if version != EXPORT_VERSION {
+    if version != EXPORT_VERSION && version != LEGACY_EXPORT_VERSION {
         return Err(BackupError::InvalidFormat(format!(
             "expected version {EXPORT_VERSION}, got {version}"
         )));
@@ -487,7 +488,8 @@ mod tests {
 
     #[test]
     fn test_export_version_constant() {
-        assert_eq!(EXPORT_VERSION, "tiez-export-v1");
+        assert_eq!(EXPORT_VERSION, "dezirclip-export-v1");
+        assert_eq!(LEGACY_EXPORT_VERSION, "tiez-export-v1");
     }
 
     #[test]
@@ -646,6 +648,17 @@ mod tests {
             matches!(result, Err(BackupError::InvalidFormat(_))),
             "wrong version must be InvalidFormat, got {result:?}"
         );
+    }
+
+    #[test]
+    fn test_legacy_tiez_export_version_still_imports() {
+        let legacy_json = r#"{
+            "version": "tiez-export-v1",
+            "exported_at": 0,
+            "entries": []
+        }"#;
+        let summary = import_from_json(legacy_json, ImportMode::Merge).expect("legacy import");
+        assert_eq!(summary.imported, 0);
     }
 
     #[test]

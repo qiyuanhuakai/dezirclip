@@ -1,4 +1,4 @@
-# ROADMAP — tiez-clipboard
+# ROADMAP — dezirclip
 
 > **目的**：把调研结论固化为可执行的路线图。每项功能都给出 用户场景 / 技术方案 / 关键文件 / 依赖 / i18n / 手动 QA / 风险，使后续开发可以直接照着走。
 >
@@ -50,8 +50,8 @@
 | 2.6 | 屏幕区域截图到剪贴板 | Phase 2 | 3-4 天 | 📋 planned |
 | 2.7 | 本地 OCR（先 Windows） | Phase 2 | 1 周/平台 | 📋 planned |
 | 2.8 | 导出/导入备份 | Phase 2 | 3-5 天 | 📋 planned |
-| 2.9 | tiez-c CLI 工具 | Phase 2 | 1-2 周 | 📋 planned |
-| 2.9.1 | tiez-c Agent Skill（教 LLM 使用 CLI） | Phase 2 | 1-2 天（与 2.9 同步） | 📋 planned |
+| 2.9 | dzc CLI 工具 | Phase 2 | 1-2 周 | 📋 planned |
+| 2.9.1 | dzc Agent Skill（教 LLM 使用 CLI） | Phase 2 | 1-2 天（与 2.9 同步） | 📋 planned |
 | — | （旧）死代码清理 | Phase 0 | 1 天 | 📋 planned |
 
 **累计估算**：~2-3 个月专注工作量。各项可独立发布，建议按编号顺序执行（前 5 项建立"新功能印象"，后 4 项加深度）。
@@ -148,7 +148,7 @@
 - **前端**：
   - 搜索框 `AppHeader.tsx` 加模式指示器（图标）
   - 模式切换：默认 `Contains`；按 `Ctrl+F` 循环 `Fuzzy → Regex → Fts5 → Contains`
-  - 匹配字符高亮：在 `ClipboardItem.tsx` 的 preview 文本里高亮命中子串（用 `<mark>` 元素 + 主题变量 `--tiez-accent`）
+  - 匹配字符高亮：在 `ClipboardItem.tsx` 的 preview 文本里高亮命中子串（用 `<mark>` 元素 + 主题变量 `--dezirclip-accent`）
   - 搜索历史：localStorage 存最近 20 条
 
 **关键文件**：
@@ -288,7 +288,7 @@
 - **前端**：
   - 新组件 `FilterChips.tsx`：横排胶囊按钮，多选状态，每个 chip 显示 `图标 + 标签 + 数量`
   - 接入位置：`AppHeader.tsx` 搜索框下方
-  - 6 主题统一风格：背景用 `var(--tiez-surface-2)`，选中态用 `var(--tiez-accent)` + 微透明
+  - 6 主题统一风格：背景用 `var(--dezirclip-surface-2)`，选中态用 `var(--dezirclip-accent)` + 微透明
   - 单击切换；Cmd/Ctrl+单击多选；右键 chip 隐藏（设置项可恢复）
   - 数量 lazy 加载（窗口内仅显示当前查询命中的统计）
 
@@ -357,7 +357,7 @@
 - 新组件 `ItemContextMenu.tsx`：基于 Radix UI `ContextMenu` 或自研（项目目前未用 Radix，需评估）
   - 决策：项目当前右键菜单是 HTML + JS 事件；评估后发现 Radix ContextMenu 与现有 CSS 主题系统集成较复杂，**优先自研**（200-300 LOC），与项目 6 主题风格完全可控
   - 入口：ClipboardItem 右键触发（`onContextMenu` 阻止默认 + 自定义位置）
-  - 渲染：fixed 定位 + backdrop blur（用 `var(--tiez-surface-1)`）
+  - 渲染：fixed 定位 + backdrop blur（用 `var(--dezirclip-surface-1)`）
 - 子菜单用 hover 延迟展开（300ms）+ 键盘 `→` 展开 + `←` 收回
 - 菜单项元数据统一结构：`{ id, labelKey, icon, requiresContentType, action: 'transform' | 'command' | 'submenu' }`
 
@@ -471,7 +471,7 @@
   - 复用现有 `copy_image_bytes_to_clipboard` 写回剪贴板
 - **覆盖层 UI**：
   - 新窗口 `?window=region-select`：全屏透明，`focus: false`, `decorations: false`, `transparent: true`, `skipTaskbar: true`, `alwaysOnTop: true`
-  - 渲染：CSS 蒙层 `rgba(0,0,0,0.3)` + 鼠标位置实时矩形选区高亮（`var(--tiez-accent)` 边框）
+  - 渲染：CSS 蒙层 `rgba(0,0,0,0.3)` + 鼠标位置实时矩形选区高亮（`var(--dezirclip-accent)` 边框）
   - 鼠标事件：`mousedown` 起、`mousemove` 更新、`mouseup` 提交 bounds
   - 提交后通过 Tauri 事件 `region-selected` 把 bounds 发到主进程
 - **Wayland 处理**：
@@ -600,12 +600,12 @@
 ### 5.3 导出/导入备份
 
 **目标平台**：Win + Linux
-**用户场景**：设置 → "数据管理" → "导出历史" → 选 JSON / 加密 JSON → 选位置保存 → 验证：用 tiez-c import 还原一致
+**用户场景**：设置 → "数据管理" → "导出历史" → 选 JSON / 加密 JSON → 选位置保存 → 验证：用 dzc import 还原一致
 
 **技术方案**：
 - **导出格式**：
-  - 基础：`tiez-export-v1.json` —— JSON `{ version, exported_at, entries: [...] }`
-  - 加密：同上 + AES-GCM 加密（用 `keyring` 存的主密钥），文件后缀 `.tiezbak`
+  - 基础：`dezirclip-export-v1.json` —— JSON `{ version, exported_at, entries: [...] }`
+  - 加密：同上 + AES-GCM 加密（用 `keyring` 存的主密钥），文件后缀 `.dzc`
 - **条目字段**（按需）：`id, content_type, content, preview, html_content, source_app, source_app_path, created_at, updated_at, use_count, is_pinned, pinned_order, tags, ocr_text, kinds`
 - **加密数据**：
   - Windows：复用现有 `dpapi:` 前缀
@@ -672,26 +672,26 @@
 
 ---
 
-### 5.4 tiez-c CLI 工具
+### 5.4 dzc CLI 工具
 
 **目标平台**：Win + Linux（独立二进制）
 **用户场景**：
 
 ```bash
 # SSH：从远程服务器拉取本地剪贴板最近一条
-$ ssh me@server 'echo "$(tiez-c get --latest)"'
+$ ssh me@server 'echo "$(dzc get --latest)"'
 
 # FZF 集成：从 500 条历史里选一条复制到剪贴板
-$ tiez-c list --ids | fzf --preview 'tiez-c get {}' | xargs -I {} tiez-c get {} | xclip
+$ dzc list --ids | fzf --preview 'dzc get {}' | xargs -I {} dzc get {} | xclip
 
 # 脚本：监控剪贴板，命中 TODO 时通知
-$ tiez-c watch --json | jq -r 'select(.preview | test("TODO")) | .id'
+$ dzc watch --json | jq -r 'select(.preview | test("TODO")) | .id'
 
 # 快速添加：把命令历史转成剪贴板条目
-$ echo "git commit -m 'fix:...'" | tiez-c add -
+$ echo "git commit -m 'fix:...'" | dzc add -
 
 # 统计
-$ tiez-c stats
+$ dzc stats
 total: 1283
 by_type:
   text: 1100
@@ -701,43 +701,43 @@ most_used: "git checkout" (47 times)
 ```
 
 **技术方案**：
-- **独立 cargo binary**：`src-tauri/src/bin/tiez-c.rs`
-  - `Cargo.toml` 加 `[[bin]]` 段（默认已存在 main.rs；加 name = "tiez-c"）
+- **独立 cargo binary**：`src-tauri/src/bin/dzc.rs`
+  - `Cargo.toml` 加 `[[bin]]` 段（默认已存在 main.rs；加 name = "dzc"）
   - 复用现有 `services/repository` 模块（直接读 SQLite）
 - **CLI 框架**：`clap = "4"`（derive 模式）
 - **命令结构**：
-  - `tiez-c list [OPTIONS] [N]` —— 列最近 N 条（默认 20）
+  - `dzc list [OPTIONS] [N]` —— 列最近 N 条（默认 20）
     - `--type <KIND>` 过滤类型
     - `--tag <TAG>` 过滤标签
     - `--pinned` 只显示置顶
     - `--json` JSON 输出
     - `--ids` 仅 ID（一行一个）
     - `--quiet` 无图标（脚本友好）
-  - `tiez-c search <QUERY>` —— 全文搜索（用 FTS5 / 模糊 / 正则；与 4.2 共用查询引擎）
-  - `tiez-c get <ID|latest>` —— 打印条目内容
-  - `tiez-c add <TEXT|->` —— 添加条目（`@file` 从文件，`-` 从 stdin）
-  - `tiez-c delete <ID>` —— 删除
-  - `tiez-c pin <ID>` / `tiez-c unpin <ID>`
-  - `tiez-c tag add <ID> <TAG>` / `tiez-c tag remove <ID> <TAG>` / `tiez-c tag list`
-  - `tiez-c export <FILE>` / `tiez-c import <FILE>` —— 调 5.3 的 backup 模块
-  - `tiez-c stats` —— 统计
-  - `tiez-c watch [OPTIONS]` —— 持续输出新条目（FIFO 模式）
+  - `dzc search <QUERY>` —— 全文搜索（用 FTS5 / 模糊 / 正则；与 4.2 共用查询引擎）
+  - `dzc get <ID|latest>` —— 打印条目内容
+  - `dzc add <TEXT|->` —— 添加条目（`@file` 从文件，`-` 从 stdin）
+  - `dzc delete <ID>` —— 删除
+  - `dzc pin <ID>` / `dzc unpin <ID>`
+  - `dzc tag add <ID> <TAG>` / `dzc tag remove <ID> <TAG>` / `dzc tag list`
+  - `dzc export <FILE>` / `dzc import <FILE>` —— 调 5.3 的 backup 模块
+  - `dzc stats` —— 统计
+  - `dzc watch [OPTIONS]` —— 持续输出新条目（FIFO 模式）
 - **输出格式**：
   - 默认：人类可读（`[TEXT] VSCode 2026-06-16 21:30 #142  use 5x  pinned`）
   - `--json`：`{ id, type, content, preview, source_app, created_at, use_count, is_pinned, tags }`
 - **可执行性**：
-  - 用户安装路径：`src-tauri/target/release/tiez-c`（与 tiez-clipboard 同 bundle 目录）
-  - 文档：`docs/cli.md` + `tiez-c --help`
-  - NSIS / deb / AppImage / rpm 安装时把 tiez-c 放到 `/usr/local/bin/`（或在用户 PATH 内）
+  - 用户安装路径：`src-tauri/target/release/dzc`（与 dezirclip 同 bundle 目录）
+  - 文档：`docs/cli.md` + `dzc --help`
+  - NSIS / deb / AppImage / rpm 安装时把 dzc 放到 `/usr/local/bin/`（或在用户 PATH 内）
 
 **关键文件**：
-- 新增：`src-tauri/src/bin/tiez-c.rs`
+- 新增：`src-tauri/src/bin/dzc.rs`
 - 新增：`src-tauri/src/bin/cli/mod.rs`（命令树）
 - 新增：`src-tauri/src/bin/cli/{list,search,get,add,delete,tag,export,import,stats,watch}.rs`
 - 新增：`docs/cli.md`（用户文档）
 - 修改：`src-tauri/Cargo.toml`（加 `[[bin]]` + `clap` 依赖）
 - 修改：`src-tauri/src/services/repository/mod.rs`（暴露 CLI 需要的查询函数）
-- 修改：`src-tauri/tauri.conf.json`（`bundle.targets` 加 tiez-c 二进制）
+- 修改：`src-tauri/tauri.conf.json`（`bundle.targets` 加 dzc 二进制）
 - 修改：`src-tauri/nsis/installer.nsi`（如有自定义安装器）
 - 修改：`.github/ISSUE_TEMPLATE/*`（如需新增 "cli" 标签）
 
@@ -750,37 +750,37 @@ most_used: "git checkout" (47 times)
 **i18n**：CLI 文本默认中文（与项目语言一致），但用 `clap` 的本地化可能性预留（不强制要求）
 
 **手动 QA 场景**：
-- [ ] `tiez-c --help` 输出清晰命令树
-- [ ] `tiez-c list` 输出最近 20 条，每条含类型图标 / 时间 / 来源
-- [ ] `tiez-c list --json` 输出合法 JSON，`jq` 可解析
-- [ ] `tiez-c list --ids | fzf` 可正常用键盘选择
-- [ ] `tiez-c search "git"` 命中含 "git" 的条目
-- [ ] `tiez-c add "hello"` 添加到历史，GUI 应用中可见
-- [ ] `tiez-c add -` 从 stdin 读
-- [ ] `tiez-c add @file.txt` 从文件读
-- [ ] `tiez-c get <id>` 打印内容
-- [ ] `tiez-c pin/unpin` 状态切换，GUI 同步
-- [ ] `tiez-c watch` 持续输出新条目（GUI 复制时 CLI 立即打印）
-- [ ] `tiez-c stats` 输出统计
-- [ ] `tiez-c export` / `tiez-c import` 与 5.3 文件格式兼容
-- [ ] 无 GUI 运行（只启动 tiez-c）→ 不依赖 Tauri runtime，直接读 DB
+- [ ] `dzc --help` 输出清晰命令树
+- [ ] `dzc list` 输出最近 20 条，每条含类型图标 / 时间 / 来源
+- [ ] `dzc list --json` 输出合法 JSON，`jq` 可解析
+- [ ] `dzc list --ids | fzf` 可正常用键盘选择
+- [ ] `dzc search "git"` 命中含 "git" 的条目
+- [ ] `dzc add "hello"` 添加到历史，GUI 应用中可见
+- [ ] `dzc add -` 从 stdin 读
+- [ ] `dzc add @file.txt` 从文件读
+- [ ] `dzc get <id>` 打印内容
+- [ ] `dzc pin/unpin` 状态切换，GUI 同步
+- [ ] `dzc watch` 持续输出新条目（GUI 复制时 CLI 立即打印）
+- [ ] `dzc stats` 输出统计
+- [ ] `dzc export` / `dzc import` 与 5.3 文件格式兼容
+- [ ] 无 GUI 运行（只启动 dzc）→ 不依赖 Tauri runtime，直接读 DB
 - [ ] Linux / Windows 各测一次
 - [ ] 终端编码（中文 / emoji）显示正确
 
 **风险**：
-- DB 锁冲突：tiez-c 与 GUI 同时写 SQLite 时，WAL 模式天然支持并发读 + 单写者；写操作排队即可
+- DB 锁冲突：dzc 与 GUI 同时写 SQLite 时，WAL 模式天然支持并发读 + 单写者；写操作排队即可
 - 二进制体积：增加 ~1MB（含 clap）
-- 文档：tiez-c 是个独立工具，README/AGENTS.md 应有专门段落
+- 文档：dzc 是个独立工具，README/AGENTS.md 应有专门段落
 
 **提交**：
-- `feat(cli): tiez-c 独立 CLI 工具（list/search/get/add/pin/tag/export/import/stats/watch）`
-- `docs: tiez-c 使用文档`
+- `feat(cli): dzc 独立 CLI 工具（list/search/get/add/pin/tag/export/import/stats/watch）`
+- `docs: dzc 使用文档`
 
 ---
 
-### 5.4.1 tiez-c Agent Skill（教 LLM 使用 CLI）
+### 5.4.1 dzc Agent Skill（教 LLM 使用 CLI）
 
-**目的**：在仓库内随项目发布一个 LLM 友好的技能文件（`SKILL.md`），让 Claude / GPT / 其他代理在不查阅 `docs/cli.md` 的前提下，能正确使用 `tiez-c` 完成"读 / 搜 / 增 / 标 / 导"等任务。
+**目的**：在仓库内随项目发布一个 LLM 友好的技能文件（`SKILL.md`），让 Claude / GPT / 其他代理在不查阅 `docs/cli.md` 的前提下，能正确使用 `dzc` 完成"读 / 搜 / 增 / 标 / 导"等任务。
 
 **目标平台**：Win + Linux（与 CLI 同步）
 
@@ -788,14 +788,14 @@ most_used: "git checkout" (47 times)
 
 | 用户说 | LLM 应执行 |
 |---|---|
-| "我上周从 VS Code 复制过一条 URL，帮我找出来" | `tiez-c list --source VSCode --json \| jq '...'` 或 `tiez-c search "..."` |
-| "把这段 markdown 存进剪贴板历史" | `echo "..." \| tiez-c add -` |
-| "找出包含 'TODO' 的最近 10 条" | `tiez-c search "TODO" --limit 10` |
-| "给我看现在剪贴板里最常用的 5 个文本片段" | `tiez-c stats --top 5` |
-| "把第 142 条加上 'work' 标签" | `tiez-c tag add 142 work` |
-| "导出最近一个月到 ~/backup.json" | `tiez-c export ~/backup.json --since "30 days ago"` |
-| "我看不清 800 条历史，按代码过滤一下" | `tiez-c list --kind code`（依赖 4.4 智能分类） |
-| "把这条转成大写" | `tiez-c get 142 \| tiez-c transform upper \| tiez-c add -` |
+| "我上周从 VS Code 复制过一条 URL，帮我找出来" | `dzc list --source VSCode --json \| jq '...'` 或 `dzc search "..."` |
+| "把这段 markdown 存进剪贴板历史" | `echo "..." \| dzc add -` |
+| "找出包含 'TODO' 的最近 10 条" | `dzc search "TODO" --limit 10` |
+| "给我看现在剪贴板里最常用的 5 个文本片段" | `dzc stats --top 5` |
+| "把第 142 条加上 'work' 标签" | `dzc tag add 142 work` |
+| "导出最近一个月到 ~/backup.json" | `dzc export ~/backup.json --since "30 days ago"` |
+| "我看不清 800 条历史，按代码过滤一下" | `dzc list --kind code`（依赖 4.4 智能分类） |
+| "把这条转成大写" | `dzc get 142 \| dzc transform upper \| dzc add -` |
 
 **技术方案**：
 
@@ -803,7 +803,7 @@ most_used: "git checkout" (47 times)
 
 ```
 skills/
-└── tiez-c-cli/
+└── dzc-cli/
     ├── SKILL.md           # 技能定义（YAML frontmatter + 内容）
     ├── examples/
     │   ├── search-and-add.md
@@ -818,8 +818,8 @@ skills/
 1. **YAML frontmatter**：
    ```yaml
    ---
-   name: tiez-c
-   description: Use the tiez-c CLI to read, search, and manage the tiez-clipboard local clipboard history. Triggers: "clipboard history", "find what I copied", "search clipboard", "add to clipboard", "pin/tag/export clipboard items", "stats about clipboard usage". Pure-local operations; no network.
+   name: dzc
+   description: Use the dzc CLI to read, search, and manage the dezirclip local clipboard history. Triggers: "clipboard history", "find what I copied", "search clipboard", "add to clipboard", "pin/tag/export clipboard items", "stats about clipboard usage". Pure-local operations; no network.
    ---
    ```
 
@@ -847,11 +847,11 @@ skills/
    - 模糊搜索：用 `search --mode fuzzy "term"`
    - 时间范围：`list --since "2026-06-01"`
    - 组合：`search "TODO" --source VSCode --kind code`
-   - 管道：`tiez-c watch --json | jq ...`（实时触发）
+   - 管道：`dzc watch --json | jq ...`（实时触发）
 
 6. **Safety & permissions**：
    - **零网络**：所有操作本地（强化提示，匹配 fork 哲学）
-   - **无代码执行**：tiez-c 不接受 `--exec` / `--shell` / 类似参数；不接受 stdin 之外的任意代码
+   - **无代码执行**：dzc 不接受 `--exec` / `--shell` / 类似参数；不接受 stdin 之外的任意代码
    - **可逆**：
      - `add` / `pin` / `tag` 可在 GUI 撤销
      - `delete` **不可逆**（除非有备份）—— LLM 在调用前应明确告知用户
@@ -866,33 +866,33 @@ skills/
    - `export-encrypted.md`："导出加密备份的完整流程"
 
 8. **Failure modes & recovery**：
-   - `tiez-c: database is locked` → GUI 在写；tiez-c 自动重试 3 次，每次 100ms；如失败，提示用户
-   - `tiez-c: not found` → 检查 `$PATH`，提示运行 `install.sh` 或将 `target/release/tiez-c` 加入 PATH
+   - `dzc: database is locked` → GUI 在写；dzc 自动重试 3 次，每次 100ms；如失败，提示用户
+   - `dzc: not found` → 检查 `$PATH`，提示运行 `install.sh` 或将 `target/release/dzc` 加入 PATH
    - `search: empty result` → 切到 `search --mode fuzzy` 重试
    - `add: content too large` → 超过 `MAX_PERSISTED_TEXT_BYTES`（10MB），建议分批
 
 **分发与安装**：
 
-- **随仓库发布**：`skills/tiez-c-cli/` 完整目录在 git 内
+- **随仓库发布**：`skills/dzc-cli/` 完整目录在 git 内
 - **用户级安装**（推荐）：
   ```bash
   # Linux
-  ./skills/tiez-c-cli/install.sh
-  # → ln -s "$(pwd)/skills/tiez-c-cli" ~/.claude/skills/tiez-c-cli
+  ./skills/dzc-cli/install.sh
+  # → ln -s "$(pwd)/skills/dzc-cli" ~/.claude/skills/dzc-cli
   # Windows (PowerShell)
-  .\skills\tiez-c-cli\install.ps1
-  # → New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\tiez-c-cli" -Target "$(Resolve-Path .\skills\tiez-c-cli)"
+  .\skills\dzc-cli\install.ps1
+  # → New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\dzc-cli" -Target "$(Resolve-Path .\skills\dzc-cli)"
   ```
 - **其他代理支持**：在 `SKILL.md` 头部加注释，说明本技能同时适用于 Claude / Cursor / Continue / OpenCode 等支持 OpenCode Skills 规范的代理
-- **版本同步**：在 `SKILL.md` frontmatter 加 `tiez-clipboard-version: ^0.x` 约束；不匹配时技能加载器应提示
+- **版本同步**：在 `SKILL.md` frontmatter 加 `dezirclip-version: ^0.x` 约束；不匹配时技能加载器应提示
 
 **关键文件**：
-- 新增：`skills/tiez-c-cli/SKILL.md`
-- 新增：`skills/tiez-c-cli/examples/{search-and-add,fzf-pick,bulk-tag,watch-trigger,export-encrypted}.md`
-- 新增：`skills/tiez-c-cli/install.sh`（Linux/macOS）
-- 新增：`skills/tiez-c-cli/install.ps1`（Windows）
-- 新增：`skills/tiez-c-cli/README.md`（开发者向：如何更新本技能）
-- 修改：`README.md`（"开发者"段落链接到 `skills/tiez-c-cli/`）
+- 新增：`skills/dzc-cli/SKILL.md`
+- 新增：`skills/dzc-cli/examples/{search-and-add,fzf-pick,bulk-tag,watch-trigger,export-encrypted}.md`
+- 新增：`skills/dzc-cli/install.sh`（Linux/macOS）
+- 新增：`skills/dzc-cli/install.ps1`（Windows）
+- 新增：`skills/dzc-cli/README.md`（开发者向：如何更新本技能）
+- 修改：`README.md`（"开发者"段落链接到 `skills/dzc-cli/`）
 - 修改：`docs/cli.md`（末尾加 "作为 LLM 技能使用" 小节）
 
 **依赖**：无新依赖（SKILL.md 是纯文档）
@@ -902,8 +902,8 @@ skills/
 **手动 QA 场景**：
 
 1. **技能发现**：
-   - [ ] 用户问 "我上周复制过的 docker 命令在哪" → Claude 自动加载 `tiez-c` skill
-   - [ ] 用户问 "把这条加到剪贴板历史" → Claude 调 `tiez-c add`
+   - [ ] 用户问 "我上周复制过的 docker 命令在哪" → Claude 自动加载 `dzc` skill
+   - [ ] 用户问 "把这条加到剪贴板历史" → Claude 调 `dzc add`
 
 2. **实际执行**（手工 LLM 测试）：
    - [ ] 给 Claude 5 个真实查询，验证返回的命令正确
@@ -914,7 +914,7 @@ skills/
    - [ ] SKILL.md 不引用未公开的内部 API / 未实现的命令
 
 4. **install 脚本**：
-   - [ ] Linux：`./install.sh` 后 `~/.claude/skills/tiez-c-cli/SKILL.md` 存在且为软链接
+   - [ ] Linux：`./install.sh` 后 `~/.claude/skills/dzc-cli/SKILL.md` 存在且为软链接
    - [ ] Windows：`install.ps1` 后 junction 存在，可正常读取
    - [ ] 卸载：`./install.sh --uninstall` 清理软链接
 
@@ -924,17 +924,17 @@ skills/
    - [ ] OpenCode（`~/.config/opencode/skills/`）→ 提供替代安装路径
 
 6. **版本同步**：
-   - [ ] tiez-c 加新命令后，SKILL.md 的 quick reference 同步更新
+   - [ ] dzc 加新命令后，SKILL.md 的 quick reference 同步更新
    - [ ] README / docs/cli.md / SKILL.md 三者描述的命令集一致
 
 **风险**：
 - 技能格式差异：不同 LLM 代理的 SKILL.md schema 略有不同；本项目以 OpenCode Skills 规范为基线（与 AGENTS.md 风格一致）
-- LLM 误用：`tiez-c delete --all` 之类灾难性命令必须要求 `--yes` 二次确认；`import --mode replace` 必须显示条目数等用户确认
+- LLM 误用：`dzc delete --all` 之类灾难性命令必须要求 `--yes` 二次确认；`import --mode replace` 必须显示条目数等用户确认
 - 安全性 vs 易用性：默认 **不** 接受任意 stdin 之外的代码；LLM 应通过组合命令实现"transform + add"，而不是 shell 注入
 
 **提交**：
-- `docs(skills): tiez-c Agent Skill（SKILL.md + 5 examples + install.sh/ps1）`
-- `docs: README 链接到 skills/tiez-c-cli/`
+- `docs(skills): dzc Agent Skill（SKILL.md + 5 examples + install.sh/ps1）`
+- `docs: README 链接到 skills/dzc-cli/`
 
 ---
 
@@ -944,14 +944,14 @@ skills/
 
 - 单一组件 `ItemContextMenu.tsx`，所有功能通过菜单项 manifest 注册
 - 菜单项分组：`[基础操作] [文本转换] [生成] [标签] [危险操作]`
-- 6 主题适配通过 `var(--tiez-surface-*)` + `var(--tiez-accent)` 完成
+- 6 主题适配通过 `var(--dezirclip-surface-*)` + `var(--dezirclip-accent)` 完成
 
 ### 6.2 异步任务进度反馈
 
 OCR / 截图 / 导入导出等长任务用统一模式：
 - 前端：`<ProgressToast />` 浮窗组件
 - 后端：`tauri::async_runtime::spawn` + `app.emit("task-progress", { id, percent, message })`
-- 已有的 `tiez.emit(...)` 事件机制直接复用
+- 已有的 `dezirclip.emit(...)` 事件机制直接复用
 
 ### 6.3 i18n key 命名规范
 
@@ -998,8 +998,8 @@ Phase 2（2-3 月，4 项）
   6. 屏幕区域截图       [3-4 天]
   7. 本地 OCR           [1 周/平台]
   8. 导出/导入备份      [3-5 天]
-  9. tiez-c CLI         [1-2 周]
-     └─ 9.1 tiez-c Agent Skill  [1-2 天, 与 9 同步交付]
+  9. dzc CLI         [1-2 周]
+     └─ 9.1 dzc Agent Skill  [1-2 天, 与 9 同步交付]
 ```
 
 每完成一项 → commit → 跑 `cargo test` + `npm run build` → 手动 QA → 进入下一项。
@@ -1012,13 +1012,13 @@ Phase 2（2-3 月，4 项）
 |---|---|
 | [`AGENTS.md`](./AGENTS.md) | 项目知识库、代码约定、反模式 |
 | [`README.md`](./README.md) | 项目说明、Linux 依赖、构建步骤 |
-| [`docs/cli.md`](./docs/cli.md) | （待写）tiez-c CLI 用户文档 |
+| [`docs/cli.md`](./docs/cli.md) | （待写）dzc CLI 用户文档 |
 | [`docs/i18n.md`](./docs/i18n.md) | （待写）i18n key 命名规范 |
-| [`skills/tiez-c-cli/SKILL.md`](./skills/tiez-c-cli/SKILL.md) | （待写）教 LLM 代理使用 tiez-c 的 OpenCode Skills 规范技能 |
+| [`skills/dzc-cli/SKILL.md`](./skills/dzc-cli/SKILL.md) | （待写）教 LLM 代理使用 dzc 的 OpenCode Skills 规范技能 |
 
 ---
 
 **最后更新**：2026-06-16
-**新增**：5.4.1 tiez-c Agent Skill（教 LLM 使用 CLI 的技能文件计划）
+**新增**：5.4.1 dzc Agent Skill（教 LLM 使用 CLI 的技能文件计划）
 **下次评审**：完成 Phase 1.1（二维码）后
 **责任人**：项目维护者本人（本仓库 fork）

@@ -1,19 +1,19 @@
 <div align="center">
 
-<img src="docs/images/show.png" alt="TieZ Logo" />
+<img src="docs/images/show.png" alt="DezirClip Logo" />
 
-# TieZ
+# DezirClip
 
 A lightweight cross-platform clipboard manager focused on speed, practical daily workflows, and a polished desktop experience.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](https://github.com/jimuzhe/tiez-clipboard/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey.svg)](https://github.com/jimuzhe/tiez-clipboard/releases)
+[![Version](https://img.shields.io/badge/version-0.3.1-green.svg)](https://github.com/qiyuanhuakai/dezirclip/releases)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey.svg)](https://github.com/qiyuanhuakai/dezirclip/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-4a90d9.svg)](https://tauri.app/)
 
 [English](./README.md) | [简体中文](./README.zh-CN.md)
 
-[Releases](https://github.com/jimuzhe/tiez-clipboard/releases) · [Issues](https://github.com/jimuzhe/tiez-clipboard/issues)
+[Releases](https://github.com/qiyuanhuakai/dezirclip/releases) · [Issues](https://github.com/qiyuanhuakai/dezirclip/issues)
 
 </div>
 
@@ -22,12 +22,12 @@ A lightweight cross-platform clipboard manager focused on speed, practical daily
 ## Preview
 
 <div align="center">
-  <img src="docs/images/ui预览.png" alt="TieZ UI Preview" width="860" />
+  <img src="docs/images/ui预览.png" alt="DezirClip UI Preview" width="860" />
 </div>
 
 ## Overview
 
-**TieZ** is a cross-platform clipboard manager built with [Tauri 2](https://tauri.app/), available on **Windows** and **macOS**. It stays in the system tray, opens instantly with a global shortcut, and helps you manage clipboard history, rich text, tags, and everyday copy/paste workflow in one place.
+**DezirClip** is a cross-platform clipboard manager built with [Tauri 2](https://tauri.app/), available on **Windows** and **Linux**. It stays in the system tray, opens instantly with a global shortcut, and helps you manage clipboard history, rich text, tags, and everyday copy/paste workflow in one place.
 
 ## Highlights
 
@@ -113,22 +113,22 @@ A lightweight cross-platform clipboard manager focused on speed, practical daily
 | Platform | Requirement |
 | --- | --- |
 | Windows | Windows 10/11 (x64); Windows 10 requires [Microsoft Edge WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
-| macOS | macOS 10.15 Catalina or later (Apple Silicon / Intel) |
+| Linux | Linux 10.15 Catalina or later (Apple Silicon / Intel) |
 
 ## Quick Start
 
-Download the latest installer from [Releases](https://github.com/jimuzhe/tiez-clipboard/releases).
+Download the latest installer from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases).
 
 | Platform | Package |
 | --- | --- |
 | Windows | `.exe` installer / `.zip` portable build |
-| macOS | `.dmg` disk image |
+| Linux | `.dmg` disk image |
 
 ## Support and Community
 
-If TieZ is useful to you, sponsorship helps keep the project moving.
+If DezirClip is useful to you, sponsorship helps keep the project moving.
 
-- Please leave a name or nickname with your donation so it can be added to the [sponsor list](https://tiez.name666.top/zh/sponsors.html)
+- Please leave a name or nickname with your donation so it can be added to the [sponsor list](https://github.com/qiyuanhuakai/dezirclip/zh/sponsors.html)
 - You can also join the QQ group by scanning the QR code below
 
 <div align="center">
@@ -152,12 +152,12 @@ If TieZ is useful to you, sponsorship helps keep the project moving.
 
 ### Agent Skill
 
-This project provides an Agent Skill for tiez-c-cli at [skills/tiez-c-cli/](./skills/tiez-c-cli/). Install with: `bash skills/tiez-c-cli/install.sh` (Linux/macOS) or `powershell -ExecutionPolicy Bypass -File skills/tiez-c-cli/install.ps1` (Windows).
+This project provides an Agent Skill for dzc-cli at [skills/dzc-cli/](./skills/dzc-cli/). Install with: `bash skills/dzc-cli/install.sh` (Linux/Linux) or `powershell -ExecutionPolicy Bypass -File skills/dzc-cli/install.ps1` (Windows).
 
 ---
 
 <div align="center">
 
-If TieZ helps your workflow, a Star is appreciated.
+If DezirClip helps your workflow, a Star is appreciated.
 
 </div>

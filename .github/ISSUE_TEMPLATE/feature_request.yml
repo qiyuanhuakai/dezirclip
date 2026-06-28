@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest an improvement or new feature for TieZ
+description: Suggest an improvement or new feature for DezirClip
 title: "[Feature] "
 labels:
   - enhancement
@@ -23,7 +23,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: What would you like TieZ to do?
+      description: What would you like DezirClip to do?
     validations:
       required: true
 

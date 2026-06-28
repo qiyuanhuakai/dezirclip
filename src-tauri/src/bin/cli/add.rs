@@ -1,4 +1,4 @@
-//! `tiez-c add` — create a new clipboard entry.
+//! `dzc add` — create a new clipboard entry.
 //!
 //! Content sources (mutually exclusive, resolved by the binary from a
 //! single positional `content` token):
@@ -64,7 +64,7 @@ pub fn run(args: &AddArgs, repo: &dyn ClipboardRepository) -> Result<i64, String
         content_type,
         content,
         html_content: None,
-        source_app: "tiez-c".to_string(),
+        source_app: "dzc".to_string(),
         source_app_path: None,
         timestamp: chrono::Utc::now().timestamp_millis(),
         preview,
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn read_content_file_branch() {
         let dir = std::env::temp_dir();
-        let path = dir.join("tiez_c_add_test.txt");
+        let path = dir.join("dezirclip_c_add_test.txt");
         std::fs::write(&path, "from file").unwrap();
         let args = AddArgs {
             text: None,

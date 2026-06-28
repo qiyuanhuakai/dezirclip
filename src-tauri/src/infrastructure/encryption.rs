@@ -135,7 +135,7 @@ use aes_gcm::{
 
 #[cfg(not(windows))]
 fn get_or_create_master_key() -> Option<[u8; 32]> {
-    let entry = keyring::Entry::new("tiez-app", "encryption-master-key").ok()?;
+    let entry = keyring::Entry::new("dezirclip", "encryption-master-key").ok()?;
 
     match entry.get_password() {
         Ok(password) => {

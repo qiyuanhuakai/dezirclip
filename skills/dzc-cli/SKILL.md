@@ -1,17 +1,17 @@
 ---
-name: tiez-c
-description: tiez-clipboard CLI for LLM agents — query, search, modify clipboard history via 12 subcommands
+name: dzc
+description: dezirclip CLI for LLM agents — query, search, modify clipboard history via 12 subcommands
 ---
 
-# tiez-c — tiez-clipboard CLI Agent Skill
+# dzc — dezirclip CLI Agent Skill
 
-`tiez-c` is the official command-line interface for tiez-clipboard. It exposes clipboard history as structured data so agents, scripts, and humans can read, write, search, export, and watch the local clipboard database without launching the GUI.
+`dzc` is the official command-line interface for dezirclip. It exposes clipboard history as structured data so agents, scripts, and humans can read, write, search, export, and watch the local clipboard database without launching the GUI.
 
-The CLI talks directly to the same SQLite backend the desktop app uses. There is no daemon, no REST layer, and no network hop between `tiez-c` and the data.
+The CLI talks directly to the same SQLite backend the desktop app uses. There is no daemon, no REST layer, and no network hop between `dzc` and the data.
 
 ## When to use this skill
 
-Use `tiez-c` when the user asks to access or manipulate clipboard history from the command line.
+Use `dzc` when the user asks to access or manipulate clipboard history from the command line.
 
 - User asks to access or search clipboard history
 - User wants to add, delete, pin, or tag clipboard entries
@@ -24,7 +24,7 @@ Do NOT use this skill for:
 
 - GUI interaction (launching the desktop window, clicking buttons)
 - Direct system clipboard access (use the OS clipboard API or language bindings instead)
-- Reading or writing to active applications (that is outside tiez-clipboard's scope)
+- Reading or writing to active applications (that is outside dezirclip's scope)
 
 ## Quick reference
 
@@ -54,14 +54,14 @@ The 12 subcommands split cleanly into three categories.
 | Command | Description | Key flags |
 |---------|-------------|-----------|
 | `watch` | Stream new entries as they arrive | `--pattern`, `--notify`, `--json` |
-| `export` | Dump database to a `.tiez` file | `--encrypted`, `--passphrase` |
-| `import` | Restore from a `.tiez` file | `--mode merge/replace`, `--passphrase` |
+| `export` | Dump database to a `.dzc` file | `--encrypted`, `--passphrase` |
+| `import` | Restore from a `.dzc` file | `--mode merge/replace`, `--passphrase` |
 
-Run `tiez-c <command> --help` for per-command options.
+Run `dzc <command> --help` for per-command options.
 
 ## Output conventions
 
-LLMs parsing `tiez-c` output must handle several formats. Default output is human-readable, not machine-readable.
+LLMs parsing `dzc` output must handle several formats. Default output is human-readable, not machine-readable.
 
 - Default output uses unicode icons (for example: 📋 🌐 🖼️ 📁). Strip these before parsing.
 - `--json` returns a JSON array. Iterate all entries; do not assume a single object.
@@ -77,7 +77,7 @@ LLMs parsing `tiez-c` output must handle several formats. Default output is huma
 Show the most recent clipboard entries in human-readable form.
 
 ```bash
-tiez-c list
+dzc list
 ```
 
 ### Pattern 2: Find specific content
@@ -85,7 +85,7 @@ tiez-c list
 Search with a regular expression across titles and bodies.
 
 ```bash
-tiez-c search "regex pattern" --mode regex
+dzc search "regex pattern" --mode regex
 ```
 
 ### Pattern 3: FZF interactive picker
@@ -93,7 +93,7 @@ tiez-c search "regex pattern" --mode regex
 Pipe IDs into `fzf`, then fetch the selected entry as JSON.
 
 ```bash
-tiez-c list --ids | fzf | xargs tiez-c get --json
+dzc list --ids | fzf | xargs dzc get --json
 ```
 
 ### Pattern 4: Bulk tag
@@ -101,7 +101,7 @@ tiez-c list --ids | fzf | xargs tiez-c get --json
 Tag every listed entry with a single label.
 
 ```bash
-tiez-c list --ids | xargs -I {} tiez-c tag add {} web
+dzc list --ids | xargs -I {} dzc tag add {} web
 ```
 
 ### Pattern 5: Watch for secrets
@@ -109,7 +109,7 @@ tiez-c list --ids | xargs -I {} tiez-c tag add {} web
 Monitor new clipboard entries for passwords or API keys.
 
 ```bash
-tiez-c watch --pattern "password|api[_-]?key" --notify
+dzc watch --pattern "password|api[_-]?key" --notify
 ```
 
 ### Pattern 6: Export encrypted backup
@@ -117,7 +117,7 @@ tiez-c watch --pattern "password|api[_-]?key" --notify
 Save a portable encrypted backup.
 
 ```bash
-tiez-c export /tmp/backup.tiez --encrypted --passphrase "..."
+dzc export /tmp/backup.dzc --encrypted --passphrase "..."
 ```
 
 ### Pattern 7: Restore from backup
@@ -125,7 +125,7 @@ tiez-c export /tmp/backup.tiez --encrypted --passphrase "..."
 Merge a backup into the existing database.
 
 ```bash
-tiez-c import /tmp/backup.tiez --mode merge
+dzc import /tmp/backup.dzc --mode merge
 ```
 
 ### Pattern 8: Programmatic access
@@ -133,14 +133,14 @@ tiez-c import /tmp/backup.tiez --mode merge
 Extract just the content field from every entry.
 
 ```bash
-tiez-c list --json | jq '.[].content'
+dzc list --json | jq '.[].content'
 ```
 
 ## Safety & permissions
 
-`tiez-c` is designed to be safe by default and dangerous only when explicitly invoked.
+`dzc` is designed to be safe by default and dangerous only when explicitly invoked.
 
-- Zero network: `tiez-c` makes no network calls. All data is local SQLite.
+- Zero network: `dzc` makes no network calls. All data is local SQLite.
 - Read-only by default: `list`, `search`, `get`, and `stats` never modify the database.
 - Destructive actions require confirmation: `delete`, `pin`, `unpin`, `tag`, `add`, and `import` will prompt for confirmation unless `--yes` is passed.
 - Irreversible actions: `delete` removes entries permanently with no soft delete. `import --mode replace` overwrites all existing data. Confirm with the user before running either.
@@ -148,23 +148,23 @@ tiez-c list --json | jq '.[].content'
 
 ## Common errors
 
-- `database is locked`: another `tiez-c` or tiez instance is accessing the same database file. Wait for it to close or stop the other process.
-- `entry not found`: the supplied ID does not exist. Use `tiez-c list --ids` to discover valid IDs.
+- `database is locked`: another `dzc` or dezirclip instance is accessing the same database file. Wait for it to close or stop the other process.
+- `entry not found`: the supplied ID does not exist. Use `dzc list --ids` to discover valid IDs.
 - `wrong passphrase`: the encrypted backup file cannot be decrypted with the supplied passphrase. Verify the passphrase and retry.
-- `version mismatch`: the backup was created by an incompatible tiez version. Update or rollback tiez-clipboard to match.
-- `permission denied`: the data path is not writable. Check the `TIEZ_DB_PATH` environment variable and filesystem permissions.
+- `version mismatch`: the backup was created by an incompatible dezirclip version. Update or rollback dezirclip to match.
+- `permission denied`: the data path is not writable. Check the `DEZIRCLIP_DB_PATH` environment variable and filesystem permissions.
 
 ## Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `TIEZ_DB_PATH` | Override the default SQLite database path |
-| `TIEZ_CONFIG_DIR` | Override the config directory |
-| `TIEZ_NO_NOTIFY=1` | Disable desktop notifications in `watch` mode |
-| `TIEZ_EDITOR` | External editor invoked by `add -` (stdin mode) |
+| `DEZIRCLIP_DB_PATH` | Override the default SQLite database path |
+| `DEZIRCLIP_CONFIG_DIR` | Override the config directory |
+| `DEZIRCLIP_NO_NOTIFY=1` | Disable desktop notifications in `watch` mode |
+| `DEZIRCLIP_EDITOR` | External editor invoked by `add -` (stdin mode) |
 
 ## See also
 
 - `docs/cli.md` — full user manual
-- `skills/tiez-c-cli/examples/*.md` — five worked examples
-- `tiez-c <command> --help` — per-command help
+- `skills/dzc-cli/examples/*.md` — five worked examples
+- `dzc <command> --help` — per-command help

@@ -37,8 +37,8 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
 
   // Apply theme from localStorage
   useEffect(() => {
-    const theme = localStorage.getItem("tiez_theme") || "mica";
-    const colorMode = localStorage.getItem("tiez_color_mode") || "light";
+    const theme = localStorage.getItem("dezirclip_theme") || localStorage.getItem("tiez_theme") || "mica";
+    const colorMode = localStorage.getItem("dezirclip_color_mode") || localStorage.getItem("tiez_color_mode") || "light";
     applyThemeClass(document.documentElement, document.body, theme);
     applyModeClass(
       document.documentElement,
