@@ -96,7 +96,8 @@ jobs:
             libx11-dev \
             libxi-dev \
             libxrandr-dev \
-            libxtst-dev
+            libxtst-dev \
+            xdg-utils
 
       - name: Install Rust stable
         if: matrix.rust_target == ''

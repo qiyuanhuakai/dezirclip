@@ -58,7 +58,8 @@ jobs:
             libx11-dev \
             libxi-dev \
             libxrandr-dev \
-            libxtst-dev
+            libxtst-dev \
+            xdg-utils
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -234,7 +235,8 @@ jobs:
             libx11-dev \
             libxi-dev \
             libxrandr-dev \
-            libxtst-dev
+            libxtst-dev \
+            xdg-utils
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
