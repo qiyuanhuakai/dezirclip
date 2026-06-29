@@ -1,9 +1,6 @@
-import type { ComponentProps } from "react";
-import SettingsPanel from "../components/SettingsPanel";
 import type { AppState } from "../../app/types";
 import type { Locale } from "../../../shared/types";
-
-type SettingsPanelProps = ComponentProps<typeof SettingsPanel>;
+import type { SettingsPanelProps } from "../components/SettingsPanel.types";
 
 interface UseSettingsPanelPropsOptions {
   t: (key: string) => string;

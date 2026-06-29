@@ -11,7 +11,8 @@ export const useAppState = (): AppState => {
     clipboard: true,
     appearance: true,
     default_apps: true,
-    data: true
+    data: true,
+    tools: true
   });
   const [history, setHistory] = useState<ClipboardEntry[]>([]);
   const [search, setSearch] = useState("");
