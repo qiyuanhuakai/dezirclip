@@ -1,0 +1,25 @@
+app-id: io.github.qiyuanhuakai.dezirclip
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: dezirclip
+finish-args:
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=xdg-run/tray-icon:create
+  - --talk-name=org.freedesktop.secrets
+  - --talk-name=org.kde.StatusNotifierWatcher
+modules:
+  - name: dezirclip
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 usr/bin/dezirclip /app/bin/dezirclip
+      - if [ -f usr/bin/dzc ]; then install -Dm755 usr/bin/dzc /app/bin/dzc; fi
+      - if [ -d usr/lib ]; then mkdir -p /app/lib && cp -a usr/lib/. /app/lib/; fi
+      - if [ -d usr/share ]; then mkdir -p /app/share && cp -a usr/share/. /app/share/; fi
+    sources:
+      - type: dir
+        path: build-root
