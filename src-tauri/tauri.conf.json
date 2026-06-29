@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm run build",
+    "beforeBuildCommand": "pnpm run build && pnpm run tauri:prepare-sidecars",
     "frontendDist": "../dist/web"
   },
   "app": {
@@ -149,6 +149,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/dzc"
+    ],
+    "resources": [
+      "../skills/dzc-cli"
     ],
     "targets": [
       "nsis",

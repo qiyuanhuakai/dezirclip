@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, type ComponentType, type ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { ToolsPathStatus, type CliInfo } from "./ToolsPathStatus";
 
 interface LabelWithHintProps {
     label: string;
@@ -8,18 +9,11 @@ interface LabelWithHintProps {
     hintKey: string;
 }
 
-interface CliInfo {
-    cli_path: string | null;
-    cli_version: string;
-    skill_path: string | null;
-    cli_on_path: boolean;
-}
-
 interface CliPathResult {
-    installed_path: string;
-    path_entry: string;
-    already_linked: boolean;
-    requires_new_terminal: boolean;
+    readonly installed_path: string;
+    readonly path_entry: string;
+    readonly already_linked: boolean;
+    readonly requires_new_terminal: boolean;
 }
 
 let cachedCliInfo: CliInfo | null = null;
@@ -120,6 +114,15 @@ const ToolsSettingsGroup = ({
         }
     };
 
+    const handleOpenInstallFolder = async () => {
+        try {
+            await invoke("open_install_folder");
+        } catch (e: unknown) {
+            setPathStatusKey("open_install_folder_failed");
+            setPathStatusDetail(e instanceof Error ? e.message : String(e));
+        }
+    };
+
     const pathStatusText = () => {
         switch (pathStatusKey) {
             case "cli_path_added":
@@ -130,6 +133,8 @@ const ToolsSettingsGroup = ({
                 return t("cli_path_already_linked");
             case "cli_path_add_failed":
                 return t("cli_path_add_failed");
+            case "open_install_folder_failed":
+                return t("open_install_folder_failed");
             default:
                 return "";
         }
@@ -176,25 +181,14 @@ const ToolsSettingsGroup = ({
                     <div className="setting-item tools-action-row" style={{ marginLeft: "18px" }}>
                         <div className="item-label-group">
                             <span className="item-label">{t("cli_path_status")}</span>
-                            <span className="hint">
-                                {cliInfoLoading
-                                    ? t("processing")
-                                    : cliInfo?.cli_on_path
-                                    ? t("cli_path_ready")
-                                    : cliInfo?.cli_path
-                                        ? t("cli_path_missing_hint")
-                                        : t("cli_not_found")}
-                            </span>
                         </div>
-                        {cliInfo?.cli_path && !cliInfo.cli_on_path && (
-                            <button
-                                className="setting-btn setting-btn--compact"
-                                onClick={handleAddCliToPath}
-                                disabled={pathUpdating}
-                            >
-                                {pathUpdating ? t("processing") : t("add_to_path")}
-                            </button>
-                        )}
+                        <ToolsPathStatus
+                            t={t}
+                            cliInfo={cliInfo}
+                            cliInfoLoading={cliInfoLoading}
+                            pathUpdating={pathUpdating}
+                            onAddToPath={handleAddCliToPath}
+                        />
                     </div>
 
                     {pathStatusKey && (
@@ -214,7 +208,15 @@ const ToolsSettingsGroup = ({
                         <div className="tools-skill-method">
                             {t("skill_acquire_method")}
                         </div>
-                        <code className="tools-skill-command">skills/dzc-cli</code>
+                        <button
+                            type="button"
+                            className="tools-skill-command tools-skill-command--button"
+                            onClick={handleOpenInstallFolder}
+                            title={t("open_install_folder")}
+                        >
+                            <FolderOpen size={14} />
+                            <span>{t("open_install_folder")}</span>
+                        </button>
                     </div>
 
                     {cliInfo?.skill_path && (

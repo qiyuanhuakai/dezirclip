@@ -12,6 +12,7 @@
     "build": "tsc && vite build",
     "i18n:check": "node scripts/i18n-check.mjs",
     "preview": "vite preview",
+    "tauri:prepare-sidecars": "node scripts/prepare-tauri-sidecars.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:dev:safe": "DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey tauri dev",

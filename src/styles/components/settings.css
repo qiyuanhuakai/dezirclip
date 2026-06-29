@@ -197,6 +197,14 @@
   gap: 10px;
 }
 
+.tools-path-status-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .tools-note-item {
   justify-content: flex-start;
   min-height: 0;
@@ -216,6 +224,8 @@
 
 .tools-skill-command {
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
   width: fit-content;
   max-width: 100%;
   padding: 5px 8px;
@@ -230,6 +240,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tools-skill-command--button {
+  cursor: pointer;
+}
+
+.tools-skill-command--button:hover {
+  background: var(--surface-control-hover-bg, var(--surface-control-bg, var(--bg-body)));
 }
 
 .tools-path-text {

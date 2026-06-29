@@ -249,6 +249,7 @@ fn main() {
             app::commands::get_search_history,
             app::commands::get_cli_info,
             app::commands::add_cli_to_path,
+            app::commands::open_install_folder,
             app::commands::import_cmd::import_from_file,
             app::commands::screenshot_cmd::capture_full_screen,
             app::commands::screenshot_cmd::capture_region,
