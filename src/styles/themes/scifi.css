@@ -156,15 +156,50 @@ body.light-mode.theme-scifi #root {
 }
 
 .theme-scifi .compact-popover-portal.compact-preview-window {
+  border-radius: 12px !important;
   background: color-mix(in srgb, var(--bg-panel) 88%, transparent) !important;
   border: 1px solid color-mix(in srgb, var(--border-dark) 72%, transparent) !important;
   box-shadow: 0 12px 28px color-mix(in srgb, var(--shadow-color) 30%, transparent) !important;
+  color: var(--text-primary) !important;
 }
 
 body.light-mode.theme-scifi .compact-popover-portal.compact-preview-window {
-  background: color-mix(in srgb, var(--bg-input) 96%, white) !important;
-  border-color: color-mix(in srgb, var(--border-dark) 58%, transparent) !important;
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--shadow-color) 18%, transparent) !important;
+  background: rgba(248, 253, 255, 0.96) !important;
+  border-color: rgba(45, 160, 150, 0.30) !important;
+  box-shadow:
+    0 12px 28px rgba(17, 84, 70, 0.18),
+    inset 0 0 0 1px rgba(45, 233, 184, 0.12) !important;
+  color: #0a2746 !important;
+}
+
+body.compact-preview.light-mode.theme-scifi #root {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+body.compact-preview.light-mode.theme-scifi .compact-preview-root .compact-popover-portal.compact-preview-window {
+  background: rgba(248, 253, 255, 0.96) !important;
+  border-color: rgba(45, 160, 150, 0.30) !important;
+  box-shadow:
+    0 12px 28px rgba(17, 84, 70, 0.18),
+    inset 0 0 0 1px rgba(45, 233, 184, 0.12) !important;
+  color: #0a2746 !important;
+}
+
+body.light-mode.theme-scifi .compact-popover-portal.compact-preview-window .popover-meta,
+body.light-mode.theme-scifi .compact-popover-portal.compact-preview-window .popover-content,
+body.light-mode.theme-scifi .compact-popover-portal.compact-preview-window .popover-meta svg,
+body.light-mode.theme-scifi .compact-popover-portal.compact-preview-window .meta-row span {
+  color: #0a2746 !important;
+}
+
+body.compact-preview.light-mode.theme-scifi .compact-preview-root .compact-popover-portal.compact-preview-window .popover-meta,
+body.compact-preview.light-mode.theme-scifi .compact-preview-root .compact-popover-portal.compact-preview-window .popover-content,
+body.compact-preview.light-mode.theme-scifi .compact-preview-root .compact-popover-portal.compact-preview-window .popover-meta svg,
+body.compact-preview.light-mode.theme-scifi .compact-preview-root .compact-popover-portal.compact-preview-window .meta-row span,
+body.compact-preview.light-mode.theme-scifi .compact-preview-root .compact-popover-portal.compact-preview-window .meta-dot {
+  color: #0a2746 !important;
 }
 
 body.light-mode.theme-scifi .compact-popover-portal .rich-text-preview {

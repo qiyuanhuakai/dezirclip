@@ -55,6 +55,7 @@ body.compact-preview #root>* {
     margin: 0 !important;
     box-shadow: none !important;
     filter: none !important;
+    overflow: hidden;
 }
 
 /* Keep compact preview visually single-layer. */

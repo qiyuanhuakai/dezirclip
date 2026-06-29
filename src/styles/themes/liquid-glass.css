@@ -1845,18 +1845,23 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-color-dot {
    16. Compact preview
    ============================================================ */
 .theme-liquid-glass .compact-popover-portal.compact-preview-window {
-  border-radius: 12px !important;
-  background: var(--lg-history-bg) !important;
-  border: 1px solid var(--lg-history-border) !important;
-  box-shadow: var(--lg-history-shadow) !important;
+  border-radius: 14px !important;
+  background: rgba(255, 255, 255, 0.84) !important;
+  border: 1px solid rgba(60, 60, 67, 0.16) !important;
+  box-shadow:
+    0 16px 36px rgba(20, 30, 60, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.46) !important;
+  color: var(--text-primary) !important;
 }
 
 body.dark-mode.theme-liquid-glass .compact-popover-portal.compact-preview-window,
 body.dark-mode.theme-liquid-glass .compact-popover-portal.compact-preview-window.retro {
-  border-radius: 12px !important;
-  background: var(--lg-history-bg) !important;
-  border: 1px solid var(--lg-history-border) !important;
-  box-shadow: var(--lg-history-shadow) !important;
+  border-radius: 14px !important;
+  background: rgba(30, 33, 42, 0.88) !important;
+  border: 1px solid rgba(255, 255, 255, 0.10) !important;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   color: var(--text-primary) !important;
 }
 
@@ -1890,9 +1895,9 @@ body.theme-liquid-glass .queue-bar {
    18. Compact preview variant
    ============================================================ */
 body.compact-preview.theme-liquid-glass #root {
-  background: var(--glass-shell-bg) !important;
-  backdrop-filter: blur(40px) saturate(145%);
-  -webkit-backdrop-filter: blur(40px) saturate(145%);
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 body.compact-preview.theme-liquid-glass #root::before {

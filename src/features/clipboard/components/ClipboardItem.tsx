@@ -35,6 +35,7 @@ import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
+import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
 const CONTEXT_MENU_OPEN_EVENT = "dezirclip:context-menu-open";
@@ -61,6 +62,7 @@ type CompactPreviewAnchor = {
     clientY: number;
     screenX: number;
     screenY: number;
+    itemRect: CompactPreviewRect | null;
 };
 
 let compactPreviewWindow: WebviewWindow | null = null;
@@ -91,96 +93,52 @@ const clearCompactPreviewPendingState = () => {
     compactPreviewPendingAnchor = null;
 };
 
+type CompactPreviewPhysicalAnchor = {
+    readonly x: number;
+    readonly y: number;
+    readonly itemRect: CompactPreviewRect | null;
+};
+
+const scaleRect = (rect: CompactPreviewRect, offset: { readonly x: number; readonly y: number }, scale: number): CompactPreviewRect => ({
+    left: Math.round(offset.x + rect.left * scale),
+    top: Math.round(offset.y + rect.top * scale),
+    right: Math.round(offset.x + rect.right * scale),
+    bottom: Math.round(offset.y + rect.bottom * scale)
+});
+
+const toCompactPreviewRect = (rect: DOMRect): CompactPreviewRect => ({
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom
+});
+
 const resolveAnchorPhysical = async (
     anchor: CompactPreviewAnchor,
     scale: number
-): Promise<{ x: number; y: number }> => {
+): Promise<CompactPreviewPhysicalAnchor> => {
     try {
         const appWindow = getCurrentWindow();
         const outer = await appWindow.outerPosition();
         return {
             x: Math.round(outer.x + anchor.clientX * scale),
-            y: Math.round(outer.y + anchor.clientY * scale)
+            y: Math.round(outer.y + anchor.clientY * scale),
+            itemRect: anchor.itemRect ? scaleRect(anchor.itemRect, outer, scale) : null
         };
     } catch {
         return {
             x: Math.round(anchor.screenX * scale),
-            y: Math.round(anchor.screenY * scale)
+            y: Math.round(anchor.screenY * scale),
+            itemRect: anchor.itemRect
+                ? {
+                      left: Math.round(anchor.screenX * scale + (anchor.itemRect.left - anchor.clientX) * scale),
+                      top: Math.round(anchor.screenY * scale + (anchor.itemRect.top - anchor.clientY) * scale),
+                      right: Math.round(anchor.screenX * scale + (anchor.itemRect.right - anchor.clientX) * scale),
+                      bottom: Math.round(anchor.screenY * scale + (anchor.itemRect.bottom - anchor.clientY) * scale)
+                  }
+                : null
         };
     }
-};
-
-const pickPreviewPosition = (
-    anchorX: number,
-    anchorY: number,
-    widthPx: number,
-    heightPx: number,
-    monitorPos: { x: number; y: number },
-    monitorSize: { width: number; height: number },
-    margin: number,
-    offset: number,
-    avoidRect?: { left: number; top: number; right: number; bottom: number } | null
-) => {
-    const left = monitorPos.x + margin;
-    const top = monitorPos.y + margin;
-    const right = monitorPos.x + monitorSize.width - margin;
-    const bottom = monitorPos.y + monitorSize.height - margin;
-
-    const clampPoint = (p: { x: number; y: number }) => ({
-        x: Math.min(Math.max(p.x, left), right - widthPx),
-        y: Math.min(Math.max(p.y, top), bottom - heightPx)
-    });
-
-    const intersectsAvoidRect = (p: { x: number; y: number }) => {
-        if (!avoidRect) return false;
-        const previewRect = {
-            left: p.x,
-            top: p.y,
-            right: p.x + widthPx,
-            bottom: p.y + heightPx
-        };
-        return !(
-            previewRect.right <= avoidRect.left ||
-            previewRect.left >= avoidRect.right ||
-            previewRect.bottom <= avoidRect.top ||
-            previewRect.top >= avoidRect.bottom
-        );
-    };
-
-    const candidates = [
-        { x: anchorX + offset, y: anchorY + offset }, // right-bottom
-        { x: anchorX + offset, y: anchorY - heightPx - offset }, // right-top
-        { x: anchorX - widthPx - offset, y: anchorY + offset }, // left-bottom
-        { x: anchorX - widthPx - offset, y: anchorY - heightPx - offset } // left-top
-    ];
-
-    const fits = (p: { x: number; y: number }) =>
-        p.x >= left && p.y >= top && p.x + widthPx <= right && p.y + heightPx <= bottom;
-
-    for (const c of candidates) {
-        if (fits(c) && !intersectsAvoidRect(c)) return c;
-    }
-
-    if (avoidRect) {
-        const outsideCandidates = [
-            { x: avoidRect.right + offset, y: anchorY - Math.round(heightPx * 0.25) }, // right of main
-            { x: avoidRect.left - widthPx - offset, y: anchorY - Math.round(heightPx * 0.25) }, // left of main
-            { x: anchorX - Math.round(widthPx * 0.2), y: avoidRect.top - heightPx - offset }, // above main
-            { x: anchorX - Math.round(widthPx * 0.2), y: avoidRect.bottom + offset } // below main
-        ].map(clampPoint);
-
-        for (const c of outsideCandidates) {
-            if (!intersectsAvoidRect(c)) return c;
-        }
-    }
-
-    for (const c of candidates) {
-        const clamped = clampPoint(c);
-        if (!intersectsAvoidRect(clamped)) return clamped;
-    }
-
-    // Final fallback: clamp the default candidate into monitor bounds.
-    return clampPoint(candidates[0]);
 };
 
 const placeAndShowPendingCompactPreview = async (
@@ -220,9 +178,10 @@ const placeAndShowPendingCompactPreview = async (
               }
             : null;
 
-    const target = pickPreviewPosition(
-        anchorPx.x,
-        anchorPx.y,
+    const target = pickPreviewPosition({
+        anchorX: anchorPx.x,
+        anchorY: anchorPx.y,
+        anchorRect: anchorPx.itemRect,
         widthPx,
         heightPx,
         monitorPos,
@@ -230,7 +189,7 @@ const placeAndShowPendingCompactPreview = async (
         margin,
         offset,
         avoidRect
-    );
+    });
     compactPreviewLog("place/show target resolved", {
         widthLogical,
         heightLogical,
@@ -1152,7 +1111,8 @@ const ClipboardItem = ({
                     clientX: e.clientX,
                     clientY: e.clientY,
                     screenX: e.screenX,
-                    screenY: e.screenY
+                    screenY: e.screenY,
+                    itemRect: toCompactPreviewRect(e.currentTarget.getBoundingClientRect())
                 };
                 const target = e.currentTarget;
 
@@ -1175,7 +1135,8 @@ const ClipboardItem = ({
                     clientX: e.clientX,
                     clientY: e.clientY,
                     screenX: e.screenX,
-                    screenY: e.screenY
+                    screenY: e.screenY,
+                    itemRect: toCompactPreviewRect(e.currentTarget.getBoundingClientRect())
                 };
             }}
             onMouseLeave={() => {
