@@ -1,4 +1,4 @@
-import { useState, useEffect, type ComponentType, type ReactNode } from "react";
+import { useCallback, useState, useEffect, type ComponentType, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -22,6 +22,26 @@ interface CliPathResult {
     requires_new_terminal: boolean;
 }
 
+let cachedCliInfo: CliInfo | null = null;
+let pendingCliInfoRequest: Promise<CliInfo> | null = null;
+
+const loadCliInfo = (forceRefresh: boolean): Promise<CliInfo> => {
+    if (!forceRefresh && cachedCliInfo) {
+        return Promise.resolve(cachedCliInfo);
+    }
+    if (!forceRefresh && pendingCliInfoRequest) {
+        return pendingCliInfoRequest;
+    }
+    const request = invoke<CliInfo>("get_cli_info").then((info) => {
+        cachedCliInfo = info;
+        return info;
+    });
+    pendingCliInfoRequest = request.finally(() => {
+        pendingCliInfoRequest = null;
+    });
+    return pendingCliInfoRequest;
+};
+
 interface ToolsSettingsGroupProps {
     t: (key: string) => string;
     collapsed: boolean;
@@ -35,7 +55,8 @@ const ToolsSettingsGroup = ({
     onToggle,
     LabelWithHint,
 }: ToolsSettingsGroupProps) => {
-    const [cliInfo, setCliInfo] = useState<CliInfo | null>(null);
+    const [cliInfo, setCliInfo] = useState<CliInfo | null>(cachedCliInfo);
+    const [cliInfoLoading, setCliInfoLoading] = useState(false);
     const [appVersion, setAppVersion] = useState("");
     const [platformKey, setPlatformKey] = useState("");
     const [pathUpdating, setPathUpdating] = useState(false);
@@ -49,14 +70,19 @@ const ToolsSettingsGroup = ({
         }
     });
 
-    const refreshCliInfo = () => {
-        invoke<CliInfo>("get_cli_info")
+    const refreshCliInfo = useCallback((forceRefresh = false) => {
+        setCliInfoLoading(true);
+        loadCliInfo(forceRefresh)
             .then(setCliInfo)
-            .catch(() => {});
-    };
+            .catch(() => {
+                setCliInfo(null);
+            })
+            .finally(() => {
+                setCliInfoLoading(false);
+            });
+    }, []);
 
     useEffect(() => {
-        refreshCliInfo();
         import("@tauri-apps/api/app").then(({ getVersion }) => {
             getVersion().then(setAppVersion).catch(() => {});
         });
@@ -65,13 +91,19 @@ const ToolsSettingsGroup = ({
             .catch(() => setPlatformKey(""));
     }, []);
 
+    useEffect(() => {
+        if (!collapsed) {
+            refreshCliInfo();
+        }
+    }, [collapsed, refreshCliInfo]);
+
     const handleAddCliToPath = async () => {
         setPathUpdating(true);
         setPathStatusKey(null);
         setPathStatusDetail("");
         try {
             const result = await invoke<CliPathResult>("add_cli_to_path");
-            refreshCliInfo();
+            refreshCliInfo(true);
             if (result.already_linked) {
                 setPathStatusKey("cli_path_already_linked");
             } else if (result.requires_new_terminal) {
@@ -145,7 +177,9 @@ const ToolsSettingsGroup = ({
                         <div className="item-label-group">
                             <span className="item-label">{t("cli_path_status")}</span>
                             <span className="hint">
-                                {cliInfo?.cli_on_path
+                                {cliInfoLoading
+                                    ? t("processing")
+                                    : cliInfo?.cli_on_path
                                     ? t("cli_path_ready")
                                     : cliInfo?.cli_path
                                         ? t("cli_path_missing_hint")

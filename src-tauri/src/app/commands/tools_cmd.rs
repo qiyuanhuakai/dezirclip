@@ -1,5 +1,6 @@
 use crate::infrastructure::cli_path;
 use serde::Serialize;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,44 +72,31 @@ fn find_bundled_cli_binary() -> Option<PathBuf> {
 }
 
 fn find_cli_on_path() -> Option<String> {
-    let (command, arg) = path_lookup_command();
-    let output = std::process::Command::new(command).arg(arg).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let path = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if path.is_empty() {
-        None
-    } else {
-        Some(path)
-    }
+    let path_value = std::env::var_os("PATH")?;
+    find_cli_on_path_in(&path_value, cli_binary_name())
+        .map(|path| path.to_string_lossy().to_string())
 }
 
-fn path_lookup_command() -> (&'static str, &'static str) {
+fn find_cli_on_path_in(path_value: &OsStr, binary_name: &str) -> Option<PathBuf> {
+    std::env::split_paths(path_value)
+        .map(|entry| entry.join(binary_name))
+        .find(|candidate| candidate.is_file())
+}
+
+fn cli_binary_name() -> &'static str {
     if cfg!(target_os = "windows") {
-        ("where", "dzc.exe")
+        "dzc.exe"
     } else {
-        ("which", "dzc")
+        "dzc"
     }
 }
 
 fn get_cli_version(cli_path: &Option<String>) -> String {
-    let path = match cli_path {
-        Some(p) => p,
-        None => return "not installed".to_string(),
-    };
-
-    std::process::Command::new(path)
-        .arg("--version")
-        .output()
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string())
+    if cli_path.is_some() {
+        env!("CARGO_PKG_VERSION").to_string()
+    } else {
+        "not installed".to_string()
+    }
 }
 
 fn find_skill_path() -> Option<String> {
@@ -140,14 +128,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_path_lookup_command_uses_platform_binary_name() {
-        let (command, arg) = path_lookup_command();
-        if cfg!(target_os = "windows") {
-            assert_eq!(command, "where");
-            assert_eq!(arg, "dzc.exe");
-        } else {
-            assert_eq!(command, "which");
-            assert_eq!(arg, "dzc");
-        }
+    fn test_find_cli_on_path_scans_path_without_shell_command() {
+        let binary_name = cli_binary_name();
+        let temp_dir = std::env::temp_dir().join(format!(
+            "dezirclip-cli-path-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let cli_path = temp_dir.join(binary_name);
+        std::fs::write(&cli_path, b"").expect("create cli file");
+
+        let path_value = std::env::join_paths([temp_dir.clone()]).expect("join path");
+
+        assert_eq!(find_cli_on_path_in(&path_value, binary_name), Some(cli_path));
+
+        std::fs::remove_dir_all(temp_dir).expect("remove temp dir");
     }
 }
