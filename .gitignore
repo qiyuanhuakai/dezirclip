@@ -9,6 +9,7 @@ dist/
 
 # Tauri / Rust build outputs
 src-tauri/target/
+src-tauri/binaries/
 
 # Runtime files
 *.db
@@ -28,5 +29,5 @@ CLAUDE.md
 AGENTS.md
 dzc-standalone/target/
 backup-e2e/
-src-tauri/binaries/
+
 .cortexkit/
