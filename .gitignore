@@ -6,6 +6,11 @@
 node_modules/
 package-lock.json
 dist/
+flatpak/build/
+flatpak/build-root/
+flatpak/repo/
+.flatpak-builder/
+*.flatpak
 
 # Tauri / Rust build outputs
 src-tauri/target/

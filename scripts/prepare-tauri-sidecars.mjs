@@ -5,13 +5,23 @@ import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(root, "..");
-const extension = process.platform === "win32" ? ".exe" : "";
-const targetTriple = execFileSync("rustc", ["--print", "host-tuple"], {
+const hostTriple = execFileSync("rustc", ["--print", "host-tuple"], {
   cwd: repoRoot,
   encoding: "utf8",
 }).trim();
+const targetTriple = process.env.TAURI_ENV_TARGET_TRIPLE || hostTriple;
+const isWindowsTarget = targetTriple.includes("windows");
+const extension = isWindowsTarget ? ".exe" : "";
+const cargoArgs = ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--release"];
+const releaseDir = targetTriple === hostTriple
+  ? join(repoRoot, "src-tauri", "target", "release")
+  : join(repoRoot, "src-tauri", "target", targetTriple, "release");
 
-execFileSync("cargo", ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--release"], {
+if (targetTriple !== hostTriple) {
+  cargoArgs.push("--target", targetTriple);
+}
+
+execFileSync("cargo", cargoArgs, {
   cwd: repoRoot,
   stdio: "inherit",
 });
@@ -20,6 +30,6 @@ const binariesDir = join(repoRoot, "src-tauri", "binaries");
 mkdirSync(binariesDir, { recursive: true });
 
 copyFileSync(
-  join(repoRoot, "src-tauri", "target", "release", `dzc${extension}`),
+  join(releaseDir, `dzc${extension}`),
   join(binariesDir, `dzc-${targetTriple}${extension}`),
 );

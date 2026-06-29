@@ -1,7 +1,7 @@
 {
   "name": "dezirclip",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.0.5",
   "packageManager": "pnpm@11.0.9",
   "type": "module",
   "scripts": {
@@ -13,6 +13,10 @@
     "i18n:check": "node scripts/i18n-check.mjs",
     "preview": "vite preview",
     "tauri:prepare-sidecars": "node scripts/prepare-tauri-sidecars.mjs",
+    "release:set-version": "node scripts/set-release-version.mjs",
+    "flatpak:prepare": "node scripts/prepare-flatpak-root.mjs",
+    "flatpak:build": "flatpak-builder --user --force-clean --repo=flatpak/repo flatpak/build flatpak/io.github.qiyuanhuakai.dezirclip.yml",
+    "flatpak:bundle": "flatpak build-bundle flatpak/repo DezirClip.flatpak io.github.qiyuanhuakai.dezirclip",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:dev:safe": "DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey tauri dev",

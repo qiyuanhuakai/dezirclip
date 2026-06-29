@@ -13,16 +13,32 @@ env:
 
 jobs:
   publish-tauri:
-    name: Tauri release (${{ matrix.platform }})
+    name: Tauri release (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: ubuntu-24.04
+          - name: linux-x86_64
+            platform: ubuntu-24.04
             args: ''
-          - platform: windows-latest
+            rust_target: ''
+            msvc_arch: ''
+          - name: linux-aarch64
+            platform: ubuntu-24.04-arm
             args: ''
+            rust_target: ''
+            msvc_arch: ''
+          - name: windows-x86_64
+            platform: windows-latest
+            args: ''
+            rust_target: ''
+            msvc_arch: ''
+          - name: windows-aarch64
+            platform: windows-latest
+            args: --target aarch64-pc-windows-msvc
+            rust_target: aarch64-pc-windows-msvc
+            msvc_arch: amd64_arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,6 +48,182 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            libpipewire-0.3-dev \
+            libgbm-dev \
+            libx11-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxtst-dev
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust stable
+        if: matrix.rust_target == ''
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust stable with target
+        if: matrix.rust_target != ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Setup MSVC ARM64 toolchain
+        if: matrix.msvc_arch != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set release version
+        run: pnpm run release:set-version ${{ github.ref_name }}
+
+      - name: Publish Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: DezirClip ${{ github.ref_name }}
+          releaseBody: Download the matching installer or standalone dzc archive for your platform.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  publish-dzc:
+    name: dzc standalone release (${{ matrix.name }})
+    needs: publish-tauri
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            platform: ubuntu-22.04
+            archive: dzc-linux-x86_64.tar.gz
+            cargo_args: ''
+            binary_path: target/release/dzc
+            rust_target: ''
+            msvc_arch: ''
+          - name: linux-aarch64
+            platform: ubuntu-24.04-arm
+            archive: dzc-linux-aarch64.tar.gz
+            cargo_args: ''
+            binary_path: target/release/dzc
+            rust_target: ''
+            msvc_arch: ''
+          - name: windows-x86_64
+            platform: windows-latest
+            archive: dzc-windows-x86_64.zip
+            cargo_args: ''
+            binary_path: target/release/dzc.exe
+            rust_target: ''
+            msvc_arch: ''
+          - name: windows-aarch64
+            platform: windows-latest
+            archive: dzc-windows-aarch64.zip
+            cargo_args: --target aarch64-pc-windows-msvc
+            binary_path: target/aarch64-pc-windows-msvc/release/dzc.exe
+            rust_target: aarch64-pc-windows-msvc
+            msvc_arch: amd64_arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        if: matrix.rust_target == ''
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust stable with target
+        if: matrix.rust_target != ''
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Setup MSVC ARM64 toolchain
+        if: matrix.msvc_arch != ''
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: dzc-standalone -> target
+
+      - name: Set release version
+        run: node scripts/set-release-version.mjs ${{ github.ref_name }}
+
+      - name: Build dzc standalone
+        working-directory: dzc-standalone
+        run: cargo build --release ${{ matrix.cargo_args }}
+
+      - name: Package dzc for Linux
+        if: runner.os == 'Linux'
+        working-directory: dzc-standalone
+        run: |
+          binary='${{ matrix.binary_path }}'
+          tar -czf ../${{ matrix.archive }} -C "$(dirname "$binary")" "$(basename "$binary")"
+
+      - name: Package dzc for Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dzc-standalone/${{ matrix.binary_path }} -DestinationPath ${{ matrix.archive }} -Force
+
+      - name: Upload dzc archive to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.ref_name }} ${{ matrix.archive }} --clobber
+
+  publish-flatpak:
+    name: Flatpak release (${{ matrix.name }})
+    needs: publish-tauri
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            platform: ubuntu-24.04
+            bundle: DezirClip-linux-x86_64.flatpak
+          - name: linux-aarch64
+            platform: ubuntu-24.04-arm
+            bundle: DezirClip-linux-aarch64.flatpak
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            flatpak \
+            flatpak-builder \
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
@@ -66,57 +258,26 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Publish Tauri bundles
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: DezirClip ${{ github.ref_name }}
-          releaseBody: Download the matching installer or standalone dzc archive for your platform.
-          releaseDraft: false
-          prerelease: false
-          args: ${{ matrix.args }}
+      - name: Set release version
+        run: pnpm run release:set-version ${{ github.ref_name }}
 
-  publish-dzc:
-    name: dzc standalone release (${{ matrix.platform }})
-    needs: publish-tauri
-    runs-on: ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-22.04
-            archive: dzc-linux-x86_64.tar.gz
-          - platform: windows-latest
-            archive: dzc-windows-x86_64.zip
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Build Debian bundle for Flatpak root
+        run: pnpm tauri build --bundles deb
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - name: Prepare Flatpak root
+        run: pnpm run flatpak:prepare
 
-      - name: Cache Rust artifacts
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: dzc-standalone -> target
+      - name: Install Flatpak runtime
+        run: |
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
-      - name: Build dzc standalone
-        working-directory: dzc-standalone
-        run: cargo build --release
+      - name: Build Flatpak bundle
+        run: |
+          flatpak-builder --user --force-clean --repo=flatpak/repo flatpak/build flatpak/io.github.qiyuanhuakai.dezirclip.yml
+          flatpak build-bundle flatpak/repo ${{ matrix.bundle }} io.github.qiyuanhuakai.dezirclip
 
-      - name: Package dzc for Linux
-        if: runner.os == 'Linux'
-        working-directory: dzc-standalone/target/release
-        run: tar -czf ../../../${{ matrix.archive }} dzc
-
-      - name: Package dzc for Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path dzc-standalone/target/release/dzc.exe -DestinationPath ${{ matrix.archive }} -Force
-
-      - name: Upload dzc archive to release
+      - name: Upload Flatpak bundle to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.ref_name }} ${{ matrix.archive }} --clobber
+        run: gh release upload ${{ github.ref_name }} ${{ matrix.bundle }} --clobber
