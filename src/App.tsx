@@ -167,6 +167,10 @@ const App = () => {
     setClipboardItemFontSize,
     clipboardTagFontSize,
     setClipboardTagFontSize,
+    fontMain,
+    setFontMain,
+    fontMono,
+    setFontMono,
     emojiPanelEnabled,
     setEmojiPanelEnabled,
     emojiPanelTab,
@@ -357,6 +361,8 @@ const App = () => {
     setSurfaceOpacity,
     setClipboardItemFontSize,
     setClipboardTagFontSize,
+    setFontMain,
+    setFontMono,
     setEmojiPanelEnabled,
     setTagManagerEnabled,
     setEmojiPanelTab,
@@ -454,7 +460,9 @@ const App = () => {
     settingsLoaded,
     clipboardItemFontSize,
     clipboardTagFontSize,
-    surfaceOpacity
+    surfaceOpacity,
+    fontMain,
+    fontMono
   });
 
   useCustomBackground({ customBackground, customBackgroundOpacity, theme });

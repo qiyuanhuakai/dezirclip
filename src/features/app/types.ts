@@ -101,6 +101,10 @@ export interface AppState {
   setClipboardItemFontSize: StateSetter<number>;
   clipboardTagFontSize: number;
   setClipboardTagFontSize: StateSetter<number>;
+  fontMain: string;
+  setFontMain: StateSetter<string>;
+  fontMono: string;
+  setFontMono: StateSetter<string>;
   emojiPanelEnabled: boolean;
   setEmojiPanelEnabled: StateSetter<boolean>;
   emojiPanelTab: "emoji" | "favorites";

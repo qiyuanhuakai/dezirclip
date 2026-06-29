@@ -53,6 +53,8 @@ interface UseSettingsApplyOptions {
   clipboardItemFontSize: number;
   clipboardTagFontSize: number;
   surfaceOpacity: number;
+  fontMain: string;
+  fontMono: string;
 }
 
 export const useSettingsApply = ({
@@ -63,7 +65,9 @@ export const useSettingsApply = ({
   settingsLoaded,
   clipboardItemFontSize,
   clipboardTagFontSize,
-  surfaceOpacity
+  surfaceOpacity,
+  fontMain,
+  fontMono
 }: UseSettingsApplyOptions) => {
   useEffect(() => {
     if (!settingsLoaded) return;
@@ -213,4 +217,18 @@ export const useSettingsApply = ({
     const scale = Math.min(1, Math.max(0, surfaceOpacity / 100));
     root.style.setProperty("--surface-opacity-scale", scale.toString());
   }, [clipboardItemFontSize, clipboardTagFontSize, surfaceOpacity, settingsLoaded]);
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    const root = document.documentElement;
+    const applyFont = (cssVar: string, value: string) => {
+      if (value && value.trim()) {
+        root.style.setProperty(cssVar, value);
+      } else {
+        root.style.removeProperty(cssVar);
+      }
+    };
+    applyFont("--font-main", fontMain);
+    applyFont("--font-mono", fontMono);
+  }, [fontMain, fontMono, settingsLoaded]);
 };

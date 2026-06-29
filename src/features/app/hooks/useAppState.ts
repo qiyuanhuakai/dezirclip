@@ -61,6 +61,8 @@ export const useAppState = (): AppState => {
   const [compactMode, setCompactMode] = useState(false);
   const [clipboardItemFontSize, setClipboardItemFontSize] = useState(13);
   const [clipboardTagFontSize, setClipboardTagFontSize] = useState(10);
+  const [fontMain, setFontMain] = useState<string>("");
+  const [fontMono, setFontMono] = useState<string>("");
   const [emojiPanelEnabled, setEmojiPanelEnabled] = useState(false);
   const [emojiPanelTab, setEmojiPanelTab] = useState<"emoji" | "favorites">("emoji");
   const [language, setLanguage] = useState<Locale>("zh");
@@ -185,6 +187,10 @@ export const useAppState = (): AppState => {
     setClipboardItemFontSize,
     clipboardTagFontSize,
     setClipboardTagFontSize,
+    fontMain,
+    setFontMain,
+    fontMono,
+    setFontMono,
     emojiPanelEnabled,
     setEmojiPanelEnabled,
     emojiPanelTab,

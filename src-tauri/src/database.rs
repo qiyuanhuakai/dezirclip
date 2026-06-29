@@ -366,6 +366,15 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
         [],
     );
 
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.font_main', '')",
+        [],
+    );
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.font_mono', '')",
+        [],
+    );
+
     Ok(())
 }
 

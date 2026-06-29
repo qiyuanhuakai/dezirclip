@@ -22,6 +22,10 @@ interface SettingsPanelProps {
     setClipboardItemFontSize: (val: number) => void;
     clipboardTagFontSize: number;
     setClipboardTagFontSize: (val: number) => void;
+    fontMain: string;
+    setFontMain: (val: string) => void;
+    fontMono: string;
+    setFontMono: (val: string) => void;
     collapsedGroups: Record<string, boolean>;
     autoStart: boolean;
     silentStart: boolean;
@@ -155,6 +159,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         setIsRecording, isRecording, hotkey, mainHotkeys, updateHotkey, addMainHotkey, removeMainHotkey,
         setTheme, setColorMode, setLanguage, showAppBorder, setShowAppBorder, compactMode, setCompactMode, checkHotkeyConflict,
         clipboardItemFontSize, setClipboardItemFontSize, clipboardTagFontSize, setClipboardTagFontSize,
+        fontMain, setFontMain, fontMono, setFontMono,
         emojiPanelEnabled, setEmojiPanelEnabled, tagManagerEnabled, setTagManagerEnabled,
         handleResetSettings
     } = props;
@@ -352,6 +357,10 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setClipboardItemFontSize={setClipboardItemFontSize}
                 clipboardTagFontSize={clipboardTagFontSize}
                 setClipboardTagFontSize={setClipboardTagFontSize}
+                fontMain={fontMain}
+                setFontMain={setFontMain}
+                fontMono={fontMono}
+                setFontMono={setFontMono}
                 customBackground={customBackground}
                 setCustomBackground={setCustomBackground}
                 customBackgroundOpacity={customBackgroundOpacity}

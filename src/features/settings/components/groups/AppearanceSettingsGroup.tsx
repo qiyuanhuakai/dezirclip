@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Locale } from "../../../../shared/types";
+import { useEffect, useMemo, useState } from "react";
+import ThemedSelect from "../ThemedSelect";
 
 interface LabelWithHintProps {
     label: string;
@@ -29,6 +31,10 @@ interface AppearanceSettingsGroupProps {
     setClipboardItemFontSize: (val: number) => void;
     clipboardTagFontSize: number;
     setClipboardTagFontSize: (val: number) => void;
+    fontMain: string;
+    setFontMain: (val: string) => void;
+    fontMono: string;
+    setFontMono: (val: string) => void;
     customBackground: string;
     setCustomBackground: (val: string) => void;
     customBackgroundOpacity: number;
@@ -93,6 +99,10 @@ const AppearanceSettingsGroup = ({
     setClipboardItemFontSize,
     clipboardTagFontSize,
     setClipboardTagFontSize,
+    fontMain,
+    setFontMain,
+    fontMono,
+    setFontMono,
     customBackground,
     setCustomBackground,
     customBackgroundOpacity,
@@ -100,7 +110,27 @@ const AppearanceSettingsGroup = ({
     surfaceOpacity,
     setSurfaceOpacity,
     saveAppSetting
-}: AppearanceSettingsGroupProps) => (
+}: AppearanceSettingsGroupProps) => {
+    const [systemFonts, setSystemFonts] = useState<{ family: string; is_mono: boolean; path: string }[]>([]);
+    useEffect(() => {
+        let cancelled = false;
+        invoke<{ family: string; is_mono: boolean; path: string }[]>("list_system_fonts")
+            .then((list) => { if (!cancelled) setSystemFonts(list); })
+            .catch((err) => { console.warn("[font] list_system_fonts failed:", err); });
+        return () => { cancelled = true; };
+    }, []);
+
+    const defaultOption = { value: "", label: t("font_default_option") };
+    const fontMainOptions = useMemo(() => [
+        defaultOption,
+        ...systemFonts.filter(f => !f.is_mono).map(f => ({ value: f.family, label: f.family }))
+    ], [systemFonts]);
+    const fontMonoOptions = useMemo(() => [
+        defaultOption,
+        ...systemFonts.filter(f => f.is_mono).map(f => ({ value: f.family, label: f.family }))
+    ], [systemFonts]);
+
+    return (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
         <div className="group-header" onClick={onToggle}>
             <h3 style={{ margin: 0 }}>{t('appearance_settings')}</h3>
@@ -278,6 +308,44 @@ const AppearanceSettingsGroup = ({
                     />
                 </div>
 
+                <div className="setting-item column">
+                    <LabelWithHint
+                        label={t('font_main') || '界面字体'}
+                        hint={t('font_main_hint') || '选择整个界面使用的字体（留空则使用主题默认）'}
+                        hintKey="font_main"
+                    />
+                    <ThemedSelect
+                        options={fontMainOptions}
+                        value={fontMain}
+                        width="100%"
+                        searchable
+                        noOptionsMessage={t('no_matching_fonts') || '无匹配字体'}
+                        onChange={(val) => {
+                            setFontMain(val);
+                            saveAppSetting('font_main', val);
+                        }}
+                    />
+                </div>
+
+                <div className="setting-item column">
+                    <LabelWithHint
+                        label={t('font_mono') || '等宽字体'}
+                        hint={t('font_mono_hint') || '选择代码、路径等显示使用的等宽字体（留空则使用主题默认）'}
+                        hintKey="font_mono"
+                    />
+                    <ThemedSelect
+                        options={fontMonoOptions}
+                        value={fontMono}
+                        width="100%"
+                        searchable
+                        noOptionsMessage={t('no_matching_fonts') || '无匹配字体'}
+                        onChange={(val) => {
+                            setFontMono(val);
+                            saveAppSetting('font_mono', val);
+                        }}
+                    />
+                </div>
+
                 {(theme === 'mica' || theme === 'acrylic' || theme === 'liquid-glass') && (
                     <>
                         <div className="setting-item column no-border">
@@ -383,5 +451,6 @@ const AppearanceSettingsGroup = ({
         )}
     </div>
 );
+};
 
 export default AppearanceSettingsGroup;

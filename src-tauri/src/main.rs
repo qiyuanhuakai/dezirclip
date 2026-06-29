@@ -224,6 +224,7 @@ fn main() {
             app::commands::save_emoji_favorite,
             app::commands::remove_emoji_favorite,
             app::commands::list_emoji_favorites,
+            app::commands::list_system_fonts,
             app::commands::save_emoji_favorite_data_url,
             app::commands::get_file_size,
             app::commands::show_quick_paste,

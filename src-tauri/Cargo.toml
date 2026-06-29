@@ -47,6 +47,7 @@ qrcode2 = "0.18"
 rand = "0.8"
 xcap = "0.9.6"
 zeroize = "1"
+font-kit = "0.14"
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 

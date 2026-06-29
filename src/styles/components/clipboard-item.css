@@ -55,7 +55,7 @@
   /* Slightly reduced from 14px */
   line-height: 1.35;
   /* Reduced from 1.5 for higher density */
-  font-family: "Consolas", "Courier New", monospace;
+  font-family: var(--font-mono);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 4;

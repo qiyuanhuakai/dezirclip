@@ -44,6 +44,8 @@ interface UseSettingsPostInitOptions {
   setSettingsLoaded: (val: boolean) => void;
   setClipboardItemFontSize: (val: number) => void;
   setClipboardTagFontSize: (val: number) => void;
+  setFontMain: (val: string) => void;
+  setFontMono: (val: string) => void;
   setEmojiPanelEnabled: (val: boolean) => void;
   setTagManagerEnabled: (val: boolean) => void;
   setEmojiPanelTab: (val: "emoji" | "favorites") => void;
@@ -92,6 +94,8 @@ export const useSettingsPostInit = ({
   setSettingsLoaded,
   setClipboardItemFontSize,
   setClipboardTagFontSize,
+  setFontMain,
+  setFontMono,
   setEmojiPanelEnabled,
   setTagManagerEnabled,
   setEmojiPanelTab,
@@ -125,6 +129,8 @@ export const useSettingsPostInit = ({
       const next = parseInt(settings["app.clipboard_tag_font_size"]);
       if (Number.isFinite(next)) setClipboardTagFontSize(next);
     }
+    if (settings["app.font_main"] !== undefined) setFontMain(settings["app.font_main"]);
+    if (settings["app.font_mono"] !== undefined) setFontMono(settings["app.font_mono"]);
     if (settings["app.emoji_panel_enabled"] !== undefined) setEmojiPanelEnabled(settings["app.emoji_panel_enabled"] === "true");
     if (settings["app.tag_manager_enabled"] !== undefined) setTagManagerEnabled(settings["app.tag_manager_enabled"] !== "false");
     if (settings["app.emoji_panel_tab"] === "favorites" || settings["app.emoji_panel_tab"] === "emoji") {
@@ -232,6 +238,8 @@ export const useSettingsPostInit = ({
     setSettingsLoaded,
     setClipboardItemFontSize,
     setClipboardTagFontSize,
+    setFontMain,
+    setFontMono,
     setEmojiPanelEnabled,
     setTagManagerEnabled,
     setEmojiPanelTab,
