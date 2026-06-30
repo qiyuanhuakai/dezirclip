@@ -1256,9 +1256,22 @@ fn show_settings_from_tray(app: &AppHandle) {
     }
 }
 
+fn should_toggle_window_for_tray_click(
+    button: tauri::tray::MouseButton,
+    button_state: tauri::tray::MouseButtonState,
+) -> bool {
+    matches!(
+        (button, button_state),
+        (
+            tauri::tray::MouseButton::Left,
+            tauri::tray::MouseButtonState::Up
+        )
+    )
+}
+
 fn setup_tray(app: &App, hide_tray: bool) {
     use tauri::menu::{Menu, MenuItem};
-    use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+    use tauri::tray::TrayIconBuilder;
 
     let show_i = MenuItem::with_id(app, "show_hide", "显示/隐藏", true, None::<&str>).unwrap();
     let settings_i = MenuItem::with_id(app, "settings", "设置", true, None::<&str>).unwrap();
@@ -1284,13 +1297,16 @@ fn setup_tray(app: &App, hide_tray: bool) {
             }
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
+            if let tauri::tray::TrayIconEvent::Click {
+                button,
+                button_state,
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                toggle_window(app);
+                if should_toggle_window_for_tray_click(button, button_state) {
+                    let app = tray.app_handle();
+                    toggle_window(app);
+                }
             }
         })
         .build(app)
@@ -1298,6 +1314,36 @@ fn setup_tray(app: &App, hide_tray: bool) {
 
     let _ = tray.set_visible(!hide_tray);
     app.manage(tray);
+}
+
+#[cfg(test)]
+mod tray_tests {
+    use super::should_toggle_window_for_tray_click;
+    use tauri::tray::{MouseButton, MouseButtonState};
+
+    #[test]
+    fn tray_left_click_toggles_only_on_release() {
+        assert!(!should_toggle_window_for_tray_click(
+            MouseButton::Left,
+            MouseButtonState::Down
+        ));
+        assert!(should_toggle_window_for_tray_click(
+            MouseButton::Left,
+            MouseButtonState::Up
+        ));
+    }
+
+    #[test]
+    fn tray_non_left_click_never_toggles_window() {
+        assert!(!should_toggle_window_for_tray_click(
+            MouseButton::Right,
+            MouseButtonState::Up
+        ));
+        assert!(!should_toggle_window_for_tray_click(
+            MouseButton::Middle,
+            MouseButtonState::Up
+        ));
+    }
 }
 
 fn apply_initial_theme(app: &App) {
