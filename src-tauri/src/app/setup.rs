@@ -41,7 +41,9 @@ static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
 static OPEN_SETTINGS_PANEL_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_TRAY_TOGGLE_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
+static LAST_TRAY_LEFT_DOWN_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
 const TRAY_TOGGLE_DEBOUNCE_MS: u64 = 300;
+const TRAY_BLUR_SUPPRESSION_MS: u64 = 500;
 
 #[cfg(target_os = "linux")]
 fn linux_service_disabled(service: &str) -> bool {
@@ -1271,6 +1273,24 @@ fn should_toggle_window_for_tray_click(
     )
 }
 
+fn should_mark_tray_left_button_down(
+    button: tauri::tray::MouseButton,
+    button_state: tauri::tray::MouseButtonState,
+) -> bool {
+    matches!(
+        (button, button_state),
+        (
+            tauri::tray::MouseButton::Left,
+            tauri::tray::MouseButtonState::Down
+        )
+    )
+}
+
+fn should_suppress_blur_for_tray_click(last_left_down_ms: &AtomicU64, now_ms: u64) -> bool {
+    let previous = last_left_down_ms.load(Ordering::SeqCst);
+    previous != 0 && now_ms.saturating_sub(previous) < TRAY_BLUR_SUPPRESSION_MS
+}
+
 fn should_accept_tray_toggle(last_toggle_timestamp: &AtomicU64, now_ms: u64) -> bool {
     loop {
         let previous = last_toggle_timestamp.load(Ordering::SeqCst);
@@ -1321,6 +1341,9 @@ fn setup_tray(app: &App, hide_tray: bool) {
                 ..
             } = event
             {
+                if should_mark_tray_left_button_down(button, button_state) {
+                    LAST_TRAY_LEFT_DOWN_TIMESTAMP.store(now_millis(), Ordering::SeqCst);
+                }
                 if should_toggle_window_for_tray_click(button, button_state)
                     && should_accept_tray_toggle(&LAST_TRAY_TOGGLE_TIMESTAMP, now_millis())
                 {
@@ -1338,7 +1361,10 @@ fn setup_tray(app: &App, hide_tray: bool) {
 
 #[cfg(test)]
 mod tray_tests {
-    use super::{should_accept_tray_toggle, should_toggle_window_for_tray_click};
+    use super::{
+        should_accept_tray_toggle, should_mark_tray_left_button_down,
+        should_suppress_blur_for_tray_click, should_toggle_window_for_tray_click,
+    };
     use std::sync::atomic::AtomicU64;
     use tauri::tray::{MouseButton, MouseButtonState};
 
@@ -1374,6 +1400,31 @@ mod tray_tests {
         assert!(!should_accept_tray_toggle(&last_toggle, 1_050));
         assert!(!should_accept_tray_toggle(&last_toggle, 1_299));
         assert!(should_accept_tray_toggle(&last_toggle, 1_300));
+    }
+
+    #[test]
+    fn tray_left_button_down_marks_blur_suppression_window() {
+        assert!(should_mark_tray_left_button_down(
+            MouseButton::Left,
+            MouseButtonState::Down
+        ));
+        assert!(!should_mark_tray_left_button_down(
+            MouseButton::Left,
+            MouseButtonState::Up
+        ));
+        assert!(!should_mark_tray_left_button_down(
+            MouseButton::Right,
+            MouseButtonState::Down
+        ));
+    }
+
+    #[test]
+    fn tray_blur_suppression_expires_after_click_window() {
+        let last_left_down = AtomicU64::new(2_000);
+
+        assert!(should_suppress_blur_for_tray_click(&last_left_down, 2_100));
+        assert!(should_suppress_blur_for_tray_click(&last_left_down, 2_499));
+        assert!(!should_suppress_blur_for_tray_click(&last_left_down, 2_500));
     }
 }
 
@@ -1663,6 +1714,9 @@ fn handle_blur(window: &tauri::Window) {
     if now.saturating_sub(LAST_SHOW_TIMESTAMP.load(Ordering::Relaxed)) < 500 {
         return;
     }
+    if should_suppress_blur_for_tray_click(&LAST_TRAY_LEFT_DOWN_TIMESTAMP, now) {
+        return;
+    }
 
     if IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst) {
         return;
@@ -1696,6 +1750,9 @@ fn handle_blur(window: &tauri::Window) {
         };
         if !down && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
+                if should_suppress_blur_for_tray_click(&LAST_TRAY_LEFT_DOWN_TIMESTAMP, now_millis()) {
+                    return;
+                }
                 let _ = w.hide();
                 if let Some(webview_window) = w.app_handle().get_webview_window("main") {
                     crate::app::webview_memory::lower_window_memory(&webview_window, "blur-hide");

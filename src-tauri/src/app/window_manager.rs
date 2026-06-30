@@ -4,7 +4,8 @@ use crate::app_state::SettingsState;
 use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(target_os = "linux")]
@@ -25,6 +26,29 @@ fn hide_compact_preview_window(app: &AppHandle) {
     }
 }
 
+const WINDOW_TOGGLE_COOLDOWN_MS: u64 = 500;
+
+fn current_time_millis() -> u64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
+        Err(_) => 0,
+    }
+}
+
+fn should_accept_window_toggle(last_toggle: &AtomicU64, now: u64) -> bool {
+    loop {
+        let previous = last_toggle.load(Ordering::SeqCst);
+        if previous != 0 && now.saturating_sub(previous) < WINDOW_TOGGLE_COOLDOWN_MS {
+            return false;
+        }
+
+        match last_toggle.compare_exchange(previous, now, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return true,
+            Err(_) => continue,
+        }
+    }
+}
+
 pub fn toggle_window(app: &AppHandle) {
     // The idle destroyer may have torn down the webview while the window was
     // hidden. Recreate it from tauri.conf.json before deciding what to do.
@@ -32,6 +56,10 @@ pub fn toggle_window(app: &AppHandle) {
         return;
     }
     if let Some(window) = app.get_webview_window("main") {
+        if !should_accept_window_toggle(&LAST_TOGGLE_TIMESTAMP, current_time_millis()) {
+            return;
+        }
+
         #[cfg(windows)]
         let mut active_center: Option<(i32, i32)> = None;
         let is_visible = window.is_visible().unwrap_or(false);
@@ -586,4 +614,40 @@ pub fn release_win_keys() {
 
 pub fn is_main_window_focused() -> bool {
     IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicU64;
+
+    #[test]
+    fn window_toggle_cooldown_accepts_first_toggle() {
+        let last_toggle = AtomicU64::new(0);
+
+        let accepted = should_accept_window_toggle(&last_toggle, 1_000);
+
+        assert!(accepted);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_000);
+    }
+
+    #[test]
+    fn window_toggle_cooldown_rejects_reentrant_toggle() {
+        let last_toggle = AtomicU64::new(1_000);
+
+        let accepted = should_accept_window_toggle(&last_toggle, 1_250);
+
+        assert!(!accepted);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_000);
+    }
+
+    #[test]
+    fn window_toggle_cooldown_accepts_after_window_expires() {
+        let last_toggle = AtomicU64::new(1_000);
+
+        let accepted = should_accept_window_toggle(&last_toggle, 1_500);
+
+        assert!(accepted);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_500);
+    }
 }

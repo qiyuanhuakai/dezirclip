@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Locale } from "../../../../shared/types";
 import { useEffect, useMemo, useState } from "react";
 import ThemedSelect from "../ThemedSelect";
+import { shouldRequestSystemFonts } from "../../utils/systemFontLoading";
 
 interface LabelWithHintProps {
     label: string;
@@ -112,23 +113,30 @@ const AppearanceSettingsGroup = ({
     saveAppSetting
 }: AppearanceSettingsGroupProps) => {
     const [systemFonts, setSystemFonts] = useState<{ family: string; is_mono: boolean; path: string }[]>([]);
+    const [systemFontsLoaded, setSystemFontsLoaded] = useState(false);
     useEffect(() => {
+        if (!shouldRequestSystemFonts(collapsed, systemFontsLoaded)) return;
         let cancelled = false;
         invoke<{ family: string; is_mono: boolean; path: string }[]>("list_system_fonts")
-            .then((list) => { if (!cancelled) setSystemFonts(list); })
+            .then((list) => {
+                if (!cancelled) {
+                    setSystemFonts(list);
+                    setSystemFontsLoaded(true);
+                }
+            })
             .catch((err) => { console.warn("[font] list_system_fonts failed:", err); });
         return () => { cancelled = true; };
-    }, []);
+    }, [collapsed, systemFontsLoaded]);
 
-    const defaultOption = { value: "", label: t("font_default_option") };
+    const defaultOption = useMemo(() => ({ value: "", label: t("font_default_option") }), [t]);
     const fontMainOptions = useMemo(() => [
         defaultOption,
         ...systemFonts.filter(f => !f.is_mono).map(f => ({ value: f.family, label: f.family }))
-    ], [systemFonts]);
+    ], [defaultOption, systemFonts]);
     const fontMonoOptions = useMemo(() => [
         defaultOption,
         ...systemFonts.filter(f => f.is_mono).map(f => ({ value: f.family, label: f.family }))
-    ], [systemFonts]);
+    ], [defaultOption, systemFonts]);
 
     return (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
