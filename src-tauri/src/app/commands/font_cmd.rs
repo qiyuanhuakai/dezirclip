@@ -88,9 +88,21 @@ fn sort_fonts(mut fonts: Vec<FontInfo>) -> Vec<FontInfo> {
 }
 
 #[tauri::command]
-pub fn list_system_fonts() -> AppResult<Vec<FontInfo>> {
-    let source = SystemSourceWrapper::new();
-    list_system_fonts_with_source(&source)
+pub async fn list_system_fonts() -> AppResult<Vec<FontInfo>> {
+    list_system_fonts_with_source_factory(SystemSourceWrapper::new).await
+}
+
+async fn list_system_fonts_with_source_factory<F, T>(source_factory: F) -> AppResult<Vec<FontInfo>>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: FontSource,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = source_factory();
+        list_system_fonts_with_source(&source)
+    })
+    .await
+    .map_err(|e| format!("font enumeration worker failed: {e}"))?
 }
 
 fn list_system_fonts_with_source(source: &dyn FontSource) -> AppResult<Vec<FontInfo>> {
@@ -156,5 +168,22 @@ mod tests {
             result.unwrap().is_empty(),
             "failed source should yield empty list"
         );
+    }
+
+    struct MockSource;
+
+    impl FontSource for MockSource {
+        fn all_fonts(&self) -> Result<Vec<FontInfo>, String> {
+            Ok(vec![info("Worker Sans", false)])
+        }
+    }
+
+    #[test]
+    fn test_list_system_fonts_blocking_uses_owned_source() {
+        let result =
+            tauri::async_runtime::block_on(list_system_fonts_with_source_factory(|| MockSource));
+
+        assert!(result.is_ok(), "blocking worker should return source fonts");
+        assert_eq!(result.unwrap()[0].family, "Worker Sans");
     }
 }

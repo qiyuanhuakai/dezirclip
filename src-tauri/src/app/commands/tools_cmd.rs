@@ -21,7 +21,13 @@ pub struct CliPathResult {
 }
 
 #[tauri::command]
-pub fn get_cli_info(app: AppHandle) -> Result<CliInfo, String> {
+pub async fn get_cli_info(app: AppHandle) -> Result<CliInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || build_cli_info(&app))
+        .await
+        .map_err(|e| format!("CLI info worker failed: {e}"))?
+}
+
+fn build_cli_info(app: &AppHandle) -> Result<CliInfo, String> {
     let cli_on_path = find_cli_on_path().is_some();
     let cli_path = find_cli_binary();
     let cli_version = get_cli_version(&cli_path);
@@ -42,7 +48,13 @@ pub fn open_install_folder(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn add_cli_to_path() -> Result<CliPathResult, String> {
+pub async fn add_cli_to_path() -> Result<CliPathResult, String> {
+    tauri::async_runtime::spawn_blocking(install_cli_path)
+        .await
+        .map_err(|e| format!("CLI PATH worker failed: {e}"))?
+}
+
+fn install_cli_path() -> Result<CliPathResult, String> {
     let cli_path = find_bundled_cli_binary()
         .or_else(|| find_cli_on_path().map(PathBuf::from))
         .ok_or_else(|| "dzc executable not found".to_string())?;

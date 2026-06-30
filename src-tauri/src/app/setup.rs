@@ -41,7 +41,8 @@ static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
 static OPEN_SETTINGS_PANEL_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_TRAY_TOGGLE_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
-static LAST_TRAY_LEFT_DOWN_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
+static TRAY_LEFT_BUTTON_ACTIVE: AtomicBool = AtomicBool::new(false);
+static LAST_TRAY_LEFT_INTERACTION_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
 const TRAY_TOGGLE_DEBOUNCE_MS: u64 = 300;
 const TRAY_BLUR_SUPPRESSION_MS: u64 = 500;
 
@@ -1286,8 +1287,33 @@ fn should_mark_tray_left_button_down(
     )
 }
 
-fn should_suppress_blur_for_tray_click(last_left_down_ms: &AtomicU64, now_ms: u64) -> bool {
-    let previous = last_left_down_ms.load(Ordering::SeqCst);
+fn mark_tray_left_button_down(
+    tray_press_active: &AtomicBool,
+    last_left_interaction_ms: &AtomicU64,
+    now_ms: u64,
+) {
+    tray_press_active.store(true, Ordering::SeqCst);
+    last_left_interaction_ms.store(now_ms, Ordering::SeqCst);
+}
+
+fn mark_tray_left_button_up(
+    tray_press_active: &AtomicBool,
+    last_left_interaction_ms: &AtomicU64,
+    now_ms: u64,
+) {
+    tray_press_active.store(false, Ordering::SeqCst);
+    last_left_interaction_ms.store(now_ms, Ordering::SeqCst);
+}
+
+fn should_suppress_blur_for_tray_click(
+    tray_press_active: &AtomicBool,
+    last_left_interaction_ms: &AtomicU64,
+    now_ms: u64,
+) -> bool {
+    if tray_press_active.load(Ordering::SeqCst) {
+        return true;
+    }
+    let previous = last_left_interaction_ms.load(Ordering::SeqCst);
     previous != 0 && now_ms.saturating_sub(previous) < TRAY_BLUR_SUPPRESSION_MS
 }
 
@@ -1342,7 +1368,18 @@ fn setup_tray(app: &App, hide_tray: bool) {
             } = event
             {
                 if should_mark_tray_left_button_down(button, button_state) {
-                    LAST_TRAY_LEFT_DOWN_TIMESTAMP.store(now_millis(), Ordering::SeqCst);
+                    mark_tray_left_button_down(
+                        &TRAY_LEFT_BUTTON_ACTIVE,
+                        &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
+                        now_millis(),
+                    );
+                }
+                if should_toggle_window_for_tray_click(button, button_state) {
+                    mark_tray_left_button_up(
+                        &TRAY_LEFT_BUTTON_ACTIVE,
+                        &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
+                        now_millis(),
+                    );
                 }
                 if should_toggle_window_for_tray_click(button, button_state)
                     && should_accept_tray_toggle(&LAST_TRAY_TOGGLE_TIMESTAMP, now_millis())
@@ -1362,10 +1399,10 @@ fn setup_tray(app: &App, hide_tray: bool) {
 #[cfg(test)]
 mod tray_tests {
     use super::{
-        should_accept_tray_toggle, should_mark_tray_left_button_down,
+        mark_tray_left_button_up, should_accept_tray_toggle, should_mark_tray_left_button_down,
         should_suppress_blur_for_tray_click, should_toggle_window_for_tray_click,
     };
-    use std::sync::atomic::AtomicU64;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use tauri::tray::{MouseButton, MouseButtonState};
 
     #[test]
@@ -1420,11 +1457,51 @@ mod tray_tests {
 
     #[test]
     fn tray_blur_suppression_expires_after_click_window() {
-        let last_left_down = AtomicU64::new(2_000);
+        let tray_press_active = AtomicBool::new(false);
+        let last_left_interaction = AtomicU64::new(2_000);
 
-        assert!(should_suppress_blur_for_tray_click(&last_left_down, 2_100));
-        assert!(should_suppress_blur_for_tray_click(&last_left_down, 2_499));
-        assert!(!should_suppress_blur_for_tray_click(&last_left_down, 2_500));
+        assert!(should_suppress_blur_for_tray_click(
+            &tray_press_active,
+            &last_left_interaction,
+            2_100
+        ));
+        assert!(should_suppress_blur_for_tray_click(
+            &tray_press_active,
+            &last_left_interaction,
+            2_499
+        ));
+        assert!(!should_suppress_blur_for_tray_click(
+            &tray_press_active,
+            &last_left_interaction,
+            2_500
+        ));
+    }
+
+    #[test]
+    fn tray_blur_suppression_covers_entire_long_press() {
+        let tray_press_active = AtomicBool::new(true);
+        let last_left_interaction = AtomicU64::new(2_000);
+
+        assert!(should_suppress_blur_for_tray_click(
+            &tray_press_active,
+            &last_left_interaction,
+            3_200
+        ));
+    }
+
+    #[test]
+    fn tray_left_button_up_extends_blur_suppression_window() {
+        let tray_press_active = AtomicBool::new(true);
+        let last_left_interaction = AtomicU64::new(2_000);
+
+        mark_tray_left_button_up(&tray_press_active, &last_left_interaction, 3_200);
+
+        assert!(!tray_press_active.load(Ordering::SeqCst));
+        assert!(should_suppress_blur_for_tray_click(
+            &tray_press_active,
+            &last_left_interaction,
+            3_450
+        ));
     }
 }
 
@@ -1714,7 +1791,11 @@ fn handle_blur(window: &tauri::Window) {
     if now.saturating_sub(LAST_SHOW_TIMESTAMP.load(Ordering::Relaxed)) < 500 {
         return;
     }
-    if should_suppress_blur_for_tray_click(&LAST_TRAY_LEFT_DOWN_TIMESTAMP, now) {
+    if should_suppress_blur_for_tray_click(
+        &TRAY_LEFT_BUTTON_ACTIVE,
+        &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
+        now,
+    ) {
         return;
     }
 
@@ -1750,7 +1831,11 @@ fn handle_blur(window: &tauri::Window) {
         };
         if !down && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
-                if should_suppress_blur_for_tray_click(&LAST_TRAY_LEFT_DOWN_TIMESTAMP, now_millis()) {
+                if should_suppress_blur_for_tray_click(
+                    &TRAY_LEFT_BUTTON_ACTIVE,
+                    &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
+                    now_millis(),
+                ) {
                     return;
                 }
                 let _ = w.hide();
