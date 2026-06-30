@@ -22,7 +22,7 @@ use crate::services::sensitive_align::spawn_sensitive_alignment;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
-use tauri::{App, AppHandle, Emitter, Manager};
+use tauri::{App, AppHandle, Emitter, Listener, Manager};
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::{HINSTANCE, HWND, POINT, RECT};
 #[cfg(target_os = "windows")]
@@ -39,6 +39,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 static WINDOW_SIZE_SAVE_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
+static OPEN_SETTINGS_PANEL_PENDING: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "linux")]
 fn linux_service_disabled(service: &str) -> bool {
@@ -60,6 +61,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize GLOBAL_APP_HANDLE for Win32 hooks
     let _ = GLOBAL_APP_HANDLE.set(app_handle.clone());
+    register_open_settings_panel_events(&app_handle);
 
     // 1. Data Directory & Migration
     let app_dir = resolve_data_dir(app)?;
@@ -1216,13 +1218,52 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
     });
 }
 
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+}
+
+fn register_open_settings_panel_events(app: &AppHandle) {
+    let app_for_ready = app.clone();
+    let _ = app.listen("settings-panel-listener-ready", move |_| {
+        if OPEN_SETTINGS_PANEL_PENDING.swap(false, Ordering::SeqCst) {
+            let _ = app_for_ready.emit("open-settings-panel", ());
+        }
+    });
+    let _ = app.listen("open-settings-panel-consumed", |_| {
+        OPEN_SETTINGS_PANEL_PENDING.store(false, Ordering::SeqCst);
+    });
+}
+
+fn show_settings_from_tray(app: &AppHandle) {
+    OPEN_SETTINGS_PANEL_PENDING.store(true, Ordering::SeqCst);
+    if !crate::app::idle_destroyer::ensure_main_window(app) {
+        OPEN_SETTINGS_PANEL_PENDING.store(false, Ordering::SeqCst);
+        return;
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        crate::app::webview_memory::restore_window_memory(&window, "tray-menu-settings");
+        let _ = window.set_focusable(true);
+        let _ = window.show();
+        crate::app::idle_destroyer::mark_shown();
+        LAST_SHOW_TIMESTAMP.store(now_millis(), Ordering::Relaxed);
+        let _ = window.set_focus();
+        let _ = app.emit("open-settings-panel", ());
+    } else {
+        OPEN_SETTINGS_PANEL_PENDING.store(false, Ordering::SeqCst);
+    }
+}
+
 fn setup_tray(app: &App, hide_tray: bool) {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 
-    let show_i = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>).unwrap();
-    let quit_i = MenuItem::with_id(app, "quit", "Quit DezirClip", true, None::<&str>).unwrap();
-    let menu = Menu::with_items(app, &[&show_i, &quit_i]).unwrap();
+    let show_i = MenuItem::with_id(app, "show_hide", "显示/隐藏", true, None::<&str>).unwrap();
+    let settings_i = MenuItem::with_id(app, "settings", "设置", true, None::<&str>).unwrap();
+    let quit_i = MenuItem::with_id(app, "quit", "退出 DezirClip", true, None::<&str>).unwrap();
+    let menu = Menu::with_items(app, &[&show_i, &settings_i, &quit_i]).unwrap();
     let icon =
         tauri::image::Image::from_bytes(include_bytes!("../../icons/tray-icon.png")).unwrap();
 
@@ -1232,18 +1273,14 @@ fn setup_tray(app: &App, hide_tray: bool) {
         .show_menu_on_left_click(false)
         .menu(&menu)
         .on_menu_event(|app, event| {
-            if event.id.as_ref() == "show" {
-                if !crate::app::idle_destroyer::ensure_main_window(app) {
-                    return;
+            match event.id.as_ref() {
+                "show_hide" => toggle_window(app),
+                "settings" => show_settings_from_tray(app),
+                "quit" => {
+                    crate::app::app_exit::request_app_exit();
+                    app.exit(0);
                 }
-                if let Some(window) = app.get_webview_window("main") {
-                    crate::app::webview_memory::restore_window_memory(&window, "tray-menu-show");
-                    let _ = window.show();
-                    crate::app::idle_destroyer::mark_shown();
-                }
-            } else if event.id.as_ref() == "quit" {
-                crate::app::app_exit::request_app_exit();
-                app.exit(0);
+                _ => {}
             }
         })
         .on_tray_icon_event(|tray, event| {
@@ -1253,20 +1290,7 @@ fn setup_tray(app: &App, hide_tray: bool) {
             } = event
             {
                 let app = tray.app_handle();
-                if !crate::app::idle_destroyer::ensure_main_window(app) {
-                    return;
-                }
-                if let Some(window) = app.get_webview_window("main") {
-                    crate::app::webview_memory::restore_window_memory(&window, "tray-click-show");
-                    let _ = window.show();
-                    crate::app::idle_destroyer::mark_shown();
-                    let _ = window.set_focus();
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
-                    LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
-                }
+                toggle_window(app);
             }
         })
         .build(app)

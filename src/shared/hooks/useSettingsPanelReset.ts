@@ -16,7 +16,8 @@ export const useSettingsPanelReset = ({
         clipboard: true,
         appearance: true,
         default_apps: true,
-        data: true
+        data: true,
+        tools: true
       });
     }
   }, [showSettings, setCollapsedGroups]);

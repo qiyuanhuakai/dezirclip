@@ -33,6 +33,7 @@ import { useAppActions } from "./shared/hooks/useAppActions";
 import { useNavigationSync } from "./shared/hooks/useNavigationSync";
 import { useContextMenuBlock } from "./shared/hooks/useContextMenuBlock";
 import { useSettingsPanelReset } from "./shared/hooks/useSettingsPanelReset";
+import { useOpenSettingsPanelListener } from "./shared/hooks/useOpenSettingsPanelListener";
 import { useTagManagerRefresh } from "./shared/hooks/useTagManagerRefresh";
 import { matchesHotkey } from "./shared/hooks/useHotkeyMatching";
 import { usePinnedSort } from "./shared/hooks/usePinnedSort";
@@ -487,6 +488,12 @@ const App = () => {
   }, []);
 
   useToastListener({ pushToast });
+
+  useOpenSettingsPanelListener({
+    setShowSettings,
+    setShowTagManager,
+    setShowEmojiPanel
+  });
 
   useSettingsPanelReset({ showSettings, setCollapsedGroups });
 
