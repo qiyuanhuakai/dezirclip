@@ -40,6 +40,8 @@ static WINDOW_SIZE_SAVE_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
 static OPEN_SETTINGS_PANEL_PENDING: AtomicBool = AtomicBool::new(false);
+static LAST_TRAY_TOGGLE_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
+const TRAY_TOGGLE_DEBOUNCE_MS: u64 = 300;
 
 #[cfg(target_os = "linux")]
 fn linux_service_disabled(service: &str) -> bool {
@@ -1269,6 +1271,22 @@ fn should_toggle_window_for_tray_click(
     )
 }
 
+fn should_accept_tray_toggle(last_toggle_timestamp: &AtomicU64, now_ms: u64) -> bool {
+    loop {
+        let previous = last_toggle_timestamp.load(Ordering::SeqCst);
+        if previous != 0 && now_ms.saturating_sub(previous) < TRAY_TOGGLE_DEBOUNCE_MS {
+            return false;
+        }
+
+        if last_toggle_timestamp
+            .compare_exchange(previous, now_ms, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            return true;
+        }
+    }
+}
+
 fn setup_tray(app: &App, hide_tray: bool) {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -1303,7 +1321,9 @@ fn setup_tray(app: &App, hide_tray: bool) {
                 ..
             } = event
             {
-                if should_toggle_window_for_tray_click(button, button_state) {
+                if should_toggle_window_for_tray_click(button, button_state)
+                    && should_accept_tray_toggle(&LAST_TRAY_TOGGLE_TIMESTAMP, now_millis())
+                {
                     let app = tray.app_handle();
                     toggle_window(app);
                 }
@@ -1318,7 +1338,8 @@ fn setup_tray(app: &App, hide_tray: bool) {
 
 #[cfg(test)]
 mod tray_tests {
-    use super::should_toggle_window_for_tray_click;
+    use super::{should_accept_tray_toggle, should_toggle_window_for_tray_click};
+    use std::sync::atomic::AtomicU64;
     use tauri::tray::{MouseButton, MouseButtonState};
 
     #[test]
@@ -1343,6 +1364,16 @@ mod tray_tests {
             MouseButton::Middle,
             MouseButtonState::Up
         ));
+    }
+
+    #[test]
+    fn tray_toggle_debounce_rejects_repeated_platform_events() {
+        let last_toggle = AtomicU64::new(0);
+
+        assert!(should_accept_tray_toggle(&last_toggle, 1_000));
+        assert!(!should_accept_tray_toggle(&last_toggle, 1_050));
+        assert!(!should_accept_tray_toggle(&last_toggle, 1_299));
+        assert!(should_accept_tray_toggle(&last_toggle, 1_300));
     }
 }
 
