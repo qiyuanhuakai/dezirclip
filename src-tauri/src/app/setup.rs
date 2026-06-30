@@ -1261,6 +1261,7 @@ fn show_settings_from_tray(app: &AppHandle) {
     }
 }
 
+#[cfg(any(test, not(target_os = "linux")))]
 fn should_toggle_window_for_tray_click(
     button: tauri::tray::MouseButton,
     button_state: tauri::tray::MouseButtonState,
@@ -1274,6 +1275,7 @@ fn should_toggle_window_for_tray_click(
     )
 }
 
+#[cfg(any(test, not(target_os = "linux")))]
 fn should_mark_tray_left_button_down(
     button: tauri::tray::MouseButton,
     button_state: tauri::tray::MouseButtonState,
@@ -1334,6 +1336,14 @@ fn should_accept_tray_toggle(last_toggle_timestamp: &AtomicU64, now_ms: u64) -> 
 }
 
 fn setup_tray(app: &App, hide_tray: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        setup_linux_tray(app, hide_tray);
+        return;
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
 
@@ -1394,6 +1404,44 @@ fn setup_tray(app: &App, hide_tray: bool) {
 
     let _ = tray.set_visible(!hide_tray);
     app.manage(tray);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn setup_linux_tray(app: &App, hide_tray: bool) {
+    use crate::infrastructure::linux_api::tray::{setup_status_icon, TrayCallbacks};
+
+    let app_for_left = app.handle().clone();
+    let app_for_show = app.handle().clone();
+    let app_for_settings = app.handle().clone();
+    let app_for_quit = app.handle().clone();
+
+    setup_status_icon(
+        hide_tray,
+        TrayCallbacks {
+            on_left_click: Box::new(move || {
+                mark_tray_left_button_down(
+                    &TRAY_LEFT_BUTTON_ACTIVE,
+                    &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
+                    now_millis(),
+                );
+                mark_tray_left_button_up(
+                    &TRAY_LEFT_BUTTON_ACTIVE,
+                    &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
+                    now_millis(),
+                );
+                if should_accept_tray_toggle(&LAST_TRAY_TOGGLE_TIMESTAMP, now_millis()) {
+                    toggle_window(&app_for_left);
+                }
+            }),
+            on_show_hide: Box::new(move || toggle_window(&app_for_show)),
+            on_settings: Box::new(move || show_settings_from_tray(&app_for_settings)),
+            on_quit: Box::new(move || {
+                crate::app::app_exit::request_app_exit();
+                app_for_quit.exit(0);
+            }),
+        },
+    );
 }
 
 #[cfg(test)]

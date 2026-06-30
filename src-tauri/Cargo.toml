@@ -67,6 +67,7 @@ webview2-com = "0.38.2"
 x11rb = { version = "0.13", features = ["xtest", "allow-unsafe-code"] }
 x11-clipboard = "0.9"
 keyring = { version = "3", features = ["linux-native"] }
+ksni = { version = "0.3", features = ["blocking"] }
 
 # ============ Release 体积优化 ============
 [profile.release]

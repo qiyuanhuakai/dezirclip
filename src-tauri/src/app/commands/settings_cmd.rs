@@ -493,6 +493,9 @@ pub fn set_tray_visible(
     visible: bool,
 ) -> AppResult<()> {
     state.hide_tray_icon.store(!visible, Ordering::Relaxed);
+    #[cfg(target_os = "linux")]
+    crate::infrastructure::linux_api::tray::set_tray_visible(visible);
+    #[cfg(not(target_os = "linux"))]
     if let Some(tray) = app_handle.tray_by_id("main_tray") {
         let _ = tray.set_visible(visible);
     }

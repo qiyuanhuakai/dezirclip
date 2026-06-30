@@ -51,6 +51,7 @@ sudo apt install -y \
   librsvg2-dev \
   patchelf \
   pkg-config \
+  libclang-dev \
   libpipewire-0.3-dev \
   libgbm-dev \
   libx11-dev \
@@ -138,6 +139,7 @@ sudo apt install -y \
   librsvg2-dev \
   patchelf \
   pkg-config \
+  libclang-dev \
   libpipewire-0.3-dev \
   libgbm-dev \
   libx11-dev \
