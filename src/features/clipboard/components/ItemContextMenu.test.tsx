@@ -27,10 +27,10 @@ const MOCK_TRANSFORM_KINDS = [
   { id: "base64_decode", label_zh: "Base64 解码", label_en: "Base64 Decode" },
 ];
 
-function makeEntry(content: string, isPinned = false): ClipboardEntry {
+function makeEntry(content: string, isPinned = false, contentType = "text"): ClipboardEntry {
   return {
     id: 1,
-    content_type: "text",
+    content_type: contentType,
     content,
     source_app: "test",
     timestamp: Date.now(),
@@ -225,5 +225,63 @@ describe("ItemContextMenu", () => {
 
     const items = screen.getAllByRole("menuitem");
     expect(items[4]).toHaveTextContent("取消固定");
+  });
+
+  it("shows rich text paste action for rich text entries", () => {
+    const onCopy = vi.fn();
+    render(
+      <ItemContextMenu
+        x={100}
+        y={100}
+        entry={makeEntry("formatted", false, "rich_text")}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        onCopy={onCopy}
+      />
+    );
+
+    fireEvent.click(screen.getByText("以富文本格式粘贴"));
+    expect(onCopy).toHaveBeenCalledWith(true);
+  });
+
+  it("keeps transform parent active while pointer is inside the portal submenu", async () => {
+    render(
+      <ItemContextMenu
+        x={100}
+        y={100}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        transformKinds={MOCK_TRANSFORM_KINDS}
+      />
+    );
+
+    fireEvent.mouseEnter(screen.getByText("文本转换 →"));
+    const submenu = await screen.findByTestId("transform-submenu");
+    fireEvent.mouseEnter(submenu);
+
+    expect(screen.getByText("文本转换 →").closest("[role='menuitem']")?.className).toContain(
+      "item-context-menu__item--active"
+    );
+  });
+
+  it("stops transform submenu wheel events from scrolling the clipboard list behind it", async () => {
+    const outerWheel = vi.fn();
+    render(
+      <div onWheel={outerWheel}>
+        <ItemContextMenu
+          x={100}
+          y={100}
+          onSelect={vi.fn()}
+          onClose={vi.fn()}
+          transformKinds={MOCK_TRANSFORM_KINDS}
+        />
+      </div>
+    );
+
+    fireEvent.mouseEnter(screen.getByText("文本转换 →"));
+    const submenu = await screen.findByTestId("transform-submenu");
+    fireEvent.wheel(submenu, { deltaY: 120 });
+
+    expect(outerWheel).not.toHaveBeenCalled();
   });
 });

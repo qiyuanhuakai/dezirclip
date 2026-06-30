@@ -3,6 +3,18 @@ pub fn simulate_paste() -> Result<(), String> {
 }
 
 pub fn simulate_paste_with_method(method: &str, content_type: Option<&str>) -> Result<(), String> {
+    simulate_paste_with_method_and_content(method, content_type, None)
+}
+
+pub fn simulate_paste_with_method_and_content(
+    method: &str,
+    content_type: Option<&str>,
+    expected_text: Option<&str>,
+) -> Result<(), String> {
+    if let Some(text) = expected_text.filter(|_| content_type_is_text_like(content_type)) {
+        wait_for_clipboard_text(text);
+    }
+
     let key_combo = match resolve_effective_paste_method(method, content_type) {
         "ctrl_v" => "ctrl+v",
         _ => "Shift+Insert",
@@ -23,6 +35,23 @@ pub fn simulate_paste_with_method(method: &str, content_type: Option<&str>) -> R
     }
 
     Ok(())
+}
+
+fn content_type_is_text_like(content_type: Option<&str>) -> bool {
+    matches!(content_type, Some("text" | "code" | "url" | "rich_text"))
+}
+
+fn wait_for_clipboard_text(expected: &str) {
+    for _ in 0..8 {
+        if arboard::Clipboard::new()
+            .and_then(|mut clipboard| clipboard.get_text())
+            .map(|text| text == expected)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
 }
 
 fn release_active_modifiers() {
@@ -81,7 +110,7 @@ fn resolve_effective_paste_method(method: &str, content_type: Option<&str>) -> &
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_effective_paste_method;
+    use super::{content_type_is_text_like, resolve_effective_paste_method};
 
     #[test]
     fn keeps_explicit_ctrl_v() {
@@ -109,5 +138,13 @@ mod tests {
             resolve_effective_paste_method("shift_insert", Some("image")),
             "ctrl_v"
         );
+    }
+
+    #[test]
+    fn identifies_text_like_content_for_clipboard_settle_wait() {
+        assert!(content_type_is_text_like(Some("text")));
+        assert!(content_type_is_text_like(Some("rich_text")));
+        assert!(!content_type_is_text_like(Some("image")));
+        assert!(!content_type_is_text_like(None));
     }
 }

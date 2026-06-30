@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
-#[cfg(target_os = "windows")]
 use tauri::Emitter;
-#[cfg(target_os = "windows")]
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
@@ -23,75 +21,58 @@ pub struct OcrStatusResponse {
 }
 
 #[tauri::command]
-#[cfg_attr(
-    not(target_os = "windows"),
-    allow(
-        unused_variables,
-        reason = "Linux returns early; params reserved for Windows path"
-    )
-)]
 pub async fn recognize_clipboard_image(item_id: i64, app: AppHandle) -> Result<OcrResult, String> {
-    #[cfg(target_os = "linux")]
-    {
-        return Err(
-            "OCR is not supported on this platform (Linux OCR engine not available)".to_string(),
-        );
+    let db_state = app.state::<DbState>();
+    let conn = db_state
+        .conn
+        .lock()
+        .map_err(|e| format!("DB lock failed: {e}"))?;
+
+    let entry = db_state
+        .repo
+        .get_entry_by_id_with_conn(&conn, item_id)?
+        .ok_or_else(|| format!("Clipboard entry {item_id} not found"))?;
+
+    if entry.content_type != "image" {
+        return Err(format!(
+            "Entry {item_id} is not an image (content_type={})",
+            entry.content_type
+        ));
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        let db_state = app.state::<DbState>();
-        let conn = db_state
-            .conn
-            .lock()
-            .map_err(|e| format!("DB lock failed: {e}"))?;
+    let png_bytes = crate::services::clipboard_ops::resolve_image_bytes(&entry.content)
+        .ok_or_else(|| {
+            format!(
+                "Failed to resolve image bytes for entry {item_id} (content_len={})",
+                entry.content.len()
+            )
+        })?;
 
-        let entry = db_state
-            .repo
-            .get_entry_by_id_with_conn(&conn, item_id)?
-            .ok_or_else(|| format!("Clipboard entry {item_id} not found"))?;
+    let text = {
+        let service = crate::services::ocr::OcrService::new()
+            .map_err(|e| format!("OCR engine init failed: {e}"))?;
+        service
+            .recognize(&png_bytes)
+            .map_err(|e| format!("OCR recognition failed: {e}"))?
+    };
 
-        if entry.content_type != "image" {
-            return Err(format!(
-                "Entry {item_id} is not an image (content_type={})",
-                entry.content_type
-            ));
-        }
+    db_state
+        .repo
+        .update_ocr_text_with_conn(&conn, item_id, &text, "done")
+        .map_err(|e| format!("Failed to persist OCR text: {e}"))?;
 
-        let png_bytes = crate::services::clipboard_ops::resolve_image_bytes(&entry.content)
-            .ok_or_else(|| {
-                format!(
-                    "Failed to resolve image bytes for entry {item_id} (content_len={})",
-                    entry.content.len()
-                )
-            })?;
+    drop(conn);
 
-        let text = {
-            let service = crate::services::ocr::OcrService::new()
-                .map_err(|e| format!("OCR engine init failed: {e}"))?;
-            service
-                .recognize(&png_bytes)
-                .map_err(|e| format!("OCR recognition failed: {e}"))?
-        };
+    let result = OcrResult {
+        item_id,
+        text: text.clone(),
+        confidence: None,
+        status: "done".to_string(),
+    };
 
-        db_state
-            .repo
-            .update_ocr_text_with_conn(&conn, item_id, &text, "done")
-            .map_err(|e| format!("Failed to persist OCR text: {e}"))?;
+    let _ = app.emit("ocr:complete", &result);
 
-        drop(conn);
-
-        let result = OcrResult {
-            item_id,
-            text: text.clone(),
-            confidence: None,
-            status: "done".to_string(),
-        };
-
-        let _ = app.emit("ocr:complete", &result);
-
-        Ok(result)
-    }
+    Ok(result)
 }
 
 #[tauri::command]

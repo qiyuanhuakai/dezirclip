@@ -12,10 +12,7 @@ pub enum OcrError {
 impl std::fmt::Display for OcrError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OcrError::NoOcrEngine => write!(
-                f,
-                "OCR is not supported on this platform (No OCR engine available)"
-            ),
+            OcrError::NoOcrEngine => write!(f, "No OCR engine available. On Linux, install tesseract-ocr and language packs such as tesseract-ocr-eng."),
             OcrError::NoLanguages => write!(f, "No OCR language pack installed"),
             OcrError::ImageError(e) => write!(f, "Image decode error: {e}"),
             OcrError::OcrFailed(msg) => write!(f, "OCR failed: {msg}"),

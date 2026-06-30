@@ -58,6 +58,9 @@ sudo apt install -y \
   libxi-dev \
   libxrandr-dev \
   libxtst-dev \
+  tesseract-ocr \
+  tesseract-ocr-eng \
+  tesseract-ocr-chi-sim \
   xdotool
 ```
 
@@ -146,6 +149,9 @@ sudo apt install -y \
   libxi-dev \
   libxrandr-dev \
   libxtst-dev \
+  tesseract-ocr \
+  tesseract-ocr-eng \
+  tesseract-ocr-chi-sim \
   xdotool
 ```
 

@@ -16,7 +16,7 @@ export interface ItemContextMenuProps {
   entry?: ClipboardEntry | null;
   onSelect: (key: string) => void;
   onClose: () => void;
-  onCopy?: () => void;
+  onCopy?: (withFormat?: boolean) => void;
   onEditTags?: () => void;
   onQRCode?: () => void;
   onDelete?: () => void;
@@ -118,11 +118,15 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       const ct = entry?.content_type;
       const isBinary = ct === "image" || ct === "video" || ct === "file";
       const isImage = ct === "image";
+      const isRichText = ct === "rich_text";
       const isTransformable = !isBinary;
       const items: { key: string; label: string; hasSubmenu?: boolean }[] = [
         { key: "copy", label: "复制" },
         { key: "editTags", label: "编辑标签" },
       ];
+      if (isRichText) {
+        items.push({ key: "pasteRichText", label: "以富文本格式粘贴" });
+      }
       if (!isBinary) {
         items.push({ key: "qrCode", label: "QR 码" });
       }
@@ -152,7 +156,10 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         onSelect(key);
         switch (key) {
           case "copy":
-            onCopy?.();
+            onCopy?.(false);
+            break;
+          case "pasteRichText":
+            onCopy?.(true);
             break;
           case "editTags":
             onEditTags?.();
@@ -290,6 +297,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 	        data-testid="transform-submenu"
 	        onMouseEnter={() => {
 	          clearSubmenuCloseTimer();
+	          setActiveIndex(transformIndex);
 	          setSubmenuOpen(true);
 	        }}
 	        onMouseLeave={() => {
@@ -297,6 +305,12 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 	            setSubmenuOpen(false);
 	          }, SUBMENU_CLOSE_DELAY_MS);
 	        }}
+        onWheel={(e) => {
+          e.stopPropagation();
+        }}
+        onScroll={(e) => {
+          e.stopPropagation();
+        }}
 	      >
 	        {transformKinds.map((kind, tIdx) => (
 	          <div

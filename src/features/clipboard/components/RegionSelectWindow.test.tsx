@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent, screen, act } from "@testing-library/react";
-import RegionSelectWindow from "./RegionSelectWindow";
+import RegionSelectWindow, { toPhysicalCaptureRect } from "./RegionSelectWindow";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -8,10 +8,14 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 const mockHide = vi.fn();
 const mockSetFocusable = vi.fn();
+const mockOuterPosition = vi.fn();
+const mockScaleFactor = vi.fn();
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     hide: mockHide,
     setFocusable: mockSetFocusable,
+    outerPosition: mockOuterPosition,
+    scaleFactor: mockScaleFactor,
   }),
 }));
 
@@ -28,6 +32,8 @@ describe("RegionSelectWindow", () => {
     vi.clearAllMocks();
     mockHide.mockResolvedValue(undefined);
     mockSetFocusable.mockResolvedValue(undefined);
+    mockOuterPosition.mockResolvedValue({ x: 0, y: 0 });
+    mockScaleFactor.mockResolvedValue(1);
     Storage.prototype.getItem = vi.fn(() => null);
   });
 
@@ -95,6 +101,40 @@ describe("RegionSelectWindow", () => {
     expect(onSelect).toHaveBeenCalledWith({ x: 100, y: 100, width: 320, height: 200 });
     expect(mockSetFocusable).toHaveBeenCalledWith(false);
     expect(mockHide).toHaveBeenCalledTimes(1);
+  });
+
+  it("converts CSS selection coordinates to physical screen coordinates", () => {
+    expect(
+      toPhysicalCaptureRect({ x: 100, y: 80, width: 320, height: 200 }, { x: 1920, y: 40 }, 1.5)
+    ).toEqual({ x: 2070, y: 160, width: 480, height: 300 });
+  });
+
+  it("captures physical coordinates when region window is scaled and offset", async () => {
+    const onSelect = vi.fn();
+    mockOuterPosition.mockResolvedValue({ x: 1920, y: 40 });
+    mockScaleFactor.mockResolvedValue(1.5);
+    render(<RegionSelectWindow onSelect={onSelect} />);
+    const overlay = screen.getByTestId("region-select-overlay");
+
+    act(() => {
+      fireEvent.mouseDown(overlay, { clientX: 100, clientY: 80 });
+    });
+
+    act(() => {
+      fireEvent.mouseMove(overlay, { clientX: 420, clientY: 280 });
+    });
+
+    await act(async () => {
+      fireEvent.mouseUp(overlay);
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith("capture_region", {
+      x: 2070,
+      y: 160,
+      width: 480,
+      height: 300,
+    });
+    expect(onSelect).toHaveBeenCalledWith({ x: 2070, y: 160, width: 480, height: 300 });
   });
 
   it("escape cancels, hides window, and fires onCancel", async () => {

@@ -36,6 +36,7 @@ import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
+import { resolveContextMenuPoint } from "./contextMenuPosition";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
 const CONTEXT_MENU_OPEN_EVENT = "dezirclip:context-menu-open";
@@ -1101,7 +1102,17 @@ const ClipboardItem = ({
                 e.preventDefault();
                 e.stopPropagation();
                 window.dispatchEvent(new CustomEvent(CONTEXT_MENU_OPEN_EVENT, { detail: { id: item.id } }));
-                setContextMenuState({ x: e.clientX, y: e.clientY });
+                const point = resolveContextMenuPoint({
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                    anchorRect: toCompactPreviewRect(e.currentTarget.getBoundingClientRect()),
+                    viewport: {
+                        width: window.innerWidth,
+                        height: window.innerHeight,
+                        scale: window.devicePixelRatio || 1
+                    }
+                });
+                setContextMenuState(point);
             }}
             onMouseEnter={(e) => {
                 if (!compactMode) return;
@@ -1547,7 +1558,7 @@ const ClipboardItem = ({
                     entry={item}
                     onSelect={handleContextMenuAction}
                     onClose={() => setContextMenuState(null)}
-                    onCopy={() => handleContextMenuAction("copy")}
+                    onCopy={(withFormat) => onCopy(!!withFormat, false)}
                     onEditTags={() => handleContextMenuAction("editTags")}
                     onQRCode={() => handleContextMenuAction("qrCode")}
                     onDelete={() => handleContextMenuAction("delete")}

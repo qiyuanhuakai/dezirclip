@@ -1,24 +1,113 @@
+use std::path::PathBuf;
+use std::process::Command;
+
 use crate::services::ocr::OcrError;
 
-/// Linux OCR placeholder.
-///
-/// Real OCR on Linux (Tesseract WASM, native tesseract crate, or any
-/// alternative) is deferred to a later phase. To keep the cross-platform
-/// `services::ocr::OcrService` surface uniform, both `new()` and `recognize()`
-/// always report `OcrError::NoOcrEngine`. Callers should treat this as
-/// "OCR is not yet supported on Linux" and either disable the feature or
-/// surface a localized message to the user.
+const DEFAULT_TESSERACT_LANG: &str = "eng+chi_sim";
+const OCR_LANG_ENV: &str = "DEZIRCLIP_OCR_LANG";
+
 #[derive(Debug)]
-pub struct OcrService;
+pub struct OcrService {
+    command: String,
+    language: String,
+}
 
 impl OcrService {
     pub fn new() -> Result<Self, OcrError> {
-        Err(OcrError::NoOcrEngine)
+        let command = "tesseract".to_string();
+        let available = Command::new(&command)
+            .arg("--version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        if !available {
+            return Err(OcrError::NoOcrEngine);
+        }
+
+        Ok(Self {
+            command,
+            language: ocr_language(),
+        })
     }
 
-    pub fn recognize(&self, _png_bytes: &[u8]) -> Result<String, OcrError> {
-        Err(OcrError::NoOcrEngine)
+    pub fn recognize(&self, png_bytes: &[u8]) -> Result<String, OcrError> {
+        image::load_from_memory(png_bytes)?;
+        let path = write_temp_png(png_bytes)?;
+        let result = self.run_tesseract(&path);
+        let _ = std::fs::remove_file(&path);
+        result
     }
+
+    fn run_tesseract(&self, path: &std::path::Path) -> Result<String, OcrError> {
+        match run_tesseract_command(&self.command, path, &self.language) {
+            Ok(text) => Ok(text),
+            Err(err) if self.language != "eng" => run_tesseract_command(&self.command, path, "eng")
+                .map_err(|_| err),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+fn ocr_language() -> String {
+    std::env::var(OCR_LANG_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_TESSERACT_LANG.to_string())
+}
+
+fn temp_png_path() -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    std::env::temp_dir().join(format!("dezirclip-ocr-{}-{nanos}.png", std::process::id()))
+}
+
+fn write_temp_png(png_bytes: &[u8]) -> Result<PathBuf, OcrError> {
+    let path = temp_png_path();
+    std::fs::write(&path, png_bytes)
+        .map_err(|e| OcrError::OcrFailed(format!("Failed to write temporary OCR image: {e}")))?;
+    Ok(path)
+}
+
+fn tesseract_args(path: &std::path::Path, language: &str) -> Vec<String> {
+    vec![
+        path.to_string_lossy().into_owned(),
+        "stdout".to_string(),
+        "-l".to_string(),
+        language.to_string(),
+    ]
+}
+
+fn run_tesseract_command(
+    command: &str,
+    path: &std::path::Path,
+    language: &str,
+) -> Result<String, OcrError> {
+    let output = Command::new(command)
+        .args(tesseract_args(path, language))
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                OcrError::NoOcrEngine
+            } else {
+                OcrError::OcrFailed(format!("Failed to run tesseract: {e}"))
+            }
+        })?;
+
+    if output.status.success() {
+        return String::from_utf8(output.stdout)
+            .map(|text| text.trim().to_string())
+            .map_err(|e| OcrError::OcrFailed(format!("Tesseract output was not UTF-8: {e}")));
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(OcrError::OcrFailed(if stderr.is_empty() {
+        format!("Tesseract exited with status {}", output.status)
+    } else {
+        stderr
+    }))
 }
 
 #[cfg(test)]
@@ -26,50 +115,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_linux_ocr_service_new_returns_no_engine() {
-        let result = OcrService::new();
-        assert!(
-            matches!(result, Err(OcrError::NoOcrEngine)),
-            "OcrService::new() must return Err(NoOcrEngine) on Linux, got {:?}",
-            result.map(|s| format!("constructed: {s:?}"))
+    fn test_tesseract_args_include_stdout_and_language() {
+        let path = std::path::Path::new("/tmp/demo.png");
+        assert_eq!(
+            tesseract_args(path, "eng+chi_sim"),
+            vec!["/tmp/demo.png", "stdout", "-l", "eng+chi_sim"]
         );
     }
 
     #[test]
-    fn test_linux_ocr_service_recognize_returns_no_engine() {
-        let svc = OcrService;
-        let png = image::RgbaImage::from_pixel(2, 2, image::Rgba([0, 0, 0, 255]));
-        let mut buf = std::io::Cursor::new(Vec::<u8>::new());
-        png.write_to(&mut buf, image::ImageFormat::Png).unwrap();
-        let result = svc.recognize(&buf.into_inner());
-        assert!(
-            matches!(result, Err(OcrError::NoOcrEngine)),
-            "recognize() on valid PNG must return Err(NoOcrEngine) on Linux, got {:?}",
-            result.map(|t| format!("text={t:?}"))
-        );
+    fn test_ocr_language_defaults_to_english_and_simplified_chinese() {
+        std::env::remove_var(OCR_LANG_ENV);
+        assert_eq!(ocr_language(), DEFAULT_TESSERACT_LANG);
     }
 
     #[test]
-    fn test_linux_ocr_service_recognize_empty_bytes() {
-        let svc = OcrService;
+    fn test_linux_ocr_service_rejects_invalid_image_before_running_tesseract() {
+        let svc = OcrService {
+            command: "tesseract".to_string(),
+            language: "eng".to_string(),
+        };
         let result = svc.recognize(&[]);
-        assert!(
-            matches!(result, Err(OcrError::NoOcrEngine)),
-            "recognize() on empty bytes must return Err(NoOcrEngine) on Linux, got {:?}",
-            result.map(|t| format!("text={t:?}"))
-        );
-    }
-
-    #[test]
-    fn test_linux_ocr_service_recognize_garbage_bytes() {
-        let svc = OcrService;
-        let garbage: &[u8] = &[0xFF, 0x00, 0xAB, 0xCD, 0xEE, 0x12, 0x34, 0x56];
-        let result = svc.recognize(garbage);
-        assert!(
-            matches!(result, Err(OcrError::NoOcrEngine)),
-            "recognize() on garbage bytes must return Err(NoOcrEngine) on Linux, got {:?}",
-            result.map(|t| format!("text={t:?}"))
-        );
+        assert!(matches!(result, Err(OcrError::ImageError(_))));
     }
 
     #[test]
@@ -77,8 +144,8 @@ mod tests {
         let msg = OcrError::NoOcrEngine.to_string();
         let lowered = msg.to_lowercase();
         assert!(
-            lowered.contains("linux") || lowered.contains("not supported"),
-            "Error message should mention 'Linux' or 'not supported', got {:?}",
+            lowered.contains("tesseract") || lowered.contains("ocr engine"),
+            "Error message should mention tesseract or OCR engine, got {:?}",
             msg
         );
     }

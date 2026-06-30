@@ -11,6 +11,13 @@ type Selection = {
   endY: number;
 };
 
+type CaptureRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 type RegionSelectWindowProps = {
   onSelect?: (result: { x: number; y: number; width: number; height: number }) => void;
   onCancel?: () => void;
@@ -30,6 +37,17 @@ const normalizeRect = (sel: Selection) => {
   const height = Math.abs(sel.endY - sel.startY);
   return { x, y, width, height };
 };
+
+export const toPhysicalCaptureRect = (
+  rect: CaptureRect,
+  origin: { x: number; y: number },
+  scale: number
+): CaptureRect => ({
+  x: Math.round(origin.x + rect.x * scale),
+  y: Math.round(origin.y + rect.y * scale),
+  width: Math.round(rect.width * scale),
+  height: Math.round(rect.height * scale),
+});
 
 const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => {
   const [selection, setSelection] = useState<Selection | null>(null);
@@ -75,13 +93,14 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     }
 
     try {
-      await invoke("capture_region", {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      });
-      onSelect?.({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+      const window = getCurrentWindow();
+      const [origin, scale] = await Promise.all([
+        window.outerPosition(),
+        window.scaleFactor(),
+      ]);
+      const captureRect = toPhysicalCaptureRect(rect, origin, scale);
+      await invoke("capture_region", captureRect);
+      onSelect?.(captureRect);
     } catch {
       // capture_region not available yet (Task 37 pending) — still emit selection
       onSelect?.({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });

@@ -78,16 +78,29 @@ export const pickPreviewPosition = ({
 
   if (avoidRect) {
     const sideY = anchorRect ? anchorRect.bottom - heightPx : anchorY - Math.round(heightPx * 0.25);
-    const outsideCandidates = [
+    const sideCandidates = [
       { x: avoidRect.right + offset, y: sideY },
       { x: avoidRect.left - widthPx - offset, y: sideY },
-      { x: anchorX - Math.round(widthPx * 0.2), y: avoidRect.top - heightPx - offset },
-      { x: anchorX - Math.round(widthPx * 0.2), y: avoidRect.bottom + offset },
     ].map(clampPoint);
 
-    for (const c of outsideCandidates) {
+    for (const c of sideCandidates) {
       if (!intersectsAvoidRect(c)) return c;
     }
+
+    if (!anchorRect) {
+      const outsideCandidates = [
+        { x: anchorX - Math.round(widthPx * 0.2), y: avoidRect.top - heightPx - offset },
+        { x: anchorX - Math.round(widthPx * 0.2), y: avoidRect.bottom + offset },
+      ].map(clampPoint);
+
+      for (const c of outsideCandidates) {
+        if (!intersectsAvoidRect(c)) return c;
+      }
+    }
+  }
+
+  if (anchorRect) {
+    return clampPoint(candidates[1]);
   }
 
   for (const c of candidates) {

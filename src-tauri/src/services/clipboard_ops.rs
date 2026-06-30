@@ -843,8 +843,11 @@ pub fn send_paste_keystroke(
 
     #[cfg(target_os = "linux")]
     {
-        let _ = content;
-        crate::infrastructure::linux_api::paste::simulate_paste_with_method(method, content_type)
+        crate::infrastructure::linux_api::paste::simulate_paste_with_method_and_content(
+            method,
+            content_type,
+            content,
+        )
             .map_err(AppError::from)?;
     }
 
