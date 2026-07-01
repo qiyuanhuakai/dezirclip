@@ -25,9 +25,11 @@ export interface ItemContextMenuProps {
   onImageBase64?: () => void;
   onTransform?: (kind: string) => void;
   onOcr?: () => void;
+  onPasteOcr?: () => void;
   transformKinds?: TransformKindDto[];
   language?: "zh" | "en" | "tw";
   ocrRunning?: boolean;
+  ocrText?: string | null;
 }
 
 const MENU_WIDTH = 180;
@@ -88,9 +90,11 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       onImageBase64,
       onTransform,
       onOcr,
+      onPasteOcr,
       transformKinds = [],
       language = "zh",
       ocrRunning = false,
+      ocrText,
     },
     ref
   ) => {
@@ -132,6 +136,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       }
       if (isImage) {
         items.push({ key: "ocr", label: ocrRunning ? "OCR 识别中..." : "OCR 识别" });
+        if (ocrText) {
+          items.push({ key: "pasteOcr", label: "粘贴 OCR 文本" });
+        }
         items.push({ key: "imageBase64", label: "转为 Base64" });
       }
       items.push({ key: "delete", label: "删除" });
@@ -141,7 +148,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
       return items;
-    }, [entry?.is_pinned, entry?.content_type, ocrRunning]);
+    }, [entry?.is_pinned, entry?.content_type, ocrRunning, ocrText]);
 
 	    const totalItems = menuItems.length;
 	    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
@@ -153,7 +160,6 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 
     const handleAction = useCallback(
       (key: string) => {
-        onSelect(key);
         switch (key) {
           case "copy":
             onCopy?.(false);
@@ -182,21 +188,23 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
           case "ocr":
             onOcr?.();
             break;
+          case "pasteOcr":
+            onPasteOcr?.();
+            break;
         }
         if (key !== "ocr") {
           onClose();
         }
       },
-      [onSelect, onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onImageBase64, onOcr, onClose]
+      [onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onImageBase64, onOcr, onPasteOcr, onClose]
     );
 
     const handleTransformSelect = useCallback(
       (kind: string) => {
-        onSelect("transforms");
         onTransform?.(kind);
         onClose();
       },
-      [onSelect, onTransform, onClose]
+      [onTransform, onClose]
     );
 
     const handleKeyDown = useCallback(
@@ -249,6 +257,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
               setSubmenuOpen(true);
               setSubmenuActiveIndex(0);
             } else {
+              onSelect(menuItems[activeIndex]?.key ?? "");
               handleAction(menuItems[activeIndex]?.key ?? "");
             }
             break;
@@ -268,6 +277,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         handleAction,
         handleTransformSelect,
         onClose,
+        onSelect,
       ]
     );
 

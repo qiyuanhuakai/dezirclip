@@ -35,14 +35,5 @@ export const resolveContextMenuPoint = (input: ContextMenuPointInput): ContextMe
   if (isInsideViewport(input.clientX, input.clientY, input.viewport)) {
     return { x: input.clientX, y: input.clientY };
   }
-
-  if (input.viewport.scale > 1) {
-    const scaledX = input.clientX / input.viewport.scale;
-    const scaledY = input.clientY / input.viewport.scale;
-    if (isInsideViewport(scaledX, scaledY, input.viewport)) {
-      return { x: scaledX, y: scaledY };
-    }
-  }
-
   return clampToAnchor(input);
 };

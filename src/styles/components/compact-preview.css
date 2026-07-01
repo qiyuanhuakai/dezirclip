@@ -56,6 +56,7 @@ body.compact-preview #root>* {
     box-shadow: none !important;
     filter: none !important;
     overflow: hidden;
+    border-radius: var(--surface-dialog-radius, var(--radius-window));
 }
 
 /* Keep compact preview visually single-layer. */

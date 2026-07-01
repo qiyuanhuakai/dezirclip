@@ -38,6 +38,7 @@
 .item-context-menu__item--has-submenu {
   position: relative;
   padding-right: 16px;
+  border-radius: var(--surface-dialog-radius, 8px);
 }
 
 .item-context-menu__item-label {
@@ -80,7 +81,7 @@
   pointer-events: auto;
   transform: translateX(0);
   transition: opacity 0.12s ease, transform 0.12s ease;
-  z-index: 10000;
+  z-index: 110000;
 }
 
 /* Invisible bridge between parent menu item and submenu to prevent hover gap */

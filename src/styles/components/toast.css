@@ -18,6 +18,7 @@
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 700;
+  border-radius: var(--surface-dialog-radius, 12px);
   box-shadow: var(--surface-dialog-shadow, 6px 6px 0 var(--shadow-color));
   pointer-events: auto;
   min-width: 200px;

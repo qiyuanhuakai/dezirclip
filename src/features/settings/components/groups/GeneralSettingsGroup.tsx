@@ -247,7 +247,10 @@ const GeneralSettingsGroup = ({
                             inputMode="numeric"
                             pattern="[0-9]*"
                             value={idleDestroyDraft}
-                            onFocus={(e) => e.target.select()}
+                            onFocus={(e) => {
+                                e.target.select();
+                                invoke("focus_clipboard_window").catch(console.error);
+                            }}
                             onChange={(e) => {
                                 const next = e.target.value;
                                 if (next === "" || /^\d+$/.test(next)) {

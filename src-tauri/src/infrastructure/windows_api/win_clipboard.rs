@@ -9,6 +9,35 @@ const CF_DIB: u32 = 8; // DIB
 const CF_DIBV5: u32 = 17; // DIBV5
 const CF_UNICODETEXT: u32 = 13; // Unicode text
 
+// OpenClipboard retry policy: another thread may hold the clipboard briefly
+// (per Microsoft docs); retry a few times with a short sleep before giving up.
+const MAX_OPEN_RETRIES: u32 = 3;
+const RETRY_DELAY_MS: u64 = 50;
+
+/// Open the Windows clipboard, retrying on transient contention.
+///
+/// Per MSDN, `OpenClipboard` can fail when another thread currently owns it.
+/// We retry up to `MAX_OPEN_RETRIES` times with a small back-off before
+/// surfacing the last error. Matches the retry cadence already used by
+/// `copy_text_with_retry` on the Linux path.
+unsafe fn open_clipboard_with_retry() -> Result<(), String> {
+    let mut retries = MAX_OPEN_RETRIES;
+    loop {
+        match OpenClipboard(None) {
+            Ok(_) => return Ok(()),
+            Err(e) if retries > 1 => {
+                retries -= 1;
+                std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS));
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Cannot open clipboard after {MAX_OPEN_RETRIES} retries: {e}"
+                ));
+            }
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 struct BITMAPINFOHEADER {
@@ -311,7 +340,7 @@ pub unsafe fn get_clipboard_image() -> Option<ImageData> {
 
 #[cfg(test)]
 mod tests {
-    use super::detect_appended_bitfields_masks;
+    use super::{detect_appended_bitfields_masks, MAX_OPEN_RETRIES, RETRY_DELAY_MS};
 
     #[test]
     fn detects_extra_32bit_masks_after_extended_header() {
@@ -330,6 +359,15 @@ mod tests {
         let raw = vec![0x11u8; 128];
         let extra = detect_appended_bitfields_masks(&raw, 40, 32, 3);
         assert_eq!(extra, 0);
+    }
+
+    #[test]
+    fn open_clipboard_retry_policy_matches_text_retry_cadence() {
+        assert_eq!(MAX_OPEN_RETRIES, 3, "must retry up to 3 times");
+        assert_eq!(
+            RETRY_DELAY_MS, 50,
+            "retry delay must mirror copy_text_with_retry (50ms)"
+        );
     }
 }
 const CF_HDROP: u32 = 15;
@@ -415,9 +453,7 @@ pub unsafe fn get_clipboard_files() -> Option<Vec<String>> {
 
 /// Set files to Windows clipboard (CF_HDROP)
 pub unsafe fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
-    if OpenClipboard(None).is_err() {
-        return Err("Cannot open clipboard".into());
-    }
+    open_clipboard_with_retry()?;
 
     // Prepare payload (Double null terminated list of wide strings)
     let mut buffer: Vec<u16> = Vec::new();
@@ -522,9 +558,7 @@ unsafe fn set_clipboard_text_and_html_inner(
 ) -> Result<(), String> {
     use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
 
-    if OpenClipboard(None).is_err() {
-        return Err("Cannot open clipboard".into());
-    }
+    open_clipboard_with_retry()?;
 
     let result = (|| {
         if clear_existing {
@@ -601,9 +635,7 @@ pub unsafe fn set_clipboard_image_and_gif(
 ) -> Result<(), String> {
     use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
 
-    if OpenClipboard(None).is_err() {
-        return Err("Cannot open clipboard".into());
-    }
+    open_clipboard_with_retry()?;
 
     let result = (|| {
         let _ = EmptyClipboard();
@@ -743,9 +775,7 @@ pub unsafe fn set_clipboard_image_with_formats(
         None
     };
 
-    if OpenClipboard(None).is_err() {
-        return Err("Cannot open clipboard".into());
-    }
+    open_clipboard_with_retry()?;
 
     let result = (|| {
         let _ = EmptyClipboard();

@@ -874,6 +874,7 @@ const ClipboardItem = ({
     }, [item.id, item.ocr_text, item.ocr_status]);
 
     const [ocrRunning, setOcrRunning] = useState(false);
+    const shareInFlightRef = useRef(false);
 
     const handleOcr = useCallback(() => {
         if (ocrRunning || item.content_type !== "image") return;
@@ -947,7 +948,32 @@ const ClipboardItem = ({
         }
     }, [item.content, item.content_type, item.id, onTransformItemError, onTransformItemSuccess]);
 
+    const handlePasteOcr = useCallback(async () => {
+        if (!ocrText) return;
+        try {
+            await invoke("copy_to_clipboard", {
+                content: ocrText,
+                contentType: "text",
+                paste: false,
+                id: 0,
+                deleteAfterUse: false,
+                pasteWithFormat: false,
+                moveToTop: false,
+                pasteImageAsBase64: false,
+            });
+            onTransformItemSuccess?.("paste_ocr");
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            onTransformItemError?.("paste_ocr", msg);
+        }
+    }, [ocrText, onTransformItemError, onTransformItemSuccess]);
+
     const handleShare = useCallback(async () => {
+        if (shareInFlightRef.current) {
+            onTransformItemError?.("share", t("share_in_progress"));
+            return;
+        }
+        shareInFlightRef.current = true;
         try {
             if (navigator.share) {
                 await navigator.share({ text: item.content });
@@ -957,8 +983,10 @@ const ClipboardItem = ({
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             onTransformItemError?.("share", msg);
+        } finally {
+            shareInFlightRef.current = false;
         }
-    }, [item.content, onTransformItemError]);
+    }, [item.content, onTransformItemError, t]);
 
     const handleContextMenuAction = useCallback((action: string) => {
         switch (action) {
@@ -1445,6 +1473,8 @@ const ClipboardItem = ({
                                 marginTop: '2px',
                                 borderRadius: '3px',
                                 background: 'var(--bg-tertiary, rgba(128,128,128,0.05))',
+                                userSelect: 'text',
+                                WebkitUserSelect: 'text',
                             }}
                         >
                             {ocrText}
@@ -1556,7 +1586,7 @@ const ClipboardItem = ({
                     x={contextMenuState.x}
                     y={contextMenuState.y}
                     entry={item}
-                    onSelect={handleContextMenuAction}
+                    onSelect={() => setContextMenuState(null)}
                     onClose={() => setContextMenuState(null)}
                     onCopy={(withFormat) => onCopy(!!withFormat, false)}
                     onEditTags={() => handleContextMenuAction("editTags")}
@@ -1567,9 +1597,11 @@ const ClipboardItem = ({
                     onImageBase64={() => handleContextMenuAction("imageBase64")}
                     onTransform={handleTransform}
                     onOcr={handleOcr}
+                    onPasteOcr={() => handlePasteOcr()}
                     transformKinds={transformKinds}
                     language={language === "zh" ? "zh" : language === "en" ? "en" : "zh"}
                     ocrRunning={ocrRunning}
+                    ocrText={ocrText}
                 />
             )}
         </motion.div>

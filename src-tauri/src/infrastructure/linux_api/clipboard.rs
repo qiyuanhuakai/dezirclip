@@ -155,16 +155,59 @@ pub fn set_clipboard_image_with_formats(data: ImageData) -> Result<(), String> {
     let mut owner = owner_store
         .lock()
         .map_err(|_| "系统剪贴板所有权状态已损坏".to_string())?;
-    let mut clipboard =
-        arboard::Clipboard::new().map_err(|e| format!("初始化剪贴板失败: {}", e))?;
+
     let image = arboard::ImageData {
         width: data.width,
         height: data.height,
         bytes: std::borrow::Cow::Owned(data.bytes),
     };
-    clipboard
-        .set_image(image)
-        .map_err(|e| format!("设置图像到剪贴板失败: {}", e))?;
+
+    let try_set = |clipboard: &mut arboard::Clipboard| -> Result<(), String> {
+        clipboard
+            .set_image(image.clone())
+            .map_err(|e| format!("设置图像到剪贴板失败: {}", e))
+    };
+
+    let initial = arboard::Clipboard::new().map_err(|e| {
+        crate::error!("[linux-clipboard] 初始化 arboard::Clipboard 失败: {}", e);
+        format!("初始化剪贴板失败: {}", e)
+    });
+    let mut clipboard = match initial {
+        Ok(c) => c,
+        Err(e) => {
+            crate::error!("[linux-clipboard] 首次创建剪贴板所有者失败: {}", e);
+            return Err(e);
+        }
+    };
+
+    if let Err(first_err) = try_set(&mut clipboard) {
+        // arboard::Clipboard::new() can fail on first call on Wayland/X11
+        // without an active display server; drop the stale owner and recreate.
+        crate::error!(
+            "[linux-clipboard] 首次 set_image 失败，准备重建所有者: {}",
+            first_err
+        );
+        clipboard = arboard::Clipboard::new().map_err(|recreate_err| {
+            crate::error!(
+                "[linux-clipboard] 重建剪贴板所有者失败: first={}, recreate={}",
+                first_err,
+                recreate_err
+            );
+            format!(
+                "设置图像到剪贴板失败: {}; 且无法重建剪贴板所有者: {}",
+                first_err, recreate_err
+            )
+        })?;
+        try_set(&mut clipboard).map_err(|retry_err| {
+            crate::error!(
+                "[linux-clipboard] 重试 set_image 仍失败: first={}, retry={}",
+                first_err,
+                retry_err
+            );
+            retry_err
+        })?;
+    }
+
     *owner = Some(clipboard);
     Ok(())
 }

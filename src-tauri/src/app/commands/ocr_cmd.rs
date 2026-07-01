@@ -5,6 +5,11 @@ use tauri::{AppHandle, State};
 
 use crate::database::DbState;
 
+#[cfg(target_os = "windows")]
+const OCR_ENGINE_DISPLAY_NAME: &str = "Windows.Media.Ocr";
+#[cfg(not(target_os = "windows"))]
+const OCR_ENGINE_DISPLAY_NAME: &str = "Tesseract";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrResult {
     pub item_id: i64,
@@ -95,6 +100,21 @@ pub fn get_ocr_status(
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OcrEngineInfo {
+    pub available: bool,
+    pub engine_name: String,
+}
+
+#[tauri::command]
+pub fn check_ocr_engine_available() -> OcrEngineInfo {
+    let available = crate::services::ocr::OcrService::new().is_ok();
+    OcrEngineInfo {
+        available,
+        engine_name: OCR_ENGINE_DISPLAY_NAME.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +177,42 @@ mod tests {
             json.contains("\"ocr_text\":null"),
             "ocr_text None must serialize as JSON null, got: {json}"
         );
+    }
+
+    #[test]
+    fn test_ocr_engine_info_serializes_both_fields() {
+        let info = OcrEngineInfo {
+            available: true,
+            engine_name: "Tesseract".to_string(),
+        };
+        let json = serde_json::to_string(&info).expect("serialize");
+        let parsed: OcrEngineInfo = serde_json::from_str(&json).expect("deserialize");
+        assert!(parsed.available);
+        assert_eq!(parsed.engine_name, "Tesseract");
+    }
+
+    #[test]
+    fn test_ocr_engine_info_serializes_unavailable() {
+        let info = OcrEngineInfo {
+            available: false,
+            engine_name: "Windows.Media.Ocr".to_string(),
+        };
+        let json = serde_json::to_string(&info).expect("serialize");
+        assert!(
+            json.contains("\"available\":false"),
+            "available false must serialize as JSON false, got: {json}"
+        );
+        assert!(
+            json.contains("\"engine_name\":\"Windows.Media.Ocr\""),
+            "engine_name must serialize verbatim, got: {json}"
+        );
+    }
+
+    #[test]
+    fn test_ocr_engine_display_name_matches_platform() {
+        #[cfg(target_os = "windows")]
+        assert_eq!(OCR_ENGINE_DISPLAY_NAME, "Windows.Media.Ocr");
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(OCR_ENGINE_DISPLAY_NAME, "Tesseract");
     }
 }

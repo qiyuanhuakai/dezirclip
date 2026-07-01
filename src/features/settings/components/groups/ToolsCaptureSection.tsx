@@ -93,6 +93,11 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
     );
 };
 
+interface OcrEngineInfo {
+    readonly available: boolean;
+    readonly engine_name: string;
+}
+
 const ToolsCaptureSection = ({
     t,
     LabelWithHint,
@@ -110,9 +115,15 @@ const ToolsCaptureSection = ({
     const [quickPasteHotkey, setQuickPasteHotkey] = useState(initialQuickPasteHotkey);
     const [isRecordingScreenshot, setIsRecordingScreenshot] = useState(false);
     const [isRecordingQuickPaste, setIsRecordingQuickPaste] = useState(false);
-    const [isWindows, setIsWindows] = useState(false);
+    const [ocrEngineInfo, setOcrEngineInfo] = useState<OcrEngineInfo | null>(null);
 
-    useEffect(() => setIsWindows(navigator.platform.startsWith("Win")), []);
+    useEffect(() => {
+        invoke<OcrEngineInfo>("check_ocr_engine_available")
+            .then(setOcrEngineInfo)
+            .catch((err) => {
+                console.error("Failed to query OCR engine availability:", err);
+            });
+    }, []);
     useEffect(() => setScreenshotHotkey(initialScreenshotHotkey), [initialScreenshotHotkey]);
     useEffect(() => setQuickPasteHotkey(initialQuickPasteHotkey), [initialQuickPasteHotkey]);
 
@@ -153,9 +164,11 @@ const ToolsCaptureSection = ({
             </div>
             <div className="setting-item">
                 <div className="item-label-group"><span className="item-label">{t("ocr_status_label")}</span></div>
-                <span className={`capture-engine-badge capture-engine-badge--${isWindows ? "available" : "unavailable"}`}>
+                <span className={`capture-engine-badge capture-engine-badge--${ocrEngineInfo?.available ? "available" : "unavailable"}`}>
                     <span className="capture-engine-badge__dot" />
-                    {isWindows ? `Windows Media.Ocr (${t("ocr_engine_available")})` : `Linux (${t("ocr_engine_unavailable")})`}
+                    {ocrEngineInfo
+                        ? `${ocrEngineInfo.engine_name} (${t(ocrEngineInfo.available ? "ocr_engine_available" : "ocr_engine_unavailable")})`
+                        : t("common_loading")}
                 </span>
             </div>
         </>

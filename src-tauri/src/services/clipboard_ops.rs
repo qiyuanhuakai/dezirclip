@@ -1409,10 +1409,15 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: A
         let result: Result<String, String> = async {
             #[cfg(target_os = "linux")]
             {
-                Err(
-                    "OCR is not supported on this platform (Linux OCR engine not available)"
-                        .to_string(),
-                )
+                let service = crate::services::ocr::OcrService::new()
+                    .map_err(|e| format!("OCR engine init failed: {e}"))?;
+                // recognize() is sync and invokes the tesseract binary; off-load it
+                // to a blocking task so we do not stall the async runtime.
+                let png_owned = png_bytes;
+                tokio::task::spawn_blocking(move || service.recognize(&png_owned))
+                    .await
+                    .map_err(|e| format!("OCR blocking task failed: {e}"))?
+                    .map_err(|e| format!("OCR recognition failed: {e}"))
             }
             #[cfg(target_os = "windows")]
             {

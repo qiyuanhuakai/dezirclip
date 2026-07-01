@@ -240,6 +240,7 @@ fn main() {
             app::commands::qr_cmd::generate_qr_svg,
             app::commands::ocr_cmd::recognize_clipboard_image,
             app::commands::ocr_cmd::get_ocr_status,
+            app::commands::ocr_cmd::check_ocr_engine_available,
             app::commands::transform_text,
             app::commands::list_transform_kinds,
             app::commands::classify_text,

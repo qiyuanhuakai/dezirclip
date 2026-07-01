@@ -59,7 +59,16 @@ pub async fn list_monitors(_app: AppHandle) -> Result<Vec<MonitorInfo>, String> 
 
 fn copy_screenshot_to_clipboard(result: &ScreenshotResult) -> Result<(), String> {
     clipboard_ops::copy_image_bytes_to_system_clipboard(result.png_bytes.clone())
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            crate::error!(
+                "[screenshot] Failed to copy screenshot to clipboard ({}x{}, {} bytes): {}",
+                result.width,
+                result.height,
+                result.png_bytes.len(),
+                e
+            );
+            e.to_string()
+        })
 }
 
 fn screenshot_data_url(result: &ScreenshotResult) -> String {
