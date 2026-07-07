@@ -25,7 +25,7 @@ unsafe fn open_clipboard_with_retry() -> Result<(), String> {
     loop {
         match OpenClipboard(None) {
             Ok(_) => return Ok(()),
-            Err(e) if retries > 1 => {
+            Err(_) if retries > 1 => {
                 retries -= 1;
                 std::thread::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS));
             }

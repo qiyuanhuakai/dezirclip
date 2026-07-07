@@ -165,6 +165,7 @@ body.light-mode.theme-scifi #root {
 
 body.light-mode.theme-scifi .compact-popover-portal.compact-preview-window {
   background: rgba(248, 253, 255, 0.96) !important;
+  background-color: rgba(248, 253, 255, 0.96) !important;
   border-color: rgba(45, 160, 150, 0.30) !important;
   box-shadow:
     0 12px 28px rgba(17, 84, 70, 0.18),
@@ -180,6 +181,7 @@ body.compact-preview.light-mode.theme-scifi #root {
 
 body.compact-preview.light-mode.theme-scifi .compact-preview-root .compact-popover-portal.compact-preview-window {
   background: rgba(248, 253, 255, 0.96) !important;
+  background-color: rgba(248, 253, 255, 0.96) !important;
   border-color: rgba(45, 160, 150, 0.30) !important;
   box-shadow:
     0 12px 28px rgba(17, 84, 70, 0.18),

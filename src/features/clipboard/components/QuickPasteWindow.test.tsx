@@ -6,12 +6,17 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(vi.fn())),
+}));
+
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
 
 vi.mock("../../../shared/lib/themeRuntime", () => ({
   applyThemeClass: vi.fn(),
   applyModeClass: vi.fn(),
+  ensureThemeCssLoaded: vi.fn(() => Promise.resolve()),
 }));
 
 function makeEntry(id: number, content: string) {

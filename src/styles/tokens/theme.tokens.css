@@ -332,6 +332,7 @@ body.theme-scifi {
   --select-option-color: var(--text-primary);
 }
 
+:root.light-mode.theme-scifi,
 body.light-mode.theme-scifi {
   --bg-body: #eaf3ff;
   --bg-window: #f5faff;

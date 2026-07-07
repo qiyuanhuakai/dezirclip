@@ -18,6 +18,12 @@ pub struct PlatformInfo {
     pub is_linux: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct ThemeChangedPayload {
+    theme: String,
+    color_mode: String,
+}
+
 #[tauri::command]
 pub fn get_platform_info() -> PlatformInfo {
     #[cfg(target_os = "windows")]
@@ -118,6 +124,7 @@ fn clear_windows_backdrop(window: &WebviewWindow) {
 
 #[tauri::command]
 pub fn set_theme(
+    app: AppHandle,
     window: WebviewWindow,
     state: State<'_, SettingsState>,
     db_state: State<'_, DbState>,
@@ -152,6 +159,18 @@ pub fn set_theme(
         *guard = theme.clone();
     }
 
+    let resolved_color_mode = match effective_color_mode.as_deref() {
+        Some("light") => "light",
+        Some("dark") => "dark",
+        _ => {
+            if window.theme().unwrap_or(Theme::Dark) == Theme::Dark {
+                "dark"
+            } else {
+                "light"
+            }
+        }
+    };
+
     #[cfg(target_os = "windows")]
     use windows::core::BOOL;
     #[cfg(target_os = "windows")]
@@ -169,11 +188,7 @@ pub fn set_theme(
             .map_err(|e| AppError::Internal(e.to_string()))?;
         let hwnd = HWND(hwnd.0 as _);
 
-        let is_dark = match effective_color_mode.as_deref() {
-            Some("light") => false,
-            Some("dark") => true,
-            _ => window.theme().unwrap_or(Theme::Dark) == Theme::Dark,
-        };
+        let is_dark = resolved_color_mode == "dark";
 
         let dark_mode = BOOL::from(is_dark);
         unsafe {
@@ -242,12 +257,6 @@ pub fn set_theme(
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _is_dark = match effective_color_mode.as_deref() {
-            Some("light") => false,
-            Some("dark") => true,
-            _ => window.theme().unwrap_or(Theme::Dark) == Theme::Dark,
-        };
-
         let _ = window_vibrancy::clear_vibrancy(&window);
         let material = match theme.as_str() {
             "mica" => window_vibrancy::NSVisualEffectMaterial::HudWindow,
@@ -259,7 +268,13 @@ pub fn set_theme(
         }
     }
 
-    let _ = window.emit("theme-changed", theme);
+    let _ = app.emit(
+        "theme-changed",
+        ThemeChangedPayload {
+            theme,
+            color_mode: resolved_color_mode.to_string(),
+        },
+    );
 
     #[cfg(not(target_os = "windows"))]
     webview_memory::force_transparent_background(&window);

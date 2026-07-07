@@ -1,25 +1,13 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { applyModeClass, applyThemeClass, resolveThemeMode } from "../lib/themeRuntime";
+import { applyModeClass, applyThemeClass, ensureThemeCssLoaded, resolveThemeMode } from "../lib/themeRuntime";
 
 type PlatformInfo = {
   platform: string;
   is_windows_10: boolean;
   is_windows_11: boolean;
   is_linux: boolean;
-};
-
-const themeCssLoaders = import.meta.glob("../../styles/themes/*.css");
-const loadedThemes = new Set<string>();
-
-const ensureThemeCssLoaded = async (theme: string) => {
-  if (!theme || loadedThemes.has(theme)) return;
-  const path = `../../styles/themes/${theme}.css`;
-  const loader = themeCssLoaders[path];
-  if (!loader) return;
-  await loader();
-  loadedThemes.add(theme);
 };
 
 const readNativeSystemIsDark = async () => {

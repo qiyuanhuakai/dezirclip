@@ -1567,6 +1567,7 @@ fn apply_initial_theme(app: &App) {
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = crate::app::commands::set_theme(
+            app.handle().clone(),
             window,
             app.state::<SettingsState>(),
             db_state,

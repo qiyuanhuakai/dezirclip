@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { applyThemeClass, applyModeClass } from "../../../shared/lib/themeRuntime";
+import { useThemeSync } from "../../../shared/hooks/useThemeSync";
 import type { ClipboardEntry } from "../../../shared/types";
 import "./QuickPasteWindow.css";
 
@@ -15,6 +15,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  useThemeSync();
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return entries;
@@ -45,16 +46,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       .catch(() => setEntries([]));
   }, []);
 
-  // Apply theme from localStorage (shared across windows)
   useEffect(() => {
-    const theme = localStorage.getItem("dezirclip_theme") || localStorage.getItem("tiez_theme") || "mica";
-    const colorMode = localStorage.getItem("dezirclip_color_mode") || localStorage.getItem("tiez_color_mode") || "light";
-    applyThemeClass(document.documentElement, document.body, theme);
-    applyModeClass(
-      document.documentElement,
-      document.body,
-      colorMode === "dark" ? "dark" : "light"
-    );
     document.body.classList.add("quick-paste");
     inputRef.current?.focus();
   }, []);

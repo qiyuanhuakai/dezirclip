@@ -1,6 +1,17 @@
 export type ThemeMode = "light" | "dark";
 export type ThemeColorMode = "light" | "dark" | "system";
 
+const themeCssLoaders = import.meta.glob("../../styles/themes/*.css");
+const loadedThemes = new Set<string>();
+
+export const ensureThemeCssLoaded = async (theme: string) => {
+  if (!theme || loadedThemes.has(theme)) return;
+  const loader = themeCssLoaders[`../../styles/themes/${theme}.css`];
+  if (!loader) return;
+  await loader();
+  loadedThemes.add(theme);
+};
+
 const clearThemeClasses = (element: HTMLElement) => {
   Array.from(element.classList)
     .filter((className) => className.startsWith("theme-"))
