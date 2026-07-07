@@ -71,6 +71,18 @@ fn map_xcap<E: std::fmt::Display>(err: E) -> ScreenshotError {
     ScreenshotError::XcapError(err.to_string())
 }
 
+fn map_monitor_enumeration_error<E: std::fmt::Display>(err: E) -> ScreenshotError {
+    let message = err.to_string();
+    let no_display = ["DISPLAY", "display string", "Connection closed"]
+        .iter()
+        .any(|needle| message.contains(needle));
+    if no_display {
+        ScreenshotError::NoMonitor
+    } else {
+        ScreenshotError::XcapError(message)
+    }
+}
+
 /// Encode a RGBA image as PNG bytes.
 fn encode_png(rgba: &xcap::image::RgbaImage) -> Result<Vec<u8>, ScreenshotError> {
     let mut buf: Vec<u8> = Vec::with_capacity(rgba.len() / 4);
@@ -92,16 +104,12 @@ fn select_primary_monitor(monitors: &[Monitor]) -> Option<&Monitor> {
 
 /// Capture the full primary monitor as a PNG.
 pub fn capture_full_screen() -> Result<ScreenshotResult, ScreenshotError> {
-    let monitors = Monitor::all().map_err(map_xcap)?;
+    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
     let monitor = select_primary_monitor(&monitors).ok_or(ScreenshotError::NoMonitor)?;
     let rgba = monitor.capture_image().map_err(map_xcap)?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
-    Ok(ScreenshotResult {
-        width,
-        height,
-        png_bytes,
-    })
+    Ok(ScreenshotResult { width, height, png_bytes })
 }
 
 /// Capture a region at absolute screen coordinates `(x, y)` with size `(w, h)`.
@@ -113,7 +121,7 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
         return Err(ScreenshotError::RegionOutOfBounds);
     }
 
-    let monitors = Monitor::all().map_err(map_xcap)?;
+    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
     let right = i64::from(x) + i64::from(w);
     let bottom = i64::from(y) + i64::from(h);
     let mut target: Option<(&Monitor, u32, u32)> = None;
@@ -143,16 +151,12 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
         .map_err(map_xcap)?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
-    Ok(ScreenshotResult {
-        width,
-        height,
-        png_bytes,
-    })
+    Ok(ScreenshotResult { width, height, png_bytes })
 }
 
 /// Enumerate all attached monitors.
 pub fn list_monitors() -> Result<Vec<MonitorInfo>, ScreenshotError> {
-    let monitors = Monitor::all().map_err(map_xcap)?;
+    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
     if monitors.is_empty() {
         return Err(ScreenshotError::NoMonitor);
     }
@@ -239,6 +243,12 @@ mod tests {
     }
 
     #[test]
+    fn test_monitor_enumeration_display_failure_maps_to_no_monitor() {
+        let err = map_monitor_enumeration_error("Connection closed, error during parsing display string");
+        assert!(matches!(err, ScreenshotError::NoMonitor));
+    }
+
+    #[test]
     fn test_list_monitors_returns_at_least_one() -> Result<(), ScreenshotError> {
         if !screenshot_smoke_enabled() {
             return Ok(());
@@ -268,14 +278,8 @@ mod tests {
             .find(|m| m.is_primary)
             .or(list.first())
             .expect("non-empty list implies at least one element");
-        assert!(
-            monitor.width > 0,
-            "monitor width must be populated and non-zero"
-        );
-        assert!(
-            monitor.height > 0,
-            "monitor height must be populated and non-zero"
-        );
+        assert!(monitor.width > 0, "monitor width must be populated and non-zero");
+        assert!(monitor.height > 0, "monitor height must be populated and non-zero");
         assert!(!monitor.name.is_empty(), "monitor name must be populated");
         Ok(())
     }
@@ -290,11 +294,7 @@ mod tests {
             Ok(r) => r,
             Err(_) => return Ok(()), // headless CI: nothing to validate
         };
-        assert!(
-            result.png_bytes.len() >= PNG_MAGIC.len(),
-            "PNG output too short: {} bytes",
-            result.png_bytes.len()
-        );
+        assert!(result.png_bytes.len() >= PNG_MAGIC.len(), "PNG output too short: {} bytes", result.png_bytes.len());
         assert_eq!(
             &result.png_bytes[..PNG_MAGIC.len()],
             &PNG_MAGIC,
