@@ -109,47 +109,38 @@ pub fn capture_full_screen() -> Result<ScreenshotResult, ScreenshotError> {
 /// The region must lie entirely within a single monitor; coordinates outside every
 /// attached monitor (or non-positive dimensions) yield `RegionOutOfBounds`.
 pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult, ScreenshotError> {
-    if w == 0 || h == 0 || x < 0 || y < 0 {
+    if w == 0 || h == 0 {
         return Err(ScreenshotError::RegionOutOfBounds);
     }
 
-    let monitor = Monitor::from_point(x, y).map_err(map_xcap)?;
-    let mx = monitor.x().map_err(map_xcap)?;
-    let my = monitor.y().map_err(map_xcap)?;
-    let mw = monitor.width().map_err(map_xcap)?;
-    let mh = monitor.height().map_err(map_xcap)?;
+    let monitors = Monitor::all().map_err(map_xcap)?;
+    let right = i64::from(x) + i64::from(w);
+    let bottom = i64::from(y) + i64::from(h);
+    let mut target: Option<(&Monitor, u32, u32)> = None;
 
-    if x < mx || y < my {
-        return Err(ScreenshotError::RegionOutOfBounds);
+    for monitor in &monitors {
+        let mx = monitor.x().map_err(map_xcap)?;
+        let my = monitor.y().map_err(map_xcap)?;
+        let mw = monitor.width().map_err(map_xcap)?;
+        let mh = monitor.height().map_err(map_xcap)?;
+        let monitor_right = i64::from(mx) + i64::from(mw);
+        let monitor_bottom = i64::from(my) + i64::from(mh);
+
+        if i64::from(x) >= i64::from(mx)
+            && i64::from(y) >= i64::from(my)
+            && right <= monitor_right
+            && bottom <= monitor_bottom
+        {
+            target = Some((monitor, (x - mx) as u32, (y - my) as u32));
+            break;
+        }
     }
 
-    let rel_x = (x - mx) as u32;
-    let rel_y = (y - my) as u32;
-
-    // Use saturating subtraction to avoid u32 overflow on adversarial inputs.
-    if w > mw.saturating_sub(rel_x) || h > mh.saturating_sub(rel_y) {
-        return Err(ScreenshotError::RegionOutOfBounds);
-    }
+    let (monitor, rel_x, rel_y) = target.ok_or(ScreenshotError::RegionOutOfBounds)?;
 
     let rgba = monitor
         .capture_region(rel_x, rel_y, w, h)
         .map_err(map_xcap)?;
-    let (width, height) = rgba.dimensions();
-    let png_bytes = encode_png(&rgba)?;
-    Ok(ScreenshotResult {
-        width,
-        height,
-        png_bytes,
-    })
-}
-
-pub fn capture_monitor(id: u32) -> Result<ScreenshotResult, ScreenshotError> {
-    let monitors = Monitor::all().map_err(map_xcap)?;
-    let monitor = monitors
-        .iter()
-        .find(|m| m.id().ok() == Some(id))
-        .ok_or(ScreenshotError::NoMonitor)?;
-    let rgba = monitor.capture_image().map_err(map_xcap)?;
     let (width, height) = rgba.dimensions();
     let png_bytes = encode_png(&rgba)?;
     Ok(ScreenshotResult {

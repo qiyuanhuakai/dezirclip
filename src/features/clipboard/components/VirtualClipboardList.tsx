@@ -127,7 +127,7 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
                     {renderItem(item, index, index === 0)}
                 </div>
             );
-        }, []);
+        }, [compactMode, renderItem]);
 
         const components = useMemo(() => ({
             Header: ListHeader,
@@ -162,4 +162,3 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
 VirtualClipboardList.displayName = 'VirtualClipboardList';
 
 export { VirtualClipboardList };
-

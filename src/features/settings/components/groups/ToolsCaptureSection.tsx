@@ -129,12 +129,12 @@ const ToolsCaptureSection = ({
 
     const updateScreenshotHotkey = useCallback((newHotkey: string) => {
         setScreenshotHotkey(newHotkey);
-        saveAppSetting("app.screenshot_hotkey", newHotkey);
+        saveAppSetting("screenshot_hotkey", newHotkey);
     }, [saveAppSetting]);
 
     const updateQuickPasteHotkey = useCallback((newHotkey: string) => {
         setQuickPasteHotkey(newHotkey);
-        saveAppSetting("app.quick_paste_hotkey", newHotkey);
+        saveAppSetting("quick_paste_hotkey", newHotkey);
     }, [saveAppSetting]);
 
     return (
@@ -142,7 +142,7 @@ const ToolsCaptureSection = ({
             <div className="setting-item"><div className="item-label-group"><span className="item-label">{t("capture_settings")}</span></div></div>
             <div className="setting-item">
                 <LabelWithHint label={t("screenshot_enabled")} hint={t("screenshot_enabled_hint")} hintKey="screenshot_enabled" />
-                <label className="switch"><input className="cb" type="checkbox" checked={screenshotEnabled} onChange={(e) => { setScreenshotEnabled(e.target.checked); saveAppSetting("app.screenshot_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
+                <label className="switch"><input className="cb" type="checkbox" checked={screenshotEnabled} onChange={(e) => { setScreenshotEnabled(e.target.checked); saveAppSetting("screenshot_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
             </div>
             {screenshotEnabled && (
                 <>
@@ -155,12 +155,12 @@ const ToolsCaptureSection = ({
             )}
             <div className="setting-item">
                 <LabelWithHint label={t("quick_paste_enabled")} hint={t("quick_paste_enabled_hint")} hintKey="quick_paste_enabled" />
-                <label className="switch"><input className="cb" type="checkbox" checked={quickPasteEnabled} onChange={(e) => { setQuickPasteEnabled(e.target.checked); saveAppSetting("app.quick_paste_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
+                <label className="switch"><input className="cb" type="checkbox" checked={quickPasteEnabled} onChange={(e) => { setQuickPasteEnabled(e.target.checked); saveAppSetting("quick_paste_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
             </div>
             {quickPasteEnabled && <HotkeyRecorder t={t} labelKey="quick_paste_hotkey_label" hotkey={quickPasteHotkey} recording={isRecordingQuickPaste} setRecording={setIsRecordingQuickPaste} onHotkeyChange={updateQuickPasteHotkey} />}
             <div className="setting-item">
                 <LabelWithHint label={t("ocr_enabled")} hint={t("ocr_enabled_hint")} hintKey="ocr_enabled" />
-                <label className="switch"><input className="cb" type="checkbox" checked={ocrEnabled} onChange={(e) => { setOcrEnabled(e.target.checked); saveAppSetting("app.ocr_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
+                <label className="switch"><input className="cb" type="checkbox" checked={ocrEnabled} onChange={(e) => { setOcrEnabled(e.target.checked); saveAppSetting("ocr_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
             </div>
             <div className="setting-item">
                 <div className="item-label-group"><span className="item-label">{t("ocr_status_label")}</span></div>

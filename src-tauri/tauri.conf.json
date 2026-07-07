@@ -57,6 +57,7 @@
         "skipTaskbar": true,
         "visible": false,
         "focus": false,
+        "focusable": true,
         "shadow": false
       }
     ],
@@ -91,6 +92,7 @@
             "core:window:allow-is-visible",
             "core:window:allow-inner-size",
             "core:window:allow-inner-position",
+            "core:window:allow-outer-position",
             "core:window:allow-scale-factor",
             "core:window:allow-set-size",
             "core:window:allow-set-position",

@@ -24,6 +24,7 @@ type RegionSelectWindowProps = {
 };
 
 const MIN_SELECTION_SIZE = 10;
+const CAPTURE_SETTLE_MS = 100;
 
 const hideRegionSelectWindow = async () => {
   await getCurrentWindow().setFocusable(false);
@@ -99,11 +100,14 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         window.scaleFactor(),
       ]);
       const captureRect = toPhysicalCaptureRect(rect, origin, scale);
+      setSelection(null);
+      await hideRegionSelectWindow();
+      await new Promise((resolve) => globalThis.setTimeout(resolve, CAPTURE_SETTLE_MS));
       await invoke("capture_region", captureRect);
       onSelect?.(captureRect);
-    } catch {
-      // capture_region not available yet (Task 37 pending) — still emit selection
-      onSelect?.({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+      return;
+    } catch (err) {
+      console.error("Failed to capture selected region", err);
     }
 
     setSelection(null);
@@ -123,14 +127,6 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onCancel]);
-
-  // Cleanup on unmount — no stale state errors
-  useEffect(() => {
-    return () => {
-      setSelection(null);
-      setDragging(false);
-    };
-  }, []);
 
   const rect = selection ? normalizeRect(selection) : null;
   const hasValidSize =

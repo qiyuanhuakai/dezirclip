@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, fireEvent, screen, act } from "@testing-library/react";
+import { render, fireEvent, screen, act, waitFor } from "@testing-library/react";
 import RegionSelectWindow, { toPhysicalCaptureRect } from "./RegionSelectWindow";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -92,11 +92,13 @@ describe("RegionSelectWindow", () => {
       fireEvent.mouseUp(overlay);
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith("capture_region", {
-      x: 100,
-      y: 100,
-      width: 320,
-      height: 200,
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("capture_region", {
+        x: 100,
+        y: 100,
+        width: 320,
+        height: 200,
+      });
     });
     expect(onSelect).toHaveBeenCalledWith({ x: 100, y: 100, width: 320, height: 200 });
     expect(mockSetFocusable).toHaveBeenCalledWith(false);
@@ -128,11 +130,13 @@ describe("RegionSelectWindow", () => {
       fireEvent.mouseUp(overlay);
     });
 
-    expect(mockInvoke).toHaveBeenCalledWith("capture_region", {
-      x: 2070,
-      y: 160,
-      width: 480,
-      height: 300,
+    await waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith("capture_region", {
+        x: 2070,
+        y: 160,
+        width: 480,
+        height: 300,
+      });
     });
     expect(onSelect).toHaveBeenCalledWith({ x: 2070, y: 160, width: 480, height: 300 });
   });
@@ -207,7 +211,9 @@ describe("RegionSelectWindow", () => {
       fireEvent.mouseUp(overlay);
     });
 
-    expect(onSelect).toHaveBeenCalledWith({ x: 10, y: 10, width: 300, height: 200 });
+    await waitFor(() => {
+      expect(onSelect).toHaveBeenCalledWith({ x: 10, y: 10, width: 300, height: 200 });
+    });
   });
 
   it("right-to-left drag normalizes coordinates", async () => {
@@ -230,6 +236,8 @@ describe("RegionSelectWindow", () => {
       fireEvent.mouseUp(overlay);
     });
 
-    expect(onSelect).toHaveBeenCalledWith({ x: 100, y: 100, width: 300, height: 200 });
+    await waitFor(() => {
+      expect(onSelect).toHaveBeenCalledWith({ x: 100, y: 100, width: 300, height: 200 });
+    });
   });
 });
