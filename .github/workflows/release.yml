@@ -12,8 +12,31 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  create-release:
+    name: Create GitHub release
+    runs-on: ubuntu-24.04
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - name: Create or reuse release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --verify-tag \
+              --title "DezirClip ${GITHUB_REF_NAME}" \
+              --generate-notes \
+              --notes "Download the matching installer or standalone dzc archive for your platform."
+          fi
+          release_id="$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq '.databaseId')"
+          echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
+
   publish-tauri:
     name: Tauri release (${{ matrix.name }})
+    needs: create-release
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -109,6 +132,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: DezirClip ${{ github.ref_name }}
           releaseBody: Download the matching installer or standalone dzc archive for your platform.
@@ -118,7 +142,7 @@ jobs:
 
   publish-dzc:
     name: dzc standalone release (${{ matrix.name }})
-    needs: publish-tauri
+    needs: create-release
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -126,28 +150,28 @@ jobs:
         include:
           - name: linux-x86_64
             platform: ubuntu-22.04
-            archive: dzc-linux-x86_64.tar.gz
+            archive_ext: tar.gz
             cargo_args: ''
             binary_path: target/release/dzc
             rust_target: ''
             msvc_arch: ''
           - name: linux-aarch64
             platform: ubuntu-24.04-arm
-            archive: dzc-linux-aarch64.tar.gz
+            archive_ext: tar.gz
             cargo_args: ''
             binary_path: target/release/dzc
             rust_target: ''
             msvc_arch: ''
           - name: windows-x86_64
             platform: windows-latest
-            archive: dzc-windows-x86_64.zip
+            archive_ext: zip
             cargo_args: ''
             binary_path: target/release/dzc.exe
             rust_target: ''
             msvc_arch: ''
           - name: windows-aarch64
             platform: windows-latest
-            archive: dzc-windows-aarch64.zip
+            archive_ext: zip
             cargo_args: --target aarch64-pc-windows-msvc
             binary_path: target/aarch64-pc-windows-msvc/release/dzc.exe
             rust_target: aarch64-pc-windows-msvc
@@ -180,6 +204,12 @@ jobs:
       - name: Set release version
         run: node scripts/set-release-version.mjs ${{ github.ref_name }}
 
+      - name: Resolve dzc artifact name
+        shell: bash
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          echo "DZC_ARCHIVE=dzc-${release_version}-${{ matrix.name }}.${{ matrix.archive_ext }}" >> "$GITHUB_ENV"
+
       - name: Build dzc standalone
         working-directory: dzc-standalone
         run: cargo build --release ${{ matrix.cargo_args }}
@@ -189,21 +219,22 @@ jobs:
         working-directory: dzc-standalone
         run: |
           binary='${{ matrix.binary_path }}'
-          tar -czf ../${{ matrix.archive }} -C "$(dirname "$binary")" "$(basename "$binary")"
+          tar -czf "../${DZC_ARCHIVE}" -C "$(dirname "$binary")" "$(basename "$binary")"
 
       - name: Package dzc for Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dzc-standalone/${{ matrix.binary_path }} -DestinationPath ${{ matrix.archive }} -Force
+        run: Compress-Archive -Path dzc-standalone/${{ matrix.binary_path }} -DestinationPath $env:DZC_ARCHIVE -Force
 
       - name: Upload dzc archive to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.ref_name }} ${{ matrix.archive }} --clobber
+        shell: bash
+        run: gh release upload "${GITHUB_REF_NAME}" "${DZC_ARCHIVE}" --clobber
 
   publish-flatpak:
     name: Flatpak release (${{ matrix.name }})
-    needs: publish-tauri
+    needs: create-release
     runs-on: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -211,10 +242,8 @@ jobs:
         include:
           - name: linux-x86_64
             platform: ubuntu-24.04
-            bundle: DezirClip-linux-x86_64.flatpak
           - name: linux-aarch64
             platform: ubuntu-24.04-arm
-            bundle: DezirClip-linux-aarch64.flatpak
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -263,6 +292,11 @@ jobs:
       - name: Set release version
         run: pnpm run release:set-version ${{ github.ref_name }}
 
+      - name: Resolve Flatpak artifact name
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          echo "FLATPAK_BUNDLE=DezirClip-${release_version}-${{ matrix.name }}.flatpak" >> "$GITHUB_ENV"
+
       - name: Build Debian bundle for Flatpak root
         run: pnpm tauri build --bundles deb
 
@@ -277,9 +311,9 @@ jobs:
       - name: Build Flatpak bundle
         run: |
           flatpak-builder --user --force-clean --repo=flatpak/repo flatpak/build flatpak/io.github.qiyuanhuakai.dezirclip.yml
-          flatpak build-bundle flatpak/repo ${{ matrix.bundle }} io.github.qiyuanhuakai.dezirclip
+          flatpak build-bundle flatpak/repo "${FLATPAK_BUNDLE}" io.github.qiyuanhuakai.dezirclip
 
       - name: Upload Flatpak bundle to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.ref_name }} ${{ matrix.bundle }} --clobber
+        run: gh release upload "${GITHUB_REF_NAME}" "${FLATPAK_BUNDLE}" --clobber
