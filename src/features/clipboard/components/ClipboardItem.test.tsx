@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useState, memo, type ReactNode } from "react";
 import { render, screen, act } from "@testing-library/react";
 import ClipboardItem from "./ClipboardItem";
 import type { ClipboardEntry } from "../../../shared/types";
@@ -189,5 +190,134 @@ describe("ClipboardItem OCR display", () => {
     const badge = screen.getByTestId("ocr-badge");
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent("OCR 不支持");
+  });
+});
+
+describe("ClipboardItem memoization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("test_memo_skip_on_unrelated_prop_change: changing selectedIndex only re-renders the selected item, not all 50", async () => {
+    const bodyCallCounts: number[] = new Array(50).fill(0);
+
+    const Spy = memo(function SpyItem({
+      itemIndex,
+      item,
+      isSelected,
+      baseProps,
+      callbacks,
+    }: {
+      itemIndex: number;
+      item: ClipboardEntry;
+      isSelected: boolean;
+      baseProps: typeof stableBaseProps;
+      callbacks: typeof stableCallbacks;
+    }) {
+      bodyCallCounts[itemIndex] += 1;
+      return (
+        <ClipboardItem
+          item={item}
+          isSelected={isSelected}
+          {...baseProps}
+          {...callbacks}
+        />
+      );
+    });
+
+    const items: ClipboardEntry[] = Array.from({ length: 50 }, (_, i) =>
+      makeEntry({
+        id: i + 1,
+        content: `content-${i}`,
+        timestamp: 1_700_000_000 + i,
+        preview: `preview-${i}`,
+      })
+    );
+
+    const stableCallbacks = {
+      onSelect: vi.fn(),
+      onCopy: vi.fn(),
+      onToggleReveal: vi.fn(),
+      onOpen: vi.fn(),
+      onTogglePin: vi.fn(),
+      onDelete: vi.fn(),
+      onToggleTagEditor: vi.fn(),
+      onTagInput: vi.fn(),
+      onTagAdd: vi.fn(),
+      onTagDelete: vi.fn(),
+    };
+
+    const stableTagColors: Record<string, string> = {};
+    const stableBaseProps = {
+      windowPinned: false,
+      isSensitiveHidden: false,
+      isRevealed: false,
+      isEditingTags: false,
+      tagInput: "",
+      theme: "mica",
+      language: "zh" as const,
+      t: baseProps.t,
+      tagColors: stableTagColors,
+      compactMode: false,
+      richTextSnapshotPreview: false,
+    };
+
+    function ListHarness(): ReactNode {
+      const [selectedIndex, setSelectedIndex] = useState(-1);
+      return (
+        <div>
+          <button data-testid="select-25" onClick={() => setSelectedIndex(25)}>
+            select 25
+          </button>
+          {items.map((item, index) => {
+            const isSelected = index === selectedIndex;
+            return (
+              <Spy
+                key={item.id}
+                itemIndex={index}
+                item={item}
+                isSelected={isSelected}
+                baseProps={stableBaseProps}
+                callbacks={stableCallbacks}
+              />
+            );
+          })}
+        </div>
+      );
+    }
+
+    await act(async () => {
+      render(<ListHarness />);
+    });
+
+    const initialBodySnapshot = bodyCallCounts.slice();
+
+    await act(async () => {
+      screen.getByTestId("select-25").click();
+    });
+
+    let itemsThatReRendered = 0;
+    let selectedRenders = 0;
+    for (let i = 0; i < 50; i += 1) {
+      const delta = bodyCallCounts[i] - initialBodySnapshot[i];
+      if (delta > 0) {
+        itemsThatReRendered += 1;
+        if (i === 25) selectedRenders = delta;
+      }
+    }
+
+    expect(itemsThatReRendered).toBe(1);
+    expect(selectedRenders).toBe(1);
+  });
+
+  it("test_clipboard_item_default_memo: ClipboardItem is exported with default React.memo (shallow comparison)", () => {
+    const MemoSymbol = (Symbol.for("react.memo") as unknown) as symbol;
+    const exportedType = (ClipboardItem as unknown as { $$typeof: symbol }).$$typeof;
+    expect(exportedType).toBe(MemoSymbol);
+
+    const memoInternals = ClipboardItem as unknown as {
+      compare: ((prev: unknown, next: unknown) => boolean) | null;
+    };
+    expect(memoInternals.compare).toBeNull();
   });
 });

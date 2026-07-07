@@ -118,3 +118,51 @@ describe("QuickPasteWindow", () => {
     );
   });
 });
+
+describe("QuickPasteWindow — liquid-glass theme integration", () => {
+  let styleEl: HTMLStyleElement;
+
+  beforeAll(() => {
+    // The liquid-glass.css panel override under test.
+    // vitest does not process CSS imports, so inject the rule explicitly.
+    styleEl = document.createElement("style");
+    styleEl.textContent =
+      "body.theme-liquid-glass.quick-paste," +
+      "body.theme-liquid-glass.compact-preview," +
+      "body.theme-liquid-glass.region-select {" +
+        "--surface-dialog-radius: 14px;" +
+      "}";
+    document.head.appendChild(styleEl);
+  });
+
+  afterAll(() => {
+    styleEl.remove();
+  });
+
+  beforeEach(() => {
+    document.body.classList.remove(
+      "theme-liquid-glass",
+      "quick-paste",
+      "compact-preview",
+      "region-select"
+    );
+  });
+
+  it("--surface-dialog-radius resolves to 14px when body has theme-liquid-glass + quick-paste", async () => {
+    // Simulate what applyThemeClass("liquid-glass") does in production: add the theme
+    // class to body. QuickPasteWindow.tsx then adds `quick-paste` via its useEffect.
+    document.body.classList.add("theme-liquid-glass");
+
+    await act(async () => {
+      render(<QuickPasteWindow />);
+    });
+
+    // The liquid-glass rule targets body, so the cascaded value lives on body.
+    // (documentElement keeps the global 16px from :root -- CSS custom properties
+    // inherit parent -> child, never child -> parent.)
+    const dialogRadius = getComputedStyle(document.body)
+      .getPropertyValue("--surface-dialog-radius")
+      .trim();
+    expect(dialogRadius).toBe("14px");
+  });
+});

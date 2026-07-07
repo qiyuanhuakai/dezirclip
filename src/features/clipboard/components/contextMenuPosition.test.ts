@@ -18,4 +18,30 @@ describe("context menu positioning", () => {
       y: 120,
     });
   });
+
+  it("falls back to anchor when compact preview is on top", () => {
+    expect(
+      resolveContextMenuPoint({
+        clientX: 240,
+        clientY: 160,
+        anchorRect,
+        viewport,
+        currentWindowLabel: "main",
+        isCompactPreviewOnTop: true,
+      }),
+    ).toEqual({ x: 40, y: 120 });
+  });
+
+  it("uses pointer when compact preview is NOT on top", () => {
+    expect(
+      resolveContextMenuPoint({
+        clientX: 240,
+        clientY: 160,
+        anchorRect,
+        viewport,
+        currentWindowLabel: "main",
+        isCompactPreviewOnTop: false,
+      }),
+    ).toEqual({ x: 240, y: 160 });
+  });
 });

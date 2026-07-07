@@ -8,7 +8,7 @@ use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use serde::Serialize;
 #[cfg(target_os = "linux")]
 use std::process::Command;
-use tauri::{Emitter, State, Theme, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, Theme, WebviewWindow};
 
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
@@ -267,7 +267,115 @@ pub fn set_theme(
     Ok(())
 }
 
-#[cfg(test)]
+/// Whether the Tauri window with the given label is currently the topmost
+/// window of this application. Used by the React frontend to detect the
+/// compact-preview overlay sitting over the cursor position so it can fall
+/// back to the anchor rect for context menu placement. Bug: B6.
+#[tauri::command]
+pub fn is_window_topmost(app: AppHandle, label: String) -> bool {
+    is_window_topmost_for_platform(&app, &label)
+}
+
+#[cfg(target_os = "linux")]
+fn is_window_topmost_for_platform(app: &AppHandle, label: &str) -> bool {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto;
+    use x11rb::protocol::xproto::ConnectionExt;
+
+    let Ok((conn, screen_num)) = x11rb::connect(None) else {
+        return false;
+    };
+    let root = conn.setup().roots[screen_num].root;
+
+    let Ok(intern_reply) = conn.intern_atom(false, b"_NET_ACTIVE_WINDOW") else {
+        return false;
+    };
+    let Ok(reply) = intern_reply.reply() else {
+        return false;
+    };
+    let net_active_window_atom = reply.atom;
+
+    let Ok(property_reply) = conn.get_property(
+        false,
+        root,
+        net_active_window_atom,
+        xproto::AtomEnum::WINDOW,
+        0,
+        1,
+    ) else {
+        return false;
+    };
+    let Ok(reply) = property_reply.reply() else {
+        return false;
+    };
+    if reply.format != 32 || reply.value.len() < 4 {
+        return false;
+    }
+    let active_wid = u32::from_ne_bytes([
+        reply.value[0],
+        reply.value[1],
+        reply.value[2],
+        reply.value[3],
+    ]);
+    if active_wid == 0 {
+        return false;
+    }
+
+    let Ok(intern_reply) = conn.intern_atom(false, b"_NET_WM_PID") else {
+        return false;
+    };
+    let Ok(reply) = intern_reply.reply() else {
+        return false;
+    };
+    let net_wm_pid_atom = reply.atom;
+
+    let Ok(property_reply) = conn.get_property(
+        false,
+        active_wid,
+        net_wm_pid_atom,
+        xproto::AtomEnum::CARDINAL,
+        0,
+        1,
+    ) else {
+        return false;
+    };
+    let Ok(reply) = property_reply.reply() else {
+        return false;
+    };
+    let active_pid = if reply.format == 32 && reply.value.len() >= 4 {
+        u32::from_ne_bytes([
+            reply.value[0],
+            reply.value[1],
+            reply.value[2],
+            reply.value[3],
+        ])
+    } else {
+        0
+    };
+
+    if active_pid != std::process::id() {
+        return false;
+    }
+
+    app.get_webview_window(label)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn is_window_topmost_for_platform(app: &AppHandle, label: &str) -> bool {
+    app.get_webview_window(label)
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn is_window_topmost_for_platform(_app: &AppHandle, _label: &str) -> bool {
+    false
+}
+
+#[cfg(test)] 
+
 mod tests {
     use super::*;
 

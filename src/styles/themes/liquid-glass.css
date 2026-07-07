@@ -11,6 +11,7 @@ body.light-mode.theme-liquid-glass,
 :root.theme-liquid-glass,
 body.theme-liquid-glass {
   --radius-window: 14px;
+  --radius-panel: var(--radius-window);
   --font-main: "SF Pro Text", "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", "Consolas", monospace;
 
@@ -516,7 +517,7 @@ body.has-custom-bg.theme-liquid-glass::before {
   z-index: 1;
 }
 
-body.theme-liquid-glass:not(.hide-app-border) #root {
+body.theme-liquid-glass:not(.hide-app-border):not(.quick-paste):not(.compact-preview):not(.region-select) #root {
   border-radius: 0 !important;
   border-color: transparent !important;
   box-shadow:
@@ -1839,6 +1840,12 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-item.create-hint {
 body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-color-dot {
   border-color: rgba(255, 255, 255, 0.20) !important;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16) inset !important;
+}
+
+body.theme-liquid-glass.quick-paste,
+body.theme-liquid-glass.compact-preview,
+body.theme-liquid-glass.region-select {
+  --surface-dialog-radius: 14px;
 }
 
 /* ============================================================

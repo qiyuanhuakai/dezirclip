@@ -569,6 +569,7 @@ const ClipboardItem = ({
     const richSnapshotFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hoverAnchorRef = useRef<CompactPreviewAnchor | null>(null);
+    const windowLabelRef = useRef<string>(getCurrentWindow().label);
     const richTextFallback = useMemo(() => {
         if (item.content_type !== "rich_text" || !item.html_content) return null;
         const { cleanHtml, imagePayload } = extractRichImageFallback(item.html_content);
@@ -1130,17 +1131,36 @@ const ClipboardItem = ({
                 e.preventDefault();
                 e.stopPropagation();
                 window.dispatchEvent(new CustomEvent(CONTEXT_MENU_OPEN_EVENT, { detail: { id: item.id } }));
-                const point = resolveContextMenuPoint({
-                    clientX: e.clientX,
-                    clientY: e.clientY,
-                    anchorRect: toCompactPreviewRect(e.currentTarget.getBoundingClientRect()),
-                    viewport: {
-                        width: window.innerWidth,
-                        height: window.innerHeight,
-                        scale: window.devicePixelRatio || 1
-                    }
-                });
-                setContextMenuState(point);
+                const anchorRect = toCompactPreviewRect(e.currentTarget.getBoundingClientRect());
+                const viewport = {
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    scale: window.devicePixelRatio || 1
+                };
+                const currentWindowLabel = windowLabelRef.current;
+                invoke<boolean>("is_window_topmost", { label: COMPACT_PREVIEW_LABEL })
+                    .then((isCompactPreviewOnTop) => {
+                        const point = resolveContextMenuPoint({
+                            clientX: e.clientX,
+                            clientY: e.clientY,
+                            anchorRect,
+                            viewport,
+                            currentWindowLabel,
+                            isCompactPreviewOnTop
+                        });
+                        setContextMenuState(point);
+                    })
+                    .catch(() => {
+                        const point = resolveContextMenuPoint({
+                            clientX: e.clientX,
+                            clientY: e.clientY,
+                            anchorRect,
+                            viewport,
+                            currentWindowLabel,
+                            isCompactPreviewOnTop: false
+                        });
+                        setContextMenuState(point);
+                    });
             }}
             onMouseEnter={(e) => {
                 if (!compactMode) return;
@@ -1608,27 +1628,4 @@ const ClipboardItem = ({
     );
 };
 
-export default memo(ClipboardItem, (prevProps, nextProps) => {
-    return prevProps.isSelected === nextProps.isSelected &&
-        prevProps.item.id === nextProps.item.id &&
-        prevProps.item.content_type === nextProps.item.content_type &&
-        prevProps.item.timestamp === nextProps.item.timestamp &&
-        prevProps.item.content === nextProps.item.content &&
-        prevProps.item.preview === nextProps.item.preview &&
-        prevProps.item.html_content === nextProps.item.html_content &&
-        prevProps.item.source_app === nextProps.item.source_app &&
-        prevProps.item.source_app_path === nextProps.item.source_app_path &&
-        prevProps.item.is_pinned === nextProps.item.is_pinned &&
-        prevProps.item.is_external === nextProps.item.is_external &&
-        prevProps.item.file_preview_exists === nextProps.item.file_preview_exists &&
-        prevProps.item.tags === nextProps.item.tags &&
-        prevProps.item.ocr_text === nextProps.item.ocr_text &&
-        prevProps.item.ocr_status === nextProps.item.ocr_status &&
-        prevProps.isRevealed === nextProps.isRevealed &&
-        prevProps.isEditingTags === nextProps.isEditingTags &&
-        prevProps.richTextSnapshotPreview === nextProps.richTextSnapshotPreview &&
-        prevProps.compactMode === nextProps.compactMode &&
-        prevProps.theme === nextProps.theme &&
-        prevProps.language === nextProps.language &&
-        prevProps.tagInput === nextProps.tagInput;
-});
+export default memo(ClipboardItem);

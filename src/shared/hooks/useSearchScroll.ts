@@ -1,5 +1,4 @@
 import { useCallback, useRef } from "react";
-import type { WheelEvent as ReactWheelEvent } from "react";
 
 type UseSearchScrollOptions = {
   showSearchBox: boolean;
@@ -30,7 +29,7 @@ export const useSearchScroll = ({
   }, []);
 
   const handleMainWheel = useCallback(
-    (e: ReactWheelEvent<HTMLElement>) => {
+    (e: WheelEvent) => {
       if (showSettings || showTagManager) return;
 
       if (

@@ -169,9 +169,23 @@ pub async fn copy_to_clipboard(
 
     let paste_image_as_base64_requested = paste_image_as_base64.unwrap_or(false);
     let mut effective_content_type = content_type.clone();
+    let mut self_insert_label: Option<String> = None;
+
     if content_type == "image" && paste_image_as_base64_requested {
-        content = convert_image_content_to_base64(&content)?;
-        effective_content_type = "text".to_string();
+        if id != 0 {
+            // Image-to-Base64 conversion on an existing image entry. Decode the image
+            // payload and re-encode as a plain base64 string so the clipboard monitor
+            // and downstream consumers see it as TEXT.
+            content = convert_image_content_to_base64(&content)?;
+            effective_content_type = "text".to_string();
+            self_insert_label = Some("DezirClip Image to Base64".to_string());
+        } else {
+            // Defensive: id=0 with content_type="image" + paste_image_as_base64 may be
+            // sent by an OCR-paste caller where the payload is already plain text. Skip
+            // the image decoder (it would fail on OCR text) and plan the explicit insert.
+            effective_content_type = "text".to_string();
+            self_insert_label = Some("DezirClip OCR Paste".to_string());
+        }
     }
 
     // 1. Handle Window Visibility and Focus
@@ -179,7 +193,29 @@ pub async fn copy_to_clipboard(
         handle_window_focus_for_paste(&app_handle).await?;
     }
 
-    // 2. Copy to system clipboard
+    // 2. For image-to-Base64 and OCR-paste paths, synchronously insert the resulting
+    // TEXT entry via the clipboard pipeline BEFORE writing to the system clipboard.
+    // The pipeline assigns a fresh timestamp strictly greater than the source entry's,
+    // guaranteeing the new TEXT row lands at the top of history. The subsequent
+    // clipboard write below is then marked as a self-copy so the OS clipboard monitor
+    // does not race us by creating a duplicate row.
+    if let Some(label) = self_insert_label.as_ref() {
+        crate::services::clipboard::process_new_entry(
+            &app_handle,
+            crate::services::clipboard::ClipboardData::Text(content.clone()),
+            Some(label.clone()),
+            None,
+        );
+    }
+
+    // 3. Copy to system clipboard. For self-insert paths we force mark_as_self_copy=true
+    // to suppress the monitor; otherwise we delegate to the standard decision helper.
+    let mark_as_self_copy = if self_insert_label.is_some() {
+        true
+    } else {
+        should_mark_clipboard_write_as_self_copy(id, paste, paste_image_as_base64_requested)
+    };
+
     write_content_to_system_clipboard(
         &content,
         ClipboardWriteOptions {
@@ -188,11 +224,7 @@ pub async fn copy_to_clipboard(
             paste_with_format: paste_with_format.unwrap_or(
                 effective_content_type == "rich_text" && html_content.as_deref().is_some(),
             ),
-            mark_as_self_copy: should_mark_clipboard_write_as_self_copy(
-                id,
-                paste,
-                paste_image_as_base64_requested,
-            ),
+            mark_as_self_copy,
         },
     )?;
 
@@ -1557,5 +1589,66 @@ mod tests {
             !should_mark_clipboard_write_as_self_copy(7, false, true),
             "image-to-base64 creates new text and must be visible to the clipboard monitor"
         );
+    }
+
+    #[test]
+    fn test_should_mark_clipboard_write_as_self_copy_all_eight_combos() {
+        // Truth table for should_mark_clipboard_write_as_self_copy: returns true iff
+        // the helper would mark the write as a self-copy. Formula:
+        //   paste || (id != 0 && !paste_image_as_base64)
+        // Note: copy_to_clipboard additionally overrides mark_as_self_copy=true for
+        // the image-to-base64 case (id != 0, paste_image_as_base64=true) so the OS
+        // clipboard monitor does not race the explicit history insert; that override
+        // lives at the call site and is not visible in the helper-function result.
+        let cases: &[(i64, bool, bool, bool)] = &[
+            (0, false, false, false),
+            (0, false, true, false),
+            (0, true, false, true),
+            (0, true, true, true),
+            (7, false, false, true),
+            (7, false, true, false),
+            (7, true, false, true),
+            (7, true, true, true),
+        ];
+        assert_eq!(cases.len(), 8, "must cover all 2x2x2 combinations");
+        for (id, paste, paste_image_as_base64, expected) in cases {
+            let actual =
+                should_mark_clipboard_write_as_self_copy(*id, *paste, *paste_image_as_base64);
+            assert_eq!(
+                actual, *expected,
+                "should_mark_clipboard_write_as_self_copy(id={}, paste={}, paste_image_as_base64={}) expected {}, got {}",
+                id, paste, paste_image_as_base64, expected, actual
+            );
+        }
+    }
+
+    #[test]
+    fn test_convert_image_content_to_base64_data_url_round_trip() {
+        let bytes = [0u8, 1, 2, 3, 0xFF, 0x80, 0x40, 0x20];
+        let b64 = general_purpose::STANDARD.encode(bytes);
+        let data_url = format!("data:image/png;base64,{}", b64);
+        let result = convert_image_content_to_base64(&data_url);
+        let decoded = result.expect("data url must decode");
+        assert_eq!(decoded, b64);
+    }
+
+    #[test]
+    fn test_convert_image_content_to_base64_already_base64_passthrough() {
+        let b64 = general_purpose::STANDARD.encode([9u8, 8, 7, 6]);
+        let result = convert_image_content_to_base64(&b64);
+        let decoded = result.expect("raw base64 must pass through");
+        assert_eq!(decoded, b64);
+    }
+
+    #[test]
+    fn test_convert_image_content_to_base64_empty_errors() {
+        let result = convert_image_content_to_base64("");
+        assert!(result.is_err(), "empty content must error");
+    }
+
+    #[test]
+    fn test_convert_image_content_to_base64_unrecognized_errors() {
+        let result = convert_image_content_to_base64("not base64 nor data url @@@");
+        assert!(result.is_err(), "unrecognized content must error");
     }
 }

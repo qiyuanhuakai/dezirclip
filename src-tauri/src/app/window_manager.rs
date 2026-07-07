@@ -9,9 +9,107 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
 #[cfg(target_os = "linux")]
+use std::sync::{Mutex, OnceLock};
+#[cfg(target_os = "linux")]
 use x11rb::connection::Connection;
 #[cfg(target_os = "linux")]
 use x11rb::protocol::xproto::ConnectionExt;
+
+#[cfg(target_os = "linux")]
+static X11_CONNECTION_CACHE: OnceLock<Mutex<Option<(x11rb::rust_connection::RustConnection, usize)>>> =
+    OnceLock::new();
+
+#[cfg(target_os = "linux")]
+fn with_x11_connection<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&x11rb::rust_connection::RustConnection, usize) -> Option<R>,
+{
+    let mutex = X11_CONNECTION_CACHE.get_or_init(|| Mutex::new(None));
+    let mut guard = mutex.lock().ok()?;
+
+    if guard.is_none() {
+        let conn_screen = x11rb::connect(None).ok()?;
+        *guard = Some(conn_screen);
+    }
+
+    let (conn, screen_num) = guard.as_ref()?;
+    f(conn, *screen_num)
+}
+
+#[cfg(target_os = "linux")]
+fn position_window_at_cursor_linux(window: &tauri::WebviewWindow, w: i32, h: i32) {
+    let cursor_xy = with_x11_connection(|conn, screen_num| {
+        let root_window = conn.setup().roots[screen_num].root;
+        conn.query_pointer(root_window)
+            .ok()?
+            .reply()
+            .ok()
+            .map(|reply| (reply.root_x, reply.root_y))
+    });
+
+    let Some((cursor_x_raw, cursor_y_raw)) = cursor_xy else {
+        return;
+    };
+    let cursor_x = cursor_x_raw as i32;
+    let cursor_y = cursor_y_raw as i32;
+
+    let mut target_x = cursor_x - (w / 2);
+    let mut target_y = cursor_y + 12;
+
+    let mut target_monitor: Option<tauri::Monitor> = None;
+    if let Ok(monitors) = window.available_monitors() {
+        for m in &monitors {
+            let m_pos = m.position();
+            let m_size = m.size();
+            let mx = m_pos.x;
+            let my = m_pos.y;
+            let mw = m_size.width as i32;
+            let mh = m_size.height as i32;
+            if cursor_x >= mx
+                && cursor_x < mx + mw
+                && cursor_y >= my
+                && cursor_y < my + mh
+            {
+                target_monitor = Some(m.clone());
+                break;
+            }
+        }
+        if target_monitor.is_none() && !monitors.is_empty() {
+            target_monitor = Some(monitors[0].clone());
+        }
+    }
+
+    if let Some(m) = target_monitor.as_ref() {
+        let m_pos = m.position();
+        let m_size = m.size();
+        let mx = m_pos.x;
+        let my = m_pos.y;
+        let mw = m_size.width as i32;
+        let mh = m_size.height as i32;
+        if target_x < mx {
+            target_x = mx + 5;
+        }
+        if target_x + w > mx + mw {
+            target_x = mx + mw - w - 5;
+        }
+        if target_y + h > my + mh {
+            let above_y = cursor_y - h - 12;
+            if above_y >= my {
+                target_y = above_y;
+            } else {
+                target_y = my + mh - h - 5;
+            }
+        }
+        if target_y < my {
+            target_y = my + 5;
+        }
+    }
+
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+        x: target_x,
+        y: target_y,
+    }));
+}
 
 #[cfg(windows)]
 use windows::Win32::Foundation::{HWND, POINT};
@@ -237,75 +335,7 @@ pub fn toggle_window(app: &AppHandle) {
                 {
                     let w = size.width as i32;
                     let h = size.height as i32;
-
-                    if let Ok((conn, screen_num)) = x11rb::connect(None) {
-                        let screen = &conn.setup().roots[screen_num];
-                        if let Ok(cookie) = conn.query_pointer(screen.root) {
-                            if let Ok(reply) = cookie.reply() {
-                                let cursor_x = reply.root_x as i32;
-                                let cursor_y = reply.root_y as i32;
-
-                                let mut target_x = cursor_x - (w / 2);
-                                let mut target_y = cursor_y + 12;
-
-                                let mut target_monitor: Option<tauri::Monitor> = None;
-                                if let Ok(monitors) = window.available_monitors() {
-                                    for m in &monitors {
-                                        let m_pos = m.position();
-                                        let m_size = m.size();
-                                        let mx = m_pos.x;
-                                        let my = m_pos.y;
-                                        let mw = m_size.width as i32;
-                                        let mh = m_size.height as i32;
-                                        if cursor_x >= mx
-                                            && cursor_x < mx + mw
-                                            && cursor_y >= my
-                                            && cursor_y < my + mh
-                                        {
-                                            target_monitor = Some(m.clone());
-                                            break;
-                                        }
-                                    }
-                                    if target_monitor.is_none() && !monitors.is_empty() {
-                                        target_monitor = Some(monitors[0].clone());
-                                    }
-                                }
-
-                                if let Some(m) = target_monitor.as_ref() {
-                                    let m_pos = m.position();
-                                    let m_size = m.size();
-                                    let mx = m_pos.x;
-                                    let my = m_pos.y;
-                                    let mw = m_size.width as i32;
-                                    let mh = m_size.height as i32;
-                                    if target_x < mx {
-                                        target_x = mx + 5;
-                                    }
-                                    if target_x + w > mx + mw {
-                                        target_x = mx + mw - w - 5;
-                                    }
-                                    if target_y + h > my + mh {
-                                        let above_y = cursor_y - h - 12;
-                                        if above_y >= my {
-                                            target_y = above_y;
-                                        } else {
-                                            target_y = my + mh - h - 5;
-                                        }
-                                    }
-                                    if target_y < my {
-                                        target_y = my + 5;
-                                    }
-                                }
-
-                                let _ = window.set_position(tauri::Position::Physical(
-                                    tauri::PhysicalPosition {
-                                        x: target_x,
-                                        y: target_y,
-                                    },
-                                ));
-                            }
-                        }
-                    }
+                    position_window_at_cursor_linux(&window, w, h);
                 }
             } else if was_docked {
                 #[cfg(windows)]
@@ -649,5 +679,30 @@ mod tests {
 
         assert!(accepted);
         assert_eq!(last_toggle.load(Ordering::Relaxed), 1_500);
+    }
+
+    #[test]
+    fn test_set_position_throttled() {
+        let last_toggle = AtomicU64::new(0);
+
+        let first = should_accept_window_toggle(&last_toggle, 1_000);
+        assert!(first);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_000);
+
+        let second = should_accept_window_toggle(&last_toggle, 1_004);
+        assert!(!second);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_000);
+
+        let third = should_accept_window_toggle(&last_toggle, 1_008);
+        assert!(!third);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_000);
+
+        let fourth = should_accept_window_toggle(&last_toggle, 1_016);
+        assert!(!fourth);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_000);
+
+        let fifth = should_accept_window_toggle(&last_toggle, 1_600);
+        assert!(fifth);
+        assert_eq!(last_toggle.load(Ordering::Relaxed), 1_600);
     }
 }

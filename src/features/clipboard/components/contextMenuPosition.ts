@@ -16,6 +16,8 @@ export type ContextMenuPointInput = {
   readonly clientY: number;
   readonly anchorRect: ContextMenuRect;
   readonly viewport: ContextMenuViewport;
+  readonly currentWindowLabel?: string;
+  readonly isCompactPreviewOnTop?: boolean;
 };
 
 export type ContextMenuPoint = {
@@ -32,6 +34,9 @@ const clampToAnchor = ({ anchorRect, viewport }: ContextMenuPointInput): Context
 });
 
 export const resolveContextMenuPoint = (input: ContextMenuPointInput): ContextMenuPoint => {
+  if (input.isCompactPreviewOnTop === true) {
+    return clampToAnchor(input);
+  }
   if (isInsideViewport(input.clientX, input.clientY, input.viewport)) {
     return { x: input.clientX, y: input.clientY };
   }

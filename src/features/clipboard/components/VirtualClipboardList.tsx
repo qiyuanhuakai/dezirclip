@@ -127,7 +127,7 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
                     {renderItem(item, index, index === 0)}
                 </div>
             );
-        }, [renderItem, compactMode]);
+        }, []);
 
         const components = useMemo(() => ({
             Header: ListHeader,

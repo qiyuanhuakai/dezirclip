@@ -295,109 +295,110 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       return () => el.removeEventListener("keydown", handleKeyDown);
     }, [handleKeyDown, resolvedRef]);
 
-	    const transformSubmenu = submenuOpen && transformKinds.length > 0 && createPortal(
-	      <div
-	        className="item-context-menu__submenu item-context-menu__submenu--open"
-	        style={{
-	          left: submenuPos.left,
-	          top: submenuPos.top,
-	          width: SUBMENU_WIDTH,
-	          maxHeight: SUBMENU_MAX_HEIGHT,
-	        }}
-	        data-testid="transform-submenu"
-	        onMouseEnter={() => {
-	          clearSubmenuCloseTimer();
-	          setActiveIndex(transformIndex);
-	          setSubmenuOpen(true);
-	        }}
-	        onMouseLeave={() => {
-	          submenuCloseTimerRef.current = setTimeout(() => {
-	            setSubmenuOpen(false);
-	          }, SUBMENU_CLOSE_DELAY_MS);
-	        }}
-        onWheel={(e) => {
-          e.stopPropagation();
-        }}
-        onScroll={(e) => {
-          e.stopPropagation();
-        }}
-	      >
-	        {transformKinds.map((kind, tIdx) => (
+return createPortal(
+	      <>
+	        <div
+	          ref={resolvedRef}
+	          role="menu"
+	          tabIndex={0}
+	          data-test-item-context-menu
+	          className="item-context-menu"
+	          style={{
+	            left: pos.left,
+	            top: pos.top,
+	            width: MENU_WIDTH,
+	          }}
+	        >
+	          {menuItems.map((item, index) => (
+	            <div
+	              key={item.key}
+	              role="menuitem"
+	              data-test-context-menu-item
+	              data-test-action={item.key}
+	              className={`item-context-menu__item ${
+	                index === activeIndex ? "item-context-menu__item--active" : ""
+	              } ${item.hasSubmenu ? "item-context-menu__item--has-submenu" : ""}`}
+	              onMouseEnter={(e) => {
+                e.stopPropagation();
+                clearSubmenuCloseTimer();
+                setActiveIndex(index);
+                if (item.hasSubmenu) {
+                  setSubmenuOpen(true);
+                  setSubmenuActiveIndex(0);
+                } else {
+                  setSubmenuOpen(false);
+                }
+              }}
+	              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setActiveIndex(index);
+                if (item.hasSubmenu) {
+                  setSubmenuOpen(true);
+                  setSubmenuActiveIndex(0);
+                } else {
+                  handleAction(item.key);
+                }
+              }}
+	            >
+	              <span className="item-context-menu__item-label">{item.label}</span>
+	              {item.hasSubmenu && (
+	                <span className="item-context-menu__item-arrow">▶</span>
+	              )}
+	            </div>
+	          ))}
+	        </div>
+	        {submenuOpen && transformKinds.length > 0 && (
 	          <div
-	            key={kind.id}
-	            role="menuitem"
-	            data-testid="transform-item"
-	            data-test-transform-kind={kind.id}
-	            className={`item-context-menu__submenu-item ${
-	              tIdx === submenuActiveIndex
-	                ? "item-context-menu__submenu-item--active"
-	                : ""
-	            }`}
-	            onMouseEnter={() => setSubmenuActiveIndex(tIdx)}
-	            onClick={(e) => {
+	            className="item-context-menu__submenu item-context-menu__submenu--open"
+	            style={{
+	              left: submenuPos.left,
+	              top: submenuPos.top,
+	              width: SUBMENU_WIDTH,
+	              maxHeight: SUBMENU_MAX_HEIGHT,
+	            }}
+	            data-testid="transform-submenu"
+	            onMouseEnter={() => {
+	              clearSubmenuCloseTimer();
+	              setActiveIndex(transformIndex);
+	              setSubmenuOpen(true);
+	            }}
+	            onMouseLeave={() => {
+	              submenuCloseTimerRef.current = setTimeout(() => {
+	                setSubmenuOpen(false);
+	              }, SUBMENU_CLOSE_DELAY_MS);
+	            }}
+	            onWheel={(e) => {
 	              e.stopPropagation();
-	              handleTransformSelect(kind.id);
+	            }}
+	            onScroll={(e) => {
+	              e.stopPropagation();
 	            }}
 	          >
-	            {language === "en" ? kind.label_en : kind.label_zh}
+	            {transformKinds.map((kind, tIdx) => (
+	              <div
+	                key={kind.id}
+	                role="menuitem"
+	                data-testid="transform-item"
+	                data-test-transform-kind={kind.id}
+	                className={`item-context-menu__submenu-item ${
+	                  tIdx === submenuActiveIndex
+	                    ? "item-context-menu__submenu-item--active"
+	                    : ""
+	                }`}
+	                onMouseEnter={() => setSubmenuActiveIndex(tIdx)}
+	                onClick={(e) => {
+	                  e.stopPropagation();
+	                  handleTransformSelect(kind.id);
+	                }}
+	              >
+	                {language === "en" ? kind.label_en : kind.label_zh}
+	              </div>
+	            ))}
 	          </div>
-	        ))}
-	      </div>,
+	        )}
+	      </>,
 	      document.body
-	    );
-
-	    return (
-	      <>
-	      <div
-        ref={resolvedRef}
-        role="menu"
-        tabIndex={0}
-        data-test-item-context-menu
-        className="item-context-menu"
-        style={{
-          left: pos.left,
-          top: pos.top,
-          width: MENU_WIDTH,
-        }}
-      >
-        {menuItems.map((item, index) => (
-          <div
-            key={item.key}
-            role="menuitem"
-            data-test-context-menu-item
-            data-test-action={item.key}
-            className={`item-context-menu__item ${
-              index === activeIndex ? "item-context-menu__item--active" : ""
-            } ${item.hasSubmenu ? "item-context-menu__item--has-submenu" : ""}`}
-            onMouseEnter={() => {
-              clearSubmenuCloseTimer();
-              setActiveIndex(index);
-              if (item.hasSubmenu) {
-                setSubmenuOpen(true);
-                setSubmenuActiveIndex(0);
-              } else {
-                setSubmenuOpen(false);
-              }
-            }}
-            onClick={() => {
-              setActiveIndex(index);
-              if (item.hasSubmenu) {
-                setSubmenuOpen(true);
-                setSubmenuActiveIndex(0);
-              } else {
-                handleAction(item.key);
-              }
-            }}
-          >
-            <span className="item-context-menu__item-label">{item.label}</span>
-	            {item.hasSubmenu && (
-	              <span className="item-context-menu__item-arrow">▶</span>
-	            )}
-	          </div>
-	        ))}
-	      </div>
-	      {transformSubmenu}
-	      </>
 	    );
   }
 );

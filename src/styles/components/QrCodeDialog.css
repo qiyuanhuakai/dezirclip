@@ -43,7 +43,7 @@
 .qr-dialog__image {
   padding: var(--spacing-md, 16px);
   border: 2px solid var(--border-light, var(--border-dark));
-  border-radius: var(--radius-panel, 2px);
+  border-radius: var(--radius-window, 8px);
   background: var(--bg-input);
 }
 
@@ -95,7 +95,7 @@
   transition: all 0.1s ease;
   box-shadow: var(--control-confirm-btn-shadow, 0 2px 4px rgba(0, 0, 0, 0.05));
   text-transform: uppercase;
-  border-radius: var(--radius-panel, 4px);
+  border-radius: var(--radius-window, 8px);
 }
 
 .qr-dialog__btn:hover {

@@ -1,10 +1,10 @@
 use crate::error::{AppError, AppResult};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 static SEQ: AtomicU32 = AtomicU32::new(1);
 static FILE_CLIPBOARD_OWNER: OnceLock<Mutex<Option<x11_clipboard::Clipboard>>> = OnceLock::new();
-static SYSTEM_CLIPBOARD_OWNER: OnceLock<Mutex<Option<arboard::Clipboard>>> = OnceLock::new();
+static SYSTEM_CLIPBOARD_OWNER: OnceLock<Mutex<Option<Arc<arboard::Clipboard>>>> = OnceLock::new();
 
 pub struct ImageData {
     pub width: usize,
@@ -146,7 +146,7 @@ pub fn set_clipboard_text_and_html(text: String, html: Option<String>) -> AppRes
             .set_text(text)
             .map_err(|e| AppError::Internal(format!("设置剪贴板失败: {}", e)))?;
     }
-    *owner = Some(clipboard);
+    *owner = Some(Arc::new(clipboard));
     Ok(())
 }
 
@@ -208,7 +208,7 @@ pub fn set_clipboard_image_with_formats(data: ImageData) -> Result<(), String> {
         })?;
     }
 
-    *owner = Some(clipboard);
+    *owner = Some(Arc::new(clipboard));
     Ok(())
 }
 

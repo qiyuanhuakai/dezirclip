@@ -284,4 +284,49 @@ describe("ItemContextMenu", () => {
 
     expect(outerWheel).not.toHaveBeenCalled();
   });
+
+  it("renders main menu and open submenu as siblings under document.body via a single portal", async () => {
+    render(
+      <ItemContextMenu
+        x={100}
+        y={100}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+        transformKinds={MOCK_TRANSFORM_KINDS}
+      />
+    );
+
+    fireEvent.mouseEnter(screen.getByText("文本转换 →"));
+    const submenu = await screen.findByTestId("transform-submenu");
+    const menu = screen.getByRole("menu");
+
+    expect(menu.parentElement).toBe(document.body);
+    expect(submenu.parentElement).toBe(document.body);
+    expect(menu.parentElement).toBe(submenu.parentElement);
+  });
+
+  it("stops click propagation from first-level menu items", () => {
+    const onCopy = vi.fn();
+    const onClose = vi.fn();
+    const onSelect = vi.fn();
+    const parentClick = vi.fn();
+
+    render(
+      <div onClick={parentClick}>
+        <ItemContextMenu
+          x={100}
+          y={100}
+          onSelect={onSelect}
+          onClose={onClose}
+          onCopy={onCopy}
+        />
+      </div>
+    );
+
+    const items = screen.getAllByRole("menuitem");
+    fireEvent.click(items[0]);
+
+    expect(onCopy).toHaveBeenCalledTimes(1);
+    expect(parentClick).not.toHaveBeenCalled();
+  });
 });

@@ -9,6 +9,7 @@ import { useProgress } from "./features/shared/hooks/useProgress";
 import { translations } from "./locales";
 import AppHeader from "./features/app/components/AppHeader";
 import AppMainContent from "./features/app/components/AppMainContent";
+import { WheelHotZone } from "./features/app/components/WheelHotZone";
 import { useAppState } from "./features/app/hooks/useAppState";
 import { useSettingsPanelProps } from "./features/settings/hooks/useSettingsPanelProps";
 import { useDebounce } from "./shared/hooks/useDebounce";
@@ -652,6 +653,19 @@ const App = () => {
   });
 
 
+  const handleQRCode = useCallback((item: ClipboardEntry) => {
+    setQrEntry(item);
+  }, []);
+
+  const handleTransformError = useCallback((_item: ClipboardEntry, _kind: string, message: string) => {
+    const msg = message || "unknown error";
+    pushToast(t("transform_failed").replace("{message}", msg));
+  }, [t, pushToast]);
+
+  const handleTransformSuccess = useCallback((_item: ClipboardEntry, _kind: string) => {
+    pushToast(t("transform_applied"));
+  }, [t, pushToast]);
+
   const { renderItemContent } = useClipboardItemRenderer({
     privacyProtection,
     revealedIds,
@@ -675,14 +689,9 @@ const App = () => {
     setEditingTagsId,
     setTagInput,
     handleUpdateTags,
-    onQRCode: (item) => setQrEntry(item),
-    onTransformError: (_item, _kind, message) => {
-      const msg = message || "unknown error";
-      pushToast(t("transform_failed").replace("{message}", msg));
-    },
-    onTransformSuccess: (_item, _kind) => {
-      pushToast(t("transform_applied"));
-    }
+    onQRCode: handleQRCode,
+    onTransformError: handleTransformError,
+    onTransformSuccess: handleTransformSuccess
   });
 
   const settingsPanelProps = useSettingsPanelProps({
@@ -772,13 +781,14 @@ const App = () => {
       <AppHeader {...appHeaderProps} />
 
 
-      <main
-        className="main-content"
-        style={{ overflowY: (showSettings || effectiveShowTagManager) ? 'auto' : 'hidden' }}
-        onWheel={handleMainWheel}
-      >
-        <AppMainContent {...appMainContentProps} />
-      </main>
+      <WheelHotZone onWheel={handleMainWheel}>
+        <main
+          className="main-content"
+          style={{ overflowY: (showSettings || effectiveShowTagManager) ? 'auto' : 'hidden' }}
+        >
+          <AppMainContent {...appMainContentProps} />
+        </main>
+      </WheelHotZone>
 
       <ToastContainer toasts={toasts} />
 

@@ -208,106 +208,113 @@ const AppMainContent = ({
     );
   }
 
-  if (showSettings) {
-    return (
+  return (
+    <>
       <div
         className="settings-view"
-        style={{ display: "flex", flexDirection: "column", gap: "12px" }}
+        style={{
+          display: showSettings ? "flex" : "none",
+          flexDirection: "column",
+          gap: "12px",
+          flex: showSettings ? "1 1 0" : undefined,
+          minHeight: 0
+        }}
       >
         <Suspense fallback={<div style={{ minHeight: "240px" }} />}>
           <SettingsPanel {...settingsPanelProps} />
         </Suspense>
       </div>
-    );
-  }
-
-  if (filteredHistory.length === 0) {
-    return (
-      <div className="empty-state">
-        <Clipboard size={40} opacity={0.2} style={{ marginBottom: "12px" }} />
-        {search ? (
-          <p>{t("no_records")}</p>
+      <div
+        className="list-view"
+        style={{
+          display: showSettings ? "none" : "flex",
+          flexDirection: "column",
+          flex: showSettings ? undefined : "1 1 0",
+          minHeight: 0
+        }}
+      >
+        {filteredHistory.length === 0 ? (
+          <div className="empty-state">
+            <Clipboard size={40} opacity={0.2} style={{ marginBottom: "12px" }} />
+            {search ? (
+              <p>{t("no_records")}</p>
+            ) : (
+              <>
+                <p
+                  style={{
+                    fontSize: "15px",
+                    fontWeight: "bold",
+                    color: "var(--text-primary)",
+                    marginBottom: "4px"
+                  }}
+                >
+                  {t("empty_title")}
+                </p>
+                <p style={{ fontSize: "12px", opacity: 0.6 }}>{t("empty_desc")}</p>
+              </>
+            )}
+          </div>
         ) : (
-          <>
-            <p
-              style={{
-                fontSize: "15px",
-                fontWeight: "bold",
-                color: "var(--text-primary)",
-                marginBottom: "4px"
+          <div className="history-list-container">
+            <VirtualClipboardList
+              ref={virtualListRef}
+              items={unpinnedItems}
+              compactMode={compactMode}
+              selectedIndex={selectedIndex - pinnedItems.length}
+              isKeyboardMode={isKeyboardMode}
+              header={
+                pinnedItems.length > 0 ? (
+                  <Reorder.Group
+                    axis="y"
+                    values={orderedPinnedIds}
+                    onReorder={handlePinnedIdsReorder}
+                    className={isDraggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}
+                    style={{ listStyle: "none", padding: 0 }}
+                  >
+                    {orderedPinnedItems.map((item, index) => (
+                      <SortableItem
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        renderItem={renderItemContent}
+                        isFirst={index === 0}
+                        onDragStart={handlePinnedDragStart}
+                        onDragEnd={handlePinnedDragEnd}
+                      />
+                    ))}
+                  </Reorder.Group>
+                ) : null
+              }
+              renderItem={(item, index, isFirst?: boolean) => {
+                const el = renderItemContent(item, pinnedItems.length + index, undefined, true);
+                if (isFirst && pinnedItems.length === 0) {
+                  return (
+                    <div className="first-virtual-item" style={{ height: "100%", paddingTop: "4px" }}>
+                      {el}
+                    </div>
+                  );
+                }
+                return el;
               }}
-            >
-              {t("empty_title")}
-            </p>
-            <p style={{ fontSize: "12px", opacity: 0.6 }}>{t("empty_desc")}</p>
-          </>
+              onLoadMore={loadMoreHistory}
+              onScroll={handleListScroll}
+              hasMore={hasMore}
+              isLoading={isLoadingMore}
+            />
+            {showScrollTop && (
+              <button
+                type="button"
+                className="btn-icon scroll-top-button"
+                onClick={onScrollTop}
+                aria-label={t("scroll_to_top")}
+                title={t("scroll_to_top")}
+              >
+                <ArrowUp size={16} />
+              </button>
+            )}
+          </div>
         )}
       </div>
-    );
-  }
-
-  return (
-    <>
-      {filteredHistory.length > 0 && (
-        <div className="history-list-container">
-          <VirtualClipboardList
-            ref={virtualListRef}
-            items={unpinnedItems}
-            compactMode={compactMode}
-            selectedIndex={selectedIndex - pinnedItems.length}
-            isKeyboardMode={isKeyboardMode}
-            header={
-              pinnedItems.length > 0 ? (
-                <Reorder.Group
-                  axis="y"
-                  values={orderedPinnedIds}
-                  onReorder={handlePinnedIdsReorder}
-                  className={isDraggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}
-                  style={{ listStyle: "none", padding: 0 }}
-                >
-                  {orderedPinnedItems.map((item, index) => (
-                    <SortableItem
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      renderItem={renderItemContent}
-                      isFirst={index === 0}
-                      onDragStart={handlePinnedDragStart}
-                      onDragEnd={handlePinnedDragEnd}
-                    />
-                  ))}
-                </Reorder.Group>
-              ) : null
-            }
-            renderItem={(item, index, isFirst?: boolean) => {
-              const el = renderItemContent(item, pinnedItems.length + index, undefined, true);
-              if (isFirst && pinnedItems.length === 0) {
-                return (
-                  <div className="first-virtual-item" style={{ height: "100%", paddingTop: "4px" }}>
-                    {el}
-                  </div>
-                );
-              }
-              return el;
-            }}
-            onLoadMore={loadMoreHistory}
-            onScroll={handleListScroll}
-            hasMore={hasMore}
-            isLoading={isLoadingMore}
-          />
-          {showScrollTop && (
-            <button
-              type="button"
-              className="btn-icon scroll-top-button"
-              onClick={onScrollTop}
-              aria-label={t("scroll_to_top")}
-              title={t("scroll_to_top")}
-            >
-              <ArrowUp size={16} />
-            </button>
-          )}
-        </div>
-      )}
     </>
   );
 };

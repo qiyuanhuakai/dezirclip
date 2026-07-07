@@ -214,6 +214,7 @@ fn main() {
             app::commands::set_theme,
             app::commands::get_platform_info,
             app::commands::get_system_theme_mode,
+            app::commands::is_window_topmost,
             app::commands::register_hotkey,
             app::commands::test_hotkey_available,
             app::commands::toggle_clipboard_pin,

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
 import { render, fireEvent, screen, waitFor } from "@testing-library/react";
 import QrCodeDialog from "./QrCodeDialog";
 import type { ClipboardEntry } from "../../../shared/types";
+import qrDialogCss from "./qrDialogCssLoader.mjs";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -116,5 +117,64 @@ describe("QrCodeDialog", () => {
       "generate_qr_png",
       expect.anything()
     );
+  });
+});
+
+describe("QrCodeDialog computed styles", () => {
+  let styleEl: HTMLStyleElement;
+
+  function resolveVar(
+    expression: string,
+    vars: Record<string, string>
+  ): string {
+    return expression.replace(
+      /var\(\s*(--[^,\s)]+)\s*(?:,\s*([^)]+))?\s*\)/g,
+      (_match, name: string, fallback?: string) => {
+        const key = name.trim();
+        const resolved = vars[key];
+        if (resolved !== undefined && resolved !== "") return resolved;
+        return fallback ? fallback.trim() : "";
+      }
+    );
+  }
+
+  function readVar(name: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name)
+      .trim();
+  }
+
+  beforeAll(() => {
+    styleEl = document.createElement("style");
+    styleEl.textContent = qrDialogCss;
+    document.head.appendChild(styleEl);
+  });
+
+  afterAll(() => {
+    styleEl.remove();
+  });
+
+  beforeEach(() => {
+    document.documentElement.style.removeProperty("--radius-window");
+  });
+
+  it("button borderRadius follows --radius-window (14px liquid-glass)", () => {
+    document.documentElement.style.setProperty("--radius-window", "14px");
+    const entry = makeEntry("https://example.com");
+    const { container } = render(
+      <QrCodeDialog entry={entry} onClose={vi.fn()} />
+    );
+    const btn = container.querySelector(
+      ".qr-dialog__btn"
+    ) as HTMLElement | null;
+    expect(btn).not.toBeNull();
+    const computedExpression = getComputedStyle(btn!).borderRadius;
+    expect(computedExpression).toContain("var(--radius-window");
+    const resolved = resolveVar(computedExpression, {
+      "--radius-window": readVar("--radius-window"),
+    });
+    const radiusPx = parseFloat(resolved);
+    expect(Number.isNaN(radiusPx)).toBe(false);
+    expect(radiusPx.toFixed(2)).toBe("14.00");
   });
 });
