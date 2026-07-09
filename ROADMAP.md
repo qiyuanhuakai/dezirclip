@@ -16,9 +16,9 @@
 | **平台** | 仅 Windows + Linux。`cfg(target_os = "macos")` 禁止 |
 | **代码质量** | 无 `TODO/FIXME/HACK`、无 `as any`/`@ts-ignore`、无内联主题 CSS、无 cargo `[dev-dependencies]`、无前端测试框架 |
 | **主题一致性** | 所有新 UI 必须适配 6 主题（`retro` / `mica` / `acrylic` / `macos` / `scifi` / `liquid-glass`）× 3 颜色模式 |
-| **i18n 完整** | 新增字符串 → 先加 `zh.ts`，再 `en.ts` + `tw.ts`，跑 `npm run i18n:check` |
+| **i18n 完整** | 新增字符串 → 先加 `zh.ts`，再 `en.ts` + `tw.ts`，跑 `pnpm run i18n:check` |
 | **提交规范** | Conventional Commits 中文：`feat(scope): ...`、`fix(scope): ...`、`docs: ...`。slim 工作流用 `(slim)` scope |
-| **构建前必跑** | Rust：`cd src-tauri && cargo test`；前端：`npm run build`（含 `tsc --strict`） |
+| **构建前必跑** | Rust：`cd src-tauri && cargo test`；前端：`pnpm run build`（含 `tsc --strict`） |
 
 ---
 
@@ -72,7 +72,7 @@
 | 任何 `app.rich_text_snapshot_preview` 引用 | 移除 |
 
 **手动 QA**：
-- [ ] 三个语言文件键数一致，`npm run i18n:check` 通过
+- [ ] 三个语言文件键数一致，`pnpm run i18n:check` 通过
 - [ ] 设置 UI 渲染正常，删除项不留下断链
 
 **提交**：`chore(i18n): 移除未实现的设置项 i18n 键`、`refactor(settings): 移除无效的富文本快照与更新检查入口`
@@ -958,7 +958,7 @@ OCR / 截图 / 导入导出等长任务用统一模式：
 为保持一致性：
 - 功能前缀：`clipboard.*` / `search.*` / `quick_paste.*` / `filter.*` / `transform.*` / `screenshot.*` / `ocr.*` / `data.*` / `cli.*` / `settings.*`
 - 通用：`common.cancel` / `common.confirm` / `common.error` / `common.success`
-- 新增键时先建 `zh.ts`，再 `en.ts` + `tw.ts`，最后 `npm run i18n:check`
+- 新增键时先建 `zh.ts`，再 `en.ts` + `tw.ts`，最后 `pnpm run i18n:check`
 
 ---
 
@@ -969,8 +969,8 @@ OCR / 截图 / 导入导出等长任务用统一模式：
 | 类别 | 标准 |
 |---|---|
 | **类型检查** | `tsc --strict` 0 错误；`cargo check` 0 错误；`cargo clippy` 无新增 warning |
-| **i18n 完整** | `npm run i18n:check` 0 错误；zh / en / tw 三语键数一致 |
-| **构建通过** | `npm run build` 成功；`cargo test` 全绿（Rust 端） |
+| **i18n 完整** | `pnpm run i18n:check` 0 错误；zh / en / tw 三语键数一致 |
+| **构建通过** | `pnpm run build` 成功；`cargo test` 全绿（Rust 端） |
 | **6 主题 × 3 颜色模式** | 新 UI 组件在 18 种组合下视觉一致（手动 QA） |
 | **手动 QA 全部 PASS** | 每项至少 5 个真实场景，截图存档 |
 | **代码风格** | 无 `TODO` / `FIXME` / `as any` / `@ts-ignore`；无内联主题 CSS；无新 ESLint 配置 |
@@ -1002,7 +1002,7 @@ Phase 2（2-3 月，4 项）
      └─ 9.1 dzc Agent Skill  [1-2 天, 与 9 同步交付]
 ```
 
-每完成一项 → commit → 跑 `cargo test` + `npm run build` → 手动 QA → 进入下一项。
+每完成一项 → commit → 跑 `cargo test` + `pnpm run build` → 手动 QA → 进入下一项。
 
 ---
 

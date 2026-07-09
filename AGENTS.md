@@ -40,7 +40,7 @@ tiez-clipboard/
 | Add React UI | `src/features/<feature>/components/` + `hooks/` if stateful | Each feature is self-contained; re-export via barrel only if needed |
 | Add Rust platform code | `src-tauri/src/infrastructure/{windows_api,linux_api}/` | NEVER touch `app/` from platform code — it goes the other way |
 | Modify theme | `src/styles/themes/` for variant, `src/styles/tokens/` for vars, `src/styles/theme-core/` for cross-theme shared rules | Tokens are pure CSS custom properties; themes reference tokens |
-| Add i18n key | Edit `src/locales/zh.ts` first, then `en.ts`/`tw.ts`, then run `npm run i18n:check` | `zh.ts` is the canonical source |
+| Add i18n key | Edit `src/locales/zh.ts` first, then `en.ts`/`tw.ts`, then run `pnpm run i18n:check` | `zh.ts` is the canonical source |
 | Configure window/security | `src-tauri/tauri.conf.json` + `src-tauri/capabilities/default.json` | Window starts `visible: false, focusable: false, transparent: true` |
 | Test pure Rust logic | Inline `#[cfg(test)] mod tests` in source file | 9 files have inline tests; no integration tests, no mock framework |
 
@@ -69,7 +69,7 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 `vite.config.ts` splits output by feature (`settings`, `tag`, `emoji`, `compact-preview`) and by vendor (`vendor-react-select`, `vendor-motion`, `vendor-virtuoso`, `vendor-tauri`, `vendor-react`). When adding a heavy new feature, add a `manualChunks` entry to keep cold-start parse time bounded.
 
 ### Linux service opt-out via env var
-`TIEZ_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey` skips three Linux-specific background services. Used in `npm run tauri:dev:safe`. Pattern: any new Linux service must support this kill switch.
+`TIEZ_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey` skips three Linux-specific background services. Used in `pnpm run tauri:dev:safe`. Pattern: any new Linux service must support this kill switch.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -91,7 +91,9 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 
 9. **NO ESLint / Prettier / rustfmt config.** Project relies on `tsc --strict` + `cargo clippy` (not configured either) + code review. Adding these is a deliberate decision, not an oversight.
 
-10. **NO CI workflows.** `.github/` contains issue templates only. No `.github/workflows/*.yml`. All builds are local via npm scripts.
+10. **NO CI workflows.** `.github/` contains issue templates only. No `.github/workflows/*.yml`. All builds are local via pnpm scripts.
+
+11. **NO npm commands for project management.** `package.json` pins `packageManager: pnpm@11.0.9`; use `pnpm install`, `pnpm run ...`, and `pnpm exec ...` for all frontend/Tauri package tasks. Do not use `npm install`, `npm run ...`, or `npx` in project instructions or local verification commands.
 
 ## UNIQUE STYLES
 
@@ -128,25 +130,25 @@ Result: ~10–20% smaller binary. **Do not change `opt-level` to "3"** — that 
 
 ```bash
 # Frontend dev (Vite, port 1420)
-npm run dev
+pnpm run dev
 
 # Full Tauri dev (frontend + Rust binary)
-npm run tauri:dev
+pnpm run tauri:dev
 
 # Linux dev with services disabled (faster iteration)
-npm run tauri:dev:safe
+pnpm run tauri:dev:safe
 
 # Type check + production frontend build (outputs dist/web/)
-npm run build
+pnpm run build
 
 # Full Tauri production build (deb/AppImage/rpm/NSIS)
-npm run tauri:build
+pnpm run tauri:build
 
 # Windows portable ZIP (cross-platform PowerShell script)
-npm run build:portable
+pnpm run build:portable
 
 # i18n key audit (zh→en/tw consistency)
-npm run i18n:check
+pnpm run i18n:check
 
 # Rust tests (inline #[cfg(test)] modules)
 cd src-tauri && cargo test
@@ -155,13 +157,13 @@ cd src-tauri && cargo test
 cd src-tauri && cargo clean -p <broken-crate>
 
 # Frontend E2E (currently unconfigured — would fail)
-npm run test:e2e
+pnpm run test:e2e
 ```
 
 ## NOTES
 
 ### Where things can go wrong
-- **`dist/web/` must exist** before `npm run tauri:build` — the `beforeBuildCommand` runs `npm run build` but Cargo doesn't fail visibly if frontendDist is missing. Build will succeed with an empty window.
+- **`dist/web/` must exist** before `pnpm run tauri:build` — the `beforeBuildCommand` runs `pnpm run build` but Cargo doesn't fail visibly if frontendDist is missing. Build will succeed with an empty window.
 - **Cargo caches failed compiles.** After changing webview2-com or windows versions, run `cargo clean -p windows-future` before retrying. Otherwise a stale error persists across dep changes.
 - **WebView2 `--disable-gpu` is browser-startup-only.** Cannot hot-toggle. Changing the setting requires `app.gpu_switcher::apply_gpu_disable_env()` then a webview recreate.
 - **Tauri's `WebviewWindow::destroy()` is async (message-based).** The `main` label isn't released synchronously. `idle_destroyer::recreate_main_window()` polls up to 200ms before rebuilding via `WebviewWindowBuilder::from_config`. Don't shortcut this.
