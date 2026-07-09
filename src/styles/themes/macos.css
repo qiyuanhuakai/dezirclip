@@ -246,6 +246,10 @@ body.dark-mode.theme-macos .compact-popover-portal.compact-preview-window.retro 
   color: var(--text-primary) !important;
 }
 
+body.compact-preview.theme-macos .compact-preview-root .compact-popover-portal.compact-preview-window {
+  box-shadow: none !important;
+}
+
 body.dark-mode.theme-macos .compact-popover-portal.compact-preview-window .popover-divider,
 body.dark-mode.theme-macos .compact-popover-portal.compact-preview-window.retro .popover-divider {
   display: none !important;
