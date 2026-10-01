@@ -20,14 +20,31 @@
   --radius-pill: 9999px;
   --spacing-md: 16px;
   --spacing-sm: 8px;
-  --font-main: "Courier New", Courier, monospace, sans-serif;
-  --font-mono: "Consolas", "Courier New", monospace;
+  --font-main: "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Courier New", Courier, monospace, sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Consolas", "Courier New", monospace;
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 14px;
   --font-size-lg: 16px;
   --clipboard-item-font-size: 13px;
   --clipboard-tag-font-size: 10px;
+
+  /* Shell opacity control.
+     `--surface-opacity` is the ABSOLUTE alpha of the outermost window surface
+     (0 = fully see-through, 1 = fully opaque) and is written from the
+     `app.surface_opacity` setting. It is deliberately not a multiplier on a
+     per-theme base: with a base multiplier the same slider value produced a
+     different-looking shell in every theme and in each colour mode, and the top
+     of the range was never opaque. Themes only supply the tint below, so one
+     number means one thing everywhere.
+     `--surface-shell-rgb` is the per-theme / per-mode tint, overridden by the
+     `theme-*` blocks. */
+  --surface-opacity: 0.65;
+  --surface-shell-rgb: 252 252 252;
+  /* Re-declared next to `--surface-shell-rgb` in every theme block: a
+     non-registered custom property substitutes its `var()` references where it
+     is declared, so pairing the two is what makes a theme's tint take effect. */
+  --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
 
   --surface-overlay-bg: rgba(0, 0, 0, 0.2);
   --surface-overlay-blur: 4px;

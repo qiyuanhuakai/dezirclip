@@ -62,6 +62,10 @@ fn linux_service_disabled(service: &str) -> bool {
 }
 
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+    // Runs on the thread Tauri dispatches window teardown and creation on, which
+    // the idle destroyer needs in order to never block on a label release.
+    crate::app::idle_destroyer::note_main_thread();
+
     let app_handle = app.handle().clone();
 
     // Initialize GLOBAL_APP_HANDLE for Win32 hooks

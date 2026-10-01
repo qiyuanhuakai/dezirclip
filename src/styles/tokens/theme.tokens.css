@@ -38,7 +38,10 @@ body:is(.theme-mica, .theme-acrylic) {
   --surface-segment-active-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   --scrollbar-thumb-bg: rgba(128, 128, 128, 0.15);
   --scrollbar-thumb-hover-bg: rgba(128, 128, 128, 0.4);
-  --surface-shell-root-bg: rgba(252, 252, 252, calc(0.62 * var(--surface-opacity-scale, 1)));
+  /* Shell tint only — the alpha comes from the shared `--surface-opacity`, so
+     the surface_opacity slider reads the same in every theme and colour mode. */
+  --surface-shell-rgb: 252 252 252;
+  --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
   --surface-shell-root-shadow: 0 10px 38px rgba(0, 0, 0, 0.16);
   --surface-shell-queue-bg: #f3f3f3;
   --surface-shell-queue-border: rgba(128, 128, 128, 0.2);
@@ -142,7 +145,8 @@ body:is(.theme-mica, .theme-acrylic) {
 
 :root.theme-acrylic,
 body.theme-acrylic {
-  --surface-shell-root-bg: rgba(255, 255, 255, calc(0.45 * var(--surface-opacity-scale, 1)));
+  --surface-shell-rgb: 255 255 255;
+  --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
   --surface-shell-root-shadow: 0 14px 48px rgba(0, 0, 0, 0.22);
   --surface-shell-texture-image:
     linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 50%, transparent 100%),
@@ -192,7 +196,8 @@ body.dark-mode:is(.theme-mica, .theme-acrylic) {
   --surface-segment-active-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   --scrollbar-thumb-bg: rgba(255, 255, 255, 0.2);
   --scrollbar-thumb-hover-bg: rgba(255, 255, 255, 0.4);
-  --surface-shell-root-bg: rgba(20, 20, 20, calc(0.52 * var(--surface-opacity-scale, 1)));
+  --surface-shell-rgb: 20 20 20;
+  --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
   --surface-shell-root-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
   --surface-shell-queue-bg: #1a1a1a;
   --surface-shell-queue-border: #000;
@@ -266,7 +271,8 @@ body.dark-mode:is(.theme-mica, .theme-acrylic) {
 
 :root.dark-mode.theme-acrylic,
 body.dark-mode.theme-acrylic {
-  --surface-shell-root-bg: rgba(25, 25, 25, calc(0.38 * var(--surface-opacity-scale, 1)));
+  --surface-shell-rgb: 25 25 25;
+  --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
   --surface-shell-root-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
   --surface-shell-texture-image:
     repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255, 255, 255, .015) 3px, rgba(255, 255, 255, .015) 6px),
@@ -297,8 +303,8 @@ body:is(.theme-macos, .theme-scifi, .theme-retro) {
 
 :root.theme-scifi,
 body.theme-scifi {
-  --font-main: "Orbitron", "Rajdhani", "Segoe UI", "Microsoft YaHei", sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  --font-main: "Orbitron", "Rajdhani", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Noto Sans Mono", "Consolas", monospace;
   --bg-body: #050810;
   --bg-window: #080e1e;
   --bg-content: #080e1e;

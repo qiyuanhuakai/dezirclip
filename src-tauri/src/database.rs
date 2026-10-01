@@ -342,7 +342,13 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
         [],
     );
     let _ = conn.execute(
-        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.surface_opacity', '50')",
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.custom_background_opacity', '45')",
+        [],
+    );
+    // Absolute shell alpha (percent), not a multiplier on a per-theme base, so
+    // the same value reads identically in every theme and colour mode.
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.surface_opacity', '65')",
         [],
     );
     let _ = conn.execute(

@@ -452,6 +452,9 @@ const AppearanceSettingsGroup = ({
                                 }}
                                 style={buildRangeStyle(surfaceOpacity, 0, 100)}
                             />
+                            <div className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.5 }}>
+                                {t('opacity_composition_hint') || '底板为绝对不透明度：100% 完全遮住背景，0% 完全透明。同一数值在所有主题与深浅色下效果一致。背景图透过底板的可见程度 = 背景图片透明度 × (1 − 底板不透明度)。'}
+                            </div>
                         </div>
                     </>
                 )}

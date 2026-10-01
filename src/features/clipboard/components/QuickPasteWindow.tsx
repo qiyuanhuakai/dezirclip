@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useThemeSync } from "../../../shared/hooks/useThemeSync";
+import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import type { ClipboardEntry } from "../../../shared/types";
 import "./QuickPasteWindow.css";
 
@@ -15,7 +15,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
-  useThemeSync();
+  useBackendAppearance();
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return entries;

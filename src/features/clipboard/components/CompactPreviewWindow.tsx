@@ -12,6 +12,7 @@ import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
+import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 
@@ -63,6 +64,9 @@ const applyTheme = (payload: PreviewPayload) => {
 
 const CompactPreviewWindow = () => {
     const [payload, setPayload] = useState<PreviewPayload | null>(null);
+    // The hover card can be opened before the main window has ever rendered, so
+    // the appearance comes from the backend rather than from local state.
+    useBackendAppearance();
     const [snapshotFailed, setSnapshotFailed] = useState(false);
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
     const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
