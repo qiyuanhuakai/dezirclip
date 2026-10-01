@@ -47,10 +47,11 @@ body.hide-app-border #root {
   box-shadow: none !important;
 }
 
-:root.linux,
-body.linux {
-  background-color: var(--bg-window) !important;
-}
+/* Linux renders through the same layer stack as Windows: the wallpaper lives on
+   `body::before` at z-index -1, which paints *behind* the body background, and
+   `#root` carries the single shell surface. An extra body background here would
+   hide the wallpaper, double up the shell alpha, and force an opaque backdrop
+   under the region-select capture overlay — so neither element paints one. */
 :root.linux,
 body.linux,
 :root.linux #root,

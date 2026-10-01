@@ -81,7 +81,7 @@ export const useAppState = (): AppState => {
   const [idleDestroySeconds, setIdleDestroySeconds] = useState<number>(60);
   const [customBackground, setCustomBackground] = useState<string>("");
   const [customBackgroundOpacity, setCustomBackgroundOpacity] = useState(45);
-  const [surfaceOpacity, setSurfaceOpacity] = useState(50);
+  const [surfaceOpacity, setSurfaceOpacity] = useState(65);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);

@@ -1,8 +1,8 @@
 :root.theme-macos,
 body.theme-macos {
   --radius-window: 12px;
-  --font-main: "SF Pro Text", "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", "JetBrains Mono", "Consolas", monospace;
+  --font-main: "SF Pro Text", "SF Pro Display", "PingFang SC", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", "Noto Sans Mono", "Consolas", monospace;
   --bg-body: #eceff3;
   --bg-window: #f5f6f8;
   --bg-content: #f5f6f8;

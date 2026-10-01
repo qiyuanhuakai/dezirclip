@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { applyThemeClass, applyModeClass } from "../../../shared/lib/themeRuntime";
+import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import "./RegionSelectWindow.css";
 
 type Selection = {
@@ -54,16 +54,12 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
   const [selection, setSelection] = useState<Selection | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  // Apply theme from localStorage
+  // The capture overlay is usually opened straight from a hotkey, long before
+  // the main window has ever rendered, so theme and colour mode come from the
+  // backend rather than from the main window's local state.
+  useBackendAppearance();
+
   useEffect(() => {
-    const theme = localStorage.getItem("dezirclip_theme") || localStorage.getItem("tiez_theme") || "mica";
-    const colorMode = localStorage.getItem("dezirclip_color_mode") || localStorage.getItem("tiez_color_mode") || "light";
-    applyThemeClass(document.documentElement, document.body, theme);
-    applyModeClass(
-      document.documentElement,
-      document.body,
-      colorMode === "dark" ? "dark" : "light"
-    );
     document.body.classList.add("region-select");
   }, []);
 

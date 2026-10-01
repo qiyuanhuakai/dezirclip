@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyModeClass, applyThemeClass, ensureThemeCssLoaded, resolveThemeMode } from "../lib/themeRuntime";
+import { applyFontOverrides, applySurfaceOpacity } from "../lib/appearanceRuntime";
+import { readSystemIsDark } from "../lib/systemTheme";
 
 type PlatformInfo = {
   platform: string;
@@ -9,28 +11,6 @@ type PlatformInfo = {
   is_windows_11: boolean;
   is_linux: boolean;
 };
-
-const readNativeSystemIsDark = async () => {
-  try {
-    const mode = await invoke<string>("get_system_theme_mode");
-    if (mode === "dark") return true;
-    if (mode === "light") return false;
-  } catch {
-    // Fall through to Tauri/Web media detection.
-  }
-  return null;
-};
-
-const readWindowSystemIsDark = async () => {
-  try {
-    return (await getCurrentWindow().theme()) === "dark";
-  } catch {
-    return null;
-  }
-};
-
-const mediaSystemIsDark = () =>
-  !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
 interface UseSettingsApplyOptions {
   theme: string;
@@ -69,9 +49,6 @@ export const useSettingsApply = ({
       if (disposed) return;
       applyModeClass(root, body, mode);
     };
-
-    const readSystemIsDark = async () =>
-      (await readNativeSystemIsDark()) ?? (await readWindowSystemIsDark()) ?? mediaSystemIsDark();
 
     const applySystemMode = async () => {
       const isDark = await readSystemIsDark();
@@ -202,21 +179,11 @@ export const useSettingsApply = ({
     const root = document.documentElement;
     root.style.setProperty("--clipboard-item-font-size", `${clipboardItemFontSize}px`);
     root.style.setProperty("--clipboard-tag-font-size", `${clipboardTagFontSize}px`);
-    const scale = Math.min(1, Math.max(0, surfaceOpacity / 100));
-    root.style.setProperty("--surface-opacity-scale", scale.toString());
+    applySurfaceOpacity(surfaceOpacity);
   }, [clipboardItemFontSize, clipboardTagFontSize, surfaceOpacity, settingsLoaded]);
 
   useEffect(() => {
     if (!settingsLoaded) return;
-    const root = document.documentElement;
-    const applyFont = (cssVar: string, value: string) => {
-      if (value && value.trim()) {
-        root.style.setProperty(cssVar, value);
-      } else {
-        root.style.removeProperty(cssVar);
-      }
-    };
-    applyFont("--font-main", fontMain);
-    applyFont("--font-mono", fontMono);
+    applyFontOverrides(fontMain, fontMono);
   }, [fontMain, fontMono, settingsLoaded]);
 };

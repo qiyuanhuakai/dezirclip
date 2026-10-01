@@ -121,6 +121,7 @@ export const en = {
         background_size_error: "Image file is too large! Please choose an image smaller than 10MB.",
         background_opacity: "Background Opacity",
         surface_opacity: "Surface Opacity",
+        opacity_composition_hint: "Surface opacity is absolute: 100% fully hides the background, 0% is fully transparent, and the same value looks the same in every theme and colour mode. How much of the background image shows through ≈ background opacity × (1 − surface opacity).",
         error: "Error",
         notice: "Notice",
 

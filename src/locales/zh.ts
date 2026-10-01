@@ -119,6 +119,7 @@ export const zh = {
         background_size_error: "图片文件过大！请选择小于 10MB 的图片。",
         background_opacity: "背景图片透明度",
         surface_opacity: "界面底板透明度",
+        opacity_composition_hint: "底板为绝对不透明度：100% 完全遮住背景，0% 完全透明；同一数值在所有主题与深浅色下效果一致。背景图透过底板的可见程度 ≈ 背景图片透明度 × (1 − 底板不透明度)。",
         error: "错误",
         notice: "提示",
 

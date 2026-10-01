@@ -4,7 +4,7 @@ use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<()> {
     db_state
@@ -233,6 +233,25 @@ pub fn set_deduplication(
         .set("app.deduplicate", &enabled.to_string());
 }
 
+/// Settings that any webview re-renders itself from. Every window is a separate
+/// webview with a separate document, so none of them can observe what another
+/// one applied in memory; the database is the only shared source of truth.
+///
+/// Theme and colour mode are deliberately absent: `set_theme` broadcasts those on
+/// `theme-changed` with a payload, so a theme switch needs no database read.
+fn is_appearance_override_key(key: &str) -> bool {
+    matches!(
+        key,
+        "app.font_main"
+            | "app.font_mono"
+            | "app.surface_opacity"
+            | "app.clipboard_item_font_size"
+            | "app.clipboard_tag_font_size"
+            | "app.show_app_border"
+            | "app.compact_mode"
+    )
+}
+
 #[tauri::command]
 pub fn save_setting(
     app_handle: AppHandle,
@@ -243,6 +262,9 @@ pub fn save_setting(
 ) -> AppResult<()> {
     persist_setting_with_legacy(&db_state, &key, &value)?;
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
+    if is_appearance_override_key(&key) {
+        let _ = app_handle.emit("appearance-changed", key);
+    }
     Ok(())
 }
 
@@ -547,4 +569,43 @@ pub fn set_idle_destroy_seconds(
         .settings_repo
         .set("app.idle_destroy_seconds", &clamped.to_string())
         .map_err(AppError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appearance_keys_are_broadcast() {
+        assert!(is_appearance_override_key("app.font_main"));
+        assert!(is_appearance_override_key("app.font_mono"));
+        assert!(is_appearance_override_key("app.surface_opacity"));
+        assert!(is_appearance_override_key("app.clipboard_item_font_size"));
+        assert!(is_appearance_override_key("app.clipboard_tag_font_size"));
+        assert!(is_appearance_override_key("app.show_app_border"));
+        assert!(is_appearance_override_key("app.compact_mode"));
+    }
+
+    #[test]
+    fn theme_keys_are_not_broadcast_here() {
+        // `set_theme` already broadcasts these on `theme-changed` with a payload.
+        // Emitting them again here would make every window do a needless database
+        // read on each theme switch.
+        assert!(!is_appearance_override_key("app.theme"));
+        assert!(!is_appearance_override_key("app.color_mode"));
+    }
+
+    #[test]
+    fn unrelated_keys_are_not_broadcast() {
+        // Waking every auxiliary webview on a hotkey or storage-limit change
+        // would cost a settings reload per keystroke for no visual effect.
+        assert!(!is_appearance_override_key("app.hotkey"));
+        assert!(!is_appearance_override_key("app.custom_background_opacity"));
+    }
+
+    #[test]
+    fn similar_prefixes_do_not_match() {
+        assert!(!is_appearance_override_key("app.font_main_backup"));
+        assert!(!is_appearance_override_key("app.surface_opacity_scale"));
+    }
 }

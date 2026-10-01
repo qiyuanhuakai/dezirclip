@@ -119,6 +119,7 @@ export const tw = {
         background_size_error: "圖片檔案過大！請選擇小於 10MB 的圖片。",
         background_opacity: "背景圖片透明度",
         surface_opacity: "介面底板透明度",
+        opacity_composition_hint: "底板為絕對不透明度：100% 完全遮住背景，0% 完全透明；同一數值在所有主題與深淺色下效果一致。背景圖透過底板的可見程度 ≈ 背景圖片透明度 × (1 − 底板不透明度)。",
         error: "錯誤",
         notice: "提示",
 
