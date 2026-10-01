@@ -126,7 +126,11 @@ jobs:
       - name: Test Tauri crate
         if: matrix.can_test
         working-directory: src-tauri
-        run: cargo test
+        # --all-targets so `examples/` is covered too. `cargo test` only builds
+        # examples, it does not run their tests, and backup-inspect moved out of
+        # src/bin (to keep it out of the installers) into examples/ — without
+        # this flag its 15 tests silently stop running.
+        run: cargo test --all-targets
 
       - name: Build Tauri crate
         working-directory: src-tauri
