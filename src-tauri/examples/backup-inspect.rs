@@ -3,9 +3,9 @@
 //! Companion to `services/backup.rs`. Use for cross-platform verification:
 //! decrypt a file produced on any OS without needing the Tauri runtime.
 //!
-//! Build: `cargo build --bin backup-inspect`
-//! Run:   `target/debug/backup-inspect <file> [passphrase]`
-//!        `target/debug/backup-inspect --schema <file>`
+//! Build: `cargo build --example backup-inspect`
+//! Run:   `cargo run --example backup-inspect -- <file> [passphrase]`
+//!        `cargo run --example backup-inspect -- --schema <file>`
 //!
 //! Exit codes:
 //!     0 — success
@@ -19,13 +19,13 @@
 //!
 //! ## Build env note
 //!
-//! This bin target is part of the `dezirclip` package, so it shares
+//! This example target is part of the `dezirclip` package, so it shares
 //! Cargo.toml deps. Building it still requires the full Tauri build env
 //! (xcap + libpipewire-0.3-dev on Linux). For a build that does NOT need
 //! those, see `backup-e2e/` (the standalone sub-crate that copies
 //! `services/backup.rs` verbatim and links only the pure-Rust deps).
 
-#[path = "../services/backup.rs"]
+#[path = "../src/services/backup.rs"]
 #[allow(dead_code)]
 mod backup;
 
