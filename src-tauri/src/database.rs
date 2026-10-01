@@ -48,17 +48,31 @@ pub fn calc_text_hash(content: &str) -> u64 {
 }
 
 pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
-    let parts: Vec<&str> = base64_data.splitn(2, ',').collect();
-    let payload = if parts.len() == 2 {
-        parts[1]
-    } else {
-        base64_data
+    // `split_once` gives the same payload as `splitn(2, ',').nth(1)` without
+    // allocating a Vec for the two halves.
+    let payload = match base64_data.split_once(',') {
+        Some((_, rest)) => rest,
+        None => base64_data,
     };
-    let payload_clean = payload.replace("\r", "").replace("\n", "");
+
+    // The payload of a screenshot data URL runs into megabytes. Only allocate a
+    // cleaned copy when there is whitespace to strip at all, and strip it in one
+    // pass instead of `replace("\r", "").replace("\n", "")`, which made two
+    // full-size copies on every lookup.
+    let cleaned;
+    let payload = if payload.contains(['\r', '\n']) {
+        cleaned = payload
+            .chars()
+            .filter(|c| *c != '\r' && *c != '\n')
+            .collect::<String>();
+        cleaned.as_str()
+    } else {
+        payload
+    };
 
     use base64::Engine;
     let decoded = base64::engine::general_purpose::STANDARD
-        .decode(payload_clean.trim())
+        .decode(payload.trim())
         .ok()?;
 
     let img = image::load_from_memory(&decoded).ok()?;
@@ -396,8 +410,7 @@ mod tests {
         ClipboardRepository, SqliteClipboardRepository,
     };
     use crate::infrastructure::repository::settings_repo::{
-        SettingsRepository, SqliteSettingsRepository,
-    };
+        SettingsRepository, SqliteSettingsRepository,    };
 
     // 辅助函数：创建一个内存中的临时测试数据库
     fn setup_test_db() -> Connection {
@@ -492,5 +505,48 @@ mod tests {
         // 测试设置读取
         let val = repo.get("test_key").unwrap();
         assert_eq!(val, Some("test_value".to_string()));
+    }
+
+    // 1x1 opaque PNG.
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90,
+        0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8,
+        0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xDD, 0x8D, 0xB0, 0x00, 0x00, 0x00,
+        0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    fn tiny_png_data_url() -> String {
+        use base64::Engine;
+        format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(TINY_PNG)
+        )
+    }
+
+    // The dedup pipeline hashes the image once and reuses that hash for a second
+    // lookup whose input differs only by trimmed / CRLF-folded whitespace. If
+    // the whitespace handling ever drifts, the two lookups would disagree and
+    // the app would stop recognising its own duplicates.
+    #[test]
+    fn image_hash_ignores_surrounding_and_folded_whitespace() {
+        let url = tiny_png_data_url();
+        let base = calc_image_hash(&url).expect("tiny png should hash");
+
+        let mut noisy = String::new();
+        noisy.push_str("  \r\n");
+        for chunk in url.as_bytes().chunks(24) {
+            noisy.push_str(std::str::from_utf8(chunk).unwrap());
+            noisy.push_str("\r\n");
+        }
+        noisy.push_str("\n  ");
+
+        assert_eq!(calc_image_hash(&noisy), Some(base));
+    }
+
+    #[test]
+    fn image_hash_rejects_non_image_payloads() {
+        assert_eq!(calc_image_hash("data:image/png;base64,bm90IGFuIGltYWdl"), None);
+        assert_eq!(calc_image_hash(""), None);
     }
 }
