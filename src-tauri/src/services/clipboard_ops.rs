@@ -728,7 +728,7 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
             crate::infrastructure::linux_api::clipboard::ImageData {
                 width: width as usize,
                 height: height as usize,
-                bytes: raw_bytes,
+                bytes: rgba.into_raw(),
             },
         )
         .map_err(AppError::from)?;
