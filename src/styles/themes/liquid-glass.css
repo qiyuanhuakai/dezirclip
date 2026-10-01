@@ -490,6 +490,23 @@ body.has-custom-bg.theme-liquid-glass::before {
   opacity: var(--custom-bg-opacity, 0.45);
 }
 
+/* A custom background image replaces the desktop as the thing seen through the
+   glass, and the user picked it in order to look at it. The frosted blur exists
+   to fake refraction of the desktop wallpaper; this theme is the only one that
+   blurs the shell itself, and at 40px on a 352px window that turns any image
+   into a flat colour block. So while a custom background is active the whole
+   stack drops the blur, shell and layers alike — mica and acrylic only ever
+   blur modal scrims, which is why their wallpapers stay crisp.
+   Layer alphas are deliberately untouched: how much of the image shows through
+   is the 界面底板透明度 slider's job, and readability comes back by raising it. */
+body.has-custom-bg.theme-liquid-glass #root,
+body.has-custom-bg.theme-liquid-glass #root *,
+body.has-custom-bg.theme-liquid-glass #root *::before,
+body.has-custom-bg.theme-liquid-glass #root *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 /* ============================================================
    3. #root shell — the main glass surface with texture overlay
    ============================================================ */
