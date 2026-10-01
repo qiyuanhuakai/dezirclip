@@ -71,3 +71,9 @@ pub static IS_DESTROYED: AtomicBool = AtomicBool::new(false);
 /// A recreate request was queued while a destroy was in-flight.
 /// The destroy path consumes this flag and immediately recreates after tearing down.
 pub static RECREATE_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Timestamp (ms since UNIX_EPOCH) when the main window entered the `Closing`
+/// lifecycle state. `0` means "not closing".
+/// Bounded by `idle_destroyer::CLOSING_WATCHDOG_MS` so a teardown the runtime
+/// never confirms cannot wedge the lifecycle in `Closing` forever.
+pub static CLOSING_SINCE_MS: AtomicU64 = AtomicU64::new(0);
