@@ -27,6 +27,13 @@ vi.mock("../../../shared/lib/themeRuntime", () => ({
   applyModeClass: vi.fn(),
 }));
 
+// Appearance sync is orthogonal to the drag geometry under test here, and it
+// issues its own `invoke` calls on mount that would otherwise leak into the
+// command assertions below.
+vi.mock("../../../shared/hooks/useBackendAppearance", () => ({
+  useBackendAppearance: vi.fn(),
+}));
+
 describe("RegionSelectWindow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -171,7 +178,9 @@ describe("RegionSelectWindow", () => {
       fireEvent.mouseUp(overlay);
     });
 
-    expect(mockInvoke).not.toHaveBeenCalled();
+    // Assert on the capture command specifically rather than on `invoke` as a
+    // whole: a drag below the minimum size must not trigger a screenshot.
+    expect(mockInvoke).not.toHaveBeenCalledWith("capture_region", expect.anything());
     expect(onSelect).not.toHaveBeenCalled();
   });
 
