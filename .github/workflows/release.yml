@@ -66,6 +66,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check src-tauri/src/bin layout
+        run: node scripts/check-tauri-bin-dir.mjs
+
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -247,6 +250,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Check src-tauri/src/bin layout
+        run: node scripts/check-tauri-bin-dir.mjs
 
       - name: Install Linux system dependencies
         run: |
