@@ -490,17 +490,10 @@ fn read_image_file(file_path: &std::path::Path, new_content: &mut String) -> boo
                 return true;
             }
 
-            if let Ok(img) = image::load_from_memory(&buffer) {
-                use std::io::Cursor;
-                let mut bytes: Vec<u8> = Vec::new();
-                if img
-                    .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
-                    .is_ok()
-                {
-                    let b64 = general_purpose::STANDARD.encode(&bytes);
-                    *new_content = format!("data:image/png;base64,{}", b64);
-                    return true;
-                }
+            if let Ok(png) = crate::services::image_png::as_png_bytes(&buffer) {
+                let b64 = general_purpose::STANDARD.encode(&png);
+                *new_content = format!("data:image/png;base64,{}", b64);
+                return true;
             }
         }
     }
