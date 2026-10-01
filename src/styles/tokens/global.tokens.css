@@ -46,6 +46,20 @@
      is declared, so pairing the two is what makes a theme's tint take effect. */
   --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
 
+  /* Layer factor for the surfaces stacked ABOVE the shell — content, toolbar,
+     panels, cards, dialogs. Those layers used to multiply by the same slider,
+     and they have to keep doing so: with fixed design alpha the shell could go
+     to 0 while everything above it stayed opaque, which left a custom
+     background image visible only in the margin around an opaque content area.
+     Scaling the stack by this factor makes the window fade as one surface —
+     0 clears the way to the background image, and 100% is already covered by
+     the opaque shell on its own.
+     Declared on `:root` because `--surface-opacity` is written inline on
+     `document.documentElement`: a custom property resolves its `var()`
+     references where it is declared, so both have to sit on the same element. */
+  --surface-layer-neutral: 0.65;
+  --surface-layer-scale: calc(var(--surface-opacity) / var(--surface-layer-neutral));
+
   --surface-overlay-bg: rgba(0, 0, 0, 0.2);
   --surface-overlay-blur: 4px;
   --surface-dialog-bg: rgba(255, 255, 255, 0.8);

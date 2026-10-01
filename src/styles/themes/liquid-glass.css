@@ -15,14 +15,14 @@ body.theme-liquid-glass {
   --font-main: "SF Pro Text", "SF Pro Display", "PingFang SC", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
   --font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", "Noto Sans Mono", "Consolas", monospace;
 
-  --bg-body: rgba(245, 248, 255, 0.85);
-  --bg-window: rgba(255, 255, 255, 0.82);
-  --bg-content: rgba(255, 255, 255, 0.70);
-  --bg-toolbar: rgba(255, 255, 255, 0.85);
-  --bg-panel: rgba(255, 255, 255, 0.88);
-  --bg-input: rgba(255, 255, 255, 0.92);
-  --bg-element: rgba(255, 255, 255, 0.78);
-  --bg-button: rgba(255, 255, 255, 0.85);
+  --bg-body: rgba(245, 248, 255, calc(0.85 * var(--surface-layer-scale, 1)));
+  --bg-window: rgba(255, 255, 255, calc(0.82 * var(--surface-layer-scale, 1)));
+  --bg-content: rgba(255, 255, 255, calc(0.70 * var(--surface-layer-scale, 1)));
+  --bg-toolbar: rgba(255, 255, 255, calc(0.85 * var(--surface-layer-scale, 1)));
+  --bg-panel: rgba(255, 255, 255, calc(0.88 * var(--surface-layer-scale, 1)));
+  --bg-input: rgba(255, 255, 255, calc(0.92 * var(--surface-layer-scale, 1)));
+  --bg-element: rgba(255, 255, 255, calc(0.78 * var(--surface-layer-scale, 1)));
+  --bg-button: rgba(255, 255, 255, calc(0.85 * var(--surface-layer-scale, 1)));
 
   /* Text */
   --text-primary: #1d1d1f;
@@ -40,19 +40,22 @@ body.theme-liquid-glass {
   /* Shadows — blue-tinted, diffused */
   --shadow-color: rgba(20, 30, 60, 0.08);
 
-  /* Glass surfaces — layered depth (light mode). Only the shell follows the
-     user-controlled `--surface-opacity`; the layers above it keep their design
-     alpha so the slider means one thing: how opaque the outer window surface
-     is. */
+  /* Glass surfaces — layered depth (light mode). The shell is the absolute
+     anchor (`--surface-opacity`); every layer above it multiplies by
+     `--surface-layer-scale` so the whole stack fades as one surface. Pinning
+     them to fixed design alpha instead let the shell reach 0 while the content
+     area stayed opaque, which hid a custom background image behind a milky
+     panel. At the neutral 0.65 the factors are exactly 1, so the design below
+     is what you see out of the box. */
   --surface-shell-rgb: 255 255 255;
   --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
   --glass-shell-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
-  --glass-header-bg: rgba(255, 255, 255, 0.40);
-  --glass-modal-bg: rgba(255, 255, 255, 0.48);
-  --glass-card-bg: rgba(255, 255, 255, 0.32);
-  --glass-sidebar-bg: rgba(255, 255, 255, 0.40);
-  --glass-toolbar-bg: rgba(255, 255, 255, 0.44);
-  --glass-dialog-bg: rgba(255, 255, 255, 0.54);
+  --glass-header-bg: rgba(255, 255, 255, calc(0.40 * var(--surface-layer-scale, 1)));
+  --glass-modal-bg: rgba(255, 255, 255, calc(0.48 * var(--surface-layer-scale, 1)));
+  --glass-card-bg: rgba(255, 255, 255, calc(0.32 * var(--surface-layer-scale, 1)));
+  --glass-sidebar-bg: rgba(255, 255, 255, calc(0.40 * var(--surface-layer-scale, 1)));
+  --glass-toolbar-bg: rgba(255, 255, 255, calc(0.44 * var(--surface-layer-scale, 1)));
+  --glass-dialog-bg: rgba(255, 255, 255, calc(0.54 * var(--surface-layer-scale, 1)));
 
   /* Glass edge highlights — light mode */
   --glass-edge-top: rgba(255, 255, 255, 0.50);
@@ -118,24 +121,24 @@ body.theme-liquid-glass {
   --lg-tag-chip-text: #ffffff;
 
   /* Settings group — light mode */
-  --lg-settings-bg: rgba(255, 255, 255, 0.50);
+  --lg-settings-bg: rgba(255, 255, 255, calc(0.50 * var(--surface-layer-scale, 1)));
   --lg-settings-border: rgba(60, 60, 67, 0.10);
   --lg-settings-shadow:
     0 2px 10px rgba(20, 30, 60, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.40);
-  --lg-settings-header-bg: rgba(255, 255, 255, 0.45);
+  --lg-settings-header-bg: rgba(255, 255, 255, calc(0.45 * var(--surface-layer-scale, 1)));
   --lg-settings-header-border: rgba(60, 60, 67, 0.08);
-  --lg-settings-open-header-bg: rgba(255, 255, 255, 0.36);
+  --lg-settings-open-header-bg: rgba(255, 255, 255, calc(0.36 * var(--surface-layer-scale, 1)));
   --lg-settings-open-header-border: rgba(60, 60, 67, 0.08);
 
   /* Data panel — light mode */
   --lg-data-border: rgba(60, 60, 67, 0.08);
-  --lg-data-bg: rgba(255, 255, 255, 0.28);
+  --lg-data-bg: rgba(255, 255, 255, calc(0.28 * var(--surface-layer-scale, 1)));
   --lg-data-shadow: inset 0 1px 2px rgba(20, 30, 60, 0.04);
 
   /* Input — light mode */
   --lg-input-border: rgba(60, 60, 67, 0.12);
-  --lg-input-bg: rgba(255, 255, 255, 0.55);
+  --lg-input-bg: rgba(255, 255, 255, calc(0.55 * var(--surface-layer-scale, 1)));
   --lg-input-shadow:
     inset 0 1px 2px rgba(20, 30, 60, 0.04),
     inset 0 1px 0 rgba(255, 255, 255, 0.30);
@@ -161,7 +164,7 @@ body.theme-liquid-glass {
   --lg-history-action-btn-active-shadow: none;
 
   /* Dialog / Modal — light mode */
-  --lg-dialog-bg: rgba(255, 255, 255, 0.52);
+  --lg-dialog-bg: rgba(255, 255, 255, calc(0.52 * var(--surface-layer-scale, 1)));
   --lg-dialog-border: rgba(60, 60, 67, 0.12);
   --lg-dialog-shadow:
     0 16px 48px rgba(20, 30, 60, 0.12),
@@ -182,16 +185,16 @@ body.theme-liquid-glass {
   --lg-tag-item-active-bg: rgba(10, 132, 255, 0.10);
   --lg-tag-item-active-border: rgba(10, 132, 255, 0.36);
   --lg-tag-item-hover-bg: rgba(0, 0, 0, 0.03);
-  --lg-tag-card-bg: rgba(255, 255, 255, 0.32);
+  --lg-tag-card-bg: rgba(255, 255, 255, calc(0.32 * var(--surface-layer-scale, 1)));
   --lg-tag-card-border: rgba(60, 60, 67, 0.10);
   --lg-tag-card-shadow:
     0 2px 10px rgba(20, 30, 60, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  --lg-tag-card-hover-bg: rgba(255, 255, 255, 0.50);
+  --lg-tag-card-hover-bg: rgba(255, 255, 255, calc(0.50 * var(--surface-layer-scale, 1)));
   --lg-tag-card-hover-shadow:
     0 4px 14px rgba(20, 30, 60, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.40);
-  --lg-tag-toolbar-bg: rgba(255, 255, 255, 0.42);
+  --lg-tag-toolbar-bg: rgba(255, 255, 255, calc(0.42 * var(--surface-layer-scale, 1)));
   --lg-tag-toolbar-border: rgba(60, 60, 67, 0.08);
   --lg-tag-sort-border: rgba(60, 60, 67, 0.06);
   --lg-tag-btn-bg: rgba(255, 255, 255, 0.38);
@@ -212,7 +215,7 @@ body.theme-liquid-glass {
   --lg-select-option-checked-text: #ffffff;
 
   /* ThemedSelect (react-select) — light mode: glass pill control */
-  --select-control-bg: rgba(255, 255, 255, 0.55);
+  --select-control-bg: rgba(255, 255, 255, calc(0.55 * var(--surface-layer-scale, 1)));
   --select-control-border: 1px solid rgba(60, 60, 67, 0.12);
   --select-control-radius: 10px;
   --select-control-shadow:
@@ -223,7 +226,7 @@ body.theme-liquid-glass {
   --select-single-value-color: var(--text-primary);
   --select-placeholder-color: rgba(60, 60, 67, 0.5);
   --select-indicator-color: #636366;
-  --select-menu-bg: rgba(255, 255, 255, 0.62);
+  --select-menu-bg: rgba(255, 255, 255, calc(0.62 * var(--surface-layer-scale, 1)));
   --select-menu-border: 1px solid rgba(60, 60, 67, 0.14);
   --select-menu-shadow:
     0 8px 32px rgba(20, 30, 60, 0.18),
@@ -241,14 +244,14 @@ body.theme-liquid-glass {
 :root.dark-mode.theme-liquid-glass,
 body.dark-mode.theme-liquid-glass {
   /* Surfaces — dark mode (true glass: alpha 0.15–0.55) */
-  --bg-body: rgba(15, 18, 28, 0.95);
-  --bg-window: rgba(25, 28, 38, 0.92);
-  --bg-content: rgba(25, 28, 38, 0.78);
-  --bg-toolbar: rgba(30, 33, 42, 0.92);
-  --bg-panel: rgba(35, 38, 48, 0.95);
-  --bg-input: rgba(45, 48, 58, 0.98);
-  --bg-element: rgba(30, 33, 42, 0.88);
-  --bg-button: rgba(40, 43, 54, 0.92);
+  --bg-body: rgba(15, 18, 28, calc(0.95 * var(--surface-layer-scale, 1)));
+  --bg-window: rgba(25, 28, 38, calc(0.92 * var(--surface-layer-scale, 1)));
+  --bg-content: rgba(25, 28, 38, calc(0.78 * var(--surface-layer-scale, 1)));
+  --bg-toolbar: rgba(30, 33, 42, calc(0.92 * var(--surface-layer-scale, 1)));
+  --bg-panel: rgba(35, 38, 48, calc(0.95 * var(--surface-layer-scale, 1)));
+  --bg-input: rgba(45, 48, 58, calc(0.98 * var(--surface-layer-scale, 1)));
+  --bg-element: rgba(30, 33, 42, calc(0.88 * var(--surface-layer-scale, 1)));
+  --bg-button: rgba(40, 43, 54, calc(0.92 * var(--surface-layer-scale, 1)));
 
   /* Text — dark */
   --text-primary: #f5f5f7;
@@ -266,17 +269,18 @@ body.dark-mode.theme-liquid-glass {
   /* Shadows — dark */
   --shadow-color: rgba(0, 0, 0, 0.25);
 
-  /* Glass surfaces — dark (layered depth). Shell follows the user-controlled
-     `--surface-opacity`, matching every other theme. */
+  /* Glass surfaces — dark (layered depth). Same contract as light mode above:
+     the shell is the absolute anchor, the layers above it scale with
+     `--surface-layer-scale`. */
   --surface-shell-rgb: 25 28 38;
   --surface-shell-root-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
   --glass-shell-bg: rgb(var(--surface-shell-rgb) / var(--surface-opacity));
-  --glass-header-bg: rgba(30, 33, 42, 0.62);
-  --glass-modal-bg: rgba(35, 38, 48, 0.72);
-  --glass-card-bg: rgba(30, 33, 42, 0.55);
-  --glass-sidebar-bg: rgba(28, 31, 40, 0.62);
-  --glass-toolbar-bg: rgba(32, 35, 44, 0.65);
-  --glass-dialog-bg: rgba(38, 41, 52, 0.78);
+  --glass-header-bg: rgba(30, 33, 42, calc(0.62 * var(--surface-layer-scale, 1)));
+  --glass-modal-bg: rgba(35, 38, 48, calc(0.72 * var(--surface-layer-scale, 1)));
+  --glass-card-bg: rgba(30, 33, 42, calc(0.55 * var(--surface-layer-scale, 1)));
+  --glass-sidebar-bg: rgba(28, 31, 40, calc(0.62 * var(--surface-layer-scale, 1)));
+  --glass-toolbar-bg: rgba(32, 35, 44, calc(0.65 * var(--surface-layer-scale, 1)));
+  --glass-dialog-bg: rgba(38, 41, 52, calc(0.78 * var(--surface-layer-scale, 1)));
 
   /* Glass edge highlights — dark mode */
   --glass-edge-top: rgba(255, 255, 255, 0.08);
@@ -342,24 +346,24 @@ body.dark-mode.theme-liquid-glass {
   --lg-tag-chip-text: #ffffff;
 
   /* Settings group — dark */
-  --lg-settings-bg: rgba(30, 33, 42, 0.78);
+  --lg-settings-bg: rgba(30, 33, 42, calc(0.78 * var(--surface-layer-scale, 1)));
   --lg-settings-border: rgba(255, 255, 255, 0.06);
   --lg-settings-shadow:
     0 2px 10px rgba(0, 0, 0, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --lg-settings-header-bg: rgba(35, 38, 48, 0.50);
+  --lg-settings-header-bg: rgba(35, 38, 48, calc(0.50 * var(--surface-layer-scale, 1)));
   --lg-settings-header-border: rgba(255, 255, 255, 0.05);
-  --lg-settings-open-header-bg: rgba(35, 38, 48, 0.42);
+  --lg-settings-open-header-bg: rgba(35, 38, 48, calc(0.42 * var(--surface-layer-scale, 1)));
   --lg-settings-open-header-border: rgba(255, 255, 255, 0.06);
 
   /* Data panel — dark */
   --lg-data-border: rgba(255, 255, 255, 0.06);
-  --lg-data-bg: rgba(25, 28, 38, 0.78);
+  --lg-data-bg: rgba(25, 28, 38, calc(0.78 * var(--surface-layer-scale, 1)));
   --lg-data-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
 
   /* Input — dark */
   --lg-input-border: rgba(255, 255, 255, 0.08);
-  --lg-input-bg: rgba(45, 48, 58, 0.88);
+  --lg-input-bg: rgba(45, 48, 58, calc(0.88 * var(--surface-layer-scale, 1)));
   --lg-input-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -385,7 +389,7 @@ body.dark-mode.theme-liquid-glass {
   --lg-history-action-btn-active-shadow: none;
 
   /* Dialog / Modal — dark */
-  --lg-dialog-bg: rgba(38, 41, 52, 0.78);
+  --lg-dialog-bg: rgba(38, 41, 52, calc(0.78 * var(--surface-layer-scale, 1)));
   --lg-dialog-border: rgba(255, 255, 255, 0.08);
   --lg-dialog-shadow:
     0 16px 48px rgba(0, 0, 0, 0.38),
@@ -406,16 +410,16 @@ body.dark-mode.theme-liquid-glass {
   --lg-tag-item-active-bg: rgba(10, 132, 255, 0.14);
   --lg-tag-item-active-border: rgba(10, 132, 255, 0.38);
   --lg-tag-item-hover-bg: rgba(255, 255, 255, 0.04);
-  --lg-tag-card-bg: rgba(32, 35, 44, 0.55);
+  --lg-tag-card-bg: rgba(32, 35, 44, calc(0.55 * var(--surface-layer-scale, 1)));
   --lg-tag-card-border: rgba(255, 255, 255, 0.06);
   --lg-tag-card-shadow:
     0 2px 10px rgba(0, 0, 0, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --lg-tag-card-hover-bg: rgba(45, 48, 58, 0.65);
+  --lg-tag-card-hover-bg: rgba(45, 48, 58, calc(0.65 * var(--surface-layer-scale, 1)));
   --lg-tag-card-hover-shadow:
     0 4px 14px rgba(0, 0, 0, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --lg-tag-toolbar-bg: rgba(32, 35, 44, 0.62);
+  --lg-tag-toolbar-bg: rgba(32, 35, 44, calc(0.62 * var(--surface-layer-scale, 1)));
   --lg-tag-toolbar-border: rgba(255, 255, 255, 0.06);
   --lg-tag-sort-border: rgba(255, 255, 255, 0.05);
   --lg-tag-btn-bg: rgba(50, 53, 63, 0.42);
@@ -436,7 +440,7 @@ body.dark-mode.theme-liquid-glass {
   --lg-select-option-checked-text: #ffffff;
 
   /* ThemedSelect (react-select) — dark mode: glass pill control */
-  --select-control-bg: rgba(45, 48, 58, 0.72);
+  --select-control-bg: rgba(45, 48, 58, calc(0.72 * var(--surface-layer-scale, 1)));
   --select-control-border: 1px solid rgba(255, 255, 255, 0.08);
   --select-control-radius: 10px;
   --select-control-shadow:
@@ -447,7 +451,7 @@ body.dark-mode.theme-liquid-glass {
   --select-single-value-color: var(--text-primary);
   --select-placeholder-color: rgba(245, 245, 247, 0.55);
   --select-indicator-color: #a1a1a6;
-  --select-menu-bg: rgba(38, 41, 52, 0.82);
+  --select-menu-bg: rgba(38, 41, 52, calc(0.82 * var(--surface-layer-scale, 1)));
   --select-menu-border: 1px solid rgba(255, 255, 255, 0.10);
   --select-menu-shadow:
     0 8px 32px rgba(0, 0, 0, 0.40),
