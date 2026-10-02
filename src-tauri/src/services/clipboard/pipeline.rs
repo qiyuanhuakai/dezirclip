@@ -184,8 +184,14 @@ impl PipelineStage for TransformationStage {
         let entry = ctx.entry.as_mut().unwrap();
         let settings = ctx.app_handle.state::<SettingsState>();
 
-        // Normalization (already partially done but let's be thorough)
-        entry.content = entry.content.trim().replace("\r\n", "\n");
+        // Normalization (already partially done but let's be thorough).
+        // Only rebuild the string when there is actually something to change:
+        // this runs for every content type, and an image capture carries a
+        // multi-megabyte data URL that is already trimmed and LF-only.
+        let trimmed = entry.content.trim();
+        if trimmed.len() != entry.content.len() || trimmed.contains("\r\n") {
+            entry.content = trimmed.replace("\r\n", "\n");
+        }
 
         // Sensitive Info
         let protect_kinds = settings.privacy_protection_kinds.lock().unwrap().clone();
@@ -253,12 +259,13 @@ impl ValidationStage {
             )
         };
 
-        let normalized_content = content.trim().replace("\r\n", "\n");
-        let normalized_html = |html: &str| html.trim().replace("\r\n", "\n");
+        let normalized_content = crate::database::normalize_text(&content);
         let htmls_equivalent = |a: Option<&str>, b: Option<&str>| -> bool {
             match (a, b) {
                 (None, None) => true,
-                (Some(left), Some(right)) => normalized_html(left) == normalized_html(right),
+                (Some(left), Some(right)) => {
+                    crate::database::normalize_text(left) == crate::database::normalize_text(right)
+                }
                 _ => false,
             }
         };
@@ -330,9 +337,8 @@ impl ValidationStage {
         {
             let session = session_history.0.lock().unwrap();
             let entry = ctx.entry.as_ref().expect("entry exists");
-            let normalized_entry_content = entry.content.trim().replace("\r\n", "\n");
+            let normalized_entry_content = crate::database::normalize_text(&entry.content);
             for item in session.iter() {
-                let item_normalized = item.content.trim().replace("\r\n", "\n");
                 let html_match = if entry.content_type == "rich_text"
                     && item.content_type == "rich_text"
                 {
@@ -340,8 +346,13 @@ impl ValidationStage {
                 } else {
                     true
                 };
+                // The exact comparison answers almost every item, and only the
+                // remainder needs the CRLF-folded form. Normalising first meant
+                // copying every remembered item's full content once per capture —
+                // with a full 500-item session that is 500 copies of every
+                // payload, for a comparison the first term already decides.
                 let match_found = (item.content == entry.content
-                    || item_normalized == normalized_entry_content)
+                    || crate::database::normalize_text(&item.content) == normalized_entry_content)
                     && html_match;
                 if match_found {
                     removed_ids.push(item.id);

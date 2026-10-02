@@ -1,6 +1,7 @@
 use rusqlite::{Connection, Result};
 
 use base64::Engine;
+use std::borrow::Cow;
 
 pub use crate::infrastructure::encryption::{self, ENCRYPT_PREFIX};
 
@@ -34,16 +35,32 @@ pub fn is_text_type(content_type: &str) -> bool {
     matches!(content_type, "text" | "code" | "url" | "rich_text")
 }
 
-fn normalize_text(content: &str) -> String {
-    content.trim().replace("\r\n", "\n")
+/// The clipboard treats `\r\n` and `\n` as the same content everywhere it
+/// compares or hashes text, so every capture and every paste normalises before
+/// doing so. `str::replace` always allocates, and it was doing that on the whole
+/// payload — on a 10 MB text entry that is a full copy per event, and the
+/// session dedup scan repeats it once per remembered item. Normalised clipboard
+/// text is almost never CRLF, so hand back a borrow in that case and only
+/// allocate when there is genuinely a `\r\n` to fold.
+pub fn fold_crlf(content: &str) -> Cow<'_, str> {
+    if content.contains("\r\n") {
+        Cow::Owned(content.replace("\r\n", "\n"))
+    } else {
+        Cow::Borrowed(content)
+    }
+}
+
+/// `content` trimmed and CRLF-folded, matching what the history comparison has
+/// always treated as equal.
+pub fn normalize_text(content: &str) -> Cow<'_, str> {
+    fold_crlf(content.trim())
 }
 
 pub fn calc_text_hash(content: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let normalized = normalize_text(content);
-    let mut hasher = DefaultHasher::new();
-    normalized.hash(&mut hasher);
+    let mut hasher = DefaultHasher::new();    normalized.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -618,5 +635,57 @@ mod tests {
         ));
 
         assert_ne!(thumbnail_hash(&reference), thumbnail_hash(&recolored));
+    }
+
+    // The borrow arm is the whole point: normalised clipboard text is normally
+    // LF already, and copying it anyway is what this change removes. A silent
+    // switch back to always-allocating would still pass every equality test
+    // below, so the allocation itself has to be asserted.
+    #[test]
+    fn fold_crlf_borrows_when_there_is_nothing_to_fold() {
+        assert!(matches!(fold_crlf("plain lf text"), Cow::Borrowed(_)));
+        assert!(matches!(fold_crlf(""), Cow::Borrowed(_)));
+        assert!(matches!(fold_crlf("lone \r carriage"), Cow::Borrowed(_)));
+        assert!(matches!(fold_crlf("windows\r\nline\r\nend"), Cow::Owned(_)));
+    }
+
+    // Every consumer compares or hashes this value, so it has to match the
+    // `trim().replace("\r\n", "\n")` it replaced, character for character.
+    #[test]
+    fn normalize_text_matches_the_string_it_replaced() {
+        let reference = |s: &str| s.trim().replace("\r\n", "\n");
+
+        for input in [
+            "",
+            "   ",
+            "plain",
+            "  padded  ",
+            "a\r\nb",
+            "a\r\nb\nc",
+            "\r\nleading crlf",
+            "trailing crlf\r\n",
+            "mixed \r\n and \n and \r",
+            "\u{4f60}\u{597d}\r\n\u{4e16}\u{754c}",
+            "emoji \u{1f389}\r\ntail",
+        ] {
+            assert_eq!(
+                normalize_text(input),
+                reference(input),
+                "normalize_text diverged for {input:?}"
+            );
+        }
+    }
+
+    // The hash is what the clipboard monitor uses to recognise its own writes.
+    // If the folded and borrowed arms ever hashed differently, the app would
+    // stop suppressing its own echoes and re-capture everything it pastes.
+    #[test]
+    fn text_hash_is_stable_across_line_endings() {
+        assert_eq!(
+            calc_text_hash("line one\r\nline two"),
+            calc_text_hash("line one\nline two")
+        );
+        assert_eq!(calc_text_hash("  padded  "), calc_text_hash("padded"));
+        assert_ne!(calc_text_hash("alpha"), calc_text_hash("beta"));
     }
 }

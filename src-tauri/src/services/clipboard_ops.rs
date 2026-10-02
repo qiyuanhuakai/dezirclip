@@ -8,7 +8,6 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 #[cfg(target_os = "windows")]
 use regex::Regex;
-use serde_json;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
@@ -350,7 +349,7 @@ async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult
 }
 
 fn calculate_content_hash(content: &str) -> (u64, u64) {
-    let normalized = content.trim().replace("\r\n", "\n");
+    let normalized = crate::database::normalize_text(content);
     let mut hasher = DefaultHasher::new();
     normalized.hash(&mut hasher);
     let content_hash = hasher.finish();
@@ -361,11 +360,6 @@ fn calculate_content_hash(content: &str) -> (u64, u64) {
         .as_secs();
 
     (content_hash, current_time)
-}
-
-fn build_content_kinds_json(content: &str) -> String {
-    let kinds = crate::services::classification::classify(content);
-    serde_json::to_string(&kinds).unwrap_or_else(|_| "[]".to_string())
 }
 
 pub(crate) struct ClipboardWriteOptions<'a> {
@@ -388,7 +382,6 @@ pub(crate) fn write_content_to_system_clipboard(
     options: ClipboardWriteOptions<'_>,
 ) -> AppResult<()> {
     let (content_hash, current_time) = calculate_content_hash(content);
-    let _content_kinds_json = build_content_kinds_json(content);
 
     let clipboard_hashes = match options.content_type {
         "image" | "video" | "file" => {
@@ -1571,38 +1564,28 @@ mod tests {
         assert_eq!(from_vec.finish(), from_slice.finish());
     }
 
+    // The paste path used to build a `content_kinds` JSON string and drop it on
+    // the floor, which ran all twelve classifiers over the whole pasted payload
+    // for a value nothing read. Whatever the hash is built from has to stay
+    // byte-identical to the old `trim().replace("\r\n", "\n")`, or entries
+    // written before and after this change stop matching their own pastes.
     #[test]
-    fn test_build_content_kinds_url() {
-        let json = build_content_kinds_json("https://example.com");
-        assert!(json.contains("\"url\""), "expected url in {json}");
-        assert_eq!(json, "[\"url\"]");
+    fn content_hash_survives_the_fold_crlf_change() {
+        let hash = |s: &str| calculate_content_hash(s).0;
+
+        let lf = "hello\nworld";
+        let crlf = "hello\r\nworld";
+        assert_eq!(hash(crlf), hash(lf), "CRLF must fold to LF");
+        assert_eq!(hash("  padded  "), hash("padded"), "outer space must be trimmed");
+
+        let mixed = "a\r\nb\nc";
+        let mut hasher = DefaultHasher::new();
+        "a\nb\nc".hash(&mut hasher);
+        assert_eq!(hash(mixed), hasher.finish());
+
+        assert_ne!(hash("alpha"), hash("beta"), "different text must not collide");
     }
 
-    #[test]
-    fn test_build_content_kinds_email() {
-        let json = build_content_kinds_json("user@example.com");
-        assert!(json.contains("\"email\""), "expected email in {json}");
-        assert_eq!(json, "[\"email\"]");
-    }
-
-    #[test]
-    fn test_build_content_kinds_multi() {
-        let json = build_content_kinds_json("https://user@example.com");
-        assert!(json.contains("\"url\""), "expected url in {json}");
-        assert_eq!(json, "[\"url\"]");
-    }
-
-    #[test]
-    fn test_build_content_kinds_empty() {
-        let json = build_content_kinds_json("");
-        assert_eq!(json, "[]");
-    }
-
-    #[test]
-    fn test_build_content_kinds_no_match() {
-        let json = build_content_kinds_json("hello world");
-        assert_eq!(json, "[]");
-    }
 
     #[test]
     fn test_generated_clipboard_writes_are_not_marked_as_self_copy() {
