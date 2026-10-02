@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyModeClass, applyThemeClass, ensureThemeCssLoaded, resolveThemeMode } from "../lib/themeRuntime";
 import { applyFontOverrides, applySurfaceOpacity } from "../lib/appearanceRuntime";
-import { readSystemIsDark } from "../lib/systemTheme";
+import { readSystemIsDark, mediaSystemIsDark } from "../lib/systemTheme";
 
 type PlatformInfo = {
   platform: string;
@@ -44,6 +44,9 @@ export const useSettingsApply = ({
     const body = document.body;
 
     let disposed = false;
+    // Last system darkness the UI was resolved to, so the poll can tell an
+    // actual change from another tick of the same theme.
+    const lastSystemIsDark = useRef<boolean | null>(null);
 
     const applyExplicitMode = (mode: "light" | "dark") => {
       if (disposed) return;
@@ -53,7 +56,21 @@ export const useSettingsApply = ({
     const applySystemMode = async () => {
       const isDark = await readSystemIsDark();
       if (disposed) return;
+      lastSystemIsDark.current = isDark;
       applyExplicitMode(resolveThemeMode("system", isDark));
+    };
+
+    // The poll exists to catch a system theme change the two event sources
+    // miss. `prefers-color-scheme` tracks the same OS preference and costs
+    // nothing to read, so it is used as a gate: while it still agrees with
+    // what was last applied there is nothing to re-resolve, and the native
+    // read — an IPC round trip across the WebView boundary — is skipped. On a
+    // platform where the media query does not follow the OS the gate never
+    // holds and the poll behaves exactly as before, which is what keeps the
+    // Linux WebKitGTK fallback intact.
+    const systemModeChanged = () => {
+      if (lastSystemIsDark.current === null) return true;
+      return mediaSystemIsDark() !== lastSystemIsDark.current;
     };
 
     let ensureDisposed = false;
@@ -156,7 +173,9 @@ export const useSettingsApply = ({
       }
 
       const poll = window.setInterval(() => {
-        applySystemMode();
+        if (systemModeChanged()) {
+          applySystemMode();
+        }
       }, 2000);
       cleanupPoll = () => window.clearInterval(poll);
     }

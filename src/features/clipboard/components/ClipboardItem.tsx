@@ -33,6 +33,7 @@ import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/l
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
+import { createFrameThrottle } from "../../../shared/lib/frameThrottle";
 import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
@@ -569,6 +570,33 @@ const ClipboardItem = ({
     const richSnapshotFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hoverAnchorRef = useRef<CompactPreviewAnchor | null>(null);
+    // One measurement per frame at most, applied inside the frame callback so
+    // the layout is read after the frame's own writes rather than forcing one
+    // on every pointer event.
+    const hoverAnchorThrottle = useMemo(
+        () =>
+            createFrameThrottle<{
+                clientX: number;
+                clientY: number;
+                screenX: number;
+                screenY: number;
+                element: HTMLElement;
+            }>(
+                ({ clientX, clientY, screenX, screenY, element }) => {
+                    if (!element.isConnected) return;
+                    hoverAnchorRef.current = {
+                        clientX,
+                        clientY,
+                        screenX,
+                        screenY,
+                        itemRect: toCompactPreviewRect(element.getBoundingClientRect())
+                    };
+                },
+                (cb) => requestAnimationFrame(cb),
+                (handle) => cancelAnimationFrame(handle)
+            ),
+        []
+    );
     const windowLabelRef = useRef<string>(getCurrentWindow().label);
     const richTextFallback = useMemo(() => {
         if (item.content_type !== "rich_text" || !item.html_content) return null;
@@ -1190,16 +1218,26 @@ const ClipboardItem = ({
             onMouseMove={(e) => {
                 if (!compactMode) return;
                 if (contextMenuState) return;
-                hoverAnchorRef.current = {
+                // The anchor is only read a second later, when the preview
+                // timer fires, so the newest position in the frame is exactly
+                // as good as the newest position in the event queue. Measuring
+                // on every event was a forced synchronous layout per event, on
+                // the hottest path in the list; the element is captured here
+                // because `currentTarget` is gone by the time the frame runs.
+                hoverAnchorThrottle.schedule({
                     clientX: e.clientX,
                     clientY: e.clientY,
                     screenX: e.screenX,
                     screenY: e.screenY,
-                    itemRect: toCompactPreviewRect(e.currentTarget.getBoundingClientRect())
-                };
+                    element: e.currentTarget
+                });
             }}
             onMouseLeave={() => {
                 if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                // Drop a frame that is still queued: applying it after the
+                // pointer has already left would resurrect an anchor for an
+                // item the user is no longer on.
+                hoverAnchorThrottle.cancel();
                 hoverAnchorRef.current = null;
                 compactPreviewLog("mouseleave hide preview", { itemId: item.id });
                 hideCompactPreview();
