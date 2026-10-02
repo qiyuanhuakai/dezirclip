@@ -35,6 +35,11 @@ pub struct PipelineContext {
     pub should_stop: bool,
     pub pending_removals: Vec<i64>,
     pub reuse_session_id: Option<i64>,
+    /// `content_hash` for an image entry, once the dedup stage has decoded the
+    /// picture to look one up. The persistence stage writes the very same value
+    /// to the database, so it is handed over instead of decoded a second time.
+    /// `None` until the dedup stage runs, and for a non-deduped run.
+    pub image_hash: Option<i64>,
 }
 
 impl PipelineContext {
@@ -59,6 +64,7 @@ impl PipelineContext {
             should_stop: false,
             pending_removals: Vec::new(),
             reuse_session_id: None,
+            image_hash: None,
         }
     }
 }
@@ -279,12 +285,14 @@ impl ValidationStage {
         // base64 decode plus a full image decode. Both lookups below run against
         // the same picture — the second differs only by trimmed / CRLF-folded
         // whitespace, which `calc_image_hash` strips anyway — so decode once and
-        // hand the result to both.
+        // hand the result to both. The persistence stage stores the same value
+        // as `content_hash`, so it is kept on the context for that stage too.
         let image_hash = if content_type == "image" {
             crate::database::calc_image_hash(&content)
         } else {
             None
         };
+        ctx.image_hash = image_hash;
 
         for t in types_to_check {
             if let Ok(Some(id)) = db_state
@@ -417,7 +425,12 @@ impl PipelineStage for PersistenceStage {
                 None
             };
 
-            if let Ok(id) = db_state.repo.save_with_conn(&conn, entry, Some(&data_dir)) {
+            if let Ok(id) = db_state.repo.save_with_conn_and_image_hash(
+                &conn,
+                entry,
+                Some(&data_dir),
+                ctx.image_hash,
+            ) {
                 entry.id = id;
                 if let Ok(deleted_ids) = db_state
                     .repo

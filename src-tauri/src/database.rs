@@ -47,6 +47,22 @@ pub fn calc_text_hash(content: &str) -> u64 {
     hasher.finish()
 }
 
+/// Hashes the 32x32 nearest-neighbour thumbnail of an already decoded image.
+///
+/// Both entry points need this exact tail: `calc_image_hash` for `data:` URLs
+/// and the repository's on-disk branch for a content that is a file path. The two
+/// have to agree — `content_hash` is the column the dedup lookup matches on, so a
+/// divergence would hash an image one way on the way in and another on the way to
+/// the database, and the picture would never deduplicate.
+pub fn thumbnail_hash(img: &image::DynamicImage) -> i64 {
+    let thumb = img.resize_exact(32, 32, image::imageops::FilterType::Nearest);
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    thumb.as_bytes().hash(&mut hasher);
+    hasher.finish() as i64
+}
+
 pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
     // `split_once` gives the same payload as `splitn(2, ',').nth(1)` without
     // allocating a Vec for the two halves.
@@ -76,13 +92,7 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
         .ok()?;
 
     let img = image::load_from_memory(&decoded).ok()?;
-    let thumb = img.resize_exact(32, 32, image::imageops::FilterType::Nearest);
-
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    thumb.as_bytes().hash(&mut hasher);
-    Some(hasher.finish() as i64)
+    Some(thumbnail_hash(&img))
 }
 
 pub fn init_db(path: &str) -> Result<Connection> {
@@ -548,5 +558,65 @@ mod tests {
     fn image_hash_rejects_non_image_payloads() {
         assert_eq!(calc_image_hash("data:image/png;base64,bm90IGFuIGltYWdl"), None);
         assert_eq!(calc_image_hash(""), None);
+    }
+
+    // The data-URL path and the on-disk path are two callers of one helper, and
+    // they have to land on the same number: `content_hash` is both what the
+    // dedup lookup matches on and what the row is stored with, so a divergence
+    // would make an image look like a new picture every time it was pasted.
+    #[test]
+    fn thumbnail_hash_matches_the_data_url_path() {
+        use base64::Engine;
+        let url = tiny_png_data_url();
+        let payload = url.split_once(',').expect("data url has a payload").1;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .expect("payload decodes");
+        let decoded_image = image::load_from_memory(&decoded).expect("payload decodes to image");
+
+        assert_eq!(
+            calc_image_hash(&url),
+            Some(thumbnail_hash(&decoded_image))
+        );
+    }
+
+    // The same picture reached through two routes must hash identically, since
+    // one arrives as a data URL and the other as a file on disk.
+    #[test]
+    fn thumbnail_hash_ignores_how_the_bytes_arrived() {
+        use base64::Engine;
+        let url = tiny_png_data_url();
+        let payload = url.split_once(',').expect("data url has a payload").1;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .expect("payload decodes");
+
+        let from_url = calc_image_hash(&url).expect("tiny png should hash");
+        let from_path = image::load_from_memory(&decoded)
+            .map(|img| thumbnail_hash(&img))
+            .expect("same bytes decode the same way");
+
+        assert_eq!(from_url, from_path);
+    }
+
+    // Distinct pictures must not collide, otherwise dedup would drop a real
+    // clipboard entry. A 1x1 red PNG against the reference tiny PNG is enough:
+    // different pixels, same dimensions, so only the pixel hash separates them.
+    #[test]
+    fn thumbnail_hash_separates_different_pixels() {
+        use base64::Engine;
+        let url = tiny_png_data_url();
+        let payload = url.split_once(',').expect("data url has a payload").1;
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .expect("payload decodes");
+        let reference = image::load_from_memory(&decoded).expect("payload decodes to image");
+        let recolored = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            1,
+            1,
+            image::Rgba([255, 0, 0, 255]),
+        ));
+
+        assert_ne!(thumbnail_hash(&reference), thumbnail_hash(&recolored));
     }
 }
