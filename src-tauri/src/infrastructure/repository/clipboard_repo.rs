@@ -1,6 +1,6 @@
 use crate::database::{
     calc_image_hash, calc_text_hash, has_sensitive_tag, is_text_type, save_image_to_file,
-    ENCRYPT_PREFIX,
+    thumbnail_hash, ENCRYPT_PREFIX,
 };
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::encryption;
@@ -367,6 +367,26 @@ impl SqliteClipboardRepository {
         entry: &ClipboardEntry,
         data_dir: Option<&std::path::Path>,
     ) -> Result<i64, String> {
+        self.save_with_conn_and_image_hash(conn, entry, data_dir, None)
+    }
+
+    /// Same as [`Self::save_with_conn`], but lets a caller that already decoded
+    /// the image hand its `content_hash` down.
+    ///
+    /// `content_hash` for an image comes from the decoded 32x32 thumbnail, so
+    /// recomputing it here would mean a second base64 decode plus a second full
+    /// image decode of the same picture — a 4K screenshot decodes to ~33 MB of
+    /// RGBA. The clipboard pipeline already computes that hash while looking for
+    /// a duplicate, so it passes the value in and the decode happens once per
+    /// event. `None` means "no hash was computed for you", which is what every
+    /// other caller wants and keeps the previous behaviour intact.
+    pub fn save_with_conn_and_image_hash(
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>,
+    ) -> Result<i64, String> {
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&entry.tags);
 
@@ -384,19 +404,18 @@ impl SqliteClipboardRepository {
         }
 
         let calculated_hash = if entry.content_type == "image" {
-            if entry.content.starts_with("data:") {
-                calc_image_hash(&entry.content).unwrap_or(0)
-            } else {
-                if let Ok(img) = image::open(&entry.content) {
-                    let thumb = img.resize_exact(32, 32, image::imageops::FilterType::Nearest);
-                    use std::collections::hash_map::DefaultHasher;
-                    use std::hash::{Hash, Hasher};
-                    let mut hasher = DefaultHasher::new();
-                    thumb.as_bytes().hash(&mut hasher);
-                    hasher.finish() as i64
-                } else {
-                    0
+            // A handed-in hash only ever describes a `data:` payload — the
+            // on-disk branch needs `image::open` on a real path, so a stray value
+            // falls through to the decode rather than silently mislabelling it.
+            match image_hash {
+                Some(hash) if entry.content.starts_with("data:") => hash,
+                None if entry.content.starts_with("data:") => {
+                    calc_image_hash(&entry.content).unwrap_or(0)
                 }
+                _ => match image::open(&entry.content) {
+                    Ok(img) => thumbnail_hash(&img),
+                    Err(_) => 0,
+                },
             }
         } else {
             calc_text_hash(&final_content) as i64
@@ -1813,5 +1832,78 @@ mod tests {
         let contents: Vec<&str> = results.iter().map(|e| e.content.as_str()).collect();
         assert!(contents.iter().any(|c| c.contains("apple banana foo")));
         assert!(contents.iter().any(|c| c.contains("hello foo world")));
+    }
+
+    // The dedup stage hands its computed hash down through
+    // `save_with_conn_and_image_hash`, and the row must be stored under exactly
+    // the value that lookup matched on. If the two ever diverged, a pasted
+    // picture would look brand new on every paste and the history would fill
+    // with duplicates.
+    #[test]
+    fn handed_in_hash_is_stored_as_content_hash() {
+        use crate::infrastructure::repository::migrations::run_migrations;
+        use base64::Engine;
+        use image::ImageEncoder;
+
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(
+                &[255, 0, 0, 255],
+                1,
+                1,
+                image::ExtendedColorType::Rgba8,
+            )
+            .expect("png encode");
+        let url = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&png)
+        );
+        let dedup_hash = calc_image_hash(&url).expect("png payload should hash");
+
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations failed");
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+
+        let entry = ClipboardEntry {
+            id: 0,
+            content_type: "image".to_string(),
+            content: url,
+            html_content: None,
+            source_app: "Test".to_string(),
+            source_app_path: None,
+            timestamp: 1_700_000_000,
+            preview: "[Image Content]".to_string(),
+            is_pinned: false,
+            tags: Vec::new(),
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+            content_kinds: Vec::new(),
+            ocr_text: None,
+            ocr_status: None,
+        };
+
+        let conn = repo.conn.lock().expect("lock");
+        let new_id = repo
+            .save_with_conn_and_image_hash(&conn, &entry, None, Some(dedup_hash))
+            .expect("save with handed-in hash");
+        let old_id = repo.save_with_conn(&conn, &entry, None).expect("save recomputing");
+
+        let read_hash = |id: i64| -> i64 {
+            conn.query_row(
+                "SELECT content_hash FROM clipboard_history WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .expect("row should exist")
+        };
+
+        assert_eq!(
+            read_hash(new_id),
+            read_hash(old_id),
+            "reusing the dedup hash must store the same content_hash as recomputing it"
+        );
+        assert_eq!(read_hash(new_id), dedup_hash);
     }
 }
