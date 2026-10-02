@@ -30,6 +30,7 @@ Thumbs.db
 .claude/
 .opencode/
 .omo/
+.kilo/
 CLAUDE.md
 AGENTS.md
 dzc-standalone/target/
