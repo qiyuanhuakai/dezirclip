@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
 import { render, fireEvent, screen, act, waitFor } from "@testing-library/react";
 import RegionSelectWindow, { toPhysicalCaptureRect } from "./RegionSelectWindow";
 
@@ -42,6 +42,23 @@ describe("RegionSelectWindow", () => {
     mockOuterPosition.mockResolvedValue({ x: 0, y: 0 });
     mockScaleFactor.mockResolvedValue(1);
     Storage.prototype.getItem = vi.fn(() => null);
+  });
+
+  // Live drag geometry is written from a requestAnimationFrame callback so a
+  // thousand `mousemove` events a second cost one repaint rather than a
+  // thousand re-renders. Running the frame synchronously is enough to assert
+  // on what the user would see, and keeps the `waitFor` assertions below on
+  // real timers.
+  beforeAll(() => {
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
+  afterAll(() => {
+    vi.unstubAllGlobals();
   });
 
   it("renders overlay element", () => {
