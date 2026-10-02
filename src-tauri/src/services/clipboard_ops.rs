@@ -642,13 +642,18 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
     // Check if it's a GIF by magic number
     let is_gif = bytes.len() > 3 && &bytes[0..3] == b"GIF";
 
-    let (width, height, raw_bytes) = {
-        let img = image::load_from_memory(&bytes)
-            .map_err(|e| AppError::Internal(format!("加载图像失败: {}", e)))?
-            .to_rgba8();
-        let (w, h) = img.dimensions();
-        (w, h, img.into_raw())
+    // One decode feeds the pixel hash, the clipboard payload and the PNG export.
+    // This used to decode a second time just to re-encode, which doubled peak
+    // memory on large screenshots.
+    let decoded = image::load_from_memory(&bytes)
+        .map_err(|e| AppError::Internal(format!("加载图像失败: {}", e)))?;
+    // Already-RGBA8 sources (what the clipboard hands us) move instead of being
+    // copied by `to_rgba8`.
+    let rgba = match decoded {
+        image::DynamicImage::ImageRgba8(buffer) => buffer,
+        other => other.to_rgba8(),
     };
+    let (width, height) = rgba.dimensions();
 
     let (primary_hash, secondary_hash) = if is_gif {
         let mut hasher = DefaultHasher::new();
@@ -656,41 +661,51 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
         let byte_hash = hasher.finish();
 
         // Calculate pixel hash of the first frame as a secondary fingerprint
+        let pixels = rgba.as_raw();
         let pixel_count = (width as u64) * (height as u64);
         let mut h = pixel_count;
-        if !raw_bytes.is_empty() {
+        if !pixels.is_empty() {
             h = h
-                .wrapping_add(raw_bytes[0] as u64)
-                .wrapping_add(raw_bytes[raw_bytes.len() / 2] as u64)
-                .wrapping_add(raw_bytes[raw_bytes.len() - 1] as u64);
+                .wrapping_add(pixels[0] as u64)
+                .wrapping_add(pixels[pixels.len() / 2] as u64)
+                .wrapping_add(pixels[pixels.len() - 1] as u64);
         }
         (byte_hash, h)
     } else {
         // Hash full pixel bytes so the monitor can skip our own image copy
         let mut hasher = DefaultHasher::new();
-        raw_bytes.hash(&mut hasher);
+        rgba.as_raw().as_slice().hash(&mut hasher);
         let byte_hash = hasher.finish();
         (byte_hash, 0)
     };
 
     #[cfg(target_os = "windows")]
     {
-        // Prepare PNG data for better compatibility.
-        let mut png_buf: Vec<u8> = Vec::new();
-        let img = image::load_from_memory(&bytes)
-            .map_err(|e| AppError::Internal(format!("加载图像失败: {}", e)))?;
-        img.write_to(
-            &mut std::io::Cursor::new(&mut png_buf),
-            image::ImageFormat::Png,
-        )
-        .map_err(|e| AppError::Internal(format!("编码 PNG 失败: {}", e)))?;
+        // Prepare PNG data for better compatibility. Sources that already are a
+        // PNG go through untouched instead of paying for another encode.
+        let png_buf: Vec<u8> = if crate::services::image_png::is_png(&bytes) {
+            bytes.clone()
+        } else {
+            let mut encoded: Vec<u8> = Vec::new();
+            // `write_image` takes the pixel buffer by reference, so encoding the
+            // non-PNG case does not need its own copy of the pixels.
+            image::ImageEncoder::write_image(
+                image::codecs::png::PngEncoder::new(&mut encoded),
+                rgba.as_raw(),
+                width,
+                height,
+                image::ExtendedColorType::Rgba8,
+            )
+            .map_err(|e| AppError::Internal(format!("编码 PNG 失败: {}", e)))?;
+            encoded
+        };
 
         let gif_temp_path = unsafe {
             crate::infrastructure::windows_api::win_clipboard::set_clipboard_image_with_formats(
                 crate::infrastructure::windows_api::win_clipboard::ImageData {
                     width: width as usize,
                     height: height as usize,
-                    bytes: raw_bytes,
+                    bytes: rgba.into_raw(),
                 },
                 if is_gif { Some(&bytes) } else { None },
                 Some(&png_buf),
@@ -713,7 +728,7 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
             crate::infrastructure::linux_api::clipboard::ImageData {
                 width: width as usize,
                 height: height as usize,
-                bytes: raw_bytes,
+                bytes: rgba.into_raw(),
             },
         )
         .map_err(AppError::from)?;
@@ -1537,6 +1552,24 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: A
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // `copy_image_bytes_to_clipboard` hashes the decoded pixels so the monitor
+    // can recognise and skip our own copy. The monitor side hashes the
+    // `Vec<u8>` it reads back off the clipboard; the copy side hashes a slice of
+    // the decoded buffer. Those two must keep producing the same digest or the
+    // app starts re-capturing every image it puts on the clipboard.
+    #[test]
+    fn pixel_hash_matches_between_vec_and_slice() {
+        let pixels: Vec<u8> = vec![7, 11, 13, 17, 19, 23, 29, 31];
+
+        let mut from_vec = DefaultHasher::new();
+        pixels.hash(&mut from_vec);
+
+        let mut from_slice = DefaultHasher::new();
+        pixels.as_slice().hash(&mut from_slice);
+
+        assert_eq!(from_vec.finish(), from_slice.finish());
+    }
 
     #[test]
     fn test_build_content_kinds_url() {

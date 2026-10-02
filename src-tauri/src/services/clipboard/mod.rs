@@ -262,13 +262,9 @@ fn clipboard_image_fallback_data_url() -> Option<String> {
                         name,
                     )
                 {
-                    if let Ok(img) = image::load_from_memory(&raw) {
-                        let mut bytes: Vec<u8> = Vec::new();
-                        let mut cursor = std::io::Cursor::new(&mut bytes);
-                        if img.write_to(&mut cursor, image::ImageFormat::Png).is_ok() {
-                            let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-                            return Some(format!("data:image/png;base64,{}", b64));
-                        }
+                    if let Ok(png) = crate::services::image_png::as_png_bytes(&raw) {
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+                        return Some(format!("data:image/png;base64,{}", b64));
                     }
                 }
             }
