@@ -497,7 +497,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                 }
 
                 if should_process {
-                    let normalized = content.trim().replace("\r\n", "\n");
+                    let normalized = crate::database::normalize_text(&content);
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     use std::hash::{Hash, Hasher};
                     normalized.hash(&mut hasher);
@@ -710,7 +710,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     use std::hash::{Hash, Hasher};
-                    text.trim().replace("\r\n", "\n").hash(&mut hasher);
+                    crate::database::normalize_text(&text).hash(&mut hasher);
                     let current_hash = hasher.finish();
 
                     let last_app_hash = crate::LAST_APP_SET_HASH.load(Ordering::SeqCst);

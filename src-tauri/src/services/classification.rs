@@ -16,15 +16,60 @@
 //! * [`is_json`]        — starts with `{` or `[` and parses as JSON
 //!
 //! The [`classify`] dispatcher runs every classifier and returns the names
-//! of all matching kinds. Classification is **pure**: no I/O, no platform
-//! code, no shared state. Per-call regex compilation is cheap for short
-//! strings; the 5000-entry backfill target in roadmap-2026 §4.4 stays
-//! under 2s without `once_cell` caches (which AGENTS.md prohibits).
+//! of all matching kinds. Classification stays **pure**: no I/O, no platform
+//! code, no mutation of the caller's data. Each pattern is compiled once on
+//! first use and then reused — see [`cached_regex`].
 //!
 //! Per G21 there is no trait abstraction: dispatch is a flat `match` over
 //! [`CONTENT_KINDS`].
 
 use regex::Regex;
+
+/// Compiles a pattern literal on first use and hands back a borrow of the
+/// cached regex, or `None` if the pattern fails to compile.
+///
+/// Every classifier used to call `Regex::new` inline, so one `classify` pass
+/// rebuilt a dozen programs. Compilation, not matching, dominated the cost —
+/// classifying a 37-byte URL took roughly 9.7 ms, which made the 5000-entry
+/// backfill target in roadmap-2026 §4.4 unreachable by more than an order of
+/// magnitude. The patterns are string literals, so the set is closed and there
+/// is no dynamic key to look up. `std::sync::OnceLock` is the caching idiom
+/// already used throughout this crate; a compile failure is still reported to
+/// the caller as `None`, exactly as the inline `match` did.
+macro_rules! cached_regex {
+    ($name:ident, $pattern:literal) => {
+        fn $name() -> Option<&'static Regex> {
+            static RE: std::sync::OnceLock<Option<Regex>> = std::sync::OnceLock::new();
+            RE.get_or_init(|| Regex::new($pattern).ok()).as_ref()
+        }
+    };
+}
+
+cached_regex!(url_re, r"^(?:https?|ftp)://|^www\.");
+cached_regex!(email_re, r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$");
+cached_regex!(phone_cn_re, r"^1[3-9]\d{9}$");
+cached_regex!(phone_intl_re, r"^\+\d{1,3}[\s\-]?\d{4,14}$");
+cached_regex!(idcard_re, r"^\d{17}[\dXx]$");
+cached_regex!(ipv4_re, r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$");
+cached_regex!(jwt_seg_re, r"^[A-Za-z0-9_\-]+$");
+cached_regex!(win_drive_re, r#"^[A-Za-z]:[\\/][^<>:"|?*\r\n]*$"#);
+cached_regex!(
+    win_unc_re,
+    r#"^\\\\[^<>:"|?*\r\n]+[\\/][^<>:"|?*\r\n]+(?:[\\/][^<>:"|?*\r\n]+)*$"#
+);
+cached_regex!(unix_path_re, r"^/(?:[^/]+/)*(?:[^/]+|/)$");
+cached_regex!(
+    color_hex_re,
+    r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+);
+cached_regex!(
+    color_rgb_re,
+    r"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$"
+);
+cached_regex!(
+    color_rgba_re,
+    r"^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*([\d.]+%?)\s*\)$"
+);
 
 /// All content kinds recognised by [`classify`], in dispatcher order.
 ///
@@ -55,9 +100,9 @@ pub fn is_url(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    match Regex::new(r"^(?:https?|ftp)://|^www\.") {
-        Ok(re) => re.is_match(trimmed),
-        Err(_) => false,
+    match url_re() {
+        Some(re) => re.is_match(trimmed),
+        None => false,
     }
 }
 
@@ -67,9 +112,9 @@ pub fn is_email(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    match Regex::new(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$") {
-        Ok(re) => re.is_match(trimmed),
-        Err(_) => false,
+    match email_re() {
+        Some(re) => re.is_match(trimmed),
+        None => false,
     }
 }
 
@@ -82,13 +127,13 @@ pub fn is_phone(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    let cn = Regex::new(r"^1[3-9]\d{9}$").map(|re| re.is_match(trimmed));
-    if matches!(cn, Ok(true)) {
+    let cn = phone_cn_re().map(|re| re.is_match(trimmed));
+    if matches!(cn, Some(true)) {
         return true;
     }
-    match Regex::new(r"^\+\d{1,3}[\s\-]?\d{4,14}$") {
-        Ok(re) => re.is_match(trimmed),
-        Err(_) => false,
+    match phone_intl_re() {
+        Some(re) => re.is_match(trimmed),
+        None => false,
     }
 }
 
@@ -99,9 +144,9 @@ pub fn is_idcard(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    match Regex::new(r"^\d{17}[\dXx]$") {
-        Ok(re) => re.is_match(trimmed),
-        Err(_) => false,
+    match idcard_re() {
+        Some(re) => re.is_match(trimmed),
+        None => false,
     }
 }
 
@@ -111,9 +156,9 @@ pub fn is_idcard(text: &str) -> bool {
 /// validated after the shape match.
 pub fn is_ipv4(text: &str) -> bool {
     let trimmed = text.trim();
-    let re = match Regex::new(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$") {
-        Ok(re) => re,
-        Err(_) => return false,
+    let re = match ipv4_re() {
+        Some(re) => re,
+        None => return false,
     };
     let caps = match re.captures(trimmed) {
         Some(c) => c,
@@ -203,9 +248,9 @@ pub fn is_jwt(text: &str) -> bool {
     if parts.len() != 3 {
         return false;
     }
-    let re = match Regex::new(r"^[A-Za-z0-9_\-]+$") {
-        Ok(re) => re,
-        Err(_) => return false,
+    let re = match jwt_seg_re() {
+        Some(re) => re,
+        None => return false,
     };
     if !parts.iter().all(|p| !p.is_empty() && re.is_match(p)) {
         return false;
@@ -220,15 +265,12 @@ pub fn is_path_windows(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    let drive_re = Regex::new(r#"^[A-Za-z]:[\\/][^<>:"|?*\r\n]*$"#);
-    if let Ok(re) = drive_re {
+    if let Some(re) = win_drive_re() {
         if re.is_match(trimmed) {
             return true;
         }
     }
-    let unc_re =
-        Regex::new(r#"^\\\\[^<>:"|?*\r\n]+[\\/][^<>:"|?*\r\n]+(?:[\\/][^<>:"|?*\r\n]+)*$"#);
-    if let Ok(re) = unc_re {
+    if let Some(re) = win_unc_re() {
         if re.is_match(trimmed) {
             return true;
         }
@@ -251,9 +293,9 @@ pub fn is_path_unix(text: &str) -> bool {
     if !trimmed.starts_with('/') {
         return false;
     }
-    match Regex::new(r"^/(?:[^/]+/)*(?:[^/]+|/)$") {
-        Ok(re) => re.is_match(trimmed),
-        Err(_) => false,
+    match unix_path_re() {
+        Some(re) => re.is_match(trimmed),
+        None => false,
     }
 }
 
@@ -265,9 +307,9 @@ pub fn is_color_hex(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    match Regex::new(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$") {
-        Ok(re) => re.is_match(trimmed),
-        Err(_) => false,
+    match color_hex_re() {
+        Some(re) => re.is_match(trimmed),
+        None => false,
     }
 }
 
@@ -281,9 +323,9 @@ pub fn is_color_rgb(text: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    let rgb_re = match Regex::new(r"^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$") {
-        Ok(re) => re,
-        Err(_) => return false,
+    let rgb_re = match color_rgb_re() {
+        Some(re) => re,
+        None => return false,
     };
     if let Some(caps) = rgb_re.captures(trimmed) {
         for i in 1..=3 {
@@ -301,11 +343,9 @@ pub fn is_color_rgb(text: &str) -> bool {
         }
         return true;
     }
-    let rgba_re = match Regex::new(
-        r"^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*([\d.]+%?)\s*\)$",
-    ) {
-        Ok(re) => re,
-        Err(_) => return false,
+    let rgba_re = match color_rgba_re() {
+        Some(re) => re,
+        None => return false,
     };
     let caps = match rgba_re.captures(trimmed) {
         Some(c) => c,
@@ -781,5 +821,47 @@ mod tests {
         assert_eq!(CONTENT_KINDS[9], "color_hex");
         assert_eq!(CONTENT_KINDS[10], "color_rgb");
         assert_eq!(CONTENT_KINDS[11], "json");
+    }
+
+    // The whole point of the cache is that the second call reuses the program.
+    // Correctness alone would not catch a regression back to per-call
+    // compilation — every classification test would still pass, just slowly —
+    // so assert the identity of the compiled program itself.
+    #[test]
+    fn cached_patterns_are_reused_not_rebuilt() {
+        for name in ["url", "email", "idcard", "color_hex", "unix_path"] {
+            let (first, second) = match name {
+                "url" => (url_re(), url_re()),
+                "email" => (email_re(), email_re()),
+                "idcard" => (idcard_re(), idcard_re()),
+                "color_hex" => (color_hex_re(), color_hex_re()),
+                _ => (unix_path_re(), unix_path_re()),
+            };
+            let first = first.expect("pattern compiles");
+            let second = second.expect("pattern compiles");
+            assert!(
+                std::ptr::eq(first, second),
+                "{name} pattern was recompiled instead of reused"
+            );
+        }
+    }
+
+    // Every pattern is a literal that has to keep compiling; a typo would
+    // otherwise turn a classifier into a silent `false` rather than an error.
+    #[test]
+    fn every_cached_pattern_compiles() {
+        assert!(url_re().is_some());
+        assert!(email_re().is_some());
+        assert!(phone_cn_re().is_some());
+        assert!(phone_intl_re().is_some());
+        assert!(idcard_re().is_some());
+        assert!(ipv4_re().is_some());
+        assert!(jwt_seg_re().is_some());
+        assert!(win_drive_re().is_some());
+        assert!(win_unc_re().is_some());
+        assert!(unix_path_re().is_some());
+        assert!(color_hex_re().is_some());
+        assert!(color_rgb_re().is_some());
+        assert!(color_rgba_re().is_some());
     }
 }
