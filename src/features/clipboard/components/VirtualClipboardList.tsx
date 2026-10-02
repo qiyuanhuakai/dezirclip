@@ -2,6 +2,7 @@ import React, { useRef, useImperativeHandle, useCallback, useMemo } from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { ListRange } from 'react-virtuoso';
 import type { ClipboardEntry } from "../../../shared/types";
+import { createScrollCoalescer } from "../../../shared/lib/scrollCoalesce";
 import type { VirtualClipboardListHandle, VirtualClipboardListProps } from "../types";
 
 type VirtuosoListContext = {
@@ -44,11 +45,13 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
             selectedIndex,
             isKeyboardMode,
             onScroll,
+            onScrollFrame,
             compactMode,
             header
         } = props;
 
         const virtuosoRef = useRef<VirtuosoHandle>(null);
+        const wrapperRef = useRef<HTMLDivElement>(null);
         const visibleRangeRef = useRef<ListRange | null>(null);
         useImperativeHandle(ref, () => ({
             scrollToItem: (index: number) => {
@@ -109,6 +112,27 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
             onScroll?.(scrollTop);
         }, [onScroll]);
 
+        const handleScrollFrame = useCallback((scrollTop: number) => {
+            onScrollFrame?.(scrollTop);
+        }, [onScrollFrame]);
+
+        // A fling fires scroll events faster than the display refreshes, so the
+        // scroller is observed with a passive native listener instead of a React
+        // onScroll prop: the wheel heuristic still gets every offset as it
+        // happens, while anything that can trigger a re-render is held to one
+        // call per frame. The scroller is looked up through Virtuoso's own
+        // documented test hook rather than by taking over its scrollerRef, which
+        // would make this component responsible for the element Virtuoso owns.
+        React.useEffect(() => {
+            const scroller = wrapperRef.current?.querySelector<HTMLElement>(
+                '[data-testid="virtuoso-scroller"]'
+            );
+            if (!scroller) return;
+            const coalescer = createScrollCoalescer(handleScroll, handleScrollFrame);
+            coalescer.attach(scroller);
+            return () => coalescer.detach();
+        }, [handleScroll, handleScrollFrame]);
+
         // Handle end reached for infinite loading
         const handleEndReached = useCallback(() => {
             if (hasMore && !isLoading && onLoadMore) {
@@ -141,7 +165,11 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
         }), [header, hasMore, isLoading]);
 
         return (
-            <div className="virtual-list-wrapper" style={{ height: '100%', width: '100%' }}>
+            <div
+                className="virtual-list-wrapper"
+                ref={wrapperRef}
+                style={{ height: '100%', width: '100%' }}
+            >
                 <Virtuoso
                     ref={virtuosoRef}
                     data={items}
@@ -149,7 +177,6 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
                     components={components}
                     context={context}
                     style={{ height: '100%' }}
-                    onScroll={(e) => handleScroll((e.currentTarget as HTMLElement).scrollTop)}
                     endReached={handleEndReached}
                     rangeChanged={handleRangeChanged}
                     overscan={200} // Pre-render 200px of content for smoother scrolling

@@ -49,6 +49,9 @@ import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
 
+// How far the list has to be scrolled before the scroll-to-top button appears.
+const SCROLL_TOP_BUTTON_THRESHOLD_PX = 200;
+
 const insertHistoryItem = (list: ClipboardEntry[], item: ClipboardEntry) => {
   const next = list.slice();
   const isPinned = !!item.is_pinned;
@@ -232,6 +235,7 @@ const App = () => {
   const { toasts: progressToasts, dismiss: dismissProgress } = useProgress();
   const virtualListRef = useRef<VirtualClipboardListHandle | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const showScrollTopRef = useRef(false);
   const [qrEntry, setQrEntry] = useState<ClipboardEntry | null>(null);
   const PAGE_SIZE = HISTORY_PAGE_SIZE;
   const { fetchHistory, loadMoreHistory } = useHistoryFetch({
@@ -268,8 +272,18 @@ const App = () => {
 
   const handleListScroll = useCallback((offset: number) => {
     handleSearchScroll(offset);
-    setShowScrollTop(offset > 200);
   }, [handleSearchScroll]);
+
+  // The scroll-to-top button only exists to be shown or hidden, so it is
+  // settled from the per-frame offset and only when the answer actually flips.
+  // Scrolling used to call this setter on every scroll event, which is thousands
+  // of state dispatches per fling on the app's busiest surface.
+  const handleListScrollFrame = useCallback((offset: number) => {
+    const pastTop = offset > SCROLL_TOP_BUTTON_THRESHOLD_PX;
+    if (pastTop === showScrollTopRef.current) return;
+    showScrollTopRef.current = pastTop;
+    setShowScrollTop(pastTop);
+  }, []);
 
   const handleScrollTop = useCallback(() => {
     if (virtualListRef.current?.scrollToTop) {
@@ -768,6 +782,7 @@ const App = () => {
     renderItemContent,
     loadMoreHistory,
     handleListScroll,
+    handleListScrollFrame,
     hasMore: effectiveHasMore,
     isLoadingMore,
     showScrollTop: showScrollTopVisible,
