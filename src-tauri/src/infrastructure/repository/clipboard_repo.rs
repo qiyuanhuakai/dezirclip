@@ -547,8 +547,21 @@ impl SqliteClipboardRepository {
         content: &str,
         content_type: Option<&str>,
     ) -> Result<Option<i64>, String> {
+        self.find_by_content_with_hash(conn, content, content_type, None)
+    }
+
+    /// `image_hash` lets a caller that already decoded the image reuse that
+    /// hash instead of paying for a base64 decode plus a full image decode on
+    /// every lookup. Pass `None` to derive it from `content` as before.
+    pub fn find_by_content_with_hash(
+        &self,
+        conn: &Connection,
+        content: &str,
+        content_type: Option<&str>,
+        image_hash: Option<i64>,
+    ) -> Result<Option<i64>, String> {
         if content_type == Some("image") {
-            if let Some(hash) = calc_image_hash(content) {
+            if let Some(hash) = image_hash.or_else(|| calc_image_hash(content)) {
                 let mut stmt = conn
                     .prepare(
                         "SELECT id FROM clipboard_history \

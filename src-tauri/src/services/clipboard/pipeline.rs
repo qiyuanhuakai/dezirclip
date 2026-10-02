@@ -275,10 +275,21 @@ impl ValidationStage {
             vec![content_type.as_str()]
         };
 
+        // An image hash comes from the decoded pixels, so every lookup repeats a
+        // base64 decode plus a full image decode. Both lookups below run against
+        // the same picture — the second differs only by trimmed / CRLF-folded
+        // whitespace, which `calc_image_hash` strips anyway — so decode once and
+        // hand the result to both.
+        let image_hash = if content_type == "image" {
+            crate::database::calc_image_hash(&content)
+        } else {
+            None
+        };
+
         for t in types_to_check {
             if let Ok(Some(id)) = db_state
                 .repo
-                .find_by_content_with_conn(&conn, &content, Some(t))
+                .find_by_content_with_hash(&conn, &content, Some(t), image_hash)
             {
                 if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id) {
                     continue;
@@ -286,10 +297,9 @@ impl ValidationStage {
                 existing_id = Some(id);
                 break;
             }
-            if let Ok(Some(id)) =
-                db_state
-                    .repo
-                    .find_by_content_with_conn(&conn, &normalized_content, Some(t))
+            if let Ok(Some(id)) = db_state
+                .repo
+                .find_by_content_with_hash(&conn, &normalized_content, Some(t), image_hash)
             {
                 if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id) {
                     continue;
