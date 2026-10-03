@@ -575,6 +575,6 @@ impl PipelineStage for DistributionStage {
         // Notify
         let _ = ctx
             .app_handle
-            .emit("clipboard-updated", truncate_entry_for_ui(entry.clone()));
+            .emit("clipboard-updated", truncate_entry_for_ui(entry));
     }
 }
