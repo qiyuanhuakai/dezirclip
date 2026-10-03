@@ -49,7 +49,7 @@ fn normalize_limit(limit: i32) -> i32 {
 }
 
 #[tauri::command]
-pub fn get_clipboard_history(
+pub async fn get_clipboard_history(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     limit: i32,
@@ -99,7 +99,7 @@ pub fn get_clipboard_history(
 }
 
 #[tauri::command]
-pub fn search_clipboard_history(
+pub async fn search_clipboard_history(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     search_term: String,
@@ -166,7 +166,7 @@ pub fn clear_clipboard_history(
 }
 
 #[tauri::command]
-pub fn get_tag_items(state: State<'_, DbState>, tag: String) -> AppResult<Vec<ClipboardEntry>> {
+pub async fn get_tag_items(state: State<'_, DbState>, tag: String) -> AppResult<Vec<ClipboardEntry>> {
     let mut history = state
         .tag_repo
         .get_entries_by_tag(&tag)
@@ -183,7 +183,7 @@ pub fn get_tag_items(state: State<'_, DbState>, tag: String) -> AppResult<Vec<Cl
 }
 
 #[tauri::command]
-pub fn get_all_tags_info(
+pub async fn get_all_tags_info(
     state: State<'_, DbState>,
 ) -> AppResult<std::collections::HashMap<String, i32>> {
     state.tag_repo.get_all_with_counts().map_err(AppError::from)
@@ -240,7 +240,7 @@ pub fn create_new_tag(state: State<'_, DbState>, tag_name: String) -> AppResult<
 }
 
 #[tauri::command]
-pub fn get_clipboard_content(
+pub async fn get_clipboard_content(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     id: i64,
@@ -268,6 +268,6 @@ pub fn update_pinned_order(state: State<'_, DbState>, orders: Vec<(i64, i64)>) -
 }
 
 #[tauri::command]
-pub fn get_db_count(state: State<'_, DbState>) -> AppResult<i64> {
+pub async fn get_db_count(state: State<'_, DbState>) -> AppResult<i64> {
     state.repo.get_count().map_err(AppError::from)
 }

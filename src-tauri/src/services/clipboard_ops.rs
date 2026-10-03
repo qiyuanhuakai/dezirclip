@@ -1392,7 +1392,8 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
             1,
             0, // offset
             None,
-        );
+        )
+        .await;
 
         if let Ok(items) = history {
             if let Some(item) = items.first() {

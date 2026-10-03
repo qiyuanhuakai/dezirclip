@@ -1028,9 +1028,7 @@ impl SqliteClipboardRepository {
                 "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app,
                         ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count,
                         ch.is_external, ch.pinned_order, ch.source_app_path,
-                        ch.content_kinds, ch.ocr_text, ch.ocr_status,
-                        snippet(clipboard_fts, 0, '<mark>', '</mark>', '...', 16),
-                        highlight(clipboard_fts, 0, '<mark>', '</mark>')
+                        ch.content_kinds, ch.ocr_text, ch.ocr_status
                  FROM clipboard_fts
                  INNER JOIN clipboard_history ch ON ch.id = clipboard_fts.rowid
                  WHERE clipboard_fts MATCH ?1
@@ -1049,9 +1047,6 @@ impl SqliteClipboardRepository {
                 let content = self.maybe_decrypt_text(&content_raw);
                 let preview = self.maybe_decrypt_text(&preview_raw);
                 let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
-
-                let _snippet: String = row.get(16)?;
-                let _highlight: String = row.get(17)?;
 
                 Ok(ClipboardEntry {
                     id: row.get(0)?,
@@ -1742,6 +1737,55 @@ mod tests {
         assert_eq!(
             results[0].ocr_text.as_deref(),
             Some("Bryobacterales bacterium annotation panel")
+        );
+    }
+
+    #[test]
+    fn test_fts5_search_maps_every_selected_column() {
+        let arc = setup_fts_db();
+        {
+            let conn = arc.lock().expect("lock");
+            conn.execute(
+                "INSERT INTO clipboard_history
+                 (content_type, content, html_content, source_app, timestamp, preview,
+                  is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+                  content_kinds, ocr_text, ocr_status)
+                 VALUES ('text', 'quantum entanglement notes', '<p>quantum</p>', 'Editor.exe', 1700000009,
+                         'quantum entanglement', 0, 0, '[\"work\"]', 0, 0, 'C:/apps/editor.exe',
+                         '[\"code\",\"url\"]', 'quantum scanned body', 'done')",
+                [],
+            )
+            .expect("insert fully populated row");
+        }
+
+        let repo = SqliteClipboardRepository::new(arc);
+        let results = repo
+            .search_fts("quantum", 10)
+            .expect("search_fts failed");
+
+        assert_eq!(results.len(), 1);
+        let hit = &results[0];
+        assert_eq!(hit.content_type, "text");
+        assert_eq!(hit.content, "quantum entanglement notes");
+        assert_eq!(hit.html_content.as_deref(), Some("<p>quantum</p>"));
+        assert_eq!(hit.source_app, "Editor.exe");
+        assert_eq!(hit.preview, "quantum entanglement");
+        assert_eq!(hit.tags, vec!["work".to_string()]);
+        assert_eq!(
+            hit.source_app_path.as_deref(),
+            Some("C:/apps/editor.exe"),
+            "the column after pinned_order must still resolve to source_app_path"
+        );
+        assert_eq!(
+            hit.content_kinds,
+            vec!["code".to_string(), "url".to_string()],
+            "the column before ocr_text must still resolve to content_kinds"
+        );
+        assert_eq!(hit.ocr_text.as_deref(), Some("quantum scanned body"));
+        assert_eq!(
+            hit.ocr_status.as_deref(),
+            Some("done"),
+            "the final selected column must still resolve to ocr_status"
         );
     }
 
