@@ -218,6 +218,7 @@ function makeBaseProps(overrides: Partial<AppMainContentProps> = {}): AppMainCon
     renderItemContent: noopRender,
     loadMoreHistory: noopFn,
     handleListScroll: noopFn,
+    handleListScrollFrame: noopFn,
     hasMore: false,
     isLoadingMore: false,
     showScrollTop: false,

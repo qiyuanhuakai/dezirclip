@@ -46,6 +46,7 @@ interface AppMainContentProps {
   renderItemContent: RenderItem;
   loadMoreHistory: () => void;
   handleListScroll: (offset: number) => void;
+  handleListScrollFrame: (offset: number) => void;
   hasMore: boolean;
   isLoadingMore: boolean;
   showScrollTop: boolean;
@@ -112,6 +113,7 @@ const AppMainContent = ({
   renderItemContent,
   loadMoreHistory,
   handleListScroll,
+  handleListScrollFrame,
   hasMore,
   isLoadingMore,
   showScrollTop,
@@ -298,6 +300,7 @@ const AppMainContent = ({
               }}
               onLoadMore={loadMoreHistory}
               onScroll={handleListScroll}
+              onScrollFrame={handleListScrollFrame}
               hasMore={hasMore}
               isLoading={isLoadingMore}
             />
