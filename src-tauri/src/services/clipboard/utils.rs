@@ -2,10 +2,12 @@ use crate::database::save_image_to_file;
 use crate::domain::models::ClipboardEntry;
 use base64::{engine::general_purpose, Engine as _};
 use regex::Regex;
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::OnceLock;
 use urlencoding::decode;
 
+const CONTENT_PREVIEW_MAX_CHARS: usize = 2000;
 const HTML_PREVIEW_MAX_CHARS: usize = 5000;
 const HTML_PREVIEW_MAX_ROWS: usize = 10;
 const HTML_TRUNCATION_SUFFIX: &str = "... [HTML Truncated]";
@@ -80,27 +82,59 @@ pub fn externalize_rich_image_fallback(html: &str, data_dir: &Path) -> String {
     html.to_string()
 }
 
-pub fn truncate_entry_for_ui(mut entry: ClipboardEntry) -> ClipboardEntry {
-    if (entry.content_type == "text"
-        || entry.content_type == "code"
-        || entry.content_type == "url"
-        || entry.content_type == "rich_text")
-        && entry.content.chars().count() > 2000
+/// Caps an entry's text and HTML so a huge clipboard payload does not cross
+/// the IPC boundary whole, and reports whether anything was actually capped.
+///
+/// An image carries its entire data URL and is never capped, so it is the case
+/// where the cap does nothing — and where copying the entry to find that out
+/// costs the most.
+pub fn entry_needs_ui_truncation(entry: &ClipboardEntry) -> bool {
+    let content_over = entry.content.chars().count() > CONTENT_PREVIEW_MAX_CHARS
+        && matches!(
+            entry.content_type.as_str(),
+            "text" | "code" | "url" | "rich_text"
+        );
+    let html_over = entry
+        .html_content
+        .as_deref()
+        .is_some_and(|html| html.chars().count() > HTML_PREVIEW_MAX_CHARS);
+    content_over || html_over
+}
+
+/// Prepares the payload for the `clipboard-updated` event.
+///
+/// Entries that need no capping are borrowed rather than copied. The emit path
+/// used to clone the whole entry before calling this, so every clipboard event
+/// duplicated the full data URL of a screenshot — megabytes — only to hand back
+/// the same bytes for the image types this function never touches.
+pub fn truncate_entry_for_ui(entry: &ClipboardEntry) -> Cow<'_, ClipboardEntry> {
+    if !entry_needs_ui_truncation(entry) {
+        return Cow::Borrowed(entry);
+    }
+
+    let mut capped = entry.clone();
+    if capped.content.chars().count() > CONTENT_PREVIEW_MAX_CHARS
+        && matches!(
+            capped.content_type.as_str(),
+            "text" | "code" | "url" | "rich_text"
+        )
     {
-        entry.content = format!(
+        capped.content = format!(
             "{}... [Truncated for speed]",
-            entry.content.chars().take(2000).collect::<String>()
+            capped.content
+                .chars()
+                .take(CONTENT_PREVIEW_MAX_CHARS)
+                .collect::<String>()
         );
     }
 
-    // Also truncate HTML content up to a certain point for UI preview
-    if let Some(ref html) = entry.html_content {
+    if let Some(ref html) = capped.html_content {
         if html.chars().count() > HTML_PREVIEW_MAX_CHARS {
-            entry.html_content = truncate_html_for_preview(html);
+            capped.html_content = truncate_html_for_preview(html);
         }
     }
 
-    entry
+    Cow::Owned(capped)
 }
 
 pub fn truncate_html_for_preview(html: &str) -> Option<String> {
@@ -580,3 +614,173 @@ pub fn parse_cf_html(raw: &[u8]) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::borrow::Cow;
+
+    fn entry_of(content_type: &str, content: String, html: Option<String>) -> ClipboardEntry {
+        ClipboardEntry {
+            id: 1,
+            content_type: content_type.to_string(),
+            content,
+            html_content: html,
+            source_app: "app".to_string(),
+            source_app_path: None,
+            timestamp: 0,
+            preview: "p".to_string(),
+            is_pinned: false,
+            tags: vec![],
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+            content_kinds: vec![],
+            ocr_text: None,
+            ocr_status: None,
+        }
+    }
+
+    /// An image is the case that makes the borrow worth having: the payload is
+    /// a whole data URL and no cap applies to it, so any copy of the entry on
+    /// this path is pure waste.
+    #[test]
+    fn image_payload_is_borrowed_not_copied() {
+        let url = format!("data:image/png;base64,{}", "A".repeat(1 << 20));
+        let entry = entry_of("image", url.clone(), None);
+
+        let payload = truncate_entry_for_ui(&entry);
+
+        assert!(
+            matches!(payload, Cow::Borrowed(_)),
+            "an image entry must not be copied on the emit path"
+        );
+        assert_eq!(payload.content, url);
+    }
+
+    #[test]
+    fn short_text_is_borrowed() {
+        let entry = entry_of("text", "hello".to_string(), None);
+        let payload = truncate_entry_for_ui(&entry);
+        assert!(matches!(payload, Cow::Borrowed(_)));
+        assert_eq!(payload.content, "hello");
+    }
+
+    #[test]
+    fn long_text_is_capped_and_owned() {
+        let body = "x".repeat(CONTENT_PREVIEW_MAX_CHARS + 500);
+        let entry = entry_of("text", body, None);
+
+        let payload = truncate_entry_for_ui(&entry);
+
+        assert!(matches!(payload, Cow::Owned(_)));
+        assert!(payload.content.ends_with("... [Truncated for speed]"));
+        assert_eq!(
+            payload.content.chars().filter(|c| *c == 'x').count(),
+            CONTENT_PREVIEW_MAX_CHARS
+        );
+    }
+
+    #[test]
+    fn long_text_at_exactly_the_limit_is_left_alone() {
+        let body = "x".repeat(CONTENT_PREVIEW_MAX_CHARS);
+        let entry = entry_of("text", body.clone(), None);
+
+        let payload = truncate_entry_for_ui(&entry);
+
+        assert!(matches!(payload, Cow::Borrowed(_)));
+        assert_eq!(payload.content, body);
+    }
+
+    #[test]
+    fn overlong_body_of_an_uncapped_type_is_left_alone() {
+        // Images and files are never capped: the UI needs the real payload.
+        let body = "x".repeat(CONTENT_PREVIEW_MAX_CHARS * 3);
+        let entry = entry_of("file", body.clone(), None);
+
+        assert!(!entry_needs_ui_truncation(&entry));
+        assert!(matches!(truncate_entry_for_ui(&entry), Cow::Borrowed(_)));
+        assert_eq!(truncate_entry_for_ui(&entry).content, body);
+    }
+
+    #[test]
+    fn long_html_is_capped_even_when_the_body_is_short() {
+        let html = format!("<p>{}</p>", "y".repeat(HTML_PREVIEW_MAX_CHARS * 2));
+        let html_len = html.len();
+        let entry = entry_of("rich_text", "body".to_string(), Some(html));
+
+        let payload = truncate_entry_for_ui(&entry);
+
+        assert!(matches!(payload, Cow::Owned(_)));
+        assert_eq!(payload.content, "body", "the body was already short");
+        let capped = payload
+            .html_content
+            .as_ref()
+            .expect("capped html is present");
+        assert!(capped.len() < html_len);
+        assert!(capped.contains(HTML_TRUNCATION_SUFFIX));
+    }
+
+    #[test]
+    fn both_fields_capped_in_one_pass() {
+        let body = "x".repeat(CONTENT_PREVIEW_MAX_CHARS + 1);
+        let html = "<p>z</p>".repeat(HTML_PREVIEW_MAX_CHARS);
+        let entry = entry_of("rich_text", body, Some(html));
+
+        let payload = truncate_entry_for_ui(&entry);
+
+        assert!(payload.content.ends_with("... [Truncated for speed]"));
+        assert!(
+            payload
+                .html_content
+                .as_ref()
+                .is_some_and(|h| h.contains(HTML_TRUNCATION_SUFFIX))
+        );
+    }
+
+    #[test]
+    fn needs_truncation_agrees_with_what_the_cap_does() {
+        for (ct, len, expect) in [
+            ("text", CONTENT_PREVIEW_MAX_CHARS, false),
+            ("text", CONTENT_PREVIEW_MAX_CHARS + 1, true),
+            ("code", CONTENT_PREVIEW_MAX_CHARS + 1, true),
+            ("url", CONTENT_PREVIEW_MAX_CHARS + 1, true),
+            ("rich_text", CONTENT_PREVIEW_MAX_CHARS + 1, true),
+            ("image", CONTENT_PREVIEW_MAX_CHARS + 1, false),
+            ("file", CONTENT_PREVIEW_MAX_CHARS + 1, false),
+            ("video", CONTENT_PREVIEW_MAX_CHARS + 1, false),
+        ] {
+            let entry = entry_of(ct, "x".repeat(len), None);
+            assert_eq!(
+                entry_needs_ui_truncation(&entry),
+                expect,
+                "{ct} at {len} chars"
+            );
+            assert_eq!(
+                matches!(truncate_entry_for_ui(&entry), Cow::Borrowed(_)),
+                !expect,
+                "borrow-vs-own disagrees with the cap for {ct} at {len} chars"
+            );
+        }
+    }
+
+    #[test]
+    fn multibyte_content_is_capped_by_characters_not_bytes() {
+        let body = "中".repeat(CONTENT_PREVIEW_MAX_CHARS + 10);
+        let entry = entry_of("text", body, None);
+
+        let payload = truncate_entry_for_ui(&entry);
+
+        assert!(payload.content.ends_with("... [Truncated for speed]"));
+        assert_eq!(
+            payload
+                .content
+                .chars()
+                .filter(|c| *c == '中')
+                .count(),
+            CONTENT_PREVIEW_MAX_CHARS
+        );
+    }
+}
+
