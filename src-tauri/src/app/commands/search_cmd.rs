@@ -76,7 +76,7 @@ fn ensure_regex_registered(conn: &Connection) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn search_fts(
+pub async fn search_fts(
     state: State<'_, DbState>,
     history: State<'_, SearchHistory>,
     query: String,
@@ -92,7 +92,7 @@ pub fn search_fts(
 }
 
 #[tauri::command]
-pub fn search_fuzzy(
+pub async fn search_fuzzy(
     state: State<'_, DbState>,
     history: State<'_, SearchHistory>,
     query: String,
@@ -117,7 +117,7 @@ pub fn search_fuzzy(
 }
 
 #[tauri::command]
-pub fn search_regex(
+pub async fn search_regex(
     state: State<'_, DbState>,
     history: State<'_, SearchHistory>,
     pattern: String,
@@ -144,8 +144,8 @@ pub fn search_regex(
 }
 
 #[tauri::command]
-pub fn get_search_history(history: State<'_, SearchHistory>) -> Vec<String> {
-    history.snapshot()
+pub async fn get_search_history(history: State<'_, SearchHistory>) -> Result<Vec<String>, String> {
+    Ok(history.snapshot())
 }
 
 #[cfg(test)]
