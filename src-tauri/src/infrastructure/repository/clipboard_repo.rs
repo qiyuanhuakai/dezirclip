@@ -720,9 +720,19 @@ impl SqliteClipboardRepository {
         if let Ok(Some(limit_str)) = SqliteSettingsRepository::get_raw(conn, "app.persistent_limit")
         {
             if let Ok(limit) = limit_str.parse::<i32>() {
-                // Count non-pinned entries that have no tags
+                // `INDEXED BY` is not decoration. Left to itself the planner
+                // picks `idx_clipboard_history_pinned_order_time` for both of
+                // these, because it can seek on `is_pinned` — but `pinned_order`
+                // sits between `is_pinned` and `timestamp`, so it still has to
+                // read every matching row out of the table to apply the `tags`
+                // test, and to sort them for the ORDER BY. The partial index
+                // added in v16 holds only the rows that pass that test, already
+                // in timestamp order, so both queries become a covering walk of
+                // it. The planner will not choose it on its own; naming it is
+                // what keeps the cost flat as the history grows.
                 let count: i32 = conn.query_row(
-                    "SELECT COUNT(*) FROM clipboard_history WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+                    "SELECT COUNT(*) FROM clipboard_history INDEXED BY idx_clipboard_history_evictable
+                     WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
                     [],
                     |row| row.get(0)
                 ).map_err(|e| e.to_string())?;
@@ -733,7 +743,7 @@ impl SqliteClipboardRepository {
                     let deleted_ids: Vec<i64> = {
                         let mut stmt = conn
                             .prepare(
-                                "SELECT id FROM clipboard_history
+                                "SELECT id FROM clipboard_history INDEXED BY idx_clipboard_history_evictable
                              WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)
                              ORDER BY timestamp ASC
                              LIMIT ?",
@@ -1826,8 +1836,11 @@ mod tests {
             .expect("drop au trigger");
         conn.execute("DROP TABLE IF EXISTS clipboard_fts", [])
             .expect("drop fts table");
+        // Roll the whole tail back rather than naming the versions that existed
+        // when this test was written: the migration gate is `MAX(version)`, so
+        // a leftover later marker would skip the block this test re-runs.
         conn.execute(
-            "DELETE FROM schema_migrations WHERE version IN (13, 14, 15)",
+            "DELETE FROM schema_migrations WHERE version >= 13",
             [],
         )
         .expect("version reset failed");
