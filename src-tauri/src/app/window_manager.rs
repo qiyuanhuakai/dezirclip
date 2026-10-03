@@ -637,22 +637,35 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Hand focus back to whatever window was in front before dezirclip took it.
+///
+/// Runs on its own thread. Global hotkey callbacks are dispatched inline from
+/// the hotkey window procedure, and that window is created during the Tauri
+/// setup hook on the main thread, so `WM_HOTKEY` messages arrive on the event
+/// loop itself. Measured cost of doing it inline: every window hide froze the
+/// main thread for 62 ms, and a hotkey pressed inside that window was served
+/// 66 ms late. The settle wait has to stay — it lets the foreground transition
+/// land — but it never needed the caller to stand still for it. No call site
+/// reads the result: the two Rust callers discard it and the frontend one only
+/// flips a local ref.
 #[tauri::command]
 pub fn restore_last_focus(_app_handle: AppHandle) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let last_hwnd_val = LAST_ACTIVE_HWND.load(Ordering::Relaxed);
-        if last_hwnd_val == 0 {
-            return Ok(());
+    std::thread::spawn(|| {
+        #[cfg(windows)]
+        {
+            let last_hwnd_val = LAST_ACTIVE_HWND.load(Ordering::Relaxed);
+            if last_hwnd_val == 0 {
+                return;
+            }
+            WindowExt::force_focus_window(HWND(last_hwnd_val as _));
+            std::thread::sleep(std::time::Duration::from_millis(60));
         }
-        WindowExt::force_focus_window(HWND(last_hwnd_val as _));
-        std::thread::sleep(std::time::Duration::from_millis(60));
-    }
 
-    #[cfg(target_os = "linux")]
-    {
-        let _ = crate::infrastructure::linux_api::window_tracker::restore_last_focus();
-    }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = crate::infrastructure::linux_api::window_tracker::restore_last_focus();
+        }
+    });
     Ok(())
 }
 
