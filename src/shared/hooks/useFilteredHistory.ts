@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import type { ClipboardEntry } from "../types";
-import { FuzzyIndex, parseFuzzyQuery } from "../lib/fuzzy";
+import { FuzzyIndex } from "../lib/fuzzy";
+import { compareForList, compareForScore, planNeedsFuzzyIndex, planSearch } from "../lib/searchPlan";
 
 interface UseFilteredHistoryOptions {
   history: ClipboardEntry[];
@@ -15,87 +16,89 @@ const buildSearchItem = (item: ClipboardEntry) => ({
   tagText: item.tags?.join(" ") ?? ""
 });
 
+type SearchItem = ReturnType<typeof buildSearchItem>;
+
+const NO_SEARCH_ITEMS: SearchItem[] = [];
+const NO_ITEM_LOOKUP: Map<SearchItem, ClipboardEntry> = new Map();
+
 export const useFilteredHistory = ({
   history,
   debouncedSearch,
   search,
   typeFilter
 }: UseFilteredHistoryOptions) => {
-  const searchItems = useMemo(() => history.map(buildSearchItem), [history]);
+  const plan = useMemo(
+    () => planSearch({ search, debouncedSearch }),
+    [search, debouncedSearch]
+  );
+
+  // Building the Fuse index costs roughly a kilobyte of heap and a hundred
+  // milliseconds per entry at large history sizes, and the branches below
+  // are the common case: browsing, scrolling, and every clipboard capture
+  // that appends a row. Only a live fuzzy query reads it back.
+  const needsFuzzyIndex = planNeedsFuzzyIndex(plan);
+
+  const searchItems = useMemo(
+    () => (needsFuzzyIndex ? history.map(buildSearchItem) : NO_SEARCH_ITEMS),
+    [history, needsFuzzyIndex]
+  );
+
   const itemBySearchItem = useMemo(() => {
-    const m = new Map<ReturnType<typeof buildSearchItem>, ClipboardEntry>();
+    if (!needsFuzzyIndex) return NO_ITEM_LOOKUP;
+    const m: Map<SearchItem, ClipboardEntry> = new Map();
     for (let i = 0; i < history.length; i++) {
       m.set(searchItems[i], history[i]);
     }
     return m;
-  }, [history, searchItems]);
+  }, [history, searchItems, needsFuzzyIndex]);
 
-  const index = useMemo(
-    () =>
-      new FuzzyIndex(searchItems, {
-        keys: [
-          { name: "content", weight: 1 },
-          { name: "sourceApp", weight: 0.6 },
-          { name: "tagText", weight: 0.8 }
-        ],
-        threshold: 0.4,
-        minMatchCharLength: 1
-      }),
-    [searchItems]
-  );
+  const index = useMemo(() => {
+    if (!needsFuzzyIndex) return null;
+    return new FuzzyIndex(searchItems, {
+      keys: [
+        { name: "content", weight: 1 },
+        { name: "sourceApp", weight: 0.6 },
+        { name: "tagText", weight: 0.8 }
+      ],
+      threshold: 0.4,
+      minMatchCharLength: 1
+    });
+  }, [searchItems, needsFuzzyIndex]);
 
   return useMemo(() => {
-    const rawSearch = search.toLowerCase();
-    const isTagSearch = rawSearch.startsWith("tag:");
-    const effectiveSearch = isTagSearch ? rawSearch.slice(4) : rawSearch;
-    const { terms } = parseFuzzyQuery(effectiveSearch);
-    const shouldBypassLocalSearch = !!debouncedSearch && debouncedSearch === search;
+    const byType = (item: ClipboardEntry) =>
+      !typeFilter || item.content_type === typeFilter;
 
-    if (shouldBypassLocalSearch) {
+    if (plan.kind === "server") {
+      return history.filter(byType).sort(compareForList);
+    }
+
+    if (plan.kind === "plain") {
+      return history.filter(byType).sort(compareForList);
+    }
+
+    if (plan.kind === "unordered") {
+      return history.filter(byType);
+    }
+
+    if (plan.kind === "tag") {
+      const term = plan.term;
       return history
-        .filter((item) => !typeFilter || item.content_type === typeFilter)
-        .sort((a, b) => {
-          if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
-          if (a.is_pinned) {
-            if ((a.pinned_order || 0) !== (b.pinned_order || 0)) {
-              return (b.pinned_order || 0) - (a.pinned_order || 0);
-            }
-            return b.timestamp - a.timestamp;
-          }
-          return b.timestamp - a.timestamp;
-        });
+        .filter(
+          (item) =>
+            byType(item) &&
+            (item.tags?.some((tag) => tag.toLowerCase().includes(term)) ?? false)
+        )
+        .sort((a, b) => b.timestamp - a.timestamp);
     }
 
-    if (!effectiveSearch) {
-      return history
-        .filter((item) => !typeFilter || item.content_type === typeFilter)
-        .sort((a, b) => {
-          if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
-          if (a.is_pinned) {
-            if ((a.pinned_order || 0) !== (b.pinned_order || 0)) {
-              return (b.pinned_order || 0) - (a.pinned_order || 0);
-            }
-            return b.timestamp - a.timestamp;
-          }
-          return b.timestamp - a.timestamp;
-        });
-    }
-
-    if (isTagSearch) {
-      const filtered = history.filter(
-        (item) =>
-          (!typeFilter || item.content_type === typeFilter) &&
-          (item.tags?.some((tag) => tag.toLowerCase().includes(effectiveSearch)) ?? false)
-      );
-      return filtered.sort((a, b) => b.timestamp - a.timestamp);
-    }
-
-    if (terms.length === 0) {
-      return history.filter((item) => !typeFilter || item.content_type === typeFilter);
+    // A fuzzy plan always comes with an index; the guard only narrows the type.
+    if (!index) {
+      return history.filter(byType);
     }
 
     const scoreByItem = new Map<ClipboardEntry, number>();
-    for (const term of terms) {
+    for (const term of plan.terms) {
       const matches = index.search(term, searchItems.length);
       for (const m of matches) {
         const item = itemBySearchItem.get(m.item);
@@ -105,28 +108,10 @@ export const useFilteredHistory = ({
       }
     }
 
-    const filtered = history.filter(
-      (item) =>
-        (!typeFilter || item.content_type === typeFilter) && scoreByItem.has(item)
-    );
-
-    return filtered
+    return history
+      .filter((item) => byType(item) && scoreByItem.has(item))
       .map((item) => ({ item, score: scoreByItem.get(item) ?? 0 }))
-      .sort((a, b) => {
-        if (a.item.is_pinned !== b.item.is_pinned) {
-          return a.item.is_pinned ? -1 : 1;
-        }
-        if (a.item.is_pinned) {
-          if ((a.item.pinned_order || 0) !== (b.item.pinned_order || 0)) {
-            return (b.item.pinned_order || 0) - (a.item.pinned_order || 0);
-          }
-          return b.item.timestamp - a.item.timestamp;
-        }
-        if (a.score !== b.score) {
-          return b.score - a.score;
-        }
-        return b.item.timestamp - a.item.timestamp;
-      })
+      .sort(compareForScore)
       .map((entry) => entry.item);
-  }, [history, debouncedSearch, search, typeFilter, index, itemBySearchItem, searchItems]);
+  }, [history, plan, typeFilter, index, itemBySearchItem, searchItems]);
 };
