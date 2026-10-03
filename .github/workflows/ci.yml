@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - master
+  # No base filter on purpose. A stacked PR (base = another feature branch) used
+  # to report no checks at all, which is indistinguishable from passing and
+  # leaves the branch unverified until the stack is merged. Every PR now runs the
+  # same suite regardless of what it is stacked on.
   pull_request:
-    branches:
-      - master
 
 permissions:
   contents: read
