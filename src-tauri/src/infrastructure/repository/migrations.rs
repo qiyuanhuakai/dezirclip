@@ -450,6 +450,39 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (15)", [])?;
     }
 
+    if current_version < 16 {
+        conn.execute("BEGIN", [])?;
+        let migration_result = (|| -> Result<()> {
+            // Storage-limit enforcement runs after every single insert, and both
+            // of its queries filter on `is_pinned = 0 AND tags = '[]'`. The
+            // existing indexes cannot serve that: `pinned_order` sits between
+            // `is_pinned` and `timestamp`, so ordering the candidates by time
+            // means sorting every unpinned row, and the `tags` test is not
+            // indexed at all, so each candidate costs a trip back to the table.
+            //
+            // A partial index over exactly the evictable rows makes both halves
+            // of the check walk that index alone — the COUNT becomes a count of
+            // index entries, and the ORDER BY ... LIMIT walks them in order and
+            // stops after the rows it needs. Rows that are pinned or tagged are
+            // never written into it, so its size tracks the history that is
+            // actually subject to the limit.
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_clipboard_history_evictable
+                    ON clipboard_history (timestamp)
+                    WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+                [],
+            )?;
+            Ok(())
+        })();
+
+        if let Err(err) = migration_result {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(err);
+        }
+        conn.execute("COMMIT", [])?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (16)", [])?;
+    }
+
     Ok(())
 }
 
@@ -720,7 +753,10 @@ mod tests {
             .expect("drop au");
         conn.execute("DROP TABLE IF EXISTS clipboard_fts", [])
             .expect("drop fts");
-        conn.execute("DELETE FROM schema_migrations WHERE version IN (14, 15)", [])
+        // Roll the whole tail back, not just the versions that existed when this
+        // test was written: the gate is `MAX(version)`, so leaving any later
+        // marker behind would skip the blocks this test is trying to re-run.
+        conn.execute("DELETE FROM schema_migrations WHERE version >= 14", [])
             .expect("delete v14 row");
 
         // Re-apply migrations: this must re-add columns (already there but the
@@ -771,7 +807,7 @@ mod tests {
     #[test]
     fn test_v15_rebuilds_existing_v14_fts_without_ocr_text() {
         let mut conn = fresh_db();
-        conn.execute("DELETE FROM schema_migrations WHERE version = 15", [])
+        conn.execute("DELETE FROM schema_migrations WHERE version >= 15", [])
             .expect("remove v15 marker");
         conn.execute_batch(
             "
@@ -834,12 +870,12 @@ mod tests {
 
         let version: i32 = conn
             .query_row(
-                "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+                "SELECT COUNT(*) FROM schema_migrations WHERE version = 15",
                 [],
                 |row| row.get(0),
             )
             .expect("schema version");
-        assert_eq!(version, 15, "v15 migration marker must be written");
+        assert_eq!(version, 1, "v15 migration marker must be written");
 
         let after: i32 = conn
             .query_row(
@@ -849,5 +885,141 @@ mod tests {
             )
             .expect("new fts count");
         assert!(after >= 1, "v15 rebuild must index existing OCR text");
+    }
+
+    fn insert_history_row(conn: &Connection, id: i64, pinned: i32, tags: &str, ts: i64) {
+        conn.execute(
+            "INSERT INTO clipboard_history
+             (id, content_type, content, html_content, source_app, timestamp, preview,
+              is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+              ocr_text, ocr_status)
+             VALUES (?1, 'text', ?2, NULL, 'App', ?3, 'p', ?4, 0, ?5, 0, 0, NULL, NULL, 'pending')",
+            params![id, format!("entry {id}"), ts, pinned, tags],
+        )
+        .expect("insert history row");
+    }
+
+    fn query_plan(conn: &Connection, sql: &str) -> String {
+        let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).expect("plan");
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("plan rows");
+        let mut out = String::new();
+        for row in rows {
+            out.push_str(&row.expect("plan row"));
+            out.push('\n');
+        }
+        out
+    }
+
+    // The index only pays for itself if the enforcement queries actually take
+    // it. Asserting on the plan is what stops a later "simplification" from
+    // quietly reintroducing a full scan that the timings would not catch:
+    // without the index the planner picks idx_clipboard_history_pinned_order_time
+    // and has to read every unpinned row back out of the table.
+    #[test]
+    fn eviction_queries_are_served_by_the_partial_index() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+
+        for id in 1..=200 {
+            insert_history_row(&mut conn, id, 0, "[]", id);
+        }
+
+        let count_plan = query_plan(
+            &conn,
+            "SELECT COUNT(*) FROM clipboard_history INDEXED BY idx_clipboard_history_evictable \
+             WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+        );
+        assert!(
+            count_plan.contains("INDEX idx_clipboard_history_evictable"),
+            "the COUNT must be driven by the partial index, got: {count_plan}"
+        );
+        assert!(
+            !count_plan.contains("idx_clipboard_history_pinned_order_time"),
+            "the old index forces a full pass over every unpinned row, got: {count_plan}"
+        );
+
+        let order_plan = query_plan(
+            &conn,
+            "SELECT id FROM clipboard_history INDEXED BY idx_clipboard_history_evictable \
+             WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL) \
+             ORDER BY timestamp ASC LIMIT 10",
+        );
+        assert!(
+            order_plan.contains("INDEX idx_clipboard_history_evictable"),
+            "the eviction query must be driven by the partial index, got: {order_plan}"
+        );
+        assert!(
+            !order_plan.contains("TEMP B-TREE"),
+            "the index is already in timestamp order, so the query must not sort: {order_plan}"
+        );
+    }
+
+    // A partial index that quietly held pinned or tagged rows would keep them
+    // alive in the index and make the count disagree with the table. `INDEXED
+    // BY` on its own is only a planner hint and does not filter, so the
+    // predicate has to stay in the query for the two counts to be comparable.
+    #[test]
+    fn partial_index_covers_only_evictable_rows() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+
+        insert_history_row(&mut conn, 1, 0, "[]", 1);
+        insert_history_row(&mut conn, 2, 1, "[]", 2);
+        insert_history_row(&mut conn, 3, 0, "[\"work\"]", 3);
+        insert_history_row(&mut conn, 4, 0, "[]", 4);
+
+        let via_index: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_history INDEXED BY idx_clipboard_history_evictable \
+                 WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count through partial index");
+        assert_eq!(
+            via_index, 2,
+            "pinned and tagged rows must not be reachable through the evictable index"
+        );
+
+        let via_table: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clipboard_history \
+                 WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count through table");
+        assert_eq!(
+            via_table, via_index,
+            "the index and the predicate must agree on how many rows are evictable"
+        );
+    }
+
+    #[test]
+    fn eviction_still_removes_the_oldest_rows_first() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+
+        for id in 1..=10 {
+            insert_history_row(&mut conn, id, 0, "[]", id);
+        }
+        insert_history_row(&mut conn, 11, 1, "[]", 11);
+        insert_history_row(&mut conn, 12, 0, "[\"keep\"]", 12);
+
+        let ids: Vec<i64> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id FROM clipboard_history \
+                     WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL) \
+                     ORDER BY timestamp ASC LIMIT 3",
+                )
+                .expect("prepare");
+            let rows = stmt.query_map([], |row| row.get(0)).expect("rows");
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        assert_eq!(ids, vec![1, 2, 3], "eviction order must still be oldest first");
     }
 }
