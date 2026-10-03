@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import type { Dispatch, SetStateAction, MouseEvent, ReactNode } from "react";
 import type { DragControls } from "framer-motion";
-import ClipboardItem from "../../features/clipboard/components/ClipboardItem";
+import ClipboardItemRenderer from "../../features/clipboard/components/ClipboardItemRenderer";
 import type { ClipboardEntry } from "../types";
 import type { Locale } from "../types";
 
@@ -84,10 +84,9 @@ export const useClipboardItemRenderer = ({
       const isEditingTags = editingTagsId === item.id;
 
       return (
-        <ClipboardItem
-          id={`clipboard-item-${item.id}`}
-          key={item.id}
+        <ClipboardItemRenderer
           item={item}
+          index={index}
           isSelected={isKeyboardMode && index === selectedIndex}
           windowPinned={isWindowPinned}
           isSensitiveHidden={!!isSensitiveHidden}
@@ -100,51 +99,20 @@ export const useClipboardItemRenderer = ({
           t={t}
           compactMode={compactMode}
           richTextSnapshotPreview={richTextSnapshotPreview}
-          onSelect={() => setSelectedIndex(index)}
-          onCopy={(withFormat, pasteImageAsBase64) =>
-            copyToClipboard(item.id, item.content, item.content_type, withFormat, pasteImageAsBase64)
-          }
-          onToggleReveal={(e) => {
-            e.stopPropagation();
-            setRevealedIds((prev) => {
-              const next = new Set(prev);
-              if (next.has(item.id)) next.delete(item.id);
-              else next.add(item.id);
-              return next;
-            });
-          }}
-          onOpen={(e) => {
-            e.stopPropagation();
-            openContent(item);
-          }}
-          onTogglePin={(e) => togglePin(e, item.id, item.is_pinned)}
-          onDelete={(e) => deleteEntry(e, item.id)}
-          onToggleTagEditor={(e) => {
-            e.stopPropagation();
-            if (editingTagsId === item.id) {
-              setEditingTagsId(null);
-            } else {
-              setEditingTagsId(item.id);
-              setTagInput("");
-            }
-          }}
-          onTagInput={setTagInput}
-          onTagAdd={() => {
-            const newTag = tagInput.trim();
-            if (newTag && !item.tags?.includes(newTag)) {
-              handleUpdateTags(item.id, [...(item.tags || []), newTag]);
-            }
-            setTagInput("");
-            setEditingTagsId(null);
-          }}
-          onTagDelete={(tag) => {
-            handleUpdateTags(item.id, item.tags ? item.tags.filter((t) => t !== tag) : []);
-          }}
           dragControls={dragControls}
           disableLayout={disableLayout}
-          onQRCode={() => onQRCode(item)}
-          onTransformItemError={(kind, message) => onTransformError(item, kind, message)}
-          onTransformItemSuccess={(kind) => onTransformSuccess(item, kind)}
+          setSelectedIndex={setSelectedIndex}
+          copyToClipboard={copyToClipboard}
+          setRevealedIds={setRevealedIds}
+          openContent={openContent}
+          togglePin={togglePin}
+          deleteEntry={deleteEntry}
+          setEditingTagsId={setEditingTagsId}
+          setTagInput={setTagInput}
+          handleUpdateTags={handleUpdateTags}
+          onQRCode={onQRCode}
+          onTransformError={onTransformError}
+          onTransformSuccess={onTransformSuccess}
         />
       );
     },
