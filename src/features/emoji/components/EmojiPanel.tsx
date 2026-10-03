@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -180,10 +180,21 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   const flatEmoji = useMemo(() => emojiGroups.flatMap((g) => g.emojis), [emojiGroups]);
   const hasFavorites = favorites.length > 0;
 
+  // The drag-drop listeners below are bound to the window, not to the favorites
+  // list: every path that mutates favorites goes through `setFavorites`'s
+  // updater form, so none of those handlers ever reads the current array. The
+  // only prop they close over is `saveSetting`, and a ref keeps them pointed at
+  // the latest one — which is what lets the listener effect run once instead of
+  // tearing down and re-registering all seven listeners on every edit.
+  const saveSettingRef = useRef(saveSetting);
+  useEffect(() => {
+    saveSettingRef.current = saveSetting;
+  }, [saveSetting]);
+
   const persistFavorites = (updater: string[] | ((prev: string[]) => string[])) => {
     setFavorites((prev) => {
       const next = dedupeFavoritePaths(typeof updater === "function" ? updater(prev) : updater);
-      saveSetting("app.emoji_favorites", JSON.stringify(next));
+      saveSettingRef.current("app.emoji_favorites", JSON.stringify(next));
       return next;
     });
   };
@@ -456,7 +467,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
       unlistenV2Leave.then((f) => f());
       unlistenNativeEmoji.then((f) => f());
     };
-  }, [favorites]);
+  }, []);
 
   useEffect(() => {
     const handleDragOver = (event: globalThis.DragEvent) => {
