@@ -28,6 +28,7 @@ import { useClipboardActions } from "./shared/hooks/useClipboardActions";
 import { useSoundEffects } from "./shared/hooks/useSoundEffects";
 import { useWindowPinnedListener } from "./shared/hooks/useWindowPinnedListener";
 import { useCustomBackground } from "./shared/hooks/useCustomBackground";
+import { useDragDegradation } from "./shared/hooks/useDragDegradation";
 import { useToastListener } from "./shared/hooks/useToastListener";
 import { useAppBootstrap } from "./shared/hooks/useAppBootstrap";
 import { useAppActions } from "./shared/hooks/useAppActions";
@@ -342,6 +343,8 @@ const App = () => {
   const { toasts, pushToast, confirmDialog, openConfirm, closeConfirm } = useOverlays();
 
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
+
+  useDragDegradation();
 
 
   const tagManagerSizeRef = useRef<{ width: number; height: number } | null>(null);

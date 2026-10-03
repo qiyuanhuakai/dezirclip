@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
@@ -39,6 +39,9 @@ const normalizeRect = (sel: Selection) => {
   return { x, y, width, height };
 };
 
+const meetsMinimum = (rect: CaptureRect) =>
+  rect.width >= MIN_SELECTION_SIZE && rect.height >= MIN_SELECTION_SIZE;
+
 export const toPhysicalCaptureRect = (
   rect: CaptureRect,
   origin: { x: number; y: number },
@@ -53,6 +56,25 @@ export const toPhysicalCaptureRect = (
 const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [boxVisible, setBoxVisible] = useState(false);
+
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const dimsRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The drag is the one genuinely per-frame interaction in this window, and a
+   * 1000 Hz mouse delivers a thousand `mousemove` events a second. Routing each
+   * one through setSelection meant a thousand full re-renders of this overlay
+   * a second, each rebuilding the selection object, the normalised rect and the
+   * inline style. The live geometry now lives in refs and reaches the screen
+   * as direct style writes inside a single animation frame, so React is only
+   * involved at the transitions it actually owns: the box crossing the minimum
+   * size, and the capture finishing. That is at most two renders per drag.
+   */
+  const live = useRef<Selection | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const framePending = useRef(false);
+  const pendingRef = useRef<{ x: number; y: number } | null>(null);
+  const visibleRef = useRef(false);
 
   // The capture overlay is usually opened straight from a hotkey, long before
   // the main window has ever rendered, so theme and colour mode come from the
@@ -63,29 +85,122 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     document.body.classList.add("region-select");
   }, []);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setSelection({ startX: e.clientX, startY: e.clientY, endX: e.clientX, endY: e.clientY });
-    setDragging(true);
+  const paint = useCallback((sel: Selection) => {
+    const rect = normalizeRect(sel);
+    const box = boxRef.current;
+    if (box) {
+      box.style.left = `${rect.x}px`;
+      box.style.top = `${rect.y}px`;
+      box.style.width = `${rect.width}px`;
+      box.style.height = `${rect.height}px`;
+    }
+    const dims = dimsRef.current;
+    if (dims) {
+      dims.textContent = `${rect.width} × ${rect.height}`;
+    }
+    // Only this one transition is worth a render: the box appearing once the
+    // rectangle is big enough. Everything below the threshold stays unrendered
+    // exactly as before, so the minimum-size behaviour is unchanged.
+    if (visibleRef.current !== meetsMinimum(rect)) {
+      visibleRef.current = meetsMinimum(rect);
+      setBoxVisible(visibleRef.current);
+    }
   }, []);
+
+  const cancelFrame = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    framePending.current = false;
+  }, []);
+
+  const schedulePaint = useCallback(() => {
+    if (framePending.current) return;
+    // The guard is raised before requesting the frame, not after: storing the
+    // handle in the same statement would let a callback that runs first clear
+    // the handle and leave a stale one behind, re-arming the guard forever.
+    framePending.current = true;
+    frameRef.current = requestAnimationFrame(() => {
+      framePending.current = false;
+      frameRef.current = null;
+      const sel = live.current;
+      const point = pendingRef.current;
+      if (!sel || !point) return;
+      live.current = { ...sel, endX: point.x, endY: point.y };
+      paint(live.current);
+    });
+  }, [paint]);
+
+  useEffect(() => cancelFrame, [cancelFrame]);
+
+  // The box only exists once the rectangle clears the minimum size, which is
+  // the same frame that first tries to write into it. Replaying the current
+  // geometry on mount is what makes the very first visible box carry the right
+  // position and dimensions instead of a frame of empty content.
+  useLayoutEffect(() => {
+    if (boxVisible && live.current) {
+      paint(live.current);
+    }
+  }, [boxVisible, paint]);
+
+  const clearSelection = useCallback(() => {
+    cancelFrame();
+    live.current = null;
+    pendingRef.current = null;
+    visibleRef.current = false;
+    setBoxVisible(false);
+    setSelection(null);
+  }, [cancelFrame]);
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const start = {
+        startX: e.clientX,
+        startY: e.clientY,
+        endX: e.clientX,
+        endY: e.clientY,
+      };
+      live.current = start;
+      pendingRef.current = null;
+      visibleRef.current = false;
+      setBoxVisible(false);
+      setSelection(start);
+      setDragging(true);
+    },
+    []
+  );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (!dragging) return;
-      setSelection((prev) =>
-        prev ? { ...prev, endX: e.clientX, endY: e.clientY } : prev
-      );
+      pendingRef.current = { x: e.clientX, y: e.clientY };
+      schedulePaint();
     },
-    [dragging]
+    [dragging, schedulePaint]
   );
 
   const handleMouseUp = useCallback(async () => {
-    if (!dragging || !selection) return;
+    if (!dragging) return;
     setDragging(false);
+    // Flush the position queued for the next frame so a release between two
+    // frames still captures the rectangle the user actually saw.
+    cancelFrame();
+    const last = live.current;
+    const queued = pendingRef.current;
+    if (last && queued) {
+      live.current = { ...last, endX: queued.x, endY: queued.y };
+    }
+    const final = live.current;
+    if (!final) {
+      clearSelection();
+      return;
+    }
 
-    const rect = normalizeRect(selection);
-    if (rect.width < MIN_SELECTION_SIZE || rect.height < MIN_SELECTION_SIZE) {
-      setSelection(null);
+    const rect = normalizeRect(final);
+    if (!meetsMinimum(rect)) {
+      clearSelection();
       return;
     }
 
@@ -96,7 +211,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         window.scaleFactor(),
       ]);
       const captureRect = toPhysicalCaptureRect(rect, origin, scale);
-      setSelection(null);
+      clearSelection();
       await hideRegionSelectWindow();
       await new Promise((resolve) => globalThis.setTimeout(resolve, CAPTURE_SETTLE_MS));
       await invoke("capture_region", captureRect);
@@ -106,15 +221,15 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
       console.error("Failed to capture selected region", err);
     }
 
-    setSelection(null);
+    clearSelection();
     await hideRegionSelectWindow().catch(() => undefined);
-  }, [dragging, selection, onSelect]);
+  }, [dragging, onSelect, cancelFrame, clearSelection]);
 
   // ESC key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setSelection(null);
+        clearSelection();
         setDragging(false);
         onCancel?.();
         hideRegionSelectWindow().catch(() => undefined);
@@ -122,11 +237,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
-
-  const rect = selection ? normalizeRect(selection) : null;
-  const hasValidSize =
-    rect !== null && rect.width >= MIN_SELECTION_SIZE && rect.height >= MIN_SELECTION_SIZE;
+  }, [onCancel, clearSelection]);
 
   return (
     <div
@@ -136,20 +247,17 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
-      {selection && hasValidSize && (
+      {selection && boxVisible && (
         <div
           className="region-select-window__selection"
           data-testid="region-select-box"
-          style={{
-            left: rect.x,
-            top: rect.y,
-            width: rect.width,
-            height: rect.height,
-          }}
+          ref={boxRef}
         >
-          <div className="region-select-window__dimensions" data-testid="region-select-dimensions">
-            {rect.width} × {rect.height}
-          </div>
+          <div
+            className="region-select-window__dimensions"
+            data-testid="region-select-dimensions"
+            ref={dimsRef}
+          />
         </div>
       )}
     </div>
