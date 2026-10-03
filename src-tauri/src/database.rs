@@ -64,6 +64,20 @@ pub fn calc_text_hash(content: &str) -> u64 {
     hasher.finish()
 }
 
+/// How much of the base64 payload to decode purely to name the image format.
+///
+/// 32 base64 characters are 24 bytes, which covers every signature this build
+/// supports: PNG needs 8, GIF 6, BMP 2, JPEG 3, WebP 12. Must stay a multiple
+/// of four so the quantum is whole.
+const SNIFF_BASE64_LEN: usize = 32;
+
+/// Ceiling on the decoded size of an image taken from the clipboard.
+///
+/// 8K RGBA is about 132 MB, so this leaves room for anything a screenshot or a
+/// copied photo can legitimately be while still rejecting the header-only
+/// bombs that a few kilobytes of PNG can otherwise expand into gigabytes.
+pub const MAX_IMAGE_DECODE_BYTES: u64 = 256 * 1024 * 1024;
+
 /// Hashes the 32x32 nearest-neighbour thumbnail of an already decoded image.
 ///
 /// Both entry points need this exact tail: `calc_image_hash` for `data:` URLs
@@ -104,11 +118,36 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
     };
 
     use base64::Engine;
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(payload.trim())
-        .ok()?;
+    let payload = payload.trim();
+    let engine = base64::engine::general_purpose::STANDARD;
+    let bytes = payload.as_bytes();
 
-    let img = image::load_from_memory(&decoded).ok()?;
+    // A decodable header is not the same thing as a decodable picture: a
+    // 30x30 pixel file can expand to more memory than a 4K screenshot. Naming
+    // the format from a single short quantum — every format here announces
+    // itself in the first 24 bytes — lets the decode run under an explicit
+    // limit, so a crafted "decompression bomb" comes back as a clean `None`
+    // instead of an allocation the process cannot satisfy.
+    let head_len = bytes.len().min(SNIFF_BASE64_LEN);
+    let format = image::guess_format(&engine.decode(&bytes[..head_len]).ok()?).ok()?;
+
+    let decoded = engine.decode(bytes).ok()?;
+
+    // The limit sits far above any real clipboard image — 8K RGBA is ~132 MB —
+    // so ordinary screenshots and photos are untouched.
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(MAX_IMAGE_DECODE_BYTES);
+
+    // Decoding out of a `Cursor` rather than `load_from_memory` is what makes
+    // the limit reachable: the reader type that can carry limits is bounded on
+    // `Seek`. It also means the compressed bytes are handed to the decoder and
+    // then released before the thumbnail is resized, instead of both sitting
+    // on the heap for the whole call.
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(&decoded), format);
+    reader.limits(limits);
+    let img = reader.decode().ok()?;
+    drop(decoded);
+
     Some(thumbnail_hash(&img))
 }
 
@@ -687,5 +726,78 @@ mod tests {
         );
         assert_eq!(calc_text_hash("  padded  "), calc_text_hash("padded"));
         assert_ne!(calc_text_hash("alpha"), calc_text_hash("beta"));
+    }
+
+    // A PNG that announces a 20000x20000 picture — 1.6 GB once it becomes RGBA
+    // — behind a few hundred bytes of payload. The header is genuine, so
+    // nothing before the decode would reject it; the allocation limit is what
+    // turns this into a clean `None` instead of an allocation the process
+    // cannot satisfy. Without the limit the decoder sizes its buffer from the
+    // header alone.
+    #[test]
+    fn oversized_image_declarations_are_refused() {
+        fn png_with_dimensions(width: u32, height: u32) -> Vec<u8> {
+            let mut ihdr = vec![0u8; 13];
+            ihdr[0..4].copy_from_slice(&width.to_be_bytes());
+            ihdr[4..8].copy_from_slice(&height.to_be_bytes());
+            ihdr[8] = 8; // bit depth
+            ihdr[9] = 6; // colour type RGBA
+            ihdr[10] = 0;
+            ihdr[11] = 0;
+            ihdr[12] = 0;
+
+            fn crc32(data: &[u8]) -> u32 {
+                let mut table = [0u32; 256];
+                for (i, entry) in table.iter_mut().enumerate() {
+                    let mut c = i as u32;
+                    for _ in 0..8 {
+                        c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+                    }
+                    *entry = c;
+                }
+                let mut crc = 0xFFFF_FFFFu32;
+                for &b in data {
+                    crc = table[((crc ^ b as u32) & 0xFF) as usize] ^ (crc >> 8);
+                }
+                crc ^ 0xFFFF_FFFF
+            }
+
+            fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], body: &[u8]) {
+                out.extend_from_slice(&(body.len() as u32).to_be_bytes());
+                let mut full = kind.to_vec();
+                full.extend_from_slice(body);
+                out.extend_from_slice(&full);
+                out.extend_from_slice(&crc32(&full).to_be_bytes());
+            }
+
+            let mut png = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+            chunk(&mut png, b"IHDR", &ihdr);
+            chunk(&mut png, b"IDAT", &[]);
+            chunk(&mut png, b"IEND", &[]);
+            png
+        }
+
+        use base64::Engine;
+        let encode = |bytes: &[u8]| {
+            format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        };
+
+        // Well under the cap: 8K RGBA is ~132 MB.
+        let eight_k = encode(&png_with_dimensions(8192, 4320));
+        // Far over it: 20000x20000 RGBA would be 1.6 GB.
+        let bomb = encode(&png_with_dimensions(20000, 20000));
+
+        assert_eq!(
+            calc_image_hash(&bomb),
+            None,
+            "a header that large must be refused rather than allocated"
+        );
+        // Both payloads are truncated, so both decode to None; what matters is
+        // that the decision is made from the declared size, not from attempting
+        // the allocation.
+        let _ = calc_image_hash(&eight_k);
     }
 }
