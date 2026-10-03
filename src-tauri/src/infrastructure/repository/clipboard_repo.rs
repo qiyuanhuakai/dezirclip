@@ -17,6 +17,17 @@ const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
 const HISTORY_CONTENT_PREVIEW_CHARS: usize = 2_000;
 const HISTORY_PREVIEW_CHARS: usize = 500;
 const HISTORY_HTML_PREVIEW_CHARS: usize = 5_000;
+
+/// Byte ceilings for the three repository caches.
+///
+/// The entry ceilings stay where they were; these are what stop a page of
+/// screenshots from turning "64 cached pages" into an unbounded resident set.
+/// A page of ordinary text entries weighs well under a megabyte, so a text-only
+/// history still keeps dozens of pages warm — the ceiling only starts evicting
+/// once the cached pages are actually carrying megabytes.
+const HISTORY_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
+const SEARCH_CACHE_MAX_BYTES: usize = 16 * 1024 * 1024;
+const CONTENT_CACHE_MAX_BYTES: usize = 8 * 1024 * 1024;
 const HISTORY_LIST_SELECT_COLUMNS: &str = "id, content_type, \
     CASE WHEN content LIKE 'linux:%' OR content LIKE 'dpapi:%' THEN content ELSE substr(content, 1, 2004) END, \
     CASE WHEN html_content LIKE 'linux:%' OR html_content LIKE 'dpapi:%' THEN html_content ELSE substr(html_content, 1, 5004) END, \
@@ -50,18 +61,51 @@ fn history_html_preview(value: &str) -> String {
     truncate_chars_with_suffix(value, HISTORY_HTML_PREVIEW_CHARS, "... [HTML Truncated]")
 }
 
+/// What a single cached entry keeps alive, in bytes.
+///
+/// A page-count bound alone does not bound memory: the history and search
+/// caches hold whole pages of entries, and an entry's payload is not a fixed
+/// size. A screenshot carries its full data URL in `content`, a table carries
+/// 5,000 characters of HTML, and an OCR'd screenshot carries both plus its
+/// text. 64 pages of 120 entries is 7,680 entries, and how much that costs is
+/// decided entirely by what the user happened to copy.
+fn entry_payload_weight(entry: &ClipboardEntry) -> usize {
+    entry.content.len()
+        + entry.preview.len()
+        + entry.source_app.len()
+        + entry.source_app_path.as_deref().map_or(0, str::len)
+        + entry.html_content.as_deref().map_or(0, str::len)
+        + entry.ocr_text.as_deref().map_or(0, str::len)
+        + entry.content_type.len()
+        + entry.tags.iter().map(String::len).sum::<usize>()
+}
+
+fn entry_page_weight(entries: &Vec<ClipboardEntry>) -> usize {
+    entries.iter().map(entry_payload_weight).sum()
+}
+
+fn content_triple_weight(value: &(String, String, Option<String>)) -> usize {
+    value.0.len() + value.1.len() + value.2.as_deref().map_or(0, str::len)
+}
+
 struct SimpleLruCache<T: Clone> {
     map: HashMap<String, T>,
     order: VecDeque<String>,
     capacity: usize,
+    max_weight: usize,
+    weight: usize,
+    weight_of: fn(&T) -> usize,
 }
 
 impl<T: Clone> SimpleLruCache<T> {
-    fn new(capacity: usize) -> Self {
+    fn new(capacity: usize, max_weight: usize, weight_of: fn(&T) -> usize) -> Self {
         Self {
             map: HashMap::new(),
             order: VecDeque::new(),
             capacity: capacity.max(1),
+            max_weight: max_weight.max(1),
+            weight: 0,
+            weight_of,
         }
     }
 
@@ -74,18 +118,35 @@ impl<T: Clone> SimpleLruCache<T> {
     }
 
     fn put(&mut self, key: String, value: T) {
-        if self.map.contains_key(&key) {
-            self.map.insert(key.clone(), value);
+        let incoming = (self.weight_of)(&value);
+
+        if let Some(previous) = self.map.insert(key.clone(), value) {
+            self.weight = self.weight.saturating_sub((self.weight_of)(&previous));
             self.touch(&key);
+            self.weight = self.weight.saturating_add(incoming);
+            self.evict_to_budget();
             return;
         }
-        self.map.insert(key.clone(), value);
+
         self.order.push_back(key);
-        while self.map.len() > self.capacity {
-            if let Some(oldest) = self.order.pop_front() {
-                self.map.remove(&oldest);
-            } else {
+        self.weight = self.weight.saturating_add(incoming);
+        self.evict_to_budget();
+    }
+
+    /// Drops least-recently-used entries until the entry count and the byte
+    /// budget are both satisfied.
+    ///
+    /// A value that exceeds the whole budget on its own is not retained. A miss
+    /// costs the query the hit would have saved and nothing else, whereas
+    /// keeping it would leave the cache holding exactly the payload the budget
+    /// exists to exclude.
+    fn evict_to_budget(&mut self) {
+        while self.map.len() > self.capacity || self.weight > self.max_weight {
+            let Some(oldest) = self.order.pop_front() else {
                 break;
+            };
+            if let Some(dropped) = self.map.remove(&oldest) {
+                self.weight = self.weight.saturating_sub((self.weight_of)(&dropped));
             }
         }
     }
@@ -93,6 +154,7 @@ impl<T: Clone> SimpleLruCache<T> {
     fn clear(&mut self) {
         self.map.clear();
         self.order.clear();
+        self.weight = 0;
     }
 
     fn touch(&mut self, key: &str) {
@@ -150,9 +212,21 @@ impl SqliteClipboardRepository {
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
         Self {
             conn,
-            history_cache: Arc::new(Mutex::new(SimpleLruCache::new(64))),
-            search_cache: Arc::new(Mutex::new(SimpleLruCache::new(64))),
-            content_cache: Arc::new(Mutex::new(SimpleLruCache::new(256))),
+            history_cache: Arc::new(Mutex::new(SimpleLruCache::new(
+                64,
+                HISTORY_CACHE_MAX_BYTES,
+                entry_page_weight,
+            ))),
+            search_cache: Arc::new(Mutex::new(SimpleLruCache::new(
+                64,
+                SEARCH_CACHE_MAX_BYTES,
+                entry_page_weight,
+            ))),
+            content_cache: Arc::new(Mutex::new(SimpleLruCache::new(
+                256,
+                CONTENT_CACHE_MAX_BYTES,
+                content_triple_weight,
+            ))),
         }
     }
 
@@ -1905,5 +1979,188 @@ mod tests {
             "reusing the dedup hash must store the same content_hash as recomputing it"
         );
         assert_eq!(read_hash(new_id), dedup_hash);
+    }
+
+    // The repository caches hold pages of entries whose payload size is decided
+    // by whatever the user happened to copy, so an entry-count ceiling on its own
+    // leaves the resident set unbounded. These pin the byte ceiling: it has to
+    // bind before the count ceiling does, it has to bind by recency, and the
+    // running total must never drift from what the cache is actually holding.
+
+    fn weighted_entry(content_len: usize) -> ClipboardEntry {
+        ClipboardEntry {
+            id: 0,
+            content_type: "image".to_string(),
+            content: "x".repeat(content_len),
+            html_content: None,
+            source_app: "Test".to_string(),
+            source_app_path: None,
+            timestamp: 1_700_000_000,
+            preview: String::new(),
+            is_pinned: false,
+            tags: Vec::new(),
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+            content_kinds: Vec::new(),
+            ocr_text: None,
+            ocr_status: None,
+        }
+    }
+
+    /// A page of `entries` entries carrying `payload_bytes` of content in total,
+    /// so a test can state a weight in round numbers without depending on the
+    /// weight function's internals.
+    fn page_of(payload_bytes: usize, entries: usize) -> Vec<ClipboardEntry> {
+        let per_entry = payload_bytes / entries;
+        (0..entries).map(|_| weighted_entry(per_entry)).collect()
+    }
+
+    #[test]
+    fn byte_ceiling_evicts_long_before_the_entry_ceiling_would() {
+        let mut cache: SimpleLruCache<Vec<ClipboardEntry>> =
+            SimpleLruCache::new(64, 1_000, entry_page_weight);
+
+        for page in 0..10 {
+            cache.put(format!("page:{page}"), page_of(400, 2));
+        }
+
+        assert!(
+            cache.map.len() < 10,
+            "ten ~418-byte pages blow a 1000-byte ceiling while sitting far below the \
+             64-entry ceiling, so the byte ceiling must have bound: {} pages retained",
+            cache.map.len()
+        );
+        assert!(cache.weight <= 1_000);
+    }
+
+    #[test]
+    fn byte_eviction_drops_the_least_recently_used_page() {
+        let mut cache: SimpleLruCache<Vec<ClipboardEntry>> =
+            SimpleLruCache::new(64, 1_000, entry_page_weight);
+        cache.put("a".to_string(), page_of(400, 2));
+        cache.put("b".to_string(), page_of(400, 2));
+        assert!(cache.get("a").is_some());
+        cache.put("c".to_string(), page_of(400, 2));
+
+        assert!(
+            cache.get("a").is_some(),
+            "the page that was just read must survive the next insert"
+        );
+        assert!(
+            cache.get("b").is_none(),
+            "the untouched page is the least recently used and must be the one to go"
+        );
+        assert!(cache.get("c").is_some());
+    }
+
+    #[test]
+    fn a_page_too_big_for_the_whole_ceiling_is_not_retained() {
+        let mut cache: SimpleLruCache<Vec<ClipboardEntry>> =
+            SimpleLruCache::new(64, 1_000, entry_page_weight);
+        cache.put("huge".to_string(), page_of(50_000, 1));
+
+        assert!(
+            cache.map.is_empty(),
+            "keeping a page that alone exceeds the ceiling would leave the cache holding \
+             exactly the payload the ceiling exists to exclude"
+        );
+        assert_eq!(cache.weight, 0);
+    }
+
+    #[test]
+    fn the_entry_ceiling_still_applies_to_pages_that_cost_nothing() {
+        let mut cache: SimpleLruCache<Vec<ClipboardEntry>> =
+            SimpleLruCache::new(4, 1_000_000, entry_page_weight);
+        for page in 0..20 {
+            cache.put(format!("page:{page}"), Vec::new());
+        }
+
+        assert_eq!(cache.map.len(), 4, "a zero-byte page must not escape the count ceiling");
+    }
+
+    #[test]
+    fn retained_weight_tracks_the_entries_actually_held() {
+        let mut cache: SimpleLruCache<Vec<ClipboardEntry>> =
+            SimpleLruCache::new(64, 10_000, entry_page_weight);
+        for page in 0..5 {
+            cache.put(format!("page:{page}"), page_of(200, 2));
+        }
+
+        let recomputed: usize = cache.map.values().map(|v| entry_page_weight(v)).sum();
+        assert_eq!(
+            cache.weight, recomputed,
+            "the running total must match the live entries, or eviction starts guessing"
+        );
+    }
+
+    #[test]
+    fn replacing_a_key_corrects_the_weight_instead_of_adding_to_it() {
+        let mut cache: SimpleLruCache<Vec<ClipboardEntry>> =
+            SimpleLruCache::new(64, 10_000, entry_page_weight);
+        cache.put("k".to_string(), page_of(1_000, 1));
+        let after_large = cache.weight;
+
+        cache.put("k".to_string(), page_of(10, 1));
+
+        assert_eq!(cache.map.len(), 1, "replacing a key must not add a second entry");
+        assert!(
+            after_large > cache.weight,
+            "replacing a heavy page with a light one must shrink the total, not stack on it"
+        );
+        assert_eq!(cache.weight, entry_page_weight(&page_of(10, 1)));
+    }
+
+    #[test]
+    fn clearing_resets_the_weight_along_with_the_entries() {
+        let mut cache: SimpleLruCache<Vec<ClipboardEntry>> =
+            SimpleLruCache::new(64, 10_000, entry_page_weight);
+        cache.put("a".to_string(), page_of(400, 2));
+        assert!(cache.weight > 0);
+
+        cache.clear();
+
+        assert_eq!(
+            cache.weight, 0,
+            "a stale total after an invalidation would evict healthy entries forever"
+        );
+    }
+
+    #[test]
+    fn html_and_ocr_payload_count_towards_the_page_weight() {
+        let mut entry = weighted_entry(10);
+        let bare = entry_payload_weight(&entry);
+
+        entry.html_content = Some("x".repeat(500));
+        entry.ocr_text = Some("y".repeat(300));
+
+        assert_eq!(
+            entry_payload_weight(&entry) - bare,
+            800,
+            "an entry that also carries HTML and OCR text must weigh what it holds, \
+             not just its content column"
+        );
+    }
+
+    #[test]
+    fn the_history_cache_stays_accounted_after_real_reads() {
+        let arc = setup_fts_db();
+        {
+            let conn = arc.lock().expect("lock");
+            for i in 0..120 {
+                insert_entry(&conn, &"body ".repeat(300), "Browser", 1_700_000_000 + i);
+            }
+        }
+
+        let repo = SqliteClipboardRepository::new(arc);
+        for offset in [0, 20, 40, 0] {
+            repo.get_history(20, offset, None).expect("get_history failed");
+        }
+
+        let cached = repo.history_cache.lock().expect("lock");
+        let recomputed: usize = cached.map.values().map(|v| entry_page_weight(v)).sum();
+        assert_eq!(cached.weight, recomputed);
+        assert!(cached.weight <= HISTORY_CACHE_MAX_BYTES);
     }
 }
