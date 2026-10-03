@@ -31,6 +31,17 @@ const hideRegionSelectWindow = async () => {
   await getCurrentWindow().hide();
 };
 
+/**
+ * A cancelled selection has no capture to make, and the overlay is fullscreen —
+ * while it sits hidden it still holds a whole display's worth of compositor
+ * surface. Handing the hide to the backend lets it drop the window's memory
+ * target too, which is what gives the memory back. The success path skips this
+ * because `capture_region` releases the selector once it has replied.
+ */
+const parkRegionSelectWindow = async () => {
+  await invoke("hide_region_select").catch(() => undefined);
+};
+
 const normalizeRect = (sel: Selection) => {
   const x = Math.min(sel.startX, sel.endX);
   const y = Math.min(sel.startY, sel.endY);
@@ -222,7 +233,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     }
 
     clearSelection();
-    await hideRegionSelectWindow().catch(() => undefined);
+    await parkRegionSelectWindow();
   }, [dragging, onSelect, cancelFrame, clearSelection]);
 
   // ESC key handler
@@ -232,7 +243,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         clearSelection();
         setDragging(false);
         onCancel?.();
-        hideRegionSelectWindow().catch(() => undefined);
+        parkRegionSelectWindow().catch(() => undefined);
       }
     };
     window.addEventListener("keydown", handleKeyDown);

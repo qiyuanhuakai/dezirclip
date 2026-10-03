@@ -13,6 +13,7 @@ pub fn show_region_selector(app: AppHandle) -> Result<(), String> {
         .get_webview_window("region-select")
         .ok_or_else(|| "Region selector window is not configured".to_string())?;
     let _ = window.set_focusable(true);
+    crate::app::webview_memory::restore_window_memory(&window, "region-select-show");
     window
         .show()
         .map_err(|e| format!("Failed to show region selector: {e}"))?;
@@ -20,6 +21,22 @@ pub fn show_region_selector(app: AppHandle) -> Result<(), String> {
         .set_focus()
         .map_err(|e| format!("Failed to focus region selector: {e}"))?;
     Ok(())
+}
+
+/// Park the region selector after a cancel.
+///
+/// The overlay is fullscreen and idle the moment a selection is abandoned, and
+/// it holds a whole display's worth of compositor surface while it sits there.
+/// Releasing it on cancel is what keeps the startup saving in place for anyone
+/// who opens the screenshot tool and then backs out. Safe to call when no
+/// selector exists.
+#[tauri::command]
+pub fn hide_region_select(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("region-select") {
+        let _ = window.set_focusable(false);
+        let _ = window.hide();
+        crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
+    }
 }
 
 /// Capture the primary monitor as a PNG and broadcast a `screenshot:complete`
@@ -48,7 +65,22 @@ pub async fn capture_region(
     copy_screenshot_to_clipboard(&result)?;
     save_screenshot_to_history(&app, &result);
     emit_screenshot_complete(&app, &result);
+    release_selector_after_response(&app);
     Ok(result)
+}
+
+/// Park the selector once the caller has actually received the result.
+///
+/// The capture is invoked *from* the selector, so dropping its memory target
+/// inline would race the IPC reply. Waiting hands the reply back first and
+/// keeps the teardown off the response path; the overlay is hidden and idle for
+/// the whole wait, so nothing the user can see changes.
+fn release_selector_after_response(app: &AppHandle) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        hide_region_select(handle);
+    });
 }
 
 /// Enumerate every attached monitor.

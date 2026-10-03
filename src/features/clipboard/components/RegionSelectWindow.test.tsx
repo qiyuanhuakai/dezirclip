@@ -165,7 +165,7 @@ describe("RegionSelectWindow", () => {
     expect(onSelect).toHaveBeenCalledWith({ x: 2070, y: 160, width: 480, height: 300 });
   });
 
-  it("escape cancels, hides window, and fires onCancel", async () => {
+  it("escape cancels, parks the window, and fires onCancel", async () => {
     const onCancel = vi.fn();
     render(<RegionSelectWindow onCancel={onCancel} />);
 
@@ -174,8 +174,9 @@ describe("RegionSelectWindow", () => {
     });
 
     expect(onCancel).toHaveBeenCalledTimes(1);
-    expect(mockSetFocusable).toHaveBeenCalledWith(false);
-    expect(mockHide).toHaveBeenCalledTimes(1);
+    // The backend owns the hide so it can drop the fullscreen window's memory
+    // target; hiding from here would leave that surface allocated.
+    expect(mockInvoke).toHaveBeenCalledWith("hide_region_select");
   });
 
   it("small selection is ignored (below MIN_SELECTION_SIZE)", async () => {

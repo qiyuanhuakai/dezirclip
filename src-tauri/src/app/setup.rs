@@ -523,11 +523,22 @@ fn setup_state(
     app.manage(SearchHistory::default());
 }
 
+/// Park the auxiliary overlays for the rest of the session.
+///
+/// They are built at startup and stay hidden until their hotkey fires, but a
+/// hidden WebView2 renderer still holds its compositor surface. Dropping them to
+/// the low memory target is what the main window already does on blur-hide, and
+/// it is worth far more here than the cache eviction it sounds like: with all
+/// three windows present the GPU process sat at 209.7 MB and the whole WebView2
+/// tree at 676.6 MB, and with the two overlays parked they measure 6.1 MB and
+/// 161.3 MB on the same machine and window size. Their show paths raise the
+/// target again before the window is used.
 fn hide_auxiliary_windows(app: &App) {
     for label in ["quick-paste", "region-select"] {
         if let Some(window) = app.get_webview_window(label) {
             let _ = window.hide();
             let _ = window.set_focusable(false);
+            crate::app::webview_memory::lower_window_memory(&window, "auxiliary-startup-hide");
         }
     }
 }
