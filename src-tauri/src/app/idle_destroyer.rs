@@ -463,6 +463,7 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
             // freshly-recreated window before the caller reaches mark_shown().
             LAST_HIDDEN_TIMESTAMP.store(0, Ordering::SeqCst);
             clear_closing();
+            consume_recreate_request();
             crate::info!("[idle-destroyer] Main webview recreated successfully.");
             true
         }
@@ -472,6 +473,20 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
             false
         }
     }
+}
+
+/// Retire a queued recreate request, because the build that satisfied it just
+/// landed.
+///
+/// The flag has to be consumed here and nowhere else. Every caller that defers a
+/// recreate sets it, but if it survives a successful build then the next teardown
+/// undoes itself: `try_destroy_idle` ends a destroy by calling
+/// `service_pending_recreate`, which builds a window and *shows* it. The user
+/// hides the window, one tick later it reopens by itself, and their next hotkey
+/// press then hides it instead of showing it — the memory is never reclaimed and
+/// the hotkey appears to be stuck.
+fn consume_recreate_request() {
+    RECREATE_PENDING.store(false, Ordering::SeqCst);
 }
 
 /// Pure decision: may this thread call `WebviewWindowBuilder::build()` now?
