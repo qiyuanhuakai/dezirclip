@@ -500,7 +500,7 @@ pub fn toggle_window(app: &AppHandle) {
             .unwrap()
             .as_millis() as u64;
         LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
-        idle_destroyer::mark_shown();
+        idle_destroyer::notify_main_window_shown(app);
         webview_memory::restore_window_memory(&window, "toggle-show");
 
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
@@ -615,7 +615,7 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
         webview_memory::restore_window_memory(&window, "focus-show");
         let _ = window.set_focusable(true);
         let _ = window.show();
-        idle_destroyer::mark_shown();
+        idle_destroyer::notify_main_window_shown(&app_handle);
 
         #[cfg(windows)]
         {
