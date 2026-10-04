@@ -199,6 +199,7 @@ pub fn show_quick_paste(app: AppHandle) -> Result<(), String> {
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.set_always_on_top(true);
     let _ = window.set_focusable(true);
+    crate::app::webview_memory::restore_window_memory(&window, "quick-paste-show");
     window
         .show()
         .map_err(|e| format!("Failed to show quick-paste window: {e}"))?;
@@ -218,6 +219,7 @@ pub fn hide_quick_paste(app: AppHandle) -> Result<(), String> {
     match app.get_webview_window(QUICK_PASTE_LABEL) {
         Some(window) => {
             let _ = window.set_focusable(false);
+            crate::app::webview_memory::lower_window_memory(&window, "quick-paste-hide");
             window
                 .hide()
                 .map_err(|e| format!("Failed to hide quick-paste window: {e}"))?;
