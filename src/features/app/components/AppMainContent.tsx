@@ -3,6 +3,7 @@ import type { ComponentProps, RefObject, ReactNode } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import type { DragControls } from "framer-motion";
 import { ArrowUp, Clipboard } from "lucide-react";
+import { sameIdOrder } from "../../../shared/lib/idOrder";
 import { VirtualClipboardList } from "../../clipboard/components/VirtualClipboardList";
 import type { ClipboardEntry } from "../../../shared/types";
 import type { VirtualClipboardListHandle } from "../../clipboard/types";
@@ -128,8 +129,14 @@ const AppMainContent = ({
   useEffect(() => {
     if (isDraggingPinned) return;
     const next = pinnedItems.map((item) => item.id);
-    setPinnedOrderIds(next);
+    // An id list rebuilt from the same pinned rows is a different array with the
+    // same contents, and handing that to the setter is a state change all the
+    // same -- one render pass per firing for an ordering that has not moved.
+    // This effect runs once per search keystroke, and the list it reads is
+    // rebuilt several times while the keystroke settles.
+    if (sameIdOrder(pinnedOrderRef.current, next)) return;
     pinnedOrderRef.current = next;
+    setPinnedOrderIds(next);
   }, [pinnedItems, isDraggingPinned]);
 
   const orderedPinnedItems = useMemo(() => {
