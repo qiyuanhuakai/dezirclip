@@ -80,9 +80,71 @@ let compactPreviewLifecycleListenersReady: Promise<void> | null = null;
 
 const loadWebviewWindowModule = async () => import("@tauri-apps/api/webviewWindow");
 
+// The backend flag only ever holds the value we last asked for, so repeating
+// the same ask is a wasted cross-process round trip. Scrolling mounts and
+// unmounts rows constantly and every teardown used to re-send `false`.
+let lastIgnoreBlur: boolean | null = null;
+
 const setIgnoreBlurSafe = (ignore: boolean) => {
+    if (lastIgnoreBlur === ignore) return;
+    lastIgnoreBlur = ignore;
     compactPreviewLog("set_ignore_blur", { ignore });
-    invoke("set_ignore_blur", { ignore }).catch(() => {});
+    invoke("set_ignore_blur", { ignore }).catch(() => {
+        // The backend state is unknown after a failure, so let the next caller
+        // with the same value try again rather than trusting a memo that the
+        // backend never acknowledged.
+        lastIgnoreBlur = null;
+    });
+};
+
+// `list_transform_kinds` answers from a compile-time table, so one fetch for
+// the whole app is enough. Every mounted row used to ask for its own copy.
+let transformKindsRequest: Promise<TransformKindDto[]> | null = null;
+
+const fetchTransformKinds = (): Promise<TransformKindDto[]> => {
+    if (!transformKindsRequest) {
+        transformKindsRequest = invoke<TransformKindDto[]>("list_transform_kinds").catch((err) => {
+            transformKindsRequest = null;
+            throw err;
+        });
+    }
+    return transformKindsRequest;
+};
+
+type OcrCompletePayload = { item_id: number; text: string; status: string };
+
+// One backend subscription shared by every mounted row. Each row only cares
+// about its own id, so N listeners were N register/unregister round trips per
+// scroll with no behavioural difference between one listener and N.
+const ocrSubscribers = new Set<{ itemId: number; handle: (p: OcrCompletePayload) => void }>();
+let ocrUnlisten: Promise<() => void> | null = null;
+
+const subscribeOcrComplete = (
+    itemId: number,
+    handle: (payload: OcrCompletePayload) => void
+): (() => void) => {
+    const entry = { itemId, handle };
+    ocrSubscribers.add(entry);
+    if (!ocrUnlisten) {
+        ocrUnlisten = listen<OcrCompletePayload>("ocr:complete", (event) => {
+            for (const sub of ocrSubscribers) {
+                if (sub.itemId === event.payload.item_id) sub.handle(event.payload);
+            }
+        }).catch(() => {
+            // Let a later subscriber retry the registration, and hand back a
+            // no-op so every teardown path stays symmetrical.
+            ocrUnlisten = null;
+            return () => {};
+        });
+    }
+    return () => {
+        ocrSubscribers.delete(entry);
+        if (ocrSubscribers.size === 0 && ocrUnlisten) {
+            const pending = ocrUnlisten;
+            ocrUnlisten = null;
+            void pending.then((fn) => fn());
+        }
+    };
 };
 
 const clearCompactPreviewPendingState = () => {
@@ -872,7 +934,7 @@ const ClipboardItem = ({
     }, []);
 
     useEffect(() => {
-        invoke<TransformKindDto[]>("list_transform_kinds")
+        fetchTransformKinds()
             .then((kinds) => {
                 if (kinds && Array.isArray(kinds)) {
                     setTransformKinds(kinds);
@@ -882,18 +944,10 @@ const ClipboardItem = ({
     }, []);
 
     useEffect(() => {
-        const unlisten = listen<{ item_id: number; text: string; status: string }>(
-            "ocr:complete",
-            (event) => {
-                if (event.payload.item_id === item.id) {
-                    setOcrStatus(event.payload.status);
-                    setOcrText(event.payload.text || null);
-                }
-            }
-        );
-        return () => {
-            unlisten.then((fn) => fn());
-        };
+        return subscribeOcrComplete(item.id, (payload) => {
+            setOcrStatus(payload.status);
+            setOcrText(payload.text || null);
+        });
     }, [item.id]);
 
     useEffect(() => {
