@@ -37,6 +37,13 @@ export const useSettingsApply = ({
   fontMain,
   fontMono
 }: UseSettingsApplyOptions) => {
+  // Last system darkness the UI was resolved to, so the poll can tell an
+  // actual change from another tick of the same theme. The ref belongs to the
+  // hook, not to the effect: a `useRef` called inside the effect body is a hook
+  // call outside a component render, which throws "Invalid hook call" as soon
+  // as the effect runs and unmounts the whole root.
+  const lastSystemIsDark = useRef<boolean | null>(null);
+
   useEffect(() => {
     if (!settingsLoaded) return;
 
@@ -44,9 +51,6 @@ export const useSettingsApply = ({
     const body = document.body;
 
     let disposed = false;
-    // Last system darkness the UI was resolved to, so the poll can tell an
-    // actual change from another tick of the same theme.
-    const lastSystemIsDark = useRef<boolean | null>(null);
 
     const applyExplicitMode = (mode: "light" | "dark") => {
       if (disposed) return;
