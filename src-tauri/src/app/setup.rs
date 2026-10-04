@@ -592,7 +592,7 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
         if let Some(window) = app.get_webview_window("main") {
             crate::app::webview_memory::restore_window_memory(&window, "startup-show");
             let _ = window.show();
-            crate::app::idle_destroyer::mark_shown();
+            crate::app::idle_destroyer::notify_main_window_shown(app.handle());
         }
     }
 }
@@ -687,7 +687,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                             "edge-docking-disabled-show",
                         );
                         let _ = window.show();
-                        crate::app::idle_destroyer::mark_shown();
+                        crate::app::idle_destroyer::notify_main_window_shown(&app_handle);
                         IS_HIDDEN.store(false, Ordering::Relaxed);
                         CURRENT_DOCK.store(0, Ordering::Relaxed);
                     }
@@ -835,7 +835,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                                 "edge-dock-show",
                             );
                             let _ = window.show();
-                            crate::app::idle_destroyer::mark_shown();
+                            crate::app::idle_destroyer::notify_main_window_shown(&app_handle);
                             match dock_actual {
                                 DockPosition::Top => {
                                     let _ = window.set_position(tauri::Position::Physical(
@@ -1267,7 +1267,7 @@ fn show_settings_from_tray(app: &AppHandle) {
         crate::app::webview_memory::restore_window_memory(&window, "tray-menu-settings");
         let _ = window.set_focusable(true);
         let _ = window.show();
-        crate::app::idle_destroyer::mark_shown();
+        crate::app::idle_destroyer::notify_main_window_shown(app);
         LAST_SHOW_TIMESTAMP.store(now_millis(), Ordering::Relaxed);
         let _ = window.set_focus();
         let _ = app.emit("open-settings-panel", ());

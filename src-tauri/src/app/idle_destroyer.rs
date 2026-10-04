@@ -2,11 +2,12 @@ use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 use std::thread::ThreadId;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
 
 use crate::app_state::SettingsState;
 use crate::global_state::{
-    CLOSING_SINCE_MS, IS_DESTROYED, LAST_HIDDEN_TIMESTAMP, RECREATE_PENDING, WINDOW_LIFECYCLE,
+    CLOSING_SINCE_MS, FRONTEND_CATCHUP_PENDING, IS_DESTROYED, LAST_HIDDEN_TIMESTAMP,
+    RECREATE_PENDING, WINDOW_LIFECYCLE,
 };
 use crate::infrastructure::webview_environment;
 
@@ -134,6 +135,50 @@ pub fn mark_hidden() {
 /// Resets the hidden timestamp so the idle countdown restarts on the next hide.
 pub fn mark_shown() {
     LAST_HIDDEN_TIMESTAMP.store(0, Ordering::Relaxed);
+}
+
+/// Pure decision: is the main window on screen right now?
+///
+/// `LAST_HIDDEN_TIMESTAMP` is already the single source of truth for this: every
+/// show path calls `mark_shown`, every hide path calls `mark_hidden`, and the
+/// ticker reconciles the two against the real visibility. Reusing it keeps the
+/// capture pipeline from needing a second, separately maintained flag that could
+/// disagree with the destroyer's.
+pub fn main_window_on_screen() -> bool {
+    LAST_HIDDEN_TIMESTAMP.load(Ordering::Relaxed) == 0
+}
+
+/// Pure decision: should this capture be delivered to the frontend right now?
+///
+/// Hidden means "nobody is looking", and the renderer is at its low memory
+/// target: waking it to re-sort and re-render a list no one can see is the exact
+/// cost the hide just paid to avoid. A destroyed window has no frontend to wake
+/// at all, and its replacement fetches the whole history when it mounts.
+pub fn should_deliver_capture(on_screen: bool, webview_alive: bool) -> bool {
+    on_screen && webview_alive
+}
+
+/// Note that the frontend missed at least one capture, so the next show has to
+/// hand it a refresh.
+pub fn mark_frontend_catchup_pending() {
+    FRONTEND_CATCHUP_PENDING.store(true, Ordering::SeqCst);
+}
+
+/// Announce that the main window is on screen again, settling the idle countdown
+/// and paying off any refresh the hidden window was owed.
+///
+/// Every show path routes through here rather than `mark_shown` so a new one
+/// cannot forget the catch-up: without it the list would silently keep showing
+/// whatever was there when the window went down.
+pub fn notify_main_window_shown(app: &AppHandle) {
+    mark_shown();
+    if !FRONTEND_CATCHUP_PENDING.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    crate::info!(
+        "[idle-destroyer] Main window shown; flushing the captures it missed while hidden."
+    );
+    let _ = app.emit_to("main", "clipboard-changed", ());
 }
 
 /// Tauri event hook: call when the main window's visibility changes externally
@@ -395,7 +440,7 @@ fn service_pending_recreate(app: &AppHandle) -> bool {
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
-        mark_shown();
+        notify_main_window_shown(app);
     }
     true
 }
@@ -612,7 +657,7 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
     if was_visible {
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.show();
-            mark_shown();
+            notify_main_window_shown(app);
         }
     }
 
@@ -667,6 +712,24 @@ mod tests {
     #[test]
     fn background_thread_may_build_the_window() {
         assert!(can_build_window_here(false));
+    }
+
+    #[test]
+    fn captures_reach_a_visible_window() {
+        assert!(should_deliver_capture(true, true));
+    }
+
+    #[test]
+    fn captures_wait_while_the_window_is_hidden() {
+        assert!(!should_deliver_capture(false, true));
+    }
+
+    #[test]
+    fn captures_wait_while_the_webview_is_torn_down() {
+        // A destroyed window has no frontend to wake; its replacement fetches the
+        // whole history when it mounts, so an emit here would be pure waste.
+        assert!(!should_deliver_capture(true, false));
+        assert!(!should_deliver_capture(false, false));
     }
 
     #[test]

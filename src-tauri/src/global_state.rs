@@ -72,6 +72,15 @@ pub static IS_DESTROYED: AtomicBool = AtomicBool::new(false);
 /// The destroy path consumes this flag and immediately recreates after tearing down.
 pub static RECREATE_PENDING: AtomicBool = AtomicBool::new(false);
 
+/// `true` if a clipboard capture was written to the database while the main
+/// window was off screen, so the frontend never heard about it.
+///
+/// The main window is hidden for almost its entire life, and delivering a
+/// capture into a hidden renderer undoes the low memory target that the hide
+/// just applied. The entry is already durable, so the capture is not lost — the
+/// next show converts this flag into a single `clipboard-changed` refresh.
+pub static FRONTEND_CATCHUP_PENDING: AtomicBool = AtomicBool::new(false);
+
 /// Timestamp (ms since UNIX_EPOCH) when the main window entered the `Closing`
 /// lifecycle state. `0` means "not closing".
 /// Bounded by `idle_destroyer::CLOSING_WATCHDOG_MS` so a teardown the runtime

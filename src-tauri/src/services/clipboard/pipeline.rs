@@ -2,6 +2,7 @@ use crate::app_state::{AppDataDir, PasteQueue, SessionHistory, SettingsState};
 use crate::database::is_text_type;
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
+use crate::global_state::IS_DESTROYED;
 #[cfg(not(target_os = "windows"))]
 use crate::infrastructure::linux_api::window_tracker::{
     get_active_app_info as get_clipboard_source_app_info, ActiveAppInfo,
@@ -539,6 +540,20 @@ impl PipelineStage for DistributionStage {
             return; // Failed to save
         }
 
+        // The main window is off screen for nearly its whole life, and its
+        // WebView2 renderer sits at the low memory target while it is. Pushing a
+        // capture into that renderer wakes it up to re-sort and re-render a list
+        // nobody is looking at, which is exactly what the hide paid to avoid.
+        // Everything the frontend needs is already durable by this point, so the
+        // capture is recorded now and the next show hands the window one refresh.
+        let deliver = crate::app::idle_destroyer::should_deliver_capture(
+            crate::app::idle_destroyer::main_window_on_screen(),
+            !IS_DESTROYED.load(Ordering::Relaxed),
+        );
+        if !deliver {
+            crate::app::idle_destroyer::mark_frontend_catchup_pending();
+        }
+
         if !ctx.pending_removals.is_empty() {
             let mut pending = std::mem::take(&mut ctx.pending_removals);
             pending.retain(|id| *id != entry.id);
@@ -549,8 +564,10 @@ impl PipelineStage for DistributionStage {
                     let mut session = session_history.0.lock().unwrap();
                     session.retain(|item| !unique.contains(&item.id));
                 }
-                for rid in unique {
-                    let _ = ctx.app_handle.emit("clipboard-removed", rid);
+                if deliver {
+                    for rid in unique {
+                        let _ = ctx.app_handle.emit("clipboard-removed", rid);
+                    }
                 }
             }
         }
@@ -567,14 +584,18 @@ impl PipelineStage for DistributionStage {
             queue.items.push_back(entry.id);
         }
 
-        // Sound
+        // Sound. Deliberately not gated: the point of the setting is to tell the
+        // user a capture landed while the window was out of the way, and
+        // suppressing it would change a feature the user opted into.
         if settings.sound_enabled.load(Ordering::Relaxed) {
             let _ = ctx.app_handle.emit("play-sound", "copy");
         }
 
         // Notify
-        let _ = ctx
-            .app_handle
-            .emit("clipboard-updated", truncate_entry_for_ui(entry));
+        if deliver {
+            let _ = ctx
+                .app_handle
+                .emit("clipboard-updated", truncate_entry_for_ui(entry));
+        }
     }
 }
