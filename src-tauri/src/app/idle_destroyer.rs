@@ -421,6 +421,19 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
         return false;
     }
 
+    // Building on the main thread would deadlock the event loop, so a
+    // main-thread caller hands the work to the ticker instead: roll the state
+    // machine back, let the caller queue the request with
+    // `request_recreate_after_destroy`, and the ticker rebuilds from a thread
+    // where `build()` is safe.
+    if !can_build_window_here(runs_on_main_thread()) {
+        crate::warn!(
+            "[idle-destroyer] Recreate requested from the main thread; deferring to the ticker."
+        );
+        WINDOW_LIFECYCLE.store(LIFECYCLE_CLOSED, Ordering::SeqCst);
+        return false;
+    }
+
     // The runtime frees the `main` label on the main thread, so a caller that
     // already runs there could only spin until its own timeout. Defer to the
     // ticker instead of blocking here.
@@ -459,6 +472,22 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
             false
         }
     }
+}
+
+/// Pure decision: may this thread call `WebviewWindowBuilder::build()` now?
+///
+/// `build()` hands the window to the event loop and waits for it. On the thread
+/// that *is* the event loop that wait can never be satisfied: the window
+/// half-registers, `build()` never returns, and the lifecycle is parked in
+/// `Opening` with `IS_DESTROYED` still set. Neither is ever cleared again, so
+/// the idle destroyer stops reclaiming memory for the rest of the process
+/// lifetime and the half-built webview keeps a renderer and GPU process alive.
+///
+/// This is the ordinary path, not an exotic one: `tauri-plugin-global-shortcut`
+/// dispatches its `Pressed` callback on the main thread, so every toggle from
+/// the hotkey or the tray lands here on the one thread that cannot build.
+pub fn can_build_window_here(on_main_thread: bool) -> bool {
+    !on_main_thread
 }
 
 /// Report whether the `main` label is free for a rebuild right now.
@@ -613,6 +642,16 @@ mod tests {
     #[test]
     fn should_destroy_now_disabled_when_feature_off() {
         assert!(!should_destroy_now(1000, 61_000, 60, false, false));
+    }
+
+    #[test]
+    fn main_thread_must_not_build_the_window() {
+        assert!(!can_build_window_here(true));
+    }
+
+    #[test]
+    fn background_thread_may_build_the_window() {
+        assert!(can_build_window_here(false));
     }
 
     #[test]
