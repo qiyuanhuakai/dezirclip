@@ -13,10 +13,33 @@ describe("planSearch", () => {
     });
   });
 
-  it("still filters locally while the debounce is still catching up", () => {
-    expect(planSearch({ search: "abc", debouncedSearch: "ab" })).toEqual({
+  it("still filters locally while the debounce is catching up on the first search", () => {
+    // Nothing has been asked of the server yet, so the list in memory is the
+    // full history and narrowing it as the user types is the responsive thing
+    // to do.
+    expect(planSearch({ search: "abc", debouncedSearch: "" })).toEqual({
       kind: "fuzzy",
       terms: ["abc"]
+    });
+  });
+
+  // Once the server has answered, the list in memory is its narrowed result.
+  // Re-filtering it with the half-typed query matches against data that is
+  // already filtered, costs a Fuse index build over the whole list, and is
+  // thrown away when the debounce lands.
+  it("does not re-filter a list the server already narrowed", () => {
+    expect(planSearch({ search: "abc", debouncedSearch: "ab" })).toEqual({
+      kind: "server"
+    });
+  });
+
+  it("keeps deferring to the server while the box is being cleared", () => {
+    expect(planSearch({ search: "a", debouncedSearch: "ab" })).toEqual({ kind: "server" });
+  });
+
+  it("routes a tag: prefix typed over a server result to the server too", () => {
+    expect(planSearch({ search: "tag:work", debouncedSearch: "a" })).toEqual({
+      kind: "server"
     });
   });
 

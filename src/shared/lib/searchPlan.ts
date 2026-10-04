@@ -31,6 +31,22 @@ export const planSearch = ({ search, debouncedSearch }: PlanSearchInput): Search
     return { kind: "server" };
   }
 
+  // The list in memory is the server's answer to `debouncedSearch`. Filtering
+  // it again with the half-typed `search` re-runs a match over data that is
+  // already narrowed, and the result is thrown away as soon as the debounce
+  // lands and the real query returns. Filtering it also showed the user three
+  // lists per keystroke: narrowed by the stale term, back to the server's, then
+  // the new one. The fuzzy branch is the expensive one -- it is the only branch
+  // that builds a Fuse index over the whole list -- so this is where that cost
+  // was being paid for an answer nobody kept.
+  //
+  // A search that has not reached the server yet is a different case: the list
+  // in memory is the full history, and narrowing it as the user types is the
+  // responsive behaviour, so an empty `debouncedSearch` still filters locally.
+  if (debouncedSearch) {
+    return { kind: "server" };
+  }
+
   const raw = search.toLowerCase();
   const isTagSearch = raw.startsWith("tag:");
   const effectiveSearch = isTagSearch ? raw.slice(4) : raw;
