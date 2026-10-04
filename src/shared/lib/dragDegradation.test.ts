@@ -167,6 +167,21 @@ describe("isDragHandleTarget", () => {
     expect(isDragHandleTarget(plain)).toBe(false);
   });
 
+  // The header is a single drag region wrapping the panel buttons, so a click on
+  // one of them used to read as the start of a window drag.
+  it("rejects a control inside a drag handle", () => {
+    const button = document.createElement("button");
+    handle.appendChild(button);
+    expect(isDragHandleTarget(button)).toBe(false);
+    expect(isDragHandleTarget(button.querySelector("svg") ?? button)).toBe(false);
+  });
+
+  it("rejects a text field inside a drag handle", () => {
+    const input = document.createElement("input");
+    handle.appendChild(input);
+    expect(isDragHandleTarget(input)).toBe(false);
+  });
+
   it("rejects non-element targets", () => {
     expect(isDragHandleTarget(null)).toBe(false);
   });
