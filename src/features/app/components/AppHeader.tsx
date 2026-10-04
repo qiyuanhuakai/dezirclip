@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -72,6 +73,20 @@ const AppHeader = ({
   typeFilter,
   setTypeFilter
 }: AppHeaderProps) => {
+  const panelOnTop = showSettings || showTagManager || showEmojiPanel;
+  const searchBoxVisible = showSearchBox || search.trim().length > 0;
+  // The whole search box sits behind a panel guard, so closing a panel remounts
+  // it and replays the height reveal. That reveal animates height, which re-lays
+  // out the list underneath on every frame; measured on a settings open+close it
+  // was more than half the frame cost, for a transition the panel transition has
+  // already covered. The reveal therefore only plays when the user is the one who
+  // asked for the box, and a panel switch brings it back outright.
+  const visibleBeforePanel = useRef(searchBoxVisible);
+  useEffect(() => {
+    if (!panelOnTop) visibleBeforePanel.current = searchBoxVisible;
+  }, [searchBoxVisible, panelOnTop]);
+  const revealSearchBox = searchBoxVisible && !visibleBeforePanel.current;
+
   return (
   <header data-tauri-drag-region>
     <div className="header-top" data-tauri-drag-region>
@@ -141,7 +156,7 @@ const AppHeader = ({
       <AnimatePresence>
         {(showSearchBox || search.trim().length > 0) && (
           <motion.div
-            initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
+            initial={revealSearchBox ? { height: 0, opacity: 0, overflow: 'hidden' } : false}
             animate={{
               height: "auto",
               opacity: 1,
