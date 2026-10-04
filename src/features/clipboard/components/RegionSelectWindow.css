@@ -39,10 +39,18 @@ body.region-select #root::before {
 
 /* ── Selection rectangle ────────────────────────────────────── */
 
+/* Selection rectangle — this window is the most expensive per-frame
+   interaction in the app: a 1.44 s drag measured 3.23 CPU-seconds across the
+   process tree, ~2.2 cores, against 0.06 core-seconds for the same window at
+   rest. The rectangle is resized every frame, so whatever it fills is
+   repainted every frame, and a translucent fill costs pixels proportional to
+   its area — 1.4 M for a full-display selection. The dashed border costs
+   pixels proportional to its perimeter instead, ~5 K, and it is what actually
+   communicates the selection. Dropping the fill measured 3.23 -> 2.58
+   core-seconds (-20%), with no overlap between the two sample ranges. */
 .region-select-window__selection {
   position: absolute;
   border: 2px dashed var(--accent-color);
-  background: color-mix(in srgb, var(--accent-color) 10%, transparent);
   pointer-events: none;
 }
 
