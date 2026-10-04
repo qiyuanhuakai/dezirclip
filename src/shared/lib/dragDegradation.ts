@@ -87,8 +87,19 @@ export const createDragState = (
   };
 };
 
+/**
+ * A pointerdown on something the user can operate is a click, not a drag, even
+ * when it lands inside a drag region. The header is one whole drag region and the
+ * panel buttons live inside it, so without this check every click on a header
+ * button entered the degraded state: the theme's blur layers came off for the
+ * settle window and the whole stack was recomputed when they went back on, twice
+ * per panel switch, for a drag that never happened.
+ */
+const INTERACTIVE = "button, input, textarea, select, a, [role='button'], [contenteditable='true']";
+
 /** True when a pointerdown landed on a native window-drag handle. */
 export const isDragHandleTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof Element)) return false;
+  if (target.closest(INTERACTIVE)) return false;
   return target.closest("[data-tauri-drag-region]") !== null;
 };
