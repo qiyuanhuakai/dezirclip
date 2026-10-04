@@ -4,7 +4,7 @@ use crate::app_state::SettingsState;
 use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -121,6 +121,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
 fn hide_compact_preview_window(app: &AppHandle) {
     if let Some(preview) = app.get_webview_window("compact-preview") {
         let _ = preview.hide();
+    }
+}
+
+/// Last value handed to the frontend as `window-pinned-changed`.
+///
+/// The main window learns its starting value from settings, so this event only
+/// ever has to carry *changes*. Broadcasting it on every show meant each hotkey
+/// press shipped an IPC message that the frontend turned into a state update
+/// for a value that rarely moves.
+static LAST_EMITTED_PINNED: AtomicBool = AtomicBool::new(false);
+
+fn emit_pinned_if_changed(app: &AppHandle, pinned: bool) {
+    if LAST_EMITTED_PINNED.swap(pinned, Ordering::Relaxed) != pinned {
+        let _ = app.emit("window-pinned-changed", pinned);
     }
 }
 
@@ -492,7 +506,7 @@ pub fn toggle_window(app: &AppHandle) {
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(pinned);
         let _ = window.set_focusable(false);
-        let _ = app.emit("window-pinned-changed", pinned);
+        emit_pinned_if_changed(app, pinned);
 
         #[cfg(target_os = "windows")]
         {
@@ -505,11 +519,16 @@ pub fn toggle_window(app: &AppHandle) {
                         ex_style | WS_EX_NOACTIVATE.0 as isize,
                     );
                 }
+                // Tauri owns the show itself: routing visibility through a raw
+                // `ShowWindow` left tao's own state behind, and the next hotkey
+                // press then read the window as still visible and only ever
+                // hid it. The helpers here adjust the Z order for a window that
+                // is already on screen.
                 let _ = window.show();
                 if pinned {
-                    WindowExt::show_window_no_activate(HWND(hwnd_raw.0));
+                    WindowExt::raise_topmost_no_activate(HWND(hwnd_raw.0));
                 } else {
-                    WindowExt::show_window_no_activate_normal(HWND(hwnd_raw.0));
+                    WindowExt::raise_front_no_activate(HWND(hwnd_raw.0));
                 }
             } else {
                 let _ = window.show();
