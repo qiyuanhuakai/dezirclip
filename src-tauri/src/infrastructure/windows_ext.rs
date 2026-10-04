@@ -8,7 +8,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, IsIconic,
     IsWindowVisible, MessageBoxW, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
     MB_ICONERROR, MB_OK, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE,
-    SW_SHOWNA,
 };
 
 /// 安全封装的窗口辅助工具
@@ -87,10 +86,13 @@ impl WindowExt {
         }
     }
 
-    /// 无感显示置顶窗口（不夺取焦点）
-    pub fn show_window_no_activate(hwnd: HWND) {
+    /// 无感置顶一个**已经显示**的窗口（不夺取焦点）
+    ///
+    /// 只调整 Z 序，不负责显示。显示交给 Tauri 的 `show()`，否则窗口的
+    /// 显隐会绕过 tao 的状态跟踪：实测那样之后每次热键都判定窗口仍可见，
+    /// 于是只隐藏、再也不显示。
+    pub fn raise_topmost_no_activate(hwnd: HWND) {
         unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOWNA);
             let _ = SetWindowPos(
                 hwnd,
                 Some(HWND_TOPMOST),
@@ -103,10 +105,9 @@ impl WindowExt {
         }
     }
 
-    /// 无激活显示普通窗口（不置顶）
-    pub fn show_window_no_activate_normal(hwnd: HWND) {
+    /// 无激活把一个**已经显示**的普通窗口提到前面（不保持置顶）
+    pub fn raise_front_no_activate(hwnd: HWND) {
         unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOWNA);
             // Bring to front without activation by temporarily toggling TOPMOST.
             let _ = SetWindowPos(
                 hwnd,

@@ -4,7 +4,7 @@ use crate::app_state::SettingsState;
 use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -121,6 +121,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
 fn hide_compact_preview_window(app: &AppHandle) {
     if let Some(preview) = app.get_webview_window("compact-preview") {
         let _ = preview.hide();
+    }
+}
+
+/// Last value handed to the frontend as `window-pinned-changed`.
+///
+/// The main window learns its starting value from settings, so this event only
+/// ever has to carry *changes*. Broadcasting it on every show meant each hotkey
+/// press shipped an IPC message that the frontend turned into a state update
+/// for a value that rarely moves.
+static LAST_EMITTED_PINNED: AtomicBool = AtomicBool::new(false);
+
+fn emit_pinned_if_changed(app: &AppHandle, pinned: bool) {
+    if LAST_EMITTED_PINNED.swap(pinned, Ordering::Relaxed) != pinned {
+        let _ = app.emit("window-pinned-changed", pinned);
     }
 }
 
@@ -492,7 +506,7 @@ pub fn toggle_window(app: &AppHandle) {
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(pinned);
         let _ = window.set_focusable(false);
-        let _ = app.emit("window-pinned-changed", pinned);
+        emit_pinned_if_changed(app, pinned);
 
         #[cfg(target_os = "windows")]
         {
@@ -505,11 +519,16 @@ pub fn toggle_window(app: &AppHandle) {
                         ex_style | WS_EX_NOACTIVATE.0 as isize,
                     );
                 }
+                // Tauri owns the show itself: routing visibility through a raw
+                // `ShowWindow` left tao's own state behind, and the next hotkey
+                // press then read the window as still visible and only ever
+                // hid it. The helpers here adjust the Z order for a window that
+                // is already on screen.
                 let _ = window.show();
                 if pinned {
-                    WindowExt::show_window_no_activate(HWND(hwnd_raw.0));
+                    WindowExt::raise_topmost_no_activate(HWND(hwnd_raw.0));
                 } else {
-                    WindowExt::show_window_no_activate_normal(HWND(hwnd_raw.0));
+                    WindowExt::raise_front_no_activate(HWND(hwnd_raw.0));
                 }
             } else {
                 let _ = window.show();
@@ -618,22 +637,35 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Hand focus back to whatever window was in front before dezirclip took it.
+///
+/// Runs on its own thread. Global hotkey callbacks are dispatched inline from
+/// the hotkey window procedure, and that window is created during the Tauri
+/// setup hook on the main thread, so `WM_HOTKEY` messages arrive on the event
+/// loop itself. Measured cost of doing it inline: every window hide froze the
+/// main thread for 62 ms, and a hotkey pressed inside that window was served
+/// 66 ms late. The settle wait has to stay — it lets the foreground transition
+/// land — but it never needed the caller to stand still for it. No call site
+/// reads the result: the two Rust callers discard it and the frontend one only
+/// flips a local ref.
 #[tauri::command]
 pub fn restore_last_focus(_app_handle: AppHandle) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let last_hwnd_val = LAST_ACTIVE_HWND.load(Ordering::Relaxed);
-        if last_hwnd_val == 0 {
-            return Ok(());
+    std::thread::spawn(|| {
+        #[cfg(windows)]
+        {
+            let last_hwnd_val = LAST_ACTIVE_HWND.load(Ordering::Relaxed);
+            if last_hwnd_val == 0 {
+                return;
+            }
+            WindowExt::force_focus_window(HWND(last_hwnd_val as _));
+            std::thread::sleep(std::time::Duration::from_millis(60));
         }
-        WindowExt::force_focus_window(HWND(last_hwnd_val as _));
-        std::thread::sleep(std::time::Duration::from_millis(60));
-    }
 
-    #[cfg(target_os = "linux")]
-    {
-        let _ = crate::infrastructure::linux_api::window_tracker::restore_last_focus();
-    }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = crate::infrastructure::linux_api::window_tracker::restore_last_focus();
+        }
+    });
     Ok(())
 }
 
