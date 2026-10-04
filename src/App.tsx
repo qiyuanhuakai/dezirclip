@@ -294,12 +294,12 @@ const App = () => {
     virtualListRef.current?.scrollToItem(0);
   }, []);
 
-  const toggleGroup = (group: string) => {
+  const toggleGroup = useCallback((group: string) => {
     setCollapsedGroups(prev => ({
       ...prev,
       [group]: !prev[group],
     }));
-  };
+  }, []);
 
   const mainHotkeys = useMemo(
     () =>

@@ -41,8 +41,13 @@ export const useSettingsPanelProps = ({
   toggleGroup,
   state
 }: UseSettingsPanelPropsOptions): SettingsPanelProps => {
+  // The panel is rendered inside the settings view, so it is told when its own
+  // visibility flips on every panel switch. Nothing in the settings feature
+  // reads these three, and letting them through re-renders the whole settings
+  // subtree each time, which is what stops the memo on the panel from bailing.
+  const { showSettings, showTagManager, showEmojiPanel, ...panelState } = state;
   return {
-    ...state,
+    ...panelState,
     t,
     theme,
     language,
