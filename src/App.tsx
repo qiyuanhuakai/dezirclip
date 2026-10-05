@@ -46,43 +46,13 @@ import { useSearchFetchTrigger } from "./shared/hooks/useSearchFetchTrigger";
 import { useScrollToSelection } from "./shared/hooks/useScrollToSelection";
 import { useClipboardItemRenderer } from "./shared/hooks/useClipboardItemRenderer";
 import { useOverlays } from "./shared/hooks/useOverlays";
+import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
 
 // How far the list has to be scrolled before the scroll-to-top button appears.
 const SCROLL_TOP_BUTTON_THRESHOLD_PX = 200;
-
-const insertHistoryItem = (list: ClipboardEntry[], item: ClipboardEntry) => {
-  const next = list.slice();
-  const isPinned = !!item.is_pinned;
-  let insertIndex = 0;
-
-  if (isPinned) {
-    while (insertIndex < next.length) {
-      const current = next[insertIndex];
-      if (!current.is_pinned) break;
-      if (current.timestamp < item.timestamp) break;
-      insertIndex++;
-    }
-  } else {
-    while (insertIndex < next.length && next[insertIndex].is_pinned) {
-      insertIndex++;
-    }
-    while (insertIndex < next.length) {
-      const current = next[insertIndex];
-      if (current.is_pinned) {
-        insertIndex++;
-        continue;
-      }
-      if (current.timestamp < item.timestamp) break;
-      insertIndex++;
-    }
-  }
-
-  next.splice(insertIndex, 0, item);
-  return next;
-};
 
 const App = () => {
   const appState = useAppState();
@@ -489,10 +459,7 @@ const App = () => {
 
   useClipboardEvents({
     onUpdated: (updatedItem) => {
-      setHistory(prev => {
-        const withoutItem = prev.filter(item => item.id !== updatedItem.id);
-        return insertHistoryItem(withoutItem, updatedItem);
-      });
+      setHistory(prev => applyHistoryUpdate(prev, updatedItem).entries);
     },
     onRemoved: (id) => {
       setHistory(prev => prev.filter(item => item.id !== id));

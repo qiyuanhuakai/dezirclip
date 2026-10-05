@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
+import { applyHistoryUpdate } from "../../../shared/lib/historyInsert";
 import type { ClipboardEntry } from "../../../shared/types";
 import "./QuickPasteWindow.css";
 
@@ -35,8 +37,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     });
   }, [filtered.length]);
 
-  // Fetch recent entries on mount
-  useEffect(() => {
+  const fetchRecent = useCallback(() => {
     invoke<ClipboardEntry[]>("get_clipboard_history", {
       limit: MAX_ENTRIES,
       offset: 0,
@@ -45,6 +46,52 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       .then((data) => setEntries(data ?? []))
       .catch(() => setEntries([]));
   }, []);
+
+  // Fetch recent entries on mount
+  useEffect(() => {
+    fetchRecent();
+  }, [fetchRecent]);
+
+  // Follow the same broadcasts the main list follows.
+  //
+  // This window is created once and then parked, so the fetch above runs for
+  // the lifetime of the process rather than for the lifetime of the panel: the
+  // list used to freeze at whatever the database held the first time the window
+  // was built, and everything copied after that was invisible here until the
+  // process restarted. The backend emits both events to every window, so
+  // applying them is enough — no refetch per change.
+  useEffect(() => {
+    let disposed = false;
+    const unlistenUpdated = listen<ClipboardEntry>("clipboard-updated", (event) => {
+      if (disposed) return;
+      setEntries((prev) => {
+        const { entries, wasPresent } = applyHistoryUpdate(prev, event.payload);
+        // A genuinely new entry is what the user most likely wants to paste, so
+        // the highlight follows it. An edit of something already listed leaves
+        // the highlight where it is rather than moving the cursor under it.
+        if (!wasPresent) setActiveIndex(0);
+        return entries.slice(0, MAX_ENTRIES);
+      });
+    });
+    const unlistenRemoved = listen<number>("clipboard-removed", (event) => {
+      if (disposed) return;
+      setEntries((prev) => prev.filter((entry) => entry.id !== event.payload));
+    });
+    // The backend only pushes captures to the frontend while the main window is
+    // on screen, so an entry copied while the app was parked never reaches this
+    // panel as an event. Every time the panel is shown, one fetch settles it --
+    // once per hotkey press, not once per clipboard change.
+    const unlistenShown = listen("quick-paste-shown", () => {
+      if (disposed) return;
+      fetchRecent();
+    });
+    return () => {
+      disposed = true;
+      unlistenUpdated.then((f) => f());
+      unlistenRemoved.then((f) => f());
+      unlistenShown.then((f) => f());
+    };
+  }, [fetchRecent]);
 
   useEffect(() => {
     document.body.classList.add("quick-paste");
