@@ -524,8 +524,19 @@ const App = () => {
     fetchHistory
   });
 
+  // Writing a setting that already holds that value is a no-op on disk, but it
+  // used to cost a round trip every time. The six effects in useSettingsSync
+  // write every value they just read the moment settings finish loading, so a
+  // cold start paid that several times over. The map is read through a ref so
+  // these two callbacks keep their identity: both are listed in the dependency
+  // arrays of the search and tag-manager triggers, and a callback that moved
+  // whenever a setting changed would re-run those instead.
+  const appSettingsRef = useRef(appSettings);
+  appSettingsRef.current = appSettings;
+
   const saveAppSetting = useCallback(async (type: string, path: string) => {
     const key = `app.${type}`;
+    if (appSettingsRef.current[key] === path) return;
     setAppSettings(prev => ({ ...prev, [key]: path }));
 
     // Sync theme-related settings to localStorage for instant startup (prevents flash)
@@ -545,6 +556,7 @@ const App = () => {
   }, [setAppSettings]);
 
   const saveSetting = useCallback((key: string, val: string) => {
+    if (appSettingsRef.current[key] === val) return;
     invoke("save_setting", { key, value: val }).catch(console.error);
   }, []);
 

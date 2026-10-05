@@ -19,27 +19,50 @@ export const useAppBootstrap = ({
   setDefaultApps
 }: UseAppBootstrapOptions) => {
   const scannedRef = useRef(false);
+  const defaultsReadRef = useRef(false);
   useEffect(() => {
     invoke<string>("get_data_path").then(setDataPath).catch(console.error);
 
     invoke<boolean>("is_autostart_enabled").then(setAutoStart).catch(console.error);
 
-    const types = ["text", "image", "video", "code", "url"];
-    types.forEach(async (type) => {
-      try {
-        const name = await invoke<string>("get_system_default_app", { contentType: type });
-        setDefaultApps((prev) => ({ ...prev, [type]: name }));
-      } catch (err) {
-        console.error(`Failed to get default for ${type}`, err);
-      }
-    });
-
     return;
   }, [
     setAutoStart,
-    setDataPath,
-    setDefaultApps
+    setDataPath
   ]);
+
+  // The system default per content type is another settings-panel answer: the
+  // only thing that reads it is the "open with" row in the default-apps group,
+  // which is collapsed. It used to cost five round trips on every startup and on
+  // every wake after the idle destroyer rebuilt the webview, and each answer
+  // wrote its own new object into the map, so the five writes were five separate
+  // updates rather than one.
+  //
+  // Asking when the panel is first opened keeps the map identical, folds the
+  // five writes into one, and moves the cost to the one place that can use it.
+  useEffect(() => {
+    if (!showSettings) return;
+    if (defaultsReadRef.current) return;
+    defaultsReadRef.current = true;
+
+    const types = ["text", "image", "video", "code", "url"];
+    Promise.all(
+      types.map((type) =>
+        invoke<string>("get_system_default_app", { contentType: type })
+          .then((name) => [type, name] as const)
+          .catch((err) => {
+            console.error(`Failed to get default for ${type}`, err);
+            return null;
+          })
+      )
+    ).then((answers) => {
+      const next: DefaultAppsMap = {};
+      for (const answer of answers) {
+        if (answer) next[answer[0]] = answer[1];
+      }
+      setDefaultApps(next);
+    });
+  }, [showSettings, setDefaultApps]);
 
   // On Windows the scan shells out to PowerShell and reads the whole Start app
   // list: measured at 3.3 s per call here. The only thing it feeds is the app
