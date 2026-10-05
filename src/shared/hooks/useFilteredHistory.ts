@@ -65,20 +65,35 @@ export const useFilteredHistory = ({
     });
   }, [searchItems, needsFuzzyIndex]);
 
+  // The branches that only narrow and reorder what they were handed do not read
+  // the plan, so they are memoised on the inputs they actually use. Keying them
+  // on the plan meant every half-typed character -- which produces a fresh plan
+  // object -- rebuilt the array and handed a new identity downstream, even
+  // though the contents came out the same.
+  const filteredByType = useMemo(
+    () => (typeFilter ? history.filter((item) => item.content_type === typeFilter) : history),
+    [history, typeFilter]
+  );
+
+  const listOrdered = useMemo(
+    () => [...filteredByType].sort(compareForList),
+    [filteredByType]
+  );
+
   return useMemo(() => {
     const byType = (item: ClipboardEntry) =>
       !typeFilter || item.content_type === typeFilter;
 
     if (plan.kind === "server") {
-      return history.filter(byType).sort(compareForList);
+      return listOrdered;
     }
 
     if (plan.kind === "plain") {
-      return history.filter(byType).sort(compareForList);
+      return listOrdered;
     }
 
     if (plan.kind === "unordered") {
-      return history.filter(byType);
+      return filteredByType;
     }
 
     if (plan.kind === "tag") {
@@ -113,5 +128,5 @@ export const useFilteredHistory = ({
       .map((item) => ({ item, score: scoreByItem.get(item) ?? 0 }))
       .sort(compareForScore)
       .map((entry) => entry.item);
-  }, [history, plan, typeFilter, index, itemBySearchItem, searchItems]);
+  }, [history, plan, typeFilter, index, itemBySearchItem, searchItems, filteredByType, listOrdered]);
 };
