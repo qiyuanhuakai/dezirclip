@@ -7,6 +7,7 @@ use crate::infrastructure::encryption;
 use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
 use rusqlite::params;
 use rusqlite::Connection;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -464,14 +465,20 @@ impl SqliteClipboardRepository {
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&entry.tags);
 
-        let mut final_content = entry.content.clone();
+        // Borrowed until something actually replaces it. This used to clone the
+        // content up front, which for an image is the whole `data:` URL: a 4K
+        // screenshot is 5.3 MB of base64, and on the very next line a successful
+        // `save_image_to_file` overwrites the copy with a short file path. The
+        // clone was the single largest allocation on the save path and half of
+        // what it added, spent on a string that was about to be dropped.
+        let mut final_content: Cow<'_, str> = Cow::Borrowed(&entry.content);
         let mut final_is_external = entry.is_external;
 
         // Externalize image if possible
         if entry.content_type == "image" && entry.content.starts_with("data:image/") {
             if let Some(dir) = data_dir {
                 if let Some(path) = save_image_to_file(&entry.content, dir) {
-                    final_content = path;
+                    final_content = Cow::Owned(path);
                     final_is_external = true;
                 }
             }
@@ -510,7 +517,10 @@ impl SqliteClipboardRepository {
             )
         } else {
             (
-                final_content,
+                // `into_owned` moves when the content was already replaced by the
+                // file path, and copies when it is still the caller's own string --
+                // which is the case the old unconditional clone was paying for.
+                final_content.into_owned(),
                 entry.preview.clone(),
                 calculated_hash,
                 entry.html_content.clone(),
