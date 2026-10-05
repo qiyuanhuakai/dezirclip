@@ -190,35 +190,38 @@ const AppMainContent = ({
     handlePinnedReorder(finalIds);
   }, [handlePinnedReorder, pinnedItems]);
 
-  if (showTagManager && tagManagerEnabled) {
-    return (
-      <div style={{ height: "100%" }}>
-        <Suspense fallback={<div style={{ height: "100%" }} />}>
-          <TagManager t={t} theme={theme} />
-        </Suspense>
-      </div>
-    );
-  }
-
-  if (showEmojiPanel) {
-    return (
-      <div style={{ height: "100%", overflow: "hidden" }}>
-        <Suspense fallback={<div style={{ height: "100%" }} />}>
-          <EmojiPanel
-            t={t}
-            favorites={emojiFavorites}
-            setFavorites={setEmojiFavorites}
-            activeTab={emojiPanelTab}
-            setActiveTab={setEmojiPanelTab}
-            saveSetting={saveSetting}
-          />
-        </Suspense>
-      </div>
-    );
-  }
+  // The tag manager and the emoji panel are shown instead of the list, but the
+  // list is hidden rather than unmounted: closing either panel used to destroy
+  // the whole history list and rebuild every visible row from nothing, which is
+  // the most expensive interaction in the app. The settings panel already
+  // worked this way. The two panels stay conditional so their chunks are still
+  // fetched on first use rather than at startup.
+  const tagManagerVisible = showTagManager && tagManagerEnabled;
+  const sidePanelVisible = tagManagerVisible || showEmojiPanel;
 
   return (
     <>
+      {tagManagerVisible && (
+        <div style={{ height: "100%" }}>
+          <Suspense fallback={<div style={{ height: "100%" }} />}>
+            <TagManager t={t} theme={theme} />
+          </Suspense>
+        </div>
+      )}
+      {showEmojiPanel && (
+        <div style={{ height: "100%", overflow: "hidden" }}>
+          <Suspense fallback={<div style={{ height: "100%" }} />}>
+            <EmojiPanel
+              t={t}
+              favorites={emojiFavorites}
+              setFavorites={setEmojiFavorites}
+              activeTab={emojiPanelTab}
+              setActiveTab={setEmojiPanelTab}
+              saveSetting={saveSetting}
+            />
+          </Suspense>
+        </div>
+      )}
       <div
         className="settings-view"
         style={{
@@ -236,7 +239,7 @@ const AppMainContent = ({
       <div
         className="list-view"
         style={{
-          display: showSettings ? "none" : "flex",
+          display: showSettings || sidePanelVisible ? "none" : "flex",
           flexDirection: "column",
           flex: showSettings ? undefined : "1 1 0",
           minHeight: 0
