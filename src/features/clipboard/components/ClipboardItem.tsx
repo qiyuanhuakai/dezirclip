@@ -34,6 +34,7 @@ import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceA
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { createFrameThrottle } from "../../../shared/lib/frameThrottle";
+import { sameListById } from "../../../shared/lib/sameListById";
 import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
@@ -100,13 +101,22 @@ const setIgnoreBlurSafe = (ignore: boolean) => {
 // `list_transform_kinds` answers from a compile-time table, so one fetch for
 // the whole app is enough. Every mounted row used to ask for its own copy.
 let transformKindsRequest: Promise<TransformKindDto[]> | null = null;
+// The resolved list is kept next to the request. A row that mounts after the
+// first row has already fetched starts with the answer, instead of holding an
+// empty list until a promise it did not need hands it the same data back.
+let transformKindsCache: TransformKindDto[] | null = null;
 
 const fetchTransformKinds = (): Promise<TransformKindDto[]> => {
     if (!transformKindsRequest) {
-        transformKindsRequest = invoke<TransformKindDto[]>("list_transform_kinds").catch((err) => {
-            transformKindsRequest = null;
-            throw err;
-        });
+        transformKindsRequest = invoke<TransformKindDto[]>("list_transform_kinds")
+            .then((kinds) => {
+                transformKindsCache = Array.isArray(kinds) ? kinds : [];
+                return transformKindsCache;
+            })
+            .catch((err) => {
+                transformKindsRequest = null;
+                throw err;
+            });
     }
     return transformKindsRequest;
 };
@@ -630,7 +640,9 @@ const ClipboardItem = ({
     const [richTextSnapshotSrc, setRichTextSnapshotSrc] = useState<string | null>(null);
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
     const [contextMenuState, setContextMenuState] = useState<{ x: number; y: number } | null>(null);
-    const [transformKinds, setTransformKinds] = useState<TransformKindDto[]>([]);
+    const [transformKinds, setTransformKinds] = useState<TransformKindDto[]>(
+        () => transformKindsCache ?? []
+    );
     const [ocrText, setOcrText] = useState<string | null>(item.ocr_text ?? null);
     const [ocrStatus, setOcrStatus] = useState<string | null>(item.ocr_status ?? null);
     const [ocrTextExpanded, setOcrTextExpanded] = useState(false);
@@ -944,7 +956,14 @@ const ClipboardItem = ({
         fetchTransformKinds()
             .then((kinds) => {
                 if (kinds && Array.isArray(kinds)) {
-                    setTransformKinds(kinds);
+                    // The answer is the same for every row and is usually already
+                    // in hand by the time this resolves. A freshly allocated array
+                    // with identical contents is still a new value to a state
+                    // setter, and it arrives after mount, so it re-rendered the
+                    // whole row a second time for every row that scrolled into
+                    // view. Handing back the previous list settles for "no
+                    // change" and skips that render.
+                    setTransformKinds((prev) => (sameListById(prev, kinds) ? prev : kinds));
                 }
             })
             .catch(() => {});
