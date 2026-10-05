@@ -1,6 +1,6 @@
 [package]
 name = "dzc-standalone"
-version = "0.1.10-alpha.3"
+version = "0.1.10-alpha.4"
 edition = "2021"
 
 [dependencies]
