@@ -1,6 +1,6 @@
 [package]
 name = "dezirclip"
-version = "0.1.10-alpha.2"
+version = "0.1.10-alpha.3"
 description = "A local clipboard workspace"
 authors = ["qiyuanhuakai"]
 edition = "2021"
