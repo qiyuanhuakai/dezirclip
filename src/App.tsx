@@ -459,6 +459,7 @@ const App = () => {
   }, [tagManagerEnabled, showTagManager, setShowTagManager]);
 
   useAppBootstrap({
+    showSettings,
     setDataPath,
     setInstalledApps,
     setAutoStart,
