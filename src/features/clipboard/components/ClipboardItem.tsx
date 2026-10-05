@@ -114,36 +114,43 @@ const fetchTransformKinds = (): Promise<TransformKindDto[]> => {
 type OcrCompletePayload = { item_id: number; text: string; status: string };
 
 // One backend subscription shared by every mounted row. Each row only cares
-// about its own id, so N listeners were N register/unregister round trips per
-// scroll with no behavioural difference between one listener and N.
-const ocrSubscribers = new Set<{ itemId: number; handle: (p: OcrCompletePayload) => void }>();
+// about its own entry, so N listeners were N register/unregister round trips
+// per scroll with no behavioural difference between one listener and N.
+//
+// The registration outlives the rows. It used to be dropped as soon as the last
+// row unsubscribed, but a capture that prepends an entry shifts every row one
+// slot, so each row tore its subscription down and built a new one in the same
+// commit. React runs every teardown before any setup, so the shared set went
+// empty mid-commit and the next subscriber registered the listener again: one
+// `plugin:event|listen` plus one `plugin:event|unlisten` per captured entry, to
+// no effect. One registration for the lifetime of the page costs nothing --
+// there is no per-row payload left to drop -- and a failed registration still
+// clears itself so a later subscriber can retry.
+const ocrSubscribers = new Set<{
+    matches: (itemId: number) => boolean;
+    handle: (p: OcrCompletePayload) => void;
+}>();
 let ocrUnlisten: Promise<() => void> | null = null;
 
 const subscribeOcrComplete = (
-    itemId: number,
+    matches: (itemId: number) => boolean,
     handle: (payload: OcrCompletePayload) => void
 ): (() => void) => {
-    const entry = { itemId, handle };
+    const entry = { matches, handle };
     ocrSubscribers.add(entry);
     if (!ocrUnlisten) {
         ocrUnlisten = listen<OcrCompletePayload>("ocr:complete", (event) => {
             for (const sub of ocrSubscribers) {
-                if (sub.itemId === event.payload.item_id) sub.handle(event.payload);
+                if (sub.matches(event.payload.item_id)) sub.handle(event.payload);
             }
         }).catch(() => {
-            // Let a later subscriber retry the registration, and hand back a
-            // no-op so every teardown path stays symmetrical.
+            // Let a later subscriber retry the registration.
             ocrUnlisten = null;
             return () => {};
         });
     }
     return () => {
         ocrSubscribers.delete(entry);
-        if (ocrSubscribers.size === 0 && ocrUnlisten) {
-            const pending = ocrUnlisten;
-            ocrUnlisten = null;
-            void pending.then((fn) => fn());
-        }
     };
 };
 
@@ -943,12 +950,23 @@ const ClipboardItem = ({
             .catch(() => {});
     }, []);
 
+    // The row is reused for a different entry whenever the list shifts under
+    // it, so the subscription reads the id it is currently showing instead of
+    // re-subscribing on every shift.
+    const ocrItemIdRef = useRef(item.id);
     useEffect(() => {
-        return subscribeOcrComplete(item.id, (payload) => {
-            setOcrStatus(payload.status);
-            setOcrText(payload.text || null);
-        });
+        ocrItemIdRef.current = item.id;
     }, [item.id]);
+
+    useEffect(() => {
+        return subscribeOcrComplete(
+            (itemId) => itemId === ocrItemIdRef.current,
+            (payload) => {
+                setOcrStatus(payload.status);
+                setOcrText(payload.text || null);
+            }
+        );
+    }, []);
 
     useEffect(() => {
         setOcrText(item.ocr_text ?? null);
