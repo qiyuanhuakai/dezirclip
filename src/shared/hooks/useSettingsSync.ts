@@ -59,10 +59,11 @@ export const useSettingsSync = ({
   }, [saveAppSetting, settingsLoaded, soundVolume]);
 
   useEffect(() => {
+    if (!settingsLoaded) return;
     saveSetting("app.arrow_key_selection", String(arrowKeySelection));
     if (!arrowKeySelection) {
       setIsKeyboardMode(false);
       setSelectedIndex(0);
     }
-  }, [arrowKeySelection, saveSetting, setIsKeyboardMode, setSelectedIndex]);
+  }, [arrowKeySelection, saveSetting, setIsKeyboardMode, setSelectedIndex, settingsLoaded]);
 };
