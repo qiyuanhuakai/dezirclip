@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
 import { HISTORY_SEARCH_LIMIT } from "../../features/app/constants/pagination";
+import { reuseUnchangedEntries } from "../lib/reuseUnchanged";
 
 interface UseHistoryFetchOptions {
   debouncedSearch: string;
@@ -80,7 +81,7 @@ export const useHistoryFetch = ({
 
           if (seq !== fetchSeqRef.current) return;
           // Search results are not paginated; always replace list and stop infinite loading.
-          setHistory(data);
+          setHistory((prev) => reuseUnchangedEntries(prev, data));
           setCurrentOffset(data.length);
           setHasMore(false);
         } else {
@@ -101,7 +102,7 @@ export const useHistoryFetch = ({
           const dbItemsCount = data.filter(item => item.id > 0).length;
 
           if (reset) {
-            setHistory(data);
+            setHistory((prev) => reuseUnchangedEntries(prev, data));
             setCurrentOffset(dbItemsCount);
             setHasMore(hasMoreNow);
           } else {
