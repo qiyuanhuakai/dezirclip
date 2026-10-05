@@ -502,28 +502,33 @@ impl SqliteClipboardRepository {
             calc_text_hash(&final_content) as i64
         };
 
-        let (content, preview, content_hash, html_content) = if should_encrypt {
-            let encrypted_content = self.maybe_encrypt_text(&final_content);
-            let encrypted_preview = self.maybe_encrypt_text(&entry.preview);
-            let encrypted_html = entry
-                .html_content
-                .as_ref()
-                .map(|html| self.maybe_encrypt_text(html));
+        // `rusqlite`'s `ToSql` for `String`/`str` borrows rather than copies, so
+        // nothing downstream of here needs to own any of these three. The
+        // unencrypted branch used to clone all of them anyway: a 5 MB paste and
+        // the 1 MB of markup riding with it were copied in full on the way to a
+        // bind parameter that only reads them. The encrypted branch genuinely
+        // produces new strings, so it is the one that owns.
+        let (content, preview, content_hash, html_content): (
+            Cow<'_, str>,
+            Cow<'_, str>,
+            i64,
+            Option<Cow<'_, str>>,
+        ) = if should_encrypt {
             (
-                encrypted_content,
-                encrypted_preview,
+                Cow::Owned(self.maybe_encrypt_text(&final_content)),
+                Cow::Owned(self.maybe_encrypt_text(&entry.preview)),
                 calculated_hash,
-                encrypted_html,
+                entry
+                    .html_content
+                    .as_deref()
+                    .map(|html| Cow::Owned(self.maybe_encrypt_text(html))),
             )
         } else {
             (
-                // `into_owned` moves when the content was already replaced by the
-                // file path, and copies when it is still the caller's own string --
-                // which is the case the old unconditional clone was paying for.
-                final_content.into_owned(),
-                entry.preview.clone(),
+                final_content,
+                Cow::Borrowed(&entry.preview),
                 calculated_hash,
-                entry.html_content.clone(),
+                entry.html_content.as_deref().map(Cow::Borrowed),
             )
         };
 
