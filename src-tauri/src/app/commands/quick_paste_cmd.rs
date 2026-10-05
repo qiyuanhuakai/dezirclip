@@ -24,7 +24,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::app_state::SessionHistory;
 use crate::database::DbState;
@@ -207,6 +207,15 @@ pub fn show_quick_paste(app: AppHandle) -> Result<(), String> {
     window
         .set_focus()
         .map_err(|e| format!("Failed to focus quick-paste window: {e}"))?;
+    // Tell the panel it is on screen.
+    //
+    // A capture is only pushed to the frontend while the main window is on
+    // screen, because waking a parked renderer to re-sort a list nobody is
+    // looking at is exactly what the hide paid to avoid. This panel is on
+    // screen far less often than the main window and is not the window that
+    // gating looks at, so without an explicit signal it keeps showing whatever
+    // the database held the last time its webview was built.
+    let _ = app.emit("quick-paste-shown", ());
     Ok(())
 }
 
