@@ -5,6 +5,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { RefObject } from "react";
 import { matchesHotkey } from "./useHotkeyMatching";
 import { useWindowVisibility } from "./useWindowVisibility";
+import { arrowSelectionStep } from "../lib/arrowSelection";
+import type { ArrowKey } from "../lib/arrowSelection";
 import type { ClipboardEntry } from "../types";
 
 interface UseKeyboardNavigationOptions {
@@ -126,20 +128,21 @@ export const useKeyboardNavigation = ({
       if (arrowKeySelectionRef.current && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         e.preventDefault();
         e.stopPropagation();
+        const key: ArrowKey = e.key;
 
-        setIsKeyboardMode((prev) => {
-          if (!prev) {
-            setSelectedIndex(0);
-            return true;
-          }
+        // Both setters are called from the handler rather than from inside an
+        // updater. An update dispatched while React is running an updater cannot
+        // join the batch that is already in flight, so it commits as a second
+        // pass over the whole tree -- and at key-repeat rate that doubled the
+        // work of holding an arrow key down.
+        if (!isKeyboardModeRef.current) {
+          setIsKeyboardMode(true);
+          setSelectedIndex(0);
+          return;
+        }
 
-          if (e.key === "ArrowDown") {
-            setSelectedIndex((s) => Math.min(s + 1, filteredHistoryRef.current.length - 1));
-          } else {
-            setSelectedIndex((s) => Math.max(s - 1, 0));
-          }
-          return true;
-        });
+        const total = filteredHistoryRef.current.length;
+        setSelectedIndex((s) => arrowSelectionStep(key, s, total));
         return;
       }
 
@@ -215,14 +218,14 @@ export const useKeyboardNavigation = ({
           setIsKeyboardMode(true);
           setSelectedIndex(0);
         } else {
-          setSelectedIndex((prev) => Math.max(prev - 1, 0));
+          setSelectedIndex((prev) => arrowSelectionStep("ArrowUp", prev, history.length));
         }
       } else if (action === "down") {
         if (!isNavMode) {
           setIsKeyboardMode(true);
           setSelectedIndex(0);
         } else {
-          setSelectedIndex((prev) => Math.min(prev + 1, history.length - 1));
+          setSelectedIndex((prev) => arrowSelectionStep("ArrowDown", prev, history.length));
         }
       } else if (action === "enter") {
         if (!isNavMode) return;
