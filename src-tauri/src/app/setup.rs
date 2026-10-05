@@ -1712,7 +1712,12 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
             val.replace("Win", "Super").parse::<Shortcut>()
         } {
             if shortcut == &screenshot_s {
-                let _ = crate::app::commands::screenshot_cmd::show_region_selector(app.clone());
+                // The show path may have to rebuild the selector after the idle
+                // destroyer took it, and `build()` cannot run on this thread.
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::app::commands::screenshot_cmd::show_region_selector(app);
+                });
                 return;
             }
         }

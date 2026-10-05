@@ -6,12 +6,24 @@ use crate::services::clipboard::{process_new_entry, ClipboardData};
 use crate::services::screenshot::{self, MonitorInfo, ScreenshotResult};
 
 const EVENT_SCREENSHOT_COMPLETE: &str = "screenshot:complete";
+const REGION_SELECT_LABEL: &str = "region-select";
 
+/// Bring the region selector back if the idle destroyer took it away.
+///
+/// The selector is a fullscreen overlay that holds a whole display's worth of
+/// compositor surface, so it is torn down with the main window when the app goes
+/// idle and rebuilt here the next time the screenshot hotkey fires. It is
+/// rebuilt from `tauri.conf.json` for the same reason the main window is: config
+/// drift becomes impossible.
+///
+/// Async because `build()` hands the window to the event loop and waits for it,
+/// which deadlocks if this runs on the main thread.
 #[tauri::command]
-pub fn show_region_selector(app: AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window("region-select")
-        .ok_or_else(|| "Region selector window is not configured".to_string())?;
+pub async fn show_region_selector(app: AppHandle) -> Result<(), String> {
+    let window = match app.get_webview_window(REGION_SELECT_LABEL) {
+        Some(window) => window,
+        None => rebuild_region_select(&app)?,
+    };
     let _ = window.set_focusable(true);
     crate::app::webview_memory::restore_window_memory(&window, "region-select-show");
     window
@@ -21,6 +33,20 @@ pub fn show_region_selector(app: AppHandle) -> Result<(), String> {
         .set_focus()
         .map_err(|e| format!("Failed to focus region selector: {e}"))?;
     Ok(())
+}
+
+fn rebuild_region_select(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|c| c.label == REGION_SELECT_LABEL)
+        .ok_or_else(|| "Region selector window is not configured".to_string())?;
+
+    tauri::WebviewWindowBuilder::from_config(app, config)
+        .and_then(|b| b.build())
+        .map_err(|e| format!("Failed to rebuild region selector: {e}"))
 }
 
 /// Park the region selector after a cancel.

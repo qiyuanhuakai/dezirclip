@@ -277,6 +277,8 @@ pub fn try_destroy_idle(app: &AppHandle) -> bool {
         return false;
     }
 
+    destroy_discardable_overlays(app, true);
+
     finish_main_destroy(app, false);
 
     if WINDOW_LIFECYCLE.load(Ordering::SeqCst) == LIFECYCLE_CLOSED {
@@ -290,6 +292,68 @@ pub fn try_destroy_idle(app: &AppHandle) -> bool {
 fn abort_closing() {
     clear_closing();
     WINDOW_LIFECYCLE.store(LIFECYCLE_OPEN, Ordering::SeqCst);
+}
+
+/// Overlays whose webview is worth tearing down with the main window.
+///
+/// Both are rebuilt on demand, so keeping them alive only holds a renderer and
+/// the compositor surface that goes with it. The measurements on this machine
+/// are why: from the same four-window start, destroying only the main window
+/// left the GPU process at 96.9 MB working set and 230.8 MB committed, flat for
+/// the whole 150-second watch, while destroying these two as well let it fall to
+/// 0.9 MB inside 30 seconds. That is what a leaked-looking GPU process looks
+/// like.
+///
+/// `quick-paste` is deliberately not here. Its entire purpose is to answer a
+/// hotkey without a round trip through the list, and rebuilding a webview per
+/// press would cost exactly the latency the overlay exists to remove.
+const DISCARDABLE_OVERLAYS: [&str; 2] = ["compact-preview", "region-select"];
+
+/// Tear down the overlays that will be rebuilt on their next use.
+///
+/// `keep_visible` spares an overlay the user is looking at. Both of these park
+/// themselves the moment they are done, so the next idle tick collects the one
+/// that was spared -- but a selection that is still being dragged, or a preview
+/// still on screen, is not the app's to take away. The main window has no such
+/// question: it is hidden by definition for this to run at all.
+///
+/// The compact preview is created by the frontend and its handle lives in the
+/// main window's JavaScript context, which the idle teardown removes in the same
+/// breath -- so the handle cannot be left dangling the way it would if the
+/// preview outlived its owner.
+fn destroy_discardable_overlays(app: &AppHandle, keep_visible: bool) {
+    for label in DISCARDABLE_OVERLAYS {
+        let Some(window) = app.get_webview_window(label) else {
+            continue;
+        };
+        if keep_visible && window.is_visible().unwrap_or(false) {
+            continue;
+        }
+        if let Err(err) = window.destroy() {
+            crate::warn!("[idle-destroyer] Failed to destroy '{}': {}", label, err);
+        }
+    }
+}
+
+/// Collect overlays that parked themselves after the main window was already gone.
+///
+/// The idle teardown spares a visible overlay, so a region selection that is
+/// still on screen when the app goes idle keeps its webview — and it parks
+/// itself moments later, on cancel or once the capture replies. Nothing else
+/// would ever collect it: the path that reaches the overlays runs inside
+/// `try_destroy_idle`, and "the main window is absent" is precisely the state
+/// that stops that from running, because with nothing mounted the app counts as
+/// shown and the countdown never comes due.
+///
+/// The main-window check is what keeps this from reaching into normal use. While
+/// the app is up, a parked preview is the hover cache, and destroying it there
+/// would mean rebuilding a webview on the next hover — the exact latency the
+/// overlay exists to avoid.
+fn collect_parked_overlays_while_destroyed(app: &AppHandle) {
+    if app.get_webview_window("main").is_some() {
+        return;
+    }
+    destroy_discardable_overlays(app, true);
 }
 
 fn destroy_main_window(app: &AppHandle, wait_for_browser_exit: bool) -> bool {
@@ -629,9 +693,7 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
         .and_then(|window| window.is_visible().ok())
         .unwrap_or(false);
 
-    if let Some(preview) = app.get_webview_window("compact-preview") {
-        let _ = preview.destroy();
-    }
+    destroy_discardable_overlays(app, false);
 
     if !destroy_main_window(app, true) {
         abort_closing();
@@ -672,6 +734,7 @@ pub fn spawn_idle_destroyer(app: AppHandle) {
         loop {
             std::thread::sleep(interval);
             try_destroy_idle(&app);
+            collect_parked_overlays_while_destroyed(&app);
             interval = tick_interval();
         }
     });
