@@ -1714,9 +1714,17 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
             if shortcut == &screenshot_s {
                 // The show path may have to rebuild the selector after the idle
                 // destroyer took it, and `build()` cannot run on this thread.
+                // The await is load-bearing: `show_region_selector` is an async
+                // command, and `let _ = future` compiles happily while dropping
+                // the future on the floor, so the body never runs and the hotkey
+                // does nothing at all.
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    let _ = crate::app::commands::screenshot_cmd::show_region_selector(app);
+                    if let Err(err) =
+                        crate::app::commands::screenshot_cmd::show_region_selector(app).await
+                    {
+                        crate::warn!("[hotkey] Failed to show the region selector: {}", err);
+                    }
                 });
                 return;
             }
