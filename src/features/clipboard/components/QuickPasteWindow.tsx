@@ -3,6 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { applyHistoryUpdate } from "../../../shared/lib/historyInsert";
+import {
+  resolveActiveIndex,
+  selectionAfterUpdate,
+} from "../../../shared/lib/quickPasteSelection";
 import type { ClipboardEntry } from "../../../shared/types";
 import "./QuickPasteWindow.css";
 
@@ -13,7 +17,12 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   ref
 ) {
   const [entries, setEntries] = useState<ClipboardEntry[]>([]);
-  const [activeIndex, setActiveIndex] = useState(0);
+  // The selection is an entry id, not a position. Every mutation of this list
+  // reorders it -- pinned first, then newest first -- so an index goes stale the
+  // moment anything is copied while the panel is open, and the highlight silently
+  // slides onto a different entry. Enter pastes whatever is highlighted, so a
+  // stale index pastes the wrong thing. An id survives the reorder.
+  const [activeId, setActiveId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -29,13 +38,14 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     );
   }, [entries, searchQuery]);
 
-  // Clamp activeIndex when filtered list shrinks
-  useEffect(() => {
-    setActiveIndex((prev) => {
-      if (filtered.length === 0) return 0;
-      return Math.min(prev, filtered.length - 1);
-    });
-  }, [filtered.length]);
+  // Derived, so there is no stored index that can disagree with the list. -1 only
+  // when there is nothing to select; anything that drops the selected entry --
+  // a removal, a search that filters it out, a refetch that no longer returns it
+  // -- falls back to the top rather than leaving the highlight nowhere.
+  const activeIndex = useMemo(
+    () => resolveActiveIndex(filtered, activeId),
+    [filtered, activeId]
+  );
 
   const fetchRecent = useCallback(() => {
     invoke<ClipboardEntry[]>("get_clipboard_history", {
@@ -64,12 +74,16 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     let disposed = false;
     const unlistenUpdated = listen<ClipboardEntry>("clipboard-updated", (event) => {
       if (disposed) return;
+      const incoming = event.payload;
       setEntries((prev) => {
-        const { entries, wasPresent } = applyHistoryUpdate(prev, event.payload);
+        const { entries, wasPresent } = applyHistoryUpdate(prev, incoming);
         // A genuinely new entry is what the user most likely wants to paste, so
         // the highlight follows it. An edit of something already listed leaves
-        // the highlight where it is rather than moving the cursor under it.
-        if (!wasPresent) setActiveIndex(0);
+        // the highlight on the same entry rather than moving the cursor off it.
+        // Either way this is an id, so a new entry that sorts after a pinned one
+        // still ends up highlighted, and an edit that reorders the list does not
+        // drag the highlight along with it.
+        setActiveId(selectionAfterUpdate(activeId, wasPresent, incoming));
         return entries.slice(0, MAX_ENTRIES);
       });
     });
@@ -125,14 +139,17 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setActiveIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+        const next = Math.min(activeIndex + 1, filtered.length - 1);
+        if (filtered[next]) setActiveId(filtered[next].id);
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setActiveIndex((prev) => Math.max(prev - 1, 0));
+        const next = Math.max(activeIndex - 1, 0);
+        if (filtered[next]) setActiveId(filtered[next].id);
       } else if (e.key === "Enter") {
         e.preventDefault();
-        if (filtered[activeIndex]) {
-          handlePaste(filtered[activeIndex].id);
+        const target = filtered[activeIndex];
+        if (target) {
+          handlePaste(target.id);
         }
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -185,7 +202,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
               className={`quick-paste-window__item${
                 i === activeIndex ? " quick-paste-window__item--active" : ""
               }`}
-              onMouseEnter={() => setActiveIndex(i)}
+              onMouseEnter={() => setActiveId(entry.id)}
               onClick={() => handlePaste(entry.id)}
               data-testid="quick-paste-item"
             >
