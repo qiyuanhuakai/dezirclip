@@ -1311,14 +1311,21 @@ const ClipboardItem = ({
                 if (!compactMode) return;
                 if (contextMenuState) return;
                 compactPreviewLog("mouseenter schedule preview", { itemId: item.id });
-                hoverAnchorRef.current = {
+                const target = e.currentTarget;
+
+                // Measured in the frame rather than here, for the same reason
+                // `onMouseMove` does it: a row entering under a stationary
+                // pointer lands while the list is still laying out, so reading
+                // the rect inside the handler forces a synchronous layout. The
+                // hover timer does not fire for a second, so a frame's delay
+                // changes nothing about what the preview is placed against.
+                hoverAnchorThrottle.schedule({
                     clientX: e.clientX,
                     clientY: e.clientY,
                     screenX: e.screenX,
                     screenY: e.screenY,
-                    itemRect: toCompactPreviewRect(e.currentTarget.getBoundingClientRect())
-                };
-                const target = e.currentTarget;
+                    element: target
+                });
 
                 // Clear any pending hide timer
                 if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
