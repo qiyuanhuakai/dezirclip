@@ -111,6 +111,58 @@ const setIgnoreBlurSafe = (ignore: boolean) => {
     });
 };
 
+// The main window's own geometry, as opposed to anything about the preview.
+//
+// Placing the preview needs three reads that describe the window the preview is
+// being placed next to: its scale factor, where its frame sits, and how big its
+// frame is. None of them changes while the user moves the pointer from one row
+// to the next, yet each one is a full cross-process round trip, and the hover
+// path asks for all three on every row the pointer passes over.
+//
+// The values are kept next to the browser's own view of the frame. `screenX`,
+// `screenY`, `outerWidth`, `outerHeight` and `devicePixelRatio` move, resize and
+// rescale with the window, and reading them costs nothing, so comparing them
+// says whether the cached values are still current without asking the backend
+// whether the window moved. They are only ever compared, never used as
+// geometry: they are in CSS pixels and the cached values are physical.
+//
+// `currentMonitor()` is deliberately not cached: the monitor's work area can
+// change without the window moving at all, and nothing reports that.
+type MainWindowGeometry = {
+    scale: number;
+    outer: PhysicalPosition | null;
+    size: PhysicalSize | null;
+    frameMarker: string;
+};
+
+let mainWindowGeometry: MainWindowGeometry | null = null;
+
+const mainWindowFrameMarker = () =>
+    [
+        window.screenX,
+        window.screenY,
+        window.outerWidth,
+        window.outerHeight,
+        window.devicePixelRatio
+    ].join(",");
+
+const readMainWindowGeometry = async (): Promise<MainWindowGeometry> => {
+    const frameMarker = mainWindowFrameMarker();
+    if (mainWindowGeometry && mainWindowGeometry.frameMarker === frameMarker) {
+        return mainWindowGeometry;
+    }
+    const appWindow = getCurrentWindow();
+    const [scale, outer, size] = await Promise.all([
+        appWindow.scaleFactor(),
+        appWindow.outerPosition().catch(() => null),
+        appWindow.outerSize().catch(() => null)
+    ]);
+    // The marker was read before the round trips, so a window that moved while
+    // they were in flight is caught by the next caller rather than remembered.
+    mainWindowGeometry = { scale, outer, size, frameMarker };
+    return mainWindowGeometry;
+};
+
 // `list_transform_kinds` answers from a compile-time table, so one fetch for
 // the whole app is enough. Every mounted row used to ask for its own copy.
 let transformKindsRequest: Promise<TransformKindDto[]> | null = null;
@@ -253,8 +305,7 @@ const placeAndShowPendingCompactPreview = async (
         return;
     }
 
-    const appWindow = getCurrentWindow();
-    const scale = await appWindow.scaleFactor();
+    const { scale, outer: mainOuter, size: mainSize } = await readMainWindowGeometry();
     const monitor = await currentMonitor();
     const monitorPos = monitor?.position || { x: 0, y: 0 };
     const monitorSize = monitor?.size || { width: 1920, height: 1080 };
@@ -263,8 +314,6 @@ const placeAndShowPendingCompactPreview = async (
 
     const widthPx = Math.round(widthLogical * scale);
     const heightPx = Math.round(heightLogical * scale);
-    const mainOuter = await appWindow.outerPosition().catch(() => null);
-    const mainSize = await appWindow.outerSize().catch(() => null);
     const anchorPx = resolveAnchorPhysical(compactPreviewPendingAnchor, scale, mainOuter);
     const avoidRect =
         mainOuter && mainSize
