@@ -107,6 +107,32 @@ impl ClipboardPipeline {
 }
 
 // Stage 1: Discovery
+/// What a single copied file becomes. Anything that is not a picture or a video
+/// stays a plain file entry, which is what the list renders it as either way.
+fn classify_file_path(path: &str) -> &'static str {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".gif")
+        || lower.ends_with(".png")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".bmp")
+        || lower.ends_with(".webp")
+    {
+        "image"
+    } else if lower.ends_with(".mp4")
+        || lower.ends_with(".mkv")
+        || lower.ends_with(".avi")
+        || lower.ends_with(".mov")
+        || lower.ends_with(".wmv")
+        || lower.ends_with(".flv")
+        || lower.ends_with(".webm")
+    {
+        "video"
+    } else {
+        "file"
+    }
+}
+
 pub struct DiscoveryStage;
 impl PipelineStage for DiscoveryStage {
     fn process(&self, ctx: &mut PipelineContext) {
@@ -129,28 +155,7 @@ impl PipelineStage for DiscoveryStage {
                 // that same value. Only the multi-file case actually concatenates.
                 if f.len() == 1 {
                     let path = f.pop().expect("length checked above");
-                    let lower = path.to_lowercase();
-                    if lower.ends_with(".gif") {
-                        ("image".to_string(), path, None)
-                    } else if lower.ends_with(".png")
-                        || lower.ends_with(".jpg")
-                        || lower.ends_with(".jpeg")
-                        || lower.ends_with(".bmp")
-                        || lower.ends_with(".webp")
-                    {
-                        ("image".to_string(), path, None)
-                    } else if lower.ends_with(".mp4")
-                        || lower.ends_with(".mkv")
-                        || lower.ends_with(".avi")
-                        || lower.ends_with(".mov")
-                        || lower.ends_with(".wmv")
-                        || lower.ends_with(".flv")
-                        || lower.ends_with(".webm")
-                    {
-                        ("video".to_string(), path, None)
-                    } else {
-                        ("file".to_string(), path, None)
-                    }
+                    (classify_file_path(&path).to_string(), path, None)
                 } else {
                     ("file".to_string(), f.join("\n"), None)
                 }
@@ -443,6 +448,20 @@ impl PipelineStage for ValidationStage {
 }
 
 // Stage 4: Persistence
+/// The row id OCR should run against, or `None` when it must not run at all.
+///
+/// A failed save leaves the entry at `id = 0`, and OCR is spawned with that id
+/// in hand — starting it anyway would attach recognised text to no row and pay
+/// for a full decode to find out. Only a newly captured image, with OCR turned
+/// on, that actually reached the database qualifies.
+fn ocr_target_id(is_new_image: bool, ocr_enabled: bool, saved_id: Option<i64>) -> Option<i64> {
+    if is_new_image && ocr_enabled {
+        saved_id
+    } else {
+        None
+    }
+}
+
 pub struct PersistenceStage;
 impl PipelineStage for PersistenceStage {
     fn process(&self, ctx: &mut PipelineContext) {
@@ -486,12 +505,12 @@ impl PipelineStage for PersistenceStage {
             // after the connection is released, and only when OCR is on. Copying it
             // out before the write meant holding a second copy of a screenshot's
             // data URL for the whole of a stage that may never look at it.
-            if is_new_image && settings.ocr_enabled.load(Ordering::Relaxed) {
-                let content = saved_id.and_then(|id| {
-                    ctx.entry
-                        .as_ref()
-                        .map(|e| (id, e.content.as_str()))
-                });
+            if let Some(id) = ocr_target_id(
+                is_new_image,
+                settings.ocr_enabled.load(Ordering::Relaxed),
+                saved_id,
+            ) {
+                let content = ctx.entry.as_ref().map(|e| (id, e.content.as_str()));
                 if let Some((id, content)) = content {
                     if let Some(png_bytes) =
                         crate::services::clipboard_ops::resolve_image_bytes(content)
@@ -634,5 +653,64 @@ impl PipelineStage for DistributionStage {
                 .app_handle
                 .emit("clipboard-updated", truncate_entry_for_ui(entry));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Every payload type discovery has to classify, and the file case in
+    // particular: the extension table decides whether one copied path is shown
+    // as a picture, a video, or a file, and moving the payload out by value
+    // touched every arm of that match.
+    #[test]
+    fn single_files_are_classified_by_extension() {
+        for image in ["a.gif", "a.png", "a.jpg", "a.jpeg", "a.bmp", "a.webp"] {
+            assert_eq!(classify_file_path(image), "image", "{}", image);
+        }
+        for video in [
+            "a.mp4", "a.mkv", "a.avi", "a.mov", "a.wmv", "a.flv", "a.webm",
+        ] {
+            assert_eq!(classify_file_path(video), "video", "{}", video);
+        }
+        for other in ["a.pdf", "a.txt", "a.zip", "a", "png.png.txt"] {
+            assert_eq!(classify_file_path(other), "file", "{}", other);
+        }
+    }
+
+    #[test]
+    fn extension_matching_ignores_case() {
+        assert_eq!(classify_file_path("A.PNG"), "image");
+        assert_eq!(classify_file_path("A.Mp4"), "video");
+    }
+
+    // A save that fails leaves the entry at id 0. OCR is spawned with that id in
+    // hand, so letting it run would attach recognised text to no row and pay for
+    // a full image decode to find out.
+    #[test]
+    fn a_failed_save_does_not_start_ocr() {
+        assert_eq!(ocr_target_id(true, true, None), None);
+    }
+
+    #[test]
+    fn ocr_runs_only_for_a_saved_new_image_with_ocr_on() {
+        assert_eq!(ocr_target_id(true, true, Some(42)), Some(42));
+        assert_eq!(
+            ocr_target_id(false, true, Some(42)),
+            None,
+            "an entry that was already in the database is not new"
+        );
+        assert_eq!(
+            ocr_target_id(true, false, Some(42)),
+            None,
+            "OCR turned off must not run"
+        );
+    }
+
+    #[test]
+    fn a_non_image_capture_never_reaches_ocr() {
+        assert_eq!(ocr_target_id(false, true, Some(7)), None);
+        assert_eq!(ocr_target_id(false, false, Some(7)), None);
     }
 }
