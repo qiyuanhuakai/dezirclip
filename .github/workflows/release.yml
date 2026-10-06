@@ -85,6 +85,7 @@ jobs:
             libxi-dev \
             libxrandr-dev \
             libxtst-dev \
+            libdbus-1-dev \
             xdg-utils
 
       - name: Setup pnpm
@@ -271,6 +272,7 @@ jobs:
             libxi-dev \
             libxrandr-dev \
             libxtst-dev \
+            libdbus-1-dev \
             xdg-utils
 
       - name: Setup pnpm
