@@ -128,10 +128,17 @@ const setIgnoreBlurSafe = (ignore: boolean) => {
 //
 // `currentMonitor()` is deliberately not cached: the monitor's work area can
 // change without the window moving at all, and nothing reports that.
+//
+// `outerSize()` is deliberately not cached either, and not because it is
+// stable. The window permission set does not include `outer-size`, so the call
+// is refused and resolves to null on every single hover, which is what has
+// always happened: `avoidRect` has therefore never been anything but null and
+// the preview has never actually avoided the main window. Caching a value that
+// cannot exist is not an option either, so it is left as a plain read and the
+// gap is reported rather than papered over.
 type MainWindowGeometry = {
     scale: number;
     outer: PhysicalPosition | null;
-    size: PhysicalSize | null;
     frameMarker: string;
 };
 
@@ -147,20 +154,27 @@ const mainWindowFrameMarker = () =>
     ].join(",");
 
 const readMainWindowGeometry = async (): Promise<MainWindowGeometry> => {
+    // The marker is read before the round trips, so a window that moved while
+    // they were in flight is caught by the next caller rather than remembered.
     const frameMarker = mainWindowFrameMarker();
     if (mainWindowGeometry && mainWindowGeometry.frameMarker === frameMarker) {
         return mainWindowGeometry;
     }
     const appWindow = getCurrentWindow();
-    const [scale, outer, size] = await Promise.all([
+    const [scale, outer] = await Promise.all([
         appWindow.scaleFactor(),
-        appWindow.outerPosition().catch(() => null),
-        appWindow.outerSize().catch(() => null)
+        appWindow.outerPosition().catch(() => null)
     ]);
-    // The marker was read before the round trips, so a window that moved while
-    // they were in flight is caught by the next caller rather than remembered.
-    mainWindowGeometry = { scale, outer, size, frameMarker };
-    return mainWindowGeometry;
+    const geometry: MainWindowGeometry = { scale, outer, frameMarker };
+    // A read that failed is not a value worth keeping. Before this cache the
+    // path asked the backend again on every hover, so a transient failure cost
+    // that one hover and nothing more. Caching the failure instead would keep
+    // the preview anchored to where the window used to be, until the frame
+    // marker happened to change.
+    if (outer) {
+        mainWindowGeometry = geometry;
+    }
+    return geometry;
 };
 
 // `list_transform_kinds` answers from a compile-time table, so one fetch for
@@ -305,7 +319,8 @@ const placeAndShowPendingCompactPreview = async (
         return;
     }
 
-    const { scale, outer: mainOuter, size: mainSize } = await readMainWindowGeometry();
+    const { scale, outer: mainOuter } = await readMainWindowGeometry();
+    const mainSize = await getCurrentWindow().outerSize().catch(() => null);
     const monitor = await currentMonitor();
     const monitorPos = monitor?.position || { x: 0, y: 0 };
     const monitorSize = monitor?.size || { width: 1920, height: 1080 };
