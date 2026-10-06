@@ -1315,10 +1315,14 @@ const ClipboardItem = ({
 
                 // Measured in the frame rather than here, for the same reason
                 // `onMouseMove` does it: a row entering under a stationary
-                // pointer lands while the list is still laying out, so reading
-                // the rect inside the handler forces a synchronous layout. The
-                // hover timer does not fire for a second, so a frame's delay
-                // changes nothing about what the preview is placed against.
+                // pointer can land while the list is still laying out, and a
+                // geometry read in the handler may force a synchronous layout.
+                // What that buys is measured and worth stating precisely: the
+                // synchronous reads drop to zero, and the layout count does not
+                // move, so the gain is getting the reads off the handler's
+                // synchronous path rather than fewer layouts. The hover timer
+                // does not fire for a second, so a frame's delay changes nothing
+                // about what the preview is placed against.
                 hoverAnchorThrottle.schedule({
                     clientX: e.clientX,
                     clientY: e.clientY,
