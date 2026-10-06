@@ -27,7 +27,12 @@ pub enum ClipboardData {
 }
 
 pub struct PipelineContext {
-    pub data: ClipboardData,
+    /// The captured payload, owned outright. Only the first stage reads it, and it
+    /// hands the strings straight to the entry it builds -- an image capture's
+    /// data URL is megabytes and a text capture is capped at ten, so copying any
+    /// of it is copying the whole thing. `Option` is what makes "consumed here"
+    /// say so in the type rather than in a comment.
+    pub data: Option<ClipboardData>,
     pub app_handle: AppHandle,
     pub source_app: String,
     pub source_app_path: Option<String>,
@@ -56,7 +61,7 @@ impl PipelineContext {
             .as_millis() as i64;
 
         Self {
-            data,
+            data: Some(data),
             app_handle,
             source_app: active_app.app_name,
             source_app_path: active_app.process_path,
@@ -105,26 +110,35 @@ impl ClipboardPipeline {
 pub struct DiscoveryStage;
 impl PipelineStage for DiscoveryStage {
     fn process(&self, ctx: &mut PipelineContext) {
-        let (content_type, content, html_content) = match &ctx.data {
-            ClipboardData::Text(t) => (detect_content_type(t), t.clone(), None),
+        // Taken by value: every arm below hands the payload straight to the entry
+        // instead of copying it. Discovery is the first stage and the only reader,
+        // so the strings it moves are the only copies of a capture that exist.
+        let data = ctx
+            .data
+            .take()
+            .expect("discovery runs first and is the only reader of the payload");
+        let (content_type, content, html_content) = match data {
+            ClipboardData::Text(t) => (detect_content_type(&t), t, None),
             ClipboardData::RichText { text, html } => {
-                ("rich_text".to_string(), text.clone(), Some(html.clone()))
+                ("rich_text".to_string(), text, Some(html))
             }
-            ClipboardData::Image { data_url } => ("image".to_string(), data_url.clone(), None),
-            ClipboardData::Files(f) => {
-                let content = f.join("\n");
+            ClipboardData::Image { data_url } => ("image".to_string(), data_url, None),
+            ClipboardData::Files(mut f) => {
+                // A single path never needs the join: on one element `join`
+                // returns that element, and every branch used either the path or
+                // that same value. Only the multi-file case actually concatenates.
                 if f.len() == 1 {
-                    let path = &f[0];
+                    let path = f.pop().expect("length checked above");
                     let lower = path.to_lowercase();
                     if lower.ends_with(".gif") {
-                        ("image".to_string(), path.clone(), None)
+                        ("image".to_string(), path, None)
                     } else if lower.ends_with(".png")
                         || lower.ends_with(".jpg")
                         || lower.ends_with(".jpeg")
                         || lower.ends_with(".bmp")
                         || lower.ends_with(".webp")
                     {
-                        ("image".to_string(), path.clone(), None)
+                        ("image".to_string(), path, None)
                     } else if lower.ends_with(".mp4")
                         || lower.ends_with(".mkv")
                         || lower.ends_with(".avi")
@@ -133,12 +147,12 @@ impl PipelineStage for DiscoveryStage {
                         || lower.ends_with(".flv")
                         || lower.ends_with(".webm")
                     {
-                        ("video".to_string(), path.clone(), None)
+                        ("video".to_string(), path, None)
                     } else {
-                        ("file".to_string(), content, None)
+                        ("file".to_string(), path, None)
                     }
                 } else {
-                    ("file".to_string(), content, None)
+                    ("file".to_string(), f.join("\n"), None)
                 }
             }
         };
@@ -251,16 +265,6 @@ impl ValidationStage {
         let conn = db_state.conn.lock().unwrap();
 
         let mut existing_id = None;
-        let (content, content_type, html_content) = {
-            let e = ctx.entry.as_ref().unwrap();
-            (
-                e.content.clone(),
-                e.content_type.clone(),
-                e.html_content.clone(),
-            )
-        };
-
-        let normalized_content = crate::database::normalize_text(&content);
         let htmls_equivalent = |a: Option<&str>, b: Option<&str>| -> bool {
             match (a, b) {
                 (None, None) => true,
@@ -270,60 +274,81 @@ impl ValidationStage {
                 _ => false,
             }
         };
-        let rich_text_html_matches = |id: i64| -> bool {
-            if let Ok(Some((_content, c_type, h_content))) = db_state
-                .repo
-                .get_entry_content_with_html_with_conn(&conn, id)
-            {
-                if c_type != "rich_text" {
-                    return false;
+
+        // Every lookup below reads the entry and none of them writes to it, so one
+        // immutable borrow covers the lot. It used to be lifted into owned
+        // `content` / `html_content` first, purely so the borrow could end before
+        // `entry_mut.id = id` further down — which copies the whole payload, and
+        // for a rich-text capture that payload includes the HTML with its embedded
+        // images.
+        let image_hash = {
+            let entry = ctx.entry.as_ref().expect("discovery produced an entry");
+            let content = entry.content.as_str();
+            let content_type = entry.content_type.as_str();
+            let html_content = entry.html_content.as_deref();
+
+            let normalized_content = crate::database::normalize_text(content);
+            let rich_text_html_matches = |id: i64| -> bool {
+                if let Ok(Some((_content, c_type, h_content))) = db_state
+                    .repo
+                    .get_entry_content_with_html_with_conn(&conn, id)
+                {
+                    if c_type != "rich_text" {
+                        return false;
+                    }
+                    return htmls_equivalent(html_content, h_content.as_deref());
                 }
-                return htmls_equivalent(html_content.as_deref(), h_content.as_deref());
+                false
+            };
+
+            let types_to_check = if content_type == "rich_text" {
+                vec!["rich_text", "text", "code", "url"]
+            } else {
+                vec![content_type]
+            };
+
+            // An image hash comes from the decoded pixels, so every lookup repeats a
+            // base64 decode plus a full image decode. Both lookups below run against
+            // the same picture — the second differs only by trimmed / CRLF-folded
+            // whitespace, which `calc_image_hash` strips anyway — so decode once and
+            // hand the result to both. The persistence stage stores the same value
+            // as `content_hash`, so it is kept on the context for that stage too.
+            let image_hash = if content_type == "image" {
+                crate::database::calc_image_hash(content)
+            } else {
+                None
+            };
+
+            for t in types_to_check {
+                if let Ok(Some(id)) =
+                    db_state
+                        .repo
+                        .find_by_content_with_hash(&conn, content, Some(t), image_hash)
+                {
+                    if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id)
+                    {
+                        continue;
+                    }
+                    existing_id = Some(id);
+                    break;
+                }
+                if let Ok(Some(id)) = db_state.repo.find_by_content_with_hash(
+                    &conn,
+                    &normalized_content,
+                    Some(t),
+                    image_hash,
+                ) {
+                    if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id)
+                    {
+                        continue;
+                    }
+                    existing_id = Some(id);
+                    break;
+                }
             }
-            false
-        };
-
-        let types_to_check = if content_type == "rich_text" {
-            vec!["rich_text", "text", "code", "url"]
-        } else {
-            vec![content_type.as_str()]
-        };
-
-        // An image hash comes from the decoded pixels, so every lookup repeats a
-        // base64 decode plus a full image decode. Both lookups below run against
-        // the same picture — the second differs only by trimmed / CRLF-folded
-        // whitespace, which `calc_image_hash` strips anyway — so decode once and
-        // hand the result to both. The persistence stage stores the same value
-        // as `content_hash`, so it is kept on the context for that stage too.
-        let image_hash = if content_type == "image" {
-            crate::database::calc_image_hash(&content)
-        } else {
-            None
+            image_hash
         };
         ctx.image_hash = image_hash;
-
-        for t in types_to_check {
-            if let Ok(Some(id)) = db_state
-                .repo
-                .find_by_content_with_hash(&conn, &content, Some(t), image_hash)
-            {
-                if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id) {
-                    continue;
-                }
-                existing_id = Some(id);
-                break;
-            }
-            if let Ok(Some(id)) = db_state
-                .repo
-                .find_by_content_with_hash(&conn, &normalized_content, Some(t), image_hash)
-            {
-                if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id) {
-                    continue;
-                }
-                existing_id = Some(id);
-                break;
-            }
-        }
 
         if persistent_enabled {
             if let Some(id) = existing_id {
@@ -421,55 +446,67 @@ impl PipelineStage for ValidationStage {
 pub struct PersistenceStage;
 impl PipelineStage for PersistenceStage {
     fn process(&self, ctx: &mut PipelineContext) {
-        let entry = ctx.entry.as_mut().unwrap();
         let settings = ctx.app_handle.state::<SettingsState>();
-        let db_state = ctx.app_handle.state::<DbState>();
 
         if settings.persistent.load(Ordering::Relaxed) {
             let app_data_dir = ctx.app_handle.state::<AppDataDir>();
             let data_dir = app_data_dir.0.lock().unwrap().clone();
-            let conn = db_state.conn.lock().unwrap();
+            let db_state = ctx.app_handle.state::<DbState>();
 
-            let is_new_image = entry.id == 0 && entry.content_type == "image";
-            let image_content = if is_new_image {
-                Some(entry.content.clone())
-            } else {
-                None
+            let (is_new_image, saved_id) = {
+                let entry = ctx.entry.as_mut().expect("discovery produced an entry");
+                let conn = db_state.conn.lock().unwrap();
+
+                let is_new_image = entry.id == 0 && entry.content_type == "image";
+                let saved_id =
+                    match db_state.repo.save_with_conn_and_image_hash(
+                        &conn,
+                        entry,
+                        Some(&data_dir),
+                        ctx.image_hash,
+                    ) {
+                        Ok(id) => {
+                            entry.id = id;
+                            if let Ok(deleted_ids) = db_state
+                                .repo
+                                .enforce_limit_with_conn(&conn, Some(&data_dir))
+                            {
+                                for rid in deleted_ids {
+                                    let _ = ctx.app_handle.emit("clipboard-removed", rid);
+                                }
+                            }
+                            Some(id)
+                        }
+                        Err(_) => None,
+                    };
+                (is_new_image, saved_id)
             };
 
-            if let Ok(id) = db_state.repo.save_with_conn_and_image_hash(
-                &conn,
-                entry,
-                Some(&data_dir),
-                ctx.image_hash,
-            ) {
-                entry.id = id;
-                if let Ok(deleted_ids) = db_state
-                    .repo
-                    .enforce_limit_with_conn(&conn, Some(&data_dir))
-                {
-                    for rid in deleted_ids {
-                        let _ = ctx.app_handle.emit("clipboard-removed", rid);
+            // The image payload is needed here and nowhere else: after the write,
+            // after the connection is released, and only when OCR is on. Copying it
+            // out before the write meant holding a second copy of a screenshot's
+            // data URL for the whole of a stage that may never look at it.
+            if is_new_image && settings.ocr_enabled.load(Ordering::Relaxed) {
+                let content = saved_id.and_then(|id| {
+                    ctx.entry
+                        .as_ref()
+                        .map(|e| (id, e.content.as_str()))
+                });
+                if let Some((id, content)) = content {
+                    if let Some(png_bytes) =
+                        crate::services::clipboard_ops::resolve_image_bytes(content)
+                    {
+                        let app = ctx.app_handle.clone();
+                        tauri::async_runtime::spawn(
+                            crate::services::clipboard_ops::trigger_ocr_for_image_item(
+                                id, png_bytes, app,
+                            ),
+                        );
                     }
                 }
             }
-            drop(conn);
-
-            if let Some(content) =
-                image_content.filter(|_| settings.ocr_enabled.load(Ordering::Relaxed))
-            {
-                if let Some(png_bytes) =
-                    crate::services::clipboard_ops::resolve_image_bytes(&content)
-                {
-                    let app = ctx.app_handle.clone();
-                    tauri::async_runtime::spawn(
-                        crate::services::clipboard_ops::trigger_ocr_for_image_item(
-                            entry.id, png_bytes, app,
-                        ),
-                    );
-                }
-            }
         } else {
+            let entry = ctx.entry.as_mut().expect("discovery produced an entry");
             // Session-only items
             if let Some(reuse_id) = ctx.reuse_session_id {
                 let session_history = ctx.app_handle.state::<SessionHistory>();
