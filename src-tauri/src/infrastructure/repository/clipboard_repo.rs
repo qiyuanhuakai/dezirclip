@@ -7,6 +7,7 @@ use crate::infrastructure::encryption;
 use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
 use rusqlite::params;
 use rusqlite::Connection;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -464,14 +465,20 @@ impl SqliteClipboardRepository {
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&entry.tags);
 
-        let mut final_content = entry.content.clone();
+        // Borrowed until something actually replaces it. This used to clone the
+        // content up front, which for an image is the whole `data:` URL: a 4K
+        // screenshot is 5.3 MB of base64, and on the very next line a successful
+        // `save_image_to_file` overwrites the copy with a short file path. The
+        // clone was the single largest allocation on the save path and half of
+        // what it added, spent on a string that was about to be dropped.
+        let mut final_content: Cow<'_, str> = Cow::Borrowed(&entry.content);
         let mut final_is_external = entry.is_external;
 
         // Externalize image if possible
         if entry.content_type == "image" && entry.content.starts_with("data:image/") {
             if let Some(dir) = data_dir {
                 if let Some(path) = save_image_to_file(&entry.content, dir) {
-                    final_content = path;
+                    final_content = Cow::Owned(path);
                     final_is_external = true;
                 }
             }
@@ -510,7 +517,10 @@ impl SqliteClipboardRepository {
             )
         } else {
             (
-                final_content,
+                // `into_owned` moves when the content was already replaced by the
+                // file path, and copies when it is still the caller's own string --
+                // which is the case the old unconditional clone was paying for.
+                final_content.into_owned(),
                 entry.preview.clone(),
                 calculated_hash,
                 entry.html_content.clone(),
@@ -2036,6 +2046,189 @@ mod tests {
             "reusing the dedup hash must store the same content_hash as recomputing it"
         );
         assert_eq!(read_hash(new_id), dedup_hash);
+    }
+
+    // `save_with_conn_and_image_hash` took the content as a `Cow` so that a
+    // screenshot's 5.3 MB data URL is never copied on the way to becoming a short
+    // file path. The borrow only works because every branch that still holds the
+    // caller's string hands it back intact, and the branch that replaces it hands
+    // back an owned path instead. These pin both directions of that, plus the
+    // encrypt branch, which is the one place the three payloads stop being
+    // borrowed and start being rebuilt.
+    fn png_data_url() -> String {
+        use base64::Engine;
+        use image::ImageEncoder;
+
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(
+                &[12, 34, 56, 255],
+                1,
+                1,
+                image::ExtendedColorType::Rgba8,
+            )
+            .expect("png encode");
+        format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&png)
+        )
+    }
+
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("dz-repo-test-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        dir
+    }
+
+    fn image_entry(content: String) -> ClipboardEntry {
+        ClipboardEntry {
+            id: 0,
+            content_type: "image".to_string(),
+            content,
+            html_content: None,
+            source_app: "Test".to_string(),
+            source_app_path: None,
+            timestamp: 1_700_000_000,
+            preview: "[Image Content]".to_string(),
+            is_pinned: false,
+            tags: Vec::new(),
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+            content_kinds: Vec::new(),
+            ocr_text: None,
+            ocr_status: None,
+        }
+    }
+
+    #[test]
+    fn image_is_replaced_by_a_file_path_when_a_data_dir_is_given() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let dir = scratch_dir("externalize-ok");
+        let url = png_data_url();
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &image_entry(url.clone()), Some(&dir), None)
+            .expect("save should externalize");
+
+        let (content, is_external): (String, i64) = conn
+            .query_row(
+                "SELECT content, is_external FROM clipboard_history WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("row should exist");
+
+        assert!(
+            !content.starts_with("data:"),
+            "a successful externalization must not keep the data URL, got {} bytes",
+            content.len()
+        );
+        assert!(
+            std::path::Path::new(&content).exists(),
+            "the stored path must point at a real file: {}",
+            content
+        );
+        assert_eq!(is_external, 1, "an externalized image must be marked external");
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn image_keeps_its_data_url_when_no_data_dir_is_given() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let url = png_data_url();
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &image_entry(url.clone()), None, None)
+            .expect("save without a data dir");
+
+        let (content, is_external): (String, i64) = conn
+            .query_row(
+                "SELECT content, is_external FROM clipboard_history WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("row should exist");
+
+        assert_eq!(content, url, "with no data dir the caller's string is stored as is");
+        assert_eq!(is_external, 0, "a non-externalized image must not claim to be");
+    }
+
+    #[test]
+    fn image_keeps_its_data_url_when_externalization_fails() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let dir = scratch_dir("externalize-fail");
+        // `save_image_to_file` returns None when the payload is not decodable
+        // base64, which is the same "no path produced" the borrow has to survive.
+        let broken = "data:image/png;base64,!!!!not base64!!!!".to_string();
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &image_entry(broken.clone()), Some(&dir), None)
+            .expect("a failed externalization must still save");
+
+        let (content, is_external): (String, i64) = conn
+            .query_row(
+                "SELECT content, is_external FROM clipboard_history WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("row should exist");
+
+        assert_eq!(
+            content, broken,
+            "when no file path is produced the borrowed content must survive"
+        );
+        assert_eq!(is_external, 0);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sensitive_text_goes_through_the_encrypt_branch_and_round_trips() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let mut entry = weighted_entry(64);
+        entry.content_type = "text".to_string();
+        entry.content = "correct horse battery staple".to_string();
+        entry.preview = "correct horse".to_string();
+        entry.tags = vec!["sensitive".to_string()];
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &entry, None, None)
+            .expect("save sensitive entry");
+
+        let stored: String = conn
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .expect("row should exist");
+
+        assert_eq!(
+            repo.maybe_decrypt_text(&stored),
+            entry.content,
+            "the encrypt branch must hand back exactly what it was given"
+        );
+        // DPAPI on Windows and a generated master key elsewhere both encrypt; if
+        // neither is available the branch is a passthrough and there is nothing
+        // left to assert beyond the round trip above.
+        if crate::infrastructure::encryption::encrypt_value(&entry.content).is_some() {
+            assert!(
+                crate::infrastructure::encryption::is_encrypted_value(&stored),
+                "a sensitive entry must not be readable in the database"
+            );
+        }
     }
 
     // The repository caches hold pages of entries whose payload size is decided
