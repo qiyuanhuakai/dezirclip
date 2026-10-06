@@ -207,32 +207,36 @@ const toCompactPreviewRect = (rect: DOMRect): CompactPreviewRect => ({
     bottom: rect.bottom
 });
 
-const resolveAnchorPhysical = async (
+const resolveAnchorPhysical = (
     anchor: CompactPreviewAnchor,
-    scale: number
-): Promise<CompactPreviewPhysicalAnchor> => {
-    try {
-        const appWindow = getCurrentWindow();
-        const outer = await appWindow.outerPosition();
+    scale: number,
+    appOuter: PhysicalPosition | null
+): CompactPreviewPhysicalAnchor => {
+    // The caller already read the main window's outer position for the avoid
+    // rect. This used to read it a second time, one line apart, for the same
+    // window in the same instant -- a second cross-process round trip per preview
+    // show, and the hover timer re-runs the whole path for every row the
+    // pointer passes over. Sharing the one read also means the anchor and the
+    // avoid rect come from one snapshot instead of two slightly different moments.
+    if (appOuter) {
         return {
-            x: Math.round(outer.x + anchor.clientX * scale),
-            y: Math.round(outer.y + anchor.clientY * scale),
-            itemRect: anchor.itemRect ? scaleRect(anchor.itemRect, outer, scale) : null
-        };
-    } catch {
-        return {
-            x: Math.round(anchor.screenX * scale),
-            y: Math.round(anchor.screenY * scale),
-            itemRect: anchor.itemRect
-                ? {
-                      left: Math.round(anchor.screenX * scale + (anchor.itemRect.left - anchor.clientX) * scale),
-                      top: Math.round(anchor.screenY * scale + (anchor.itemRect.top - anchor.clientY) * scale),
-                      right: Math.round(anchor.screenX * scale + (anchor.itemRect.right - anchor.clientX) * scale),
-                      bottom: Math.round(anchor.screenY * scale + (anchor.itemRect.bottom - anchor.clientY) * scale)
-                  }
-                : null
+            x: Math.round(appOuter.x + anchor.clientX * scale),
+            y: Math.round(appOuter.y + anchor.clientY * scale),
+            itemRect: anchor.itemRect ? scaleRect(anchor.itemRect, appOuter, scale) : null
         };
     }
+    return {
+        x: Math.round(anchor.screenX * scale),
+        y: Math.round(anchor.screenY * scale),
+        itemRect: anchor.itemRect
+            ? {
+                  left: Math.round(anchor.screenX * scale + (anchor.itemRect.left - anchor.clientX) * scale),
+                  top: Math.round(anchor.screenY * scale + (anchor.itemRect.top - anchor.clientY) * scale),
+                  right: Math.round(anchor.screenX * scale + (anchor.itemRect.right - anchor.clientX) * scale),
+                  bottom: Math.round(anchor.screenY * scale + (anchor.itemRect.bottom - anchor.clientY) * scale)
+              }
+            : null
+    };
 };
 
 const placeAndShowPendingCompactPreview = async (
@@ -259,9 +263,9 @@ const placeAndShowPendingCompactPreview = async (
 
     const widthPx = Math.round(widthLogical * scale);
     const heightPx = Math.round(heightLogical * scale);
-    const anchorPx = await resolveAnchorPhysical(compactPreviewPendingAnchor, scale);
     const mainOuter = await appWindow.outerPosition().catch(() => null);
     const mainSize = await appWindow.outerSize().catch(() => null);
+    const anchorPx = resolveAnchorPhysical(compactPreviewPendingAnchor, scale, mainOuter);
     const avoidRect =
         mainOuter && mainSize
             ? {
@@ -308,8 +312,10 @@ const placeAndShowPendingCompactPreview = async (
         } catch (stackErr) {
             compactPreviewLog("refresh always-on-top stacking failed", stackErr);
         }
-        const visible = await compactPreviewWindow.isVisible().catch(() => null);
-        compactPreviewLog("preview window shown", { visible, target });
+        // No `isVisible()` here: the answer only ever reached this log line, and
+        // asking costs a full cross-process round trip on a path the hover timer
+        // re-runs for every row the pointer passes over.
+        compactPreviewLog("preview window shown", { target });
     } catch (err) {
         setIgnoreBlurSafe(false);
         compactPreviewLog("preview show failed", err);
