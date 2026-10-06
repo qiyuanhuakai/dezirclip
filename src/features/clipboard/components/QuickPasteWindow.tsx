@@ -26,6 +26,18 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // A mirror of `entries` for the event listeners to read.
+  //
+  // The listeners are registered once and depend only on the stable
+  // `fetchRecent`, so anything they close over is frozen at the first render:
+  // reading `activeId` from there meant an update to an entry that was already
+  // listed resolved the selection from that stale `null` and dropped the
+  // highlight back to the top. The list has the same problem, and folding it
+  // through a state updater hides it, because the updater sees the current
+  // value. Reading the ref and writing both states from one snapshot fixes both,
+  // and keeps `setActiveId` out of another setter's updater, where React is free
+  // to call it more than once.
+  const entriesRef = useRef<ClipboardEntry[]>([]);
   useBackendAppearance();
 
   const filtered = useMemo(() => {
@@ -47,15 +59,20 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     [filtered, activeId]
   );
 
+  const replaceEntries = useCallback((next: ClipboardEntry[]) => {
+    entriesRef.current = next;
+    setEntries(next);
+  }, []);
+
   const fetchRecent = useCallback(() => {
     invoke<ClipboardEntry[]>("get_clipboard_history", {
       limit: MAX_ENTRIES,
       offset: 0,
       contentType: null,
     })
-      .then((data) => setEntries(data ?? []))
-      .catch(() => setEntries([]));
-  }, []);
+      .then((data) => replaceEntries(data ?? []))
+      .catch(() => replaceEntries([]));
+  }, [replaceEntries]);
 
   // Fetch recent entries on mount
   useEffect(() => {
@@ -75,21 +92,26 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     const unlistenUpdated = listen<ClipboardEntry>("clipboard-updated", (event) => {
       if (disposed) return;
       const incoming = event.payload;
-      setEntries((prev) => {
-        const { entries, wasPresent } = applyHistoryUpdate(prev, incoming);
-        // A genuinely new entry is what the user most likely wants to paste, so
-        // the highlight follows it. An edit of something already listed leaves
-        // the highlight on the same entry rather than moving the cursor off it.
-        // Either way this is an id, so a new entry that sorts after a pinned one
-        // still ends up highlighted, and an edit that reorders the list does not
-        // drag the highlight along with it.
-        setActiveId(selectionAfterUpdate(activeId, wasPresent, incoming));
-        return entries.slice(0, MAX_ENTRIES);
-      });
+      const { entries: merged, wasPresent } = applyHistoryUpdate(
+        entriesRef.current,
+        incoming
+      );
+      replaceEntries(merged.slice(0, MAX_ENTRIES));
+      // A genuinely new entry is what the user most likely wants to paste, so
+      // the highlight follows it. An edit of something already listed leaves
+      // the highlight on the same entry rather than moving the cursor off it.
+      // Either way this is an id, so a new entry that sorts after a pinned one
+      // still ends up highlighted, and an edit that reorders the list does not
+      // drag the highlight along with it. The functional form is what reads the
+      // selection as it is now rather than as it was when this listener was
+      // registered.
+      setActiveId((current) => selectionAfterUpdate(current, wasPresent, incoming));
     });
     const unlistenRemoved = listen<number>("clipboard-removed", (event) => {
       if (disposed) return;
-      setEntries((prev) => prev.filter((entry) => entry.id !== event.payload));
+      replaceEntries(
+        entriesRef.current.filter((entry) => entry.id !== event.payload)
+      );
     });
     // The backend only pushes captures to the frontend while the main window is
     // on screen, so an entry copied while the app was parked never reaches this
@@ -105,7 +127,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       unlistenRemoved.then((f) => f());
       unlistenShown.then((f) => f());
     };
-  }, [fetchRecent]);
+  }, [fetchRecent, replaceEntries]);
 
   useEffect(() => {
     document.body.classList.add("quick-paste");
