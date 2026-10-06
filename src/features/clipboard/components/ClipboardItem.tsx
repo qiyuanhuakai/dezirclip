@@ -86,6 +86,19 @@ const loadWebviewWindowModule = async () => import("@tauri-apps/api/webviewWindo
 // unmounts rows constantly and every teardown used to re-send `false`.
 let lastIgnoreBlur: boolean | null = null;
 
+// Whether the preview window is believed to be on screen. `null` means unknown,
+// which is what a failed request leaves behind.
+//
+// The window is on screen only between a show and the next hide, but it is asked
+// to hide on every row click and on every row unmount -- and a virtual list
+// unmounts rows continuously while it scrolls, so the ask arrives far more often
+// than the thing it is asking about. Telling the backend to hide a window that
+// is already hidden is a full cross-process round trip each time, and the
+// `isVisible()` that followed only fed a debug log. Same idea as
+// `setIgnoreBlurSafe` below: remember the state we last asked for and skip the
+// ask when it has not changed.
+let lastPreviewVisible: boolean | null = false;
+
 const setIgnoreBlurSafe = (ignore: boolean) => {
     if (lastIgnoreBlur === ignore) return;
     lastIgnoreBlur = ignore;
@@ -286,6 +299,7 @@ const placeAndShowPendingCompactPreview = async (
     try {
         await compactPreviewWindow.setPosition(new PhysicalPosition(target.x, target.y));
         await compactPreviewWindow.show();
+        lastPreviewVisible = true;
         // Force top-most z-order refresh so preview is not occluded by the main top-most window.
         try {
             await compactPreviewWindow.setAlwaysOnTop(false);
@@ -315,12 +329,16 @@ const hideCompactPreviewGlobal = async () => {
     setIgnoreBlurSafe(false);
 
     if (!previewWindow) return;
+    if (lastPreviewVisible === false) return;
+    lastPreviewVisible = false;
 
     try {
         await previewWindow.hide();
-        const visible = await previewWindow.isVisible().catch(() => null);
-        compactPreviewLog("preview window hidden", { visible });
+        compactPreviewLog("preview window hidden", { skippedVisibilityProbe: true });
     } catch (err) {
+        // The state is unknown after a failure, so let the next caller try again
+        // rather than trusting a memo the backend never acknowledged.
+        lastPreviewVisible = null;
         console.error("Failed to hide compact preview window:", err);
         compactPreviewLog("hide preview failed, reset window reference", err);
         compactPreviewWindow = null;
@@ -425,6 +443,8 @@ const tryReuseExistingCompactPreviewWindow = async (): Promise<WebviewWindow | n
 
         const visible = await existing.isVisible().catch(() => null);
         compactPreviewLog("reuse compact preview window by label", { visible });
+        // A window that is already on screen must not skip its next hide.
+        lastPreviewVisible = visible;
         compactPreviewWindow = existing;
         compactPreviewMounted = true;
         compactPreviewMountedPromise = Promise.resolve(true);
