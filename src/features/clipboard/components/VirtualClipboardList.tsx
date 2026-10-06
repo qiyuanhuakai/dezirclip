@@ -55,9 +55,24 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
         const visibleRangeRef = useRef<ListRange | null>(null);
         useImperativeHandle(ref, () => ({
             scrollToItem: (index: number) => {
+                // `behavior: 'smooth'` animated this one-row keyboard step, and a
+                // step is exactly the thing an animation is wrong for. The list
+                // glided to the centre over roughly thirty frames, each one
+                // dispatching a scroll event, each one running the coalescer's
+                // listener, and each one reading `scrollTop` -- a forced layout,
+                // because a frame's layout has not been computed yet when its
+                // scroll event is delivered. Holding an arrow key overlapped
+                // several of those animations, and the effect further down was
+                // asking for an instant `scrollToIndex` on the very same keypress,
+                // so the two were pulling against each other.
+                //
+                // The destination is unchanged: still this index, still
+                // `align: 'center'`. Only the flight is gone, and the edge logic
+                // below already keeps the selection on screen instantly, so
+                // nothing scrolls that does not have to.
                 virtuosoRef.current?.scrollIntoView({
                     index,
-                    behavior: 'smooth',
+                    behavior: 'auto',
                     align: 'center',
                 });
             },
