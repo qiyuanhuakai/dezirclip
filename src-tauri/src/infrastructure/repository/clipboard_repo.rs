@@ -2236,6 +2236,175 @@ mod tests {
         }
     }
 
+    // The three payloads are handed to `rusqlite` as borrows now, which means a
+    // borrow has to stay alive across the `execute` on both the insert and the
+    // update path, and `html_content`'s `None` has to stay a NULL rather than
+    // becoming an empty string on the way through. These pin that.
+    fn rich_text_entry(html: Option<&str>, tags: Vec<String>) -> ClipboardEntry {
+        ClipboardEntry {
+            id: 0,
+            content_type: "rich_text".to_string(),
+            content: "the visible text".to_string(),
+            html_content: html.map(|h| h.to_string()),
+            source_app: "Browser".to_string(),
+            source_app_path: None,
+            timestamp: 1_700_000_500,
+            preview: "the visible text".to_string(),
+            is_pinned: false,
+            tags,
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+            content_kinds: Vec::new(),
+            ocr_text: None,
+            ocr_status: None,
+        }
+    }
+
+    fn stored_triple(
+        conn: &Connection,
+        id: i64,
+        repo: &SqliteClipboardRepository,
+    ) -> (String, String, Option<String>) {
+        let (content, preview, html): (String, String, Option<String>) = conn
+            .query_row(
+                "SELECT content, preview, html_content FROM clipboard_history WHERE id = ?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("row should exist");
+        (
+            repo.maybe_decrypt_text(&content),
+            repo.maybe_decrypt_text(&preview),
+            html.map(|h| repo.maybe_decrypt_text(&h)),
+        )
+    }
+
+    #[test]
+    fn rich_text_stores_all_three_fields_unchanged() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let html = "<p>the visible <b>text</b></p>";
+        let entry = rich_text_entry(Some(html), Vec::new());
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &entry, None, None)
+            .expect("save rich text");
+
+        let (content, preview, stored_html) = stored_triple(&conn, id, &repo);
+        assert_eq!(content, entry.content);
+        assert_eq!(preview, entry.preview);
+        assert_eq!(stored_html.as_deref(), Some(html));
+    }
+
+    #[test]
+    fn absent_html_stays_null_and_is_not_turned_into_an_empty_string() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let mut entry = rich_text_entry(None, Vec::new());
+        entry.content_type = "text".to_string();
+        entry.preview = "plain".to_string();
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &entry, None, None)
+            .expect("save plain text");
+
+        let (_, _, stored_html) = stored_triple(&conn, id, &repo);
+        assert_eq!(
+            stored_html, None,
+            "an entry with no HTML must store SQL NULL, not ''"
+        );
+    }
+
+    #[test]
+    fn updating_a_rich_text_entry_keeps_all_three_fields() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let mut entry = rich_text_entry(Some("<p>first</p>"), Vec::new());
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &entry, None, None)
+            .expect("insert");
+        entry.id = id;
+        entry.content = "the revised text".to_string();
+        entry.preview = "the revised text".to_string();
+        entry.html_content = Some("<p>revised</p>".to_string());
+        repo.save_with_conn_and_image_hash(&conn, &entry, None, None)
+            .expect("update");
+
+        let (content, preview, stored_html) = stored_triple(&conn, id, &repo);
+        assert_eq!(content, "the revised text");
+        assert_eq!(preview, "the revised text");
+        assert_eq!(stored_html.as_deref(), Some("<p>revised</p>"));
+    }
+
+    #[test]
+    fn sensitive_rich_text_round_trips_all_three_fields() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let html = "<p>the visible <b>text</b></p>";
+        let entry = rich_text_entry(Some(html), vec!["密码".to_string()]);
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &entry, None, None)
+            .expect("save sensitive rich text");
+
+        let (content, preview, stored_html) = stored_triple(&conn, id, &repo);
+        assert_eq!(content, entry.content, "encrypted content must round-trip");
+        assert_eq!(preview, entry.preview, "encrypted preview must round-trip");
+        assert_eq!(
+            stored_html.as_deref(),
+            Some(html),
+            "encrypted HTML must round-trip"
+        );
+
+        // The encrypt branch owns all three, so on a platform that can encrypt
+        // none of them may be readable in the database.
+        if crate::infrastructure::encryption::encrypt_value(&entry.content).is_some() {
+            let raw: (String, String, Option<String>) = conn
+                .query_row(
+                    "SELECT content, preview, html_content FROM clipboard_history WHERE id = ?1",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .expect("row should exist");
+            assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.0));
+            assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.1));
+            assert!(
+                raw.2
+                    .as_deref()
+                    .is_some_and(crate::infrastructure::encryption::is_encrypted_value),
+                "sensitive HTML must not be readable either, got {:?}",
+                raw.2
+            );
+        }
+    }
+
+    #[test]
+    fn sensitive_entry_without_html_keeps_the_null() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let mut entry = rich_text_entry(None, vec!["sensitive".to_string()]);
+        entry.content_type = "text".to_string();
+        entry.preview = "secret".to_string();
+
+        let conn = repo.conn.lock().expect("lock");
+        let id = repo
+            .save_with_conn_and_image_hash(&conn, &entry, None, None)
+            .expect("save sensitive plain text");
+
+        let (_, _, stored_html) = stored_triple(&conn, id, &repo);
+        assert_eq!(
+            stored_html, None,
+            "the encrypt branch must not invent an HTML value for a None"
+        );
+    }
+
     // The repository caches hold pages of entries whose payload size is decided
     // by whatever the user happened to copy, so an entry-count ceiling on its own
     // leaves the resident set unbounded. These pin the byte ceiling: it has to
