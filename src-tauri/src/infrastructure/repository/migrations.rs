@@ -27,8 +27,7 @@ const RECLAIM_MIN_BYTES: i64 = 16 * 1024 * 1024;
 /// outside one, and deliberately allowed to fail: a database that cannot be
 /// rewritten -- most often because there is no room for the second copy -- is
 /// still a perfectly usable database, just one that keeps stranding pages. The
-/// caller logs that and leaves the migration unapplied so the next launch, with
-/// more room perhaps, tries again.
+/// caller logs that and comes back on the next launch, with more room perhaps.
 fn reclaim_stranded_pages(conn: &Connection, min_bytes: i64) -> Result<()> {
     let mode: i32 = conn.query_row("PRAGMA auto_vacuum", [], |row| row.get(0))?;
     if mode == AUTO_VACUUM_FULL {
@@ -526,21 +525,60 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (16)", [])?;
     }
 
-    if current_version < 17 {
-        // Not wrapped in the transaction every other migration uses, and not
-        // allowed to take the app down with it: see `reclaim_stranded_pages`.
-        match reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
-            Ok(()) => {
-                conn.execute("INSERT INTO schema_migrations (version) VALUES (17)", [])?;
-            }
-            Err(err) => {
-                eprintln!(
-                    "[clipboard] history database still has stranded page space and could \
-                     not be compacted: {err}. The app works normally; the file will keep \
-                     the space until the next launch succeeds."
-                );
-            }
+    // Deliberately not a numbered migration. This is a standing invariant rather
+    // than a schema step, because the version table is a running maximum: a step
+    // that is allowed to fail and retry cannot be gated on it. Gating it on
+    // version 17 meant that when the VACUUM failed, the next launch retried —
+    // but only until any later version landed. The first schema step after it
+    // would record a higher number, `MAX(version)` would then hide the failure
+    // permanently, and a database that failed once out of disk space never got
+    // its pages back even after the space came free. Running it every launch
+    // costs one pragma read when there is nothing to do.
+    if let Err(err) = reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
+        eprintln!(
+            "[clipboard] history database still has stranded page space and could \
+             not be compacted: {err}. The app works normally; the space is reclaimed \
+             on a later launch."
+        );
+    }
+
+    if current_version < 18 {
+        conn.execute("BEGIN", [])?;
+        let migration_result = (|| -> Result<()> {
+            // Deduplication runs on every single capture, and its lookup is
+            //
+            //   WHERE (content_type = ? AND content_hash = ?)
+            //      OR (content_type = ? AND content = ?)
+            //
+            // The second arm is the safety net for a row whose stored
+            // `content_hash` was not produced by today's hash function, so it
+            // has to stay. What it must not cost is a walk of the table: with
+            // no index on `content`, the planner satisfies that arm by seeking
+            // on `content_type` and then fetching every row of that type back
+            // out of the table to compare the text. On this project's history
+            // that is 3021 random page reads behind a text capture and a full
+            // table scan behind an image one, both on the hot path.
+            //
+            // Indexing the content lets both arms be seeks. It is the one index
+            // that duplicates a column's bytes rather than a rowid, and the
+            // column here is text and file paths -- on the real install all of
+            // it adds up to 3.4 MB against an 89.9 MB live file. Keeping it up
+            // to date measured as free: an insert with the index landed in
+            // 2.992 ms against 2.999 ms without, which is noise.
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_clipboard_history_content_type
+                    ON clipboard_history (content, content_type)",
+                [],
+            )?;
+            Ok(())
+        })();
+
+        if let Err(err) = migration_result {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(err);
         }
+        conn.execute("COMMIT", [])?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (18)", [])?;
     }
 
     Ok(())
@@ -676,7 +714,7 @@ fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{reclaim_stranded_pages, run_migrations};
+    use super::{reclaim_stranded_pages, run_migrations, RECLAIM_MIN_BYTES};
     use rusqlite::{params, Connection};
 
     fn fresh_db() -> Connection {
@@ -1185,6 +1223,150 @@ mod tests {
             auto_vacuum_mode(&conn),
             1,
             "a database that already returns its pages must not be rewritten"
+        );
+    }
+
+    // Deduplication runs on every capture, and each half of its lookup is an
+    // equality against the index built for it. Asserting on the plan is what
+    // stops this coming back: on a history small enough to sit in the page
+    // cache the timings look fine either way, and an `OR` left in place would
+    // quietly reintroduce the walk of the table.
+    #[test]
+    fn both_dedup_arms_are_served_by_an_index() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+
+        for id in 1..=40 {
+            insert_history_row(&mut conn, id, 0, "[]", id);
+        }
+
+        for (label, sql, index) in [
+            (
+                "the typed hash arm",
+                "SELECT id FROM clipboard_history \
+                 WHERE content_type = 'text' AND content_hash = 0",
+                "idx_clipboard_history_type_hash",
+            ),
+            (
+                "the typed content arm",
+                "SELECT id FROM clipboard_history \
+                 WHERE content_type = 'text' AND content = 'a payload'",
+                "idx_clipboard_history_content_type",
+            ),
+            (
+                "the untyped content arm",
+                "SELECT id FROM clipboard_history WHERE content = 'a payload'",
+                "idx_clipboard_history_content_type",
+            ),
+            (
+                "the image hash arm",
+                "SELECT id FROM clipboard_history \
+                 WHERE content_type = 'image' AND content_hash = 0",
+                "idx_clipboard_history_type_hash",
+            ),
+            (
+                "the image content arm",
+                "SELECT id FROM clipboard_history WHERE content = 'a payload'",
+                "idx_clipboard_history_content_type",
+            ),
+        ] {
+            let plan = query_plan(&conn, sql);
+            assert!(
+                !plan.contains("SCAN"),
+                "{label} must not walk the table, got: {plan}"
+            );
+            assert!(
+                plan.contains(index),
+                "{label} must be a seek on {index}, got: {plan}"
+            );
+        }
+    }
+
+    // The regression this pins: the reclaim used to be gated on version 17, and
+    // `MAX(version)` is a running maximum. A database whose VACUUM failed once
+    // -- out of disk space, say -- retried on the next launch, but only until
+    // the first schema step after it recorded a higher number and hid the
+    // failure for good. It has to keep running with the version table already at
+    // its highest value, because "did this ever fail?" is not something a
+    // version number can express.
+    #[test]
+    fn the_reclaim_still_runs_once_the_version_table_is_ahead() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+        conn.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;")
+            .expect("force NONE");
+
+        // Sized past `RECLAIM_MIN_BYTES`, because below it the reclaim correctly
+        // does nothing and the test would prove only that.
+        let megabyte = "x".repeat(1024 * 1024);
+        for id in 1..=20 {
+            conn.execute(
+                "INSERT INTO clipboard_history
+                 (id, content_type, content, html_content, source_app, timestamp, preview,
+                  is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+                  ocr_text, ocr_status)
+                 VALUES (?1, 'text', ?2, NULL, 'App', ?1, 'p', 0, 0, '[]', 0, 0, NULL, NULL, 'pending')",
+                params![id, format!("{id}{megabyte}")],
+            )
+            .expect("insert");
+        }
+        conn.execute("DELETE FROM clipboard_history WHERE id <= 19", [])
+            .expect("delete");
+        let stranded = free_bytes(&conn);
+        assert!(
+            stranded >= RECLAIM_MIN_BYTES,
+            "the deletions must strand at least the threshold, got {stranded} bytes"
+        );
+
+        // Stand in for a schema that already reached a later version: every
+        // `current_version < N` guard is now false, so anything still gated on
+        // one of them would never run again.
+        conn.execute(
+            "INSERT INTO schema_migrations (version) VALUES (99)",
+            [],
+        )
+        .expect("insert version");
+        let current: i32 = conn
+            .query_row(
+                "SELECT MAX(version) FROM schema_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current version");
+        assert_eq!(current, 99, "every version gate must now be closed");
+
+        run_migrations(&mut conn).expect("migrations again");
+
+        assert_eq!(
+            auto_vacuum_mode(&conn),
+            1,
+            "the reclaim must not be gated on the schema version"
+        );
+        assert_eq!(free_bytes(&conn), 0, "the stranded pages must be reclaimed");
+    }
+
+    // The index duplicates the bytes of `content`, so what it costs is bounded
+    // by how much content the history holds. Its value is that it is the same
+    // storage every history query already pays for, which is why this is an
+    // index and not a narrower rewrite of the query: dropping the content arm
+    // would stop dedup from recognising a row whose stored hash came from an
+    // older build, and users would start seeing duplicates after an update.
+    #[test]
+    fn the_content_index_exists_after_v18() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+        let mut stmt = conn
+            .prepare(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' \
+                 AND name = 'idx_clipboard_history_content_type'",
+            )
+            .expect("prepare");
+        let sql: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .expect("index must exist after v18");
+        assert!(
+            sql.unwrap().contains("(content, content_type)"),
+            "the index must be ordered content first so the content arm can seek on it alone"
         );
     }
 }
