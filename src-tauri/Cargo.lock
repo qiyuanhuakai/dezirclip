@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "dezirclip"
-version = "0.1.10-alpha.4"
+version = "0.1.10"
 dependencies = [
  "aes-gcm",
  "arboard",
