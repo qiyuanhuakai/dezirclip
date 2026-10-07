@@ -27,8 +27,7 @@ const RECLAIM_MIN_BYTES: i64 = 16 * 1024 * 1024;
 /// outside one, and deliberately allowed to fail: a database that cannot be
 /// rewritten -- most often because there is no room for the second copy -- is
 /// still a perfectly usable database, just one that keeps stranding pages. The
-/// caller logs that and leaves the migration unapplied so the next launch, with
-/// more room perhaps, tries again.
+/// caller logs that and comes back on the next launch, with more room perhaps.
 fn reclaim_stranded_pages(conn: &Connection, min_bytes: i64) -> Result<()> {
     let mode: i32 = conn.query_row("PRAGMA auto_vacuum", [], |row| row.get(0))?;
     if mode == AUTO_VACUUM_FULL {
@@ -526,21 +525,21 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (16)", [])?;
     }
 
-    if current_version < 17 {
-        // Not wrapped in the transaction every other migration uses, and not
-        // allowed to take the app down with it: see `reclaim_stranded_pages`.
-        match reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
-            Ok(()) => {
-                conn.execute("INSERT INTO schema_migrations (version) VALUES (17)", [])?;
-            }
-            Err(err) => {
-                eprintln!(
-                    "[clipboard] history database still has stranded page space and could \
-                     not be compacted: {err}. The app works normally; the file will keep \
-                     the space until the next launch succeeds."
-                );
-            }
-        }
+    // Deliberately not a numbered migration. This is a standing invariant rather
+    // than a schema step, because the version table is a running maximum: a step
+    // that is allowed to fail and retry cannot be gated on it. Gating it on
+    // version 17 meant that when the VACUUM failed, the next launch retried —
+    // but only until any later version landed. The first schema step after it
+    // would record a higher number, `MAX(version)` would then hide the failure
+    // permanently, and a database that failed once out of disk space never got
+    // its pages back even after the space came free. Running it every launch
+    // costs one pragma read when there is nothing to do.
+    if let Err(err) = reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
+        eprintln!(
+            "[clipboard] history database still has stranded page space and could \
+             not be compacted: {err}. The app works normally; the space is reclaimed \
+             on a later launch."
+        );
     }
 
     if current_version < 18 {
@@ -715,7 +714,7 @@ fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{reclaim_stranded_pages, run_migrations};
+    use super::{reclaim_stranded_pages, run_migrations, RECLAIM_MIN_BYTES};
     use rusqlite::{params, Connection};
 
     fn fresh_db() -> Connection {
@@ -1281,6 +1280,69 @@ mod tests {
                 "{label} must be a seek on {index}, got: {plan}"
             );
         }
+    }
+
+    // The regression this pins: the reclaim used to be gated on version 17, and
+    // `MAX(version)` is a running maximum. A database whose VACUUM failed once
+    // -- out of disk space, say -- retried on the next launch, but only until
+    // the first schema step after it recorded a higher number and hid the
+    // failure for good. It has to keep running with the version table already at
+    // its highest value, because "did this ever fail?" is not something a
+    // version number can express.
+    #[test]
+    fn the_reclaim_still_runs_once_the_version_table_is_ahead() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+        conn.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;")
+            .expect("force NONE");
+
+        // Sized past `RECLAIM_MIN_BYTES`, because below it the reclaim correctly
+        // does nothing and the test would prove only that.
+        let megabyte = "x".repeat(1024 * 1024);
+        for id in 1..=20 {
+            conn.execute(
+                "INSERT INTO clipboard_history
+                 (id, content_type, content, html_content, source_app, timestamp, preview,
+                  is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+                  ocr_text, ocr_status)
+                 VALUES (?1, 'text', ?2, NULL, 'App', ?1, 'p', 0, 0, '[]', 0, 0, NULL, NULL, 'pending')",
+                params![id, format!("{id}{megabyte}")],
+            )
+            .expect("insert");
+        }
+        conn.execute("DELETE FROM clipboard_history WHERE id <= 19", [])
+            .expect("delete");
+        let stranded = free_bytes(&conn);
+        assert!(
+            stranded >= RECLAIM_MIN_BYTES,
+            "the deletions must strand at least the threshold, got {stranded} bytes"
+        );
+
+        // Stand in for a schema that already reached a later version: every
+        // `current_version < N` guard is now false, so anything still gated on
+        // one of them would never run again.
+        conn.execute(
+            "INSERT INTO schema_migrations (version) VALUES (99)",
+            [],
+        )
+        .expect("insert version");
+        let current: i32 = conn
+            .query_row(
+                "SELECT MAX(version) FROM schema_migrations",
+                [],
+                |row| row.get(0),
+            )
+            .expect("current version");
+        assert_eq!(current, 99, "every version gate must now be closed");
+
+        run_migrations(&mut conn).expect("migrations again");
+
+        assert_eq!(
+            auto_vacuum_mode(&conn),
+            1,
+            "the reclaim must not be gated on the schema version"
+        );
+        assert_eq!(free_bytes(&conn), 0, "the stranded pages must be reclaimed");
     }
 
     // The index duplicates the bytes of `content`, so what it costs is bounded
