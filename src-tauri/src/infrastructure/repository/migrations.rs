@@ -1,6 +1,49 @@
 use crate::infrastructure::encryption;
 use rusqlite::{params, Connection, Result};
 
+/// The value `PRAGMA auto_vacuum` reports for the mode `init_db` asks for.
+const AUTO_VACUUM_FULL: i32 = 1;
+
+/// How much stranded page space is worth a rewrite of the whole database file.
+///
+/// Converting costs a VACUUM, so the conversion is only worth its stall once
+/// there are real megabytes to win. A database nobody has deleted from has no
+/// free pages at all and is skipped on the freelist count alone.
+const RECLAIM_MIN_BYTES: i64 = 16 * 1024 * 1024;
+
+/// Give back the pages a database that predates the `auto_vacuum` pragma has
+/// been stranding since its first launch.
+///
+/// `PRAGMA auto_vacuum` only takes effect on a database that has no tables yet.
+/// `init_db` issues it before the migrations create any, so a fresh install
+/// lands on FULL -- but on every install that already existed the pragma has
+/// been a silent no-op, the mode stayed NONE, and under NONE SQLite never
+/// returns a freed page to the file. Deletions are not rare here: crossing the
+/// storage limit evicts in batches, every time, and each batch strands its
+/// pages. The file then only ever grows, however many entries come and go.
+///
+/// Switching the mode needs a VACUUM, which rewrites the file and so cannot run
+/// inside the transaction the schema migrations use. It is deliberately left
+/// outside one, and deliberately allowed to fail: a database that cannot be
+/// rewritten -- most often because there is no room for the second copy -- is
+/// still a perfectly usable database, just one that keeps stranding pages. The
+/// caller logs that and leaves the migration unapplied so the next launch, with
+/// more room perhaps, tries again.
+fn reclaim_stranded_pages(conn: &Connection, min_bytes: i64) -> Result<()> {
+    let mode: i32 = conn.query_row("PRAGMA auto_vacuum", [], |row| row.get(0))?;
+    if mode == AUTO_VACUUM_FULL {
+        return Ok(());
+    }
+
+    let page_size: i64 = conn.query_row("PRAGMA page_size", [], |row| row.get(0))?;
+    let free_pages: i64 = conn.query_row("PRAGMA freelist_count", [], |row| row.get(0))?;
+    if page_size * free_pages < min_bytes {
+        return Ok(());
+    }
+
+    conn.execute_batch("PRAGMA auto_vacuum = FULL; VACUUM;")
+}
+
 pub fn run_migrations(conn: &mut Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -483,6 +526,23 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (16)", [])?;
     }
 
+    if current_version < 17 {
+        // Not wrapped in the transaction every other migration uses, and not
+        // allowed to take the app down with it: see `reclaim_stranded_pages`.
+        match reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
+            Ok(()) => {
+                conn.execute("INSERT INTO schema_migrations (version) VALUES (17)", [])?;
+            }
+            Err(err) => {
+                eprintln!(
+                    "[clipboard] history database still has stranded page space and could \
+                     not be compacted: {err}. The app works normally; the file will keep \
+                     the space until the next launch succeeds."
+                );
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -616,7 +676,7 @@ fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::run_migrations;
+    use super::{reclaim_stranded_pages, run_migrations};
     use rusqlite::{params, Connection};
 
     fn fresh_db() -> Connection {
@@ -1021,5 +1081,110 @@ mod tests {
         };
 
         assert_eq!(ids, vec![1, 2, 3], "eviction order must still be oldest first");
+    }
+
+    fn auto_vacuum_mode(conn: &Connection) -> i32 {
+        conn.query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
+            .expect("auto_vacuum")
+    }
+
+    fn free_bytes(conn: &Connection) -> i64 {
+        let page_size: i64 = conn
+            .query_row("PRAGMA page_size", [], |row| row.get(0))
+            .expect("page_size");
+        let free_pages: i64 = conn
+            .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+            .expect("freelist_count");
+        page_size * free_pages
+    }
+
+    /// A database in the state every install that predates the pragma is in:
+    /// mode NONE, tables present, and deletions that have left their pages
+    /// stranded in the file.
+    fn db_stranding_free_pages() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+        conn.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;")
+            .expect("force NONE");
+
+        for id in 1..=40 {
+            conn.execute(
+                "INSERT INTO clipboard_history
+                 (id, content_type, content, html_content, source_app, timestamp, preview,
+                  is_pinned, content_hash, tags, is_external, pinned_order, source_app_path,
+                  ocr_text, ocr_status)
+                 VALUES (?1, 'text', ?2, NULL, 'App', ?1, 'p', 0, 0, '[]', 0, 0, NULL, NULL, 'pending')",
+                params![id, format!("entry {id} {}", "x".repeat(900))],
+            )
+            .expect("insert");
+        }
+        conn.execute("DELETE FROM clipboard_history WHERE id <= 39", [])
+            .expect("delete");
+        assert_eq!(
+            auto_vacuum_mode(&conn),
+            0,
+            "a database with tables cannot be pushed back to NONE unless the pragma took"
+        );
+        assert!(free_bytes(&conn) > 0, "the deletions must have stranded pages");
+        conn
+    }
+
+    // The whole point of the migration: under NONE those pages are never given
+    // back, so the file can only grow. One conversion has to both claim the
+    // pages and leave the mode in a state where the next deletion reuses them
+    // instead of stranding more.
+    #[test]
+    fn stranded_pages_are_reclaimed_and_the_mode_is_kept() {
+        let conn = db_stranding_free_pages();
+        let stranded = free_bytes(&conn);
+        assert!(stranded > 0);
+
+        reclaim_stranded_pages(&conn, 1).expect("reclaim");
+
+        assert_eq!(auto_vacuum_mode(&conn), 1, "the mode must end up FULL");
+        assert_eq!(
+            free_bytes(&conn),
+            0,
+            "the pages the deletions stranded must be back in the file's use"
+        );
+    }
+
+    // The conversion costs a rewrite of the whole database, so the freelist
+    // count is the only thing standing between a normal startup and a multi
+    // second stall. A database with a handful of free pages must be left alone
+    // rather than compacted for nothing.
+    #[test]
+    fn a_database_below_the_threshold_is_left_alone() {
+        let conn = db_stranding_free_pages();
+        let stranded = free_bytes(&conn);
+
+        reclaim_stranded_pages(&conn, stranded + 1).expect("below threshold");
+
+        assert_eq!(auto_vacuum_mode(&conn), 0, "below the threshold nothing changes");
+        assert_eq!(
+            free_bytes(&conn),
+            stranded,
+            "the stranded pages must still be there to be reclaimed later"
+        );
+    }
+
+    // A fresh install already gets FULL from the pragma `init_db` issues before
+    // any table exists. Rewriting such a database would stall the first launch
+    // for a file that has nothing to give back.
+    #[test]
+    fn a_database_already_on_full_is_not_rewritten() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).expect("migrations");
+        conn.execute_batch("PRAGMA auto_vacuum = FULL; VACUUM;")
+            .expect("force FULL");
+        assert_eq!(auto_vacuum_mode(&conn), 1);
+
+        reclaim_stranded_pages(&conn, 0).expect("reclaim on a FULL database");
+
+        assert_eq!(
+            auto_vacuum_mode(&conn),
+            1,
+            "a database that already returns its pages must not be rewritten"
+        );
     }
 }
