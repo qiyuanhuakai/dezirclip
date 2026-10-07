@@ -136,6 +136,35 @@ use aes_gcm::{
 const MASTER_KEY_SERVICE: &str = "dezirclip";
 const MASTER_KEY_ACCOUNT: &str = "encryption-master-key";
 
+// Why there is no migration away from an older keyring backend, in enough
+// detail that it does not have to be re-derived -- or "fixed" in the other
+// direction by adding one that would strand the keys it meant to rescue.
+//
+// The Linux build asks keyring for `linux-native-sync-persistent`. That feature
+// name reads like a backend swap and has been mistaken for one, so here is what
+// it actually selects (keyring 3.6.3, the locked version):
+//
+//   - the crate documents the feature as using *both* `keyutils` and
+//     `sync-secret-service`, with keyutils as the cache "available to headless
+//     processes" and secret-service as the "credential storage beyond reboot";
+//   - `keyutils_persistent::KeyutilsPersistentCredential::get_password` reads
+//     `self.keyutils` first and only falls back to `self.ss` on a miss, caching
+//     a secret-service hit back into keyutils;
+//   - `set_password` writes to both.
+//
+// So the chain got *wider*, not different. A key left in keyutils by an older
+// build is still the first thing read, which is why an upgrade does not need to
+// move it anywhere -- and why "the old key was never persistent, so there is
+// nothing to migrate" is the wrong reason to skip the question: the key is
+// still there on a machine that has not rebooted, and the correct action was
+// always to stop treating "I could not read it" as "there is none".
+//
+// What this depends on is a third party's internal read order, under a `3`
+// constraint that allows upgrades. That is worth re-checking when keyring is
+// next bumped, and it is why the invariant is written down here rather than
+// left implicit. It cannot be pinned by a unit test: proving it needs a real
+// session keyring and a secret service to survive a reboot against.
+
 // How a read of the stored master key came back, kept apart from the keyring
 // error type so the decision built on it can be reasoned about -- and tested --
 // on any platform.
@@ -227,23 +256,35 @@ static MASTER_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
 /// key, and whichever wrote last would strand everything encrypted under the
 /// other's. Creation is not a hot path, so the plain lock costs nothing that
 /// matters.
+/// The whole read-decide-create-publish sequence happens under this one lock.
+///
+/// It used to be released before the cache was published, which left a window
+/// exactly wide enough to destroy data: thread A created and stored K1, let go
+/// of the lock, and had not yet published it; thread B took the lock, saw an
+/// empty cache, did not re-read the store, and stored K2. B's publish then
+/// failed silently because A had won, so B returned K2 while the process cached
+/// K1 and the store held K2 -- the two threads that just ran now disagree, and
+/// whatever the loser wrote is unreadable.
+///
+/// A process-level mutex still says nothing about two *processes* doing this at
+/// once. That would need arbitration the kernel provides, which is out of scope
+/// here; what this lock does guarantee is that one process never hands two
+/// different keys to two callers.
 #[cfg(not(windows))]
-static MASTER_KEY_CREATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// Writes a fresh key to the store. The caller holds `MASTER_KEY_INIT_LOCK`.
+///
+/// The write is checked because a store that refuses it means there is nowhere
+/// durable to keep the key. Handing one back anyway would encrypt with a key the
+/// next login cannot read, which loses the data instead of leaving it
+/// unencrypted.
 #[cfg(not(windows))]
-fn create_master_key() -> Option<[u8; 32]> {
-    let _guard = MASTER_KEY_CREATE_LOCK.lock().ok()?;
-    // Another thread may have created the key between our read and this lock.
-    if let Some(key) = MASTER_KEY.get() {
-        return Some(*key);
-    }
+fn write_fresh_master_key() -> Option<[u8; 32]> {
     let entry = keyring::Entry::new(MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT).ok()?;
     let mut key = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut key);
     let encoded = base64::engine::general_purpose::STANDARD.encode(&key);
-    // A store that refuses the write means there is nowhere durable to keep the
-    // key. Handing one back anyway would encrypt with a key the next login
-    // cannot read, which loses the data instead of leaving it unencrypted.
     if let Err(err) = entry.set_password(&encoded) {
         crate::warn!("[encryption] could not store the master key: {}", err);
         return None;
@@ -251,24 +292,58 @@ fn create_master_key() -> Option<[u8; 32]> {
     Some(key)
 }
 
+/// Reads, decides, creates if allowed, publishes, and returns the cache.
+///
+/// Cache and lock are parameters so the interleaving can be driven from a test:
+/// production passes the process-wide pair, a test passes its own plus a store
+/// that answers whatever it likes. `create` is `FnOnce` because it can only be
+/// reached once per call -- after that the function has returned or published.
+///
+/// The value returned is whatever ended up in the cache, never a local copy.
+/// That is what stops two callers from disagreeing when the second one loses
+/// the publish.
+#[cfg(not(windows))]
+fn initialise_master_key(
+    cache: &std::sync::OnceLock<[u8; 32]>,
+    lock: &std::sync::Mutex<()>,
+    may_create: bool,
+    read: impl Fn() -> Result<[u8; 32], MasterKeyRead>,
+    create: impl FnOnce() -> Option<[u8; 32]>,
+) -> Option<[u8; 32]> {
+    if let Some(key) = cache.get() {
+        return Some(*key);
+    }
+
+    let _guard = lock.lock().ok()?;
+    // Whoever held the lock before us may have published in the meantime.
+    if let Some(key) = cache.get() {
+        return Some(*key);
+    }
+
+    let (read_result, decoded) = match read() {
+        Ok(key) => (MasterKeyRead::Present, Some(key)),
+        Err(reason) => (reason, None),
+    };
+    let key = match plan_master_key(read_result) {
+        MasterKeyPlan::Use => decoded?,
+        MasterKeyPlan::Create if may_create => create()?,
+        _ => return None,
+    };
+    let _ = cache.set(key);
+    cache.get().copied()
+}
+
 /// The key used for writing. Returns `None` when the store cannot be read and
 /// must not be written, which the callers turn into "leave the value as it is".
 #[cfg(not(windows))]
 fn master_key() -> Option<[u8; 32]> {
-    if let Some(key) = MASTER_KEY.get() {
-        return Some(*key);
-    }
-    let (read, decoded) = match read_master_key() {
-        Ok(key) => (MasterKeyRead::Present, Some(key)),
-        Err(reason) => (reason, None),
-    };
-    let key = match plan_master_key(read) {
-        MasterKeyPlan::Use => decoded?,
-        MasterKeyPlan::Create => create_master_key()?,
-        MasterKeyPlan::Unavailable => return None,
-    };
-    let _ = MASTER_KEY.set(key);
-    Some(key)
+    initialise_master_key(
+        &MASTER_KEY,
+        &MASTER_KEY_INIT_LOCK,
+        true,
+        read_master_key,
+        write_fresh_master_key,
+    )
 }
 
 /// The key used for reading. It never creates one: decryption has to be able to
@@ -276,12 +351,7 @@ fn master_key() -> Option<[u8; 32]> {
 /// against.
 #[cfg(not(windows))]
 fn existing_master_key() -> Option<[u8; 32]> {
-    if let Some(key) = MASTER_KEY.get() {
-        return Some(*key);
-    }
-    let key = read_master_key().ok()?;
-    let _ = MASTER_KEY.set(key);
-    Some(key)
+    initialise_master_key(&MASTER_KEY, &MASTER_KEY_INIT_LOCK, false, read_master_key, || None)
 }
 
 #[cfg(not(windows))]
@@ -376,5 +446,220 @@ mod tests {
             plan_master_key(MasterKeyRead::Unavailable),
             MasterKeyPlan::Unavailable
         );
+    }
+
+    // The Linux path only, because on Windows the key comes from DPAPI and none
+    // of this exists. `initialise_master_key` takes its cache and lock as
+    // arguments precisely so a test can own them: the production ones are
+    // process-wide statics, and a test sharing them would be racing every other
+    // test in the binary.
+    #[cfg(not(windows))]
+    mod linux_key_init {
+        use super::*;
+        use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+        use std::sync::{Arc, Barrier, Mutex, OnceLock};
+        use std::cell::Cell;
+
+        /// A store that answers "nothing stored" until something is written, and
+        /// hands back whatever was written. It is what makes a second write
+        /// detectable: each creator returns a *different* key, so the second one
+        /// can only be wrong.
+        struct FakeStore {
+            stored: Mutex<Option<[u8; 32]>>,
+            writes: AtomicUsize,
+        }
+
+        impl FakeStore {
+            fn new() -> Arc<Self> {
+                Arc::new(Self {
+                    stored: Mutex::new(None),
+                    writes: AtomicUsize::new(0),
+                })
+            }
+
+            fn read(&self) -> Result<[u8; 32], MasterKeyRead> {
+                match *self.stored.lock().expect("store") {
+                    Some(key) => Ok(key),
+                    None => Err(MasterKeyRead::Missing),
+                }
+            }
+
+            fn write(&self, key: [u8; 32]) -> Option<[u8; 32]> {
+                self.writes.fetch_add(1, AtomicOrdering::SeqCst);
+                *self.stored.lock().expect("store") = Some(key);
+                Some(key)
+            }
+
+            fn writes(&self) -> usize {
+                self.writes.load(AtomicOrdering::SeqCst)
+            }
+        }
+
+        // The regression, stated as something a test can actually decide.
+        //
+        // The bug was not that two callers might race -- a mutex can be held
+        // across all of it -- it was *where* the read sat. Reading before
+        // taking the lock means both callers get told "empty" and only then
+        // race to create; reading inside means the loser never has to ask.
+        //
+        // A racing two-thread test cannot decide this: the scheduler may run
+        // one caller to completion before the other starts, and the second then
+        // never reads at all -- the broken code passes. So this asks the
+        // question directly instead. `Mutex` is not reentrant, so `try_lock`
+        // failing is unambiguous evidence that the lock is held -- by this very
+        // thread, since the test is single-threaded.
+        #[test]
+        fn the_store_is_read_while_the_init_lock_is_held() {
+            let cache = OnceLock::new();
+            let lock = Mutex::new(());
+            let read_under_lock = Cell::new(false);
+
+            let key = initialise_master_key(
+                &cache,
+                &lock,
+                true,
+                || {
+                    if lock.try_lock().is_err() {
+                        read_under_lock.set(true);
+                    }
+                    Err(MasterKeyRead::Missing)
+                },
+                || Some([1; 32]),
+            );
+
+            assert_eq!(key, Some([1; 32]));
+            assert!(
+                read_under_lock.get(),
+                "the store must be read inside the critical section, otherwise two \
+                 callers can both be told it is empty and both go on to create"
+            );
+        }
+
+        // The same regression end to end, in the shape it actually damaged:
+        // two callers, one store, each creator handing back a *different* key.
+        //
+        // This one states the invariant rather than proving the bug is gone --
+        // that is the job of the test above. It would also have passed against
+        // the old code, because whether the second caller wins the window
+        // depends on scheduling.
+        #[test]
+        fn two_callers_racing_to_create_end_up_with_one_key() {
+            let cache = OnceLock::new();
+            let lock = Mutex::new(());
+            let store = FakeStore::new();
+            let start = Arc::new(Barrier::new(2));
+
+            let keys: Vec<Option<[u8; 32]>> = std::thread::scope(|scope| {
+                // References, so the `move` below copies rather than takes the
+                // cache and lock the assertions still need afterwards.
+                let shared_cache = &cache;
+                let shared_lock = &lock;
+                let handles: Vec<_> = (0..2u8)
+                    .map(|id| {
+                        let store = Arc::clone(&store);
+                        let start = Arc::clone(&start);
+                        scope.spawn(move || {
+                            start.wait();
+                            initialise_master_key(
+                                shared_cache,
+                                shared_lock,
+                                true,
+                                || store.read(),
+                                || store.write([id + 1; 32]),
+                            )
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|handle| handle.join().expect("caller thread"))
+                    .collect()
+            });
+
+            assert!(
+                keys.iter().all(Option::is_some),
+                "an empty store authorises exactly one key for both callers: {keys:?}"
+            );
+            assert_eq!(
+                keys[0], keys[1],
+                "two callers must never be handed two different keys"
+            );
+            assert_eq!(
+                store.writes(),
+                1,
+                "the store must be written once, not once per racing caller"
+            );
+            assert_eq!(
+                cache.get().copied(),
+                keys[0],
+                "what a caller is handed must be what the process caches"
+            );
+        }
+
+        // Decryption must be able to fail honestly. `may_create = false` is what
+        // stops a read of a store that cannot answer from minting a key and
+        // then "decrypting" everything to noise.
+        #[test]
+        fn a_reader_never_creates_a_key() {
+            let cache = OnceLock::new();
+            let lock = Mutex::new(());
+            let store = FakeStore::new();
+
+            let key = initialise_master_key(
+                &cache,
+                &lock,
+                false,
+                || store.read(),
+                || panic!("a reader must never reach the creator"),
+            );
+
+            assert_eq!(key, None, "nothing is stored, so there is nothing to read");
+            assert_eq!(store.writes(), 0, "a reader must not write");
+            assert!(cache.get().is_none(), "a reader must not publish either");
+        }
+
+        // A store that answers for some reason other than "empty" is the case
+        // that destroyed data once. It has to stay unanswered *and* unwritten
+        // even when this caller is the one allowed to create.
+        #[test]
+        fn an_unavailable_store_is_neither_written_nor_cached() {
+            let cache = OnceLock::new();
+            let lock = Mutex::new(());
+            let store = FakeStore::new();
+
+            let key = initialise_master_key(
+                &cache,
+                &lock,
+                true,
+                || Err(MasterKeyRead::Unavailable),
+                || store.write([9; 32]),
+            );
+
+            assert_eq!(key, None);
+            assert_eq!(store.writes(), 0, "an unavailable store must not be written");
+            assert!(cache.get().is_none());
+        }
+
+        // A key that is already there is used as it is. Creating here is the
+        // bug from the other side: it would overwrite a working key over rows
+        // encrypted under it.
+        #[test]
+        fn a_present_key_is_used_without_being_rewritten() {
+            let cache = OnceLock::new();
+            let lock = Mutex::new(());
+            let store = FakeStore::new();
+            store.write([5; 32]).expect("seed");
+
+            let key = initialise_master_key(
+                &cache,
+                &lock,
+                true,
+                || store.read(),
+                || panic!("a present key must never reach the creator"),
+            );
+
+            assert_eq!(key, Some([5; 32]));
+            assert_eq!(store.writes(), 1, "only the seeding write");
+        }
     }
 }
