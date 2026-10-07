@@ -6,7 +6,7 @@ use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::encryption;
 use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
 use rusqlite::params;
-use rusqlite::Connection;
+use rusqlite::{Connection, ToSql};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -665,50 +665,51 @@ impl SqliteClipboardRepository {
     ) -> Result<Option<i64>, String> {
         if content_type == Some("image") {
             if let Some(hash) = image_hash.or_else(|| calc_image_hash(content)) {
-                let mut stmt = conn
-                    .prepare(
+                return first_matching_id(
+                    conn,
+                    (
                         "SELECT id FROM clipboard_history \
-                     WHERE (content_type = 'image' AND content_hash = ?) OR content = ?",
-                    )
-                    .map_err(|e| e.to_string())?;
-                let mut rows = stmt
-                    .query(params![hash, content])
-                    .map_err(|e| e.to_string())?;
-                if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-                    return Ok(Some(row.get(0).map_err(|e| e.to_string())?));
-                }
-                return Ok(None);
+                         WHERE content_type = 'image' AND content_hash = ?",
+                        &params![hash],
+                    ),
+                    (
+                        "SELECT id FROM clipboard_history WHERE content = ?",
+                        &params![content],
+                    ),
+                );
             }
         }
 
         let hash = calc_text_hash(content) as i64;
 
         if let Some(ct) = content_type {
-            let mut stmt = conn.prepare(
-                "SELECT id FROM clipboard_history \
-                 WHERE (content_type = ? AND content_hash = ?) OR (content_type = ? AND content = ?)",
-            ).map_err(|e| e.to_string())?;
-            let mut rows = stmt
-                .query(params![ct, hash, ct, content])
-                .map_err(|e| e.to_string())?;
-            if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-                Ok(Some(row.get(0).map_err(|e| e.to_string())?))
-            } else {
-                Ok(None)
-            }
+            first_matching_id(
+                conn,
+                (
+                    "SELECT id FROM clipboard_history \
+                     WHERE content_type = ? AND content_hash = ?",
+                    &params![ct, hash],
+                ),
+                (
+                    "SELECT id FROM clipboard_history \
+                     WHERE content_type = ? AND content = ?",
+                    &params![ct, content],
+                ),
+            )
         } else {
-            let mut stmt = conn.prepare(
-                "SELECT id FROM clipboard_history \
-                 WHERE ((content_type IN ('text', 'rich_text', 'code', 'url')) AND content_hash = ?) OR content = ?",
-            ).map_err(|e| e.to_string())?;
-            let mut rows = stmt
-                .query(params![hash, content])
-                .map_err(|e| e.to_string())?;
-            if let Some(row) = rows.next().map_err(|e| e.to_string())? {
-                Ok(Some(row.get(0).map_err(|e| e.to_string())?))
-            } else {
-                Ok(None)
-            }
+            first_matching_id(
+                conn,
+                (
+                    "SELECT id FROM clipboard_history \
+                     WHERE content_type IN ('text', 'rich_text', 'code', 'url') \
+                       AND content_hash = ?",
+                    &params![hash],
+                ),
+                (
+                    "SELECT id FROM clipboard_history WHERE content = ?",
+                    &params![content],
+                ),
+            )
         }
     }
 
@@ -1089,6 +1090,39 @@ impl SqliteClipboardRepository {
         }
         Ok(results)
     }
+}
+
+/// Runs a dedup lookup's two halves as two statements instead of one `OR`, and
+/// answers with the first row either half finds.
+///
+/// The content half is the safety net for a row whose stored `content_hash` was
+/// not produced by the build that wrote it, so it has to stay. What it must not
+/// cost is a walk of the table: given an `OR`, the planner may satisfy that
+/// half by seeking on `content_type` and fetching every row of that type back
+/// out of the table to compare the text — 3021 random page reads behind a text
+/// capture on a real history, and a full table scan behind an image one, since
+/// that half has no `content_type` to seek on at all. Splitting takes the choice
+/// away. Each half is an equality against an index built for it
+/// (`idx_clipboard_history_type_hash` and `idx_clipboard_history_content_type`),
+/// and both come back covering, so neither touches the table.
+///
+/// The hash half goes first because it is the one the current build produced:
+/// when the two disagree — a stored hash from an older build is exactly when
+/// that happens — it is the authoritative answer, where the `OR` would have let
+/// the planner pick.
+fn first_matching_id(
+    conn: &Connection,
+    hash_arm: (&str, &[&dyn ToSql]),
+    content_arm: (&str, &[&dyn ToSql]),
+) -> Result<Option<i64>, String> {
+    for (sql, bind) in [hash_arm, content_arm] {
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let mut rows = stmt.query(bind).map_err(|e| e.to_string())?;
+        if let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            return Ok(Some(row.get(0).map_err(|e| e.to_string())?));
+        }
+    }
+    Ok(None)
 }
 
 impl ClipboardRepository for SqliteClipboardRepository {
