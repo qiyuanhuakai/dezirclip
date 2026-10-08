@@ -136,34 +136,46 @@ use aes_gcm::{
 const MASTER_KEY_SERVICE: &str = "dezirclip";
 const MASTER_KEY_ACCOUNT: &str = "encryption-master-key";
 
-// Why there is no migration away from an older keyring backend, in enough
-// detail that it does not have to be re-derived -- or "fixed" in the other
-// direction by adding one that would strand the keys it meant to rescue.
+// Why the key is looked up in two places, in enough detail that it does not
+// have to be re-derived -- and because getting it backwards is the expensive
+// mistake.
 //
-// The Linux build asks keyring for `linux-native-sync-persistent`. That feature
-// name reads like a backend swap and has been mistaken for one, so here is what
-// it actually selects (keyring 3.6.3, the locked version):
+// The Linux build asks keyring for `linux-native-sync-persistent`, which reads
+// like a backend swap but is only a feature selection. What that selection
+// actually produces is the trap. In keyring 3.6.3:
 //
-//   - the crate documents the feature as using *both* `keyutils` and
-//     `sync-secret-service`, with keyutils as the cache "available to headless
-//     processes" and secret-service as the "credential storage beyond reboot";
-//   - `keyutils_persistent::KeyutilsPersistentCredential::get_password` reads
-//     `self.keyutils` first and only falls back to `self.ss` on a miss, caching
-//     a secret-service hit back into keyutils;
-//   - `set_password` writes to both.
+//   - the module's own docs describe an entry holding *both* stores, keyutils
+//     as a cache and secret-service for storage beyond reboot, and
+//     `KeyutilsPersistentCredential::get_password` really does read keyutils
+//     first;
+//   - but `KeyutilsPersistentCredentialBuilder::build` -- the function
+//     `Entry::new` actually reaches through the default builder -- returns
+//     `SsCredential::new_with_target`. Not the two-store entry.
 //
-// So the chain got *wider*, not different. A key left in keyutils by an older
-// build is still the first thing read, which is why an upgrade does not need to
-// move it anywhere -- and why "the old key was never persistent, so there is
-// nothing to migrate" is the wrong reason to skip the question: the key is
-// still there on a machine that has not rebooted, and the correct action was
-// always to stop treating "I could not read it" as "there is none".
+// So the documented design and the default construction path disagree, and the
+// construction path is the one that runs. `Entry::new` consults the secret
+// service and never touches the kernel keyring.
 //
-// What this depends on is a third party's internal read order, under a `3`
-// constraint that allows upgrades. That is worth re-checking when keyring is
-// next bumped, and it is why the invariant is written down here rather than
-// left implicit. It cannot be pinned by a unit test: proving it needs a real
-// session keyring and a secret service to survive a reboot against.
+// That leaves the state this project introduced when it switched the feature:
+// on a machine that upgraded without rebooting, the old key is still in the
+// kernel keyring, the rows encrypted under it are still readable, and the
+// secret service has no entry for it. Read through `Entry::new`, that key is
+// invisible, and the next write mints a replacement over the top of it --
+// after which those rows are gone.
+//
+// Hence `open_stores`: both credentials are constructed explicitly so the
+// secret service is asked first (which is what the default path reads, so
+// everything this build has written is already there) and the kernel keyring
+// is reached only when the secret service has nothing. A key found that way is
+// written through to the secret service -- the same key, so no ciphertext is
+// re-encrypted and the old copy is left in place.
+//
+// What this does not do is prove the result, and the two halves need checking
+// separately: "still readable in this session" is the kernel-keyring fallback,
+// and "still readable after a reboot" is the write-through. Neither can be
+// exercised without a real keyring, so the tests here drive the decision
+// through the same seams the stores are reached by rather than pretending to
+// cover the stores themselves.
 
 // How a read of the stored master key came back, kept apart from the keyring
 // error type so the decision built on it can be reasoned about -- and tested --
@@ -216,34 +228,133 @@ fn decode_master_key(stored: &str) -> Option<[u8; 32]> {
     Some(key)
 }
 
+/// One store's answer about the master key.
 #[cfg(not(windows))]
-fn classify_read_error(err: &keyring::Error) -> MasterKeyRead {
-    match err {
-        keyring::Error::NoEntry => MasterKeyRead::Missing,
-        _ => MasterKeyRead::Unavailable,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StoreProbe {
+    /// A key is stored here and decoded to 32 bytes.
+    Found([u8; 32]),
+    /// This store holds nothing under our service and account.
+    Absent,
+    /// The store could not be built or read, for any reason other than being
+    /// empty.
+    Unavailable,
+}
+
+#[cfg(not(windows))]
+fn probe_store(
+    store: Option<&(dyn keyring::credential::CredentialApi + Send + Sync)>,
+    label: &str,
+) -> StoreProbe {
+    let Some(store) = store else {
+        return StoreProbe::Unavailable;
+    };
+    match store.get_password() {
+        Ok(stored) => match decode_master_key(&stored) {
+            Some(key) => StoreProbe::Found(key),
+            None => {
+                crate::warn!("[encryption] {label} holds a master key that is not 32 base64 bytes");
+                StoreProbe::Unavailable
+            }
+        },
+        Err(keyring::Error::NoEntry) => StoreProbe::Absent,
+        Err(err) => {
+            crate::warn!("[encryption] reading the master key from {label} failed: {err}");
+            StoreProbe::Unavailable
+        }
+    }
+}
+
+/// Where a key came from, and what still has to be done about it.
+#[cfg(not(windows))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum KeyOrigin {
+    /// Already in the persistent store. Nothing to do.
+    Persistent,
+    /// Recovered from the legacy kernel store and written into the persistent
+    /// one, so it outlives this session's keyring.
+    Migrated,
+}
+
+/// The store that answers first, and the legacy one behind it.
+///
+/// Secret Service is asked first because it is what `Entry::new` reads, so
+/// every key this build has written is already there. keyutils is only reached
+/// when Secret Service has nothing -- which is exactly the state a machine that
+/// upgraded without rebooting is in.
+#[cfg(not(windows))]
+fn open_stores() -> (
+    Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
+    Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
+) {
+    let persistent =
+        keyring::secret_service::SsCredential::new_with_target(None, MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT)
+            .ok()
+            .map(|credential| Box::new(credential) as Box<dyn keyring::credential::CredentialApi + Send + Sync>);
+    let legacy =
+        keyring::keyutils::KeyutilsCredential::new_with_target(None, MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT)
+            .ok()
+            .map(|credential| Box::new(credential) as Box<dyn keyring::credential::CredentialApi + Send + Sync>);
+    (persistent, legacy)
+}
+
+/// Finds the key, migrating a legacy one into the persistent store on the way.
+///
+/// The decision is a function of what the two stores say, not of what any of
+/// them failed to answer, so it is written as one and tested through the same
+/// seams the real stores are reached by.
+#[cfg(not(windows))]
+fn resolve_master_key(
+    persistent: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
+    legacy: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
+) -> (MasterKeyRead, Option<[u8; 32]>, Option<KeyOrigin>) {
+    match probe_store(persistent.as_deref(), "the secret service") {
+        StoreProbe::Found(key) => (MasterKeyRead::Present, Some(key), Some(KeyOrigin::Persistent)),
+        StoreProbe::Unavailable => (MasterKeyRead::Unavailable, None, None),
+        StoreProbe::Absent => match probe_store(legacy.as_deref(), "the kernel keyring") {
+            StoreProbe::Absent => (MasterKeyRead::Missing, None, None),
+            StoreProbe::Unavailable => (MasterKeyRead::Unavailable, None, None),
+            StoreProbe::Found(key) => {
+                // The same key, written through to the store that outlives the
+                // session. No ciphertext is touched and the old copy is left
+                // alone, so a failure here costs persistence, not data.
+                let migrated = persistent.as_deref().is_some_and(|store| {
+                    let encoded = base64::engine::general_purpose::STANDARD.encode(&key);
+                    match store.set_password(&encoded) {
+                        Ok(()) => true,
+                        Err(err) => {
+                            crate::warn!(
+                                "[encryption] recovered the master key from the kernel keyring \
+                                 but could not copy it to the secret service: {err}. It stays \
+                                 usable this session and will be retried next launch."
+                            );
+                            false
+                        }
+                    }
+                });
+                (
+                    MasterKeyRead::Present,
+                    Some(key),
+                    Some(if migrated {
+                        KeyOrigin::Migrated
+                    } else {
+                        KeyOrigin::Persistent
+                    }),
+                )
+            }
+        },
     }
 }
 
 #[cfg(not(windows))]
 fn read_master_key() -> Result<[u8; 32], MasterKeyRead> {
-    let entry =
-        keyring::Entry::new(MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT).map_err(|err| {
-            crate::warn!("[encryption] master key store unavailable: {}", err);
-            classify_read_error(&err)
-        })?;
-    match entry.get_password() {
-        Ok(stored) => decode_master_key(&stored).ok_or_else(|| {
-            crate::warn!("[encryption] stored master key is not 32 base64 bytes");
-            MasterKeyRead::Unavailable
-        }),
-        Err(err) => {
-            let read = classify_read_error(&err);
-            if read == MasterKeyRead::Unavailable {
-                crate::warn!("[encryption] reading the master key failed: {}", err);
-            }
-            Err(read)
-        }
+    let (persistent, legacy) = open_stores();
+    if persistent.is_none() && legacy.is_none() {
+        crate::warn!("[encryption] no usable key store could be opened");
+        return Err(MasterKeyRead::Unavailable);
     }
+    let (read, decoded, _) = resolve_master_key(&persistent, &legacy);
+    decoded.ok_or(read)
 }
 
 /// Cached only after a key has actually been decoded, so a keyring that was
@@ -279,15 +390,29 @@ static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// durable to keep the key. Handing one back anyway would encrypt with a key the
 /// next login cannot read, which loses the data instead of leaving it
 /// unencrypted.
+///
+/// Both stores get it, not just the persistent one. Writing only the secret
+/// service would leave the kernel keyring empty, which is fine today and means
+/// the read path has nothing to fall back to; writing both is what the
+/// two-store design the feature selects was supposed to do in the first place.
+/// A failure of the second store is not fatal once the first has taken the key.
 #[cfg(not(windows))]
 fn write_fresh_master_key() -> Option<[u8; 32]> {
-    let entry = keyring::Entry::new(MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT).ok()?;
+    let (persistent, legacy) = open_stores();
+    let persistent = persistent?;
     let mut key = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut key);
     let encoded = base64::engine::general_purpose::STANDARD.encode(&key);
-    if let Err(err) = entry.set_password(&encoded) {
+    if let Err(err) = persistent.set_password(&encoded) {
         crate::warn!("[encryption] could not store the master key: {}", err);
         return None;
+    }
+    if let Some(legacy) = legacy.as_deref() {
+        if let Err(err) = legacy.set_password(&encoded) {
+            crate::warn!(
+                "[encryption] stored the master key, but not in the kernel keyring: {err}"
+            );
+        }
     }
     Some(key)
 }
@@ -459,6 +584,222 @@ mod tests {
         use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
         use std::sync::{Arc, Barrier, Mutex, OnceLock};
         use std::cell::Cell;
+
+        // A `Credential` whose state can be read back after it has been boxed
+        // and handed over, which is what checking the migration needs. A plain
+        // mock cannot do that -- it is moved into the box -- so this exists to
+        // let a test assert that the key landed in the persistent store, not
+        // merely that it was handed back.
+        #[derive(Debug, Clone, Default)]
+        struct KeyringStore(Arc<std::sync::Mutex<KeyringStoreState>>);
+
+        #[derive(Debug, Default)]
+        struct KeyringStoreState {
+            stored: Option<Vec<u8>>,
+            failure: Option<keyring::Error>,
+            writes: usize,
+        }
+
+        impl KeyringStore {
+            fn holding(key: [u8; 32]) -> Self {
+                let store = Self::default();
+                store.seed(key);
+                store
+            }
+
+            fn failing(err: keyring::Error) -> Self {
+                let store = Self::default();
+                store.0.lock().expect("store").failure = Some(err);
+                store
+            }
+
+            fn seed(&self, key: [u8; 32]) {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&key);
+                self.0.lock().expect("store").stored = Some(encoded.into_bytes());
+            }
+
+            fn put_junk(&self) {
+                self.0.lock().expect("store").stored = Some(b"not a key".to_vec());
+            }
+
+            fn stored_key(&self) -> Option<[u8; 32]> {
+                let guard = self.0.lock().expect("store");
+                guard
+                    .stored
+                    .as_ref()
+                    .and_then(|bytes| decode_master_key(std::str::from_utf8(bytes).ok()?))
+            }
+
+            fn writes(&self) -> usize {
+                self.0.lock().expect("store").writes
+            }
+        }
+
+        impl keyring::credential::CredentialApi for KeyringStore {
+            fn set_secret(&self, secret: &[u8]) -> keyring::Result<()> {
+                let mut guard = self.0.lock().expect("store");
+                if let Some(err) = guard.failure.take() {
+                    return Err(err);
+                }
+                guard.stored = Some(secret.to_vec());
+                guard.writes += 1;
+                Ok(())
+            }
+
+            fn get_secret(&self) -> keyring::Result<Vec<u8>> {
+                let mut guard = self.0.lock().expect("store");
+                if let Some(err) = guard.failure.take() {
+                    return Err(err);
+                }
+                match &guard.stored {
+                    Some(stored) => Ok(stored.clone()),
+                    None => Err(keyring::Error::NoEntry),
+                }
+            }
+
+            fn delete_credential(&self) -> keyring::Result<()> {
+                self.0.lock().expect("store").stored = None;
+                Ok(())
+            }
+
+            fn as_any(&self) -> &dyn std::any::Any {
+                self
+            }
+        }
+
+        fn resolve_with(
+            persistent: KeyringStore,
+            legacy: KeyringStore,
+        ) -> (
+            MasterKeyRead,
+            Option<[u8; 32]>,
+            Option<KeyOrigin>,
+        ) {
+            let boxed = |store: &KeyringStore| {
+                Some(Box::new(store.clone())
+                    as Box<dyn keyring::credential::CredentialApi + Send + Sync>)
+            };
+            resolve_master_key(&boxed(&persistent), &boxed(&legacy))
+        }
+
+        fn unreadable() -> keyring::Error {
+            keyring::Error::PlatformFailure(Box::new(std::io::Error::other("store is locked")))
+        }
+
+        // The state the feature switch left behind, and the whole point of the
+        // change: the persistent store has nothing, the kernel keyring still
+        // holds the key every existing row is encrypted under.
+        //
+        // Reached through `Entry::new` that key is invisible, and the next
+        // write mints a replacement over it. Here it must be found -- and since
+        // a kernel keyring entry does not survive a reboot, it must also be
+        // written through to the store that does.
+        #[test]
+        fn a_key_left_in_the_kernel_keyring_is_recovered_and_written_forward() {
+            let persistent = KeyringStore::default();
+            let legacy = KeyringStore::holding([7u8; 32]);
+
+            let (read, key, origin) = resolve_with(persistent.clone(), legacy.clone());
+
+            assert_eq!(read, MasterKeyRead::Present);
+            assert_eq!(
+                key,
+                Some([7u8; 32]),
+                "the key that comes back must be the one the rows were written under"
+            );
+            assert_eq!(origin, Some(KeyOrigin::Migrated));
+            assert_eq!(
+                persistent.stored_key(),
+                Some([7u8; 32]),
+                "the key must be copied forward, or the next reboot loses it again"
+            );
+            assert_eq!(persistent.writes(), 1);
+        }
+
+        // Nothing to migrate: the secret service answers first because it is
+        // what the default path reads, and its key wins without the legacy
+        // store being consulted at all.
+        #[test]
+        fn a_key_already_in_the_persistent_store_is_used_untouched() {
+            let persistent = KeyringStore::holding([1u8; 32]);
+            let legacy = KeyringStore::holding([2u8; 32]);
+
+            let (read, key, origin) = resolve_with(persistent.clone(), legacy.clone());
+
+            assert_eq!(read, MasterKeyRead::Present);
+            assert_eq!(key, Some([1u8; 32]));
+            assert_eq!(origin, Some(KeyOrigin::Persistent));
+            assert_eq!(persistent.writes(), 0, "an existing key must not be rewritten");
+            assert_eq!(legacy.writes(), 0, "the legacy store is not consulted as a rival");
+        }
+
+        // Both empty: nothing stored anywhere, which is the only state that
+        // authorises creating a key.
+        #[test]
+        fn two_empty_stores_mean_no_key_yet() {
+            let (read, key, origin) = resolve_with(KeyringStore::default(), KeyringStore::default());
+
+            assert_eq!(read, MasterKeyRead::Missing);
+            assert_eq!(key, None);
+            assert_eq!(origin, None);
+        }
+
+        // The data-loss case, and the reason the decision table is shaped the
+        // way it is. The persistent store cannot be read, so we do not know
+        // whether it holds a *different* key: answering with the legacy one
+        // could encrypt under the wrong key, and answering "absent" would mint a
+        // replacement. Neither is allowed.
+        #[test]
+        fn an_unreadable_persistent_store_is_never_treated_as_empty() {
+            let persistent = KeyringStore::failing(unreadable());
+            let legacy = KeyringStore::holding([3u8; 32]);
+
+            let (read, key, origin) = resolve_with(persistent, legacy.clone());
+
+            assert_eq!(read, MasterKeyRead::Unavailable);
+            assert_eq!(key, None, "the legacy key must not be used in its place");
+            assert_eq!(origin, None);
+            assert_eq!(legacy.writes(), 0, "and it must certainly not be written");
+        }
+
+        // The same, one level down: the persistent store is genuinely empty but
+        // the legacy one cannot be reached. "I could not look" is not "there is
+        // nothing there".
+        #[test]
+        fn an_unreadable_legacy_store_is_never_treated_as_empty() {
+            let (read, key, _) = resolve_with(KeyringStore::default(), KeyringStore::failing(unreadable()));
+
+            assert_eq!(read, MasterKeyRead::Unavailable);
+            assert_eq!(key, None);
+        }
+
+        // A store that answers with something that is not a key is unreadable
+        // rather than absent, for the same reason.
+        #[test]
+        fn a_store_holding_junk_is_not_read_as_empty() {
+            let legacy = KeyringStore::default();
+            legacy.put_junk();
+
+            let (read, key, _) = resolve_with(KeyringStore::default(), legacy);
+
+            assert_eq!(read, MasterKeyRead::Unavailable);
+            assert_eq!(key, None);
+        }
+
+        // A store that cannot be opened at all is the same answer as one that
+        // cannot be read: we do not know what is in it.
+        #[test]
+        fn a_store_that_could_not_be_opened_is_never_treated_as_empty() {
+            let (persistent, legacy) = (
+                None,
+                Some(Box::new(KeyringStore::default()) as Box<dyn keyring::credential::CredentialApi + Send + Sync>),
+            );
+
+            let (read, key, _) = resolve_master_key(&persistent, &legacy);
+
+            assert_eq!(read, MasterKeyRead::Unavailable);
+            assert_eq!(key, None);
+        }
 
         /// A store that answers "nothing stored" until something is written, and
         /// hands back whatever was written. It is what makes a second write
