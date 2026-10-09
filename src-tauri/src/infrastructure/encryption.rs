@@ -265,15 +265,34 @@ fn probe_store(
     }
 }
 
-/// Where a key came from, and what still has to be done about it.
+/// Where a key came from, and whether anything durable now holds it.
 #[cfg(not(windows))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeyOrigin {
     /// Already in the persistent store. Nothing to do.
     Persistent,
-    /// Recovered from the legacy kernel store and written into the persistent
-    /// one, so it outlives this session's keyring.
+    /// Recovered from the legacy kernel store and successfully written forward,
+    /// so it now outlives this session.
     Migrated,
+    /// Recovered from the legacy kernel store, but the write forward failed. The
+    /// key can still decrypt what is already stored; it must not be used for
+    /// anything new.
+    Unpersisted,
+}
+
+/// A key, and whether a store that survives the session holds it.
+///
+/// The two answers are separate on purpose. Being able to *decrypt* a recovered
+/// key is worth having even when nothing durable holds it, because that is how
+/// existing rows stay readable. Being able to *encrypt* under it is not the
+/// same bargain: a key that only exists for this session turns every row written
+/// with it into a row that dies with the session, and no later retry can undo
+/// that because the ciphertext has already been produced and stored.
+#[cfg(not(windows))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ResolvedMasterKey {
+    key: [u8; 32],
+    persisted: bool,
 }
 
 /// The store that answers first, and the legacy one behind it.
@@ -287,14 +306,24 @@ fn open_stores() -> (
     Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
     Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
 ) {
-    let persistent =
-        keyring::secret_service::SsCredential::new_with_target(None, MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT)
-            .ok()
-            .map(|credential| Box::new(credential) as Box<dyn keyring::credential::CredentialApi + Send + Sync>);
-    let legacy =
-        keyring::keyutils::KeyutilsCredential::new_with_target(None, MASTER_KEY_SERVICE, MASTER_KEY_ACCOUNT)
-            .ok()
-            .map(|credential| Box::new(credential) as Box<dyn keyring::credential::CredentialApi + Send + Sync>);
+    let persistent = keyring::secret_service::SsCredential::new_with_target(
+        None,
+        MASTER_KEY_SERVICE,
+        MASTER_KEY_ACCOUNT,
+    )
+    .ok()
+    .map(|credential| {
+        Box::new(credential) as Box<dyn keyring::credential::CredentialApi + Send + Sync>
+    });
+    let legacy = keyring::keyutils::KeyutilsCredential::new_with_target(
+        None,
+        MASTER_KEY_SERVICE,
+        MASTER_KEY_ACCOUNT,
+    )
+    .ok()
+    .map(|credential| {
+        Box::new(credential) as Box<dyn keyring::credential::CredentialApi + Send + Sync>
+    });
     (persistent, legacy)
 }
 
@@ -307,9 +336,20 @@ fn open_stores() -> (
 fn resolve_master_key(
     persistent: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
     legacy: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
-) -> (MasterKeyRead, Option<[u8; 32]>, Option<KeyOrigin>) {
+) -> (
+    MasterKeyRead,
+    Option<ResolvedMasterKey>,
+    Option<KeyOrigin>,
+) {
     match probe_store(persistent.as_deref(), "the secret service") {
-        StoreProbe::Found(key) => (MasterKeyRead::Present, Some(key), Some(KeyOrigin::Persistent)),
+        StoreProbe::Found(key) => (
+            MasterKeyRead::Present,
+            Some(ResolvedMasterKey {
+                key,
+                persisted: true,
+            }),
+            Some(KeyOrigin::Persistent),
+        ),
         StoreProbe::Unavailable => (MasterKeyRead::Unavailable, None, None),
         StoreProbe::Absent => match probe_store(legacy.as_deref(), "the kernel keyring") {
             StoreProbe::Absent => (MasterKeyRead::Missing, None, None),
@@ -317,16 +357,17 @@ fn resolve_master_key(
             StoreProbe::Found(key) => {
                 // The same key, written through to the store that outlives the
                 // session. No ciphertext is touched and the old copy is left
-                // alone, so a failure here costs persistence, not data.
-                let migrated = persistent.as_deref().is_some_and(|store| {
+                // alone.
+                let written = persistent.as_deref().is_some_and(|store| {
                     let encoded = base64::engine::general_purpose::STANDARD.encode(&key);
                     match store.set_password(&encoded) {
                         Ok(()) => true,
                         Err(err) => {
                             crate::warn!(
                                 "[encryption] recovered the master key from the kernel keyring \
-                                 but could not copy it to the secret service: {err}. It stays \
-                                 usable this session and will be retried next launch."
+                                 but could not copy it to the secret service: {err}. Existing \
+                                 records stay readable this session; new ones will not be written \
+                                 until a store is available."
                             );
                             false
                         }
@@ -334,11 +375,14 @@ fn resolve_master_key(
                 });
                 (
                     MasterKeyRead::Present,
-                    Some(key),
-                    Some(if migrated {
+                    Some(ResolvedMasterKey {
+                        key,
+                        persisted: written,
+                    }),
+                    Some(if written {
                         KeyOrigin::Migrated
                     } else {
-                        KeyOrigin::Persistent
+                        KeyOrigin::Unpersisted
                     }),
                 )
             }
@@ -347,14 +391,14 @@ fn resolve_master_key(
 }
 
 #[cfg(not(windows))]
-fn read_master_key() -> Result<[u8; 32], MasterKeyRead> {
+fn read_master_key() -> Result<ResolvedMasterKey, MasterKeyRead> {
     let (persistent, legacy) = open_stores();
     if persistent.is_none() && legacy.is_none() {
         crate::warn!("[encryption] no usable key store could be opened");
         return Err(MasterKeyRead::Unavailable);
     }
-    let (read, decoded, _) = resolve_master_key(&persistent, &legacy);
-    decoded.ok_or(read)
+    let (read, resolved, _) = resolve_master_key(&persistent, &legacy);
+    resolved.ok_or(read)
 }
 
 /// Cached only after a key has actually been decoded, so a keyring that was
@@ -362,6 +406,15 @@ fn read_master_key() -> Result<[u8; 32], MasterKeyRead> {
 /// remembered as "there is no key".
 #[cfg(not(windows))]
 static MASTER_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
+
+/// A key recovered from the legacy store that nothing durable holds yet.
+///
+/// It lives here so existing rows stay readable for this session, and it is
+/// deliberately *not* the cache a writer consults: encrypting new rows under it
+/// would produce ciphertext whose key dies with the session keyring, and no
+/// later successful migration can rescue rows that were already written.
+#[cfg(not(windows))]
+static RECOVERED_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new();
 
 /// Two threads that both find nothing stored would otherwise each generate a
 /// key, and whichever wrote last would strand everything encrypted under the
@@ -430,13 +483,23 @@ fn write_fresh_master_key() -> Option<[u8; 32]> {
 #[cfg(not(windows))]
 fn initialise_master_key(
     cache: &std::sync::OnceLock<[u8; 32]>,
+    recovered: &std::sync::OnceLock<[u8; 32]>,
     lock: &std::sync::Mutex<()>,
     may_create: bool,
-    read: impl Fn() -> Result<[u8; 32], MasterKeyRead>,
+    for_writing: bool,
+    read: impl Fn() -> Result<ResolvedMasterKey, MasterKeyRead>,
     create: impl FnOnce() -> Option<[u8; 32]>,
 ) -> Option<[u8; 32]> {
     if let Some(key) = cache.get() {
         return Some(*key);
+    }
+    // Only a reader looks here, and only when nothing durable has turned up.
+    // A writer that did this would encrypt new rows under a key nothing else
+    // holds, which is the failure this split exists to prevent.
+    if !for_writing {
+        if let Some(key) = recovered.get() {
+            return Some(*key);
+        }
     }
 
     let _guard = lock.lock().ok()?;
@@ -446,16 +509,38 @@ fn initialise_master_key(
     }
 
     let (read_result, decoded) = match read() {
-        Ok(key) => (MasterKeyRead::Present, Some(key)),
+        Ok(resolved) => (MasterKeyRead::Present, Some(resolved)),
         Err(reason) => (reason, None),
     };
-    let key = match plan_master_key(read_result) {
+    let resolved = match plan_master_key(read_result) {
         MasterKeyPlan::Use => decoded?,
-        MasterKeyPlan::Create if may_create => create()?,
+        MasterKeyPlan::Create if may_create => ResolvedMasterKey {
+            key: create()?,
+            // A fresh key is only handed back after the store took it.
+            persisted: true,
+        },
         _ => return None,
     };
-    let _ = cache.set(key);
-    cache.get().copied()
+
+    if resolved.persisted {
+        let _ = cache.set(resolved.key);
+        return cache.get().copied();
+    }
+
+    // Recovered but not written anywhere durable. It can still read what is
+    // already stored, so a reader keeps it -- in the recovery cache, which no
+    // writer consults. A writer gets nothing, and because nothing was published
+    // the next call runs this again, which is what makes the migration retry
+    // once the store comes back instead of being skipped for the life of the
+    // process.
+    if !for_writing {
+        let _ = recovered.set(resolved.key);
+    }
+    if for_writing {
+        None
+    } else {
+        recovered.get().copied()
+    }
 }
 
 /// The key used for writing. Returns `None` when the store cannot be read and
@@ -464,7 +549,9 @@ fn initialise_master_key(
 fn master_key() -> Option<[u8; 32]> {
     initialise_master_key(
         &MASTER_KEY,
+        &RECOVERED_KEY,
         &MASTER_KEY_INIT_LOCK,
+        true,
         true,
         read_master_key,
         write_fresh_master_key,
@@ -476,7 +563,15 @@ fn master_key() -> Option<[u8; 32]> {
 /// against.
 #[cfg(not(windows))]
 fn existing_master_key() -> Option<[u8; 32]> {
-    initialise_master_key(&MASTER_KEY, &MASTER_KEY_INIT_LOCK, false, read_master_key, || None)
+    initialise_master_key(
+        &MASTER_KEY,
+        &RECOVERED_KEY,
+        &MASTER_KEY_INIT_LOCK,
+        false,
+        false,
+        read_master_key,
+        || None,
+    )
 }
 
 #[cfg(not(windows))]
@@ -597,6 +692,8 @@ mod tests {
         struct KeyringStoreState {
             stored: Option<Vec<u8>>,
             failure: Option<keyring::Error>,
+            write_failure: Option<keyring::Error>,
+            sticky_write_failure: bool,
             writes: usize,
         }
 
@@ -622,6 +719,26 @@ mod tests {
                 self.0.lock().expect("store").stored = Some(b"not a key".to_vec());
             }
 
+            fn fail_writes(&self, err: keyring::Error) {
+                let mut guard = self.0.lock().expect("store");
+                guard.write_failure = Some(err);
+                guard.sticky_write_failure = true;
+            }
+
+            fn clear_write_failure(&self) {
+                let mut guard = self.0.lock().expect("store");
+                guard.write_failure = None;
+                guard.sticky_write_failure = false;
+            }
+
+            fn fail_next_write(&self, err: keyring::Error) {
+                // Only a write fails, so a test can have a store that reads
+                // "empty" and still refuse to take a key -- which is the whole
+                // shape of the bug this covers. A failure injected on read would
+                // take the unavailable branch instead and prove nothing.
+                self.0.lock().expect("store").write_failure = Some(err);
+            }
+
             fn stored_key(&self) -> Option<[u8; 32]> {
                 let guard = self.0.lock().expect("store");
                 guard
@@ -639,6 +756,16 @@ mod tests {
             fn set_secret(&self, secret: &[u8]) -> keyring::Result<()> {
                 let mut guard = self.0.lock().expect("store");
                 if let Some(err) = guard.failure.take() {
+                    return Err(err);
+                }
+                if guard.sticky_write_failure {
+                    // Stays refused until told otherwise, which is what a
+                    // locked or absent store actually looks like.
+                    if let Some(err) = &guard.write_failure {
+                        return Err(errring(err));
+                    }
+                }
+                if let Some(err) = guard.write_failure.take() {
                     return Err(err);
                 }
                 guard.stored = Some(secret.to_vec());
@@ -672,7 +799,7 @@ mod tests {
             legacy: KeyringStore,
         ) -> (
             MasterKeyRead,
-            Option<[u8; 32]>,
+            Option<ResolvedMasterKey>,
             Option<KeyOrigin>,
         ) {
             let boxed = |store: &KeyringStore| {
@@ -680,6 +807,47 @@ mod tests {
                     as Box<dyn keyring::credential::CredentialApi + Send + Sync>)
             };
             resolve_master_key(&boxed(&persistent), &boxed(&legacy))
+        }
+
+                /// A store that already holds its key durably, for the tests that drive
+        /// initialise_master_key directly.
+        fn persisted(key: [u8; 32]) -> ResolvedMasterKey {
+            ResolvedMasterKey { key, persisted: true }
+        }
+
+                /// Reads through the real resolver, so the tests below drive the same
+        /// path production takes rather than a stand-in for it.
+        /// keyring::Error is not Clone, so a sticky failure is reported
+        /// afresh each time by rebuilding the same kind of error.
+        fn errring(err: &keyring::Error) -> keyring::Error {
+            keyring::Error::PlatformFailure(Box::new(std::io::Error::other(
+                err.to_string(),
+            )))
+        }
+
+        fn boxed_stores(
+            persistent: &KeyringStore,
+            legacy: &KeyringStore,
+        ) -> (
+            Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
+            Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
+        ) {
+            let boxed = |store: &KeyringStore| {
+                Some(Box::new(store.clone())
+                    as Box<dyn keyring::credential::CredentialApi + Send + Sync>)
+            };
+            (boxed(persistent), boxed(legacy))
+        }
+
+        fn read_through(
+            persistent: KeyringStore,
+            legacy: KeyringStore,
+        ) -> impl Fn() -> Result<ResolvedMasterKey, MasterKeyRead> {
+            move || {
+                let (p, l) = boxed_stores(&persistent, &legacy);
+                let (read, resolved, _) = resolve_master_key(&p, &l);
+                resolved.ok_or(read)
+            }
         }
 
         fn unreadable() -> keyring::Error {
@@ -703,7 +871,7 @@ mod tests {
 
             assert_eq!(read, MasterKeyRead::Present);
             assert_eq!(
-                key,
+                key.map(|resolved| resolved.key),
                 Some([7u8; 32]),
                 "the key that comes back must be the one the rows were written under"
             );
@@ -727,7 +895,7 @@ mod tests {
             let (read, key, origin) = resolve_with(persistent.clone(), legacy.clone());
 
             assert_eq!(read, MasterKeyRead::Present);
-            assert_eq!(key, Some([1u8; 32]));
+            assert_eq!(key.map(|resolved| resolved.key), Some([1u8; 32]));
             assert_eq!(origin, Some(KeyOrigin::Persistent));
             assert_eq!(persistent.writes(), 0, "an existing key must not be rewritten");
             assert_eq!(legacy.writes(), 0, "the legacy store is not consulted as a rival");
@@ -740,7 +908,7 @@ mod tests {
             let (read, key, origin) = resolve_with(KeyringStore::default(), KeyringStore::default());
 
             assert_eq!(read, MasterKeyRead::Missing);
-            assert_eq!(key, None);
+            assert_eq!(key.map(|resolved| resolved.key), None);
             assert_eq!(origin, None);
         }
 
@@ -757,7 +925,7 @@ mod tests {
             let (read, key, origin) = resolve_with(persistent, legacy.clone());
 
             assert_eq!(read, MasterKeyRead::Unavailable);
-            assert_eq!(key, None, "the legacy key must not be used in its place");
+            assert_eq!(key.map(|r| r.key), None, "the legacy key must not be used in its place");
             assert_eq!(origin, None);
             assert_eq!(legacy.writes(), 0, "and it must certainly not be written");
         }
@@ -849,6 +1017,111 @@ mod tests {
         // question directly instead. `Mutex` is not reentrant, so `try_lock`
         // failing is unambiguous evidence that the lock is held -- by this very
         // thread, since the test is single-threaded.
+        // The one the last review asked for, and the reason the two caches are
+        // separate.
+        //
+        // The failure it guards against is a specific sequence: the secret
+        // service reads empty, the kernel keyring holds K, and the write
+        // forward fails. Treating that as an ordinary Present publishes K
+        // into the write cache, after which master_key never reaches the
+        // stores again for the life of the process -- so the migration is never
+        // retried, and every row encrypted meanwhile rests on a key nothing
+        // else holds.
+        #[test]
+        fn a_failed_write_forward_is_readable_but_never_writable() {
+            let persistent = KeyringStore::default();
+            let legacy = KeyringStore::holding([4u8; 32]);
+            persistent.fail_writes(unreadable());
+
+            let write_cache = OnceLock::new();
+            let recovered_cache = OnceLock::new();
+            let lock = Mutex::new(());
+
+            // A reader gets the key: rows already stored must stay readable.
+            let read_key = initialise_master_key(
+                &write_cache,
+                &recovered_cache,
+                &lock,
+                false,
+                false,
+                read_through(persistent.clone(), legacy.clone()),
+                || panic!("a reader must never create"),
+            );
+            assert_eq!(
+                read_key,
+                Some([4u8; 32]),
+                "recovering a key that failed to persist must still allow reading"
+            );
+
+            // A writer gets nothing, and nothing was published for writers.
+            let write_key = {
+                initialise_master_key(
+                    &write_cache,
+                    &recovered_cache,
+                    &lock,
+                    true,
+                    true,
+                    read_through(persistent.clone(), legacy.clone()),
+                    || panic!("an existing key must never be replaced"),
+                )
+            };
+            assert_eq!(
+                write_key, None,
+                "a key nothing durable holds must not be published for new writes"
+            );
+            assert!(
+                write_cache.get().is_none(),
+                "the write cache must stay empty, or every later write inherits this"
+            );
+        }
+
+        // And the recovery half: because nothing was published, the next call
+        // runs the whole thing again and the migration lands once the store
+        // takes writes again.
+        #[test]
+        fn a_recovered_key_becomes_writable_once_the_store_takes_it() {
+            let persistent = KeyringStore::default();
+            let legacy = KeyringStore::holding([6u8; 32]);
+            persistent.fail_next_write(unreadable());
+
+            let write_cache = OnceLock::new();
+            let recovered_cache = OnceLock::new();
+            let lock = Mutex::new(());
+
+            let first = initialise_master_key(
+                &write_cache,
+                &recovered_cache,
+                &lock,
+                true,
+                true,
+                read_through(persistent.clone(), legacy.clone()),
+                || panic!("an existing key must never be replaced"),
+            );
+            assert_eq!(first, None, "the store still refuses writes");
+            assert!(
+                write_cache.get().is_none(),
+                "and nothing was cached, so the next attempt really retries"
+            );
+
+            // The store is unlocked and takes writes now.
+            let key = initialise_master_key(
+                &write_cache,
+                &recovered_cache,
+                &lock,
+                true,
+                true,
+                read_through(persistent.clone(), legacy.clone()),
+                || panic!("an existing key must never be replaced"),
+            );
+            assert_eq!(key, Some([6u8; 32]), "the retry must land the key");
+            assert_eq!(persistent.stored_key(), Some([6u8; 32]));
+            assert_eq!(
+                write_cache.get().copied(),
+                Some([6u8; 32]),
+                "only now is the key published for writing"
+            );
+        }
+
         #[test]
         fn the_store_is_read_while_the_init_lock_is_held() {
             let cache = OnceLock::new();
@@ -857,8 +1130,10 @@ mod tests {
 
             let key = initialise_master_key(
                 &cache,
+                &OnceLock::new(),
                 &lock,
                 true,
+                false,
                 || {
                     if lock.try_lock().is_err() {
                         read_under_lock.set(true);
@@ -903,9 +1178,11 @@ mod tests {
                             start.wait();
                             initialise_master_key(
                                 shared_cache,
+                                &OnceLock::new(),
                                 shared_lock,
                                 true,
-                                || store.read(),
+                                true,
+                                || store.read().map(persisted),
                                 || store.write([id + 1; 32]),
                             )
                         })
@@ -948,9 +1225,11 @@ mod tests {
 
             let key = initialise_master_key(
                 &cache,
+                &OnceLock::new(),
                 &lock,
                 false,
-                || store.read(),
+                false,
+                || store.read().map(persisted),
                 || panic!("a reader must never reach the creator"),
             );
 
@@ -970,8 +1249,10 @@ mod tests {
 
             let key = initialise_master_key(
                 &cache,
+                &OnceLock::new(),
                 &lock,
                 true,
+                false,
                 || Err(MasterKeyRead::Unavailable),
                 || store.write([9; 32]),
             );
@@ -993,9 +1274,11 @@ mod tests {
 
             let key = initialise_master_key(
                 &cache,
+                &OnceLock::new(),
                 &lock,
                 true,
-                || store.read(),
+                false,
+                || store.read().map(persisted),
                 || panic!("a present key must never reach the creator"),
             );
 
