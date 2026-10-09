@@ -366,8 +366,10 @@ fn resolve_master_key(
                             crate::warn!(
                                 "[encryption] recovered the master key from the kernel keyring \
                                  but could not copy it to the secret service: {err}. Existing \
-                                 records stay readable this session; new ones will not be written \
-                                 until a store is available."
+                                 records stay readable this session; anything captured until a \
+                                 store is available will be stored unencrypted, because the \
+                                 repository keeps a value it cannot encrypt rather than \
+                                 dropping it."
                             );
                             false
                         }
@@ -437,7 +439,8 @@ static RECOVERED_KEY: std::sync::OnceLock<[u8; 32]> = std::sync::OnceLock::new()
 #[cfg(not(windows))]
 static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// Writes a fresh key to the store. The caller holds `MASTER_KEY_INIT_LOCK`.
+/// Persists the key this process should be using, minting one only if there is
+/// nothing recovered to reuse. The caller holds `MASTER_KEY_INIT_LOCK`.
 ///
 /// The write is checked because a store that refuses it means there is nowhere
 /// durable to keep the key. Handing one back anyway would encrypt with a key the
@@ -450,14 +453,28 @@ static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// two-store design the feature selects was supposed to do in the first place.
 /// A failure of the second store is not fatal once the first has taken the key.
 #[cfg(not(windows))]
-fn write_fresh_master_key() -> Option<[u8; 32]> {
+fn persist_master_key(recovered: Option<[u8; 32]>) -> Option<[u8; 32]> {
     let (persistent, legacy) = open_stores();
     let persistent = persistent?;
-    let mut key = [0u8; 32];
-    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut key);
+    // A key this process already recovered is persisted as itself. Minting a
+    // replacement here would be how rows already written under it become
+    // unreadable, and the caller only offers it once it is sure nothing durable
+    // holds it.
+    let key = match recovered {
+        Some(key) => key,
+        None => {
+            let mut fresh = [0u8; 32];
+            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut fresh);
+            fresh
+        }
+    };
     let encoded = base64::engine::general_purpose::STANDARD.encode(&key);
     if let Err(err) = persistent.set_password(&encoded) {
-        crate::warn!("[encryption] could not store the master key: {}", err);
+        crate::warn!(
+            "[encryption] could not store the master key: {err}. Nothing is encrypted until a \
+             store is available, and in the meantime captures are kept as plain text rather than \
+             dropped."
+        );
         return None;
     }
     if let Some(legacy) = legacy.as_deref() {
@@ -476,6 +493,8 @@ fn write_fresh_master_key() -> Option<[u8; 32]> {
 /// production passes the process-wide pair, a test passes its own plus a store
 /// that answers whatever it likes. `create` is `FnOnce` because it can only be
 /// reached once per call -- after that the function has returned or published.
+/// It is handed whatever this process already recovered, which may be `None`;
+/// the creator is the only place that knows whether to reuse it or mint one.
 ///
 /// The value returned is whatever ended up in the cache, never a local copy.
 /// That is what stops two callers from disagreeing when the second one loses
@@ -488,7 +507,7 @@ fn initialise_master_key(
     may_create: bool,
     for_writing: bool,
     read: impl Fn() -> Result<ResolvedMasterKey, MasterKeyRead>,
-    create: impl FnOnce() -> Option<[u8; 32]>,
+    create: impl FnOnce(Option<[u8; 32]>) -> Option<[u8; 32]>,
 ) -> Option<[u8; 32]> {
     if let Some(key) = cache.get() {
         return Some(*key);
@@ -496,6 +515,13 @@ fn initialise_master_key(
     // Only a reader looks here, and only when nothing durable has turned up.
     // A writer that did this would encrypt new rows under a key nothing else
     // holds, which is the failure this split exists to prevent.
+    //
+    // Returning this early is also where the retry boundary sits, and it is
+    // deliberate that a reader stops here: a read has nothing to gain from a
+    // second attempt, and the writer that comes along is the thing that
+    // actually needs the key to become durable. A session that only ever reads
+    // therefore never migrates -- correct, because reading the recovered key
+    // works for as long as the process lives.
     if !for_writing {
         if let Some(key) = recovered.get() {
             return Some(*key);
@@ -514,11 +540,23 @@ fn initialise_master_key(
     };
     let resolved = match plan_master_key(read_result) {
         MasterKeyPlan::Use => decoded?,
-        MasterKeyPlan::Create if may_create => ResolvedMasterKey {
-            key: create()?,
-            // A fresh key is only handed back after the store took it.
-            persisted: true,
-        },
+        MasterKeyPlan::Create if may_create => {
+            // Two stores reading empty is not the same as "there has never
+            // been a key". The legacy entry can be revoked, expire, or be
+            // cleared by a session timeout while this process is still alive --
+            // keyring 3.6.3 maps KeyRevoked and KeyExpired onto NoEntry, so it
+            // arrives here exactly like a first run.
+            //
+            // If this process already recovered a key, that is the key to
+            // persist. Minting a replacement over it would strand every row
+            // already written under it, and readers would then meet the new key
+            // in the write cache first and never reach the recovered one.
+            ResolvedMasterKey {
+                key: create(recovered.get().copied())?,
+                // A key is only handed back after the store took it.
+                persisted: true,
+            }
+        }
         _ => return None,
     };
 
@@ -554,7 +592,7 @@ fn master_key() -> Option<[u8; 32]> {
         true,
         true,
         read_master_key,
-        write_fresh_master_key,
+        persist_master_key,
     )
 }
 
@@ -570,7 +608,7 @@ fn existing_master_key() -> Option<[u8; 32]> {
         false,
         false,
         read_master_key,
-        || None,
+        |_recovered| None,
     )
 }
 
@@ -737,6 +775,14 @@ mod tests {
                 // shape of the bug this covers. A failure injected on read would
                 // take the unavailable branch instead and prove nothing.
                 self.0.lock().expect("store").write_failure = Some(err);
+            }
+
+            /// The entry disappears from under a live process: a revoked key, an
+            /// expired session timeout, or something outside the app removing it.
+            /// The store is otherwise healthy, so it answers exactly like a first
+            /// run ever has.
+            fn evict(&self) {
+                self.0.lock().expect("store").stored = None;
             }
 
             fn stored_key(&self) -> Option<[u8; 32]> {
@@ -1045,7 +1091,7 @@ mod tests {
                 false,
                 false,
                 read_through(persistent.clone(), legacy.clone()),
-                || panic!("a reader must never create"),
+                |_recovered| panic!("a reader must never create"),
             );
             assert_eq!(
                 read_key,
@@ -1062,7 +1108,7 @@ mod tests {
                     true,
                     true,
                     read_through(persistent.clone(), legacy.clone()),
-                    || panic!("an existing key must never be replaced"),
+                    |_recovered| panic!("an existing key must never be replaced"),
                 )
             };
             assert_eq!(
@@ -1095,7 +1141,7 @@ mod tests {
                 true,
                 true,
                 read_through(persistent.clone(), legacy.clone()),
-                || panic!("an existing key must never be replaced"),
+                |_recovered| panic!("an existing key must never be replaced"),
             );
             assert_eq!(first, None, "the store still refuses writes");
             assert!(
@@ -1111,7 +1157,7 @@ mod tests {
                 true,
                 true,
                 read_through(persistent.clone(), legacy.clone()),
-                || panic!("an existing key must never be replaced"),
+                |_recovered| panic!("an existing key must never be replaced"),
             );
             assert_eq!(key, Some([6u8; 32]), "the retry must land the key");
             assert_eq!(persistent.stored_key(), Some([6u8; 32]));
@@ -1120,6 +1166,129 @@ mod tests {
                 Some([6u8; 32]),
                 "only now is the key published for writing"
             );
+        }
+
+        // The last review's P2, and the reason `create` is handed the recovered
+        // key rather than minting on its own.
+        //
+        // "Both stores read empty" was being treated as "no key has ever
+        // existed". Those are not the same thing. A key this process recovered
+        // from the kernel keyring can stop being readable while the process is
+        // still alive: keyring 3.6.3 maps KeyRevoked and KeyExpired onto
+        // NoEntry (`src/keyutils.rs:320-329`), and a session timeout or an
+        // external removal look identical from here.
+        //
+        // What went wrong without the fix: a reader recovered K and the write
+        // forward failed, so K sat in the recovery cache; the legacy entry was
+        // then revoked; a writer saw two empty stores, minted K2 and cached it
+        // in the write cache -- where readers look *first*. Every existing row
+        // was now written under a key this process would never reach again,
+        // and the reader's own K was stranded behind K2 in the cache.
+        //
+        // The store is modelled as production does it: persist whatever was
+        // offered, mint only when nothing was.
+        #[test]
+        fn a_key_still_in_memory_is_persisted_rather_than_replaced() {
+            let persistent = KeyringStore::default();
+            let legacy = KeyringStore::holding([8u8; 32]);
+            persistent.fail_writes(unreadable());
+
+            let write_cache = OnceLock::new();
+            let recovered_cache = OnceLock::new();
+            let lock = Mutex::new(());
+
+            // A row that already exists, sealed under K before any of this.
+            let existing = seal_under([8u8; 32], "copied before the entry was revoked");
+
+            // A reader recovers K; the write forward fails, so K stays
+            // unpersisted but readable.
+            let read_key = initialise_master_key(
+                &write_cache,
+                &recovered_cache,
+                &lock,
+                false,
+                false,
+                read_through(persistent.clone(), legacy.clone()),
+                |_recovered| panic!("a reader must never create"),
+            );
+            assert_eq!(read_key, Some([8u8; 32]));
+            assert_eq!(recovered_cache.get().copied(), Some([8u8; 32]));
+
+            // The legacy entry vanishes, and the store now takes writes.
+            legacy.evict();
+            persistent.clear_write_failure();
+
+            let write_key = initialise_master_key(
+                &write_cache,
+                &recovered_cache,
+                &lock,
+                true,
+                true,
+                read_through(persistent.clone(), legacy.clone()),
+                |offered| {
+                    let key = offered.unwrap_or([0xABu8; 32]);
+                    persistent.seed(key);
+                    Some(key)
+                },
+            );
+
+            assert_eq!(
+                write_key,
+                Some([8u8; 32]),
+                "the key this process already holds is the one to persist, not a replacement"
+            );
+            assert_eq!(
+                persistent.stored_key(),
+                Some([8u8; 32]),
+                "the store must end up holding the key the existing rows were written under"
+            );
+            assert_eq!(
+                write_cache.get().copied(),
+                Some([8u8; 32]),
+                "and that is the key readers will meet first from now on"
+            );
+
+            // The row that made this worth fixing still opens.
+            let after = initialise_master_key(
+                &write_cache,
+                &recovered_cache,
+                &lock,
+                false,
+                false,
+                read_through(persistent.clone(), legacy.clone()),
+                |_recovered| panic!("a reader must never create"),
+            );
+            assert_eq!(
+                opens_with(after.expect("a read key"), &existing).as_deref(),
+                Some("copied before the entry was revoked"),
+                "a row sealed under the recovered key must still open after the migration"
+            );
+            assert_eq!(
+                opens_with([0xABu8; 32], &existing),
+                None,
+                "and the replacement would simply have been the wrong key, which is the damage"
+            );
+        }
+
+        /// A sealed message in the module's own wire format, so "old records
+        /// still open" is shown rather than asserted in prose.
+        fn seal_under(key: [u8; 32], plain: &str) -> Vec<u8> {
+            let cipher = Aes256Gcm::new_from_slice(&key).expect("aes256");
+            let mut nonce_bytes = [0u8; 12];
+            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce_bytes);
+            let body = cipher
+                .encrypt(Nonce::from_slice(&nonce_bytes), plain.as_bytes())
+                .expect("seal");
+            let mut sealed = nonce_bytes.to_vec();
+            sealed.extend_from_slice(&body);
+            sealed
+        }
+
+        fn opens_with(key: [u8; 32], sealed: &[u8]) -> Option<String> {
+            let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
+            let (nonce, body) = sealed.split_at(12);
+            let plain = cipher.decrypt(Nonce::from_slice(nonce), body).ok()?;
+            String::from_utf8(plain).ok()
         }
 
         #[test]
@@ -1140,7 +1309,7 @@ mod tests {
                     }
                     Err(MasterKeyRead::Missing)
                 },
-                || Some([1; 32]),
+                |_recovered| Some([1; 32]),
             );
 
             assert_eq!(key, Some([1; 32]));
@@ -1183,7 +1352,7 @@ mod tests {
                                 true,
                                 true,
                                 || store.read().map(persisted),
-                                || store.write([id + 1; 32]),
+                                |_recovered| store.write([id + 1; 32]),
                             )
                         })
                     })
@@ -1230,7 +1399,7 @@ mod tests {
                 false,
                 false,
                 || store.read().map(persisted),
-                || panic!("a reader must never reach the creator"),
+                |_recovered| panic!("a reader must never reach the creator"),
             );
 
             assert_eq!(key, None, "nothing is stored, so there is nothing to read");
@@ -1254,7 +1423,7 @@ mod tests {
                 true,
                 false,
                 || Err(MasterKeyRead::Unavailable),
-                || store.write([9; 32]),
+                |_recovered| store.write([9; 32]),
             );
 
             assert_eq!(key, None);
@@ -1279,7 +1448,7 @@ mod tests {
                 true,
                 false,
                 || store.read().map(persisted),
-                || panic!("a present key must never reach the creator"),
+                |_recovered| panic!("a present key must never reach the creator"),
             );
 
             assert_eq!(key, Some([5; 32]));
