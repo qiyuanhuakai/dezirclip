@@ -13,6 +13,24 @@ pub fn init(path: PathBuf) {
 }
 
 pub fn log(msg: &str) {
+    write_to_file(msg);
+    // Also print to console for development
+    println!("{}", msg);
+}
+
+/// Diagnostics, for callers whose stdout is a data channel.
+///
+/// `dzc list --json` parses stdout, and `--ids` pipes it into another tool. A
+/// warning about a key that could not be read is exactly the moment a user is
+/// most likely to be running the CLI, and on stdout it corrupts both: the JSON
+/// no longer parses and the IDs cannot be read. It still belongs in the log
+/// file either way, which `write_to_file` above already covers.
+pub fn log_diagnostic(msg: &str) {
+    write_to_file(msg);
+    eprintln!("{}", msg);
+}
+
+fn write_to_file(msg: &str) {
     if let Ok(guard) = LOG_PATH.lock() {
         if let Some(path) = &*guard {
             if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
@@ -22,8 +40,6 @@ pub fn log(msg: &str) {
             }
         }
     }
-    // Also print to console for development
-    println!("{}", msg);
 }
 
 #[macro_export]
@@ -36,13 +52,13 @@ macro_rules! info {
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {
-        $crate::logger::log(&format!("[ERROR] {}", format!($($arg)*)))
+        $crate::logger::log_diagnostic(&format!("[ERROR] {}", format!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {
-        $crate::logger::log(&format!("[WARN] {}", format!($($arg)*)))
+        $crate::logger::log_diagnostic(&format!("[WARN] {}", format!($($arg)*)))
     };
 }
