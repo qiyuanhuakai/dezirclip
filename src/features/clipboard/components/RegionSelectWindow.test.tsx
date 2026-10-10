@@ -22,15 +22,9 @@ vi.mock("@tauri-apps/api/window", () => ({
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
 
-// systemTheme re-exports the pure helpers from here, so a partial factory that
-// omits them leaves `readSystemIsDark` and friends holding undefined. The two
-// stubs below carry real behaviour rather than bare vi.fn() for that reason.
 vi.mock("../../../shared/lib/themeRuntime", () => ({
   applyThemeClass: vi.fn(),
   applyModeClass: vi.fn(),
-  mediaSystemIsDark: () => false,
-  normalizeColorMode: (raw: string) =>
-    raw === "light" || raw === "dark" ? raw : "system"
 }));
 
 // Appearance sync is orthogonal to the drag geometry under test here, and it

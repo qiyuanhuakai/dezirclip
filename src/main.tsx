@@ -2,17 +2,30 @@ import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import "./styles/components/index.css";
-import { applyBootAppearance } from "./shared/lib/themeRuntime";
 
 const App = lazy(() => import("./App"));
 const CompactPreviewWindow = lazy(() => import("./features/clipboard/components/CompactPreviewWindow"));
 const QuickPasteWindow = lazy(() => import("./features/clipboard/components/QuickPasteWindow"));
 const RegionSelectWindow = lazy(() => import("./features/clipboard/components/RegionSelectWindow"));
 
-// Theme and colour mode go on <html>/<body> before React renders, so the first
-// paint is already in the user's theme rather than the base stylesheet. The
-// stylesheet itself is still fetched in parallel and not awaited.
-applyBootAppearance();
+const themeCssLoaders = import.meta.glob("./styles/themes/*.css");
+
+const preloadBootTheme = () => {
+  const defaultTheme = "mica";
+  const bootTheme = localStorage.getItem("dezirclip_theme") || localStorage.getItem("tiez_theme") || defaultTheme;
+  const bootThemePath = `./styles/themes/${bootTheme}.css`;
+  const bootLoader = themeCssLoaders[bootThemePath];
+  if (bootLoader) {
+    bootLoader();
+    return;
+  }
+  const fallbackLoader = themeCssLoaders[`./styles/themes/${defaultTheme}.css`];
+  if (fallbackLoader) {
+    fallbackLoader();
+  }
+};
+
+preloadBootTheme();
 
 const params = new URLSearchParams(window.location.search);
 const isCompactPreview = params.get("window") === "compact-preview";
