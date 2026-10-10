@@ -103,3 +103,19 @@ pub static MAIN_WINDOW_PAINTED: AtomicBool = AtomicBool::new(true);
 /// showing an empty one.
 pub static SHOW_DEADLINE_MS: AtomicU64 = AtomicU64::new(0);
 
+/// Monotonic id of the current show request.
+///
+/// Every show request and every abandon bumps it. A watcher captures the id it
+/// was issued under and checks it before putting the window on screen, so a
+/// request the user has since cancelled — by pressing the hotkey again, by
+/// Escape, or by hiding — drops out instead of reopening a window they closed.
+pub static SHOW_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Whether a show has been requested for a rebuilt window and is still waiting
+/// for its first paint.
+///
+/// `toggle_window` needs this: while the wait is in flight the window is not
+/// visible yet, so its ordinary "visible or not" branch would read a second
+/// toggle as a fresh request to show rather than the cancel the user meant.
+pub static SHOW_PENDING: AtomicBool = AtomicBool::new(false);
+

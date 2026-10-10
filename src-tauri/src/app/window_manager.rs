@@ -177,6 +177,28 @@ pub fn toggle_window(app: &AppHandle) {
         let is_visible = window.is_visible().unwrap_or(false);
         let is_hidden_by_edge = IS_HIDDEN.load(Ordering::Relaxed);
 
+        // A rebuilt window waiting for its first paint is not visible yet, so
+        // the branch below would read a second press as "show it again" and open
+        // a third watcher — and the request the user meant to close would still
+        // land a moment later. Once a show is in flight, a toggle closes it.
+        // This is also what keeps the keyboard out of the foreground app's
+        // hands: the global hook reads `NAVIGATION_ENABLED` and `IS_HIDDEN`,
+        // never visibility, so a flag raised for a window that has not appeared
+        // yet swallows arrow keys and Escape from whatever is in front.
+        if idle_destroyer::show_is_pending() && !is_visible {
+            idle_destroyer::cancel_pending_show();
+            let _ = window.set_focusable(false);
+            let _ = window.hide();
+            webview_memory::lower_window_memory(&window, "toggle-cancel-show");
+            idle_destroyer::mark_hidden();
+            hide_compact_preview_window(app);
+            IS_HIDDEN.store(false, Ordering::Relaxed);
+            NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
+            NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
+            let _ = restore_last_focus(app.clone());
+            return;
+        }
+
         if is_visible && !is_hidden_by_edge {
             let current_dock_val = CURRENT_DOCK.load(Ordering::Relaxed);
             if current_dock_val != 0 {
@@ -247,8 +269,6 @@ pub fn toggle_window(app: &AppHandle) {
             return;
         }
 
-        IS_HIDDEN.store(false, Ordering::Relaxed);
-        NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
         let was_docked = is_hidden_by_edge;
         let current_dock_val = CURRENT_DOCK.load(Ordering::Relaxed);
         if !was_docked {
@@ -493,28 +513,38 @@ pub fn toggle_window(app: &AppHandle) {
             }
         }
 
-        #[cfg(target_os = "windows")]
-        WindowExt::release_win_keys();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
-        idle_destroyer::notify_main_window_shown(app);
-        webview_memory::restore_window_memory(&window, "toggle-show");
-
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
-        let _ = window.set_always_on_top(pinned);
-        let _ = window.set_focusable(false);
-        emit_pinned_if_changed(app, pinned);
 
         // The window may have been rebuilt by `ensure_main_window` a moment ago,
-        // in which case its webview has drawn nothing yet. The whole show block
-        // travels into the gate rather than just `show()`: the Z order below is
-        // what makes the window come up the way the user asked for, and running
-        // it against a window that is still hidden achieves nothing.
+        // in which case its webview has drawn nothing yet. Everything that says
+        // "this window is on screen" travels into the gate rather than just
+        // `show()`: the Z order below is what makes it come up the way the user
+        // asked for, `NAVIGATION_ENABLED` is what the global keyboard hook gates
+        // on, and `notify_main_window_shown` settles the idle countdown and
+        // flushes the captures the window owes. Committing any of them early
+        // means a window that is still hidden has already claimed the keyboard
+        // and burned the blur / edge-dock protection window.
         let show_window = window.clone();
+        let show_app = app.clone();
+        let emit_app = app.clone();
         idle_destroyer::show_main_window_when_ready(move || {
+            IS_HIDDEN.store(false, Ordering::Relaxed);
+            NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
+
+            #[cfg(target_os = "windows")]
+            WindowExt::release_win_keys();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+            idle_destroyer::notify_main_window_shown(&show_app);
+            webview_memory::restore_window_memory(&show_window, "toggle-show");
+
+            let _ = show_window.set_always_on_top(pinned);
+            let _ = show_window.set_focusable(false);
+            emit_pinned_if_changed(&emit_app, pinned);
+
             #[cfg(target_os = "windows")]
             {
                 if let Ok(hwnd_raw) = show_window.hwnd() {
@@ -605,6 +635,10 @@ pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
+    // Outside the `if let` on purpose: a hide is the user closing the window, so
+    // it has to reach a show that is still waiting even when there is no window
+    // to hide yet.
+    idle_destroyer::cancel_pending_show();
     if let Some(window) = app_handle.get_webview_window("main") {
         #[cfg(target_os = "windows")]
         WindowExt::release_win_keys();
