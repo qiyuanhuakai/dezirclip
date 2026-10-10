@@ -13,10 +13,16 @@ vi.mock("@tauri-apps/api/event", () => ({
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
 
+// systemTheme re-exports the pure helpers from here, so a partial factory that
+// omits them leaves `readSystemIsDark` and friends holding undefined. The two
+// stubs below carry real behaviour rather than bare vi.fn() for that reason.
 vi.mock("../../../shared/lib/themeRuntime", () => ({
   applyThemeClass: vi.fn(),
   applyModeClass: vi.fn(),
   ensureThemeCssLoaded: vi.fn(() => Promise.resolve()),
+  mediaSystemIsDark: () => false,
+  normalizeColorMode: (raw: string) =>
+    raw === "light" || raw === "dark" ? raw : "system"
 }));
 
 function makeEntry(id: number, content: string) {
