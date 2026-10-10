@@ -7,7 +7,8 @@ use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
 use crate::app_state::SettingsState;
 use crate::global_state::{
     CLOSING_SINCE_MS, FRONTEND_CATCHUP_PENDING, IS_DESTROYED, LAST_HIDDEN_TIMESTAMP,
-    RECREATE_PENDING, WINDOW_LIFECYCLE,
+    MAIN_WINDOW_PAINTED, RECREATE_PENDING, SHOW_DEADLINE_MS, SHOW_PENDING, SHOW_REQUEST_ID,
+    WINDOW_LIFECYCLE,
 };
 use crate::infrastructure::webview_environment;
 
@@ -33,6 +34,29 @@ pub const CLOSING_WATCHDOG_MS: u64 = 5_000;
 
 const LABEL_RELEASE_TIMEOUT: Duration = Duration::from_millis(800);
 const BROWSER_PROCESS_EXIT_TIMEOUT: Duration = Duration::from_millis(3000);
+
+/// How long a rebuilt main window may sit hidden waiting for its first paint
+/// before it is shown anyway.
+///
+/// The wait exists to avoid flashing an empty window, not to delay the app: a
+/// frontend that never reaches a paint — a script error, a command that is not
+/// registered, a webview that loads and dies — must not leave the clipboard
+/// window permanently unopenable. This is the budget for that.
+pub const FIRST_PAINT_TIMEOUT_MS: u64 = 1_500;
+
+/// Poll interval for that wait. Short because the whole point is to react within
+/// the boot itself; the watcher only runs while a show is actually pending, and
+/// recreates are rare.
+const FIRST_PAINT_POLL: Duration = Duration::from_millis(8);
+
+/// Pure decision: may a rebuilt main window be put on screen yet?
+///
+/// `painted` is the frontend reporting that it drew a frame. `deadline_ms == 0`
+/// means no deadline was armed, and the answer is then whatever `painted` says:
+/// a caller that did not just rebuild must never be made to wait.
+pub fn ready_to_show(painted: bool, now_ms: u64, deadline_ms: u64) -> bool {
+    painted || (deadline_ms != 0 && now_ms >= deadline_ms)
+}
 
 /// Thread Tauri dispatches window teardown and creation on, captured during
 /// setup. Tauri does not expose it, and guessing wrong would reintroduce a
@@ -502,10 +526,12 @@ fn service_pending_recreate(app: &AppHandle) -> bool {
         return false;
     }
 
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        notify_main_window_shown(app);
-    }
+    // The build above returned a window that has not loaded anything yet.
+    // Showing it here is what puts an empty frame on screen for the length of a
+    // boot; with the idle destroyer set to a few seconds this is the path every
+    // hotkey press takes.
+    let handle = app.clone();
+    show_main_window_when_ready(move || show_main_window_now(&handle));
     true
 }
 
@@ -571,6 +597,12 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
             // background destroyer thread does not immediately re-destroy the
             // freshly-recreated window before the caller reaches mark_shown().
             LAST_HIDDEN_TIMESTAMP.store(0, Ordering::SeqCst);
+            // A rebuilt webview has drawn nothing yet. `build()` returning only
+            // means the window object exists; the page has not even begun to
+            // load, so anything that shows it now puts an empty window on screen.
+            // Arm the wait before returning, because the caller's very next move
+            // is to show it.
+            arm_first_paint_wait();
             clear_closing();
             consume_recreate_request();
             crate::info!("[idle-destroyer] Main webview recreated successfully.");
@@ -596,6 +628,159 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
 /// the hotkey appears to be stuck.
 fn consume_recreate_request() {
     RECREATE_PENDING.store(false, Ordering::SeqCst);
+}
+
+/// Start a fresh wait for the main webview's first paint, with its deadline.
+///
+/// Called from `recreate_main_window` on success, *before* the caller gets a
+/// chance to show the window it just built.
+fn arm_first_paint_wait() {
+    MAIN_WINDOW_PAINTED.store(false, Ordering::SeqCst);
+    SHOW_DEADLINE_MS.store(
+        now_ms().saturating_add(FIRST_PAINT_TIMEOUT_MS),
+        Ordering::SeqCst,
+    );
+    // Any show still waiting is waiting on the controller that just went away,
+    // and its closure holds a handle to it. The caller's own request comes
+    // straight after this and opens a fresh one.
+    cancel_pending_show();
+}
+
+/// Record that the main webview has drawn a frame worth showing.
+pub fn mark_main_window_painted() {
+    MAIN_WINDOW_PAINTED.store(true, Ordering::SeqCst);
+}
+
+fn show_main_window_now(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        notify_main_window_shown(app);
+    }
+}
+
+/// Open a show request, superseding any that is still waiting.
+///
+/// Returns the new id. Every caller that wants the window on screen takes one
+/// of these, and so does every caller that wants it *not* to appear — that is
+/// what makes "the user cancelled" and "someone asked again" the same
+/// mechanism rather than two flags that can disagree.
+pub fn begin_show_request() -> u64 {
+    SHOW_PENDING.store(true, Ordering::SeqCst);
+    SHOW_REQUEST_ID.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+/// Is a rebuilt window still on its way up?
+///
+/// `toggle_window` cannot use `window.is_visible()` for this: during the wait
+/// the window really is not visible, so a second press would look like another
+/// request to show rather than the cancel it is.
+pub fn show_is_pending() -> bool {
+    SHOW_PENDING.load(Ordering::Acquire)
+}
+
+/// Abandon every waiting show. The window stays hidden.
+pub fn cancel_pending_show() {
+    SHOW_REQUEST_ID.fetch_add(1, Ordering::AcqRel);
+    SHOW_PENDING.store(false, Ordering::SeqCst);
+}
+
+/// What a waiting watcher should do on one poll.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatcherAction {
+    /// Neither painted nor out of time yet.
+    KeepWaiting,
+    /// The window is ready, but a newer request — or a cancel — has taken over.
+    /// Showing now would put back a window the user has already closed.
+    Abort,
+    /// Show.
+    Show,
+}
+
+/// Pure decision for the watcher, so the ordering it depends on can be tested
+/// without a thread and a webview.
+pub fn watcher_action(
+    painted: bool,
+    now_ms: u64,
+    deadline_ms: u64,
+    request: u64,
+    current_request: u64,
+) -> WatcherAction {
+    if !ready_to_show(painted, now_ms, deadline_ms) {
+        return WatcherAction::KeepWaiting;
+    }
+    if request != current_request {
+        return WatcherAction::Abort;
+    }
+    WatcherAction::Show
+}
+
+/// Put the main window on screen, but not before its webview has drawn.
+///
+/// `build()` returning says the window object exists — nothing more. The page
+/// has not started loading, so showing straight after it puts an empty window on
+/// screen for the length of a boot. With the idle destroyer set to a few seconds
+/// that is the path *every* hotkey press takes, which is why the flash was
+/// constant rather than occasional.
+///
+/// The caller's own show rules travel with the closure, because they are not the
+/// same everywhere: the hotkey path adjusts Windows Z order, the tray path emits
+/// a frontend event, and only now may the window claim the keyboard. Deferring
+/// just `show()` and running the rest immediately would let a window that is not
+/// on screen yet swallow the foreground app's arrow keys — the global hook gates
+/// on `NAVIGATION_ENABLED` and `IS_HIDDEN`, not on visibility.
+///
+/// Windows that were not just rebuilt are unaffected: `MAIN_WINDOW_PAINTED`
+/// starts `true`, so they show synchronously as before.
+pub fn show_main_window_when_ready<F>(show: F)
+where
+    F: Fn() + Send + 'static,
+{
+    let request = begin_show_request();
+    if ready_to_show(
+        MAIN_WINDOW_PAINTED.load(Ordering::Acquire),
+        now_ms(),
+        SHOW_DEADLINE_MS.load(Ordering::SeqCst),
+    ) {
+        SHOW_PENDING.store(false, Ordering::SeqCst);
+        show();
+        return;
+    }
+
+    std::thread::spawn(move || loop {
+        std::thread::sleep(FIRST_PAINT_POLL);
+        let painted = MAIN_WINDOW_PAINTED.load(Ordering::Acquire);
+        match watcher_action(
+            painted,
+            now_ms(),
+            SHOW_DEADLINE_MS.load(Ordering::SeqCst),
+            request,
+            SHOW_REQUEST_ID.load(Ordering::SeqCst),
+        ) {
+            WatcherAction::KeepWaiting => continue,
+            // A hide, or a second toggle, took over while this one waited. The
+            // replacement owns the decision now.
+            WatcherAction::Abort => {
+                crate::info!(
+                    "[idle-destroyer] Abandoned a pending show: the window was hidden or the \
+                     request was superseded before its first paint."
+                );
+                return;
+            }
+            WatcherAction::Show => {
+                SHOW_PENDING.store(false, Ordering::SeqCst);
+                if painted {
+                    crate::info!("[idle-destroyer] Showing rebuilt window on its first painted frame.");
+                } else {
+                    crate::warn!(
+                        "[idle-destroyer] Rebuilt window never reported a paint; showing it anyway after \
+                         {FIRST_PAINT_TIMEOUT_MS}ms."
+                    );
+                }
+                show();
+                return;
+            }
+        }
+    });
 }
 
 /// Pure decision: may this thread call `WebviewWindowBuilder::build()` now?
@@ -717,10 +902,10 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
     }
 
     if was_visible {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            notify_main_window_shown(app);
-        }
+        // Same reason as the recreate path: the GPU switch tore the webview down
+        // and the replacement has drawn nothing yet.
+        let handle = app.clone();
+        show_main_window_when_ready(move || show_main_window_now(&handle));
     }
 
     true
@@ -961,5 +1146,278 @@ mod tests {
         // Forcing the lifecycle closed before the browser process gives up would
         // recreate a window on top of a browser process that is still alive.
         assert!(Duration::from_millis(CLOSING_WATCHDOG_MS) > BROWSER_PROCESS_EXIT_TIMEOUT);
+    }
+
+    // The gate that keeps a rebuilt window off screen until it has drawn.
+    //
+    // What went wrong: `service_pending_recreate` called `build()` and then
+    // `show()` back to back, and the log showed the two one millisecond apart.
+    // `build()` returning says the window object exists — the page had not
+    // started loading — so every hotkey press after an idle teardown put an
+    // empty window on screen for the length of a boot.
+
+    #[test]
+    fn a_rebuilt_window_waits_for_its_first_paint() {
+        let now = 10_000;
+        let deadline = now + FIRST_PAINT_TIMEOUT_MS;
+        assert!(
+            !ready_to_show(false, now, deadline),
+            "showing here is exactly the empty-window flash this gate exists to prevent"
+        );
+    }
+
+    #[test]
+    fn a_window_that_has_painted_shows_without_waiting() {
+        // The ordinary path — a window that was not rebuilt — must not be made
+        // to wait for anything, or every show would gain a frame of latency.
+        assert!(ready_to_show(true, 10_000, 10_000 + FIRST_PAINT_TIMEOUT_MS));
+    }
+
+    #[test]
+    fn the_deadline_shows_a_window_that_never_painted() {
+        // Without this the wait could turn a frontend error into a clipboard
+        // window that can never be opened again, which is worse than the flash.
+        let armed = 10_000;
+        let deadline = armed + FIRST_PAINT_TIMEOUT_MS;
+        assert!(!ready_to_show(false, armed, deadline));
+        assert!(!ready_to_show(false, deadline - 1, deadline));
+        assert!(ready_to_show(false, deadline, deadline));
+        assert!(ready_to_show(false, deadline + 1, deadline));
+    }
+
+    #[test]
+    fn no_deadline_means_never_wait() {
+        // `0` is "this caller did not rebuild anything". A false `painted` must
+        // not be able to stall it — the state is process-wide, so a stale or
+        // cleared flag would otherwise wedge every later show.
+        assert!(!ready_to_show(false, 10_000, 0));
+        assert!(ready_to_show(true, 10_000, 0));
+        assert!(!ready_to_show(false, u64::MAX, 0));
+    }
+
+    #[test]
+    fn the_paint_budget_is_long_enough_to_beat_a_cold_boot() {
+        // Shorter than this and the window shows before React has mounted, which
+        // is the same empty frame under a different name. Longer and a genuinely
+        // broken frontend keeps the user waiting for nothing.
+        assert!(FIRST_PAINT_TIMEOUT_MS >= 500);
+        assert!(FIRST_PAINT_TIMEOUT_MS <= 3_000);
+    }
+
+    // Cancelling a show that has not landed yet.
+    //
+    // What went wrong: the wait was unconditional. A second hotkey press, an
+    // Escape, or a hide from anywhere else all left the original watcher armed,
+    // and it put the window on screen a moment later regardless. Because
+    // `toggle_window` decides show-or-hide from `window.is_visible()`, and a
+    // waiting window genuinely is not visible, the second press was read as
+    // *another* request to show rather than as the cancel it was.
+
+    #[test]
+    fn a_waiting_show_is_abandoned_when_the_window_is_hidden() {
+        let request = begin_show_request();
+        assert!(show_is_pending());
+
+        cancel_pending_show();
+        assert!(!show_is_pending(), "a hidden window must not still be on its way up");
+
+        // The first paint arrives after the user closed it.
+        assert_eq!(
+            watcher_action(true, 10_000, 11_500, request, SHOW_REQUEST_ID.load(Ordering::SeqCst)),
+            WatcherAction::Abort,
+            "a request the user cancelled must not reopen the window"
+        );
+    }
+
+    #[test]
+    fn the_timeout_fallback_respects_a_cancelled_show() {
+        // The deadline is there so a broken frontend cannot wedge the window
+        // shut. It is not a licence to resurrect one the user closed, and that
+        // distinction is invisible unless both halves are asserted.
+        let request = begin_show_request();
+        cancel_pending_show();
+
+        assert_eq!(
+            watcher_action(
+                false,
+                99_999,
+                11_500,
+                request,
+                SHOW_REQUEST_ID.load(Ordering::SeqCst),
+            ),
+            WatcherAction::Abort,
+            "the fallback must not show a window the user already closed"
+        );
+    }
+
+    #[test]
+    fn a_rebuilt_window_still_shows_when_nothing_cancels_it() {
+        cancel_pending_show();
+        let request = begin_show_request();
+        let current = SHOW_REQUEST_ID.load(Ordering::SeqCst);
+        assert_eq!(request, current);
+
+        assert_eq!(
+            watcher_action(false, 10_000, 11_500, request, current),
+            WatcherAction::KeepWaiting
+        );
+        assert_eq!(
+            watcher_action(true, 10_000, 11_500, request, current),
+            WatcherAction::Show
+        );
+        assert_eq!(
+            watcher_action(false, 11_500, 11_500, request, current),
+            WatcherAction::Show,
+            "a window that never painted is shown anyway once the budget is spent"
+        );
+    }
+
+    #[test]
+    fn a_later_request_supersedes_an_earlier_one() {
+        cancel_pending_show();
+        let first = begin_show_request();
+        let second = begin_show_request();
+        assert_ne!(first, second);
+
+        assert_eq!(
+            watcher_action(true, 10_000, 11_500, first, second),
+            WatcherAction::Abort,
+            "two shows in a row must end with exactly one window on screen"
+        );
+        assert_eq!(
+            watcher_action(true, 10_000, 11_500, second, second),
+            WatcherAction::Show
+        );
+        cancel_pending_show();
+    }
+
+    #[test]
+    fn the_ways_a_user_closes_a_waiting_window_all_reach_the_gate() {
+        // `watcher_action` proves the watcher honours a cancel, and the tests
+        // above prove `cancel_pending_show` produces one. Neither says that
+        // anything calls it — the same gap that let the unconditional wait
+        // through in the first place.
+        let source = include_str!("window_manager.rs");
+        let body = source
+            .split_once("pub fn toggle_window")
+            .expect("toggle_window is the hotkey entry point")
+            .1
+            .split_once("\n}\n")
+            .expect("a top-level function body ends with `}` in column zero")
+            .0;
+        assert!(
+            body.contains("cancel_pending_show()"),
+            "a second hotkey press reads as another request to show while the window is waiting, \
+             so toggle_window has to recognise and cancel it"
+        );
+
+        let hide = source
+            .split_once("pub fn hide_window_cmd")
+            .expect("hide_window_cmd is the frontend's hide")
+            .1
+            .split_once("\n}\n")
+            .expect("a top-level function body ends with `}` in column zero")
+            .0;
+        assert!(
+            hide.contains("cancel_pending_show()"),
+            "hiding a window that is still waiting for its first paint has to abandon that show"
+        );
+    }
+
+    #[test]
+    fn a_window_that_has_not_shown_yet_may_not_claim_the_keyboard() {
+        // The global hook gates on `NAVIGATION_ENABLED` and `IS_HIDDEN`, never on
+        // visibility. Raising either for a window that is still waiting means
+        // swallowing the foreground app's arrow keys and Escape until the paint
+        // lands — up to the whole budget.
+        let source = include_str!("window_manager.rs");
+        let body = source
+            .split_once("pub fn toggle_window")
+            .expect("toggle_window is the hotkey entry point")
+            .1
+            .split_once("\n}\n")
+            .expect("a top-level function body ends with `}` in column zero")
+            .0;
+
+        let gate = body
+            .find("show_main_window_when_ready(move || {")
+            .expect("toggle_window routes its show through the gate");
+        // Everything from the gate onwards is what runs at the moment the window
+        // actually appears. The cancel branch above the gate clears the same
+        // flags, and legitimately so — it is describing a window that stays
+        // hidden — which is why this asks where each claim is committed rather
+        // than whether it appears at all.
+        let at_show = &body[gate..];
+        for claim in [
+            "NAVIGATION_ENABLED.store(true",
+            "IS_HIDDEN.store(false",
+            "notify_main_window_shown",
+            "LAST_SHOW_TIMESTAMP.store",
+        ] {
+            assert!(
+                at_show.contains(claim),
+                "{claim} is not committed inside the gate, so it claims a window that may never \
+                 reach the screen"
+            );
+        }
+    }
+
+    #[test]
+    fn a_path_that_may_rebuild_the_window_gates_its_show() {
+        // Regression guard for the shape this bug actually took. The decision
+        // function was gated and its pure tests passed, yet three of the four
+        // paths that can run straight after a rebuild still called
+        // `window.show()` on their own — including the hotkey, which is the one
+        // the user actually saw the flash on. Unit tests on `ready_to_show`
+        // cannot see that, because the bug is in what the callers never asked
+        // it.
+        //
+        // So this checks the callers instead: `ensure_main_window` is the single
+        // entry point that can build a fresh webview, and a function that calls
+        // it must reach its gate before it reaches a show.
+        for (file, source) in [
+            ("window_manager.rs", include_str!("window_manager.rs")),
+            ("setup.rs", include_str!("setup.rs")),
+            ("idle_destroyer.rs", include_str!("idle_destroyer.rs")),
+        ] {
+            let lines: Vec<&str> = source.lines().collect();
+            for (i, line) in lines.iter().enumerate() {
+                let trimmed = line.trim_start();
+                if trimmed.starts_with("//") || !line.contains("ensure_main_window(") {
+                    continue;
+                }
+                let rest = &lines[i..];
+                let gate = rest
+                    .iter()
+                    .position(|l| l.contains("show_main_window_when_ready("));
+                let show = rest.iter().position(|l| l.contains(".show()"));
+                match (gate, show) {
+                    (Some(g), Some(s)) => assert!(
+                        g < s,
+                        "{file}:{} rebuilds the webview and then shows it before the gate",
+                        i + 1
+                    ),
+                    (None, Some(_)) => panic!(
+                        "{file}:{} rebuilds the webview and shows it with no gate at all",
+                        i + 1
+                    ),
+                    // No show after this call site, or a gate and no show: nothing
+                    // on screen to flash.
+                    _ => {}
+                }
+            }
+        }
+
+        // The gate is not magic: it defers a call the caller hands it. So the one
+        // raw show left in this file is the helper the gate and the two internal
+        // callers share, and there must not be a second one. The test module is
+        // cut off first — its own matchers contain the literal it looks for.
+        let module = include_str!("idle_destroyer.rs");
+        let code = module.split_once("mod tests {").map_or(module, |(head, _)| head);
+        let raw_shows = code
+            .lines()
+            .filter(|line| line.contains(".show()") && !line.contains("show_window"))
+            .count();
+        assert_eq!(raw_shows, 1, "idle_destroyer.rs should show main in exactly one place");
     }
 }

@@ -177,6 +177,28 @@ pub fn toggle_window(app: &AppHandle) {
         let is_visible = window.is_visible().unwrap_or(false);
         let is_hidden_by_edge = IS_HIDDEN.load(Ordering::Relaxed);
 
+        // A rebuilt window waiting for its first paint is not visible yet, so
+        // the branch below would read a second press as "show it again" and open
+        // a third watcher — and the request the user meant to close would still
+        // land a moment later. Once a show is in flight, a toggle closes it.
+        // This is also what keeps the keyboard out of the foreground app's
+        // hands: the global hook reads `NAVIGATION_ENABLED` and `IS_HIDDEN`,
+        // never visibility, so a flag raised for a window that has not appeared
+        // yet swallows arrow keys and Escape from whatever is in front.
+        if idle_destroyer::show_is_pending() && !is_visible {
+            idle_destroyer::cancel_pending_show();
+            let _ = window.set_focusable(false);
+            let _ = window.hide();
+            webview_memory::lower_window_memory(&window, "toggle-cancel-show");
+            idle_destroyer::mark_hidden();
+            hide_compact_preview_window(app);
+            IS_HIDDEN.store(false, Ordering::Relaxed);
+            NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
+            NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
+            let _ = restore_last_focus(app.clone());
+            return;
+        }
+
         if is_visible && !is_hidden_by_edge {
             let current_dock_val = CURRENT_DOCK.load(Ordering::Relaxed);
             if current_dock_val != 0 {
@@ -247,8 +269,6 @@ pub fn toggle_window(app: &AppHandle) {
             return;
         }
 
-        IS_HIDDEN.store(false, Ordering::Relaxed);
-        NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
         let was_docked = is_hidden_by_edge;
         let current_dock_val = CURRENT_DOCK.load(Ordering::Relaxed);
         if !was_docked {
@@ -493,55 +513,73 @@ pub fn toggle_window(app: &AppHandle) {
             }
         }
 
-        #[cfg(target_os = "windows")]
-        WindowExt::release_win_keys();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-        LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
-        idle_destroyer::notify_main_window_shown(app);
-        webview_memory::restore_window_memory(&window, "toggle-show");
-
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
-        let _ = window.set_always_on_top(pinned);
-        let _ = window.set_focusable(false);
-        emit_pinned_if_changed(app, pinned);
 
-        #[cfg(target_os = "windows")]
-        {
-            if let Ok(hwnd_raw) = window.hwnd() {
-                unsafe {
-                    let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
-                    let _ = SetWindowLongPtrW(
-                        HWND(hwnd_raw.0),
-                        GWL_EXSTYLE,
-                        ex_style | WS_EX_NOACTIVATE.0 as isize,
-                    );
-                }
-                // Tauri owns the show itself: routing visibility through a raw
-                // `ShowWindow` left tao's own state behind, and the next hotkey
-                // press then read the window as still visible and only ever
-                // hid it. The helpers here adjust the Z order for a window that
-                // is already on screen.
-                let _ = window.show();
-                if pinned {
-                    WindowExt::raise_topmost_no_activate(HWND(hwnd_raw.0));
+        // The window may have been rebuilt by `ensure_main_window` a moment ago,
+        // in which case its webview has drawn nothing yet. Everything that says
+        // "this window is on screen" travels into the gate rather than just
+        // `show()`: the Z order below is what makes it come up the way the user
+        // asked for, `NAVIGATION_ENABLED` is what the global keyboard hook gates
+        // on, and `notify_main_window_shown` settles the idle countdown and
+        // flushes the captures the window owes. Committing any of them early
+        // means a window that is still hidden has already claimed the keyboard
+        // and burned the blur / edge-dock protection window.
+        let show_window = window.clone();
+        let show_app = app.clone();
+        let emit_app = app.clone();
+        idle_destroyer::show_main_window_when_ready(move || {
+            IS_HIDDEN.store(false, Ordering::Relaxed);
+            NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
+
+            #[cfg(target_os = "windows")]
+            WindowExt::release_win_keys();
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+            idle_destroyer::notify_main_window_shown(&show_app);
+            webview_memory::restore_window_memory(&show_window, "toggle-show");
+
+            let _ = show_window.set_always_on_top(pinned);
+            let _ = show_window.set_focusable(false);
+            emit_pinned_if_changed(&emit_app, pinned);
+
+            #[cfg(target_os = "windows")]
+            {
+                if let Ok(hwnd_raw) = show_window.hwnd() {
+                    unsafe {
+                        let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
+                        let _ = SetWindowLongPtrW(
+                            HWND(hwnd_raw.0),
+                            GWL_EXSTYLE,
+                            ex_style | WS_EX_NOACTIVATE.0 as isize,
+                        );
+                    }
+                    // Tauri owns the show itself: routing visibility through a raw
+                    // `ShowWindow` left tao's own state behind, and the next hotkey
+                    // press then read the window as still visible and only ever
+                    // hid it. The helpers here adjust the Z order for a window that
+                    // is already on screen.
+                    let _ = show_window.show();
+                    if pinned {
+                        WindowExt::raise_topmost_no_activate(HWND(hwnd_raw.0));
+                    } else {
+                        WindowExt::raise_front_no_activate(HWND(hwnd_raw.0));
+                    }
                 } else {
-                    WindowExt::raise_front_no_activate(HWND(hwnd_raw.0));
+                    let _ = show_window.show();
                 }
-            } else {
-                let _ = window.show();
             }
-        }
 
-        #[cfg(not(windows))]
-        {
-            #[cfg(target_os = "linux")]
-            let _ = window.set_always_on_top(true);
-            let _ = window.set_focusable(true);
-            let _ = window.show();
-        }
+            #[cfg(not(windows))]
+            {
+                #[cfg(target_os = "linux")]
+                let _ = show_window.set_always_on_top(true);
+                let _ = show_window.set_focusable(true);
+                let _ = show_window.show();
+            }
+        });
     }
 }
 
@@ -557,6 +595,18 @@ pub fn set_navigation_enabled(enabled: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn set_navigation_mode(active: bool) -> Result<(), String> {
     NAVIGATION_MODE_ACTIVE.store(active, Ordering::SeqCst);
+    Ok(())
+}
+
+/// The main webview reports that it has drawn a frame worth showing, so a window
+/// rebuilt by the idle destroyer or the GPU switch can stop waiting and appear.
+///
+/// Only the main window calls this. The auxiliary windows are created on demand
+/// by a user gesture and are shown by that gesture, so there is nothing to wait
+/// for.
+#[tauri::command]
+pub fn notify_main_window_painted() -> Result<(), String> {
+    idle_destroyer::mark_main_window_painted();
     Ok(())
 }
 
@@ -585,6 +635,10 @@ pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
+    // Outside the `if let` on purpose: a hide is the user closing the window, so
+    // it has to reach a show that is still waiting even when there is no window
+    // to hide yet.
+    idle_destroyer::cancel_pending_show();
     if let Some(window) = app_handle.get_webview_window("main") {
         #[cfg(target_os = "windows")]
         WindowExt::release_win_keys();
@@ -614,23 +668,29 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         webview_memory::restore_window_memory(&window, "focus-show");
         let _ = window.set_focusable(true);
-        let _ = window.show();
-        idle_destroyer::notify_main_window_shown(&app_handle);
+        // Same gate as the hotkey path: this command can be the one that ran
+        // straight after a rebuild, and focusing a window that has not drawn
+        // flashes it just the same.
+        let show_window = window.clone();
+        idle_destroyer::show_main_window_when_ready(move || {
+            let _ = show_window.show();
+            idle_destroyer::notify_main_window_shown(&app_handle);
 
-        #[cfg(windows)]
-        {
-            if let Ok(hwnd_raw) = window.hwnd() {
-                unsafe {
-                    let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
-                    let next = ex_style & !(WS_EX_NOACTIVATE.0 as isize);
-                    let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, next);
+            #[cfg(windows)]
+            {
+                if let Ok(hwnd_raw) = show_window.hwnd() {
+                    unsafe {
+                        let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
+                        let next = ex_style & !(WS_EX_NOACTIVATE.0 as isize);
+                        let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, next);
+                    }
+                    let _ = show_window.set_focus();
+                    WindowExt::force_focus_window(HWND(hwnd_raw.0));
+                    return;
                 }
-                let _ = window.set_focus();
-                WindowExt::force_focus_window(HWND(hwnd_raw.0));
-                return Ok(());
             }
-        }
-        let _ = window.set_focus();
+            let _ = show_window.set_focus();
+        });
         Ok(())
     } else {
         Err("Main window not found".to_string())

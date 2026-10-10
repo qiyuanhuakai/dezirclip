@@ -1266,11 +1266,19 @@ fn show_settings_from_tray(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         crate::app::webview_memory::restore_window_memory(&window, "tray-menu-settings");
         let _ = window.set_focusable(true);
-        let _ = window.show();
-        crate::app::idle_destroyer::notify_main_window_shown(app);
-        LAST_SHOW_TIMESTAMP.store(now_millis(), Ordering::Relaxed);
-        let _ = window.set_focus();
-        let _ = app.emit("open-settings-panel", ());
+        // The tray can be what reopens a window the idle destroyer tore down, so
+        // this is the same "rebuilt, nothing drawn yet" case as the hotkey. The
+        // emit belongs inside the gate too: the rebuilt frontend is not
+        // listening yet, and a pending panel is replayed when it does arrive.
+        let show_window = window.clone();
+        let handle = app.clone();
+        crate::app::idle_destroyer::show_main_window_when_ready(move || {
+            let _ = show_window.show();
+            crate::app::idle_destroyer::notify_main_window_shown(&handle);
+            LAST_SHOW_TIMESTAMP.store(now_millis(), Ordering::Relaxed);
+            let _ = show_window.set_focus();
+            let _ = handle.emit("open-settings-panel", ());
+        });
     } else {
         OPEN_SETTINGS_PANEL_PENDING.store(false, Ordering::SeqCst);
     }

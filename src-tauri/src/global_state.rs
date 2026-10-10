@@ -86,3 +86,36 @@ pub static FRONTEND_CATCHUP_PENDING: AtomicBool = AtomicBool::new(false);
 /// Bounded by `idle_destroyer::CLOSING_WATCHDOG_MS` so a teardown the runtime
 /// never confirms cannot wedge the lifecycle in `Closing` forever.
 pub static CLOSING_SINCE_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Whether the main webview has painted a frame since it was last rebuilt.
+///
+/// Starts `true` so every window that was *not* just rebuilt keeps showing
+/// immediately; `recreate_main_window` clears it, and the frontend sets it back
+/// once it has something worth showing. See
+/// `idle_destroyer::show_main_window_when_ready`.
+pub static MAIN_WINDOW_PAINTED: AtomicBool = AtomicBool::new(true);
+
+/// Wall-clock deadline (ms since UNIX_EPOCH) after which a rebuilt main window
+/// is shown whether or not it ever reports a paint. `0` means "no deadline armed".
+///
+/// Without it a frontend that fails before its first frame would leave the
+/// clipboard window permanently invisible after a rebuild — strictly worse than
+/// showing an empty one.
+pub static SHOW_DEADLINE_MS: AtomicU64 = AtomicU64::new(0);
+
+/// Monotonic id of the current show request.
+///
+/// Every show request and every abandon bumps it. A watcher captures the id it
+/// was issued under and checks it before putting the window on screen, so a
+/// request the user has since cancelled — by pressing the hotkey again, by
+/// Escape, or by hiding — drops out instead of reopening a window they closed.
+pub static SHOW_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
+
+/// Whether a show has been requested for a rebuilt window and is still waiting
+/// for its first paint.
+///
+/// `toggle_window` needs this: while the wait is in flight the window is not
+/// visible yet, so its ordinary "visible or not" branch would read a second
+/// toggle as a fresh request to show rather than the cancel the user meant.
+pub static SHOW_PENDING: AtomicBool = AtomicBool::new(false);
+
