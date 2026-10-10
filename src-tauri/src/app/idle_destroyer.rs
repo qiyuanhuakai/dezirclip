@@ -571,6 +571,12 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
             // background destroyer thread does not immediately re-destroy the
             // freshly-recreated window before the caller reaches mark_shown().
             LAST_HIDDEN_TIMESTAMP.store(0, Ordering::SeqCst);
+            // The new controller starts at the WebView2 defaults, so whatever
+            // the old one was told about is gone with it. The memory-target and
+            // transparent-background cache has to be dropped alongside, or the
+            // replacement would skip every apply and sit at NORMAL memory with
+            // an opaque background for as long as it lives.
+            crate::app::webview_memory::forget_main_webview_state();
             clear_closing();
             consume_recreate_request();
             crate::info!("[idle-destroyer] Main webview recreated successfully.");
