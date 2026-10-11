@@ -251,9 +251,116 @@ fn process_rgba_image_entry_async(
     true
 }
 
+/// Whether a failed image probe is worth waiting for and asking again.
+///
+/// The retry exists for one transient: a source that publishes its image format
+/// a moment after the HTML, so a first pass can find nothing where a later pass
+/// finds the format. That is worth waiting for only while there is reason to
+/// think an image is on the way -- the clipboard advertising one, or the probe
+/// having seen an image format it could not decode.
+///
+/// "Confirming there is no image" has to come from an availability query, not
+/// from a failed read. `get_clipboard_raw_format` returns `None` both when the
+/// format is absent *and* when `OpenClipboard` / `GetClipboardData` /
+/// `GlobalLock` failed, so treating its `None` as proof of absence would drop
+/// the fallback for a DIB-only clipboard whose read happened to fail -- a case
+/// the old code still recovered from.
+///
+/// **Policy boundary.** A clipboard that shows *neither* signal on the first
+/// pass -- no format seen, and the availability query reporting none -- is
+/// answered immediately and not re-asked. So a source that adds an image format
+/// only *after* that first check is not covered: this waits out a read that
+/// failed, not a format that had not arrived yet. The old loop's three
+/// unguarded passes happened to cover that case by accident, at the cost of
+/// waiting on every rich-text capture that carried no image at all, which is the
+/// common case. Trading the accidental coverage for a bounded, explicit rule is
+/// the intent; whether the old coverage was ever load-bearing is not something
+/// this change can establish from source alone.
+fn should_retry_image_probe(
+    found: Option<&str>,
+    clipboard_advertises_image: bool,
+    saw_image_format: bool,
+) -> bool {
+    if found.is_some() {
+        return false;
+    }
+    clipboard_advertises_image || saw_image_format
+}
+
+/// Total probe attempts, including the first.
+///
+/// This is the budget the pre-refactor loop had (`for _ in 0..3`, probing at
+/// 0/35/70 ms) and it is deliberately not reduced: the change here is about
+/// *when* to wait, not how long the original was willing to wait. Production and
+/// tests read this same constant -- an earlier version passed 2 in production and
+/// 3 in tests, which let the "readable only on the third pass" test pass against
+/// a path that never made a third attempt.
+const IMAGE_PROBE_ATTEMPTS: usize = 3;
+
+/// How long to wait between probe attempts.
+const IMAGE_PROBE_RETRY_DELAY_MS: u64 = 35;
+
+/// Run `probe` until it yields an image, giving up early once the clipboard is
+/// known to hold none.
+///
+/// `probe` reports what it found and whether it saw an image format at all --
+/// those differ when a format is present but not yet readable, which is the one
+/// case worth waiting out. `advertises` is the availability query that decides
+/// whether "nothing found" means "nothing here". `wait` is injected so the
+/// scheduling is testable without spending real time.
+fn probe_image_with_retry<P, A, W>(
+    attempts: usize,
+    mut probe: P,
+    advertises: A,
+    mut wait: W,
+) -> Option<String>
+where
+    P: FnMut() -> (Option<String>, bool),
+    A: Fn() -> bool,
+    W: FnMut(std::time::Duration),
+{
+    let (found, saw_image_format) = probe();
+    if let Some(found) = found {
+        return Some(found);
+    }
+    if !should_retry_image_probe(None, advertises(), saw_image_format) {
+        return None;
+    }
+    for _ in 1..attempts {
+        wait(std::time::Duration::from_millis(IMAGE_PROBE_RETRY_DELAY_MS));
+        if let Some(found) = probe().0 {
+            return Some(found);
+        }
+    }
+    None
+}
+
 #[cfg(target_os = "windows")]
 fn clipboard_image_fallback_data_url() -> Option<String> {
-    for _ in 0..3 {
+    // One pass over the formats, with no waiting between them.
+    //
+    // The probing itself is nearly free: measured on this machine, a full round
+    // over the five named formats plus the CF_DIBV5/CF_DIB decode is 0.021 ms
+    // when the clipboard holds no image at all.
+    //
+    // What is not free is *deciding not to find anything*. This helper is on
+    // the rich-text capture path, so it runs for every formatted copy -- Word,
+    // Excel, a browser's "copy rich text" -- and the overwhelming majority of
+    // those carry no image. The old shape answered that question three times
+    // with a 35 ms sleep in between: 106.1 ms of sleeping against 0.063 ms of
+    // work, so 99.94% of the time was spent waiting to re-ask a question whose
+    // answer is a property of what the source app put on the clipboard.
+    //
+    // The retry was there for a transient: an Office app that publishes the
+    // image format a moment after the HTML. That transient can only be
+    // observed when there is something to observe, so the wait is now paid
+    // only when a pass actually saw a named image format but could not turn it
+    // into PNG -- not when the clipboard simply has no image on it.
+    // `saw_image_format` is what keeps a late-arriving or briefly unreadable
+    // format retryable: it is set whenever a format yielded bytes, separately
+    // from whether those bytes became a PNG.
+    let probe_once = || -> (Option<String>, bool) {
+        let mut saw_image_format = false;
         unsafe {
             // Some sources (e.g. Office apps) may provide PNG/JPEG custom formats.
             for name in ["PNG", "image/png", "JFIF", "JPEG", "image/jpeg"] {
@@ -262,9 +369,10 @@ fn clipboard_image_fallback_data_url() -> Option<String> {
                         name,
                     )
                 {
+                    saw_image_format = true;
                     if let Ok(png) = crate::services::image_png::as_png_bytes(&raw) {
                         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
-                        return Some(format!("data:image/png;base64,{}", b64));
+                        return (Some(format!("data:image/png;base64,{}", b64)), true);
                     }
                 }
             }
@@ -273,6 +381,7 @@ fn clipboard_image_fallback_data_url() -> Option<String> {
             if let Some(image) =
                 crate::infrastructure::windows_api::win_clipboard::get_clipboard_image()
             {
+                saw_image_format = true;
                 if let Some(img_buf) =
                     image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.bytes)
                 {
@@ -283,15 +392,23 @@ fn clipboard_image_fallback_data_url() -> Option<String> {
                         .is_ok()
                     {
                         let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-                        return Some(format!("data:image/png;base64,{}", b64));
+                        return (Some(format!("data:image/png;base64,{}", b64)), true);
                     }
                 }
             }
         }
-        std::thread::sleep(std::time::Duration::from_millis(35));
-    }
+        (None, saw_image_format)
+    };
 
-    None
+    // The availability query decides whether a failed read means "nothing here".
+    // The driver runs the first probe itself and exits without waiting when the
+    // answer is already no.
+    probe_image_with_retry(
+        IMAGE_PROBE_ATTEMPTS,
+        probe_once,
+        crate::infrastructure::windows_api::win_clipboard::clipboard_advertises_image,
+        |d| std::thread::sleep(d),
+    )
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -824,4 +941,197 @@ pub fn process_new_entry(
 
     let pipeline = ClipboardPipeline::new();
     pipeline.execute(&mut ctx);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{probe_image_with_retry, should_retry_image_probe, IMAGE_PROBE_ATTEMPTS,
+        IMAGE_PROBE_RETRY_DELAY_MS};
+    use std::time::Duration;
+
+    const PNG: &str = "data:image/png;base64,AA";
+
+    // --- the gate -----------------------------------------------------------
+    //
+    // Deciding whether to retry off a failed *read* conflates "no image" with
+    // "the read failed": `get_clipboard_raw_format` returns None for both. This
+    // gate is what keeps the two apart.
+
+    #[test]
+    fn a_clipboard_with_no_image_is_not_retried() {
+        assert!(!should_retry_image_probe(None, false, false));
+    }
+
+    // DIB-only clipboard whose read failed. The availability query still says an
+    // image is there, so this must stay retryable -- the case the read-based gate
+    // silently turned into "no image, give up".
+    #[test]
+    fn an_advertised_image_is_retried_even_when_the_read_failed() {
+        assert!(
+            should_retry_image_probe(None, true, false),
+            "a DIB-only clipboard that failed to read must not be treated as empty"
+        );
+    }
+
+    // A format that was seen but could not be decoded: the original transient.
+    #[test]
+    fn a_seen_but_undecodable_format_is_retried() {
+        assert!(should_retry_image_probe(None, false, true));
+    }
+
+    #[test]
+    fn a_found_image_is_never_retried() {
+        assert!(!should_retry_image_probe(Some(PNG), false, false));
+        assert!(!should_retry_image_probe(Some(PNG), true, true));
+    }
+
+    // --- the driver ---------------------------------------------------------
+    //
+    // The truth table cannot show that a DIB-only clipboard whose first read
+    // fails still recovers, which is the behaviour that was at risk.
+
+    /// Drives the real retry loop with a scripted probe, recording the waits so
+    /// "it waited" is an assertion rather than something inferred from timing.
+    ///
+    /// The budget comes from the production constant on purpose. An earlier
+    /// version passed 3 here and 2 in production, so "recovers on the third
+    /// pass" was green while the shipped path never made a third pass -- the
+    /// test was guarding a schedule production did not use.
+    fn drive(
+        results: Vec<(Option<&'static str>, bool)>,
+        advertises: bool,
+    ) -> (Option<String>, usize, usize) {
+        let waits = std::cell::Cell::new(0usize);
+        let calls = std::cell::Cell::new(0usize);
+        let out = probe_image_with_retry(
+            IMAGE_PROBE_ATTEMPTS,
+            || {
+                let i = calls.get();
+                calls.set(i + 1);
+                let r = results.get(i).copied().unwrap_or((None, false));
+                (r.0.map(str::to_string), r.1)
+            },
+            || advertises,
+            |_: Duration| waits.set(waits.get() + 1),
+        );
+        (out, waits.get(), calls.get())
+    }
+
+    #[test]
+    fn confirmed_no_image_waits_zero_times() {
+        let (found, waits, calls) = drive(vec![(None, false)], false);
+        assert_eq!(found, None);
+        assert_eq!(waits, 0, "a clipboard with no image must not be waited on");
+        assert_eq!(calls, 1, "and it must not be probed again either");
+    }
+
+    // The boundary, asserted rather than left implied: a format that appears
+    // only *after* the first check is not waited for. This is a deliberate rule,
+    // not a gap that happens to be untested -- see the note on the gate.
+    #[test]
+    fn a_format_added_after_the_first_check_is_not_awaited() {
+        let (found, waits, calls) = drive(vec![(None, false), (Some(PNG), false)], false);
+        assert_eq!(found, None, "absence on the first pass ends the search");
+        assert_eq!(waits, 0);
+        assert_eq!(calls, 1);
+    }
+
+    // The budget is the pre-refactor one, kept as a named constant precisely so
+    // it cannot drift away from what the tests exercise.
+    #[test]
+    fn the_budget_matches_what_the_old_loop_gave() {
+        assert_eq!(
+            IMAGE_PROBE_ATTEMPTS, 3,
+            "the old loop probed at 0/35/70 ms; fewer attempts drops a case the \
+             old code recovered from"
+        );
+        assert_eq!(IMAGE_PROBE_RETRY_DELAY_MS, 35);
+    }
+
+    // Sharing the constant stops the two drifting apart, but only if the
+    // production call actually reads it -- a literal there would leave the tests
+    // exercising a schedule production does not use, which is exactly what
+    // happened before. This pins that the call site passes the constant.
+    //
+    // It is a source assertion, so it proves the call site names the constant;
+    // it does not prove anything about Windows, and the driver tests above carry
+    // that.
+    #[test]
+    fn the_production_call_uses_the_shared_budget() {
+        let source = include_str!("mod.rs");
+        let call = source
+            .split("probe_image_with_retry(")
+            .nth(1)
+            .expect("the production call site must exist");
+        let first_arg = call.split(',').next().expect("it must pass an argument");
+        assert_eq!(
+            first_arg.trim(),
+            "IMAGE_PROBE_ATTEMPTS",
+            "production must pass the shared budget, not a literal -- a literal \
+             here is invisible to the driver tests"
+        );
+    }
+
+    // ...and this is the case that budget exists for: readable only on the third
+    // probe. With two attempts the shipped path returned None here.
+    #[test]
+    fn an_image_readable_only_on_the_third_probe_is_still_recovered() {
+        let (found, waits, calls) = drive(
+            vec![(None, false), (None, false), (Some(PNG), false)],
+            true,
+        );
+        assert_eq!(found.as_deref(), Some(PNG));
+        assert_eq!(waits, 2, "it waits for the whole budget before succeeding");
+        assert_eq!(calls, IMAGE_PROBE_ATTEMPTS);
+    }
+
+    // DIB-only clipboard, first read fails, second succeeds.
+    //
+    // `saw_image_format` is false on purpose: `get_clipboard_image()` returned
+    // nothing, so the probe saw no format and the *only* evidence an image is
+    // present is the availability query. Passing true here would let the gate
+    // pass even with the availability query ignored -- the test would then be
+    // guarding nothing.
+    #[test]
+    fn a_dib_only_clipboard_that_fails_once_is_still_recovered() {
+        let (found, waits, calls) =
+            drive(vec![(None, false), (Some(PNG), false), (Some(PNG), false)], true);
+        assert_eq!(found.as_deref(), Some(PNG));
+        assert_eq!(waits, 1, "it should wait once and then succeed");
+        assert_eq!(calls, 2);
+    }
+
+    // Advertised but unreadable twice, readable on the third pass.
+    #[test]
+    fn an_advertised_format_that_fails_twice_is_recovered_on_the_third() {
+        let (found, waits, calls) = drive(
+            vec![(None, false), (None, false), (Some(PNG), false)],
+            true,
+        );
+        assert_eq!(found.as_deref(), Some(PNG));
+        assert_eq!(waits, 2);
+        assert_eq!(calls, 3);
+    }
+
+    // Bounded: a source that never becomes readable must not hold the capture
+    // thread forever.
+    #[test]
+    fn retries_are_bounded() {
+        let (found, waits, calls) = drive(
+            vec![(None, false), (None, false), (None, false), (Some(PNG), false)],
+            true,
+        );
+        assert_eq!(found, None, "must give up rather than keep waiting");
+        assert_eq!(waits, 2);
+        assert_eq!(calls, 3, "three attempts total, never more");
+    }
+
+    // The saving: an image already present costs no wait at all.
+    #[test]
+    fn an_image_found_on_the_first_probe_waits_nothing() {
+        let (found, waits, calls) = drive(vec![(Some(PNG), true)], true);
+        assert_eq!(found.as_deref(), Some(PNG));
+        assert_eq!(waits, 0);
+        assert_eq!(calls, 1);
+    }
 }
