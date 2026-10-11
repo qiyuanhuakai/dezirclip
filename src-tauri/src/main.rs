@@ -158,6 +158,7 @@ fn main() {
             app::window_manager::focus_clipboard_window,
             app::window_manager::set_navigation_enabled,
             app::window_manager::set_navigation_mode,
+            app::window_manager::notify_main_window_painted,
             app::hooks::set_recording_mode,
             services::content_handler::open_content,
             services::clipboard_ops::copy_to_clipboard,

@@ -20,6 +20,7 @@ import { useInputFocus } from "./shared/hooks/useInputFocus";
 import { useSearchScroll } from "./shared/hooks/useSearchScroll";
 import { useSettingsApply } from "./shared/hooks/useSettingsApply";
 import { useSettingsInit } from "./shared/hooks/useSettingsInit";
+import { useMainWindowPaintSignal } from "./shared/hooks/useMainWindowPaintSignal";
 import { useSettingsPostInit } from "./shared/hooks/useSettingsPostInit";
 import { useSettingsSync } from "./shared/hooks/useSettingsSync";
 import { useTagColors } from "./shared/hooks/useTagColors";
@@ -454,6 +455,8 @@ const App = () => {
     fontMain,
     fontMono
   });
+
+  useMainWindowPaintSignal(settingsLoaded);
 
   useCustomBackground({ customBackground, customBackgroundOpacity, theme });
 
