@@ -265,6 +265,17 @@ fn process_rgba_image_entry_async(
 /// `GlobalLock` failed, so treating its `None` as proof of absence would drop
 /// the fallback for a DIB-only clipboard whose read happened to fail -- a case
 /// the old code still recovered from.
+///
+/// **Policy boundary.** A clipboard that shows *neither* signal on the first
+/// pass -- no format seen, and the availability query reporting none -- is
+/// answered immediately and not re-asked. So a source that adds an image format
+/// only *after* that first check is not covered: this waits out a read that
+/// failed, not a format that had not arrived yet. The old loop's three
+/// unguarded passes happened to cover that case by accident, at the cost of
+/// waiting on every rich-text capture that carried no image at all, which is the
+/// common case. Trading the accidental coverage for a bounded, explicit rule is
+/// the intent; whether the old coverage was ever load-bearing is not something
+/// this change can establish from source alone.
 fn should_retry_image_probe(
     found: Option<&str>,
     clipboard_advertises_image: bool,
@@ -275,6 +286,19 @@ fn should_retry_image_probe(
     }
     clipboard_advertises_image || saw_image_format
 }
+
+/// Total probe attempts, including the first.
+///
+/// This is the budget the pre-refactor loop had (`for _ in 0..3`, probing at
+/// 0/35/70 ms) and it is deliberately not reduced: the change here is about
+/// *when* to wait, not how long the original was willing to wait. Production and
+/// tests read this same constant -- an earlier version passed 2 in production and
+/// 3 in tests, which let the "readable only on the third pass" test pass against
+/// a path that never made a third attempt.
+const IMAGE_PROBE_ATTEMPTS: usize = 3;
+
+/// How long to wait between probe attempts.
+const IMAGE_PROBE_RETRY_DELAY_MS: u64 = 35;
 
 /// Run `probe` until it yields an image, giving up early once the clipboard is
 /// known to hold none.
@@ -303,7 +327,7 @@ where
         return None;
     }
     for _ in 1..attempts {
-        wait(std::time::Duration::from_millis(35));
+        wait(std::time::Duration::from_millis(IMAGE_PROBE_RETRY_DELAY_MS));
         if let Some(found) = probe().0 {
             return Some(found);
         }
@@ -380,7 +404,7 @@ fn clipboard_image_fallback_data_url() -> Option<String> {
     // The driver runs the first probe itself and exits without waiting when the
     // answer is already no.
     probe_image_with_retry(
-        2,
+        IMAGE_PROBE_ATTEMPTS,
         probe_once,
         crate::infrastructure::windows_api::win_clipboard::clipboard_advertises_image,
         |d| std::thread::sleep(d),
@@ -921,7 +945,8 @@ pub fn process_new_entry(
 
 #[cfg(test)]
 mod tests {
-    use super::{probe_image_with_retry, should_retry_image_probe};
+    use super::{probe_image_with_retry, should_retry_image_probe, IMAGE_PROBE_ATTEMPTS,
+        IMAGE_PROBE_RETRY_DELAY_MS};
     use std::time::Duration;
 
     const PNG: &str = "data:image/png;base64,AA";
@@ -967,6 +992,11 @@ mod tests {
 
     /// Drives the real retry loop with a scripted probe, recording the waits so
     /// "it waited" is an assertion rather than something inferred from timing.
+    ///
+    /// The budget comes from the production constant on purpose. An earlier
+    /// version passed 3 here and 2 in production, so "recovers on the third
+    /// pass" was green while the shipped path never made a third pass -- the
+    /// test was guarding a schedule production did not use.
     fn drive(
         results: Vec<(Option<&'static str>, bool)>,
         advertises: bool,
@@ -974,7 +1004,7 @@ mod tests {
         let waits = std::cell::Cell::new(0usize);
         let calls = std::cell::Cell::new(0usize);
         let out = probe_image_with_retry(
-            3,
+            IMAGE_PROBE_ATTEMPTS,
             || {
                 let i = calls.get();
                 calls.set(i + 1);
@@ -993,6 +1023,66 @@ mod tests {
         assert_eq!(found, None);
         assert_eq!(waits, 0, "a clipboard with no image must not be waited on");
         assert_eq!(calls, 1, "and it must not be probed again either");
+    }
+
+    // The boundary, asserted rather than left implied: a format that appears
+    // only *after* the first check is not waited for. This is a deliberate rule,
+    // not a gap that happens to be untested -- see the note on the gate.
+    #[test]
+    fn a_format_added_after_the_first_check_is_not_awaited() {
+        let (found, waits, calls) = drive(vec![(None, false), (Some(PNG), false)], false);
+        assert_eq!(found, None, "absence on the first pass ends the search");
+        assert_eq!(waits, 0);
+        assert_eq!(calls, 1);
+    }
+
+    // The budget is the pre-refactor one, kept as a named constant precisely so
+    // it cannot drift away from what the tests exercise.
+    #[test]
+    fn the_budget_matches_what_the_old_loop_gave() {
+        assert_eq!(
+            IMAGE_PROBE_ATTEMPTS, 3,
+            "the old loop probed at 0/35/70 ms; fewer attempts drops a case the \
+             old code recovered from"
+        );
+        assert_eq!(IMAGE_PROBE_RETRY_DELAY_MS, 35);
+    }
+
+    // Sharing the constant stops the two drifting apart, but only if the
+    // production call actually reads it -- a literal there would leave the tests
+    // exercising a schedule production does not use, which is exactly what
+    // happened before. This pins that the call site passes the constant.
+    //
+    // It is a source assertion, so it proves the call site names the constant;
+    // it does not prove anything about Windows, and the driver tests above carry
+    // that.
+    #[test]
+    fn the_production_call_uses_the_shared_budget() {
+        let source = include_str!("mod.rs");
+        let call = source
+            .split("probe_image_with_retry(")
+            .nth(1)
+            .expect("the production call site must exist");
+        let first_arg = call.split(',').next().expect("it must pass an argument");
+        assert_eq!(
+            first_arg.trim(),
+            "IMAGE_PROBE_ATTEMPTS",
+            "production must pass the shared budget, not a literal -- a literal \
+             here is invisible to the driver tests"
+        );
+    }
+
+    // ...and this is the case that budget exists for: readable only on the third
+    // probe. With two attempts the shipped path returned None here.
+    #[test]
+    fn an_image_readable_only_on_the_third_probe_is_still_recovered() {
+        let (found, waits, calls) = drive(
+            vec![(None, false), (None, false), (Some(PNG), false)],
+            true,
+        );
+        assert_eq!(found.as_deref(), Some(PNG));
+        assert_eq!(waits, 2, "it waits for the whole budget before succeeding");
+        assert_eq!(calls, IMAGE_PROBE_ATTEMPTS);
     }
 
     // DIB-only clipboard, first read fails, second succeeds.
