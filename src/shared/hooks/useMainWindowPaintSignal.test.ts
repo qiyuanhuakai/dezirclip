@@ -13,30 +13,50 @@ const mockInvoke = vi.mocked(invoke);
  * the backend's timeout depends on.
  */
 const makeFrames = () => {
-  const queue: Array<FrameRequestCallback> = [];
+  const queue: Array<{ handle: number; cb: FrameRequestCallback }> = [];
   const cancelled = new Set<number>();
   let next = 0;
+  let ran = 0;
   return {
     request: (cb: FrameRequestCallback) => {
       const handle = ++next;
-      queue.push(cb);
+      queue.push({ handle, cb });
       return handle;
     },
     cancel: (handle: number) => {
       cancelled.add(handle);
     },
-    /** Run one frame boundary, skipping anything already cancelled. */
+    /**
+     * Run one frame boundary.
+     *
+     * A cancelled handle is dropped rather than run: that is what the real
+     * `cancelAnimationFrame` does, and stubbing it any other way turns every
+     * unmount assertion into a test of the hook's own `cancelled` flag with the
+     * cancellation path removed.
+     */
     flush: (count = 1) => {
       for (let i = 0; i < count; i++) {
         const due = queue.splice(0, queue.length);
-        for (const cb of due) cb(0);
+        for (const { handle, cb } of due) {
+          if (cancelled.has(handle)) continue;
+          ran++;
+          cb(0);
+        }
       }
     },
     get depth() {
       return queue.length;
     },
-    get cancelledCount() {
-      return cancelled.size;
+    get ranCount() {
+      return ran;
+    },
+    /**
+     * Handles that were issued, have not run, and were not cancelled -- the
+     * frames a real browser would still fire. Counted before `flush`, since
+     * draining the queue empties it either way.
+     */
+    get stillLive() {
+      return queue.filter(({ handle }) => !cancelled.has(handle)).length;
     },
   };
 };
@@ -96,6 +116,42 @@ describe("useMainWindowPaintSignal", () => {
     unmount();
     frames.flush(4);
 
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("takes the pending frames off the queue when it is torn down", () => {
+    // Asserting only that no signal went out cannot tell a cancelled frame from
+    // the hook's own `cancelled` guard: with the guard alone, a frame that was
+    // never cancelled still runs and simply declines to report. So assert the
+    // mechanism -- no frame left live, and none of them run -- which holds only
+    // if `cancelAnimationFrame` actually reached the handle.
+    const { unmount } = renderHook(() => useMainWindowPaintSignal(true));
+    expect(frames.stillLive).toBe(1);
+
+    unmount();
+
+    expect(frames.stillLive).toBe(0);
+    frames.flush(4);
+    expect(frames.ranCount).toBe(0);
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("cancels the inner frame too once the first one has run", () => {
+    // Unmounting between the two frames is the narrow window the cleanup has to
+    // cover: the outer handle is already spent, so only the inner one is live.
+    // The cleanup cancels both unconditionally -- including `inner` while it is
+    // still 0, which the spec ignores -- so this is really a check that the
+    // second handle is reached at all.
+    const { unmount } = renderHook(() => useMainWindowPaintSignal(true));
+    frames.flush(1);
+    expect(frames.ranCount).toBe(1);
+    expect(frames.stillLive).toBe(1);
+
+    unmount();
+
+    expect(frames.stillLive).toBe(0);
+    frames.flush(4);
+    expect(frames.ranCount).toBe(1);
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 
