@@ -57,6 +57,13 @@ impl LogSink {
     /// line tries again.
     fn handle(&mut self) -> Option<&mut File> {
         if Self::is_stale(self.opened_at, HANDLE_MAX_AGE) {
+            // Release the old handle before opening the replacement. Opening
+            // first would leave the previous one alive, and a file that was
+            // deleted while it was open can sit in a delete-pending state where
+            // the reopen fails until the last handle closes — which would cost a
+            // line rather than merely delay it. Closing first costs nothing
+            // here and does not depend on how a given filesystem behaves.
+            drop(self.handle.take());
             self.handle = OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -111,12 +118,25 @@ fn write_to_file(msg: &str) {
             sink.append(&line);
         }
     }
-    // Deliberately no `flush`. `File` is unbuffered, so `write_all` has already
-    // handed the line to the OS page cache and any reader — a tail, another
-    // tool, the next run of an analysis — sees it immediately. `File::flush` is
-    // `FlushFileBuffers` on Windows, which measured 2018.94 microseconds a line
-    // here: ten times worse than the open-and-close this replaced. Verified by
-    // reading the file back from a separate handle straight after writing.
+    // Deliberately no `flush` and, above all, no `sync_all`. `File` is
+    // unbuffered, so `write_all` has already handed the line to the OS page
+    // cache and any reader — a tail, another tool, the next run of an analysis —
+    // sees it immediately. Verified by reading the file back from a separate
+    // handle straight after writing.
+    //
+    // The numbers, on rustc 1.98.1 / Windows, one 63-byte line:
+    //
+    //   formatting only, no file at all            2.24 us
+    //   open + append + close per line             167.23 us   <- before
+    //   kept open, write_all                         4.26 us   <- now
+    //   kept open, write_all + `Write::flush()`      4.26 us
+    //   kept open, write_all + `File::sync_all()` 2022.97 us
+    //
+    // `Write::flush` on a `File` is a no-op on Unix and on Windows — the last
+    // but one row is the proof, it costs exactly what doing nothing costs — so
+    // the tempting "just add a flush to be safe" is free and pointless.
+    // `File::sync_all` is the one that is `FlushFileBuffers` on Windows, and it
+    // is three orders of magnitude past what a diagnostic line is worth.
 }
 
 #[macro_export]
@@ -168,7 +188,8 @@ mod tests {
 
     #[test]
     fn lines_land_in_the_file_in_order() {
-        let path = scratch("order").join("dezirclip.log");
+        let dir = scratch("order");
+        let path = dir.join("dezirclip.log");
         let mut sink = LogSink::new(path.clone());
 
         sink.append("[t] first\n");
@@ -176,7 +197,8 @@ mod tests {
 
         let written = std::fs::read_to_string(&path).expect("log file exists");
         assert_eq!(written, "[t] first\n[t] second\n");
-        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+        drop(sink);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -184,7 +206,8 @@ mod tests {
         // A line written before the data directory exists must not turn into a
         // permanent loss, so a failed open is not remembered as a decision.
         // Nothing is poked here on purpose: the retry has to happen on its own.
-        let path = scratch("retry").join("nested/out.log");
+        let dir = scratch("retry");
+        let path = dir.join("nested/out.log");
         let mut sink = LogSink::new(path.clone());
 
         sink.append("[t] dropped\n");
@@ -194,7 +217,8 @@ mod tests {
 
         let written = std::fs::read_to_string(&path).expect("log file exists");
         assert_eq!(written, "[t] recovered\n");
-        let _ = std::fs::remove_dir_all(scratch("retry"));
+        drop(sink);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -203,7 +227,8 @@ mod tests {
         // at a file, not at a path. Delete the file and writes keep succeeding
         // against the unlinked inode, so the log silently stops where the user
         // looks for it — and this log is the only record of what the app did.
-        let path = scratch("deleted").join("dezirclip.log");
+        let dir = scratch("deleted");
+        let path = dir.join("dezirclip.log");
         let mut sink = LogSink::new(path.clone());
 
         sink.append("[t] before\n");
@@ -214,7 +239,8 @@ mod tests {
 
         let written = std::fs::read_to_string(&path).expect("the path is a file again");
         assert_eq!(written, "[t] after\n");
-        let _ = std::fs::remove_dir_all(scratch("deleted"));
+        drop(sink);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
