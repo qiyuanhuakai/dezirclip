@@ -510,6 +510,45 @@ pub fn get_clipboard_sequence_number() -> u32 {
     unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() }
 }
 
+/// The named formats an image may arrive under, and the DIB formats it may
+/// arrive as. Every probe of this module has to cover all of them: a clipboard
+/// holding only a DIB is the common case, not the exotic one.
+pub const IMAGE_FORMAT_NAMES: [&str; 5] = ["PNG", "image/png", "JFIF", "JPEG", "image/jpeg"];
+pub const IMAGE_DIB_FORMATS: [u32; 2] = [CF_DIBV5, CF_DIB];
+
+/// Whether the clipboard currently offers an image, without reading it.
+///
+/// This answers a different question from `get_clipboard_raw_format`, which is
+/// why it is the one used to decide whether a failed read is worth retrying.
+/// That function returns `None` both when the format is absent *and* when
+/// `OpenClipboard` / `GetClipboardData` / `GlobalLock` failed, so a `None`
+/// from it cannot distinguish "there is no image" from "the image was there a
+/// moment ago and the clipboard was busy". It also copies the whole buffer to
+/// local memory to return bytes nobody wants when the question is only whether
+/// one exists.
+///
+/// `IsClipboardFormatAvailable` opens no clipboard, copies nothing, and answers
+/// only the availability question. When it says the format is absent it is
+/// absent; when it says present, the read may still fail and is worth retrying.
+pub fn clipboard_advertises_image() -> bool {
+    use windows::Win32::System::DataExchange::{
+        IsClipboardFormatAvailable, RegisterClipboardFormatW,
+    };
+
+    unsafe {
+        for name in IMAGE_FORMAT_NAMES {
+            let name_w: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+            let id = RegisterClipboardFormatW(windows::core::PCWSTR(name_w.as_ptr()));
+            if id != 0 && IsClipboardFormatAvailable(id).is_ok() {
+                return true;
+            }
+        }
+        IMAGE_DIB_FORMATS
+            .iter()
+            .any(|fmt| IsClipboardFormatAvailable(*fmt).is_ok())
+    }
+}
+
 /// Get raw bytes from a specific clipboard format by name
 pub unsafe fn get_clipboard_raw_format(format_name: &str) -> Option<Vec<u8>> {
     use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
