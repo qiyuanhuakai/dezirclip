@@ -1456,3 +1456,60 @@ mod tests {
         }
     }
 }
+
+/// What one encryption-queue job costs, against the 30 ms sleep that used to
+/// follow every job.
+///
+/// Run: cargo test --bin dezirclip dpapi_per_value_cost -- --ignored --nocapture
+///
+/// Kept as an executable test rather than a quoted figure because the numbers
+/// move between machines and between runs; what is stable is the ratio against
+/// the sleep, and that is what the encryption queue's comment cites.
+#[cfg(all(test, target_os = "windows"))]
+#[test]
+#[ignore]
+fn dpapi_per_value_cost() {
+    use crate::infrastructure::encryption::{decrypt_value, encrypt_value};
+    use std::time::{Duration, Instant};
+
+    let long = format!("<div>{}</div>", "b".repeat(3000));
+    let long = format!("{}{}", "plain text ".repeat(200), long);
+    let cases: [(&str, &str); 3] = [
+        ("short text", "some copied text"),
+        ("medium text", &"a".repeat(500)),
+        ("rich text + html", &long),
+    ];
+
+    println!("\nDPAPI per-value cost on this machine:\n");
+    for (label, payload) in cases {
+        let _ = encrypt_value(payload);
+        const N: usize = 50;
+        let (mut enc_total, mut dec_total) = (Duration::ZERO, Duration::ZERO);
+        let mut ok = 0;
+        for _ in 0..N {
+            let t = Instant::now();
+            let cipher = encrypt_value(payload);
+            enc_total += t.elapsed();
+            if let Some(c) = cipher {
+                let t = Instant::now();
+                let _ = decrypt_value(&c);
+                dec_total += t.elapsed();
+                ok += 1;
+            }
+        }
+        if ok == 0 {
+            continue;
+        }
+        let enc = enc_total.as_secs_f64() * 1e3 / ok as f64;
+        let dec = dec_total.as_secs_f64() * 1e3 / ok as f64;
+        println!(
+            "  {:<18} len={:>5}B  encrypt {:.3} ms  decrypt {:.3} ms  => ~{:.3} ms/entry (3 values)",
+            label,
+            payload.len(),
+            enc,
+            dec,
+            enc * 3.0
+        );
+    }
+    println!("\nthe sleep that follows every job: 30.0 ms");
+}
