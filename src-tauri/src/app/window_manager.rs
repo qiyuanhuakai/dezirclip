@@ -527,7 +527,7 @@ pub fn toggle_window(app: &AppHandle) {
         let show_window = window.clone();
         let show_app = app.clone();
         let emit_app = app.clone();
-        idle_destroyer::show_main_window_when_ready(move || {
+        idle_destroyer::show_main_window_when_ready(app, move || {
             IS_HIDDEN.store(false, Ordering::Relaxed);
             NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
 
@@ -672,9 +672,10 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
         // straight after a rebuild, and focusing a window that has not drawn
         // flashes it just the same.
         let show_window = window.clone();
-        idle_destroyer::show_main_window_when_ready(move || {
+        let notify_app = app_handle.clone();
+        idle_destroyer::show_main_window_when_ready(&app_handle, move || {
             let _ = show_window.show();
-            idle_destroyer::notify_main_window_shown(&app_handle);
+            idle_destroyer::notify_main_window_shown(&notify_app);
 
             #[cfg(windows)]
             {

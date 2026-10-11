@@ -531,7 +531,7 @@ fn service_pending_recreate(app: &AppHandle) -> bool {
     // boot; with the idle destroyer set to a few seconds this is the path every
     // hotkey press takes.
     let handle = app.clone();
-    show_main_window_when_ready(move || show_main_window_now(&handle));
+    show_main_window_when_ready(app, move || show_main_window_now(&handle));
     true
 }
 
@@ -588,6 +588,12 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
             return false;
         }
     };
+
+    // Abandon any show still waiting *before* the build. A watcher that has already
+    // passed its check posts to the main thread, which is the thread `build()`
+    // itself dispatches to, so cancelling afterwards leaves a window where the
+    // replacement can be put on screen before it has drawn.
+    cancel_pending_show();
 
     match WebviewWindowBuilder::from_config(app, config).and_then(|b| b.build()) {
         Ok(_) => {
@@ -731,9 +737,9 @@ pub fn watcher_action(
 ///
 /// Windows that were not just rebuilt are unaffected: `MAIN_WINDOW_PAINTED`
 /// starts `true`, so they show synchronously as before.
-pub fn show_main_window_when_ready<F>(show: F)
+pub fn show_main_window_when_ready<F>(app: &AppHandle, show: F)
 where
-    F: Fn() + Send + 'static,
+    F: FnOnce() + Send + 'static,
 {
     let request = begin_show_request();
     if ready_to_show(
@@ -746,6 +752,7 @@ where
         return;
     }
 
+    let handle = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(FIRST_PAINT_POLL);
         let painted = MAIN_WINDOW_PAINTED.load(Ordering::Acquire);
@@ -767,7 +774,15 @@ where
                 return;
             }
             WatcherAction::Show => {
-                SHOW_PENDING.store(false, Ordering::SeqCst);
+                // The decision is only a hint until it is committed on the thread
+                // that also runs cancel and hide. Checking here and showing on the
+                // watcher thread leaves a window where this thread is descheduled
+                // between the two, the user closes the window, and the stale show
+                // lands anyway. Committing the whole act — re-check, clear the
+                // pending flag, show — through `run_on_main_thread` puts it in the
+                // same queue as `window.hide()`, so either the cancel lands first
+                // and this aborts, or this shows first and the cancel hides. There
+                // is no third order.
                 if painted {
                     crate::info!("[idle-destroyer] Showing rebuilt window on its first painted frame.");
                 } else {
@@ -776,7 +791,20 @@ where
                          {FIRST_PAINT_TIMEOUT_MS}ms."
                     );
                 }
-                show();
+                let _ = handle.run_on_main_thread(move || {
+                    if SHOW_REQUEST_ID.load(Ordering::SeqCst) != request {
+                        crate::info!(
+                            "[idle-destroyer] A pending show was cancelled between the paint and the \
+                             show; leaving the window hidden."
+                        );
+                        return;
+                    }
+                    // Cleared here rather than on the watcher thread: a toggle that
+                    // lands in the gap above has to still see the window as being on
+                    // its way up, or it reads as a fresh request to show.
+                    SHOW_PENDING.store(false, Ordering::SeqCst);
+                    show();
+                });
                 return;
             }
         }
@@ -905,7 +933,7 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
         // Same reason as the recreate path: the GPU switch tore the webview down
         // and the replacement has drawn nothing yet.
         let handle = app.clone();
-        show_main_window_when_ready(move || show_main_window_now(&handle));
+        show_main_window_when_ready(app, move || show_main_window_now(&handle));
     }
 
     true
@@ -946,6 +974,8 @@ pub fn mark_destroyed_after_managed_destroy() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    static SHOW_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn should_destroy_now_disabled_when_feature_off() {
@@ -1213,8 +1243,22 @@ mod tests {
     // waiting window genuinely is not visible, the second press was read as
     // *another* request to show rather than as the cancel it was.
 
+    /// Serialises the tests below, which drive the process-global show state.
+    ///
+    /// These are not pure-function tests: they read and write the same
+    /// `SHOW_REQUEST_ID` / `SHOW_PENDING` the running app uses, and Rust runs
+    /// tests in parallel. Without this, one test's `cancel_pending_show()` can
+    /// land between another's read and its assert — a failure that says nothing
+    /// about the code, and worse, a green run that was luck.
+    fn serialise_show_state() -> std::sync::MutexGuard<'static, ()> {
+        // Poisoning is recovered from rather than propagated: one test failing
+        // must not turn every later one into a failure that says nothing.
+        SHOW_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn a_waiting_show_is_abandoned_when_the_window_is_hidden() {
+        let _serialised = serialise_show_state();
         let request = begin_show_request();
         assert!(show_is_pending());
 
@@ -1231,6 +1275,7 @@ mod tests {
 
     #[test]
     fn the_timeout_fallback_respects_a_cancelled_show() {
+        let _serialised = serialise_show_state();
         // The deadline is there so a broken frontend cannot wedge the window
         // shut. It is not a licence to resurrect one the user closed, and that
         // distinction is invisible unless both halves are asserted.
@@ -1252,6 +1297,7 @@ mod tests {
 
     #[test]
     fn a_rebuilt_window_still_shows_when_nothing_cancels_it() {
+        let _serialised = serialise_show_state();
         cancel_pending_show();
         let request = begin_show_request();
         let current = SHOW_REQUEST_ID.load(Ordering::SeqCst);
@@ -1274,6 +1320,7 @@ mod tests {
 
     #[test]
     fn a_later_request_supersedes_an_earlier_one() {
+        let _serialised = serialise_show_state();
         cancel_pending_show();
         let first = begin_show_request();
         let second = begin_show_request();
@@ -1289,6 +1336,64 @@ mod tests {
             WatcherAction::Show
         );
         cancel_pending_show();
+    }
+
+    #[test]
+    fn the_show_is_committed_where_a_cancel_cannot_slip_between_check_and_act() {
+        // Checking the generation and putting the window on screen are one act.
+        // Split across two threads there is a window where the watcher is
+        // descheduled between them, the user closes the window, and the stale
+        // show lands anyway — which is precisely what the first version allowed,
+        // and precisely what a pure-function test cannot see.
+        let source = include_str!("idle_destroyer.rs");
+        let body = source
+            .split_once("pub fn show_main_window_when_ready")
+            .expect("the gate is defined right here")
+            .1
+            .split_once("\n}\n")
+            .expect("a top-level function body ends with `}` in column zero")
+            .0;
+
+        let commit = body
+            .rfind("run_on_main_thread(move || {")
+            .expect("the show must be committed to the thread cancel and hide also run on, \
+                     or there is a gap between checking the generation and acting on it");
+        // Scoped to the closure, not to the rest of the function. An ordering
+        // check over the whole body also passes when the act posts the commit
+        // and then shows on the watcher thread afterwards -- the very defect the
+        // commit was added for -- because the show is still "after" the re-check.
+        let committed = body[commit..]
+            .split_once("run_on_main_thread(move || {")
+            .expect("the commit marker is inside the function")
+            .1
+            .split_once("\n                });")
+            .expect("the committed act is a closure closed at the statement's own indent")
+            .0;
+
+        let recheck = committed
+            .find("SHOW_REQUEST_ID.load")
+            .expect("the generation is re-read where the show happens");
+        let bail = committed[recheck..]
+            .find("return;")
+            .expect("a re-check that does not bail out is not a re-check");
+        let clear = committed
+            .find("SHOW_PENDING.store(false")
+            .expect("the pending flag is cleared as part of the same act");
+        let acts = committed
+            .find("show();")
+            .expect("the committed act shows the window");
+        assert!(
+            recheck < bail && bail < clear && clear < acts,
+            "inside the committed act the order has to be: re-read the generation, bail out if it \
+             moved, clear the pending flag, and only then show"
+        );
+        // Stated rather than implied: a text assertion proves the guard is
+        // written, not that it gates. What the compiler already removes from
+        // that class is `if false &&`, rejected outright as an `if` in a
+        // condition expression; what it does not remove is a guard whose
+        // condition is wrong in some way no reader can see from the text.
+        // Ordering two real threads against a barrier is what would close the
+        // remainder, and that needs a live app either way.
     }
 
     #[test]
@@ -1340,7 +1445,7 @@ mod tests {
             .0;
 
         let gate = body
-            .find("show_main_window_when_ready(move || {")
+            .find("show_main_window_when_ready(")
             .expect("toggle_window routes its show through the gate");
         // Everything from the gate onwards is what runs at the moment the window
         // actually appears. The cancel branch above the gate clears the same

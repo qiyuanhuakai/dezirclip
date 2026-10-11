@@ -1272,7 +1272,7 @@ fn show_settings_from_tray(app: &AppHandle) {
         // listening yet, and a pending panel is replayed when it does arrive.
         let show_window = window.clone();
         let handle = app.clone();
-        crate::app::idle_destroyer::show_main_window_when_ready(move || {
+        crate::app::idle_destroyer::show_main_window_when_ready(app, move || {
             let _ = show_window.show();
             crate::app::idle_destroyer::notify_main_window_shown(&handle);
             LAST_SHOW_TIMESTAMP.store(now_millis(), Ordering::Relaxed);
