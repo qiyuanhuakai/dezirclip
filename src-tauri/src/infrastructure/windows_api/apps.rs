@@ -34,10 +34,23 @@ pub struct AppInfo {
 /// arbitrary entry rather than the oldest one, and re-inserting a hit to "move it
 /// to the recent end" did nothing at all for want of an end to move it to.
 ///
-/// Measured with a cap of 8 over a 4-hot / 24-cold workload, the `HashMap` form
-/// kept 2 of the 4 hot entries against a real LRU's 4 -- and a miss costs
-/// 0.631 ms here, because it runs `ExtractIconExW`, draws through a GDI DIB,
-/// encodes a PNG and base64-encodes it, once per mounted row per scroll.
+/// Measured with a cap of 8 over a 4-hot / 24-cold workload, each round touching
+/// all four hot keys before adding one cold one: the `HashMap` form retained 1 to
+/// 3 of the 4 hot entries, varying run to run because the seed is drawn per
+/// process, against 4 of 4 for this one. The number of entries the cache holds
+/// stayed at the cap throughout -- what went wrong was which entries it kept,
+/// not how many. A native miss costs 0.631 ms: it runs `ExtractIconExW`, draws
+/// through a GDI DIB, encodes a PNG and base64-encodes it.
+///
+/// What a miss is worth per scroll is NOT established by this file. The frontend
+/// shields this command: `ClipboardItem`'s effect depends on
+/// `item.source_app_path` rather than on scroll position, `peekSourceAppIcon`
+/// returns before the call is made, and `sourceAppIcon.ts` keeps its own cache
+/// plus in-flight dedup. So the native cache is consulted when a path the
+/// frontend has not kept turns up -- on the first mount of a row, and after the
+/// frontend's own 256-entry LRU evicts it -- not once per mounted row per
+/// scroll. Correcting the eviction order is what makes this cache behave as the
+/// LRU it was written to be; the end-to-end saving has not been measured.
 struct IconCache {
     entries: HashMap<String, Option<String>>,
     order: Vec<String>,
@@ -657,14 +670,17 @@ mod tests {
     }
 
     // The measurement this is based on: with a cap of 8 over a 4-hot workload,
-    // the HashMap form retained 2 of the 4 hot entries where a real LRU keeps 4.
+    // the HashMap form retained 1 to 3 of the 4 hot entries -- varying per run,
+    // because the iteration order it depends on is seeded per process -- where
+    // this one keeps 4. The cache still held its full 8 entries either way; what
+    // differed was which ones.
     //
     // The workload interleaves the hot set with the cold tail rather than
     // flooding the cache in one block. That is what the app actually does -- a
-    // mounted row asks for its icon on every scroll -- and it is also the only
-    // shape in which an LRU can win: a cold flood with no hot touches evicts the
-    // hot entries under any correct policy, because they genuinely were the
-    // least recently used.
+    // row asks for its icon when it mounts, and a scroll mounts rows -- and it is
+    // also the only shape in which an LRU can win: a cold flood with no hot
+    // touches evicts the hot entries under any correct policy, because they
+    // genuinely were the least recently used.
     #[test]
     fn a_hot_working_set_survives_a_long_cold_tail() {
         let hot = ["h0", "h1", "h2", "h3"];
@@ -744,5 +760,67 @@ mod tests {
     fn a_hit_returns_the_stored_value() {
         let mut cache = cache_with(&["only"]);
         assert_eq!(cache.get("only"), Some(Some("icon-only".to_string())));
+    }
+
+    // Reviewer: the individual tests cover the pieces, not the combination.
+    // A cached `None` that is touched and then pushed out by overflow is the
+    // case that matters -- an entry with no icon still has to take part in
+    // eviction correctly, and it is the one whose value is easiest to lose
+    // track of because there is nothing to hand back.
+    #[test]
+    fn a_cached_absence_takes_part_in_eviction() {
+        let mut cache = small_cache(3);
+        cache.insert("oldest".to_string(), Some("icon-oldest".to_string()));
+        cache.insert("no-icon".to_string(), None);
+        cache.insert("newest".to_string(), Some("icon-newest".to_string()));
+
+        // Touch the absence so it is no longer the oldest entry.
+        assert_eq!(cache.get("no-icon"), Some(None));
+
+        // Overflow: "oldest" is now the least recently used.
+        cache.insert("newcomer".to_string(), Some("icon-newcomer".to_string()));
+
+        assert!(!contains(&cache, "oldest"), "the oldest entry is evicted");
+        assert!(
+            contains(&cache, "no-icon"),
+            "a touched absence must be kept, not evicted for being empty"
+        );
+        assert!(contains(&cache, "newest"));
+        assert!(contains(&cache, "newcomer"));
+        assert_eq!(cache.entries.len(), 3);
+    }
+
+    // Reviewer: overwriting an existing key with a different value must update
+    // both the stored value and its recency, and must not leave the old value
+    // reachable. `insert` is reached on the miss path, so a path that was
+    // cached and then re-extracted goes through this.
+    #[test]
+    fn overwriting_updates_the_value_and_the_recency() {
+        let mut cache = small_cache(3);
+        cache.insert("a".to_string(), Some("icon-a-v1".to_string()));
+        cache.insert("b".to_string(), Some("icon-b".to_string()));
+        cache.insert("c".to_string(), Some("icon-c".to_string()));
+
+        // Overwrite "a" with a different value. Nothing reads "a" between this
+        // and the overflow below: a `get` would itself refresh the recency and
+        // mask an `insert` that failed to.
+        cache.insert("a".to_string(), Some("icon-a-v2".to_string()));
+
+        // Overflow now evicts "b" (oldest), not "a".
+        cache.insert("d".to_string(), Some("icon-d".to_string()));
+        assert!(!contains(&cache, "b"), "overwriting must refresh recency");
+        assert!(
+            contains(&cache, "a"),
+            "the overwritten key must not be the one evicted"
+        );
+        assert_eq!(cache.entries.len(), 3);
+        assert_eq!(cache.order.len(), 3, "order must not gain a duplicate");
+
+        // And the stored value really is the newer one.
+        assert_eq!(
+            cache.get("a"),
+            Some(Some("icon-a-v2".to_string())),
+            "the newer value must replace the old one"
+        );
     }
 }
