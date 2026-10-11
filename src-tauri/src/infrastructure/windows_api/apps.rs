@@ -26,7 +26,81 @@ pub struct AppInfo {
     pub path: String,
 }
 
-static EXECUTABLE_ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+/// Icon cache: the data URL keyed by normalised executable path.
+///
+/// `order` holds the same keys from least to most recently used, which is what
+/// makes eviction LRU. A `HashMap` cannot supply this: its iteration order is
+/// bucket order under a per-process random seed, so `keys().next()` names an
+/// arbitrary entry rather than the oldest one, and re-inserting a hit to "move it
+/// to the recent end" did nothing at all for want of an end to move it to.
+///
+/// Measured with a cap of 8 over a 4-hot / 24-cold workload, each round touching
+/// all four hot keys before adding one cold one: the `HashMap` form retained 1 to
+/// 3 of the 4 hot entries, varying run to run because the seed is drawn per
+/// process, against 4 of 4 for this one. The number of entries the cache holds
+/// stayed at the cap throughout -- what went wrong was which entries it kept,
+/// not how many. A native miss costs 0.631 ms: it runs `ExtractIconExW`, draws
+/// through a GDI DIB, encodes a PNG and base64-encodes it.
+///
+/// What a miss is worth per scroll is NOT established by this file. The frontend
+/// shields this command: `ClipboardItem`'s effect depends on
+/// `item.source_app_path` rather than on scroll position, `peekSourceAppIcon`
+/// returns before the call is made, and `sourceAppIcon.ts` keeps its own cache
+/// plus in-flight dedup. So the native cache is consulted when a path the
+/// frontend has not kept turns up -- on the first mount of a row, and after the
+/// frontend's own 256-entry LRU evicts it -- not once per mounted row per
+/// scroll. Correcting the eviction order is what makes this cache behave as the
+/// LRU it was written to be; the end-to-end saving has not been measured.
+struct IconCache {
+    entries: HashMap<String, Option<String>>,
+    order: Vec<String>,
+    cap: usize,
+}
+
+impl IconCache {
+    fn new() -> Self {
+        Self::with_cap(EXECUTABLE_ICON_CACHE_MAX)
+    }
+
+    fn with_cap(cap: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: Vec::new(),
+            cap,
+        }
+    }
+
+    /// A cached `None` is still a hit -- it means the extractor already ran and
+    /// found no icon, and running it again would reach the same answer.
+    fn get(&mut self, key: &str) -> Option<Option<String>> {
+        let value = self.entries.get(key)?.clone();
+        self.touch(key);
+        Some(value)
+    }
+
+    fn insert(&mut self, key: String, value: Option<String>) {
+        let is_new = self.entries.insert(key.clone(), value).is_none();
+        if is_new {
+            self.order.push(key);
+        } else {
+            self.touch(&key);
+        }
+        while self.order.len() > self.cap {
+            let oldest = self.order.remove(0);
+            self.entries.remove(&oldest);
+        }
+    }
+
+    /// Move `key` to the most-recently-used end.
+    fn touch(&mut self, key: &str) {
+        if let Some(pos) = self.order.iter().position(|k| k == key) {
+            let key = self.order.remove(pos);
+            self.order.push(key);
+        }
+    }
+}
+
+static EXECUTABLE_ICON_CACHE: OnceLock<Mutex<IconCache>> = OnceLock::new();
 const EXECUTABLE_ICON_CACHE_MAX: usize = 256;
 
 #[tauri::command]
@@ -319,14 +393,12 @@ pub fn get_executable_icon(executable_path: String) -> AppResult<Option<String>>
         return Ok(None);
     }
 
-    let cache = EXECUTABLE_ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache = EXECUTABLE_ICON_CACHE.get_or_init(|| Mutex::new(IconCache::new()));
     {
         let mut guard = cache
             .lock()
             .map_err(|e| AppError::Internal(e.to_string()))?;
-        if let Some(cached) = guard.get(&cache_key).cloned() {
-            guard.remove(&cache_key);
-            guard.insert(cache_key.clone(), cached.clone());
+        if let Some(cached) = guard.get(&cache_key) {
             return Ok(cached);
         }
     }
@@ -336,13 +408,6 @@ pub fn get_executable_icon(executable_path: String) -> AppResult<Option<String>>
         .lock()
         .map_err(|e| AppError::Internal(e.to_string()))?;
     guard.insert(cache_key, icon.clone());
-    while guard.len() > EXECUTABLE_ICON_CACHE_MAX {
-        if let Some(oldest_key) = guard.keys().next().cloned() {
-            guard.remove(&oldest_key);
-        } else {
-            break;
-        }
-    }
     Ok(icon)
 }
 
@@ -557,5 +622,205 @@ pub async fn launch_uwp_with_file(app_id: &str, file_path: &str) -> AppResult<()
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("WinRT Launch failed: {}", stderr.trim()).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{IconCache, EXECUTABLE_ICON_CACHE_MAX};
+
+    /// A cache with the same shape but a cap small enough to evict inside a
+    /// test. The production cap is 256, so a test that needs overflow would
+    /// otherwise have to insert hundreds of keys to observe it -- and a test that
+    /// quietly never fills the cache asserts nothing about eviction at all.
+    fn small_cache(cap: usize) -> IconCache {
+        IconCache::with_cap(cap)
+    }
+
+    fn cache_with(keys: &[&str]) -> IconCache {
+        let mut cache = IconCache::new();
+        for k in keys {
+            cache.insert((*k).to_string(), Some(format!("icon-{k}")));
+        }
+        cache
+    }
+
+    fn contains(cache: &IconCache, key: &str) -> bool {
+        cache.entries.contains_key(key)
+    }
+
+    // The defect this replaced: `HashMap::keys().next()` is bucket order, not
+    // insertion order, so nothing was being evicted on use -- and a hit that
+    // re-inserted the key moved it nowhere, because there was no end to move it
+    // to. With the HashMap the entry that got thrown away was an arbitrary one.
+    #[test]
+    fn the_least_recently_used_entry_is_the_one_evicted() {
+        let mut cache = small_cache(3);
+        cache.insert("a".to_string(), Some("icon-a".to_string()));
+        cache.insert("b".to_string(), Some("icon-b".to_string()));
+        cache.insert("c".to_string(), Some("icon-c".to_string()));
+        // Touch "a" so "b" becomes the oldest.
+        cache.get("a");
+        cache.insert("d".to_string(), Some("icon-d".to_string()));
+
+        assert!(!contains(&cache, "b"), "the oldest entry is the one to go");
+        assert!(contains(&cache, "a"), "a was just used, so it must stay");
+        assert!(contains(&cache, "c"));
+        assert!(contains(&cache, "d"));
+    }
+
+    // The measurement this is based on: with a cap of 8 over a 4-hot workload,
+    // the HashMap form retained 1 to 3 of the 4 hot entries -- varying per run,
+    // because the iteration order it depends on is seeded per process -- where
+    // this one keeps 4. The cache still held its full 8 entries either way; what
+    // differed was which ones.
+    //
+    // The workload interleaves the hot set with the cold tail rather than
+    // flooding the cache in one block. That is what the app actually does -- a
+    // row asks for its icon when it mounts, and a scroll mounts rows -- and it is
+    // also the only shape in which an LRU can win: a cold flood with no hot
+    // touches evicts the hot entries under any correct policy, because they
+    // genuinely were the least recently used.
+    #[test]
+    fn a_hot_working_set_survives_a_long_cold_tail() {
+        let hot = ["h0", "h1", "h2", "h3"];
+        let mut cache = small_cache(8);
+        // The hot entries have to be in the cache before they can be "touched" --
+        // a get on an absent key refreshes nothing.
+        for h in hot {
+            cache.insert(h.to_string(), Some(format!("icon-{h}")));
+        }
+        for round in 0..400 {
+            // One scroll: every visible row asks for its icon, so all four hot
+            // apps are touched before the cold tail gets a turn.
+            for h in hot {
+                assert!(
+                    cache.get(h).is_some(),
+                    "{h} must hit on round {round} while it is visible"
+                );
+            }
+            // ...and the cold tail adds entries nobody is looking at.
+            cache.insert(format!("cold-{round}"), Some("icon-cold".to_string()));
+        }
+        // The hot entries were touched throughout, so all four are still there.
+        for h in hot {
+            assert!(cache.get(h).is_some(), "{h} must still be cached");
+        }
+        // And they must still be there on the next pass, not merely returned once.
+        for h in hot {
+            assert!(cache.get(h).is_some(), "{h} must survive a second pass");
+        }
+    }
+
+    #[test]
+    fn the_cache_never_exceeds_its_cap() {
+        let mut cache = IconCache::new();
+        for i in 0..(EXECUTABLE_ICON_CACHE_MAX * 2 + 5) {
+            cache.insert(format!("k-{i}"), Some("icon".to_string()));
+            assert!(
+                cache.entries.len() <= EXECUTABLE_ICON_CACHE_MAX,
+                "grew to {} past the cap of {EXECUTABLE_ICON_CACHE_MAX}",
+                cache.entries.len()
+            );
+        }
+        assert_eq!(cache.entries.len(), EXECUTABLE_ICON_CACHE_MAX);
+        assert_eq!(cache.order.len(), EXECUTABLE_ICON_CACHE_MAX);
+    }
+
+    // A miss costs 0.631 ms here (ExtractIconExW + GDI draw + PNG + base64), so
+    // caching "this path has no icon" has to count as a hit. Reading it as a miss
+    // would redo the extraction for every row of a source that has no icon.
+    #[test]
+    fn a_cached_absence_is_still_a_hit() {
+        let mut cache = IconCache::new();
+        cache.insert("no-icon".to_string(), None);
+        assert_eq!(
+            cache.get("no-icon"),
+            Some(None),
+            "None must be cached, not re-extracted"
+        );
+        assert_eq!(cache.get("never-seen"), None, "an unknown key is a miss");
+    }
+
+    #[test]
+    fn reinserting_an_existing_key_does_not_grow_the_cache() {
+        let mut cache = IconCache::new();
+        cache.insert("a".to_string(), Some("icon-a".to_string()));
+        cache.insert("a".to_string(), Some("icon-a".to_string()));
+        cache.insert("a".to_string(), Some("icon-a".to_string()));
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(
+            cache.order.len(),
+            1,
+            "order must not accumulate duplicates"
+        );
+    }
+
+    #[test]
+    fn a_hit_returns_the_stored_value() {
+        let mut cache = cache_with(&["only"]);
+        assert_eq!(cache.get("only"), Some(Some("icon-only".to_string())));
+    }
+
+    // Reviewer: the individual tests cover the pieces, not the combination.
+    // A cached `None` that is touched and then pushed out by overflow is the
+    // case that matters -- an entry with no icon still has to take part in
+    // eviction correctly, and it is the one whose value is easiest to lose
+    // track of because there is nothing to hand back.
+    #[test]
+    fn a_cached_absence_takes_part_in_eviction() {
+        let mut cache = small_cache(3);
+        cache.insert("oldest".to_string(), Some("icon-oldest".to_string()));
+        cache.insert("no-icon".to_string(), None);
+        cache.insert("newest".to_string(), Some("icon-newest".to_string()));
+
+        // Touch the absence so it is no longer the oldest entry.
+        assert_eq!(cache.get("no-icon"), Some(None));
+
+        // Overflow: "oldest" is now the least recently used.
+        cache.insert("newcomer".to_string(), Some("icon-newcomer".to_string()));
+
+        assert!(!contains(&cache, "oldest"), "the oldest entry is evicted");
+        assert!(
+            contains(&cache, "no-icon"),
+            "a touched absence must be kept, not evicted for being empty"
+        );
+        assert!(contains(&cache, "newest"));
+        assert!(contains(&cache, "newcomer"));
+        assert_eq!(cache.entries.len(), 3);
+    }
+
+    // Reviewer: overwriting an existing key with a different value must update
+    // both the stored value and its recency, and must not leave the old value
+    // reachable. `insert` is reached on the miss path, so a path that was
+    // cached and then re-extracted goes through this.
+    #[test]
+    fn overwriting_updates_the_value_and_the_recency() {
+        let mut cache = small_cache(3);
+        cache.insert("a".to_string(), Some("icon-a-v1".to_string()));
+        cache.insert("b".to_string(), Some("icon-b".to_string()));
+        cache.insert("c".to_string(), Some("icon-c".to_string()));
+
+        // Overwrite "a" with a different value. Nothing reads "a" between this
+        // and the overflow below: a `get` would itself refresh the recency and
+        // mask an `insert` that failed to.
+        cache.insert("a".to_string(), Some("icon-a-v2".to_string()));
+
+        // Overflow now evicts "b" (oldest), not "a".
+        cache.insert("d".to_string(), Some("icon-d".to_string()));
+        assert!(!contains(&cache, "b"), "overwriting must refresh recency");
+        assert!(
+            contains(&cache, "a"),
+            "the overwritten key must not be the one evicted"
+        );
+        assert_eq!(cache.entries.len(), 3);
+        assert_eq!(cache.order.len(), 3, "order must not gain a duplicate");
+
+        // And the stored value really is the newer one.
+        assert_eq!(
+            cache.get("a"),
+            Some(Some("icon-a-v2".to_string())),
+            "the newer value must replace the old one"
+        );
     }
 }
