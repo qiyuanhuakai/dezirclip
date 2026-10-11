@@ -22,10 +22,11 @@ static LOG: Mutex<Option<LogSink>> = Mutex::new(None);
 
 /// An append-only sink that holds its file open.
 ///
-/// This used to open, write one line and close, for every line. Measured on this
-/// machine that is 162.45 microseconds a line against 2.96 for a kept-open
-/// write — and the cost lands wherever the caller is, which for a synchronous
-/// `#[tauri::command]` is the main thread.
+/// This used to open, write one line and close, for every line. See
+/// `costs_one_open_close_per_line` -- an `#[ignore]`d test that measures it, so
+/// the numbers quoted below can be re-derived rather than taken on trust. The
+/// cost lands wherever the caller is, which for a synchronous `#[tauri::command]`
+/// is the main thread.
 struct LogSink {
     path: PathBuf,
     handle: Option<File>,
@@ -124,7 +125,11 @@ fn write_to_file(msg: &str) {
     // sees it immediately. Verified by reading the file back from a separate
     // handle straight after writing.
     //
-    // The numbers, on rustc 1.98.1 / Windows, one 63-byte line:
+    // The numbers, on rustc 1.98.1 / Windows, one 63-byte line. They were taken
+    // from `costs_one_open_close_per_line` below, which re-measures them on
+    // demand; absolute values move with the machine and with the payload length,
+    // so treat the ratio between the arms as the claim and the digits as one
+    // reading of it.
     //
     //   formatting only, no file at all            2.24 us
     //   open + append + close per line             167.23 us   <- before
@@ -270,5 +275,103 @@ mod tests {
         // a diagnostic is always better than panicking on the way to report it.
         // No other test here installs a sink, so there is nowhere to write.
         write_to_file("[t] written before init");
+    }
+
+    /// The cost table quoted in `write_to_file`, measured rather than remembered.
+    ///
+    /// Ignored by default because it writes to a real file and asserts nothing:
+    /// a timing number is not a pass or a fail, and a CI machine's disk is not
+    /// the disk anyone should read a ratio off. Run it deliberately:
+    ///
+    ///     cargo test --bin dezirclip costs_one_open_close_per_line -- --ignored --nocapture
+    ///
+    /// The numbers quoted in `write_to_file` were taken on rustc 1.98.1, Windows,
+    /// one 63-byte line, in this order. Absolute values are machine-specific;
+    /// the ratio between the arms is the part worth carrying to another one.
+    ///
+    /// The "before" arm is the old shape spelled out here -- open, append one
+    /// line, drop -- rather than a call into a function that no longer exists.
+    /// The "now" arm goes through the real `LogSink`, so a change to the sink
+    /// that made it slower would show up in the number instead of silently
+    /// invalidating the comment that quotes it.
+    #[test]
+    #[ignore = "writes to a real file and measures wall clock; run it on purpose"]
+    fn costs_one_open_close_per_line() {
+        const LINES: usize = 2_000;
+        const MSG: &str = "[2026-10-11 03:19:24.417] [idle-destroyer] Showing rebuilt window on its first painted frame.";
+
+        let dir = scratch("bench");
+        let path = dir.join("bench.log");
+
+        let started = Instant::now();
+        for _ in 0..LINES {
+            let now: DateTime<Utc> = SystemTime::now().into();
+            let mut line = String::with_capacity(MSG.len() + 32);
+            let _ = write!(line, "[{}] {}\n", now.format("%Y-%m-%d %H:%M:%S%.3f"), MSG);
+            std::hint::black_box(&line);
+        }
+        let per_line_format = started.elapsed().as_nanos() as f64 / LINES as f64;
+
+        let started = Instant::now();
+        for _ in 0..LINES {
+            let now: DateTime<Utc> = SystemTime::now().into();
+            let mut line = String::with_capacity(MSG.len() + 32);
+            let _ = write!(line, "[{}] {}\n", now.format("%Y-%m-%d %H:%M:%S%.3f"), MSG);
+            if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
+                let _ = f.write_all(line.as_bytes());
+            }
+        }
+        let per_line_open_close = started.elapsed().as_nanos() as f64 / LINES as f64;
+
+        let mut sink = LogSink::new(path.clone());
+        let started = Instant::now();
+        for _ in 0..LINES {
+            sink.append(MSG);
+            sink.append("\n");
+        }
+        let per_line_kept_open = started.elapsed().as_nanos() as f64 / LINES as f64;
+
+        let mut sink = LogSink::new(path.clone());
+        let started = Instant::now();
+        for _ in 0..LINES {
+            if let Some(f) = sink.handle() {
+                let _ = f.write_all(MSG.as_bytes());
+                let _ = f.write_all(b"\n");
+                // `Write::flush` on a `File`. Measured because the comment claims
+                // it is free, and a claim like that should not be unfalsifiable.
+                let _ = f.flush();
+            }
+        }
+        let per_line_flush = started.elapsed().as_nanos() as f64 / LINES as f64;
+
+        let mut sink = LogSink::new(path.clone());
+        let started = Instant::now();
+        for _ in 0..LINES / 50 {
+            if let Some(f) = sink.handle() {
+                let _ = f.write_all(MSG.as_bytes());
+                let _ = f.sync_all();
+            }
+        }
+        let per_line_sync = started.elapsed().as_nanos() as f64 / (LINES / 50) as f64;
+
+        println!(
+            "\nper line, {LINES} lines of {} bytes, dezirclip {} on {}:\n  \
+             formatting only, no file at all            {:>9.2} us\n  \
+             open + append + close per line             {:>9.2} us   <- before\n  \
+             kept open, write_all                       {:>9.2} us   <- now\n  \
+             kept open, write_all + Write::flush()      {:>9.2} us\n  \
+             kept open, write_all + File::sync_all()    {:>9.2} us\n",
+            MSG.len() + 1,
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            per_line_format / 1_000.0,
+            per_line_open_close / 1_000.0,
+            per_line_kept_open / 1_000.0,
+            per_line_flush / 1_000.0,
+            per_line_sync / 1_000.0,
+        );
+
+        drop(sink);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
