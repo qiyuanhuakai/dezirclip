@@ -914,48 +914,28 @@ mod tests {
         }
     }
 
-    /// What `detect_content_type` costs per capture before and after it stopped
-    /// searching once the verdict was settled.
-    ///
-    /// Run: cargo test --bin dezirclip detect_content_type_cost -- --ignored --nocapture
-    ///
-    /// The old algorithm is written out in full here rather than inferred, and
-    /// the benchmark checks that it returns the same verdict as the shipping
-    /// code for every payload here. That equality is the whole argument for the
-    /// change; the timings only say what it is worth.
-    ///
-    /// Absolute milliseconds on the multi-megabyte rows move a lot between runs
-    /// on this machine, so the column worth reading is the ratio, and only for
-    /// the code rows: on the rows where nothing matches, both versions probe
-    /// exactly the same needles, and the measured difference straddles zero.
-    #[cfg(target_os = "windows")]
-    #[test]
-    #[ignore]
-    fn detect_content_type_cost() {
-        use std::time::Instant;
+    const KEYWORDS: [&str; 18] = [
+        "import ",
+        "const ",
+        "let ",
+        "var ",
+        "function ",
+        "class ",
+        "pub fn ",
+        "impl ",
+        "#include",
+        "package ",
+        "interface ",
+        "namespace ",
+        "void ",
+        "return ",
+        "if (",
+        "for (",
+        "while (",
+        "=>",
+    ];
 
-        const KEYWORDS: [&str; 18] = [
-            "import ",
-            "const ",
-            "let ",
-            "var ",
-            "function ",
-            "class ",
-            "pub fn ",
-            "impl ",
-            "#include",
-            "package ",
-            "interface ",
-            "namespace ",
-            "void ",
-            "return ",
-            "if (",
-            "for (",
-            "while (",
-            "=>",
-        ];
-
-        /// The algorithm as it was before the early return: every needle is probed,
+    /// The algorithm as it was before the early return: every needle is probed,
     /// and the score is only compared with the threshold at the very end.
     fn accumulate_all(text: &str) -> String {
         let trimmed = text.trim();
@@ -990,6 +970,70 @@ mod tests {
         "text".to_string()
     }
 
+    /// Payloads that sit *on* the threshold, so that a classifier which got the
+    /// boundary wrong would answer differently from one that got it right.
+    ///
+    /// This list exists because the first version of the equivalence check was
+    /// worthless: it only fed in code payloads (score far above 2) and prose
+    /// payloads (score 0), so moving the threshold from 2 to 3 flipped not one
+    /// verdict and the check stayed green. Anything that discriminates has to
+    /// land on 1, 2 or 3.
+    #[test]
+    fn the_old_and_new_classifiers_agree_on_borderline_payloads() {
+        let cases: [(&str, &str); 12] = [
+            // score 0
+            ("plain words, nothing structural", "text"),
+            // score 1 -- one keyword, below the threshold
+            ("return the value", "text"),
+            ("let it be", "text"),
+            // score 2 -- exactly the threshold, two ways to reach it
+            ("const x = 1 let y = 2", "code"),
+            ("return the value;", "code"),
+            // score 3 -- over the threshold by one
+            ("const x = 1 let y = 2;", "code"),
+            // the HTML pair is worth two on its own
+            ("</p>", "code"),
+            // score 1 from the brace pair, plus the JSON fallback
+            ("{\"a\": 1}", "code"),
+            ("{ not json at all", "text"),
+            // the URL short-circuit runs before any of that
+            ("https://example.com/const x", "url"),
+            // empty and blank
+            ("", "text"),
+            ("   \n  ", "text"),
+        ];
+        for (input, expect) in cases {
+            assert_eq!(
+                detect_content_type(input),
+                expect,
+                "unexpected verdict for {input:?}"
+            );
+            assert_eq!(
+                accumulate_all(input),
+                detect_content_type(input),
+                "the old and new classifiers disagree on {input:?}"
+            );
+        }
+    }
+
+    /// What `detect_content_type` costs per capture before and after it stopped
+    /// searching once the verdict was settled.
+    ///
+    /// Run: cargo test --bin dezirclip detect_content_type_cost -- --ignored --nocapture
+    ///
+    /// The old algorithm is [`accumulate_all`] above, and the benchmark fails if
+    /// the two disagree on any payload here rather than merely printing it. The
+    /// boundary cases live in
+    /// `the_old_and_new_classifiers_agree_on_borderline_payloads`, which runs
+    /// by default -- this one is about timings, that one is about equivalence.
+    ///
+    /// Absolute milliseconds on the multi-megabyte rows move a lot between runs
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore]
+    fn detect_content_type_cost() {
+        use std::time::Instant;
+
         let unit_code = "pub fn handler(req: &Request) -> Result<(), Error> {\n    let x = 1;\n    return x;\n}\n";
         let unit_prose = "The quick brown fox jumps over the lazy dog near the riverbank at dawn. ";
         let unit_json = r#"{"alpha":1,"beta":[2,3],"gamma":{"delta":"value"},"epsilon":null},"#;
@@ -1011,6 +1055,10 @@ mod tests {
             for (_size_label, target) in sizes {
                 let reps = (target / unit.len().max(1)).max(1);
                 let payload = unit.repeat(reps);
+                // Both arms are called through a black box so the optimiser
+                // cannot delete a call whose result nobody looks at, and so the
+                // string cannot be hoisted out of the loop.
+                let payload = std::hint::black_box(&payload);
 
                 const N: usize = 20;
                 let mut cur = std::time::Duration::ZERO;
@@ -1024,48 +1072,65 @@ mod tests {
                     // ordering artefact, not a cost.
                     let (a, a_ms, b, b_ms) = if round % 2 == 0 {
                         let t = Instant::now();
-                        let a = accumulate_all(&payload);
+                        let a = accumulate_all(payload);
                         let a_ms = t.elapsed();
                         let t = Instant::now();
-                        let b = detect_content_type(&payload);
+                        let b = detect_content_type(payload);
                         let b_ms = t.elapsed();
                         (a, a_ms, b, b_ms)
                     } else {
                         let t = Instant::now();
-                        let b = detect_content_type(&payload);
+                        let b = detect_content_type(payload);
                         let b_ms = t.elapsed();
                         let t = Instant::now();
-                        let a = accumulate_all(&payload);
+                        let a = accumulate_all(payload);
                         let a_ms = t.elapsed();
                         (a, a_ms, b, b_ms)
                     };
                     cur += a_ms;
                     fast += b_ms;
-                    verdict = b.clone();
+                    verdict = std::hint::black_box(b.clone());
                     if a != b {
                         mismatch += 1;
                     }
                 }
+                // This is the check that makes the benchmark able to guard what
+                // its comment claims. Counting a mismatch and printing it, then
+                // returning normally, lets a build that classifies one of these
+                // payloads differently report a pass -- the equivalence would be
+                // asserted by nobody.
+                assert_eq!(
+                    mismatch, 0,
+                    "the old and new classifiers disagree on a {unit_label} \
+                     payload of {}B -- equivalence is what this change claims",
+                    payload.len()
+                );
                 let cur_ms = cur.as_secs_f64() * 1e3 / N as f64;
                 let fast_ms = fast.as_secs_f64() * 1e3 / N as f64;
-                let flag = if mismatch == 0 {
-                    String::new()
-                } else {
-                    format!("   MISMATCH x{mismatch}")
-                };
                 println!(
-                    "  {:<9} {:>9}  {:>12.3}  {:>12.3}  {:>8.1}%  {:>8}{}",
+                    "  {:<9} {:>9}  {:>12.3}  {:>12.3}  {:>8.1}%  {:>8}",
                     unit_label,
                     format!("{}B", payload.len()),
                     cur_ms,
                     fast_ms,
                     (1.0 - fast_ms / cur_ms.max(1e-9)) * 100.0,
-                    verdict,
-                    flag
+                    verdict
                 );
             }
         }
-        println!("\nverdict column: shipping code and the candidate must agree.\n");
+        println!(
+            "\nverdict column: the two classifiers must agree -- this test fails \
+             if they do not.\n\
+             profile: {}\n\
+             absolute milliseconds here are not the shipping numbers unless this \
+             ran with --release: the release profile compiles at opt-level = \"s\" \
+             with fat LTO and runs this 20-40x faster than debug does.\n",
+            if cfg!(debug_assertions) {
+                "debug (cargo test) -- absolute values are NOT representative"
+            } else {
+                "release (cargo test --release)"
+            }
+        );
     }
 }
 
