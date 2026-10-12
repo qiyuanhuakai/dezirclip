@@ -40,8 +40,14 @@ pub fn init_encryption_queue(app_handle: AppHandle) -> EncryptionQueue {
 /// had already pulled the whole channel into a batch and released the database
 /// lock. Nothing was being waited for: the next jobs were already in memory, the
 /// lock was already free, and the thread read no shared state between iterations.
-/// Measured on this machine, one job costs 1.5-3.9 ms of DPAPI, so between 88%
-/// and 95% of each job's latency was this sleep.
+///
+/// On the machine this was measured on, DPAPI alone costs 1.3-3.2 ms per entry,
+/// which puts the sleep at 90-96% of a job. Treat that as an upper bound and a
+/// local estimate, not a portable ratio: a real job also runs a SELECT, an
+/// UPDATE and a text hash under the lock, it encrypts 2 values or 3 depending on
+/// whether the entry carries `html_content`, and under `--features portable`
+/// `maybe_encrypt_text` returns the value untouched, so its DPAPI cost is zero.
+/// See `dpapi_per_value_cost` in `crate::infrastructure::encryption`.
 ///
 /// What the pacing is actually for is to leave the database connection free for
 /// ordinary capture work, so it is kept -- but it now runs once per drained
@@ -49,11 +55,13 @@ pub fn init_encryption_queue(app_handle: AppHandle) -> EncryptionQueue {
 /// so single-job latency is unchanged; a burst of N jobs that previously paid
 /// N * 30 ms now pays one.
 ///
-/// What that costs: the old sleep also spaced the queue's lock acquisitions at
+/// What that costs: the old sleep also spaced this queue's lock acquisitions at
 /// least 30 ms apart. Now the N jobs of a batch take the connection back to
-/// back. That only matters if a burst ever gets large, and the queue is fed one
-/// job at a time by a single caller (`update_entry_tags`, when an entry crosses
-/// the sensitive-tag boundary), so N stays small in practice.
+/// back. The queue has a single enqueue site (`update_entry_tags`, when an entry
+/// crosses the sensitive-tag boundary), but that bounds how often jobs arrive,
+/// not how many can pile up in one drain -- a run of rapid tag edits is one
+/// batch. Whether that measurably hurts the capture thread's tail latency has
+/// not been tested here.
 const BATCH_PAUSE: Duration = Duration::from_millis(30);
 
 /// Run every job in a drained batch, pausing once at the end, and report how

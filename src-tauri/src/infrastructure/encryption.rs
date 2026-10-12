@@ -1463,8 +1463,16 @@ mod tests {
 /// Run: cargo test --bin dezirclip dpapi_per_value_cost -- --ignored --nocapture
 ///
 /// Kept as an executable test rather than a quoted figure because the numbers
-/// move between machines and between runs; what is stable is the ratio against
-/// the sleep, and that is what the encryption queue's comment cites.
+/// move between machines and between runs.
+///
+/// What this does *not* measure, so that the encryption queue's comment does not
+/// overclaim: this is `encrypt_value`/`decrypt_value` alone. A real
+/// `encrypt_entry_with_conn` also runs a SELECT and an UPDATE under the
+/// connection lock and a text hash, and it encrypts 2 values (content, preview)
+/// or 3 when `html_content` is present -- not always 3. Under `--features
+/// portable` `maybe_encrypt_text` returns the value untouched, so the DPAPI cost
+/// of a job there is zero. The sleep fraction is therefore a property of one
+/// machine, one build and one payload mix, not a portable ratio.
 #[cfg(all(test, target_os = "windows"))]
 #[test]
 #[ignore]
@@ -1473,15 +1481,17 @@ fn dpapi_per_value_cost() {
     use std::time::{Duration, Instant};
 
     let long = format!("<div>{}</div>", "b".repeat(3000));
-    let long = format!("{}{}", "plain text ".repeat(200), long);
-    let cases: [(&str, &str); 3] = [
-        ("short text", "some copied text"),
-        ("medium text", &"a".repeat(500)),
-        ("rich text + html", &long),
+    let long = format!("{}{}", "plain text ".repeat(200), &long);
+    // (label, payload, values in the entry). The two plain-text cases have no
+    // html_content, so a real job for them encrypts content + preview only.
+    let cases: [(&str, &str, usize); 3] = [
+        ("short text", "some copied text", 2),
+        ("medium text", &"a".repeat(500), 2),
+        ("rich text + html", &long, 3),
     ];
 
-    println!("\nDPAPI per-value cost on this machine:\n");
-    for (label, payload) in cases {
+    println!("\nDPAPI per-value cost on this machine (excludes the job's SQL and hashing):\n");
+    for (label, payload, values) in cases {
         let _ = encrypt_value(payload);
         const N: usize = 50;
         let (mut enc_total, mut dec_total) = (Duration::ZERO, Duration::ZERO);
@@ -1503,13 +1513,15 @@ fn dpapi_per_value_cost() {
         let enc = enc_total.as_secs_f64() * 1e3 / ok as f64;
         let dec = dec_total.as_secs_f64() * 1e3 / ok as f64;
         println!(
-            "  {:<18} len={:>5}B  encrypt {:.3} ms  decrypt {:.3} ms  => ~{:.3} ms/entry (3 values)",
+            "  {:<18} len={:>5}B  encrypt {:.3} ms  decrypt {:.3} ms  => ~{:.3} ms/entry ({} values)",
             label,
             payload.len(),
             enc,
             dec,
-            enc * 3.0
+            enc * values as f64,
+            values
         );
     }
-    println!("\nthe sleep that follows every job: 30.0 ms");
+    println!("\nthe sleep that followed every job: 30.0 ms");
+    println!("sleep share of a DPAPI-only job is an upper bound: the real job also\ndoes a SELECT, an UPDATE and a text hash under the connection lock.");
 }
