@@ -214,6 +214,18 @@ pub fn truncate_html_for_preview(html: &str) -> Option<String> {
 }
 
 pub fn detect_content_type(text: &str) -> String {
+    detect_content_type_probing(text, &mut |needle| text.contains(needle))
+}
+
+/// [`detect_content_type`], with the "does the payload contain this" step
+/// injected.
+///
+/// The needle probe is a parameter rather than a `contains` call so that how
+/// *many* needles get looked at is observable. Returning early cannot be
+/// detected by comparing results -- both versions answer identically -- so a
+/// test that only checks the verdict would pass against a build that walked
+/// every needle, which is the thing worth preventing.
+fn detect_content_type_probing(text: &str, probe: &mut impl FnMut(&str) -> bool) -> String {
     let trimmed = text.trim();
     if trimmed.starts_with("http") || trimmed.starts_with("www.") {
         return "url".to_string();
@@ -241,30 +253,47 @@ pub fn detect_content_type(text: &str) -> String {
         "=>",
     ];
 
+    // The score only goes up and the verdict is a threshold on it, so once it
+    // has been reached the needles left to try cannot change the answer. Every
+    // one of them is a full walk of the payload, so a large paste was paying up
+    // to 24 passes to compute a score it had already decided on.
+    const CODE_AT: i32 = 2;
+    fn decided(score: i32) -> bool {
+        score >= CODE_AT
+    }
+
     for k in keywords {
-        if text.contains(k) {
+        if probe(k) {
             score += 1;
+            if decided(score) {
+                return "code".to_string();
+            }
         }
     }
 
-    if text.contains(";") {
+    if probe(";") {
         score += 1;
+        if decided(score) {
+            return "code".to_string();
+        }
     }
-    if text.contains("{") && text.contains("}") {
+    if probe("{") && probe("}") {
         score += 1;
+        if decided(score) {
+            return "code".to_string();
+        }
     }
-    if text.contains("</") && text.contains(">") {
+    if probe("</") && probe(">") {
         score += 2;
-    }
-
-    if score >= 2 {
-        return "code".to_string();
+        if decided(score) {
+            return "code".to_string();
+        }
     }
 
     if trimmed.starts_with("{")
         && trimmed.ends_with("}")
-        && text.contains(":")
-        && text.contains("\"")
+        && probe(":")
+        && probe("\"")
     {
         return "code".to_string();
     }
@@ -781,6 +810,262 @@ mod tests {
                 .count(),
             CONTENT_PREVIEW_MAX_CHARS
         );
+    }
+
+    /// Counts the needles looked at, and reports what the caller decided --
+    /// using a stub that answers from a table, so the count is a fact about
+    /// this loop rather than something the loop could hand back itself.
+    fn probe_count(
+        text: &str,
+        present: &[&str],
+    ) -> (String, Vec<String>) {
+        let mut asked: Vec<String> = Vec::new();
+        let verdict = detect_content_type_probing(text, &mut |needle| {
+            asked.push(needle.to_string());
+            present.contains(&needle)
+        });
+        (verdict, asked)
+    }
+
+    /// The whole point of the change: a payload whose verdict is already
+    /// settled must not be walked for every remaining needle.
+    #[test]
+    fn a_settled_verdict_stops_the_search() {
+        // Two hits are the threshold. The list starts "import ", so that one is
+        // probed and misses before "const " and "let " settle it -- three
+        // needles, not eighteen.
+        let (verdict, asked) = probe_count("const x = 1; let y = 2;", &["const ", "let "]);
+        assert_eq!(verdict, "code");
+        assert_eq!(
+            asked,
+            vec![
+                "import ".to_string(),
+                "const ".to_string(),
+                "let ".to_string()
+            ],
+            "the needle list must not be walked once the verdict cannot change"
+        );
+    }
+
+    /// The two-free `</` and `>` hit alone scores 2, and it must stop the
+    /// search rather than fall through to the JSON check afterwards.
+    #[test]
+    fn a_double_weighted_hit_alone_is_enough_to_stop() {
+        let (verdict, asked) = probe_count("<p>hi</p>", &["</", ">"]);
+        assert_eq!(verdict, "code");
+        assert!(
+            !asked.contains(&":".to_string()),
+            "the JSON probe runs only when the score never reached the threshold: {asked:?}"
+        );
+    }
+
+    /// A payload that stays undecided must still be probed all the way to the
+    /// end -- early exit must not turn into "give up early".
+    ///
+    /// The tail is 21 rather than 24 because each pair is guarded by `&&`:
+    /// with nothing present, the second needle of each pair is never asked.
+    #[test]
+    fn an_undecided_payload_is_still_searched_whole() {
+        let (verdict, asked) = probe_count("just some ordinary prose here", &[]);
+        assert_eq!(verdict, "text");
+        assert_eq!(
+            asked.len(),
+            18 + 1 + 1 + 1,
+            "every keyword, then the semicolon and the first needle of each \
+             guarded pair, must all be probed when nothing settles the verdict: {asked:?}"
+        );
+        assert_eq!(asked.last().map(String::as_str), Some("</"));
+    }
+
+    /// A single hit is not enough, so the search continues past it and the
+    /// trailing semicolon is what finishes the job.
+    #[test]
+    fn one_hit_alone_does_not_stop_the_search() {
+        let (verdict, asked) = probe_count("return x;", &["return ", ";"]);
+        assert_eq!(verdict, "code");
+        assert!(
+            asked.len() > 2,
+            "one keyword hit must not be treated as decisive: {asked:?}"
+        );
+        assert_eq!(asked.last().map(String::as_str), Some(";"));
+    }
+
+    /// The refactor that made the count observable must not have changed a
+    /// single verdict. This is the battery the change is allowed to pass.
+    #[test]
+    fn the_verdicts_are_the_ones_the_rules_describe() {
+        let cases: [(&str, &str); 9] = [
+            ("https://example.com/a?b=c", "url"),
+            ("www.example.com", "url"),
+            ("const x = 1; let y = 2;", "code"),
+            ("<p>hi</p>", "code"),
+            ("<p>hi", "text"),
+            ("return x;", "code"),
+            ("just some ordinary prose here", "text"),
+            ("{\"a\": 1}", "code"),
+            ("{ not json at all", "text"),
+        ];
+        for (input, expect) in cases {
+            assert_eq!(
+                detect_content_type(input),
+                expect,
+                "unexpected verdict for {input:?}"
+            );
+        }
+    }
+
+    /// What `detect_content_type` costs per capture before and after it stopped
+    /// searching once the verdict was settled.
+    ///
+    /// Run: cargo test --bin dezirclip detect_content_type_cost -- --ignored --nocapture
+    ///
+    /// The old algorithm is written out in full here rather than inferred, and
+    /// the benchmark checks that it returns the same verdict as the shipping
+    /// code for every payload here. That equality is the whole argument for the
+    /// change; the timings only say what it is worth.
+    ///
+    /// Absolute milliseconds on the multi-megabyte rows move a lot between runs
+    /// on this machine, so the column worth reading is the ratio, and only for
+    /// the code rows: on the rows where nothing matches, both versions probe
+    /// exactly the same needles, and the measured difference straddles zero.
+    #[cfg(target_os = "windows")]
+    #[test]
+    #[ignore]
+    fn detect_content_type_cost() {
+        use std::time::Instant;
+
+        const KEYWORDS: [&str; 18] = [
+            "import ",
+            "const ",
+            "let ",
+            "var ",
+            "function ",
+            "class ",
+            "pub fn ",
+            "impl ",
+            "#include",
+            "package ",
+            "interface ",
+            "namespace ",
+            "void ",
+            "return ",
+            "if (",
+            "for (",
+            "while (",
+            "=>",
+        ];
+
+        /// The algorithm as it was before the early return: every needle is probed,
+    /// and the score is only compared with the threshold at the very end.
+    fn accumulate_all(text: &str) -> String {
+        let trimmed = text.trim();
+        if trimmed.starts_with("http") || trimmed.starts_with("www.") {
+            return "url".to_string();
+        }
+        let mut score = 0;
+        for k in KEYWORDS {
+            if text.contains(k) {
+                score += 1;
+            }
+        }
+        if text.contains(";") {
+            score += 1;
+        }
+        if text.contains("{") && text.contains("}") {
+            score += 1;
+        }
+        if text.contains("</") && text.contains(">") {
+            score += 2;
+        }
+        if score >= 2 {
+            return "code".to_string();
+        }
+        if trimmed.starts_with("{")
+            && trimmed.ends_with("}")
+            && text.contains(":")
+            && text.contains("\"")
+        {
+            return "code".to_string();
+        }
+        "text".to_string()
+    }
+
+        let unit_code = "pub fn handler(req: &Request) -> Result<(), Error> {\n    let x = 1;\n    return x;\n}\n";
+        let unit_prose = "The quick brown fox jumps over the lazy dog near the riverbank at dawn. ";
+        let unit_json = r#"{"alpha":1,"beta":[2,3],"gamma":{"delta":"value"},"epsilon":null},"#;
+        let unit_cjk = "这是一段普通的中文说明文字，不包含任何代码关键字。";
+
+        let sizes: [(&str, usize); 4] = [("317B", 317), ("32KB", 32 << 10), ("337KB", 337 << 10), ("3MB", 3 << 20)];
+
+        println!("\ndetect_content_type per call (old search-all vs return-when-settled):\n");
+        println!(
+            "  {:<9} {:>9}  {:>12}  {:>12}  {:>8}  {:>10}",
+            "payload", "size", "old ms", "new ms", "saved", "verdict"
+        );
+        for (unit, unit_label) in [
+            (unit_code.to_string(), "code"),
+            (unit_prose.to_string(), "prose"),
+            (unit_json.to_string(), "json"),
+            (unit_cjk.to_string(), "cjk"),
+        ] {
+            for (_size_label, target) in sizes {
+                let reps = (target / unit.len().max(1)).max(1);
+                let payload = unit.repeat(reps);
+
+                const N: usize = 20;
+                let mut cur = std::time::Duration::ZERO;
+                let mut fast = std::time::Duration::ZERO;
+                let mut verdict = String::new();
+                let mut mismatch = 0;
+                for round in 0..N {
+                    // Alternate which arm goes first. Measuring the same pair
+                    // in a fixed order put the second arm ahead by 2-10% on
+                    // payloads where both arms do identical work, which is an
+                    // ordering artefact, not a cost.
+                    let (a, a_ms, b, b_ms) = if round % 2 == 0 {
+                        let t = Instant::now();
+                        let a = accumulate_all(&payload);
+                        let a_ms = t.elapsed();
+                        let t = Instant::now();
+                        let b = detect_content_type(&payload);
+                        let b_ms = t.elapsed();
+                        (a, a_ms, b, b_ms)
+                    } else {
+                        let t = Instant::now();
+                        let b = detect_content_type(&payload);
+                        let b_ms = t.elapsed();
+                        let t = Instant::now();
+                        let a = accumulate_all(&payload);
+                        let a_ms = t.elapsed();
+                        (a, a_ms, b, b_ms)
+                    };
+                    cur += a_ms;
+                    fast += b_ms;
+                    verdict = b.clone();
+                    if a != b {
+                        mismatch += 1;
+                    }
+                }
+                let cur_ms = cur.as_secs_f64() * 1e3 / N as f64;
+                let fast_ms = fast.as_secs_f64() * 1e3 / N as f64;
+                let flag = if mismatch == 0 {
+                    String::new()
+                } else {
+                    format!("   MISMATCH x{mismatch}")
+                };
+                println!(
+                    "  {:<9} {:>9}  {:>12.3}  {:>12.3}  {:>8.1}%  {:>8}{}",
+                    unit_label,
+                    format!("{}B", payload.len()),
+                    cur_ms,
+                    fast_ms,
+                    (1.0 - fast_ms / cur_ms.max(1e-9)) * 100.0,
+                    verdict,
+                    flag
+                );
+            }
+        }
+        println!("\nverdict column: shipping code and the candidate must agree.\n");
     }
 }
 
