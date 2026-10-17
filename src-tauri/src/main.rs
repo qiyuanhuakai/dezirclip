@@ -235,6 +235,7 @@ fn main() {
             app::commands::paste_quick_paste_selection,
             services::paste_queue::get_paste_queue,
             services::paste_queue::set_paste_queue,
+            services::paste_queue::clear_paste_queue,
             services::paste_queue::paste_next_step,
             app::commands::get_tag_colors,
             app::commands::set_tag_color,

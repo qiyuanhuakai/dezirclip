@@ -7,6 +7,8 @@ interface UseSettingsPanelPropsOptions {
   theme: string;
   language: Locale;
   colorMode: string;
+  pasteQueueCount: number;
+  clearPasteQueue: () => void;
   mainHotkeys: string[];
   checkHotkeyConflict: (newHotkey: string, mode: "main" | "sequential" | "rich" | "search") => boolean;
   updateHotkey: (key: string) => void;
@@ -189,6 +191,8 @@ export const useSettingsPanelProps = ({
   theme,
   language,
   colorMode,
+  pasteQueueCount,
+  clearPasteQueue,
   mainHotkeys,
   checkHotkeyConflict,
   updateHotkey,
@@ -213,6 +217,8 @@ export const useSettingsPanelProps = ({
     theme,
     language,
     colorMode,
+    pasteQueueCount,
+    clearPasteQueue,
     mainHotkeys,
     checkHotkeyConflict,
     updateHotkey,

@@ -36,6 +36,8 @@ export interface SettingsPanelProps {
     readonly deleteAfterPaste: boolean;
     readonly moveToTopAfterPaste: boolean;
     readonly sequentialMode: boolean;
+    readonly pasteQueueCount: number;
+    readonly clearPasteQueue: () => void;
     readonly sequentialHotkey: string;
     readonly isRecordingSequential: boolean;
     readonly richPasteHotkey: string;

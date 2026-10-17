@@ -53,6 +53,8 @@ interface ClipboardSettingsGroupProps {
     pasteMethod: string;
     setPasteMethod: (val: string) => void;
     sequentialMode: boolean;
+    pasteQueueCount: number;
+    clearPasteQueue: () => void;
     setSequentialModeState: (val: boolean) => void;
     sequentialHotkey: string;
     isRecordingSequential: boolean;
@@ -556,6 +558,13 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     const val = e.target.checked;
                                     props.setSequentialModeState(val);
                                     invoke('set_sequential_mode', { enabled: val }).catch(console.error);
+                                    // Turning the mode off used to leave the queue
+                                    // intact, and the hotkey accepts a non-empty
+                                    // queue even when the mode is off, so a batch
+                                    // copied before the switch stayed pasteable.
+                                    if (!val && props.pasteQueueCount > 0) {
+                                        props.clearPasteQueue();
+                                    }
                                     if (val) {
                                         if (props.checkHotkeyConflict(props.sequentialHotkey, 'sequential')) {
                                             props.updateSequentialHotkey("");
@@ -566,6 +575,23 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
                     </div>
+
+                    {props.sequentialMode && props.pasteQueueCount > 0 && (
+                        <div className="setting-item setting-item--detail">
+                            <div className="item-label-group">
+                                <span className="item-label">
+                                    {props.t('sequential_paste_queue_count').replace('{count}', String(props.pasteQueueCount))}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                className="setting-btn setting-btn--compact"
+                                onClick={() => props.clearPasteQueue()}
+                            >
+                                {props.t('sequential_paste_clear_queue')}
+                            </button>
+                        </div>
+                    )}
 
                     {props.sequentialMode && (
                         <div className="setting-item">

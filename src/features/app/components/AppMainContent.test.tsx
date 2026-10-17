@@ -80,6 +80,8 @@ function makeSettingsPanelProps(): SettingsPanelProps {
     captureRichText: true,
     richTextSnapshotPreview: false,
     richTextSnapshotCacheLimit: 120,
+    pasteQueueCount: 0,
+    clearPasteQueue: noop,
     deleteAfterPaste: false,
     moveToTopAfterPaste: true,
     sequentialMode: false,
