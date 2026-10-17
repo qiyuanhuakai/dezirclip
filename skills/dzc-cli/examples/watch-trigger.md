@@ -9,7 +9,16 @@ whenever a sensitive pattern is detected.
 
 > **`--pattern` is a case-insensitive substring match, not a regular expression.**
 > `a|b` matches the literal text `a|b` and never matches `password` or `secret`.
-> Run one watcher per term, or filter the stream with `grep -E` after the fact.
+> Run one watcher per term, or filter the stream with `grep -Ei` after the fact.
+
+> **Why step 2's pattern is a bare substring and not a quoted key.**
+> `dzc watch --json` emits NDJSON whose keys are fixed — `id`, `content_type`,
+> `content`, `preview`, `tags`, `pinned`, `timestamp`. A secret almost never
+> appears under one of those names; it appears *inside* `content`, as a string
+> value. A pattern like `"(password|secret|token)"` therefore matches only when
+> the clipboard content is itself a JSON document carrying those quoted keys —
+> on ordinary entries such as `password=example` or `export API_KEY=...` it
+> reports nothing at all.
 
 ## Steps
 
@@ -25,12 +34,24 @@ dzc watch --pattern "password" --json
 
 ```bash
 dzc watch --json \
-  | grep -E '"(password|secret|api[_-]?key|token)"' \
+  | grep -Ei '(password|passwd|secret|api[_-]?key|access[_-]?key|token)\b' \
   | while read -r line; do
       PREVIEW=$(echo "$line" | jq -r '.preview // "no preview"')
       notify-send "Sensitive clipboard detected" "$PREVIEW"
     done
 ```
+
+   `-i` because `API_KEY=` is as common as `api_key=`, and the trailing `\b` so
+   `tokenizer` or `passwordless` do not drag every match in. There is
+   deliberately **no** left-hand `\b`: `db_password` and
+   `AWS_SECRET_ACCESS_KEY` put the keyword in the middle of a longer identifier,
+   where a leading boundary would not fire.
+
+   Two limits worth knowing. A credential that carries no keyword at all —
+   a bare `ghp_abc123` — matches nothing here, exactly as it would miss
+   `--pattern password`. And prose that merely mentions a keyword
+   ("my db password is in the vault") does match; for a sentinel that is the
+   cheaper error, but tune the alternation if it is too loud.
 
 3. Or run several dedicated watchers, one per term, in parallel.
 
@@ -64,6 +85,10 @@ tail -f ~/.dzc-sentinel.log | jq .
   can replay or filter the file later with `jq`.
 - The startup banner goes to stderr; entries go to stdout, so the stream stays
   pipeable. `--quiet` suppresses the banner only.
+- No `--line-buffered` or `--unbuffered` is needed anywhere in the pipeline.
+  Each entry is emitted with `println!`, and Rust's `Stdout` is a `LineWriter`
+  — line-buffered whether stdout is a terminal or a pipe — so every event
+  reaches `grep` on its own newline.
 - Stopping the watcher (Ctrl-C) ends the stream with exit code `130`; the log
   file remains intact.
 

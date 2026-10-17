@@ -185,10 +185,12 @@ pub fn run_watch_with_running(
 /// Emit one entry to stdout, either as a `CliEntry` JSON object
 /// (newline-delimited, NDJSON-friendly) or as a human line.
 ///
-/// Both forms end with a `\n` so the line is flushed by the runtime
-/// promptly. We don't `flush()` explicitly — `println!` does it on
-/// most targets, and the kernel line-discipline is fast enough at
-/// 500ms cadence that we don't need it.
+/// Both forms end with a `\n`, and `std::io::Stdout` is a `LineWriter`, so
+/// every line is flushed as it is written whether stdout is a terminal or a
+/// pipe. That is what lets `dzc watch --json | grep ...` see each event as it
+/// happens, so we do not need a `flush()` here and callers piping us do not
+/// need `--line-buffered` either. (The 500 ms poll cadence would hide the
+/// difference for a human reader anyway; it is the pipe that cares.)
 fn emit_entry(e: &ClipboardEntry, json: bool) {
     if json {
         let view = CliEntry {
