@@ -114,23 +114,23 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                 <LabelWithHint label={t("dzc_cli")} hint={t("dzc_cli")} hintKey="dzc_cli" />
             </div>
             {cliInfo?.cli_path && (
-                <div className="setting-item" style={{ marginLeft: "18px" }}>
+                <div className="setting-item setting-item--detail">
                     <div className="item-label-group"><span className="item-label">{t("cli_path")}</span></div>
                     <span style={{ fontSize: "12px", opacity: 0.7, maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cliInfo.cli_path}</span>
                 </div>
             )}
             {cliInfo?.cli_version && (
-                <div className="setting-item" style={{ marginLeft: "18px" }}>
+                <div className="setting-item setting-item--detail">
                     <div className="item-label-group"><span className="item-label">{t("cli_version")}</span></div>
                     <span style={{ fontSize: "12px", opacity: 0.7 }}>{cliInfo.cli_version}</span>
                 </div>
             )}
-            <div className="setting-item tools-action-row" style={{ marginLeft: "18px" }}>
+            <div className="setting-item setting-item--detail tools-action-row">
                 <div className="item-label-group"><span className="item-label">{t("cli_path_status")}</span></div>
                 <ToolsPathStatus t={t} cliInfo={cliInfo} cliInfoLoading={cliInfoLoading} pathUpdating={pathUpdating} onAddToPath={handleAddCliToPath} />
             </div>
             {pathStatusKey && (
-                <div className="setting-item tools-note-item" style={{ marginLeft: "18px" }}>
+                <div className="setting-item setting-item--detail tools-note-item">
                     <span className="tools-note">{pathStatusText()}{pathStatusDetail ? ` ${pathStatusDetail}` : ""}</span>
                 </div>
             )}
@@ -143,7 +143,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                 </button>
             </div>
             {cliInfo?.skill_path && (
-                <div className="setting-item" style={{ marginLeft: "18px" }}>
+                <div className="setting-item setting-item--detail">
                     <div className="item-label-group"><span className="item-label">{t("skill_path")}</span></div>
                     <span className="tools-path-text">{cliInfo.skill_path}</span>
                 </div>
@@ -152,7 +152,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                 <LabelWithHint label={t("build_info")} hint={t("build_info")} hintKey="build_info" />
             </div>
             {[["app_version", appVersion || "-"], ["platform_label", platformKey ? t(platformKey) : "-"], ["build_date", buildDate || "-"]].map(([labelKey, value]) => (
-                <div key={labelKey} className="setting-item" style={{ marginLeft: "18px" }}>
+                <div key={labelKey} className="setting-item setting-item--detail">
                     <div className="item-label-group"><span className="item-label">{t(labelKey)}</span></div>
                     <span style={{ fontSize: "12px", opacity: 0.7 }}>{value}</span>
                 </div>

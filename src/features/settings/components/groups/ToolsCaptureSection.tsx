@@ -59,7 +59,7 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
     }, [onHotkeyChange, recording, setRecording]);
 
     return (
-        <div className="setting-item" style={{ marginLeft: "18px" }}>
+        <div className="setting-item setting-item--detail">
             <div className="item-label-group">
                 <span className="item-label">{t(labelKey)}</span>
                 <span className="hint">
@@ -147,7 +147,7 @@ const ToolsCaptureSection = ({
             {screenshotEnabled && (
                 <>
                     <HotkeyRecorder t={t} labelKey="screenshot_hotkey" hotkey={screenshotHotkey} recording={isRecordingScreenshot} setRecording={setIsRecordingScreenshot} onHotkeyChange={updateScreenshotHotkey} />
-                    <div className="setting-item" style={{ marginLeft: "18px" }}>
+                    <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("capture_now")}</span></div>
                         <button className="setting-btn" onClick={() => invoke("show_region_selector").catch(console.error)}><Camera size={14} />{t("capture_now")}</button>
                     </div>

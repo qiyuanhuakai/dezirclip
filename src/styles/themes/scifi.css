@@ -85,6 +85,34 @@ body.light-mode.theme-scifi #root {
   text-transform: none !important;
 }
 
+/* Wide-layout nav rail: translucent console rows with an accent edge, so the
+   selected section reads as lit rather than filled. */
+.theme-scifi .settings-rail-item {
+  border: 1px solid color-mix(in srgb, var(--border-light) 40%, transparent) !important;
+  border-radius: 10px !important;
+  background: color-mix(in srgb, var(--bg-toolbar) 72%, transparent) !important;
+  box-shadow: none !important;
+  padding: 8px 12px !important;
+  transform: none !important;
+  letter-spacing: 0.02em !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease !important;
+}
+
+.theme-scifi .settings-rail-item:hover {
+  background: color-mix(in srgb, var(--bg-toolbar) 88%, transparent) !important;
+  border-color: color-mix(in srgb, var(--accent-color) 46%, transparent) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.theme-scifi .settings-rail-item.is-active {
+  background: color-mix(in srgb, var(--accent-color) 18%, transparent) !important;
+  border-color: color-mix(in srgb, var(--accent-color) 68%, transparent) !important;
+  color: var(--accent-color) !important;
+  transform: none !important;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent-color) 26%, transparent) !important;
+}
+
 .theme-scifi .settings-group .group-content {
   background: transparent !important;
   border-top: none !important;

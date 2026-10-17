@@ -210,9 +210,15 @@
 
 .data-path-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
+/* These buttons are narrower than a Chinese label's worth of slack needs once the
+   window drops towards its 250px minimum, and CJK text has a one-character
+   min-content — so a squeezed button wraps mid-word ("导出剪贴板历" / "史") instead
+   of yielding its row. The row wraps between buttons; a button never wraps
+   inside itself. */
 .btn-icon-data-action {
   width: auto;
   padding: 4px 12px;
@@ -220,10 +226,12 @@
   text-transform: uppercase;
   height: 24px;
   gap: 4px;
+  white-space: nowrap;
 }
 
 .data-actions-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
   padding-top: 12px;

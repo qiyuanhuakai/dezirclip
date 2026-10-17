@@ -235,7 +235,7 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
                 {idleDestroyEnabled && (
-                    <div className="setting-item" style={{ marginLeft: '18px' }}>
+                    <div className="setting-item setting-item--detail">
                         <LabelWithHint
                             label={t('idle_destroy_seconds')}
                             hint={t('idle_destroy_seconds_hint')}
@@ -287,7 +287,7 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
                 {soundEnabled && (
-                    <div className="setting-item" style={{ marginLeft: '18px' }}>
+                    <div className="setting-item setting-item--detail">
                         <div className="item-label-group" style={{ flex: 1 }}>
                             <span className="item-label">{t('sound_volume') || "Sound Volume"}</span>
                             <span className="item-desc">{soundVolume}%</span>
@@ -307,7 +307,7 @@ const GeneralSettingsGroup = ({
                     </div>
                 )}
                 {soundEnabled && (
-                    <div className="setting-item" style={{ marginLeft: '18px' }}>
+                    <div className="setting-item setting-item--detail">
                         <div className="item-label-group">
                             <span className="item-label">{t('paste_sound') || "Paste Sound"}</span>
                         </div>

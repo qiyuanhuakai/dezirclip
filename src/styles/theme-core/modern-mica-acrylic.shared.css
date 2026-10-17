@@ -184,6 +184,32 @@
   border-top: none !important;
 }
 
+/* Wide-layout nav rail: the same translucent surface a group uses, flattened
+   into a sidebar row. Selection is an accent wash, not an inversion. */
+:is(.theme-mica, .theme-acrylic) .settings-rail-item {
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  background: var(--surface-settings-group-bg) !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+  padding: 9px 12px !important;
+  transform: none !important;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease !important;
+}
+
+:is(.theme-mica, .theme-acrylic) .settings-rail-item:hover {
+  border-color: var(--surface-settings-group-border) !important;
+  transform: none !important;
+}
+
+:is(.theme-mica, .theme-acrylic) .settings-rail-item.is-active {
+  background: var(--highlight-bg) !important;
+  border-color: color-mix(in srgb, var(--accent-color) 40%, transparent) !important;
+  color: var(--text-primary) !important;
+  box-shadow: inset 3px 0 0 0 var(--accent-color) !important;
+  transform: none !important;
+}
+
 :is(.theme-mica, .theme-acrylic) .settings-view input[type="range"] {
   height: 8px;
   background: transparent;
