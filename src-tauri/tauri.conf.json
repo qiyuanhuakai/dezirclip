@@ -50,6 +50,7 @@
         "url": "index.html?window=region-select",
         "width": 1920,
         "height": 1080,
+        "resizable": false,
         "transparent": true,
         "alwaysOnTop": true,
         "decorations": false,
