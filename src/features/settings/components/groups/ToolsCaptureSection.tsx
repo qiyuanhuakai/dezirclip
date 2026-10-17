@@ -14,6 +14,7 @@ interface ToolsCaptureSectionProps {
     readonly screenshotEnabled: boolean;
     readonly setScreenshotEnabled: (val: boolean) => void;
     readonly screenshotHotkey: string;
+    readonly screenshotFullHotkey: string;
     readonly quickPasteEnabled: boolean;
     readonly setQuickPasteEnabled: (val: boolean) => void;
     readonly quickPasteHotkey: string;
@@ -129,6 +130,7 @@ const ToolsCaptureSection = ({
     screenshotEnabled,
     setScreenshotEnabled,
     screenshotHotkey: initialScreenshotHotkey,
+    screenshotFullHotkey: initialScreenshotFullHotkey,
     quickPasteEnabled,
     setQuickPasteEnabled,
     quickPasteHotkey: initialQuickPasteHotkey,
@@ -137,8 +139,10 @@ const ToolsCaptureSection = ({
     saveAppSetting,
 }: ToolsCaptureSectionProps) => {
     const [screenshotHotkey, setScreenshotHotkey] = useState(initialScreenshotHotkey);
+    const [screenshotFullHotkey, setScreenshotFullHotkey] = useState(initialScreenshotFullHotkey);
     const [quickPasteHotkey, setQuickPasteHotkey] = useState(initialQuickPasteHotkey);
     const [isRecordingScreenshot, setIsRecordingScreenshot] = useState(false);
+    const [isRecordingScreenshotFull, setIsRecordingScreenshotFull] = useState(false);
     const [isRecordingQuickPaste, setIsRecordingQuickPaste] = useState(false);
     const [ocrEngineInfo, setOcrEngineInfo] = useState<OcrEngineInfo | null>(null);
     const [ocrLoading, setOcrLoading] = useState(false);
@@ -157,11 +161,17 @@ const ToolsCaptureSection = ({
         refreshOcrEngineInfo();
     }, [refreshOcrEngineInfo]);
     useEffect(() => setScreenshotHotkey(initialScreenshotHotkey), [initialScreenshotHotkey]);
+    useEffect(() => setScreenshotFullHotkey(initialScreenshotFullHotkey), [initialScreenshotFullHotkey]);
     useEffect(() => setQuickPasteHotkey(initialQuickPasteHotkey), [initialQuickPasteHotkey]);
 
     const updateScreenshotHotkey = useCallback((newHotkey: string) => {
         setScreenshotHotkey(newHotkey);
         saveAppSetting("screenshot_hotkey", newHotkey);
+    }, [saveAppSetting]);
+
+    const updateScreenshotFullHotkey = useCallback((newHotkey: string) => {
+        setScreenshotFullHotkey(newHotkey);
+        saveAppSetting("screenshot_full_hotkey", newHotkey);
     }, [saveAppSetting]);
 
     const updateQuickPasteHotkey = useCallback((newHotkey: string) => {
@@ -179,6 +189,7 @@ const ToolsCaptureSection = ({
             {screenshotEnabled && (
                 <>
                     <HotkeyRecorder t={t} labelKey="screenshot_hotkey" hotkey={screenshotHotkey} recording={isRecordingScreenshot} setRecording={setIsRecordingScreenshot} onHotkeyChange={updateScreenshotHotkey} />
+                    <HotkeyRecorder t={t} labelKey="screenshot_full_hotkey" hotkey={screenshotFullHotkey} recording={isRecordingScreenshotFull} setRecording={setIsRecordingScreenshotFull} onHotkeyChange={updateScreenshotFullHotkey} />
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("capture_now")}</span></div>
                         <div className="setting-btn-group">

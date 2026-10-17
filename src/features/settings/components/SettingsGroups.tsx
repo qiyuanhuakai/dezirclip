@@ -261,6 +261,7 @@ const SettingsGroups = ({
                     screenshotEnabled={screenshotEnabled}
                     setScreenshotEnabled={setScreenshotEnabled}
                     screenshotHotkey={screenshotHotkey}
+                    screenshotFullHotkey={settings.appSettings?.["app.screenshot_full_hotkey"] || "Ctrl+Shift+F"}
                     quickPasteEnabled={quickPasteEnabled}
                     setQuickPasteEnabled={setQuickPasteEnabled}
                     quickPasteHotkey={settings.appSettings?.["app.quick_paste_hotkey"] || "Ctrl+Shift+V"}

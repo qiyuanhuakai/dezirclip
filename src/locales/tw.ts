@@ -310,6 +310,7 @@ export const tw = {
         screenshot_enabled: "區域截圖",
         screenshot_enabled_hint: "開啟後可透過快捷鍵進行區域截圖並自動儲存到剪貼簿",
         screenshot_hotkey: "截圖快捷鍵",
+        screenshot_full_hotkey: "全螢幕截圖快捷鍵",
         quick_paste_enabled: "快速貼上",
         quick_paste_enabled_hint: "開啟後可透過快捷鍵呼出快速貼上浮層",
         quick_paste_hotkey_label: "快速貼上快捷鍵",

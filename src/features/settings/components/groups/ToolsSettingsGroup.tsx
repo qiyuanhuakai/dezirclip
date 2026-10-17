@@ -17,6 +17,7 @@ interface ToolsSettingsGroupProps {
     readonly screenshotEnabled: boolean;
     readonly setScreenshotEnabled: (val: boolean) => void;
     readonly screenshotHotkey: string;
+    readonly screenshotFullHotkey: string;
     readonly quickPasteEnabled: boolean;
     readonly setQuickPasteEnabled: (val: boolean) => void;
     readonly quickPasteHotkey: string;
@@ -33,6 +34,7 @@ const ToolsSettingsGroup = ({
     screenshotEnabled,
     setScreenshotEnabled,
     screenshotHotkey,
+    screenshotFullHotkey,
     quickPasteEnabled,
     setQuickPasteEnabled,
     quickPasteHotkey,
@@ -53,6 +55,7 @@ const ToolsSettingsGroup = ({
                     screenshotEnabled={screenshotEnabled}
                     setScreenshotEnabled={setScreenshotEnabled}
                     screenshotHotkey={screenshotHotkey}
+                    screenshotFullHotkey={screenshotFullHotkey}
                     quickPasteEnabled={quickPasteEnabled}
                     setQuickPasteEnabled={setQuickPasteEnabled}
                     quickPasteHotkey={quickPasteHotkey}

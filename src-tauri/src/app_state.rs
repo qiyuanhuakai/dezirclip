@@ -21,6 +21,7 @@ pub struct SettingsState {
     pub search_hotkey: Mutex<String>,
     pub screenshot_enabled: AtomicBool,
     pub screenshot_hotkey: Mutex<String>,
+    pub screenshot_full_hotkey: Mutex<String>,
     pub quick_paste_enabled: AtomicBool,
     pub quick_paste_hotkey: Mutex<String>,
     pub ocr_enabled: AtomicBool,

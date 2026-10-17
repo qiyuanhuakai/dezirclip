@@ -294,6 +294,7 @@ pub struct StartupSettings {
     pub search_hotkey: String,
     pub screenshot_enabled: bool,
     pub screenshot_hotkey: String,
+    pub screenshot_full_hotkey: String,
     pub quick_paste_enabled: bool,
     pub quick_paste_hotkey: String,
     pub ocr_enabled: bool,
@@ -385,6 +386,10 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .get("app.screenshot_hotkey")
             .unwrap_or(Some("Ctrl+Shift+A".to_string()))
             .unwrap_or("Ctrl+Shift+A".to_string()),
+        screenshot_full_hotkey: repo
+            .get("app.screenshot_full_hotkey")
+            .unwrap_or(Some("Ctrl+Shift+F".to_string()))
+            .unwrap_or("Ctrl+Shift+F".to_string()),
         quick_paste_enabled: repo
             .get("app.quick_paste_enabled")
             .unwrap_or(Some("true".to_string()))
@@ -501,6 +506,7 @@ fn setup_state(
         search_hotkey: std::sync::Mutex::new(s.search_hotkey.clone()),
         screenshot_enabled: AtomicBool::new(s.screenshot_enabled),
         screenshot_hotkey: std::sync::Mutex::new(s.screenshot_hotkey.clone()),
+        screenshot_full_hotkey: std::sync::Mutex::new(s.screenshot_full_hotkey.clone()),
         quick_paste_enabled: AtomicBool::new(s.quick_paste_enabled),
         quick_paste_hotkey: std::sync::Mutex::new(s.quick_paste_hotkey.clone()),
         ocr_enabled: AtomicBool::new(s.ocr_enabled),
@@ -1732,6 +1738,27 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
                         crate::app::commands::screenshot_cmd::show_region_selector(app).await
                     {
                         crate::warn!("[hotkey] Failed to show the region selector: {}", err);
+                    }
+                });
+                return;
+            }
+        }
+
+        // Whole-display capture. Shares the `screenshot_enabled` gate rather
+        // than growing a second toggle: turning off "region capture" means the
+        // user does not want screenshots stealing a global hotkey, and leaving
+        // this one armed would be the surprising half of that.
+        if let Ok(full_s) = {
+            let val = settings.screenshot_full_hotkey.lock().unwrap().clone();
+            val.replace("Win", "Super").parse::<Shortcut>()
+        } {
+            if shortcut == &full_s {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) =
+                        crate::app::commands::screenshot_cmd::capture_full_screen(app).await
+                    {
+                        crate::warn!("[hotkey] Failed to capture the full screen: {}", err);
                     }
                 });
                 return;

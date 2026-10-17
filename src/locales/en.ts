@@ -311,6 +311,7 @@ export const en = {
         screenshot_enabled: "Screenshot",
         screenshot_enabled_hint: "Enable region screenshot via hotkey, saved to clipboard",
         screenshot_hotkey: "Screenshot Hotkey",
+        screenshot_full_hotkey: "Full Screen Capture Hotkey",
         quick_paste_enabled: "Quick Paste",
         quick_paste_enabled_hint: "Enable the quick-paste overlay via hotkey",
         quick_paste_hotkey_label: "Quick Paste Hotkey",

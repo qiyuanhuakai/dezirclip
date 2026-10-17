@@ -310,6 +310,7 @@ export const zh = {
         screenshot_enabled: "区域截图",
         screenshot_enabled_hint: "开启后可通过快捷键进行区域截图并自动保存到剪贴板",
         screenshot_hotkey: "截图快捷键",
+        screenshot_full_hotkey: "全屏截图快捷键",
         quick_paste_enabled: "快速粘贴",
         quick_paste_enabled_hint: "开启后可通过快捷键呼出快速粘贴浮层",
         quick_paste_hotkey_label: "快速粘贴快捷键",
