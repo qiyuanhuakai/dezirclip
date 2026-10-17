@@ -1806,6 +1806,18 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
         }
         tauri::WindowEvent::Resized(size) => {
+            // The region overlay is sized to a monitor, so a size change here
+            // can be tao's WM_DPICHANGED handling undoing the geometry we
+            // asked for. Spending the correction from `Resized` rather than
+            // only from `ScaleFactorChanged` is what makes it reliable: a DPI
+            // message the OS dispatches directly can reach us before tao's own
+            // SetWindowPos runs, so a correction issued from that event can
+            // still be overtaken. `Resized` cannot arrive until the size has
+            // settled. The flag is one-shot, so this cannot chase itself.
+            if window.label() == "region-select" {
+                crate::app::commands::screenshot_cmd::confirm_overlay_size(window);
+                return;
+            }
             if window.label() != "main" {
                 return;
             }

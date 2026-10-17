@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -99,6 +100,10 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
     if let Ok(mut remembered) = LAST_OVERLAY_RECT.lock() {
         *remembered = Some(rect);
     }
+    // The rectangle was just derived from the cursor, so nothing is owed for
+    // it. Clearing here rather than leaving a stale flag to spend on this
+    // write avoids a redundant second resize; a DPI change later re-raises it.
+    OVERLAY_SIZE_UNCONFIRMED.store(false, Ordering::SeqCst);
     apply_overlay_rect(window, rect);
 }
 
@@ -112,6 +117,14 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
 /// the window-event handler (which runs on it), but only once per screenshot —
 /// nothing here is hot-path state, so the lock costs nothing that matters.
 static LAST_OVERLAY_RECT: Mutex<Option<MonitorRect>> = Mutex::new(None);
+
+/// Whether the overlay's size still owes a correction after a DPI change.
+///
+/// Raised by `ScaleFactorChanged` and spent by the next `Resized`, which is the
+/// first point at which the size is known to have settled. An atomic rather
+/// than part of `LAST_OVERLAY_RECT` because it is a one-shot token, not data
+/// anyone reads back.
+static OVERLAY_SIZE_UNCONFIRMED: AtomicBool = AtomicBool::new(false);
 
 /// Move the selector onto `rect` in physical pixels.
 ///
@@ -135,32 +148,62 @@ fn apply_overlay_rect(window: &tauri::WebviewWindow, rect: MonitorRect) {
 /// the position is *not* enough on its own, and this is the reason:
 ///
 /// Moving a window onto a display with a different scale factor makes Windows
-/// post `WM_DPICHANGED`, and tao answers it before this app ever sees the
-/// event -- it computes a new size itself and calls `SetWindowPos`. Which size
-/// it picks depends on a system accessibility setting: with "show window
-/// contents while dragging" on it preserves the *logical* size (so the physical
-/// size changes), and with it off it preserves the *physical* one. Below
-/// Windows build 22000 it also recomputes the position. Either branch overwrites
-/// what `cover_cursor_monitor` just asked for, so on a mixed-DPI desk the mask
-/// ends up resized the moment it arrives and stops covering the display -- the
-/// exact failure this module exists to fix, one step later.
+/// post `WM_DPICHANGED`, and tao answers it -- it computes a new size itself
+/// and calls `SetWindowPos`. Which size it picks depends on a system
+/// accessibility setting: with "show window contents while dragging" on it
+/// preserves the *logical* size (so the physical size changes), and with it off
+/// it preserves the *physical* one. Below Windows build 22000 it also recomputes
+/// the position. Either branch overwrites what `cover_cursor_monitor` just asked
+/// for, so on a mixed-DPI desk the mask ends up resized the moment it arrives and
+/// stops covering the display -- the exact failure this module exists to fix, one
+/// step later.
 ///
-/// Re-asserting on the event rather than re-ordering the calls is what closes
-/// that gap: the request and the correction are separated by a round trip
-/// through the message pump, so there is nothing left for the OS to undo.
+/// **No visibility guard, deliberately.** Guarding on `is_visible()` looks
+/// tidier and is wrong: the reopen path sizes the window, positions it, and only
+/// then shows it, and tao drains a buffered `ScaleFactorChanged` as soon as the
+/// positioning callback returns -- before the `Show` is processed. The correction
+/// lands in that gap, reads the window as still hidden, skips, and nothing
+/// re-checks afterwards, so the mask comes up at whatever DPI conversion tao
+/// chose. The stale-rectangle risk the guard was meant to prevent does not
+/// exist: every show goes through `cover_cursor_monitor` first, which recomputes
+/// the rectangle from the cursor, so a rectangle applied to a hidden window is
+/// always recomputed before anyone can see it.
 ///
-/// No-op unless the overlay is the window that changed and is currently on
-/// screen, so a display change while it is hidden cannot move a stale
-/// rectangle onto it.
-///
-/// Cannot loop: this only runs for a window whose scale factor has *already*
-/// changed, which means it is already on the monitor the stored rectangle
-/// describes, and moving a window within one monitor raises no further
-/// `WM_DPICHANGED`.
+/// Correction still is not timed by hand. Being "a message loop later than the
+/// request" holds only for the re-entrant delivery path; a `WM_DPICHANGED` the
+/// OS dispatches directly can reach this callback synchronously, with tao's own
+/// `SetWindowPos` still to come. So the correction is *owed* rather than done
+/// once here: this raises a one-shot flag, and `setup.rs` spends it from
+/// `Resized`, which cannot arrive until the size has actually settled. Whichever
+/// order the two writers run in, the last one to write is the correct one.
 pub fn reassert_overlay_geometry(window: &tauri::Window) {
-    if window.label() != REGION_SELECT_LABEL || !window.is_visible().unwrap_or(false) {
+    if window.label() != REGION_SELECT_LABEL {
         return;
     }
+    // Raise it before applying, so the `Resized` our own write produces is
+    // still covered by a pending correction rather than being read as
+    // "settled, nothing owed".
+    OVERLAY_SIZE_UNCONFIRMED.store(true, Ordering::SeqCst);
+    apply_remembered_overlay_rect(window);
+}
+
+/// Spend a pending correction once the size has actually changed.
+///
+/// One-shot by construction, which is what makes it safe: it never compares the
+/// size against a target and re-arms on mismatch, so there is nothing here that
+/// can oscillate. After it runs, the `Resized` caused by its own write finds the
+/// flag clear and stops.
+pub fn confirm_overlay_size(window: &tauri::Window) {
+    if window.label() != REGION_SELECT_LABEL {
+        return;
+    }
+    if !OVERLAY_SIZE_UNCONFIRMED.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    apply_remembered_overlay_rect(window);
+}
+
+fn apply_remembered_overlay_rect(window: &tauri::Window) {
     let Some(rect) = LAST_OVERLAY_RECT.lock().ok().and_then(|rect| *rect) else {
         return;
     };
