@@ -1,3 +1,5 @@
+use std::sync::Mutex;
+
 use base64::{engine::general_purpose, Engine as _};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -54,6 +56,9 @@ fn global_cursor(app: &AppHandle) -> Option<(i32, i32)> {
 /// Best-effort by design: if the query or the monitor list fails, the window
 /// keeps its previous geometry. That is the behaviour from before, not a new
 /// failure path.
+///
+/// The chosen rectangle is remembered so `reassert_overlay_geometry` can put it
+/// back after the OS has second thoughts about the size.
 fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
     let Ok(monitors) = window.available_monitors() else {
         return;
@@ -84,17 +89,85 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
     };
     let pos = monitor.position();
     let size = monitor.size();
-    // Order matters: size first, then position. On Windows a window resized
-    // while it hangs off the right edge gets clamped back into the work area,
-    // which would leave it short by however far it stuck out.
-    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-        width: size.width,
-        height: size.height,
-    }));
-    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+    let rect = MonitorRect {
         x: pos.x,
         y: pos.y,
+        width: size.width,
+        height: size.height,
+        is_primary: false,
+    };
+    if let Ok(mut remembered) = LAST_OVERLAY_RECT.lock() {
+        *remembered = Some(rect);
+    }
+    apply_overlay_rect(window, rect);
+}
+
+/// The rectangle the region selector was last asked to cover.
+///
+/// Kept so a later `ScaleFactorChanged` can restore it exactly; see
+/// `reassert_overlay_geometry` for why "set it once" is not enough.
+///
+/// A `Mutex` rather than one of the process atomics in `global_state.rs`: this
+/// is written by an async command (which runs off the main thread) and read by
+/// the window-event handler (which runs on it), but only once per screenshot —
+/// nothing here is hot-path state, so the lock costs nothing that matters.
+static LAST_OVERLAY_RECT: Mutex<Option<MonitorRect>> = Mutex::new(None);
+
+/// Move the selector onto `rect` in physical pixels.
+///
+/// Size before position on purpose: on Windows, resizing a window that hangs
+/// off the right edge gets clamped back into the work area, which would leave
+/// it short by however far it stuck out.
+fn apply_overlay_rect(window: &tauri::WebviewWindow, rect: MonitorRect) {
+    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+        width: rect.width,
+        height: rect.height,
     }));
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+        x: rect.x,
+        y: rect.y,
+    }));
+}
+
+/// Put the region selector back on the rectangle it was last asked to cover.
+///
+/// Called when the selector's scale factor changes. Setting the size and then
+/// the position is *not* enough on its own, and this is the reason:
+///
+/// Moving a window onto a display with a different scale factor makes Windows
+/// post `WM_DPICHANGED`, and tao answers it before this app ever sees the
+/// event -- it computes a new size itself and calls `SetWindowPos`. Which size
+/// it picks depends on a system accessibility setting: with "show window
+/// contents while dragging" on it preserves the *logical* size (so the physical
+/// size changes), and with it off it preserves the *physical* one. Below
+/// Windows build 22000 it also recomputes the position. Either branch overwrites
+/// what `cover_cursor_monitor` just asked for, so on a mixed-DPI desk the mask
+/// ends up resized the moment it arrives and stops covering the display -- the
+/// exact failure this module exists to fix, one step later.
+///
+/// Re-asserting on the event rather than re-ordering the calls is what closes
+/// that gap: the request and the correction are separated by a round trip
+/// through the message pump, so there is nothing left for the OS to undo.
+///
+/// No-op unless the overlay is the window that changed and is currently on
+/// screen, so a display change while it is hidden cannot move a stale
+/// rectangle onto it.
+///
+/// Cannot loop: this only runs for a window whose scale factor has *already*
+/// changed, which means it is already on the monitor the stored rectangle
+/// describes, and moving a window within one monitor raises no further
+/// `WM_DPICHANGED`.
+pub fn reassert_overlay_geometry(window: &tauri::Window) {
+    if window.label() != REGION_SELECT_LABEL || !window.is_visible().unwrap_or(false) {
+        return;
+    }
+    let Some(rect) = LAST_OVERLAY_RECT.lock().ok().and_then(|rect| *rect) else {
+        return;
+    };
+    let Some(overlay) = window.app_handle().get_webview_window(REGION_SELECT_LABEL) else {
+        return;
+    };
+    apply_overlay_rect(&overlay, rect);
 }
 
 /// Bring the region selector back if the idle destroyer took it away.

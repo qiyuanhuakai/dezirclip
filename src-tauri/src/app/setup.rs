@@ -1814,6 +1814,11 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
             persist_window_size(window, size.width, size.height);
         }
+        tauri::WindowEvent::ScaleFactorChanged { .. } => {
+            // The overlay is the one window here that gets moved between
+            // displays at runtime, and the OS rescales it when it lands.
+            crate::app::commands::screenshot_cmd::reassert_overlay_geometry(window);
+        }
         tauri::WindowEvent::CloseRequested { api, .. } => {
             if window.label() != "main" {
                 return;
