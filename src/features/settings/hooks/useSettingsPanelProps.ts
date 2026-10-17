@@ -7,6 +7,8 @@ interface UseSettingsPanelPropsOptions {
   theme: string;
   language: Locale;
   colorMode: string;
+  pasteQueueCount: number;
+  clearPasteQueue: () => void;
   mainHotkeys: string[];
   checkHotkeyConflict: (newHotkey: string, mode: "main" | "sequential" | "rich" | "search") => boolean;
   updateHotkey: (key: string) => void;
@@ -89,6 +91,7 @@ const SETTINGS_STATE_KEYS = [
   "registryWinVEnabled",
   "richPasteHotkey",
   "richTextSnapshotPreview",
+  "richTextSnapshotCacheLimit",
   "scrollTopButtonEnabled",
   "searchHotkey",
   "sequentialHotkey",
@@ -136,6 +139,7 @@ const SETTINGS_STATE_KEYS = [
   "setRegistryWinVEnabled",
   "setRichPasteHotkey",
   "setRichTextSnapshotPreview",
+  "setRichTextSnapshotCacheLimit",
   "setScrollTopButtonEnabled",
   "setSearchHotkey",
   "setSequentialHotkey",
@@ -187,6 +191,8 @@ export const useSettingsPanelProps = ({
   theme,
   language,
   colorMode,
+  pasteQueueCount,
+  clearPasteQueue,
   mainHotkeys,
   checkHotkeyConflict,
   updateHotkey,
@@ -211,6 +217,8 @@ export const useSettingsPanelProps = ({
     theme,
     language,
     colorMode,
+    pasteQueueCount,
+    clearPasteQueue,
     mainHotkeys,
     checkHotkeyConflict,
     updateHotkey,

@@ -1,9 +1,13 @@
 import { extractRichImageFallback, resolveRichImageSrc } from "./richPreview";
 
+// Whether a snapshot is rendered instead of this HTML is decided by each
+// caller, not here: the list and the hover preview have different fallback
+// state, and both already hold the flag themselves. An earlier version took
+// `richTextSnapshotPreview` as a parameter and never read it, which read as
+// though passing it did something.
 type RichPreviewInput = {
   contentType: string;
   htmlContent?: string;
-  richTextSnapshotPreview?: boolean;
 };
 
 export type RichPreviewData = {

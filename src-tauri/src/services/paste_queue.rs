@@ -76,45 +76,39 @@ pub fn set_paste_queue(
         return Ok(());
     }
 
-    let mut queue = state.inner().0.lock().unwrap();
-    queue.items.clear();
-    for id in item_ids {
-        queue.items.push_back(id);
-    }
-    reset_paste_tracking(&mut queue);
-    drop(queue);
-
-    // Automatically prepare the first item
-    prepare_next_paste_item(&app_handle);
+    let queued = {
+        let mut queue = state.inner().0.lock().unwrap();
+        queue.items.clear();
+        for id in item_ids {
+            queue.items.push_back(id);
+        }
+        reset_paste_tracking(&mut queue);
+        queue.items.len()
+    };
+    // Replacing the queue outright used to be silent, so the count kept showing
+    // whatever the previous batch left behind. Same signal the capture path
+    // emits, carrying the length so the frontend adopts it without a round trip.
+    let _ = app_handle.emit("paste-queue-changed", queued);
 
     Ok(())
 }
 
-fn prepare_next_paste_item(app_handle: &tauri::AppHandle) {
-    let state = app_handle.state::<PasteQueue>();
-    let db_state = app_handle.state::<DbState>();
-    let session = app_handle.state::<SessionHistory>();
-
-    let next_id = {
-        let queue = state.inner().0.lock().unwrap();
-        queue.items.front().copied()
-    };
-
-    if let Some(id) = next_id {
-        // Find content
-        let content_opt = if id < 0 {
-            let s = session.inner().0.lock().unwrap();
-            s.iter().find(|i| i.id == id).map(|i| i.content.clone())
-        } else {
-            db_state.repo.get_entry_content(id).unwrap_or(None)
-        };
-
-        if let Some(_) = content_opt {
-            // Logic to prepare next item
-        }
-    } else {
-        emit_queue_finished(app_handle, &state);
+/// Drop everything queued and forget the paste tracking that decides when the
+/// next capture starts a new sequence.
+///
+/// Turning the setting off used to leave the queue intact, and the hotkey
+/// accepts a non-empty queue even when the mode is off (`setup.rs`: `is_seq ||
+/// has_items`), so a batch built before the switch stayed pasteable. Clearing
+/// it here is what makes "off" mean off; the settings switch calls this when
+/// it is turned off, and the queue row calls it to abandon a batch by hand.
+#[tauri::command]
+pub fn clear_paste_queue(app_handle: tauri::AppHandle, state: State<'_, PasteQueue>) {
+    {
+        let mut queue = state.inner().0.lock().unwrap();
+        queue.items.clear();
+        reset_paste_tracking(&mut queue);
     }
+    let _ = app_handle.emit("queue-finished", ());
 }
 
 #[tauri::command]
@@ -286,6 +280,11 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
             }
         }
     } else {
+        // The hotkey fired with nothing queued. `queue-finished` alone says
+        // "the queue is now empty", which the UI cannot tell apart from a
+        // batch that just ran dry -- so the press would look like it did
+        // nothing at all. This event names the cause.
+        let _ = app_handle.emit("paste-queue-empty", ());
         emit_queue_finished(&app_handle, &state);
     }
 }

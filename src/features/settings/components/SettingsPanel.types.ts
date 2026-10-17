@@ -32,9 +32,12 @@ export interface SettingsPanelProps {
     readonly captureFiles: boolean;
     readonly captureRichText: boolean;
     readonly richTextSnapshotPreview: boolean;
+    readonly richTextSnapshotCacheLimit: number;
     readonly deleteAfterPaste: boolean;
     readonly moveToTopAfterPaste: boolean;
     readonly sequentialMode: boolean;
+    readonly pasteQueueCount: number;
+    readonly clearPasteQueue: () => void;
     readonly sequentialHotkey: string;
     readonly isRecordingSequential: boolean;
     readonly richPasteHotkey: string;
@@ -99,6 +102,7 @@ export interface SettingsPanelProps {
     readonly setCaptureFiles: (val: boolean) => void;
     readonly setCaptureRichText: (val: boolean) => void;
     readonly setRichTextSnapshotPreview: (val: boolean) => void;
+    readonly setRichTextSnapshotCacheLimit: (val: number) => void;
     readonly setDeleteAfterPaste: (val: boolean) => void;
     readonly setMoveToTopAfterPaste: (val: boolean) => void;
     readonly saveAppSetting: (key: string, val: string) => void;

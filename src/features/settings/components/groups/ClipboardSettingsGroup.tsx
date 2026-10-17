@@ -4,6 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";
+import {
+    DEFAULT_RICH_TEXT_SNAPSHOT_CACHE,
+    resolveRichTextSnapshotCacheLimit,
+} from "../../../../shared/lib/richTextSnapshotCache";
+import { setRichTextSnapshotCacheLimit as applySnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshot";
 
 interface LabelWithHintProps {
     label: string;
@@ -32,6 +37,8 @@ interface ClipboardSettingsGroupProps {
     setCaptureRichText: (val: boolean) => void;
     richTextSnapshotPreview: boolean;
     setRichTextSnapshotPreview: (val: boolean) => void;
+    richTextSnapshotCacheLimit: number;
+    setRichTextSnapshotCacheLimit: (val: number) => void;
     richPasteHotkey: string;
     isRecordingRich: boolean;
     setIsRecordingRich: (val: boolean) => void;
@@ -47,6 +54,8 @@ interface ClipboardSettingsGroupProps {
     pasteMethod: string;
     setPasteMethod: (val: string) => void;
     sequentialMode: boolean;
+    pasteQueueCount: number;
+    clearPasteQueue: () => void;
     setSequentialModeState: (val: boolean) => void;
     sequentialHotkey: string;
     isRecordingSequential: boolean;
@@ -118,6 +127,9 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     const [persistentLimitDraft, setPersistentLimitDraft] = useState(
         props.persistentLimit.toString()
     );
+    const [snapshotCacheLimitDraft, setSnapshotCacheLimitDraft] = useState(
+        props.richTextSnapshotCacheLimit.toString()
+    );
     const isWinVHotkey = (value: string) => {
         const parts = value
             .split('+')
@@ -132,6 +144,34 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     useEffect(() => {
         setPersistentLimitDraft(props.persistentLimit.toString());
     }, [props.persistentLimit, props.persistentLimitEnabled]);
+
+    useEffect(() => {
+        setSnapshotCacheLimitDraft(props.richTextSnapshotCacheLimit.toString());
+    }, [props.richTextSnapshotCacheLimit]);
+
+    // Blank or non-numeric input reverts instead of committing, so a
+    // half-typed number never lands as 0 -- which would read as "caching
+    // disabled" and quietly cost the memory the user meant to keep.
+    const commitSnapshotCacheLimit = (rawValue?: string) => {
+        const source = rawValue ?? snapshotCacheLimitDraft;
+        if (!/^\d+$/.test(source)) {
+            setSnapshotCacheLimitDraft(props.richTextSnapshotCacheLimit.toString());
+            return;
+        }
+        const clamped = resolveRichTextSnapshotCacheLimit(source);
+        setSnapshotCacheLimitDraft(clamped.toString());
+        if (clamped !== props.richTextSnapshotCacheLimit) {
+            props.setRichTextSnapshotCacheLimit(clamped);
+            props.saveAppSetting('rich_text_snapshot_cache_limit', String(clamped));
+            // The module owns the Map as well as the number, and only this
+            // call reaches it -- React state and the settings row do not. Without
+            // it the setting would not take effect until something else happened
+            // to reload every setting, which for a user means "the number moved
+            // and nothing did". Lowering it this way also hands the memory back
+            // straight away, since the setter trims.
+            applySnapshotCacheLimit(clamped);
+        }
+    };
 
     const commitPersistentLimit = (rawValue?: string) => {
         const source = rawValue ?? persistentLimitDraft;
@@ -302,6 +342,37 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
                     </div>
+
+                    {props.richTextSnapshotPreview && (
+                        <div className="setting-item setting-item--detail">
+                            <props.LabelWithHint
+                                label={props.t('rich_text_snapshot_cache_limit')}
+                                hint={props.t('rich_text_snapshot_cache_limit_hint').replace('{default}', String(DEFAULT_RICH_TEXT_SNAPSHOT_CACHE))}
+                                hintKey="rich_text_snapshot_cache_limit"
+                            />
+                            <input
+                                className="numeric-input"
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={snapshotCacheLimitDraft}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    if (next === "" || /^\d+$/.test(next)) {
+                                        setSnapshotCacheLimitDraft(next);
+                                    }
+                                }}
+                                onBlur={(e) => commitSnapshotCacheLimit(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        commitSnapshotCacheLimit(e.currentTarget.value);
+                                        e.currentTarget.blur();
+                                    }
+                                }}
+                            />
+                        </div>
+                    )}
 
 
                     <div className="setting-item">
@@ -495,6 +566,24 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     const val = e.target.checked;
                                     props.setSequentialModeState(val);
                                     invoke('set_sequential_mode', { enabled: val }).catch(console.error);
+                                    // Turning the mode off used to leave the queue
+                                    // intact, and the hotkey accepts a non-empty
+                                    // queue even when the mode is off, so a batch
+                                    // copied before the switch stayed pasteable.
+                                    //
+                                    // No `pasteQueueCount > 0` guard: that number
+                                    // is refreshed on paste events and on window
+                                    // focus, but copying into the queue emits
+                                    // none of them, so it is routinely stale at
+                                    // exactly this moment -- the batch this
+                                    // branch exists to drop is the batch the
+                                    // count cannot see. Clearing is idempotent,
+                                    // and `clear_paste_queue` answers with
+                                    // `queue-finished`, which is the refresh the
+                                    // count was waiting for anyway.
+                                    if (!val) {
+                                        props.clearPasteQueue();
+                                    }
                                     if (val) {
                                         if (props.checkHotkeyConflict(props.sequentialHotkey, 'sequential')) {
                                             props.updateSequentialHotkey("");
@@ -505,6 +594,23 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
                     </div>
+
+                    {props.sequentialMode && props.pasteQueueCount > 0 && (
+                        <div className="setting-item setting-item--detail">
+                            <div className="item-label-group">
+                                <span className="item-label">
+                                    {props.t('sequential_paste_queue_count').replace('{count}', String(props.pasteQueueCount))}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                className="setting-btn setting-btn--compact"
+                                onClick={() => props.clearPasteQueue()}
+                            >
+                                {props.t('sequential_paste_clear_queue')}
+                            </button>
+                        </div>
+                    )}
 
                     {props.sequentialMode && (
                         <div className="setting-item">

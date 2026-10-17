@@ -1,12 +1,35 @@
 import { toTauriLocalImageSrc } from "./localImageSrc";
 import { extractRichImageFallback } from "./richPreview";
+import {
+  DEFAULT_RICH_TEXT_SNAPSHOT_CACHE,
+  snapshotEvictionCount,
+} from "./richTextSnapshotCache";
 
-const SNAPSHOT_CACHE_LIMIT = 120;
 const SNAPSHOT_CACHE_VERSION = "v4";
 const snapshotCache = new Map<string, string>();
 
+/**
+ * Live limit, owned here because the Map is. `setRichTextSnapshotCacheLimit`
+ * is the only thing that changes it, which keeps this module from having to
+ * know anything about settings.
+ */
+let cacheLimit = DEFAULT_RICH_TEXT_SNAPSHOT_CACHE;
+
+/**
+ * Apply a new cache limit and drop whatever no longer fits.
+ *
+ * Trimming here rather than waiting for the next insert is the point: a user
+ * who lowers the setting expects the memory back now, not after they happen to
+ * scroll enough entries into view to trigger another write.
+ */
+export const setRichTextSnapshotCacheLimit = (limit: number) => {
+  cacheLimit = Math.max(0, Math.floor(limit));
+  trimCache();
+};
+
 const trimCache = () => {
-  while (snapshotCache.size > SNAPSHOT_CACHE_LIMIT) {
+  const excess = snapshotEvictionCount(snapshotCache.size, cacheLimit);
+  for (let i = 0; i < excess; i++) {
     const firstKey = snapshotCache.keys().next().value;
     if (!firstKey) break;
     snapshotCache.delete(firstKey);
@@ -260,7 +283,7 @@ export const getRichTextSnapshotDataUrl = (
     }
 
     const key = `${SNAPSHOT_CACHE_VERSION}:${hashString(sourceHtml)}:${sourceHtml.length}:${width}:${maxHeight}`;
-    const cached = snapshotCache.get(key);
+    const cached = cacheLimit > 0 ? snapshotCache.get(key) : undefined;
     if (cached) {
       snapshotCache.delete(key);
       snapshotCache.set(key, cached);
@@ -357,8 +380,12 @@ export const getRichTextSnapshotDataUrl = (
       return null;
     }
 
-    snapshotCache.set(key, dataUrl);
-    trimCache();
+    // A limit of zero means "do not hold anything", not "hold one entry":
+    // storing it and trimming on the next call would still pin a megabyte.
+    if (cacheLimit > 0) {
+      snapshotCache.set(key, dataUrl);
+      trimCache();
+    }
     return dataUrl;
   } catch (error) {
     logSnapshotFailure("unexpected_error", {

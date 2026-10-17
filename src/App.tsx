@@ -31,6 +31,7 @@ import { useWindowPinnedListener } from "./shared/hooks/useWindowPinnedListener"
 import { useCustomBackground } from "./shared/hooks/useCustomBackground";
 import { useDragDegradation } from "./shared/hooks/useDragDegradation";
 import { useToastListener } from "./shared/hooks/useToastListener";
+import { usePasteQueue } from "./shared/hooks/usePasteQueue";
 import { useAppBootstrap } from "./shared/hooks/useAppBootstrap";
 import { useAppActions } from "./shared/hooks/useAppActions";
 import { useNavigationSync } from "./shared/hooks/useNavigationSync";
@@ -131,6 +132,7 @@ const App = () => {
     setCaptureRichText,
     richTextSnapshotPreview,
     setRichTextSnapshotPreview,
+    setRichTextSnapshotCacheLimit,
     setSilentStart,
     theme,
     setTheme,
@@ -364,6 +366,7 @@ const App = () => {
     setCaptureFiles,
     setCaptureRichText,
     setRichTextSnapshotPreview,
+    setRichTextSnapshotCacheLimit,
     setPrivacyProtection,
     setPrivacyProtectionKinds,
     setPrivacyProtectionCustomRules,
@@ -694,16 +697,23 @@ const App = () => {
     onTransformSuccess: handleTransformSuccess
   });
 
+  // Subscribes to the sequential-paste queue so the settings row can show how
+  // many items are waiting and empty it. Called here rather than inside the
+  // settings panel because the empty-queue signal has to reach the user even
+  // when the settings page is closed.
+  const { pasteQueueCount, clearPasteQueue } = usePasteQueue({ t, pushToast });
+
   const settingsPanelProps = useSettingsPanelProps({
     t,
     theme,
     language,
     colorMode,
+    pasteQueueCount,
+    clearPasteQueue,
     mainHotkeys,
     checkHotkeyConflict,
     updateHotkey,
-    addMainHotkey,
-    removeMainHotkey,
+    addMainHotkey,    removeMainHotkey,
     updateSequentialHotkey,
     updateRichPasteHotkey,
     updateSearchHotkey,

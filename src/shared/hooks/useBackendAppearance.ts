@@ -10,6 +10,8 @@ import {
   applySurfaceOpacity
 } from "../lib/appearanceRuntime";
 import { followsSystemTheme, normalizeColorMode, readSystemIsDark } from "../lib/systemTheme";
+import { resolveRichTextSnapshotCacheLimit } from "../lib/richTextSnapshotCache";
+import { setRichTextSnapshotCacheLimit } from "../lib/richTextSnapshot";
 
 // Backend-driven appearance for the auxiliary webviews.
 //
@@ -53,6 +55,17 @@ const applyTokens = (settings: Record<string, string>): { theme: string; colorMo
   applyClipboardFontSizes(
     parseNumber(settings["app.clipboard_item_font_size"], 13),
     parseNumber(settings["app.clipboard_tag_font_size"], 10)
+  );
+
+  // Not appearance, but it arrives on the same channel because it has the same
+  // shape of problem: each webview runs its own copy of the rich-text snapshot
+  // cache, and only the compact preview renders snapshots from here. Without
+  // this its Map keeps the default cap no matter what the user set, and lowering
+  // the limit to free memory frees nothing in this window. `resolve` maps an
+  // absent or unreadable value back to the default rather than to 0, so a
+  // missing key cannot silently switch caching off.
+  setRichTextSnapshotCacheLimit(
+    resolveRichTextSnapshotCacheLimit(settings["app.rich_text_snapshot_cache_limit"])
   );
 
   const hideBorder = (settings["app.show_app_border"] ?? "true") === "false";
