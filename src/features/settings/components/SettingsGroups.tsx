@@ -7,6 +7,7 @@ import DataSettingsGroup from "./groups/DataSettingsGroup";
 import ToolsSettingsGroup from "./groups/ToolsSettingsGroup";
 import type { LabelWithHintProps, SettingsPanelProps } from "./SettingsPanel.types";
 import type { SettingsGroupId } from "../utils/settingsLayout";
+import { isSettingsGroupCollapsed } from "../utils/settingsLayout";
 
 interface SettingsGroupsProps {
     readonly settings: SettingsPanelProps;
@@ -50,12 +51,20 @@ const SettingsGroups = ({
     // mounted and `collapsedGroups` decides which bodies are visible.
     //
     // The split layout hands that choice to the rail -- only the active group is
-    // shown -- and pins it open. A foldable pane there would be a second way to
+    // shown -- and opens that one. A foldable pane there would be a second way to
     // change section that lands on a blank column with the rail still pointing at
     // it, so the header reads as a title instead: CSS drops its chevron and
     // pointer, and `onToggle` is a no-op. The stored flag is never written, which
     // is also what makes dragging the window narrow restore the accordion exactly
     // as it was left.
+    //
+    // The five groups the rail is *not* pointing at keep their stored fold rather
+    // than being forced open. Opening them meant mounting bodies nobody could see,
+    // and those bodies start work on mount: `ToolsCaptureSection` probes for an
+    // OCR engine, which on Linux means a `tesseract --version` subprocess, and
+    // `AppearanceSettingsGroup` enumerates every installed font. Since the settings
+    // page stays mounted while the clipboard list is showing, resizing across the
+    // breakpoint used to run both behind a closed page, once per crossing.
     //
     // Hiding is done with the `hidden` attribute on a slot rather than by not
     // rendering the group. Unmounting was the wrong tool twice over: crossing the
@@ -64,9 +73,15 @@ const SettingsGroups = ({
     // group in a narrow window and then widening it dropped that group anyway --
     // taking an open export/import dialog and its draft with it. `hidden` keeps
     // every group mounted and its local state alive; only the wrapper differs
-    // between the two layouts.
+    // between the two layouts. The same reasoning is why a hidden group honours
+    // its stored fold: see `isSettingsGroupCollapsed`.
     const shown = (id: SettingsGroupId) => !split || activeGroup === id;
-    const isCollapsed = (id: SettingsGroupId) => !split && Boolean(collapsedGroups[id]);
+    const isCollapsed = (id: SettingsGroupId) =>
+        isSettingsGroupCollapsed({
+            split,
+            shown: shown(id),
+            collapsed: Boolean(collapsedGroups[id]),
+        });
     const collapse = (id: SettingsGroupId) => {
         if (!split) toggleGroup(id);
     };

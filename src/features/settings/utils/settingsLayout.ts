@@ -71,3 +71,30 @@ export const resolveSettingsLayout = (width: number): SettingsLayout => {
   if (width >= PANE_TWO_COLUMNS_MIN_WIDTH) return { split: true, paneColumns: 2 };
   return { split: true, paneColumns: 1 };
 };
+
+/**
+ * Whether a group renders folded away, which is also the switch its data loads
+ * hang off: `ToolsCaptureSection` mounts only while tools is open, and
+ * `AppearanceSettingsGroup` starts its font scan only when `collapsed` is false.
+ *
+ * The narrow layout is the accordion, untouched. The split layout opens the one
+ * group the rail is pointing at -- its header reads as a title, and `onToggle`
+ * is a no-op there -- and leaves every other group folded the way the accordion
+ * left it. Forcing all six open instead made hidden groups start work nobody
+ * could see: on Linux each crossing back to a wide window respawned a
+ * `tesseract --version` probe, while the settings page was still closed.
+ *
+ * `collapsed` is deliberately still honoured for a hidden group. Someone who
+ * opened the export dialog in a narrow window keeps it, and its draft, after the
+ * window is widened past the rail -- folding it away here is the same class of
+ * bug as unmounting it.
+ */
+export const isSettingsGroupCollapsed = ({
+  split,
+  shown,
+  collapsed,
+}: {
+  readonly split: boolean;
+  readonly shown: boolean;
+  readonly collapsed: boolean;
+}): boolean => collapsed && !(split && shown);

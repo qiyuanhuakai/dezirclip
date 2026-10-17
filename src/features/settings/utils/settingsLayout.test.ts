@@ -5,6 +5,7 @@ import {
     PANE_TWO_COLUMNS_MIN_WIDTH,
     SETTINGS_GROUPS,
     SPLIT_MIN_WIDTH,
+    isSettingsGroupCollapsed,
     resolveSettingsLayout,
     type SettingsGroupId,
 } from "./settingsLayout";
@@ -93,6 +94,67 @@ describe("resolveSettingsLayout", () => {
             const layout = resolveSettingsLayout(width);
             if (!layout.split) expect(layout.paneColumns).toBe(1);
             else expect([1, 2, 3]).toContain(layout.paneColumns);
+        }
+    });
+});
+
+/**
+ * `collapsed` is a load-bearing flag, not just a visual one: `ToolsCaptureSection`
+ * mounts only while tools is open and probes for an OCR engine from its mount
+ * effect, and on Linux that probe is a `tesseract --version` subprocess. These
+ * cases pin which groups a layout switch is allowed to open.
+ */
+describe("isSettingsGroupCollapsed", () => {
+    const fold = (split: boolean, shown: boolean, collapsed: boolean) =>
+        isSettingsGroupCollapsed({ split, shown, collapsed });
+
+    it("leaves the narrow accordion exactly as the user folded it", () => {
+        expect(fold(false, true, true)).toBe(true);
+        expect(fold(false, true, false)).toBe(false);
+    });
+
+    it("opens the group the rail is pointing at, whatever the accordion said", () => {
+        expect(fold(true, true, true)).toBe(false);
+        expect(fold(true, true, false)).toBe(false);
+    });
+
+    // The reported defect: a group the rail is not pointing at used to open on
+    // every crossing into the split layout, which started its data loads -- for
+    // tools that is a subprocess probe -- behind a hidden pane, and repeated it
+    // each time the window narrowed again.
+    it("keeps a group the rail is not pointing at folded as the accordion left it", () => {
+        expect(fold(true, false, true)).toBe(true);
+        expect(fold(true, false, false)).toBe(false);
+    });
+
+    it("starts no group body when the window crosses the breakpoint with settings closed", () => {
+        // Every group starts folded (`useAppState`), the rail starts on `general`,
+        // and the settings page stays mounted behind the clipboard list.
+        for (const width of [559, 560, 600, 700, 1000, 1200]) {
+            const { split } = resolveSettingsLayout(width);
+            const opened = COLLAPSED_GROUP_KEYS.filter((id) =>
+                !fold(split, split && id === DEFAULT_SETTINGS_GROUP, true)
+            );
+            expect(opened, `width ${width} opened ${opened.join(", ")}`).toEqual(
+                split ? [DEFAULT_SETTINGS_GROUP] : []
+            );
+        }
+    });
+
+    it("survives a group opened in a narrow window being widened out of sight", () => {
+        // The export/import draft case: `data` was expanded, then the rail took
+        // over on `general`. Folding it here would drop the open dialog.
+        expect(fold(true, false, false)).toBe(false);
+    });
+
+    it("restores the accordion's own folds after a round trip through the rail", () => {
+        // Nothing writes `collapsedGroups` while split, so narrowing has to land
+        // back on the flags the accordion was left with.
+        const stored = Object.fromEntries(COLLAPSED_GROUP_KEYS.map(id => [id, true])) as Record<SettingsGroupId, boolean>;
+        stored.data = false;
+        for (const id of COLLAPSED_GROUP_KEYS) {
+            fold(true, id === DEFAULT_SETTINGS_GROUP, stored[id]);
+            expect(fold(false, true, stored[id]), `${id} changed across the round trip`).toBe(stored[id]);
         }
     });
 });

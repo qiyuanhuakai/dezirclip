@@ -98,6 +98,23 @@ interface OcrEngineInfo {
     readonly engine_name: string;
 }
 
+// `check_ocr_engine_available` builds an `OcrService`, and the Linux one runs
+// `tesseract --version` and waits for it to exit -- a subprocess per call, with no
+// shared cache on the Rust side. Whether an engine is installed cannot change
+// while the app runs, but this section is folded away by any resize that drops
+// the window back to the narrow layout, which remounted it and probed again.
+// Holding the promise at module scope matches the font scan and the CLI lookup
+// next door: callers arriving while a probe is in flight share it, later mounts
+// reuse the answer, and a rejection clears it so a later visit can retry.
+let ocrEngineRequest: Promise<OcrEngineInfo> | null = null;
+const loadOcrEngineInfo = (): Promise<OcrEngineInfo> => {
+    ocrEngineRequest ??= invoke<OcrEngineInfo>("check_ocr_engine_available").catch((err: unknown) => {
+        ocrEngineRequest = null;
+        throw err;
+    });
+    return ocrEngineRequest;
+};
+
 const ToolsCaptureSection = ({
     t,
     LabelWithHint,
@@ -118,7 +135,7 @@ const ToolsCaptureSection = ({
     const [ocrEngineInfo, setOcrEngineInfo] = useState<OcrEngineInfo | null>(null);
 
     useEffect(() => {
-        invoke<OcrEngineInfo>("check_ocr_engine_available")
+        loadOcrEngineInfo()
             .then(setOcrEngineInfo)
             .catch((err) => {
                 console.error("Failed to query OCR engine availability:", err);
