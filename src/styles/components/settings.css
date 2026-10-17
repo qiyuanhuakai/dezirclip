@@ -71,6 +71,23 @@
   display: none;
 }
 
+/* Each group is wrapped in a slot that carries the `hidden` flag. In the narrow
+   layout the slot is `display: contents` so the accordion lays out exactly as it
+   did before the wrapper existed; in the split layout it is an ordinary block the
+   pane can hide. The `[hidden]` rule is spelled out because the author-level
+   `display` above would otherwise beat the user-agent `[hidden]` rule. */
+.settings-group-slot {
+  display: contents;
+}
+
+.settings-layout--split .settings-group-slot {
+  display: block;
+}
+
+.settings-layout--split .settings-group-slot[hidden] {
+  display: none;
+}
+
 .settings-split-row {
   display: flex;
   align-items: stretch;

@@ -49,13 +49,22 @@ const SettingsGroups = ({
     // The narrow layout keeps the accordion exactly as it was: all six groups stay
     // mounted and `collapsedGroups` decides which bodies are visible.
     //
-    // The split layout hands that choice to the rail -- only the active group
-    // mounts -- and pins it open. A foldable pane there would be a second way to
+    // The split layout hands that choice to the rail -- only the active group is
+    // shown -- and pins it open. A foldable pane there would be a second way to
     // change section that lands on a blank column with the rail still pointing at
     // it, so the header reads as a title instead: CSS drops its chevron and
     // pointer, and `onToggle` is a no-op. The stored flag is never written, which
     // is also what makes dragging the window narrow restore the accordion exactly
     // as it was left.
+    //
+    // Hiding is done with the `hidden` attribute on a slot rather than by not
+    // rendering the group. Unmounting was the wrong tool twice over: crossing the
+    // 560px breakpoint unmounted whichever group the rail was not pointing at, and
+    // `activeGroup` does not follow an accordion expansion, so opening the data
+    // group in a narrow window and then widening it dropped that group anyway --
+    // taking an open export/import dialog and its draft with it. `hidden` keeps
+    // every group mounted and its local state alive; only the wrapper differs
+    // between the two layouts.
     const shown = (id: SettingsGroupId) => !split || activeGroup === id;
     const isCollapsed = (id: SettingsGroupId) => !split && Boolean(collapsedGroups[id]);
     const collapse = (id: SettingsGroupId) => {
@@ -64,7 +73,7 @@ const SettingsGroups = ({
 
     return (
         <>
-            {shown("general") && (
+            <div className="settings-group-slot" hidden={!shown("general")}>
                 <GeneralSettingsGroup
                     t={t}
                     collapsed={isCollapsed("general")}
@@ -104,9 +113,9 @@ const SettingsGroups = ({
                     setArrowKeySelection={settings.setArrowKeySelection}
                     saveAppSetting={saveAppSetting}
                 />
-            )}
+            </div>
 
-            {shown("clipboard") && (
+            <div className="settings-group-slot" hidden={!shown("clipboard")}>
                 <ClipboardSettingsGroup
                     t={t}
                     collapsed={isCollapsed("clipboard")}
@@ -171,9 +180,9 @@ const SettingsGroups = ({
                     theme={settings.theme}
                     colorMode={settings.colorMode}
                 />
-            )}
+            </div>
 
-            {shown("appearance") && (
+            <div className="settings-group-slot" hidden={!shown("appearance")}>
                 <AppearanceSettingsGroup
                     t={t}
                     collapsed={isCollapsed("appearance")}
@@ -205,9 +214,9 @@ const SettingsGroups = ({
                     setSurfaceOpacity={settings.setSurfaceOpacity}
                     saveAppSetting={saveAppSetting}
                 />
-            )}
+            </div>
 
-            {shown("default_apps") && (
+            <div className="settings-group-slot" hidden={!shown("default_apps")}>
                 <DefaultAppsSettingsGroup
                     t={t}
                     collapsed={isCollapsed("default_apps")}
@@ -217,18 +226,18 @@ const SettingsGroups = ({
                     defaultApps={settings.defaultApps}
                     saveAppSetting={saveAppSetting}
                 />
-            )}
+            </div>
 
-            {shown("data") && (
+            <div className="settings-group-slot" hidden={!shown("data")}>
                 <DataSettingsGroup
                     t={t}
                     collapsed={isCollapsed("data")}
                     onToggle={() => collapse("data")}
                     dataPath={settings.dataPath}
                 />
-            )}
+            </div>
 
-            {shown("tools") && (
+            <div className="settings-group-slot" hidden={!shown("tools")}>
                 <ToolsSettingsGroup
                     t={t}
                     collapsed={isCollapsed("tools")}
@@ -244,7 +253,7 @@ const SettingsGroups = ({
                     setOcrEnabled={setOcrEnabled}
                     saveAppSetting={saveAppSetting}
                 />
-            )}
+            </div>
         </>
     );
 };
