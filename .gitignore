@@ -37,3 +37,7 @@ dzc-standalone/target/
 backup-e2e/
 
 .cortexkit/
+
+# Throwaway static harnesses: real CSS + mock DOM on a local port, used to
+# measure layout in a browser because the app itself needs Tauri IPC.
+.harness/
