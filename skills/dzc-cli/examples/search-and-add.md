@@ -6,6 +6,9 @@ You pasted several passwords, API keys, and tokens while debugging a staging env
 You want to find those entries and mark them as `sensitive` so they never leak into
 shared exports or logs.
 
+Entry IDs are integers, and `search` has no `--ids` flag — take IDs out of the
+JSON output instead.
+
 ## Steps
 
 1. List recent text entries and grab their IDs.
@@ -14,16 +17,18 @@ shared exports or logs.
 dzc list --kind text --ids
 ```
 
-2. Search for secret-like patterns using regex and return only IDs.
+2. Search for secret-like patterns using regex and extract the IDs.
 
 ```bash
-dzc search "password|api[_-]?key|secret|token|auth" --mode regex --ids
+dzc search "password|api[_-]?key|secret|token|auth" --mode regex --json \
+  | jq -r '.[].id'
 ```
 
 3. Pipe the matching IDs into the tag command to add the `sensitive` label.
 
 ```bash
-dzc search "password|api[_-]?key|secret|token|auth" --mode regex --ids \
+dzc search "password|api[_-]?key|secret|token|auth" --mode regex --json \
+  | jq -r '.[].id' \
   | xargs -I {} dzc tag add {} sensitive
 ```
 
@@ -41,13 +46,15 @@ dzc list --tag sensitive --json | jq 'length'
 
 ## Expected output
 
-`dzc search ... --ids` prints one ID per line, e.g.:
+The `jq` filter in step 2 prints one numeric ID per line, e.g.:
 
 ```
-c3a1b2
-f4e5d6
-a7b8c9
+142
+377
+904
 ```
+
+`dzc tag add` prints `tag: added "sensitive" to id=142` per entry.
 
 After tagging, `dzc list --tag sensitive --json | jq '.[].preview'` returns
 an array of preview strings whose content matched the original regex.
@@ -65,5 +72,6 @@ single `--tag sensitive` flag.
 - Narrow the regex to a specific service: `"github_pat|slack_token"`.
 - Tag with multiple labels at once by running the command repeatedly or
   extending the script to call `dzc tag add` twice per ID.
-- Exclude already-tagged entries by adding `--not-tag sensitive` to the
-  `search` call if your CLI supports it.
+- Restrict the result set by content type with `dzc search "..." --mode regex --json | jq '[.[] | select(.type == "text")]'`.
+- Exclude already-tagged entries by filtering in `jq`, e.g.
+  `jq -r '.[] | select((.tags | index("sensitive")) == null) | .id'`.

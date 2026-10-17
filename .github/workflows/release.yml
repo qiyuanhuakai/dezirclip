@@ -29,7 +29,7 @@ jobs:
               --verify-tag \
               --title "DezirClip ${GITHUB_REF_NAME}" \
               --generate-notes \
-              --notes "Download the matching installer or standalone dzc archive for your platform."
+              --notes "Download the matching installer for your platform. The \`dzc\` CLI ships inside the app install, not as a separate archive."
           fi
           release_id="$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq '.databaseId')"
           echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
@@ -139,102 +139,10 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: DezirClip ${{ github.ref_name }}
-          releaseBody: Download the matching installer or standalone dzc archive for your platform.
+          releaseBody: Download the matching installer for your platform. The `dzc` CLI ships inside the app install, not as a separate archive.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
-
-  publish-dzc:
-    name: dzc standalone release (${{ matrix.name }})
-    needs: create-release
-    runs-on: ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux-x86_64
-            platform: ubuntu-22.04
-            archive_ext: tar.gz
-            cargo_args: ''
-            binary_path: target/release/dzc
-            rust_target: ''
-            msvc_arch: ''
-          - name: linux-aarch64
-            platform: ubuntu-24.04-arm
-            archive_ext: tar.gz
-            cargo_args: ''
-            binary_path: target/release/dzc
-            rust_target: ''
-            msvc_arch: ''
-          - name: windows-x86_64
-            platform: windows-latest
-            archive_ext: zip
-            cargo_args: ''
-            binary_path: target/release/dzc.exe
-            rust_target: ''
-            msvc_arch: ''
-          - name: windows-aarch64
-            platform: windows-latest
-            archive_ext: zip
-            cargo_args: --target aarch64-pc-windows-msvc
-            binary_path: target/aarch64-pc-windows-msvc/release/dzc.exe
-            rust_target: aarch64-pc-windows-msvc
-            msvc_arch: amd64_arm64
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        if: matrix.rust_target == ''
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Rust stable with target
-        if: matrix.rust_target != ''
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_target }}
-
-      - name: Setup MSVC ARM64 toolchain
-        if: matrix.msvc_arch != ''
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: ${{ matrix.msvc_arch }}
-
-      - name: Cache Rust artifacts
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: dzc-standalone -> target
-
-      - name: Set release version
-        run: node scripts/set-release-version.mjs ${{ github.ref_name }}
-
-      - name: Resolve dzc artifact name
-        shell: bash
-        run: |
-          release_version="${GITHUB_REF_NAME#v}"
-          echo "DZC_ARCHIVE=dzc-${release_version}-${{ matrix.name }}.${{ matrix.archive_ext }}" >> "$GITHUB_ENV"
-
-      - name: Build dzc standalone
-        working-directory: dzc-standalone
-        run: cargo build --release ${{ matrix.cargo_args }}
-
-      - name: Package dzc for Linux
-        if: runner.os == 'Linux'
-        working-directory: dzc-standalone
-        run: |
-          binary='${{ matrix.binary_path }}'
-          tar -czf "../${DZC_ARCHIVE}" -C "$(dirname "$binary")" "$(basename "$binary")"
-
-      - name: Package dzc for Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path dzc-standalone/${{ matrix.binary_path }} -DestinationPath $env:DZC_ARCHIVE -Force
-
-      - name: Upload dzc archive to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: gh release upload "${GITHUB_REF_NAME}" "${DZC_ARCHIVE}" --clobber
 
   publish-flatpak:
     name: Flatpak release (${{ matrix.name }})
