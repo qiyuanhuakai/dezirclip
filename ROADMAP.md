@@ -64,18 +64,19 @@
 
 | 位置 | 处理 |
 |---|---|
-| `src/locales/zh.ts` `rich_text_snapshot_preview` 键 | 删除（设置后端未实现） |
+| ~~`src/locales/zh.ts` `rich_text_snapshot_preview` 键~~ | **不要删。** 本表原先记为「设置后端未实现」，那是错的：该功能完全在前端实现（`src/shared/lib/richTextSnapshot.ts` 把 HTML 转成 SVG data URL，含缓存、HTML 消毒、XML 安全实体转换），并已接入 `ClipboardItem` 与 `CompactPreviewWindow`。已去掉 Beta 标记并把缓存条数做成设置。 |
 | `src/locales/zh.ts` `clipboard_item_font_size` 键 | 删除（设置未实现） |
 | `src/locales/zh.ts` `sound_volume` 键 | 删除（仅 `sound_enabled` / `sound_paste_enabled` 存在） |
 | `src/locales/zh.ts` `check_update` / `downloading` / `new_version_found` 键 | 删除（后端无对应命令） |
 | `src/features/settings/components/SettingsFooter.tsx` "检查更新" 按钮 | 删除或改为打开浏览器到 GitHub releases 链接 |
-| 任何 `app.rich_text_snapshot_preview` 引用 | 移除 |
 
 **手动 QA**：
 - [ ] 三个语言文件键数一致，`pnpm run i18n:check` 通过
 - [ ] 设置 UI 渲染正常，删除项不留下断链
 
-**提交**：`chore(i18n): 移除未实现的设置项 i18n 键`、`refactor(settings): 移除无效的富文本快照与更新检查入口`
+**提交**：`chore(i18n): 移除未实现的设置项 i18n 键`、`refactor(settings): 移除无效的更新检查入口`
+
+> 另一条同样过时：第 2 节把 `2.9 dzc CLI 工具` 记为 `planned`，实际 `src-tauri/src/bin/dzc.rs` 已有 15 个子命令并随应用安装。
 
 ---
 

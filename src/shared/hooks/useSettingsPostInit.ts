@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { MutableRefObject } from "react";
+import { resolveRichTextSnapshotCacheLimit } from "../lib/richTextSnapshotCache";
+import { setRichTextSnapshotCacheLimit as setRichTextSnapshotCacheLimitInModule } from "../lib/richTextSnapshot";
 
 interface UseSettingsPostInitOptions {
   settings: Record<string, string> | null;
@@ -15,6 +17,7 @@ interface UseSettingsPostInitOptions {
   setCaptureFiles: (val: boolean) => void;
   setCaptureRichText: (val: boolean) => void;
   setRichTextSnapshotPreview: (val: boolean) => void;
+  setRichTextSnapshotCacheLimit: (val: number) => void;
   setPrivacyProtection: (val: boolean) => void;
   setPrivacyProtectionKinds: (val: string[]) => void;
   setPrivacyProtectionCustomRules: (val: string) => void;
@@ -65,6 +68,7 @@ export const useSettingsPostInit = ({
   setCaptureFiles,
   setCaptureRichText,
   setRichTextSnapshotPreview,
+  setRichTextSnapshotCacheLimit,
   setPrivacyProtection,
   setPrivacyProtectionKinds,
   setPrivacyProtectionCustomRules,
@@ -152,6 +156,14 @@ export const useSettingsPostInit = ({
     setCaptureFiles(settings["app.capture_files"] !== "false");
     setCaptureRichText(settings["app.capture_rich_text"] === "true");
     setRichTextSnapshotPreview(settings["app.rich_text_snapshot_preview"] === "true");
+    // Applied to the live cache as well as React state: the module keeps its
+    // own Map and limit, so a fresh settings load that only updated state
+    // would leave the already-cached entries under the old cap.
+    const snapshotCacheLimit = resolveRichTextSnapshotCacheLimit(
+      settings["app.rich_text_snapshot_cache_limit"]
+    );
+    setRichTextSnapshotCacheLimit(snapshotCacheLimit);
+    setRichTextSnapshotCacheLimitInModule(snapshotCacheLimit);
     setPrivacyProtection(settings["app.privacy_protection"] !== "false");
     if (settings["app.privacy_protection_kinds"]) {
       const list = settings["app.privacy_protection_kinds"].split(",").map((s) => s.trim()).filter(Boolean);

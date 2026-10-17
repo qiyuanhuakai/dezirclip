@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
+import { DEFAULT_RICH_TEXT_SNAPSHOT_CACHE } from "../../../shared/lib/richTextSnapshotCache";
 import type { AppState, DefaultAppsMap, InstalledAppOption } from "../types";
 
 export const useAppState = (): AppState => {
@@ -55,6 +56,9 @@ export const useAppState = (): AppState => {
   const [captureFiles, setCaptureFiles] = useState(true);
   const [captureRichText, setCaptureRichText] = useState(false);
   const [richTextSnapshotPreview, setRichTextSnapshotPreview] = useState(false);
+  const [richTextSnapshotCacheLimit, setRichTextSnapshotCacheLimit] = useState(
+    DEFAULT_RICH_TEXT_SNAPSHOT_CACHE
+  );
   const [silentStart, setSilentStart] = useState(true);
   const [theme, setTheme] = useState("mica");
   const [colorMode, setColorMode] = useState("system");
@@ -174,6 +178,8 @@ export const useAppState = (): AppState => {
     setCaptureRichText,
     richTextSnapshotPreview,
     setRichTextSnapshotPreview,
+    richTextSnapshotCacheLimit,
+    setRichTextSnapshotCacheLimit,
     silentStart,
     setSilentStart,
     theme,

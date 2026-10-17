@@ -87,6 +87,8 @@ export interface AppState {
   setCaptureRichText: StateSetter<boolean>;
   richTextSnapshotPreview: boolean;
   setRichTextSnapshotPreview: StateSetter<boolean>;
+  richTextSnapshotCacheLimit: number;
+  setRichTextSnapshotCacheLimit: StateSetter<number>;
   silentStart: boolean;
   setSilentStart: StateSetter<boolean>;
   theme: string;

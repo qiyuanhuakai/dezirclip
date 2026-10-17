@@ -4,6 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";
+import {
+    DEFAULT_RICH_TEXT_SNAPSHOT_CACHE,
+    resolveRichTextSnapshotCacheLimit,
+} from "../../../../shared/lib/richTextSnapshotCache";
 
 interface LabelWithHintProps {
     label: string;
@@ -32,6 +36,8 @@ interface ClipboardSettingsGroupProps {
     setCaptureRichText: (val: boolean) => void;
     richTextSnapshotPreview: boolean;
     setRichTextSnapshotPreview: (val: boolean) => void;
+    richTextSnapshotCacheLimit: number;
+    setRichTextSnapshotCacheLimit: (val: number) => void;
     richPasteHotkey: string;
     isRecordingRich: boolean;
     setIsRecordingRich: (val: boolean) => void;
@@ -118,6 +124,9 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     const [persistentLimitDraft, setPersistentLimitDraft] = useState(
         props.persistentLimit.toString()
     );
+    const [snapshotCacheLimitDraft, setSnapshotCacheLimitDraft] = useState(
+        props.richTextSnapshotCacheLimit.toString()
+    );
     const isWinVHotkey = (value: string) => {
         const parts = value
             .split('+')
@@ -132,6 +141,27 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     useEffect(() => {
         setPersistentLimitDraft(props.persistentLimit.toString());
     }, [props.persistentLimit, props.persistentLimitEnabled]);
+
+    useEffect(() => {
+        setSnapshotCacheLimitDraft(props.richTextSnapshotCacheLimit.toString());
+    }, [props.richTextSnapshotCacheLimit]);
+
+    // Blank or non-numeric input reverts instead of committing, so a
+    // half-typed number never lands as 0 -- which would read as "caching
+    // disabled" and quietly cost the memory the user meant to keep.
+    const commitSnapshotCacheLimit = (rawValue?: string) => {
+        const source = rawValue ?? snapshotCacheLimitDraft;
+        if (!/^\d+$/.test(source)) {
+            setSnapshotCacheLimitDraft(props.richTextSnapshotCacheLimit.toString());
+            return;
+        }
+        const clamped = resolveRichTextSnapshotCacheLimit(source);
+        setSnapshotCacheLimitDraft(clamped.toString());
+        if (clamped !== props.richTextSnapshotCacheLimit) {
+            props.setRichTextSnapshotCacheLimit(clamped);
+            props.saveAppSetting('rich_text_snapshot_cache_limit', String(clamped));
+        }
+    };
 
     const commitPersistentLimit = (rawValue?: string) => {
         const source = rawValue ?? persistentLimitDraft;
@@ -302,6 +332,37 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
                     </div>
+
+                    {props.richTextSnapshotPreview && (
+                        <div className="setting-item setting-item--detail">
+                            <props.LabelWithHint
+                                label={props.t('rich_text_snapshot_cache_limit')}
+                                hint={props.t('rich_text_snapshot_cache_limit_hint').replace('{default}', String(DEFAULT_RICH_TEXT_SNAPSHOT_CACHE))}
+                                hintKey="rich_text_snapshot_cache_limit"
+                            />
+                            <input
+                                className="numeric-input"
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                value={snapshotCacheLimitDraft}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => {
+                                    const next = e.target.value;
+                                    if (next === "" || /^\d+$/.test(next)) {
+                                        setSnapshotCacheLimitDraft(next);
+                                    }
+                                }}
+                                onBlur={(e) => commitSnapshotCacheLimit(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        commitSnapshotCacheLimit(e.currentTarget.value);
+                                        e.currentTarget.blur();
+                                    }
+                                }}
+                            />
+                        </div>
+                    )}
 
 
                     <div className="setting-item">
