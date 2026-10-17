@@ -3,10 +3,31 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::services::clipboard_ops;
 use crate::services::clipboard::{process_new_entry, ClipboardData};
-use crate::services::screenshot::{self, MonitorInfo, ScreenshotResult};
+use crate::services::screenshot::{self, MonitorRect, ScreenshotResult};
 
-const EVENT_SCREENSHOT_COMPLETE: &str = "screenshot:complete";
+/// The frontend already listens on this channel (`useToastListener`) but
+/// nothing on the backend ever emitted it, so it was a listener waiting for an
+/// event that could not arrive. The payload is an i18n key, not finished text —
+/// the backend has no locale, and hard-coding one language here would defeat
+/// the three-language build.
+const EVENT_TOAST: &str = "toast";
 const REGION_SELECT_LABEL: &str = "region-select";
+
+/// Read the global cursor position in physical pixels, or `None` if the
+/// platform cannot answer.
+///
+/// `AppHandle::cursor_position` is a desktop-global query in Tauri v2 -- it does
+/// not resolve against a window's own frame -- and the `AppHandle` path
+/// dispatches onto the main thread and waits, which is what makes it callable
+/// from an async command. `show_quick_paste` makes the same call.
+///
+/// One helper rather than two call sites: the mask and the whole-screen capture
+/// have to agree on where the user is looking, and a second copy of this query
+/// is where they would start to drift.
+fn global_cursor(app: &AppHandle) -> Option<(i32, i32)> {
+    let cursor = app.cursor_position().ok()?;
+    Some((cursor.x.round() as i32, cursor.y.round() as i32))
+}
 
 /// Cover the monitor the cursor is on.
 ///
@@ -40,15 +61,23 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
 
     // Half-open containment, matching the bounds test `capture_region` uses:
     // the pixel at a monitor's right edge belongs to the next monitor.
-    let target = window
-        .cursor_position()
-        .ok()
-        .and_then(|cursor| {
-            let (cursor_x, cursor_y) = (cursor.x.round() as i32, cursor.y.round() as i32);
-            monitors
-                .into_iter()
-                .find(|monitor| monitor_holds_cursor(monitor, cursor_x, cursor_y))
-        });
+    let target = global_cursor(window.app_handle()).and_then(|(cursor_x, cursor_y)| {
+        monitors.into_iter().find(|monitor| {
+            let position = monitor.position();
+            let size = monitor.size();
+            screenshot::rect_holds_cursor(
+                MonitorRect {
+                    x: position.x,
+                    y: position.y,
+                    width: size.width,
+                    height: size.height,
+                    is_primary: false,
+                },
+                cursor_x,
+                cursor_y,
+            )
+        })
+    });
 
     let Some(monitor) = target else {
         return;
@@ -66,38 +95,6 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
         x: pos.x,
         y: pos.y,
     }));
-}
-
-/// Whether a cursor at `(cursor_x, cursor_y)` sits on `monitor`.
-fn monitor_holds_cursor(monitor: &tauri::Monitor, cursor_x: i32, cursor_y: i32) -> bool {
-    let pos = monitor.position();
-    let size = monitor.size();
-    rect_holds_cursor(pos.x, pos.y, size.width, size.height, cursor_x, cursor_y)
-}
-
-/// Whether `(cursor_x, cursor_y)` falls inside the rectangle at `(left, top)`
-/// sized `(width, height)` in physical pixels.
-///
-/// Split out from `monitor_holds_cursor` because `tauri::Monitor` has no public
-/// constructor: a test cannot build one, so testing the wrapper would assert
-/// nothing. Every edge case that matters -- the half-open seam, a display left
-/// of the primary, a degenerate zero-size monitor -- lives in the arithmetic
-/// below and is reachable from here.
-///
-/// Half-open on both axes, so the pixel at a monitor's right edge belongs to the
-/// next monitor rather than to two at once, matching the bounds test
-/// `capture_region` applies. Origins are frequently negative -- a display left
-/// of the primary sits at `x = -1920` -- so the arithmetic is signed throughout.
-fn rect_holds_cursor(
-    left: i32,
-    top: i32,
-    width: u32,
-    height: u32,
-    cursor_x: i32,
-    cursor_y: i32,
-) -> bool {
-    let (width, height) = (width as i32, height as i32);
-    cursor_x >= left && cursor_x < left + width && cursor_y >= top && cursor_y < top + height
 }
 
 /// Bring the region selector back if the idle destroyer took it away.
@@ -160,14 +157,29 @@ pub fn hide_region_select(app: AppHandle) {
     }
 }
 
-/// Capture the primary monitor as a PNG and broadcast a `screenshot:complete`
-/// event with the same payload the command returns to the caller.
+/// Capture the display the cursor is on as a PNG and broadcast a toast.
+///
+/// This is the second half of a feature whose first half already existed:
+/// `ROADMAP.md` 5.1 planned both `capture_screen()` and `capture_region()` plus
+/// a `screenshot.full_capture` label, and the backend half was built while the
+/// UI entry was never surfaced. Without it, grabbing a whole display means
+/// pressing the region hotkey and dragging a rectangle the size of the screen.
+///
+/// The cursor picks the display, matching `cover_cursor_monitor`. Capturing the
+/// primary instead would put a screenshot of the wrong monitor in the clipboard
+/// whenever the button was pressed from the settings page, which is the one
+/// place the main window is guaranteed to be on screen.
 #[tauri::command]
 pub async fn capture_full_screen(app: AppHandle) -> Result<ScreenshotResult, String> {
-    let result = screenshot::capture_full_screen().map_err(|e| e.to_string())?;
+    let result = screenshot::capture_full_screen(global_cursor(&app)).map_err(|e| e.to_string())?;
     copy_screenshot_to_clipboard(&result)?;
     save_screenshot_to_history(&app, &result);
-    emit_screenshot_complete(&app, &result);
+    // The region path does not toast: the mask appearing and then disappearing
+    // is its own confirmation, and the region hotkey usually fires from another
+    // application where the main window is not even on screen to show it. This
+    // one produces no visible change at all -- a click that silently drops an
+    // image on the clipboard -- and it is reachable from a visible button.
+    let _ = app.emit(EVENT_TOAST, "screenshot_captured");
     Ok(result)
 }
 
@@ -185,7 +197,6 @@ pub async fn capture_region(
     let result = screenshot::capture_region(x, y, width, height).map_err(|e| e.to_string())?;
     copy_screenshot_to_clipboard(&result)?;
     save_screenshot_to_history(&app, &result);
-    emit_screenshot_complete(&app, &result);
     release_selector_after_response(&app);
     Ok(result)
 }
@@ -202,12 +213,6 @@ fn release_selector_after_response(app: &AppHandle) {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         hide_region_select(handle);
     });
-}
-
-/// Enumerate every attached monitor.
-#[tauri::command]
-pub async fn list_monitors(_app: AppHandle) -> Result<Vec<MonitorInfo>, String> {
-    screenshot::list_monitors().map_err(|e| e.to_string())
 }
 
 fn copy_screenshot_to_clipboard(result: &ScreenshotResult) -> Result<(), String> {
@@ -246,10 +251,6 @@ fn save_screenshot_to_history(app: &AppHandle, result: &ScreenshotResult) {
     );
 }
 
-fn emit_screenshot_complete(app: &AppHandle, result: &ScreenshotResult) {
-    let _ = app.emit(EVENT_SCREENSHOT_COMPLETE, result);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,131 +259,6 @@ mod tests {
     const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
     #[test]
-    fn test_rect_holds_cursor_interior_and_corners() {
-        let left = 0;
-        let top = 0;
-        let width = 1920;
-        let height = 1080;
-
-        assert!(
-            rect_holds_cursor(left, top, width, height, 960, 540),
-            "the middle of the display is on it"
-        );
-        assert!(
-            rect_holds_cursor(left, top, width, height, 0, 0),
-            "the top-left pixel is on it -- edges are inclusive"
-        );
-        assert!(
-            rect_holds_cursor(left, top, width, height, 1919, 1079),
-            "the bottom-right pixel is on it"
-        );
-        assert!(
-            !rect_holds_cursor(left, top, width, height, -1, 540),
-            "one pixel to the left of the origin is off it"
-        );
-        assert!(
-            !rect_holds_cursor(left, top, width, height, 960, -1),
-            "one pixel above the origin is off it"
-        );
-    }
-
-    #[test]
-    fn test_rect_holds_cursor_is_half_open_at_the_far_edges() {
-        // A 1920-wide display starting at the origin occupies x in [0, 1920).
-        assert!(
-            !rect_holds_cursor(0, 0, 1920, 1080, 1920, 540),
-            "x = 1920 is the first pixel past a 1920-wide display, not on it"
-        );
-        assert!(
-            !rect_holds_cursor(0, 0, 1920, 1080, 960, 1080),
-            "y = 1080 is the first pixel past a 1080-tall display, not on it"
-        );
-    }
-
-    /// The seam between two side-by-side displays is the case the half-open
-    /// interval exists for. Both halves are asserted, so a function that went
-    /// inclusive on both ends (no display claims the seam) or exclusive on both
-    /// (every display claims it) fails here.
-    #[test]
-    fn test_rect_holds_cursor_seam_belongs_to_exactly_one_monitor() {
-        let primary_x = 0i32;
-        let primary_w = 1920u32;
-        let secondary_x = 1920i32;
-        let secondary_w = 2560u32;
-        // The seam sits one pixel past the left display's width, in absolute
-        // coordinates rather than in that display's local frame.
-        let seam = primary_x + primary_w as i32;
-
-        for seam_x in [seam, seam + 1] {
-            assert!(
-                !rect_holds_cursor(primary_x, 0, primary_w, 1080, seam_x, 540),
-                "x = {seam_x} belongs to the display on the right, not the one on the left"
-            );
-            assert!(
-                rect_holds_cursor(secondary_x, 0, secondary_w, 1440, seam_x, 540),
-                "x = {seam_x} is inside the display on the right"
-            );
-        }
-    }
-
-    /// A display left of the primary has a negative origin, which is the case a
-    /// truncating or unsigned intermediate would silently get wrong.
-    #[test]
-    fn test_rect_holds_cursor_handles_negative_origin() {
-        let left = -1920;
-        let top = -200;
-        let width = 1920;
-        let height = 1080;
-
-        assert!(
-            rect_holds_cursor(left, top, width, height, -1000, -100),
-            "a cursor at (-1000, -100) is inside a display spanning x in [-1920, 0)"
-        );
-        assert!(
-            rect_holds_cursor(left, top, width, height, -1919, -199),
-            "the display's own top-left pixel, in negative coordinates, is on it"
-        );
-        assert!(
-            !rect_holds_cursor(left, top, width, height, -1921, -100),
-            "one pixel left of a -1920 origin is off it"
-        );
-        assert!(
-            !rect_holds_cursor(left, top, width, height, -1000, 881),
-            "y = 881 is past a display spanning y in [-200, 880)"
-        );
-    }
-
-    #[test]
-    fn test_rect_holds_cursor_zero_sized_monitor_contains_nothing() {
-        for (x, y) in [(0, 0), (-1, -1), (1, 1)] {
-            assert!(
-                !rect_holds_cursor(0, 0, 0, 0, x, y),
-                "a zero-sized display must not claim the cursor at ({x}, {y})"
-            );
-        }
-    }
-
-    /// Half-open applies to a display that butts up against the origin too, not
-    /// just to one with a neighbour on the right.
-    #[test]
-    fn test_rect_holds_cursor_negative_origin_ending_at_zero_excludes_zero() {
-        // A 2560-wide display left of the primary occupies x in [-2560, 0).
-        assert!(
-            !rect_holds_cursor(-2560, 0, 2560, 1440, 0, 540),
-            "x = 0 is the first pixel of the primary, not the last pixel of the display on its left"
-        );
-        assert!(
-            rect_holds_cursor(-2560, 0, 2560, 1440, -1, 540),
-            "x = -1 is the last pixel of that display"
-        );
-        // Widening it so it genuinely spans the origin brings the pixel back,
-        // which is what shows the assertion above is about the interval and not
-        // about negative arithmetic being broken.
-        assert!(
-            rect_holds_cursor(-2560, 0, 3840, 1440, 0, 540),
-            "a display spanning x in [-2560, 1280) does claim x = 0"
-        );
-    }
 
     #[test]
     fn test_capture_full_screen_returns_png() {
@@ -390,7 +266,7 @@ mod tests {
             return;
         }
 
-        match screenshot::capture_full_screen() {
+        match screenshot::capture_full_screen(None) {
             Ok(result) => {
                 assert!(result.png_bytes.len() >= PNG_MAGIC.len());
                 assert_eq!(
@@ -427,41 +303,6 @@ mod tests {
     }
 
     #[test]
-    fn test_list_monitors_format() {
-        let monitor = MonitorInfo {
-            id: 7,
-            name: "Test Display".to_string(),
-            x: 100,
-            y: 200,
-            width: 1920,
-            height: 1080,
-            is_primary: true,
-        };
-        assert_eq!(monitor.id, 7);
-        assert_eq!(monitor.name, "Test Display");
-        assert_eq!(monitor.x, 100);
-        assert_eq!(monitor.y, 200);
-        assert_eq!(monitor.width, 1920);
-        assert_eq!(monitor.height, 1080);
-        assert!(monitor.is_primary);
-
-        if !screenshot_smoke_enabled() {
-            return;
-        }
-
-        match screenshot::list_monitors() {
-            Ok(list) => {
-                for m in &list {
-                    assert!(m.id != 0 || list.len() == 1, "id field must be populated");
-                }
-            }
-            Err(_) => {
-                // Headless CI: the service tolerates a missing display.
-            }
-        }
-    }
-
-    #[test]
     fn test_screenshot_data_url_wraps_png_bytes() {
         let result = ScreenshotResult {
             width: 1,
@@ -481,7 +322,7 @@ mod tests {
             return;
         }
 
-        let result = match screenshot::capture_full_screen() {
+        let result = match screenshot::capture_full_screen(None) {
             Ok(r) => r,
             Err(_) => return,
         };

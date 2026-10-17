@@ -258,7 +258,6 @@ fn main() {
             app::commands::screenshot_cmd::capture_full_screen,
             app::commands::screenshot_cmd::capture_region,
             app::commands::screenshot_cmd::hide_region_select,
-            app::commands::screenshot_cmd::list_monitors,
             app::commands::screenshot_cmd::show_region_selector,
             #[cfg(target_os = "windows")]
             infrastructure::windows_api::apps::get_system_default_app,

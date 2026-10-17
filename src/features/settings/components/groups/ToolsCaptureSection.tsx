@@ -181,7 +181,10 @@ const ToolsCaptureSection = ({
                     <HotkeyRecorder t={t} labelKey="screenshot_hotkey" hotkey={screenshotHotkey} recording={isRecordingScreenshot} setRecording={setIsRecordingScreenshot} onHotkeyChange={updateScreenshotHotkey} />
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("capture_now")}</span></div>
-                        <button className="setting-btn" onClick={() => invoke("show_region_selector").catch(console.error)}><Camera size={14} />{t("capture_now")}</button>
+                        <div className="setting-btn-group">
+                            <button className="setting-btn" onClick={() => invoke("show_region_selector").catch(console.error)}><Camera size={14} />{t("capture_region_now")}</button>
+                            <button className="setting-btn" onClick={() => invoke("capture_full_screen").catch(console.error)}><Camera size={14} />{t("capture_full_now")}</button>
+                        </div>
                     </div>
                 </>
             )}

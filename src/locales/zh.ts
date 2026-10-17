@@ -320,6 +320,9 @@ export const zh = {
         ocr_engine_linux: "Linux: 暂未实现",
 
         capture_now: "立即截图",
+        capture_region_now: "区域截图",
+        capture_full_now: "全屏截图",
+        screenshot_captured: "已复制到剪贴板",
         ocr_engine_available: "可用",
         ocr_engine_unavailable: "暂不可用",
         search_mode_hint: "模糊/正则搜索模式",
