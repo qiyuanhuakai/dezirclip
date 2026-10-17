@@ -12,9 +12,10 @@
 //!
 //! ## Args
 //!
-//! * `--pattern <REGEX>` — case-insensitive substring filter applied
-//!   to the entry's `content` (and `preview` as a fallback). Empty or
-//!   omitted = no filter; print every new entry.
+//! * `--pattern <TEXT>` — case-insensitive **substring** filter applied
+//!   to the entry's `content` (and `preview` as a fallback). It is not
+//!   a regex, so `a|b` matches that literal string and never either
+//!   alternative. Empty or omitted = no filter; print every new entry.
 //! * `--interval <MS>` — poll interval in milliseconds. Default
 //!   `DEFAULT_INTERVAL_MS` (500). Clamped to `[50, 60_000]` so a
 //!   typo (`--interval 0`) doesn't pin a CPU.

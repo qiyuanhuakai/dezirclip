@@ -34,8 +34,9 @@
 //!
 //! ## Output
 //!
-//! Human summary on success: `Imported N entries to <path> (mode
-//! <merge|replace>)`. Errors are propagated as `Err(String)`.
+//! Human summary on success: `Imported <n>/<total> entries from <path>
+//! (<json|encrypted>, mode <merge|replace>)`. Errors are propagated as
+//! `Err(String)`.
 
 use std::path::Path;
 

@@ -43,7 +43,10 @@ pub struct AddArgs {
 /// Preview length kept in the entry's `preview` column. The in-tree
 /// `repo.save_with_conn` will further truncate for the history list
 /// view, but the canonical preview is stored at this length.
-const PREVIEW_CHARS: usize = 500;
+///
+/// `pub(crate)` because `edit` writes the same column and the two commands
+/// must agree on its length.
+pub const PREVIEW_CHARS: usize = 500;
 
 /// Run the `add` subcommand. Returns the newly-inserted entry id.
 pub fn run(args: &AddArgs, repo: &dyn ClipboardRepository) -> Result<i64, String> {
@@ -88,7 +91,9 @@ pub fn run(args: &AddArgs, repo: &dyn ClipboardRepository) -> Result<i64, String
 /// to enforce. The cli surface is defensive: returns an informative
 /// error if none are set so future callers can't accidentally insert
 /// empty payloads.
-fn read_content(args: &AddArgs) -> Result<String, String> {
+///
+/// `pub(crate)` because `edit` resolves its content the same way.
+pub(crate) fn read_content(args: &AddArgs) -> Result<String, String> {
     if args.stdin {
         let mut buf = String::new();
         std::io::stdin()
@@ -125,7 +130,9 @@ fn normalize_kind(raw: &str) -> String {
 /// `commands::clipboard_cmd::add_manual_item` but without the ellipsis
 /// suffix — the in-tree repo's history viewer applies its own
 /// truncation on read, so we keep the full preview byte-faithful here.
-fn preview_of(content: &str) -> String {
+///
+/// `pub(crate)` because `edit` rewrites the same column.
+pub(crate) fn preview_of(content: &str) -> String {
     content.chars().take(PREVIEW_CHARS).collect()
 }
 

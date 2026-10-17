@@ -15,7 +15,9 @@
 //!   crate match against content. The repo fetches candidates so the
 //!   regex only runs on a bounded set.
 //!
-//! Output: same shape as `list` — human / `--json` / `--ids` / `--quiet`.
+//! Output: human / `--json` / `--quiet`, same as `list` minus `--ids` —
+//! `search` has no `--ids` flag; pipe `--json` through `jq -r '.[].id'`
+//! when you only need the ids.
 
 use regex::Regex;
 
