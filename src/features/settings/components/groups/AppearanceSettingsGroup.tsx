@@ -81,6 +81,23 @@ const formatThemeFallbackName = (id: string) =>
         .map(part => part.charAt(0).toUpperCase() + part.slice(1))
         .join(' ');
 
+type SystemFont = { family: string; is_mono: boolean; path: string };
+
+// `list_system_fonts` enumerates every installed font and loads each one on the
+// Rust side, with no shared cache there. This group remounts whenever the rail
+// moves to another section, so a component-local `systemFontsLoaded` restarted
+// the whole scan on every return visit. Holding the promise at module scope
+// dedupes callers that arrive while a scan is still in flight and keeps the
+// result for every later mount; a rejection clears it so the next visit retries.
+let systemFontsRequest: Promise<SystemFont[]> | null = null;
+const loadSystemFonts = (): Promise<SystemFont[]> => {
+    systemFontsRequest ??= invoke<SystemFont[]>("list_system_fonts").catch((err: unknown) => {
+        systemFontsRequest = null;
+        throw err;
+    });
+    return systemFontsRequest;
+};
+
 const AppearanceSettingsGroup = ({
     t,
     collapsed,
@@ -112,12 +129,12 @@ const AppearanceSettingsGroup = ({
     setSurfaceOpacity,
     saveAppSetting
 }: AppearanceSettingsGroupProps) => {
-    const [systemFonts, setSystemFonts] = useState<{ family: string; is_mono: boolean; path: string }[]>([]);
+    const [systemFonts, setSystemFonts] = useState<SystemFont[]>([]);
     const [systemFontsLoaded, setSystemFontsLoaded] = useState(false);
     useEffect(() => {
         if (!shouldRequestSystemFonts(collapsed, systemFontsLoaded)) return;
         let cancelled = false;
-        invoke<{ family: string; is_mono: boolean; path: string }[]>("list_system_fonts")
+        loadSystemFonts()
             .then((list) => {
                 if (!cancelled) {
                     setSystemFonts(list);

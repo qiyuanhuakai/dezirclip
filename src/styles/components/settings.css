@@ -42,12 +42,32 @@
 
 /* The rail chooses the section in this layout, so the detail pane's header is a
    title and nothing else: no chevron, no pointer, no click. Folding it away would
-   leave the pane blank with the rail still pointing at it. */
+   leave the pane blank with the rail still pointing at it.
+
+   Both declarations are `!important` on purpose. The mica/acrylic shared layer
+   sets `cursor: pointer !important` and `.group-header svg { display: block
+   !important }`; without this they win and those two themes keep advertising a
+   fold that `collapse()` refuses to perform. Specificity alone is not enough
+   against an `!important` on both sides. */
 .settings-layout--split .settings-group:not(.collapsed) .group-header {
-  cursor: default;
+  cursor: default !important;
 }
 
 .settings-layout--split .settings-group:not(.collapsed) .group-header svg {
+  display: none !important;
+}
+
+/* Narrow: the same two wrappers stay in the tree so `groups` keeps its slot
+   across the breakpoint, but both drop out of the flow entirely — the accordion
+   renders as if they were not there, and the rail is not shown. The compound
+   selectors outrank the single-class base rules above, so this does not depend
+   on source order. */
+.settings-split-row.settings-split-row--inert,
+.settings-pane.settings-pane--inert {
+  display: contents;
+}
+
+.settings-split-row.settings-split-row--inert > .settings-rail {
   display: none;
 }
 

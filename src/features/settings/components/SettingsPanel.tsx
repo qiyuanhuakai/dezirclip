@@ -109,14 +109,19 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             animate={{ opacity: 1, x: 0 }}
             className={`settings-layout settings-layout--${layout.split ? "split" : "stack"}`}
         >
-            {layout.split ? (
-                <div className="settings-split-row">
-                    <SettingsRail t={t} activeGroup={activeGroup} onSelect={setActiveGroup} />
-                    <div className={paneClass}>{groups}</div>
-                </div>
-            ) : (
-                groups
-            )}
+            {/* This wrapper exists only to keep `groups` at the same position and
+                the same element type across the breakpoint. Rendering `groups`
+                directly in stack mode and a `<div>` around it in split mode made
+                React rebuild every group on each crossing, dropping open dialogs
+                and half-filled forms. `display: contents` lifts the wrapper out of
+                the flow in stack mode, so the accordion renders exactly as before;
+                the rail is present but hidden, which keeps the child list identical
+                on both sides rather than relying on how React reconciles a null
+                slot. */}
+            <div className={`settings-split-row${layout.split ? "" : " settings-split-row--inert"}`}>
+                <SettingsRail t={t} activeGroup={activeGroup} onSelect={setActiveGroup} />
+                <div className={layout.split ? paneClass : "settings-pane settings-pane--inert"}>{groups}</div>
+            </div>
 
             <SettingsFooter
                 t={t}
