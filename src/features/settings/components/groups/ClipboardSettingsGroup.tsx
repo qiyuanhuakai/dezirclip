@@ -8,6 +8,7 @@ import {
     DEFAULT_RICH_TEXT_SNAPSHOT_CACHE,
     resolveRichTextSnapshotCacheLimit,
 } from "../../../../shared/lib/richTextSnapshotCache";
+import { setRichTextSnapshotCacheLimit as applySnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshot";
 
 interface LabelWithHintProps {
     label: string;
@@ -162,6 +163,13 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
         if (clamped !== props.richTextSnapshotCacheLimit) {
             props.setRichTextSnapshotCacheLimit(clamped);
             props.saveAppSetting('rich_text_snapshot_cache_limit', String(clamped));
+            // The module owns the Map as well as the number, and only this
+            // call reaches it -- React state and the settings row do not. Without
+            // it the setting would not take effect until something else happened
+            // to reload every setting, which for a user means "the number moved
+            // and nothing did". Lowering it this way also hands the memory back
+            // straight away, since the setter trims.
+            applySnapshotCacheLimit(clamped);
         }
     };
 
@@ -562,7 +570,18 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     // intact, and the hotkey accepts a non-empty
                                     // queue even when the mode is off, so a batch
                                     // copied before the switch stayed pasteable.
-                                    if (!val && props.pasteQueueCount > 0) {
+                                    //
+                                    // No `pasteQueueCount > 0` guard: that number
+                                    // is refreshed on paste events and on window
+                                    // focus, but copying into the queue emits
+                                    // none of them, so it is routinely stale at
+                                    // exactly this moment -- the batch this
+                                    // branch exists to drop is the batch the
+                                    // count cannot see. Clearing is idempotent,
+                                    // and `clear_paste_queue` answers with
+                                    // `queue-finished`, which is the refresh the
+                                    // count was waiting for anyway.
+                                    if (!val) {
                                         props.clearPasteQueue();
                                     }
                                     if (val) {
