@@ -5,147 +5,65 @@ interface SettingsFooterProps {
     t: (key: string) => string;
     appVersion: string;
     onResetSettings: () => void;
+    /**
+     * Wide layout folds the footer onto one line. Stacked, it is two centred
+     * blocks and costs about 120px of height -- on a short landscape window that
+     * is a fifth of the pane sitting on chrome that is not settings.
+     */
+    compact?: boolean;
 }
+
+const REPO_URL = "https://github.com/qiyuanhuakai/dezirclip";
 
 const SettingsFooter = ({
     t,
     appVersion,
-    onResetSettings
+    onResetSettings,
+    compact = false,
 }: SettingsFooterProps) => (
-    <>
-        {/* Footer Actions */}
-        <div style={{
-            marginTop: '16px',
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '12px',
-            flexWrap: 'wrap'
-        }}>
-            {/* Feedback Card */}
+    <div className={`settings-footer${compact ? " settings-footer--compact" : ""}`}>
+        <div className="settings-footer-actions">
             <div
-                className="settings-group settings-footer-action"
-                style={{
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    margin: 0,
-                    width: 'auto',
-                    padding: '10px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: '0'
-                }}
-                onClick={() => openUrl('https://github.com/qiyuanhuakai/dezirclip/issues')}
+                className="settings-group settings-footer-action settings-footer-card"
+                onClick={() => openUrl(`${REPO_URL}/issues`)}
             >
-                <div className="settings-footer-action-content" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="settings-footer-card-content">
                     <MessageSquare size={16} />
-                    <span className="settings-footer-action-label" style={{ fontSize: '13px', fontWeight: 600 }}>
+                    <span className="settings-footer-action-label settings-footer-card-label">
                         {t('feedback')}
                     </span>
                 </div>
             </div>
 
-            {/* Reset Card */}
             <div
-                className="settings-group settings-footer-action"
-                style={{
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    margin: 0,
-                    width: 'auto',
-                    padding: '10px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: '0'
-                }}
+                className="settings-group settings-footer-action settings-footer-card"
                 onClick={() => onResetSettings()}
             >
-                <div className="settings-footer-action-content" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="settings-footer-card-content">
                     <RotateCcw size={16} />
-                    <span className="settings-footer-action-label" style={{ fontSize: '13px', fontWeight: 600 }}>{t('reset_defaults')}</span>
+                    <span className="settings-footer-action-label settings-footer-card-label">
+                        {t('reset_defaults')}
+                    </span>
                 </div>
             </div>
         </div>
 
-        {/* Version Info */}
-        <div style={{
-            marginTop: '16px',
-            marginBottom: '32px',
-            textAlign: 'center',
-            opacity: 1
-        }}>
-            <div style={{
-                fontSize: '13px',
-                fontWeight: 600,
-                color: 'var(--text-secondary)',
-                letterSpacing: '0.5px',
-                marginBottom: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-            }}>
-                <span>DezirClip {appVersion ? `v${appVersion}` : "v0.2.0"}</span>
+        <div className="settings-footer-meta">
+            <div className="settings-footer-version">
+                DezirClip {appVersion ? `v${appVersion}` : "v0.2.0"}
             </div>
-            <div style={{
-                fontSize: '11px',
-                color: 'var(--text-secondary)',
-                fontWeight: 500,
-                marginBottom: '4px'
-            }}>
-                {t('slogan')}
-            </div>
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                flexWrap: 'wrap'
-            }}>
-                <button
-                    onClick={() => openUrl('https://github.com/qiyuanhuakai/dezirclip/')}
-                    style={{
-                        fontSize: '11px',
-                        color: 'var(--accent-color)',
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                        opacity: 0.7,
-                        fontWeight: 600,
-                        padding: '2px 4px'
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.7')}
-                >
+            <div className="settings-footer-slogan">{t('slogan')}</div>
+            <div className="settings-footer-links">
+                <button type="button" className="settings-footer-link" onClick={() => openUrl(REPO_URL)}>
                     {t('official_website')}
                 </button>
-                <button
-                    onClick={() => openUrl('https://github.com/qiyuanhuakai/dezirclip')}
-                    style={{
-                        fontSize: '11px',
-                        color: 'var(--accent-color)',
-                        background: 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                        opacity: 0.7,
-                        fontWeight: 600,
-                        padding: '2px 4px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.7')}
-                >
+                <button type="button" className="settings-footer-link" onClick={() => openUrl(REPO_URL)}>
                     <Github size={12} />
                     <span>GitHub</span>
                 </button>
             </div>
         </div>
-    </>
+    </div>
 );
 
 export default SettingsFooter;

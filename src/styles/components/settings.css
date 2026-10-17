@@ -2,9 +2,330 @@
 .settings-view {
   background: transparent;
   padding: 12px 8px;
+  width: 100%;
+}
+
+/* ---------------------------------------------------------------
+   Two shapes, chosen in JS by `resolveSettingsLayout` (see
+   features/settings/utils/settingsLayout.ts). Only the shape is decided
+   there -- everything about how either one looks lives in this file and the
+   per-theme files. Breakpoints: 560 / 700 / 1000.
+   --------------------------------------------------------------- */
+
+/* Narrow: the original centred single column.
+   `width: 100%` is load-bearing, not decoration. `.settings-layout--stack` is a
+   flex item of the column-flex `.settings-view`, and `margin: 0 auto` suppresses
+   `align-self: stretch` -- so without an explicit width this box sizes to its
+   content instead: ~190px with every group collapsed, then ~400px the moment one
+   opened, because a single wide row drags the whole column out with it. The
+   explicit width holds it at 420px no matter what is expanded. */
+.settings-layout--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
   max-width: 420px;
   margin: 0 auto;
+}
+
+/* Wide: a fixed rail beside one scrolling detail pane. */
+.settings-layout--split {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* Bound the height so the pane scrolls instead of the page. The parent
+     `.settings-view` is already `flex: 1 1 0; min-height: 0`. */
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The rail chooses the section in this layout, so the detail pane's header is a
+   title and nothing else: no chevron, no pointer, no click. Folding it away would
+   leave the pane blank with the rail still pointing at it.
+
+   Both declarations are `!important` on purpose. The mica/acrylic shared layer
+   sets `cursor: pointer !important` and `.group-header svg { display: block
+   !important }`; without this they win and those two themes keep advertising a
+   fold that `collapse()` refuses to perform. Specificity alone is not enough
+   against an `!important` on both sides. */
+.settings-layout--split .settings-group:not(.collapsed) .group-header {
+  cursor: default !important;
+}
+
+.settings-layout--split .settings-group:not(.collapsed) .group-header svg {
+  display: none !important;
+}
+
+/* Narrow: the same two wrappers stay in the tree so `groups` keeps its slot
+   across the breakpoint, but both drop out of the flow entirely — the accordion
+   renders as if they were not there, and the rail is not shown. The compound
+   selectors outrank the single-class base rules above, so this does not depend
+   on source order. */
+.settings-split-row.settings-split-row--inert,
+.settings-pane.settings-pane--inert {
+  display: contents;
+}
+
+.settings-split-row.settings-split-row--inert > .settings-rail {
+  display: none;
+}
+
+/* Each group is wrapped in a slot that carries the `hidden` flag. In the narrow
+   layout the slot is `display: contents` so the accordion lays out exactly as it
+   did before the wrapper existed; in the split layout it is an ordinary block the
+   pane can hide. The `[hidden]` rule is spelled out because the author-level
+   `display` above would otherwise beat the user-agent `[hidden]` rule. */
+.settings-group-slot {
+  display: contents;
+}
+
+.settings-layout--split .settings-group-slot {
+  display: block;
+}
+
+.settings-layout--split .settings-group-slot[hidden] {
+  display: none;
+}
+
+.settings-split-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.settings-rail {
+  --settings-rail-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: var(--settings-rail-width);
+  flex: 0 0 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Sized against `.setting-item` on purpose: same 34px row and same 14px label, so
+   the rail reads as part of the settings rather than a chrome strip bolted on. */
+.settings-rail-item {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
   width: 100%;
+  flex-shrink: 0;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-element);
+  border: 2px solid var(--border-dark);
+  border-radius: 4px;
+  box-shadow: 2px 2px 0 0 var(--shadow-color);
+  min-height: 34px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.settings-rail-item:hover {
+  background: var(--bg-input);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0 0 var(--shadow-color);
+}
+
+.settings-rail-item.is-active {
+  /* Retro's own "selected" idiom, same as `.segment-btn.active`. */
+  background: var(--text-primary);
+  color: var(--bg-window);
+  transform: none;
+  box-shadow: 2px 2px 0 0 var(--shadow-color);
+}
+
+.settings-pane {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Wide enough for the rows to flow side by side instead of stacking. Every
+   group's `.group-content` children are `.setting-item`, so the grid lays them
+   out in document order without any per-group opt-in.
+
+   The tracks are `minmax(0, 1fr)`, not `1fr`. A bare `1fr` is `minmax(auto, 1fr)`,
+   and that `auto` floor pins each track to the min-content of its widest row — a
+   filesystem path or an engine badge is easily 480px, so one such row pushed the
+   track past its share, the grid overflowed `.settings-pane`'s `overflow-x: hidden`,
+   and the right-hand rows were clipped instead of reflowing. `minmax(0, …)` drops
+   the floor so the columns share the pane evenly and the rows truncate instead. */
+.settings-pane--cols-2 .group-content,
+.settings-pane--cols-3 .group-content {
+  display: grid;
+  align-items: start;
+  column-gap: 20px;
+}
+
+/* Same reason, one level down: a grid item is a flex container whose own default
+   `min-width: auto` would re-introduce the overflow the track just gave up. */
+.settings-pane--cols-2 .group-content > *,
+.settings-pane--cols-3 .group-content > * {
+  min-width: 0;
+}
+
+.settings-pane--cols-2 .group-content {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-pane--cols-3 .group-content {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* A row whose control is intrinsically wide — a filesystem path, an engine badge —
+   is unreadable at half a column: the label truncates and the value gets cut
+   mid-path. Those rows claim the whole row and let the short controls flow around
+   them. `:has()` keys off controls the groups already render, so most groups need
+   no opt-in; `.column` rows stack label-over-control and want the same room. */
+.settings-pane--cols-2 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text),
+.settings-pane--cols-3 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text),
+.settings-pane--cols-2 .group-content > .setting-item.column,
+.settings-pane--cols-3 .group-content > .setting-item.column,
+.settings-pane--cols-2 .group-content > .setting-item--detail,
+.settings-pane--cols-3 .group-content > .setting-item--detail {
+  grid-column: 1 / -1;
+}
+
+/* The control side of a row must be allowed to shrink. `.item-label-group` already
+   carries `min-width: 0`, but the value beside it does not, so a `nowrap` value
+   such as a path claims its full min-content and crushes the label to zero width
+   instead of the pair reflowing. */
+.settings-pane--cols-2 .setting-item > :not(.item-label-group),
+.settings-pane--cols-3 .setting-item > :not(.item-label-group) {
+  min-width: 0;
+}
+
+/* A detail row hangs off the section above it and carries free-form values —
+   paths, versions, build stamps — which are plain `nowrap` spans with no ellipsis
+   of their own. */
+.setting-item--detail {
+  margin-left: 18px;
+}
+
+/* Footer — action cards first, then version/slogan/links. Narrow stacks the two
+   halves; wide folds them onto one line so it costs a row, not a screen. */
+.settings-footer {
+  margin-top: 16px;
+}
+
+.settings-footer-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Both footer cards are `.settings-group`, which carries the `padding: 12px` of
+   the expanded state. This rule used to be an inline style, which outranked it;
+   as a plain class it lost, and the cards collapsed to the height of their icon
+   row. Three classes is what it takes to win again. */
+.settings-group.settings-footer-action.settings-footer-card {
+  cursor: pointer;
+  width: auto;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.settings-footer-card-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-footer-card-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-footer-meta {
+  margin-top: 16px;
+  margin-bottom: 32px;
+  text-align: center;
+}
+
+.settings-footer-version {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.settings-footer-slogan {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.settings-footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-footer-link {
+  font-size: 11px;
+  color: var(--accent-color);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  opacity: 0.7;
+  font-weight: 600;
+  padding: 2px 4px;
+  transition: opacity 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-footer-link:hover {
+  opacity: 1;
+}
+
+.settings-footer--compact {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-footer--compact .settings-footer-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.settings-footer--compact .settings-footer-meta {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-footer--compact .settings-footer-version,
+.settings-footer--compact .settings-footer-slogan {
+  margin: 0;
 }
 
 .numeric-input {
@@ -197,7 +518,12 @@
   gap: 10px;
 }
 
-.tools-path-status-actions {
+/* Badge plus a compact action button. Two rows in the tools group carry that
+   shape -- the CLI path status and the OCR engine status -- and they have to
+   wrap the same way: the pane is one column until 700px, so a long badge plus a
+   button would otherwise push past the row and get clipped. */
+.tools-path-status-actions,
+.tools-engine-status-actions {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -313,14 +639,17 @@
   padding-right: 8px;
 }
 
+/* Kept as a block container on purpose. This rule declares `display: block` and
+   then overrode it with `display: flex`, which silently disabled the
+   `text-overflow: ellipsis` below — ellipsis only applies to block containers, so
+   a label too wide for its column was sliced mid-glyph instead of ending in "…".
+   Nothing renders element children inside `.item-label`, so block costs nothing.
+   Vertical centring is preserved by the line-height it already inherits. */
 .setting-item span.item-label {
   font-weight: 700;
   color: var(--text-primary);
   font-size: var(--font-size-md);
   display: block;
-  /* Flex settings to align with switch */
-  display: flex;
-  align-items: center;
   /* min-height: 32px; Removed to allow denser layout */
   white-space: nowrap;
   overflow: hidden;
@@ -328,6 +657,9 @@
 }
 
 /* Recessed Data Panel (for paths/status) */
+/* Block, not flex: the panel holds one run of text, and `display: flex` cancelled
+   the `text-overflow: ellipsis` below, so a path too long for its column was cut
+   mid-character instead of ending in "…". */
 .data-panel {
   background: var(--bg-body);
   color: var(--text-primary);
@@ -341,8 +673,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  display: flex;
-  align-items: center;
+  display: block;
 }
 
 .data-panel:hover {

@@ -115,6 +115,31 @@ body.theme-macos:not(.hide-app-border) {
   letter-spacing: 0 !important;
 }
 
+/* Wide-layout nav rail: a sidebar of flat pills, matching how macOS treats
+   selected toolbar rows rather than the bordered card used by groups. */
+.theme-macos .settings-rail-item {
+  border: 1px solid transparent !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-weight: 600 !important;
+  padding: 8px 12px !important;
+  transform: none !important;
+  transition: background-color 0.18s ease !important;
+}
+
+.theme-macos .settings-rail-item:hover {
+  background: var(--macos-btn-hover-bg) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.theme-macos .settings-rail-item.is-active {
+  background: var(--macos-btn-active-bg) !important;
+  color: var(--macos-btn-active-text) !important;
+  box-shadow: var(--macos-btn-active-shadow) !important;
+}
+
 .theme-macos .data-panel {
   border-radius: 10px !important;
   border: 1px solid var(--macos-data-border) !important;
