@@ -76,12 +76,19 @@ pub fn set_paste_queue(
         return Ok(());
     }
 
-    let mut queue = state.inner().0.lock().unwrap();
-    queue.items.clear();
-    for id in item_ids {
-        queue.items.push_back(id);
-    }
-    reset_paste_tracking(&mut queue);
+    let queued = {
+        let mut queue = state.inner().0.lock().unwrap();
+        queue.items.clear();
+        for id in item_ids {
+            queue.items.push_back(id);
+        }
+        reset_paste_tracking(&mut queue);
+        queue.items.len()
+    };
+    // Replacing the queue outright used to be silent, so the count kept showing
+    // whatever the previous batch left behind. Same signal the capture path
+    // emits, carrying the length so the frontend adopts it without a round trip.
+    let _ = app_handle.emit("paste-queue-changed", queued);
 
     Ok(())
 }

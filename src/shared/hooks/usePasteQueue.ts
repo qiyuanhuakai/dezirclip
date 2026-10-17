@@ -16,9 +16,12 @@ interface UsePasteQueueOptions {
  * a batch, and pressing the hotkey with nothing queued was indistinguishable
  * from a batch that had just run dry.
  *
- * The queue also grows with no event at all -- `pipeline.rs` appends on every
- * capture while the mode is on -- so the count is refreshed on window focus as
- * well, which is the only signal available for "you copied something".
+ * Enqueueing is the fourth signal and the one that was missing longest: the
+ * queue grows on every capture while the mode is on, which emits none of the
+ * paste events, and window focus is not a substitute — on Windows the main
+ * window is deliberately kept non-activating while shown, so opening it does
+ * not always produce a DOM focus. `paste-queue-changed` carries the new length
+ * so the count can be adopted without a round trip to `get_paste_queue`.
  */
 export const usePasteQueue = ({ t, pushToast }: UsePasteQueueOptions) => {
     const [count, setCount] = useState(0);
@@ -39,6 +42,9 @@ export const usePasteQueue = ({ t, pushToast }: UsePasteQueueOptions) => {
         const unlisteners = [
             listen("queue-item-pasted", () => refresh()),
             listen("queue-finished", () => refresh()),
+            listen<number>("paste-queue-changed", (event) => {
+                setCount(event.payload);
+            }),
             listen("paste-queue-empty", () => {
                 refresh();
                 pushToast(t("sequential_paste_queue_empty"));

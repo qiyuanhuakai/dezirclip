@@ -631,13 +631,24 @@ impl PipelineStage for DistributionStage {
         // Sequential Queue updates
         if settings.sequential_mode.load(Ordering::Relaxed) {
             let queue_state = ctx.app_handle.state::<PasteQueue>();
-            let mut queue = queue_state.0.lock().unwrap();
-            if queue.last_action_was_paste {
-                queue.items.clear();
-                queue.last_action_was_paste = false;
-                queue.last_pasted_content = None;
-            }
-            queue.items.push_back(entry.id);
+            let queued = {
+                let mut queue = queue_state.0.lock().unwrap();
+                if queue.last_action_was_paste {
+                    queue.items.clear();
+                    queue.last_action_was_paste = false;
+                    queue.last_pasted_content = None;
+                }
+                queue.items.push_back(entry.id);
+                queue.items.len()
+            };
+            // The queue grew and nothing downstream could know: the paste events
+            // only fire when the batch runs, and the main window is frequently
+            // not focused (on Windows it is kept NOACTIVATE while shown), so DOM
+            // focus is not a reliable stand-in for "you copied something". The
+            // new length rides along so the frontend can adopt it directly --
+            // making listeners re-read the queue would spend an IPC round trip
+            // per capture to learn one integer we already hold.
+            let _ = ctx.app_handle.emit("paste-queue-changed", queued);
         }
 
         // Sound. Deliberately not gated: the point of the setting is to tell the
