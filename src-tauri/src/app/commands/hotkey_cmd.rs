@@ -1,6 +1,7 @@
 use crate::app_state::SettingsState;
 use crate::error::{AppError, AppResult};
 use crate::global_state::HOTKEY_STRING;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -43,6 +44,7 @@ pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
     let rich_hotkey = settings.rich_paste_hotkey.lock().unwrap().clone();
     let search_hotkey = settings.search_hotkey.lock().unwrap().clone();
     let screenshot_hotkey = settings.screenshot_hotkey.lock().unwrap().clone();
+    let screenshot_full_hotkey = settings.screenshot_full_hotkey.lock().unwrap().clone();
     let quick_paste_hotkey = settings.quick_paste_hotkey.lock().unwrap().clone();
 
     {
@@ -57,8 +59,21 @@ pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
     register_shortcut_if_valid(app, &sequential_hotkey);
     register_shortcut_if_valid(app, &rich_hotkey);
     register_shortcut_if_valid(app, &search_hotkey);
-    register_shortcut_if_valid(app, &screenshot_hotkey);
-    register_shortcut_if_valid(app, &quick_paste_hotkey);
+
+    // A feature that is switched off must not merely ignore its key when it
+    // arrives -- it has to hand the key back. `unregister_all` above has
+    // already dropped everything, so skipping the re-registration is what
+    // releases the OS-level claim; the dispatch handler's own check in
+    // `setup.rs` only stops the action, while the shortcut stays registered
+    // and keeps the combination unavailable to every other application.
+    // Quick paste has the same shape and was quietly doing this too.
+    if settings.screenshot_enabled.load(Ordering::Relaxed) {
+        register_shortcut_if_valid(app, &screenshot_hotkey);
+        register_shortcut_if_valid(app, &screenshot_full_hotkey);
+    }
+    if settings.quick_paste_enabled.load(Ordering::Relaxed) {
+        register_shortcut_if_valid(app, &quick_paste_hotkey);
+    }
     Ok(())
 }
 

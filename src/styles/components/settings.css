@@ -493,6 +493,20 @@
   transition: background 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
 }
 
+/* Lays a row's action buttons out side by side. `min-width: 0` on the children
+   is what lets them shrink instead of forcing the grid track wider than the
+   pane -- a plain flex row would pin its own min-content width. */
+.setting-btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.setting-btn-group > .setting-btn {
+  min-width: 0;
+}
+
 .setting-btn:hover {
   background: var(--control-confirm-btn-hover-bg, var(--bg-input));
   box-shadow: var(--control-confirm-btn-hover-shadow, 3px 3px 0 var(--shadow-color));

@@ -311,6 +311,7 @@ export const en = {
         screenshot_enabled: "Screenshot",
         screenshot_enabled_hint: "Enable region screenshot via hotkey, saved to clipboard",
         screenshot_hotkey: "Screenshot Hotkey",
+        screenshot_full_hotkey: "Full Screen Capture Hotkey",
         quick_paste_enabled: "Quick Paste",
         quick_paste_enabled_hint: "Enable the quick-paste overlay via hotkey",
         quick_paste_hotkey_label: "Quick Paste Hotkey",
@@ -321,6 +322,9 @@ export const en = {
         ocr_engine_linux: "Linux: Not available",
 
         capture_now: "Capture Now",
+        capture_region_now: "Region Capture",
+        capture_full_now: "Full Screen Capture",
+        screenshot_captured: "Copied to clipboard",
         ocr_engine_available: "Available",
         ocr_engine_unavailable: "Not available",
         search_mode_hint: "Fuzzy/Regex search mode",

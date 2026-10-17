@@ -203,6 +203,35 @@ body.theme-macos:not(.hide-app-border) {
   border-color: var(--macos-btn-hover-border) !important;
 }
 
+/* Settings-page action buttons. Same treatment as
+   `.app-selector-action-btn` below — flat, 10px, no drop shadow, the dialog
+   button colours — because that is this theme's shape for an action button.
+   The base `.setting-btn` rule in `components/settings.css` is retro's: a 2px
+   flat border, a 2px 2px 0 hard shadow, and a hover nudge. None of that is
+   macOS, and macOS buttons do not move when you press them. */
+.theme-macos .setting-btn {
+  border: 1px solid var(--macos-dialog-button-border) !important;
+  border-radius: 10px !important;
+  background: var(--macos-dialog-button-bg) !important;
+  color: var(--macos-dialog-button-text) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.theme-macos .setting-btn:hover:not(:disabled) {
+  background: var(--macos-btn-hover-bg) !important;
+  border-color: var(--macos-btn-hover-border) !important;
+  transform: none !important;
+}
+
+.theme-macos .setting-btn:active:not(:disabled) {
+  background: var(--macos-btn-active-bg) !important;
+  border-color: var(--macos-btn-active-border) !important;
+  color: var(--macos-btn-active-text) !important;
+  box-shadow: var(--macos-btn-active-shadow) !important;
+  transform: none !important;
+}
+
 .theme-macos .history-item .item-actions {
   display: inline-flex !important;
   align-items: center !important;

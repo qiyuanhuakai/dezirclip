@@ -294,6 +294,7 @@ pub struct StartupSettings {
     pub search_hotkey: String,
     pub screenshot_enabled: bool,
     pub screenshot_hotkey: String,
+    pub screenshot_full_hotkey: String,
     pub quick_paste_enabled: bool,
     pub quick_paste_hotkey: String,
     pub ocr_enabled: bool,
@@ -385,6 +386,10 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .get("app.screenshot_hotkey")
             .unwrap_or(Some("Ctrl+Shift+A".to_string()))
             .unwrap_or("Ctrl+Shift+A".to_string()),
+        screenshot_full_hotkey: repo
+            .get("app.screenshot_full_hotkey")
+            .unwrap_or(Some("Ctrl+Shift+F".to_string()))
+            .unwrap_or("Ctrl+Shift+F".to_string()),
         quick_paste_enabled: repo
             .get("app.quick_paste_enabled")
             .unwrap_or(Some("true".to_string()))
@@ -501,6 +506,7 @@ fn setup_state(
         search_hotkey: std::sync::Mutex::new(s.search_hotkey.clone()),
         screenshot_enabled: AtomicBool::new(s.screenshot_enabled),
         screenshot_hotkey: std::sync::Mutex::new(s.screenshot_hotkey.clone()),
+        screenshot_full_hotkey: std::sync::Mutex::new(s.screenshot_full_hotkey.clone()),
         quick_paste_enabled: AtomicBool::new(s.quick_paste_enabled),
         quick_paste_hotkey: std::sync::Mutex::new(s.quick_paste_hotkey.clone()),
         ocr_enabled: AtomicBool::new(s.ocr_enabled),
@@ -1737,6 +1743,27 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
                 return;
             }
         }
+
+        // Whole-display capture. Shares the `screenshot_enabled` gate rather
+        // than growing a second toggle: turning off "region capture" means the
+        // user does not want screenshots stealing a global hotkey, and leaving
+        // this one armed would be the surprising half of that.
+        if let Ok(full_s) = {
+            let val = settings.screenshot_full_hotkey.lock().unwrap().clone();
+            val.replace("Win", "Super").parse::<Shortcut>()
+        } {
+            if shortcut == &full_s {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) =
+                        crate::app::commands::screenshot_cmd::capture_full_screen(app).await
+                    {
+                        crate::warn!("[hotkey] Failed to capture the full screen: {}", err);
+                    }
+                });
+                return;
+            }
+        }
     }
 
     if settings.quick_paste_enabled.load(Ordering::Relaxed) {
@@ -1779,6 +1806,18 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
         }
         tauri::WindowEvent::Resized(size) => {
+            // The region overlay is sized to a monitor, so a size change here
+            // can be tao's WM_DPICHANGED handling undoing the geometry we
+            // asked for. Spending the correction from `Resized` rather than
+            // only from `ScaleFactorChanged` is what makes it reliable: a DPI
+            // message the OS dispatches directly can reach us before tao's own
+            // SetWindowPos runs, so a correction issued from that event can
+            // still be overtaken. `Resized` cannot arrive until the size has
+            // settled. The flag is one-shot, so this cannot chase itself.
+            if window.label() == "region-select" {
+                crate::app::commands::screenshot_cmd::confirm_overlay_size(window);
+                return;
+            }
             if window.label() != "main" {
                 return;
             }
@@ -1786,6 +1825,11 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 return;
             }
             persist_window_size(window, size.width, size.height);
+        }
+        tauri::WindowEvent::ScaleFactorChanged { .. } => {
+            // The overlay is the one window here that gets moved between
+            // displays at runtime, and the OS rescales it when it lands.
+            crate::app::commands::screenshot_cmd::reassert_overlay_geometry(window);
         }
         tauri::WindowEvent::CloseRequested { api, .. } => {
             if window.label() != "main" {

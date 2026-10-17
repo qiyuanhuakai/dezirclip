@@ -310,6 +310,7 @@ export const tw = {
         screenshot_enabled: "區域截圖",
         screenshot_enabled_hint: "開啟後可透過快捷鍵進行區域截圖並自動儲存到剪貼簿",
         screenshot_hotkey: "截圖快捷鍵",
+        screenshot_full_hotkey: "全螢幕截圖快捷鍵",
         quick_paste_enabled: "快速貼上",
         quick_paste_enabled_hint: "開啟後可透過快捷鍵呼出快速貼上浮層",
         quick_paste_hotkey_label: "快速貼上快捷鍵",
@@ -320,6 +321,9 @@ export const tw = {
         ocr_engine_linux: "Linux: 尚未實作",
 
         capture_now: "立即截圖",
+        capture_region_now: "區域截圖",
+        capture_full_now: "全螢幕截圖",
+        screenshot_captured: "已複製到剪貼簿",
         ocr_engine_available: "可用",
         ocr_engine_unavailable: "暫不可用",
         search_mode_hint: "模糊/正則搜尋模式",

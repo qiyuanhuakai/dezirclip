@@ -476,7 +476,7 @@ const App = () => {
     fetchHistory();
   }, []);
 
-  useToastListener({ pushToast });
+  useToastListener({ pushToast, t });
 
   useOpenSettingsPanelListener({
     setShowSettings,

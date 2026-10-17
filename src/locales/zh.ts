@@ -310,6 +310,7 @@ export const zh = {
         screenshot_enabled: "区域截图",
         screenshot_enabled_hint: "开启后可通过快捷键进行区域截图并自动保存到剪贴板",
         screenshot_hotkey: "截图快捷键",
+        screenshot_full_hotkey: "全屏截图快捷键",
         quick_paste_enabled: "快速粘贴",
         quick_paste_enabled_hint: "开启后可通过快捷键呼出快速粘贴浮层",
         quick_paste_hotkey_label: "快速粘贴快捷键",
@@ -320,6 +321,9 @@ export const zh = {
         ocr_engine_linux: "Linux: 暂未实现",
 
         capture_now: "立即截图",
+        capture_region_now: "区域截图",
+        capture_full_now: "全屏截图",
+        screenshot_captured: "已复制到剪贴板",
         ocr_engine_available: "可用",
         ocr_engine_unavailable: "暂不可用",
         search_mode_hint: "模糊/正则搜索模式",

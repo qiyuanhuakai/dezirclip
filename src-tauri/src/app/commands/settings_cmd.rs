@@ -110,6 +110,12 @@ fn apply_setting_state_update(
             }
             let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(app_handle);
         }
+        "app.screenshot_full_hotkey" => {
+            if let Ok(mut guard) = settings_state.screenshot_full_hotkey.lock() {
+                *guard = value.to_string();
+            }
+            let _ = crate::app::commands::hotkey_cmd::sync_hotkeys_from_settings(app_handle);
+        }
         "app.quick_paste_enabled" => {
             settings_state
                 .quick_paste_enabled
@@ -468,6 +474,11 @@ pub fn reset_settings(
         .get("app.screenshot_hotkey")
         .unwrap_or(Some("Ctrl+Shift+A".to_string()))
         .unwrap_or("Ctrl+Shift+A".to_string());
+    let screenshot_full_hotkey = state
+        .settings_repo
+        .get("app.screenshot_full_hotkey")
+        .unwrap_or(Some("Ctrl+Shift+F".to_string()))
+        .unwrap_or("Ctrl+Shift+F".to_string());
     let quick_paste_hotkey = state
         .settings_repo
         .get("app.quick_paste_hotkey")
@@ -493,6 +504,10 @@ pub fn reset_settings(
     {
         let mut guard = settings_state.screenshot_hotkey.lock().unwrap();
         *guard = screenshot_hotkey.clone();
+    }
+    {
+        let mut guard = settings_state.screenshot_full_hotkey.lock().unwrap();
+        *guard = screenshot_full_hotkey.clone();
     }
     {
         let mut guard = settings_state.quick_paste_hotkey.lock().unwrap();

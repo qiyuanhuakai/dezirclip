@@ -365,6 +365,10 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
         [],
     );
     let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.screenshot_full_hotkey', 'Ctrl+Shift+F')",
+        [],
+    );
+    let _ = conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.quick_paste_enabled', 'true')",
         [],
     );
