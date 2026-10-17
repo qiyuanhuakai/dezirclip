@@ -858,6 +858,51 @@ body.theme-liquid-glass:not(.hide-app-border) {
   border-color: var(--lg-btn-hover-border) !important;
 }
 
+/* Settings-page action buttons. These carry `.setting-btn`, whose base rule in
+   `components/settings.css` is written in retro's language — a 2px flat border,
+   a hard 2px 2px 0 drop shadow, and a `translate(-1px, -1px)` nudge on hover
+   that reads as a physical key being pushed in. None of that exists anywhere
+   else in this theme: every other surface here is a 1px hairline with the
+   `--glass-edge-*` inset highlight, and none of them move on hover.
+
+   The `--lg-btn-*` state tokens were already here, consumed only by `.btn-icon`
+   and the tag manager. This is the settings page's half of the same contract,
+   so the button row now reads like the rail items and panels around it instead
+   of like a different app dropped into the panel. */
+.theme-liquid-glass .setting-btn {
+  border: 1px solid var(--lg-settings-header-border) !important;
+  border-radius: 9px !important;
+  background: var(--lg-settings-header-bg) !important;
+  color: var(--text-primary) !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+  transform: none !important;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+.theme-liquid-glass .setting-btn:hover:not(:disabled) {
+  background: var(--lg-btn-hover-bg) !important;
+  border-color: var(--lg-btn-hover-border) !important;
+  transform: none !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+}
+
+/* Pressed: the colour shift carries it, matching `.btn-icon.active`. The base
+   rule's `translate(1px, 1px)` would move the button out from under the pointer
+   it was just pressed with. */
+.theme-liquid-glass .setting-btn:active:not(:disabled) {
+  background: var(--lg-btn-active-bg) !important;
+  border-color: var(--lg-btn-active-border) !important;
+  color: var(--lg-btn-active-text) !important;
+  transform: none !important;
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom) !important;
+}
+
 /* ============================================================
    8. History items — transparent glass cards
    ============================================================ */
