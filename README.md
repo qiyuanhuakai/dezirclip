@@ -33,7 +33,6 @@ pnpm run test:unit
 pnpm run build
 pnpm run i18n:check
 cd src-tauri && cargo test
-cd ../dzc-standalone && cargo test
 ```
 
 Build artifacts are written under `src-tauri/target/release/bundle/`.
@@ -124,7 +123,6 @@ pnpm run test:unit
 pnpm run build
 pnpm run i18n:check
 cd src-tauri && cargo test
-cd ../dzc-standalone && cargo test
 ```
 
 构建产物位于 `src-tauri/target/release/bundle/`。

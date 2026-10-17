@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const rawVersion = process.argv[2];
 
@@ -10,6 +10,18 @@ const version = rawVersion.replace(/^v/, "");
 
 if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
   throw new Error(`Invalid release version: ${rawVersion}`);
+}
+
+// Resolve every target up front: a release tag must not half-rewrite the tree,
+// and a target that no longer exists is a hard error rather than a raw ENOENT.
+const jsonTargets = ["package.json", "src-tauri/tauri.conf.json"];
+const tomlTargets = ["src-tauri/Cargo.toml"];
+
+const missing = [...jsonTargets, ...tomlTargets].filter(
+  (path) => !existsSync(path),
+);
+if (missing.length > 0) {
+  throw new Error(`Missing release-version target(s): ${missing.join(", ")}`);
 }
 
 const replaceJsonVersion = (path) => {
@@ -26,7 +38,9 @@ const replaceTomlPackageVersion = (path) => {
   writeFileSync(path, content);
 };
 
-replaceJsonVersion("package.json");
-replaceJsonVersion("src-tauri/tauri.conf.json");
-replaceTomlPackageVersion("src-tauri/Cargo.toml");
-replaceTomlPackageVersion("dzc-standalone/Cargo.toml");
+for (const path of jsonTargets) {
+  replaceJsonVersion(path);
+}
+for (const path of tomlTargets) {
+  replaceTomlPackageVersion(path);
+}
