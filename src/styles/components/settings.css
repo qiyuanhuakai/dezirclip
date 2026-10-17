@@ -518,7 +518,12 @@
   gap: 10px;
 }
 
-.tools-path-status-actions {
+/* Badge plus a compact action button. Two rows in the tools group carry that
+   shape -- the CLI path status and the OCR engine status -- and they have to
+   wrap the same way: the pane is one column until 700px, so a long badge plus a
+   button would otherwise push past the row and get clipped. */
+.tools-path-status-actions,
+.tools-engine-status-actions {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;

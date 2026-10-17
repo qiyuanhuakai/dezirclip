@@ -106,8 +106,16 @@ interface OcrEngineInfo {
 // Holding the promise at module scope matches the font scan and the CLI lookup
 // next door: callers arriving while a probe is in flight share it, later mounts
 // reuse the answer, and a rejection clears it so a later visit can retry.
+//
+// Caching alone is not enough on its own. The backend answers "no engine" as a
+// fulfilled `available=false`, not a rejection, so a cached `false` was permanent
+// for the life of the webview: installing tesseract mid-session left the badge
+// claiming it was missing until the window was rebuilt. `forceRefresh` drops the
+// held promise so the row's own retry can ask again, and nothing else calls it --
+// no resize and no remount does.
 let ocrEngineRequest: Promise<OcrEngineInfo> | null = null;
-const loadOcrEngineInfo = (): Promise<OcrEngineInfo> => {
+const loadOcrEngineInfo = (forceRefresh = false): Promise<OcrEngineInfo> => {
+    if (forceRefresh) ocrEngineRequest = null;
     ocrEngineRequest ??= invoke<OcrEngineInfo>("check_ocr_engine_available").catch((err: unknown) => {
         ocrEngineRequest = null;
         throw err;
@@ -133,14 +141,21 @@ const ToolsCaptureSection = ({
     const [isRecordingScreenshot, setIsRecordingScreenshot] = useState(false);
     const [isRecordingQuickPaste, setIsRecordingQuickPaste] = useState(false);
     const [ocrEngineInfo, setOcrEngineInfo] = useState<OcrEngineInfo | null>(null);
+    const [ocrLoading, setOcrLoading] = useState(false);
 
-    useEffect(() => {
-        loadOcrEngineInfo()
+    const refreshOcrEngineInfo = useCallback((forceRefresh = false) => {
+        setOcrLoading(true);
+        loadOcrEngineInfo(forceRefresh)
             .then(setOcrEngineInfo)
             .catch((err) => {
                 console.error("Failed to query OCR engine availability:", err);
-            });
+            })
+            .finally(() => setOcrLoading(false));
     }, []);
+
+    useEffect(() => {
+        refreshOcrEngineInfo();
+    }, [refreshOcrEngineInfo]);
     useEffect(() => setScreenshotHotkey(initialScreenshotHotkey), [initialScreenshotHotkey]);
     useEffect(() => setQuickPasteHotkey(initialQuickPasteHotkey), [initialQuickPasteHotkey]);
 
@@ -181,12 +196,22 @@ const ToolsCaptureSection = ({
             </div>
             <div className="setting-item">
                 <div className="item-label-group"><span className="item-label">{t("ocr_status_label")}</span></div>
-                <span className={`capture-engine-badge capture-engine-badge--${ocrEngineInfo?.available ? "available" : "unavailable"}`}>
-                    <span className="capture-engine-badge__dot" />
-                    {ocrEngineInfo
-                        ? `${ocrEngineInfo.engine_name} (${t(ocrEngineInfo.available ? "ocr_engine_available" : "ocr_engine_unavailable")})`
-                        : t("common_loading")}
-                </span>
+                <div className="tools-engine-status-actions">
+                    <span className={`capture-engine-badge capture-engine-badge--${ocrEngineInfo?.available ? "available" : "unavailable"}`}>
+                        <span className="capture-engine-badge__dot" />
+                        {ocrEngineInfo
+                            ? `${ocrEngineInfo.engine_name} (${t(ocrEngineInfo.available ? "ocr_engine_available" : "ocr_engine_unavailable")})`
+                            : t("common_loading")}
+                    </span>
+                    <button
+                        type="button"
+                        className="setting-btn setting-btn--compact"
+                        onClick={() => refreshOcrEngineInfo(true)}
+                        disabled={ocrLoading}
+                    >
+                        {ocrLoading ? t("processing") : t("common_retry")}
+                    </button>
+                </div>
             </div>
         </>
     );
