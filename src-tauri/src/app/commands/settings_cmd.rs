@@ -249,6 +249,12 @@ fn is_appearance_override_key(key: &str) -> bool {
             | "app.clipboard_tag_font_size"
             | "app.show_app_border"
             | "app.compact_mode"
+            // Not an appearance setting, but it has the same shape of problem
+            // and no other route: the rich-text snapshot cache limit is held by
+            // a module-level Map in each webview, so the compact preview would
+            // otherwise keep its own copy pinned at the default and ignore the
+            // setting entirely. This channel is what makes it re-read.
+            | "app.rich_text_snapshot_cache_limit"
     )
 }
 
