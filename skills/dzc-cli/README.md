@@ -5,16 +5,24 @@
 ```
 skills/dzc-cli/
 ├── SKILL.md              # Skill manifest (commands, parameters, examples)
-├── install.sh            # Linux/macOS installer (symlink)
+├── install.sh            # Linux installer (symlink)
 ├── install.ps1           # Windows installer (junction)
 ├── README.md             # This file
 └── examples/
-    └── search-and-add.md # Example workflow: search + add pattern
+    ├── bulk-tag.md       # Bulk-tag entries matching a filter
+    ├── export-encrypted.md # Encrypted backup / restore workflow
+    ├── fzf-pick.md       # Interactive picker via fzf
+    ├── search-and-add.md # Example workflow: search + add pattern
+    └── watch-trigger.md  # Watch stream piped into a matcher
 ```
+
+This directory ships inside the app bundle (`resources: ["../skills/dzc-cli"]`) and is also what the installers below link into an agent's skills directory.
 
 ## Installing for end users
 
-**Linux / macOS:**
+These scripts install the **skill documentation**, not the `dzc` binary. The CLI ships inside the DezirClip app install; see `docs/cli.md` for where to find it and how to put it on `PATH`.
+
+**Linux:**
 ```bash
 bash skills/dzc-cli/install.sh
 ```

@@ -14,6 +14,9 @@ database only after the restore has been validated against a temporary copy.
 - Enough disk space for two copies of the database (export + test restore).
 - `dzc` version that supports `export --encrypted` and `import --passphrase`.
 
+A path ending in `.dzc` or `.tiez` is written as an encrypted file even without
+`--encrypted`; any other extension produces plaintext JSON.
+
 ## Steps
 
 1. Export the current database to an encrypted file with a timestamped name.
@@ -61,13 +64,17 @@ dzc stats
 
 ## Expected output
 
-- Step 1 prints a success message and the path to the encrypted file.
+- Step 1 prints `Exported 1283 entries to /home/me/backups/dezirclip-20260619.dzc (encrypted)`.
 - Step 2 shows a file size in the megabyte range for a typical personal history.
-- Step 3 completes without error; the terminal returns to the prompt.
-- Step 4 prints entry counts that match or exceed the pre-export `dzc stats`
+- Step 3 completes without error and prints `Imported 1283/1283 entries from … (encrypted, mode merge)`;
+  the terminal returns to the prompt.
+- Step 4 prints `Total: 1283 entries` — matching the pre-export `dzc stats`
   output from the live database.
-- Step 5 prints a confirmation that the live database was replaced.
-- Step 6 shows the same or higher entry count, confirming the restore succeeded.
+- Step 5 prints `Imported 1283/1283 entries from … (encrypted, mode replace)`.
+- Step 6 shows the same entry count, confirming the restore succeeded.
+
+Add `--quiet` to `export` / `import` to suppress the summary and rely on the
+exit code alone.
 
 ## Recovery procedure
 

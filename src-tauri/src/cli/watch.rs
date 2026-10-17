@@ -12,9 +12,10 @@
 //!
 //! ## Args
 //!
-//! * `--pattern <REGEX>` — case-insensitive substring filter applied
-//!   to the entry's `content` (and `preview` as a fallback). Empty or
-//!   omitted = no filter; print every new entry.
+//! * `--pattern <TEXT>` — case-insensitive **substring** filter applied
+//!   to the entry's `content` (and `preview` as a fallback). It is not
+//!   a regex, so `a|b` matches that literal string and never either
+//!   alternative. Empty or omitted = no filter; print every new entry.
 //! * `--interval <MS>` — poll interval in milliseconds. Default
 //!   `DEFAULT_INTERVAL_MS` (500). Clamped to `[50, 60_000]` so a
 //!   typo (`--interval 0`) doesn't pin a CPU.
@@ -184,10 +185,20 @@ pub fn run_watch_with_running(
 /// Emit one entry to stdout, either as a `CliEntry` JSON object
 /// (newline-delimited, NDJSON-friendly) or as a human line.
 ///
-/// Both forms end with a `\n` so the line is flushed by the runtime
-/// promptly. We don't `flush()` explicitly — `println!` does it on
-/// most targets, and the kernel line-discipline is fast enough at
-/// 500ms cadence that we don't need it.
+/// Both forms end with a `\n`, and `std::io::Stdout` is a `LineWriter`, so
+/// every line is flushed as it is written whether stdout is a terminal or a
+/// pipe. That is what lets `dzc watch --json | grep ...` see each event as it
+/// happens, so there is no `flush()` here.
+///
+/// The claim stops at our own stdout. Every stage *after* us buffers
+/// independently -- GNU `grep` block-buffers when it is not writing to a
+/// terminal -- so a consumer chaining more tools still has to ask those tools
+/// to flush per line. `watch-trigger.md` passes `grep --line-buffered` for
+/// exactly that reason; measured on GNU grep 3.11 with the upstream left open,
+/// the default delivered nothing for 700 ms and flushed only at EOF.
+///
+/// (The 500 ms poll cadence would hide this for a human reader watching a
+/// terminal; it is the downstream pipe that cares.)
 fn emit_entry(e: &ClipboardEntry, json: bool) {
     if json {
         let view = CliEntry {

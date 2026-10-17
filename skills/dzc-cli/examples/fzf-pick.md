@@ -9,48 +9,52 @@ interactively and feed the selection back into `dzc get`.
 ## Prerequisites
 
 - `fzf` installed and available on `PATH`.
-- `jq` installed for the preview variant.
+- `jq` installed for the JSON variant.
 - A terminal that supports 256-color output for best UX.
 
 ## Steps
 
-1. List all entry IDs and launch `fzf` for selection.
+1. List entry IDs and launch `fzf` for selection. `list` returns the 20 most
+   recent rows by default; add `-- -1` to browse everything.
 
 ```bash
 dzc list --ids | fzf
+dzc list --ids -- -1 | fzf
 ```
 
-2. Pass the selected ID to `dzc get` to see the full entry.
+2. Pass the selected ID to `dzc get` to print the entry's content.
 
 ```bash
 dzc list --ids | fzf | xargs dzc get
 ```
 
-3. (Optional) Show a preview window with the first 80 characters of each entry
-   while you browse.
+3. (Optional) Browse with the preview alongside each row, then print the
+   chosen entry.
 
 ```bash
-dzc list --json \
+dzc list --json -- -1 \
   | jq -r '.[] | "\(.id)\t\(.preview)"' \
-  | fzf --with-nth=2 \
+  | fzf --with-nth=2 --delimiter='\t' \
   | cut -f1 \
   | xargs dzc get
 ```
 
-4. (Optional) Restrict the picker to entries with a specific tag.
+4. (Optional) Restrict the picker to entries of one content type. `--kind`
+   filters by content type; `--tag` filters by tag.
 
 ```bash
-dzc list --tag image --ids | fzf --prompt "image> " | xargs dzc get
+dzc list --kind image --ids | fzf --prompt "image> " | xargs dzc get
 ```
 
 ## Expected behavior
 
 - `fzf` opens a searchable list. Typing narrows the candidates in real time.
 - Pressing Enter returns one ID to stdout.
-- `xargs` feeds that single ID into `dzc get`, which prints the full metadata
-  and content of the chosen entry.
-- The preview variant keeps a two-pane view: the left pane shows the picker,
-  the right pane updates with the formatted entry preview as you move the cursor.
+- `xargs` feeds that single ID into `dzc get`, which prints the entry's content
+  followed by a newline. Add `--json` for the full record (type, tags, pin
+  state, timestamp) and `--preview` for the short preview instead.
+- The variant in step 3 shows one `id + preview` row per candidate, so you can
+  match on the preview text without leaving the picker.
 
 ## Customization
 
@@ -62,5 +66,7 @@ dzc list --tag image --ids | fzf --prompt "image> " | xargs dzc get
 dzc list --ids | fzf --multi | tr '\n' '\0' | xargs -0 -n1 dzc get
 ```
 
-- Replace `jq -r '.[] | "\(.id)\t\(.preview)"'` with a shorter format if your
-  CLI supports `--preview`-style output natively.
+- Show each candidate's type and tags instead of the preview:
+  `jq -r '.[] | "\(.id)\t\(.type)\t\(.tags | join(","))"'`.
+- Pipe the result straight into another command — `get` writes content only, so
+  `dzc list --ids | fzf | xargs -I {} dzc get {} > picked.txt` is safe.

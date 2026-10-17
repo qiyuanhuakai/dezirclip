@@ -33,7 +33,6 @@ Thumbs.db
 .kilo/
 CLAUDE.md
 AGENTS.md
-dzc-standalone/target/
 backup-e2e/
 
 .cortexkit/

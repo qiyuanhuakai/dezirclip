@@ -3,10 +3,13 @@
 //! Wire-up:
 //! * clap parses `Cli` → `Commands::*` (each variant owns its `*Args`).
 //! * The matching `cli::<cmd>::run(args, ...)` is invoked.
-//! * `list` / `search` / `get` / `add` / `delete` / `tag` are real
-//!   implementations (Tasks 56 + 57).
-//! * `pin` / `unpin` / `export` / `import` / `stats` / `watch` are
-//!   placeholder `println!` for now — Task 58 fills them in.
+//! * All 15 subcommands are real implementations; none of them are stubs.
+//!
+//! Transport: there is none. This binary opens the same SQLite file the app
+//! uses and goes through the same repository types, so it needs no IPC, works
+//! while the app is stopped, and picks up its writes the next time the app
+//! reads the database. It also means a `dzc` write is invisible to a running
+//! window until something triggers a re-read.
 //!
 //! DB initialization:
 //! This binary lives in the `dezirclip` crate and shares its
@@ -49,9 +52,15 @@ enum Commands {
     /// Delete an entry. Requires `--yes` to confirm.
     Delete(DeleteCliArgs),
     /// Pin an entry.
-    Pin(PinArgs),
+    Pin(PinCliArgs),
     /// Unpin an entry.
-    Unpin(UnpinArgs),
+    Unpin(PinCliArgs),
+    /// Replace an entry's content. Content sources match `add`.
+    Edit(EditCliArgs),
+    /// Clear the unprotected history. Requires `--yes`.
+    Clear(ClearCliArgs),
+    /// Print the total number of stored entries.
+    Count(CountCliArgs),
     /// Add / remove / list tags on an entry.
     Tag(TagCliArgs),
     /// Export history to a file.
@@ -65,6 +74,7 @@ enum Commands {
 }
 
 #[derive(Args)]
+#[command(allow_negative_numbers = true)]
 struct ListArgs {
     /// Optional positional limit. `-1` returns every row.
     limit: Option<i32>,
@@ -150,14 +160,44 @@ struct DeleteCliArgs {
     yes: bool,
 }
 
+/// CLI args shared by `pin` and `unpin`.
 #[derive(Args)]
-struct PinArgs {
+struct PinCliArgs {
     id: String,
+    /// Suppress the confirmation line; emit only an exit code.
+    #[arg(long, short)]
+    quiet: bool,
 }
 
+/// CLI args for `edit`. The content token resolves exactly like `add`'s, so
+/// `-` reads stdin and `@<path>` reads a file.
 #[derive(Args)]
-struct UnpinArgs {
+struct EditCliArgs {
     id: String,
+    /// Replacement content. Use `-` to read stdin, or `@<path>` for a file.
+    content: String,
+    /// Suppress the confirmation line; emit only an exit code.
+    #[arg(long, short)]
+    quiet: bool,
+}
+
+/// CLI args for `clear`. `--yes` is mandatory: the CLI never prompts.
+#[derive(Args)]
+struct ClearCliArgs {
+    /// Confirm the clear. Without this flag, `clear` refuses.
+    #[arg(long, short)]
+    yes: bool,
+    /// Suppress the summary line; emit only an exit code.
+    #[arg(long, short)]
+    quiet: bool,
+}
+
+/// CLI args for `count`.
+#[derive(Args)]
+struct CountCliArgs {
+    /// Emit `{"count": <n>}` instead of the bare integer.
+    #[arg(long)]
+    json: bool,
 }
 
 /// CLI args for `tag` — three explicit subcommands instead of `--add`/
@@ -304,11 +344,34 @@ fn run(args: Cli) -> Result<(), String> {
             cli::tag::run(&tag_args, clip_repo.as_ref(), tag_repo.as_ref())
         }
         Commands::Pin(a) => {
-            println!("pin: id={}", a.id);
-            Ok(())
+            report_pin(&a, true, clip_repo.as_ref())
         }
         Commands::Unpin(a) => {
-            println!("unpin: id={}", a.id);
+            report_pin(&a, false, clip_repo.as_ref())
+        }
+        Commands::Edit(a) => {
+            let id = cli::edit::run(
+                &cli::edit::EditArgs {
+                    id: a.id.clone(),
+                    source: parse_add_source(&a.content, None),
+                },
+                clip_repo.as_ref(),
+            )?;
+            if !a.quiet {
+                println!("Edited: id={id}");
+            }
+            Ok(())
+        }
+        Commands::Clear(a) => {
+            let removed = cli::clear::run(&cli::clear::ClearArgs { yes: a.yes }, clip_repo.as_ref())?;
+            if !a.quiet {
+                println!("Cleared {removed} entries");
+            }
+            Ok(())
+        }
+        Commands::Count(a) => {
+            let total = cli::count::run(clip_repo.as_ref())?;
+            println!("{}", cli::count::render(total, a.json));
             Ok(())
         }
         Commands::Export(a) => cli::export::run(
@@ -391,6 +454,28 @@ fn parse_add_source(content: &str, kind: Option<&str>) -> cli::add::AddArgs {
     }
 }
 
+/// Run `pin` / `unpin` and print the confirmation line unless `--quiet`.
+///
+/// `pinned` is what selects the verb, so both clap variants share one code
+/// path and therefore cannot drift in what they do.
+fn report_pin(
+    args: &PinCliArgs,
+    pinned: bool,
+    repo: &dyn dezirclip::infrastructure::repository::clipboard_repo::ClipboardRepository,
+) -> Result<(), String> {
+    let id = cli::pin::run(
+        &cli::pin::PinArgs {
+            id: args.id.clone(),
+            pinned,
+        },
+        repo,
+    )?;
+    if !args.quiet {
+        println!("{}: id={id}", cli::pin::op_name(pinned));
+    }
+    Ok(())
+}
+
 /// Open both the clipboard repo and the tag repo, sharing a single
 /// SQLite connection (so writes through one are visible to reads on
 /// the other without an extra round-trip). Mirrors `setup.rs:371`
@@ -400,9 +485,15 @@ fn open_repos() -> Result<(Arc<SqliteClipboardRepository>, Arc<SqliteTagReposito
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {parent:?}: {e}"))?;
     }
-    let conn = Arc::new(Mutex::new(
-        rusqlite::Connection::open(&path).map_err(|e| format!("open {path:?}: {e}"))?,
-    ));
+    let conn = rusqlite::Connection::open(&path).map_err(|e| format!("open {path:?}: {e}"))?;
+    // The app is usually running and holds its own connection to this file.
+    // Without a busy timeout SQLite fails the first statement that collides
+    // with a write in progress ("database is locked") instead of waiting, which
+    // turned any concurrent `dzc add` into a spurious failure. Neither side
+    // sets a timeout, so the CLI is the only place it can be fixed.
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| format!("busy_timeout: {e}"))?;
+    let conn = Arc::new(Mutex::new(conn));
     {
         let mut guard = conn
             .lock()

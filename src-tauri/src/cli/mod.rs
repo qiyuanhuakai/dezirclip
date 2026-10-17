@@ -16,11 +16,15 @@
 //! * `--quiet`:       no stdout on success (still returns Ok/Err)
 
 pub mod add;
+pub mod clear;
+pub mod count;
 pub mod delete;
+pub mod edit;
 pub mod export;
 pub mod get;
 pub mod import;
 pub mod list;
+pub mod pin;
 pub mod search;
 pub mod stats;
 pub mod tag;

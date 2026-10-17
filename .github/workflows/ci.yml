@@ -138,26 +138,3 @@ jobs:
       - name: Build Tauri crate
         working-directory: src-tauri
         run: cargo build ${{ matrix.cargo_args }}
-
-  dzc-standalone:
-    name: dzc standalone
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust artifacts
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: dzc-standalone -> target
-
-      - name: Test dzc standalone
-        working-directory: dzc-standalone
-        run: cargo test
-
-      - name: Build dzc standalone
-        working-directory: dzc-standalone
-        run: cargo build
