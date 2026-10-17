@@ -34,12 +34,23 @@ dzc watch --pattern "password" --json
 
 ```bash
 dzc watch --json \
-  | grep -Ei '(password|passwd|secret|api[_-]?key|access[_-]?key|token)\b' \
+  | grep -Ei --line-buffered '(password|passwd|secret|api[_-]?key|access[_-]?key|token)\b' \
   | while read -r line; do
       PREVIEW=$(echo "$line" | jq -r '.preview // "no preview"')
       notify-send "Sensitive clipboard detected" "$PREVIEW"
     done
 ```
+
+   `--line-buffered` is about `grep`, not about `dzc`. `dzc` already writes one
+   line per event and flushes it, so every match reaches `grep` promptly — but
+   GNU `grep` block-buffers *its own* stdout whenever it is not writing to a
+   terminal, so without the flag a single match sits in `grep`'s buffer until
+   4 KB accumulate or the stream ends. Since a sentinel typically sees one
+   match now and then, that means the notification can arrive minutes late, or
+   never arrive while the watcher is still running. Measured on GNU grep 3.11:
+   same input, stdout to a pipe, upstream left open — default buffering
+   delivered 0 bytes after 700 ms and only flushed at EOF, `--line-buffered`
+   delivered the line within the same 700 ms.
 
    `-i` because `API_KEY=` is as common as `api_key=`, and the trailing `\b` so
    `tokenizer` or `passwordless` do not drag every match in. There is
@@ -85,10 +96,12 @@ tail -f ~/.dzc-sentinel.log | jq .
   can replay or filter the file later with `jq`.
 - The startup banner goes to stderr; entries go to stdout, so the stream stays
   pipeable. `--quiet` suppresses the banner only.
-- No `--line-buffered` or `--unbuffered` is needed anywhere in the pipeline.
-  Each entry is emitted with `println!`, and Rust's `Stdout` is a `LineWriter`
-  — line-buffered whether stdout is a terminal or a pipe — so every event
-  reaches `grep` on its own newline.
+- No `--unbuffered` is needed on the `dzc` side. Each entry is emitted with
+  `println!`, and Rust's `Stdout` is a `LineWriter` — line-buffered whether
+  stdout is a terminal or a pipe — so every event reaches `grep` on its own
+  newline. That covers `dzc`'s own output and nothing else: every stage further
+  down the pipe has its own buffer, which is why step 2 passes
+  `--line-buffered` to `grep`.
 - Stopping the watcher (Ctrl-C) ends the stream with exit code `130`; the log
   file remains intact.
 

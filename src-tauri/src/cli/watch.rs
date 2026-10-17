@@ -188,9 +188,17 @@ pub fn run_watch_with_running(
 /// Both forms end with a `\n`, and `std::io::Stdout` is a `LineWriter`, so
 /// every line is flushed as it is written whether stdout is a terminal or a
 /// pipe. That is what lets `dzc watch --json | grep ...` see each event as it
-/// happens, so we do not need a `flush()` here and callers piping us do not
-/// need `--line-buffered` either. (The 500 ms poll cadence would hide the
-/// difference for a human reader anyway; it is the pipe that cares.)
+/// happens, so there is no `flush()` here.
+///
+/// The claim stops at our own stdout. Every stage *after* us buffers
+/// independently -- GNU `grep` block-buffers when it is not writing to a
+/// terminal -- so a consumer chaining more tools still has to ask those tools
+/// to flush per line. `watch-trigger.md` passes `grep --line-buffered` for
+/// exactly that reason; measured on GNU grep 3.11 with the upstream left open,
+/// the default delivered nothing for 700 ms and flushed only at EOF.
+///
+/// (The 500 ms poll cadence would hide this for a human reader watching a
+/// terminal; it is the downstream pipe that cares.)
 fn emit_entry(e: &ClipboardEntry, json: bool) {
     if json {
         let view = CliEntry {
