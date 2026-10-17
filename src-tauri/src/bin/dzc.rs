@@ -3,7 +3,7 @@
 //! Wire-up:
 //! * clap parses `Cli` → `Commands::*` (each variant owns its `*Args`).
 //! * The matching `cli::<cmd>::run(args, ...)` is invoked.
-//! * All 17 subcommands are real implementations; none of them are stubs.
+//! * All 15 subcommands are real implementations; none of them are stubs.
 //!
 //! Transport: there is none. This binary opens the same SQLite file the app
 //! uses and goes through the same repository types, so it needs no IPC, works
