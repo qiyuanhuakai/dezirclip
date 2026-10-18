@@ -187,7 +187,7 @@ class NativePickShellTests(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "POSIX Shell widgets run on Linux/WSL")
     def test_bash_zsh_and_fish_preserve_exact_literal_text_and_cancel_partial_output(self):
         commands = {
-            "bash": 'source "$1"; READLINE_LINE="前pre:tail"; READLINE_POINT=7; '
+            "bash": 'source "$1"; prefix="前pre:"; READLINE_LINE="${prefix}tail"; READLINE_POINT=${#prefix}; '
                     '_dzc_insert; printf "%s" "$READLINE_LINE"',
             "zsh": 'source "$1"; zle() { :; }; LBUFFER="前pre:"; RBUFFER="tail"; '
                    '_dzc_insert; printf "%s" "$LBUFFER$RBUFFER"',

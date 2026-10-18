@@ -97,7 +97,7 @@ dzc pick --backend rofi
 按当前 Shell 选择一行加载；常用时将该行放入自己的启动配置：
 
 ```bash
-eval "$(dzc bash)"        # Bash
+eval "$(dzc bash)"        # Bash 5+
 eval "$(dzc zsh)"         # Zsh
 dzc fish | source        # Fish 3.4+
 ```
@@ -199,7 +199,7 @@ The following native entry points were added after the published `v0.1.20-alpha.
 dzc pick                         # built-in selection, Enter copies
 dzc tui                          # search, preview and manage history
 dzc pick --backend fzf            # optional: fzf / dmenu / rofi
-eval "$(dzc bash)"                # Bash initialization
+eval "$(dzc bash)"                # Bash 5+ initialization
 eval "$(dzc zsh)"                 # Zsh initialization
 dzc fish | source                # Fish initialization
 ```

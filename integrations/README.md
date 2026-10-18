@@ -52,7 +52,7 @@ dzc tui --action print > selected.txt
 按当前 Shell 加载一行，即可用 Ctrl-G 选择并插入当前输入行：
 
 ```bash
-eval "$(dzc bash)"        # Bash
+eval "$(dzc bash)"        # Bash 5+
 eval "$(dzc zsh)"         # Zsh
 dzc fish | source        # Fish 3.4+
 ```

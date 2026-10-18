@@ -47,7 +47,7 @@ Printing a selection does not populate a parent Shell's command line. Load the
 native widget for the current Shell, then press Ctrl-G:
 
 ```bash
-# Bash
+# Bash 5+
 eval "$(dzc bash)"
 # Zsh
 eval "$(dzc zsh)"

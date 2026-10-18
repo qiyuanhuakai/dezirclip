@@ -63,7 +63,7 @@ dzc mcp                               # MCP client launches this over stdio
 
 `--backend dmenu` is also available. No external picker is required by default. Native clipboard actions need an accessible desktop session; in SSH use `--action osc52` explicitly for terminal-mediated local text copying. This does not synchronize history.
 
-For Ctrl-G insertion into the editing buffer, load `eval "$(dzc bash)"`, `eval "$(dzc zsh)"`, or `dzc fish | source` in the appropriate Shell. PowerShell 7 with PSReadLine uses `dzc pwsh | Out-String | Invoke-Expression`. Nushell 0.116+ uses an explicit file:
+For Ctrl-G insertion into the editing buffer, load `eval "$(dzc bash)"` in Bash 5+, `eval "$(dzc zsh)"`, or `dzc fish | source` in the appropriate Shell. PowerShell 7 with PSReadLine uses `dzc pwsh | Out-String | Invoke-Expression`. Nushell 0.116+ uses an explicit file:
 
 ```nu
 dzc nu --install ($nu.user-autoload-dirs.0 | path join 'dzc.nu')

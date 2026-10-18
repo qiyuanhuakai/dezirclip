@@ -103,6 +103,14 @@ impl Browser {
             if key.kind == KeyEventKind::Release {
                 continue;
             }
+            if matches!(key.code, KeyCode::Char(_))
+                && key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                && !is_cancel(key)
+            {
+                continue;
+            }
             if is_cancel(key) || key.code == KeyCode::Char('q') {
                 return Ok(None);
             }
@@ -375,7 +383,7 @@ fn prompt(terminal: &mut Terminal, label: &str) -> Result<Option<String>, String
             }
             Event::Paste(text) => {
                 let room = 1024usize.saturating_sub(value.chars().count());
-                value.extend(frontend::display_text(&text, room).chars());
+                value.push_str(&frontend::display_text(&text, room));
             }
             _ => {}
         }

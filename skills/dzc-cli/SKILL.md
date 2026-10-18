@@ -220,7 +220,7 @@ The native interfaces run from the same CLI executable. `dzc pick` defaults to t
 Load the appropriate Shell widget in an interactive session, or add the initialization line to the user's chosen startup file when requested:
 
 ```bash
-eval "$(dzc bash)"
+eval "$(dzc bash)"  # Bash 5+
 eval "$(dzc zsh)"
 dzc fish | source
 ```

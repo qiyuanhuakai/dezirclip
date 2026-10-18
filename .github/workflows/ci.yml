@@ -173,6 +173,10 @@ jobs:
         if: matrix.can_test
         run: python scripts/verify-dzc-package.py '${{ steps.dzc-package.outputs.archive }}'
 
+      - name: Install Windows terminal test support
+        if: runner.os == 'Windows' && matrix.can_test
+        run: python -m pip install --disable-pip-version-check pywinpty==3.1.0 windows-curses==2.4.2
+
       - name: Test CLI integrations against the real binary
         if: matrix.can_test
         shell: bash

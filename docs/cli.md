@@ -103,7 +103,7 @@ dzc pick --backend fzf --action osc52 --osc52-passthrough tmux
 以下为 alpha.1 之后的原生入口，只依赖 `dzc` 和所用 Shell。将对应初始化行加入自己的 Shell 启动文件可持久启用，也可先在交互会话中运行：
 
 ```bash
-# Bash
+# Bash 5+
 eval "$(dzc bash)"
 # Zsh
 eval "$(dzc zsh)"

@@ -12,3 +12,4 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 integrations/** text eol=lf
+src-tauri/src/cli/shell/** text eol=lf
