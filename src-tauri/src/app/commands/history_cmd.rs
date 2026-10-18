@@ -240,7 +240,7 @@ pub fn remove_tag_from_all(
         }
     }
     use tauri::Emitter;
-    let _ = app.emit("clipboard-updated", ());
+    let _ = app.emit("clipboard-changed", ());
     Ok(())
 }
 
@@ -278,7 +278,7 @@ pub fn rename_tag_globally(
     }
 
     use tauri::Emitter;
-    let _ = app.emit("clipboard-updated", ());
+    let _ = app.emit("clipboard-changed", ());
     Ok(())
 }
 

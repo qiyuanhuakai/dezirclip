@@ -122,6 +122,23 @@ fn theme_validation_rejects_resources_without_opening_history_or_applying_settin
     std::fs::remove_file(source).unwrap();
 }
 
+#[test]
+fn theme_validation_rejects_directories_and_oversized_files_without_creating_history() {
+    let db = scratch_db("theme-file-types");
+    let directory = db.with_extension("directory");
+    let oversized = db.with_extension("oversized.json");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(&oversized, vec![b' '; dezirclip::domain::theme::MAX_THEME_BYTES + 1]).unwrap();
+    for (path, message) in [(&directory, "regular JSON file"), (&oversized, "size limit")] {
+        let (code, output) = run_dzc_expecting_failure(&db, &["theme", "validate", path.to_str().unwrap()]);
+        assert_ne!(code, 0, "invalid theme file must be rejected");
+        assert!(output.contains(message), "unexpected error: {output}");
+        assert!(!db.exists(), "theme validation must not create clipboard history");
+    }
+    std::fs::remove_file(oversized).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+}
+
 /// Pin then unpin has to actually move the row's flag, and `list --pinned`
 /// is the only way to observe it from outside.
 #[test]

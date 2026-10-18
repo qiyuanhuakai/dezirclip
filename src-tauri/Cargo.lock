@@ -1268,6 +1268,7 @@ dependencies = [
  "image",
  "keyring",
  "ksni",
+ "libc",
  "machine-uid",
  "qrcode2",
  "rand 0.8.6",

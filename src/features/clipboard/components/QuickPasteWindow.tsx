@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { applyHistoryUpdate } from "../../../shared/lib/historyInsert";
+import { createSnapshotRefresh } from "../../../shared/lib/snapshotRefresh";
 import {
   resolveActiveIndex,
   selectionAfterUpdate,
@@ -64,70 +65,56 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     setEntries(next);
   }, []);
 
-  const fetchRecent = useCallback(() => {
-    invoke<ClipboardEntry[]>("get_clipboard_history", {
+  const refreshReader = useMemo(() => createSnapshotRefresh(
+    () => invoke<ClipboardEntry[]>("get_clipboard_history", {
       limit: MAX_ENTRIES,
       offset: 0,
       contentType: null,
-    })
-      .then((data) => replaceEntries(data ?? []))
-      .catch(() => replaceEntries([]));
-  }, [replaceEntries]);
+    }),
+    (data) => replaceEntries(data ?? []),
+    () => replaceEntries([]),
+  ), [replaceEntries]);
+  const fetchRecent = useCallback(() => {
+    void refreshReader.refresh();
+  }, [refreshReader]);
 
-  // Fetch recent entries on mount
-  useEffect(() => {
-    fetchRecent();
-  }, [fetchRecent]);
-
-  // Follow the same broadcasts the main list follows.
-  //
-  // This window is created once and then parked, so the fetch above runs for
-  // the lifetime of the process rather than for the lifetime of the panel: the
-  // list used to freeze at whatever the database held the first time the window
-  // was built, and everything copied after that was invisible here until the
-  // process restarted. The backend emits both events to every window, so
-  // applying them is enough — no refetch per change.
+  // Entry updates are incremental; bulk changes need an authoritative snapshot.
   useEffect(() => {
     let disposed = false;
     const unlistenUpdated = listen<ClipboardEntry>("clipboard-updated", (event) => {
       if (disposed) return;
+      refreshReader.invalidate();
       const incoming = event.payload;
       const { entries: merged, wasPresent } = applyHistoryUpdate(
         entriesRef.current,
         incoming
       );
       replaceEntries(merged.slice(0, MAX_ENTRIES));
-      // A genuinely new entry is what the user most likely wants to paste, so
-      // the highlight follows it. An edit of something already listed leaves
-      // the highlight on the same entry rather than moving the cursor off it.
-      // Either way this is an id, so a new entry that sorts after a pinned one
-      // still ends up highlighted, and an edit that reorders the list does not
-      // drag the highlight along with it. The functional form is what reads the
-      // selection as it is now rather than as it was when this listener was
-      // registered.
       setActiveId((current) => selectionAfterUpdate(current, wasPresent, incoming));
     });
     const unlistenRemoved = listen<number>("clipboard-removed", (event) => {
       if (disposed) return;
+      refreshReader.invalidate();
       replaceEntries(
         entriesRef.current.filter((entry) => entry.id !== event.payload)
       );
     });
-    // The backend only pushes captures to the frontend while the main window is
-    // on screen, so an entry copied while the app was parked never reaches this
-    // panel as an event. Every time the panel is shown, one fetch settles it --
-    // once per hotkey press, not once per clipboard change.
-    const unlistenShown = listen("quick-paste-shown", () => {
-      if (disposed) return;
-      fetchRecent();
+    const unlistenChanged = listen("clipboard-changed", () => {
+      if (!disposed) fetchRecent();
     });
+    const unlistenShown = listen("quick-paste-shown", () => {
+      if (!disposed) fetchRecent();
+    });
+    fetchRecent();
     return () => {
       disposed = true;
+      refreshReader.cancel();
       unlistenUpdated.then((f) => f());
       unlistenRemoved.then((f) => f());
+      unlistenChanged.then((f) => f());
       unlistenShown.then((f) => f());
     };
-  }, [fetchRecent, replaceEntries]);
+  }, [fetchRecent, refreshReader, replaceEntries]);
 
   useEffect(() => {
     document.body.classList.add("quick-paste");

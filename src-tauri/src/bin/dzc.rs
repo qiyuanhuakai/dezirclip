@@ -170,16 +170,9 @@ enum ThemeCommand {
 
 fn run_theme(args: ThemeCliArgs) -> Result<(), String> {
     use dezirclip::domain::theme::{ThemePackage, MAX_THEME_BYTES};
-    use std::io::Read;
     match args.command {
         ThemeCommand::Validate { path, json } => {
-            let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
-            if !file.metadata().map_err(|error| error.to_string())?.is_file() {
-                return Err("theme source must be a regular JSON file".into());
-            }
-            let mut bytes = Vec::new();
-            file.take(MAX_THEME_BYTES as u64 + 1)
-                .read_to_end(&mut bytes)
+            let bytes = dezirclip::infrastructure::local_file::read_bounded_regular(&path, MAX_THEME_BYTES)
                 .map_err(|error| error.to_string())?;
             let theme = ThemePackage::parse(&bytes)?;
             if json {

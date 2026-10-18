@@ -3,7 +3,6 @@ use crate::database::DbState;
 use crate::domain::theme::{valid_theme_id, ThemePackage, MAX_THEME_BYTES};
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::custom_themes;
-use std::io::Read;
 use tauri::{AppHandle, Emitter, State, WebviewWindow};
 
 fn theme_error(error: impl ToString) -> AppError {
@@ -40,20 +39,21 @@ fn save_theme(app: &AppHandle, state: &DbState, theme: ThemePackage) -> AppResul
 }
 
 #[tauri::command]
-pub fn import_custom_theme(
+pub async fn import_custom_theme(
     app: AppHandle,
     state: State<'_, DbState>,
     path: String,
 ) -> AppResult<ThemePackage> {
-    let file = std::fs::File::open(&path).map_err(theme_error)?;
-    if !file.metadata().map_err(theme_error)?.is_file() {
-        return Err(theme_error("theme source must be a regular JSON file"));
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_THEME_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
+    let theme = tauri::async_runtime::spawn_blocking(move || {
+        let bytes = crate::infrastructure::local_file::read_bounded_regular(
+            std::path::Path::new(&path),
+            MAX_THEME_BYTES,
+        )
         .map_err(theme_error)?;
-    let theme = ThemePackage::parse(&bytes).map_err(theme_error)?;
+        ThemePackage::parse(&bytes).map_err(theme_error)
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))??;
     save_theme(&app, &state, theme)
 }
 
@@ -90,7 +90,11 @@ pub fn delete_custom_theme(
 }
 
 #[tauri::command]
-pub fn export_custom_theme(state: State<'_, DbState>, id: String, path: String) -> AppResult<()> {
+pub async fn export_custom_theme(
+    state: State<'_, DbState>,
+    id: String,
+    path: String,
+) -> AppResult<()> {
     if !valid_theme_id(&id) {
         return Err(theme_error("invalid custom theme id"));
     }
@@ -102,13 +106,22 @@ pub fn export_custom_theme(state: State<'_, DbState>, id: String, path: String) 
             .find(|theme| theme.id == id)
             .ok_or_else(|| theme_error("custom theme not found"))?
     };
-    let target = std::path::Path::new(&path);
-    state
-        .repo
-        .ensure_export_destination(target)
-        .map_err(theme_error)?;
-    let bytes = theme.export_bytes().map_err(theme_error)?;
-    crate::infrastructure::attachments::write_backup(target, &bytes).map_err(theme_error)
+    let repository =
+        crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository::new(
+            state.conn.clone(),
+        );
+    tauri::async_runtime::spawn_blocking(move || {
+        let target = std::path::Path::new(&path);
+        repository
+            .ensure_export_destination(target)
+            .map_err(theme_error)?;
+        crate::infrastructure::local_file::ensure_regular_destination(target)
+            .map_err(theme_error)?;
+        let bytes = theme.export_bytes().map_err(theme_error)?;
+        crate::infrastructure::attachments::write_backup(target, &bytes).map_err(theme_error)
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?
 }
 
 pub fn effective_base_theme(state: &DbState, theme: &str) -> String {

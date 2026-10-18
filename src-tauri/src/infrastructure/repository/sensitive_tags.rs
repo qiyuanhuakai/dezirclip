@@ -1,4 +1,3 @@
-use super::clipboard_repo::SqliteClipboardRepository;
 use super::settings_repo::SqliteSettingsRepository;
 use super::tag_repo::SqliteTagRepository;
 use crate::database::SENSITIVE_TAGS;
@@ -6,6 +5,8 @@ use crate::infrastructure::{attachments, encryption};
 use rusqlite::{params, Connection, TransactionBehavior};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
+
+mod html_refs;
 
 pub const PRIVACY_SETTING: &str = "app.privacy_protection";
 
@@ -22,7 +23,7 @@ pub fn ensure_system_tags(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 pub fn ensure_tags_if_protected(conn: &Connection) -> rusqlite::Result<()> {
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = rusqlite::Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     if SqliteSettingsRepository::get_raw(&transaction, PRIVACY_SETTING)?.as_deref() != Some("false")
     {
         ensure_system_tags(&transaction)?;
@@ -41,6 +42,12 @@ pub struct SensitiveTagDeletion {
 struct AttachmentOwner {
     configured_root: PathBuf,
     canonical_root: PathBuf,
+}
+
+#[derive(Default)]
+struct AttachmentReferences {
+    paths: HashSet<PathBuf>,
+    complete: bool,
 }
 
 impl AttachmentOwner {
@@ -109,29 +116,71 @@ impl AttachmentOwner {
         content: &str,
         html: Option<&str>,
         external: bool,
-    ) -> Result<HashSet<PathBuf>, String> {
-        let mut paths = HashSet::new();
+    ) -> Result<AttachmentReferences, String> {
+        let mut result = AttachmentReferences {
+            complete: true,
+            ..Default::default()
+        };
         if external {
             let content = decrypt_reference(content)?;
             let path = attachments::path_from_uri(&content)?;
             if let Some(path) = self.owned_file(Path::new(&path))? {
-                paths.insert(path);
+                result.paths.insert(path);
+            } else {
+                result.complete = false;
             }
         }
         if let Some(html) = html {
             let html = decrypt_reference(html)?;
-            if let Some(payload) =
-                SqliteClipboardRepository::extract_rich_image_fallback_payload(&html)
-            {
-                if !payload.starts_with("data:") {
-                    let path = attachments::path_from_uri(&payload)?;
-                    if let Some(path) = self.owned_file(Path::new(&path))? {
-                        paths.insert(path);
+            let references = html_refs::references(&html);
+            result.complete &= references.complete;
+            for value in references.values {
+                let value = value.trim();
+                if value.is_empty()
+                    || value.starts_with('#')
+                    || value
+                        .get(..5)
+                        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("data:"))
+                {
+                    continue;
+                }
+                let file_uri = value
+                    .get(..7)
+                    .is_some_and(|prefix| prefix.eq_ignore_ascii_case("file://"));
+                let local = if file_uri {
+                    let normalized = format!(
+                        "file://{}",
+                        value[7..].split(['?', '#']).next().unwrap_or("")
+                    );
+                    match attachments::path_from_uri(&normalized) {
+                        Ok(path) => path,
+                        Err(_) => {
+                            result.complete = false;
+                            continue;
+                        }
                     }
+                } else if Path::new(value).is_absolute() {
+                    value.to_owned()
+                } else {
+                    if !value.starts_with("https://")
+                        && !value.starts_with("http://")
+                        && !value.starts_with("mailto:")
+                    {
+                        result.complete = false;
+                    }
+                    continue;
+                };
+                match self.owned_file(Path::new(&local))? {
+                    Some(path) => {
+                        result.paths.insert(path);
+                    }
+                    // Unknown local aliases, relative URLs and unsupported HTML
+                    // must never justify deleting a surviving entry's resource.
+                    None => result.complete = false,
                 }
             }
         }
-        Ok(paths)
+        Ok(result)
     }
 }
 
@@ -207,7 +256,8 @@ impl SqliteTagRepository {
                 .map_err(|error| error.to_string())?;
             for row in rows {
                 let (content, html, external) = row.map_err(|error| error.to_string())?;
-                candidates.extend(owner.references(&content, html.as_deref(), external)?);
+                let references = owner.references(&content, html.as_deref(), external)?;
+                candidates.extend(references.paths);
             }
         }
 
@@ -239,7 +289,12 @@ impl SqliteTagRepository {
                     .map_err(|error| error.to_string())?;
                 for row in rows {
                     let (content, html, external) = row.map_err(|error| error.to_string())?;
-                    for shared in owner.references(&content, html.as_deref(), external)? {
+                    let references = owner.references(&content, html.as_deref(), external)?;
+                    if !references.complete {
+                        candidates.clear();
+                        break;
+                    }
+                    for shared in references.paths {
                         candidates.remove(&shared);
                     }
                 }
@@ -279,6 +334,12 @@ mod tests {
     use super::super::tag_repo::TagRepository;
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    fn file_uri(path: &Path) -> String {
+        let path = path.to_str().unwrap().replace('\\', "/");
+        let encoded = path.split('/').map(urlencoding::encode).collect::<Vec<_>>().join("/");
+        format!("{}{}", if path.starts_with('/') { "file://" } else { "file:///" }, encoded)
+    }
 
     struct Fixture {
         directory: PathBuf,
@@ -476,6 +537,232 @@ mod tests {
                 .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn sensitive_delete_preserves_attachment_referenced_by_surviving_plain_html_image() {
+        let fixture = Fixture::new();
+        fixture.settings().set(PRIVACY_SETTING, "false").unwrap();
+        let shared = fixture.file("shared.png");
+        fixture.entry(
+            1,
+            "sensitive",
+            "fallback",
+            false,
+            Some(&format!("<!--TIEZ_RICH_IMAGE:{}-->", shared.display())),
+        );
+        let uri = file_uri(&shared);
+        fixture.entry(
+            2,
+            "keep",
+            "ordinary HTML",
+            false,
+            Some(&format!("<p>keep this image</p><img src=\"{uri}\">")),
+        );
+        let report = fixture
+            .repository()
+            .delete_globally("sensitive", Some(&fixture.directory))
+            .unwrap();
+        assert_eq!(report.deleted_ids, HashSet::from([1]));
+        assert!(report.cleanup_errors.is_empty());
+        assert_eq!(fixture.count("clipboard_history"), 1);
+        assert!(
+            shared.exists(),
+            "the surviving rich text still references this file"
+        );
+    }
+
+    #[test]
+    fn unresolved_external_alias_stays_conservative_with_plain_html() {
+        let fixture = Fixture::new();
+        fixture.settings().set(PRIVACY_SETTING, "false").unwrap();
+        let shared = fixture.file("shared-alias.png");
+        fixture.entry(1, "sensitive", shared.to_str().unwrap(), true, None);
+        let alias = fixture
+            .directory
+            .join("attachments")
+            .join("..")
+            .join("attachments")
+            .join("shared-alias.png");
+        assert_eq!(alias.canonicalize().unwrap(), shared.canonicalize().unwrap());
+        fixture.entry(2, "keep", alias.to_str().unwrap(), true, Some("<p>keep</p>"));
+        let report = fixture
+            .repository()
+            .delete_globally("sensitive", Some(&fixture.directory))
+            .unwrap();
+        assert!(report.cleanup_errors.is_empty());
+        assert_eq!(fixture.count("clipboard_history"), 1);
+        assert!(shared.exists());
+    }
+
+    #[test]
+    fn sensitive_delete_recognizes_persisted_html_reference_variants() {
+        for variant in 0..5 {
+            let fixture = Fixture::new();
+            fixture.settings().set(PRIVACY_SETTING, "false").unwrap();
+            let shared = fixture.file("shared & literal%23.png");
+            fixture.entry(1, "sensitive", shared.to_str().unwrap(), true, None);
+            let uri = file_uri(&shared);
+            let html = match variant {
+                0 => format!("<IMG alt='>' SRC = '{uri}'>"),
+                1 => format!("<img src={uri}>"),
+                2 => format!(
+                    "<img src=\"{}\">",
+                    uri.replacen("file:", "&#x66;ile&#58;", 1)
+                ),
+                3 => format!(
+                    "<img src=\"{}\">",
+                    shared.to_string_lossy().replace('&', "&amp;")
+                ),
+                _ => format!("<a href='{uri}'>open saved image</a>"),
+            };
+            fixture.entry(2, "keep", "HTML", false, Some(&html));
+            let report = fixture
+                .repository()
+                .delete_globally("sensitive", Some(&fixture.directory))
+                .unwrap();
+            assert!(report.cleanup_errors.is_empty());
+            assert!(
+                shared.exists(),
+                "reference variant {variant} must retain shared image"
+            );
+            assert_eq!(fixture.count("clipboard_history"), 1);
+        }
+    }
+
+    #[test]
+    fn sensitive_delete_retains_candidates_when_surviving_html_cannot_be_fully_resolved() {
+        for markup in [
+            "<img srcset='RESOURCE 1x'>",
+            "<div style=\"background-image:url('RESOURCE')\">image</div>",
+            "<picture><source srcset='RESOURCE'><img src='data:image/png;base64,AA=='></picture>",
+            "<svg><image href='RESOURCE'/></svg>",
+            "<base href='RESOURCE'><img src='relative.png'>",
+            "<img src='&unknown;RESOURCE'>",
+            "<img src='RESOURCE",
+            "<object data='RESOURCE'></object>",
+            "<video poster='RESOURCE'></video>",
+        ] {
+            let fixture = Fixture::new();
+            fixture.settings().set(PRIVACY_SETTING, "false").unwrap();
+            let shared = fixture.file("ambiguous.png");
+            let uri = file_uri(&shared);
+            fixture.entry(1, "sensitive", shared.to_str().unwrap(), true, None);
+            fixture.entry(
+                2,
+                "keep",
+                "HTML",
+                false,
+                Some(&markup.replace("RESOURCE", &uri)),
+            );
+            let report = fixture
+                .repository()
+                .delete_globally("sensitive", Some(&fixture.directory))
+                .unwrap();
+            assert!(report.cleanup_errors.is_empty());
+            assert!(
+                shared.exists(),
+                "uncertain references must retain attachments: {markup}"
+            );
+            assert_eq!(fixture.count("clipboard_history"), 1);
+            assert_eq!(fixture.count("entry_tags"), 1);
+        }
+    }
+
+    #[test]
+    fn sensitive_delete_cleans_unshared_plain_html_image_and_all_fallbacks() {
+        let fixture = Fixture::new();
+        fixture.settings().set(PRIVACY_SETTING, "false").unwrap();
+        let image = fixture.file("ordinary-html.png");
+        let first = fixture.file("first-fallback.png");
+        let second = fixture.file("last-fallback.png");
+        let html = format!(
+            "<img src='{}'><!--TIEZ_RICH_IMAGE:{}--><!--TIEZ_RICH_IMAGE:{}-->",
+            file_uri(&image),
+            first.display(),
+            second.display()
+        );
+        fixture.entry(1, "sensitive", "HTML", false, Some(&html));
+        let report = fixture
+            .repository()
+            .delete_globally("sensitive", Some(&fixture.directory))
+            .unwrap();
+        assert!(report.cleanup_errors.is_empty());
+        assert_eq!(fixture.count("clipboard_history"), 0);
+        for attachment in [image, first, second] {
+            assert!(!attachment.exists());
+        }
+    }
+
+    #[test]
+    fn sensitive_delete_cleans_known_fallback_even_when_deleted_html_has_style() {
+        let fixture = Fixture::new();
+        fixture.settings().set(PRIVACY_SETTING, "false").unwrap();
+        let image = fixture.file("styled-fallback.png");
+        fixture.entry(
+            1,
+            "sensitive",
+            "HTML",
+            false,
+            Some(&format!(
+                "<p style='font-weight:bold'>content</p><!--TIEZ_RICH_IMAGE:{}-->",
+                image.display()
+            )),
+        );
+        let report = fixture
+            .repository()
+            .delete_globally("sensitive", Some(&fixture.directory))
+            .unwrap();
+        assert!(report.cleanup_errors.is_empty());
+        assert_eq!(fixture.count("clipboard_history"), 0);
+        assert!(!image.exists());
+    }
+
+    #[test]
+    fn startup_reserves_write_transaction_before_privacy_read_with_concurrent_cli_writer() {
+        use rusqlite::functions::FunctionFlags;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let fixture = Fixture::new();
+        let path = fixture.directory.join("startup-race.sqlite");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL;
+            CREATE TABLE persisted_settings(key TEXT PRIMARY KEY,value TEXT);
+            INSERT INTO persisted_settings VALUES ('app.privacy_protection','true');
+            CREATE TABLE saved_tags(name TEXT PRIMARY KEY,color TEXT);
+            CREATE TABLE cli_probe(value TEXT);
+            CREATE VIEW settings AS SELECT key,value || concurrent_cli_write() AS value FROM persisted_settings;").unwrap();
+        let writer_was_blocked = Arc::new(AtomicBool::new(false));
+        let observed = writer_was_blocked.clone();
+        conn.create_scalar_function(
+            "concurrent_cli_write",
+            0,
+            FunctionFlags::SQLITE_UTF8,
+            move |_| {
+                let writer = Connection::open(&path)?;
+                writer.busy_timeout(std::time::Duration::ZERO)?;
+                match writer.execute("INSERT INTO cli_probe VALUES ('CLI write')", []) {
+                    Ok(_) => {}
+                    Err(rusqlite::Error::SqliteFailure(error, _))
+                        if error.code == rusqlite::ErrorCode::DatabaseBusy =>
+                    {
+                        observed.store(true, Ordering::SeqCst);
+                    }
+                    Err(error) => return Err(error),
+                }
+                Ok(String::new())
+            },
+        )
+        .unwrap();
+        ensure_tags_if_protected(&conn).unwrap();
+        assert!(writer_was_blocked.load(Ordering::SeqCst));
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM saved_tags", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        conn.execute("INSERT INTO cli_probe VALUES ('after startup')", [])
+            .unwrap();
     }
 
     #[test]
