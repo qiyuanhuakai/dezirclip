@@ -13,6 +13,8 @@ export const useSoundEffects = ({
   pasteSoundEnabled
 }: UseSoundEffectsOptions) => {
   useEffect(() => {
+    if (!soundEnabled) return;
+
     const AudioContext =
       window.AudioContext ||
       (window as Window & { webkitAudioContext?: typeof window.AudioContext }).webkitAudioContext;
@@ -92,8 +94,6 @@ export const useSoundEffects = ({
     };
 
     const unlisten = listen<string>("play-sound", (event) => {
-      if (!soundEnabled) return;
-
       const type = event.payload;
       if (type === "paste" && !pasteSoundEnabled) return;
       const masterVol = Math.min(1, Math.max(0, soundVolume / 100));

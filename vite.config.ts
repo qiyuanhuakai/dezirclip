@@ -35,7 +35,10 @@ export default defineConfig(async ({ mode }) => {
       emptyOutDir: true,
       rollupOptions: {
         output: {
+          onlyExplicitManualChunks: true,
           manualChunks(id: string) {
+            if (id.includes("commonjsHelpers.js")) return "vendor-commonjs";
+            if (id.includes("/src/features/settings/hooks/useSettingsPanelProps")) return;
             if (id.includes("/src/features/settings/")) return "settings";
             if (id.includes("/src/features/tag/")) return "tag";
             if (id.includes("/src/features/emoji/")) return "emoji";

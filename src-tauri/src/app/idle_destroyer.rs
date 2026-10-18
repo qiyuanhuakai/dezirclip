@@ -1,6 +1,6 @@
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
-use std::thread::ThreadId;
+use std::thread::{Thread, ThreadId};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
 
@@ -62,6 +62,7 @@ pub fn ready_to_show(painted: bool, now_ms: u64, deadline_ms: u64) -> bool {
 /// setup. Tauri does not expose it, and guessing wrong would reintroduce a
 /// main-thread wait that can never make progress.
 static MAIN_THREAD_ID: OnceLock<ThreadId> = OnceLock::new();
+static IDLE_DESTROYER_THREAD: OnceLock<Thread> = OnceLock::new();
 
 /// What the ticker should do with the hidden timestamp for the window's current
 /// visibility.
@@ -318,45 +319,32 @@ fn abort_closing() {
     WINDOW_LIFECYCLE.store(LIFECYCLE_OPEN, Ordering::SeqCst);
 }
 
-/// Overlays whose webview is worth tearing down with the main window.
-///
-/// Both are rebuilt on demand, so keeping them alive only holds a renderer and
-/// the compositor surface that goes with it. The measurements on this machine
-/// are why: from the same four-window start, destroying only the main window
-/// left the GPU process at 96.9 MB working set and 230.8 MB committed, flat for
-/// the whole 150-second watch, while destroying these two as well let it fall to
-/// 0.9 MB inside 30 seconds. That is what a leaked-looking GPU process looks
-/// like.
-///
-/// `quick-paste` is deliberately not here. Its entire purpose is to answer a
-/// hotkey without a round trip through the list, and rebuilding a webview per
-/// press would cost exactly the latency the overlay exists to remove.
-const DISCARDABLE_OVERLAYS: [&str; 2] = ["compact-preview", "region-select"];
+/// Interactive overlays receive their own idle grace after their last use.
+/// The compact preview belongs to the main frontend and can be collected as
+/// soon as that owner is gone. An explicit GPU restart tears all three down.
+const DISCARDABLE_OVERLAYS: [&str; 3] = ["compact-preview", "region-select", "quick-paste"];
 
 /// Tear down the overlays that will be rebuilt on their next use.
 ///
-/// `keep_visible` spares an overlay the user is looking at. Both of these park
-/// themselves the moment they are done, so the next idle tick collects the one
-/// that was spared -- but a selection that is still being dragged, or a preview
-/// still on screen, is not the app's to take away. The main window has no such
-/// question: it is hidden by definition for this to run at all.
+/// `keep_visible` spares an overlay the user is looking at. These windows park
+/// themselves when done, then receive a full configured timeout for reuse.
+/// The main window has no such question: it is hidden for this to run at all.
 ///
 /// The compact preview is created by the frontend and its handle lives in the
 /// main window's JavaScript context, which the idle teardown removes in the same
 /// breath -- so the handle cannot be left dangling the way it would if the
 /// preview outlived its owner.
 fn destroy_discardable_overlays(app: &AppHandle, keep_visible: bool) {
-    for label in DISCARDABLE_OVERLAYS {
-        let Some(window) = app.get_webview_window(label) else {
-            continue;
-        };
-        if keep_visible && window.is_visible().unwrap_or(false) {
-            continue;
-        }
-        if let Err(err) = window.destroy() {
-            crate::warn!("[idle-destroyer] Failed to destroy '{}': {}", label, err);
-        }
-    }
+    let grace_seconds = app
+        .try_state::<SettingsState>()
+        .map(|settings| settings.idle_destroy_seconds.load(Ordering::Relaxed))
+        .unwrap_or(DEFAULT_IDLE_DESTROY_SECONDS);
+    crate::app::auxiliary_windows::destroy_windows(
+        app,
+        &DISCARDABLE_OVERLAYS,
+        keep_visible,
+        grace_seconds,
+    );
 }
 
 /// Collect overlays that parked themselves after the main window was already gone.
@@ -849,7 +837,7 @@ pub fn note_main_thread() {
     let _ = MAIN_THREAD_ID.set(std::thread::current().id());
 }
 
-fn runs_on_main_thread() -> bool {
+pub(crate) fn runs_on_main_thread() -> bool {
     MAIN_THREAD_ID.get() == Some(&std::thread::current().id())
 }
 
@@ -939,29 +927,83 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
     true
 }
 
-/// Spawn the background ticker that calls `try_destroy_idle` once per second.
+/// Spawn the background ticker, waking immediately for queued recreations and
+/// otherwise calling `try_destroy_idle` once per second.
 /// Returns immediately; runs until the process exits.
 pub fn spawn_idle_destroyer(app: AppHandle) {
     std::thread::spawn(move || {
+        register_idle_worker(&IDLE_DESTROYER_THREAD, &RECREATE_PENDING);
         let mut interval = tick_interval();
+        let mut memory_release = IdleWorkingSetRelease::default();
         loop {
-            std::thread::sleep(interval);
+            std::thread::park_timeout(interval);
+            // Notice a reused overlay before collection removes its parked
+            // webview, so that short uses also rearm the one-time release.
+            if !app.webview_windows().is_empty() {
+                memory_release = IdleWorkingSetRelease::default();
+            }
             try_destroy_idle(&app);
             collect_parked_overlays_while_destroyed(&app);
+            let webviews_present = !app.webview_windows().is_empty();
+            let idle_settled = WINDOW_LIFECYCLE.load(Ordering::SeqCst) == LIFECYCLE_CLOSED
+                && IS_DESTROYED.load(Ordering::SeqCst)
+                && !RECREATE_PENDING.load(Ordering::SeqCst)
+                && !SHOW_PENDING.load(Ordering::SeqCst);
+            if memory_release.should_release(webviews_present, idle_settled) {
+                crate::infrastructure::process_memory::release_idle_working_set();
+            }
             interval = tick_interval();
         }
     });
+}
+
+/// One attempt per fully idle period, rearmed when any webview returns. A
+/// visible overlay or an unfinished recreation keeps the backend resident.
+#[derive(Default)]
+struct IdleWorkingSetRelease {
+    attempted: bool,
+}
+
+impl IdleWorkingSetRelease {
+    fn should_release(&mut self, webviews_present: bool, idle_settled: bool) -> bool {
+        if webviews_present {
+            self.attempted = false;
+            return false;
+        }
+        if !idle_settled || self.attempted {
+            return false;
+        }
+        self.attempted = true;
+        true
+    }
 }
 
 fn tick_interval() -> Duration {
     Duration::from_millis(1000)
 }
 
+fn register_idle_worker(worker: &OnceLock<Thread>, pending: &AtomicBool) {
+    let current = std::thread::current();
+    let _ = worker.set(current.clone());
+    // A request may have arrived before the thread published its handle.
+    // Preserve that request as a token consumed by the first park.
+    if pending.load(Ordering::SeqCst) {
+        current.unpark();
+    }
+}
+
+fn queue_recreate_request(pending: &AtomicBool, worker: &OnceLock<Thread>) {
+    pending.store(true, Ordering::SeqCst);
+    if let Some(worker) = worker.get() {
+        worker.unpark();
+    }
+}
+
 /// Mark that a recreate was requested while the destroy was in flight. The
 /// destroy path will pick this up and trigger a recreate immediately after
 /// the runtime finishes tearing down the window.
 pub fn request_recreate_after_destroy() {
-    RECREATE_PENDING.store(true, Ordering::SeqCst);
+    queue_recreate_request(&RECREATE_PENDING, &IDLE_DESTROYER_THREAD);
 }
 
 pub fn mark_destroyed_after_managed_destroy() {
@@ -974,6 +1016,70 @@ pub fn mark_destroyed_after_managed_destroy() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_recreate_request_wakes_worker(request_before_start: bool) {
+        let pending = std::sync::Arc::new(AtomicBool::new(false));
+        let worker = std::sync::Arc::new(OnceLock::new());
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        if request_before_start {
+            queue_recreate_request(&pending, &worker);
+        }
+        let pending_for_worker = pending.clone();
+        let handle_for_worker = worker.clone();
+        let thread = std::thread::spawn(move || {
+            register_idle_worker(&handle_for_worker, &pending_for_worker);
+            ready_tx.send(()).unwrap();
+            loop {
+                std::thread::park_timeout(Duration::from_secs(30));
+                if pending_for_worker.load(Ordering::SeqCst) {
+                    done_tx.send(()).unwrap();
+                    break;
+                }
+            }
+        });
+        ready_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        if !request_before_start {
+            queue_recreate_request(&pending, &worker);
+        }
+        let woke = done_rx.recv_timeout(Duration::from_secs(3));
+        // Always release and join the worker, including a failed wake test.
+        thread.thread().unpark();
+        thread.join().unwrap();
+        assert!(woke.is_ok(), "recreation must wake without waiting for the polling interval");
+    }
+
+    #[test]
+    fn recreate_request_wakes_a_parked_worker() {
+        assert_recreate_request_wakes_worker(false);
+    }
+
+    #[test]
+    fn recreate_requested_before_worker_start_preserves_its_wake() {
+        assert_recreate_request_wakes_worker(true);
+    }
+
+    #[test]
+    fn backend_working_set_is_released_once_per_webview_lifetime() {
+        let mut release = IdleWorkingSetRelease::default();
+        assert!(!release.should_release(true, false));
+        assert!(!release.should_release(false, false));
+        assert!(release.should_release(false, true));
+        assert!(!release.should_release(false, true));
+        assert!(!release.should_release(false, false));
+        assert!(!release.should_release(false, true));
+        assert!(!release.should_release(true, false));
+        assert!(release.should_release(false, true));
+    }
+
+    #[test]
+    fn overlays_and_pending_recreation_defer_backend_working_set_release() {
+        let mut release = IdleWorkingSetRelease::default();
+        assert!(!release.should_release(true, true));
+        assert!(!release.should_release(false, false));
+        assert!(!release.should_release(true, false));
+        assert!(release.should_release(false, true));
+    }
 
     static SHOW_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

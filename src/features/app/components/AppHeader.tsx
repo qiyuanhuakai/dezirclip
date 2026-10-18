@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { startTransition, useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -130,16 +130,28 @@ const AppHeader = ({
               <Trash2 size={16} />
             </button>
             {tagManagerEnabled && (
-              <button className="btn-icon btn-icon-scalable btn-icon-size-header" title={t('tag_manager') || '标签管理'} onClick={() => setShowTagManager(true)}>
+              <button className="btn-icon btn-icon-scalable btn-icon-size-header" title={t('tag_manager') || '标签管理'} onClick={() => startTransition(() => {
+                setShowTagManager(true);
+                setShowSettings(false);
+                setShowEmojiPanel(false);
+              })}>
                 <Tag size={16} />
               </button>
             )}
             {emojiPanelEnabled && (
-              <button className="btn-icon btn-icon-scalable btn-icon-size-header" title={t('emoji_panel') || '表情包'} onClick={() => setShowEmojiPanel(true)}>
+              <button className="btn-icon btn-icon-scalable btn-icon-size-header" title={t('emoji_panel') || '表情包'} onClick={() => startTransition(() => {
+                setShowEmojiPanel(true);
+                setShowSettings(false);
+                setShowTagManager(false);
+              })}>
                 <Smile size={16} />
               </button>
             )}
-            <button className="btn-icon btn-icon-scalable btn-icon-size-header" title={t('settings')} onClick={() => setShowSettings(true)}>
+            <button className="btn-icon btn-icon-scalable btn-icon-size-header" title={t('settings')} onClick={() => startTransition(() => {
+              setShowSettings(true);
+              setShowTagManager(false);
+              setShowEmojiPanel(false);
+            })}>
               <SettingsIcon size={16} />
             </button>
           </>

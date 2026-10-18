@@ -36,7 +36,7 @@ interface UseSettingsPanelPropsOptions {
  * keys the component never reads, so moving the selection changed
  * `selectedIndex` and the boundary could not bail.
  *
- * The panel is mounted for the whole life of the app and hidden with
+ * After its first visit the panel stays mounted and is hidden with
  * `display: none`, so that meant the entire settings subtree -- roughly a
  * hundred kilobytes of components across the general, clipboard, appearance and
  * data groups -- re-rendered while nobody could see it, on every keystroke in

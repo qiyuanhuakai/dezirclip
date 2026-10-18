@@ -1,18 +1,28 @@
-/* Scrollbar - Chunky */
-::-webkit-scrollbar{
-  width: 10px;
-  background: transparent;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-secondary) transparent;
 }
 
-::-webkit-scrollbar-thumb{
-  background-color: var(--text-secondary);
-  border: 3.5px solid transparent;
-  background-clip: padding-box;
-  border-radius: 0;
-  opacity: 0.3;
+.hide-scrollbar {
+  scrollbar-width: none;
 }
 
-::-webkit-scrollbar-thumb:hover{
-  background-color: var(--text-primary);
-  border: 1px solid transparent;
+@supports not ((scrollbar-width: thin) and (scrollbar-color: auto)) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--text-secondary);
+    border: 3.5px solid transparent;
+    background-clip: padding-box;
+    border-radius: 0;
+    opacity: 0.3;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--text-primary);
+    border: 1px solid transparent;
+  }
 }
