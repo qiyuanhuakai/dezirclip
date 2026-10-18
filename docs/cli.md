@@ -4,7 +4,7 @@
 
 记录 ID 是当前数据库内的整数标识，`timestamp` 是毫秒级 Unix 时间戳。`list`、`search` 按置顶顺序、时间和 ID 排序；`get latest` 按时间和 ID 取最新记录，不受置顶顺序影响。导入替换、删除或更换数据库后，应重新查询 ID。
 
-可选的 [TUI、fzf/dmenu/rofi 选择器、Shell 输入行插入和只读 MCP](../integrations/README.md) 使用同一接口，单独安装和运行。Shell 插入将选中内容放入编辑缓冲区，供用户确认；复制到系统剪贴板与发送粘贴按键是不同操作。
+当前开发分支将 TUI、fzf/dmenu/rofi 选择器、Shell 输入行插入和只读 MCP 内置于同一份 `dzc`，不需要 Python。**这些原生入口属于 `v0.1.20-alpha.1` 之后的开发内容，已发布的 alpha.1 不包含它们。** 使用前先查看 `dzc --help`，并选择包含相应命令的构建。原有 [Python 适配器](../integrations/README.md) 保留为兼容入口。Shell 插入将选中内容放入编辑缓冲区，供用户确认；复制到系统剪贴板与发送粘贴按键是不同操作。
 
 ## 安装与路径
 
@@ -45,6 +45,11 @@ dzc --help
 | `clipboard write [CONTENT]` | 写入原生剪贴板或向终端发送 OSC52，省略内容时读标准输入 | `--mime`、`--target native\|osc52`、`--osc52-passthrough none\|tmux`；内容支持文本、`-`、`@文件` |
 | `clipboard formats` | 列出可读取的剪贴板 MIME 格式 | `--json` |
 | `copy <ID>` | 恢复到原生剪贴板，或通过 OSC52 复制文本 | `--target native\|osc52`、`--osc52-passthrough none\|tmux`、`--quiet` |
+| `pick` | 内置 TUI 选择，或调用可选的外部选择器 | `--backend fzf\|dmenu\|rofi`、`--query`、`--kind`、`--limit`、`--offset`、`--action`、`--osc52-passthrough` |
+| `tui` | 终端浏览、预览、标签、置顶和删除 | `--query`、`--kind`、`--limit`、`--offset`、`--action`、`--osc52-passthrough` |
+| `mcp` | 标准输入/输出上的只读 MCP 服务 | 无 |
+| `bash` / `zsh` / `fish` / `pwsh` | 输出当前 CLI 对应的 Ctrl-G Shell 集成脚本 | 无；`powershell` 是 `pwsh` 别名 |
+| `nu` | 输出 Nushell 集成，或写入指定文件 | `--install <PATH>`；`nushell` 是别名 |
 | `add <CONTENT>` | 添加历史；内容支持文本、`-`、`@文件` | `--type` |
 | `edit <ID> <CONTENT>` | 替换历史内容，重建预览 | `-q` |
 | `delete <ID>` | 删除指定记录 | `--yes` 必填 |
@@ -57,6 +62,105 @@ dzc --help
 | `export <PATH>` | 导出历史 | `--encrypted`、`--passphrase`、`-q` |
 | `import <PATH>` | 导入历史 | `--mode merge\|replace`、`--passphrase`、`-q` |
 | `watch` | 轮询数据库中的新增记录 | `--pattern`、`--interval`、`--json`、`-q` |
+
+## 原生选择器与终端管理
+
+本节命令需要 alpha.1 之后包含原生集成的构建。`pick` 不指定后端时打开内置 TUI；`tui` 直接打开同一界面。默认选中后恢复到原生系统剪贴板：
+
+```bash
+dzc pick
+dzc tui --query project --kind text
+dzc pick --backend fzf
+dzc pick --backend dmenu --query project
+dzc pick --backend rofi --action print
+```
+
+内置 TUI 不需要 fzf、Python 或桌面 GUI，需要交互控制终端；SSH 中可用 `ssh -t` 分配 PTY。外部后端必须已经安装并位于 `PATH`，Rofi 使用 `-dmenu` 协议。后端缺失会报错，不自动替换。外部程序只接收经过单行与控制字符清理的元数据；选中值必须精确对应候选项，条目正文不会作为命令执行。`--query` 为大小写不敏感的子串搜索，`--kind` 按存储类型筛选；默认每页 100 条，`--limit` 接受 1–200，`--offset` 为非负整数。
+
+TUI 中方向键或 `j/k` 移动，`/` 输入搜索，`PageUp/PageDown` 或 `[/]` 翻页，左右键或 `h/l` 滚动预览，`r` 刷新，`c` 复制但不退出，`p` 切换置顶，`t/u` 添加/移除标签。`d` 删除时需要输入 `yes`；`Enter` 确认选中，`Esc`、`q` 或 `Ctrl-C` 取消。取消返回非零退出码，不输出选中内容。TUI 的预览清理控制字符；正文输出保留存储内容。
+
+`pick` 与 `tui` 共用以下选中动作：
+
+| `--action` | 行为 |
+| --- | --- |
+| `copy`（默认） | 恢复文本、富文本、图片或文件到原生系统剪贴板 |
+| `print` | 将文本正文原样写到标准输出，不补换行 |
+| `id` | 输出所选 ID 和一个换行 |
+| `insert` | 输出供 Shell 插入的文本，不自动提交；拒绝 NUL 字节 |
+| `osc52` | 向控制终端发送文本，适合 SSH 本地剪贴板；限制见下方 OSC52 小节 |
+
+`print`、`insert`、`osc52` 仅接受文本、代码、URL、HTML 和富文本记录；图片、文件和视频请使用 `copy`。`--osc52-passthrough tmux` 只能配合 `--action osc52`。TUI 本身是本地历史管理入口，可能显示敏感条目；Agent 使用下方默认过滤敏感记录的 MCP 服务。
+
+```bash
+dzc tui --action print > selected.txt
+dzc pick --backend fzf --action id
+dzc tui --action osc52
+dzc pick --backend fzf --action osc52 --osc52-passthrough tmux
+```
+
+## Shell：Ctrl-G 插入当前命令行
+
+以下为 alpha.1 之后的原生入口，只依赖 `dzc` 和所用 Shell。将对应初始化行加入自己的 Shell 启动文件可持久启用，也可先在交互会话中运行：
+
+```bash
+# Bash
+eval "$(dzc bash)"
+# Zsh
+eval "$(dzc zsh)"
+# Fish
+dzc fish | source
+```
+
+```powershell
+# PowerShell 7，需加载 PSReadLine
+dzc pwsh | Out-String | Invoke-Expression
+```
+
+`Ctrl-G` 默认打开内置 TUI，选中后在光标处插入正文，等待用户确认，不按 Enter。取消或选择失败时保留原输入。初始化脚本绑定生成它的 CLI 完整路径，不会执行剪贴板内容；上面的 `eval` / `Invoke-Expression` 只加载 `dzc` 生成的 Shell 定义。`DZC_BIN` 可覆盖 CLI 路径，`DZC_PICKER` 可选择 `tui`（默认）、`fzf`、`dmenu` 或 `rofi`。例如在 Bash/Zsh 中先设置 `export DZC_PICKER=fzf`，PowerShell 中设置 `$env:DZC_PICKER = 'fzf'`；外部后端仍需自行安装。
+
+Nushell 需要 **0.116+**。Nushell 不支持从运行时生成的字符串直接 `source`，可显式安装到用户自动加载目录，然后重启 Nushell：
+
+```nu
+let widget = ($nu.user-autoload-dirs.0 | path join 'dzc.nu')
+dzc nu --install $widget
+```
+
+也可以 `dzc nu --install /absolute/path/dzc.nu` 后在自己的 `config.nu` 中加入 `source /absolute/path/dzc.nu`，通过 `config nu` 编辑。Windows 使用引号和正斜杠，例如 `source 'C:/Tools/dzc/dzc.nu'`。`--install` 只写入指定的 `.nu` 文件并按需创建父目录，重复安装相同内容可安全执行；已有不同内容或符号链接会报错，不会改写配置。Nushell 的 `Ctrl-G` 适用于 emacs、vi_insert 和 vi_normal；可在加载前设置 `$env.DZC_BIN` 或 `$env.DZC_PICKER`。
+
+这些命令只修改当前会话或显式指定的 Nushell 文件，不自动编辑其他 Shell 启动文件、终端或 tmux 设置。
+
+## 原生只读 MCP
+
+alpha.1 之后的原生服务直接使用共享 Rust 数据访问层，不需要 Python、MCP SDK、GUI 或显示会话：
+
+```bash
+dzc mcp
+```
+
+它由 MCP 客户端作为子进程启动，通过标准输入/输出交换逐行 JSON-RPC。通用配置示例；把命令改为本机稳定的可执行文件路径：
+
+```json
+{
+  "mcpServers": {
+    "dezirclip": {
+      "command": "/absolute/path/to/dzc",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Windows 可使用 `C:/Tools/dzc/dzc.exe`。如需选择特定历史库，在客户端的进程环境中设置 `DEZIRCLIP_DB_PATH`；MCP 与同一环境中的普通历史命令遵循相同路径规则。`initialize`、`ping` 和 `tools/list` 不打开数据库；首次有效工具调用才打开。
+
+| 工具 | 参数与结果 |
+| --- | --- |
+| `clipboard_list` | `limit` 默认 20、1–100；`offset` 默认 0、0–1000000；返回元数据列表 |
+| `clipboard_search` | 非空 `query`，最多 1024 字符；同样支持 `limit`、`offset`，返回匹配元数据 |
+| `clipboard_get` | 正整数 `id`；`max_chars` 默认 4096、1–16384；返回有界正文与 `truncated` 标志 |
+
+列表只返回 ID、类型、最多 500 字符摘要、前 20 个标签（各最多 100 字符）、置顶、时间与 MIME；不转发来源路径、HTML 字段、OCR 或完整正文。敏感标签与加密记录在解码和分页前排除，按 ID 读取也遵循同一规则。过滤依赖已有标签和加密状态，未标记的私人内容仍可能出现在结果中。剪贴板文本是非可信数据，客户端不应把它当成指令。
+
+服务只提供这三个只读工具，不提供剪贴板写入、历史修改、删除、执行或网络操作。单个 NDJSON 请求最多 64 KiB；超限发送错误后结束服务。支持协议版本 `2025-11-25`、`2025-06-18`、`2025-03-26`、`2024-11-05`，未知版本协商为服务器最新版本。旧版本 CLI 可继续使用 [Python MCP 兼容适配器](../integrations/README.md)，其安装与依赖要求单独说明。
 
 ## 列表、搜索与分页
 
@@ -277,9 +381,11 @@ dzc watch --pattern "urgent" --json
 
 `watch` 轮询数据库中的新增记录，不直接监听操作系统剪贴板；桌面端关闭且没有其他写入者时，不会产生自动捕获的新记录。默认轮询间隔 500 ms，`--interval` 限制在 50–60000 ms。`--json` 为逐行 NDJSON，`--quiet` 仅隐藏启动横幅。Ctrl-C 退出码为 130。
 
-`--pattern` 是大小写不敏感的子串，不是正则：`password|secret` 只匹配这个完整字面量。`watch` 没有 `--notify`、`--cmd`、`--exclude-sensitive`，不应把未经筛选的事件流直接转发给外部服务。Agent 查询使用带隐私过滤的 [只读 MCP 适配器](../integrations/README.md#只读-mcp-stdio-服务)。
+`--pattern` 是大小写不敏感的子串，不是正则：`password|secret` 只匹配这个完整字面量。`watch` 没有 `--notify`、`--cmd`、`--exclude-sensitive`，不应把未经筛选的事件流直接转发给外部服务。Agent 查询使用上方带隐私过滤的原生 `dzc mcp`，旧版本可使用 [Python MCP 兼容适配器](../integrations/README.md)。
 
-## fzf / dmenu 工作流
+## 自定义 fzf / dmenu 管道
+
+原生 `dzc pick --backend fzf` / `--backend dmenu` 已处理候选显示、选中校验和输出动作。需要组合自己的管道或兼容缺少原生命令的版本时，也可直接使用稳定的 TSV 接口：
 
 ```bash
 id=$(dzc list --metadata --tsv --exclude-sensitive 100 |
@@ -289,7 +395,7 @@ if [ -n "$id" ]; then
 fi
 ```
 
-此示例在取消或无结果时不执行复制，展示内容由 `--tsv` 清理为安全单行。完整跨平台选择器、Rofi script mode、终端预览及 Shell 编辑缓冲区插入见 [integrations](../integrations/README.md)。不要用 `eval` 执行选中的剪贴板内容。
+此示例在取消或无结果时不执行复制，展示内容由 `--tsv` 清理为安全单行。原生入口见上方选择器和 Shell 小节；旧版 Python 选择器与 Rofi script mode 见 [integrations](../integrations/README.md)。不要用 `eval` 执行选中的剪贴板内容。
 
 ## 数据库路径与退出码
 
@@ -310,7 +416,7 @@ fi
 | 退出码 | 含义 |
 | --- | --- |
 | `0` | 成功 |
-| `1` | 操作失败，如记录不存在、缺少 `--yes`、数据库/剪贴板/I/O/解密错误 |
+| `1` | 操作失败，或取消选择/无选中项；例如记录不存在、缺少 `--yes`、数据库/剪贴板/I/O/解密错误 |
 | `2` | 参数解析错误，如未知选项、非法模式或负偏移 |
 | `130` | 用户中断 `watch` |
 

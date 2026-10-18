@@ -21,7 +21,7 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 
 Windows 独立 CLI 无需 WebView2，但当前 MSVC 构建依赖 `VCRUNTIME140.dll`。若系统尚未安装，请安装匹配 CLI 架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。压缩包不附带该运行库。
 
-下方命令描述当前分支的能力。旧版发布包可能缺少 `--metadata`、`--target osc52` 等选项，请使用匹配版本的 CLI 与适配器，并用 `dzc --help` 检查。
+`dzc pick/tui/mcp` 与 Shell 初始化入口是 `v0.1.20-alpha.1` 之后开发分支新增的能力。已发布的 alpha.1 请使用随包说明；运行 `dzc --help` 可确认当前二进制支持的命令。
 
 解压后将二进制目录加入 `PATH`；也可在适配器中用 `DZC_BIN` 指定完整路径。例如：
 
@@ -71,91 +71,84 @@ dzc export backup.json
 
 `--raw` 不补换行；`--mime image/png` 可输出图片字节；列表/搜索支持 JSON、元数据、TSV 和过滤后分页。`--exclude-sensitive` 在解密前排除已标记敏感或加密记录，无法识别所有未标记的私人内容。备份内嵌图片原始字节；文件列表、视频及 HTML 外链资源仍引用原文件。完整参数见 [CLI 文档](./docs/cli.md)。
 
-## fzf、dmenu、rofi 与 TUI
+## 选择与终端管理
 
-以下适配器需要 Python 3.10+。独立 CLI 压缩包已附带运行所需的 `integrations/` 文件；使用桌面安装的 CLI 时，也可下载同版本源码取得该目录。命令从压缩包或仓库根目录运行，其他位置请使用完整路径。
-
-```bash
-# fzf：选择后复制；选择器需另行安装
-python3 integrations/dzc-integrations.py pick --backend fzf --action copy
-# dmenu / rofi 的逐行菜单
-python3 integrations/dzc-integrations.py pick --backend dmenu --action copy
-python3 integrations/dzc-integrations.py pick --backend rofi --action copy
-# 终端管理界面
-python3 integrations/dzc-integrations.py tui --action copy
-# Rofi script mode
-rofi -show dzc -modi 'dzc:python3 /absolute/path/to/integrations/dzc-integrations.py rofi'
-```
-
-`--action print` 输出选中的原始文本，`id` 输出 ID，`copy` 恢复原生剪贴板，`osc52` 发往控制终端。TUI 支持搜索、正文预览、翻页、置顶、标签和确认后删除；↑/↓ 选择，`/` 搜索，Enter 执行动作，`q` 退出。默认动作是 `print`。
-
-Windows 使用 `python`。只有 TUI 需要额外的 curses 兼容依赖：
-
-```powershell
-python -m pip install -r integrations/requirements-tui.txt
-python integrations/dzc-integrations.py tui --action copy
-```
-
-## 插入 Shell 输入行：Bash、Zsh、Fish、PowerShell、Nushell
-
-加载对应脚本后按 `Ctrl-G`，搜索并将记录插入当前输入行，保留多行及末尾换行，等待用户确认。脚本不执行选中的内容，也不自动按 Enter。默认使用 fzf；可提前设置 `DZC_PICKER=rofi` 或 `dmenu`。
+安装 `dzc` 后直接运行：
 
 ```bash
-# 按当前 Shell 选择一行；路径换成实际解压目录
-source /absolute/path/to/integrations/shell/dzc.bash
-source /absolute/path/to/integrations/shell/dzc.zsh
-source /absolute/path/to/integrations/shell/dzc.fish  # Fish 3.4+
+dzc pick                         # 内置选择界面，Enter 复制
+dzc tui                          # 搜索、预览、标签、置顶及确认后删除
+dzc pick --query meeting --kind text
+dzc pick --action print           # 输出原始文本，保留换行
+```
+
+`pick` 默认使用内置终端界面。已安装其他选择器时，也可选择：
+
+```bash
+dzc pick --backend fzf
+dzc pick --backend dmenu
+dzc pick --backend rofi
+```
+
+原生界面无需 Python、curses 或外部选择器。↑/↓ 选择，`/` 搜索，Enter 执行动作，`q` 或 Esc 退出；`p` 置顶，`t/u` 添加/移除标签，`d` 输入 `yes` 后删除。默认动作是复制；`--action print/id/insert/osc52` 可输出正文、ID、Shell 文本或发送到终端剪贴板。界面只绘制到控制终端，重定向输出可得到纯数据。
+
+## Shell：按 Ctrl-G 插入当前输入行
+
+按当前 Shell 选择一行加载；常用时将该行放入自己的启动配置：
+
+```bash
+eval "$(dzc bash)"        # Bash
+eval "$(dzc zsh)"         # Zsh
+dzc fish | source        # Fish 3.4+
 ```
 
 ```powershell
-# PowerShell 7 + PSReadLine
-. 'C:/Tools/dzc/integrations/shell/dzc.ps1'
+dzc pwsh | Out-String | Invoke-Expression  # PowerShell 7 + PSReadLine
 ```
+
+Nushell 0.116+ 使用其用户自动加载目录：
 
 ```nu
-# Nushell 0.116+；Windows 默认 python，其他平台默认 python3
-$env.DZC_BIN = '/absolute/path/to/dzc'
-source /absolute/path/to/integrations/shell/dzc.nu
-# Windows 示例：source 'C:/Tools/dzc/integrations/shell/dzc.nu'
+dzc nu --install ($nu.user-autoload-dirs.0 | path join dzc.nu)
+# 重新打开 Nushell 后按 Ctrl-G
 ```
 
-需要永久启用时，自行把对应加载行放入 Shell 配置；Nu 可用 `config nu` 打开配置。脚本不会修改启动文件。还可设置 `DZC_ADAPTER` 和 `DZC_PYTHON` 覆盖适配器/Python 路径；具体语法见 [集成指南](./integrations/README.md#shell-编辑缓冲区集成)。
+`dzc nu` 也可仅打印初始化脚本。`--install` 只写入明确指定的新 `.nu` 文件；遇到不同的已有文件会拒绝覆盖。其他 Shell 命令只打印脚本，不修改启动配置。
+
+Ctrl-G 默认打开内置 TUI，把选中的内容插入编辑缓冲区，保留多行和末尾换行，等待用户确认。可用 `DZC_PICKER=fzf/rofi/dmenu` 切换外部选择器，用 `DZC_BIN` 指定其他 CLI。选中内容不会被当作脚本执行，取消不会改动输入行。完整说明见 [集成指南](./integrations/README.md#shell-编辑缓冲区集成)。
 
 ## SSH：把远程文本复制到本地
 
-远程主机安装独立 `dzc`，本地使用支持并允许 OSC52 的终端连接：
+在支持并允许 OSC52 的本地终端连接远程主机：
 
 ```bash
 ssh -t user@server
 # 以下在远程执行
+dzc pick --action osc52
 dzc copy 142 --target osc52
 printf 'remote note\n' | dzc clipboard write - --target osc52
-python3 /opt/dzc/integrations/dzc-integrations.py pick --action osc52
 ```
 
-`native` 目标默认操作远程可访问的桌面剪贴板；显式 `osc52` 将文本发给本地终端，无需远程 GUI 或 `DISPLAY`，不会自动回退。它不读取本地剪贴板、不自动粘贴，也不同步两端历史。最多发送 100000 个原始 UTF-8 字节，超出时报错而不截断；不支持图片/文件，终端权限和容量仍可能阻止写入。成功仅表示序列已发送。
-
-OSC52 写入控制终端，标准输出保持为空；没有控制终端时报错。若运行在一层 tmux 中并需要穿透，显式使用 `--osc52-passthrough tmux`；tmux 3.3+ 还需用户自行允许 `allow-passthrough`。程序不会修改终端或 tmux 配置。示例与限制见 [OSC52 集成说明](./integrations/README.md#ssh-与-osc52)。
+OSC52 无需远程 GUI 或 `DISPLAY`，最多发送 100000 个原始 UTF-8 字节，超限报错且不截断。它只写控制终端，stdout 保持为空；不读取本地剪贴板、不自动粘贴或同步历史。成功表示序列已发送，实际写入仍由终端权限和容量决定。单层 tmux 穿透需显式添加 `--osc52-passthrough tmux`，并自行允许 tmux 的 `allow-passthrough`。原生系统剪贴板仍是默认目标。
 
 ## 只读 MCP 与 Agent Skill
 
-在 MCP 客户端中配置绝对路径：
+MCP 客户端直接启动 `dzc mcp`：
 
 ```json
 {
   "mcpServers": {
     "dezirclip": {
-      "command": "python3",
-      "args": ["/absolute/path/to/integrations/dzc-integrations.py", "mcp"],
-      "env": {"DZC_BIN": "/absolute/path/to/dzc"}
+      "command": "/absolute/path/to/dzc",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-Windows 将 `command` 改为 Python 的实际路径，并为脚本和 `DZC_BIN` 使用 Windows 路径。服务只通过 stdio 通信，不监听网络端口，提供 `clipboard_list`、`clipboard_search`、`clipboard_get`。列表和搜索只返回元数据，正文需单独请求；敏感标签和加密记录在 CLI 解密前过滤，读取结果有大小上限。它不提供写入、复制、删除或执行工具。
+Windows 将 `command` 改为实际的 `dzc.exe` 路径。服务通过 stdio 提供 `clipboard_list`、`clipboard_search`、`clipboard_get`，无网络监听。列表和搜索只返回有界元数据；正文需单独读取，敏感标签和加密记录在解密前排除。服务不提供写入、复制、删除或执行工具。
 
-无需 MCP 的 Agent 也可安装 [`skills/dzc-cli`](./skills/dzc-cli/) 的技能文档来使用 CLI；技能安装脚本只安装说明，不替代二进制。可用参数、返回值和完整配置见 [集成指南](./integrations/README.md#只读-mcp-stdio-服务)。
+直接使用 CLI 的 Agent 可安装 [`skills/dzc-cli`](./skills/dzc-cli/)。协议边界、配置和旧适配器兼容说明见 [集成指南](./integrations/README.md)。
 
 ## 开发与验证
 
@@ -198,45 +191,23 @@ printf 'hello\n' | dzc clipboard write -
 
 The GUI offers history, tags, pinning, rich text, images, files, OCR search, screenshots, text transforms and themes. Quick Paste defaults to Ctrl+Shift+V; use arrows and Enter to paste, or Esc to close. New captures preserve original whitespace and line endings. X11 uses XFixes with image-aware polling fallback. Source application exclusions block future captures when the source can be identified.
 
-The standalone Windows CLI needs no WebView2. Its MSVC build requires the matching architecture's [Microsoft Visual C++ v14 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) (`VCRUNTIME140.dll`), which is not included in the archive.
+The standalone Windows CLI needs no WebView2. Its MSVC build requires the matching architecture's [Microsoft Visual C++ v14 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist), which is not bundled.
 
-Optional adapters need Python 3.10+; fzf/dmenu/rofi are installed separately. On Windows use `python`; only the TUI additionally needs `python -m pip install -r integrations/requirements-tui.txt`.
-
-```bash
-python3 integrations/dzc-integrations.py pick --backend fzf --action copy
-python3 integrations/dzc-integrations.py pick --backend dmenu --action copy
-python3 integrations/dzc-integrations.py pick --backend rofi --action copy
-python3 integrations/dzc-integrations.py tui --action copy
-rofi -show dzc -modi 'dzc:python3 /absolute/path/to/integrations/dzc-integrations.py rofi'
-```
-
-Source the script for your shell, then press Ctrl-G to insert selected text into the current editing buffer without executing it. Bash, Zsh, Fish 3.4+, PowerShell 7 with PSReadLine, and Nushell 0.116+ are supported. Multiline text and trailing newlines are preserved. Add source lines to startup configuration yourself if desired; scripts do not change those files.
+The following native entry points were added after the published `v0.1.20-alpha.1`; check `dzc --help`. They require no Python or curses:
 
 ```bash
-source /absolute/path/to/integrations/shell/dzc.bash
-source /absolute/path/to/integrations/shell/dzc.zsh
-source /absolute/path/to/integrations/shell/dzc.fish
+dzc pick                         # built-in selection, Enter copies
+dzc tui                          # search, preview and manage history
+dzc pick --backend fzf            # optional: fzf / dmenu / rofi
+eval "$(dzc bash)"                # Bash initialization
+eval "$(dzc zsh)"                 # Zsh initialization
+dzc fish | source                # Fish initialization
 ```
 
-```powershell
-. 'C:/Tools/dzc/integrations/shell/dzc.ps1'
-```
+PowerShell 7: `dzc pwsh | Out-String | Invoke-Expression`. Nushell 0.116+: `dzc nu --install ($nu.user-autoload-dirs.0 | path join dzc.nu)`, then restart Nu. Ctrl-G uses the built-in TUI and inserts literal text into the editing buffer, preserving newlines and waiting for confirmation. Set `DZC_PICKER` to fzf/rofi/dmenu to use an external selector. Shell output commands do not modify startup files; the explicit Nu installer refuses conflicting files.
 
-```nu
-source /absolute/path/to/integrations/shell/dzc.nu
-```
+For SSH, use `dzc pick --action osc52` or `dzc copy ID --target osc52`. Text is written to the controlling terminal, capped at 100000 original UTF-8 bytes, without readback or history sync; success means sent. Single-layer tmux passthrough is explicit. The terminal must support and permit OSC52.
 
-For SSH, install `dzc` remotely and connect with a terminal that permits OSC52:
-
-```bash
-ssh -t user@server
-dzc copy 142 --target osc52
-printf 'remote note\n' | dzc clipboard write - --target osc52
-python3 /opt/dzc/integrations/dzc-integrations.py tui --action osc52
-```
-
-OSC52 writes text to the controlling terminal, keeping stdout empty; no remote display is needed. It neither reads the local clipboard nor syncs history. The fixed limit is 100000 original UTF-8 bytes; oversized payloads fail without truncation. Terminal support, permissions and lower limits still apply; success means sent, not acknowledged. Native clipboard access remains the default with no automatic OSC52 fallback. Explicit single-layer tmux passthrough uses `--osc52-passthrough tmux` and may require user-configured `allow-passthrough`; see the [integration guide](./integrations/README.md#ssh-与-osc52).
-
-For read-only MCP, use `python3 /absolute/path/to/integrations/dzc-integrations.py mcp` as the server command, or the JSON configuration above. It exposes bounded list/search/get tools over stdio, excludes sensitive/encrypted records before decoding, and provides no mutation or execution tools. The alternative [Agent Skill](./skills/dzc-cli/) documents direct CLI use. See [integrations](./integrations/README.md) for configuration and [Linux installation](./docs/LINUX_INSTALL.md) for dependencies and troubleshooting.
+Configure MCP with the absolute `dzc` path as `command` and `["mcp"]` as `args`. It provides bounded, read-only list/search/get tools over stdio and excludes sensitive/encrypted records before decoding. See the [integration guide](./integrations/README.md) for details and legacy Python compatibility, or install the [Agent Skill](./skills/dzc-cli/) for direct CLI use.
 
 Build with the commands in the development section above. DezirClip and its upstream are licensed under GPL-3.0; applicable original copyright and license notices are retained.

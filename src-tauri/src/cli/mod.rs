@@ -1,13 +1,8 @@
 //! `dzc` subcommand implementations.
 //!
-//! Each submodule owns a single subcommand's `run` function that takes
-//! a typed args struct (defined in the binary) and a `&dyn
-//! ClipboardRepository` for DB access. No SQL lives in the cli layer —
-//! all persistence goes through the repository trait; the only
-//! post-fetch work done here is in-memory filtering for `--tag` and
-//! `--pinned` (the repository's `get_history` does not yet accept those
-//! filters) plus case-insensitive substring matching for the default
-//! search mode.
+//! History commands and terminal frontends use the shared repositories.
+//! Filtering and pagination run in the repository before content is decoded.
+//! Shell initialization needs no database; MCP opens it only for valid queries.
 //!
 //! Output modes (set by flag):
 //! * human (default): one entry per line, type-icon + preview
@@ -21,12 +16,17 @@ pub mod count;
 pub mod delete;
 pub mod edit;
 pub mod export;
+pub mod frontend;
 pub mod get;
 pub mod import;
 pub mod list;
-pub mod pin;
+pub mod mcp;
 pub mod payload;
+pub mod pick;
+pub mod pin;
 pub mod search;
+pub mod shell;
 pub mod stats;
 pub mod tag;
+pub mod tui;
 pub mod watch;

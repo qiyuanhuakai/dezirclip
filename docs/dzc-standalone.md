@@ -30,10 +30,10 @@ Windows 当前会话示例：
 ```powershell
 $env:Path = "C:\Tools\dzc;$env:Path"
 $env:DZC_BIN = 'C:\Tools\dzc\dzc.exe'
-python 'C:\Tools\dzc\integrations\dzc-integrations.py' pick --action copy
+dzc pick
 ```
 
-可选集成需要 Python 3.10+，选择器另需 fzf、dmenu 或 rofi；只有 Windows TUI 额外需要 `integrations/requirements-tui.txt`。保留压缩包内完整的集成运行文件目录 `integrations/`，命令可从任意工作目录通过绝对路径运行；开发测试文件不随压缩包分发。Shell 输入行插入、Nushell、只读 MCP 的设置见 [集成指南](./integrations/README.md)。技能说明位于 `skills/dzc-cli/`。
+原生 `dzc pick`、`dzc tui`、`dzc mcp` 和 `dzc bash/zsh/fish/nu/pwsh` 已内置于 CLI，无需 Python 或单独的脚本目录。默认选择界面和 Ctrl-G 插件使用内置 TUI；只有 `--backend fzf/dmenu/rofi` 需要对应的外部选择器。Shell 加载与 MCP 设置见 [集成指南](./integrations/README.md)。这些原生入口在 v0.1.20-alpha.1 之后加入；旧包应使用自己的随包说明。
 
 原生剪贴板读写需要当前系统的图形会话；Linux 官方二进制基于 Ubuntu 24.04，要求 glibc 2.39+ 及其动态库，不是静态兼容构建。在 SSH 终端中，可显式通过 OSC52 将远程文本复制到支持并允许该功能的本地终端：
 

@@ -1,189 +1,111 @@
-# 可选的 dzc 终端与 Agent 集成
+# dzc 原生终端与 Agent 集成
 
-这些适配器通过本地 `dzc` 子进程工作，不增加桌面端依赖，也不启动网络服务。需要 Python 3.10+ 与匹配版本的 `dzc`；选择器另需 fzf、rofi 或 dmenu。独立 CLI 发布压缩包包含完整的集成运行文件目录 `integrations/`，源码仓库另含开发测试。桌面安装包内的 `dzc` 可搭配同版本仓库中的适配器使用；不要只复制入口文件，保留完整目录结构。旧版 CLI 可能缺少这里使用的新选项，请先检查 `dzc --help`。
+这些入口内置于 `dzc`，直接使用本地 Rust Core，无需 Python、curses 或单独的适配器目录。它们在已发布的 `v0.1.20-alpha.1` 之后加入开发分支；先运行 `dzc --help` 确认当前二进制包含这些命令。alpha.1 用户请使用该版本随包说明。
 
-```powershell
-$env:DZC_BIN = 'C:\Tools\dzc\dzc.exe'
-python 'C:\Tools\dzc\integrations\dzc-integrations.py' pick --action copy
+## 快速开始
+
+```bash
+dzc pick                         # 内置选择界面，Enter 复制
+dzc tui                          # 历史管理与预览
+dzc pick --backend fzf            # 可选外部选择器
+dzc pick --backend dmenu
+dzc pick --backend rofi
 ```
 
-Linux 通常用 `python3`。`dzc` 已在 PATH 时无需 `DZC_BIN`，也可在子命令前传 `--dzc /absolute/path/to/dzc`。下方相对路径示例从压缩包解压根目录或仓库根目录运行；其他位置使用完整路径，路径有空格时加引号。所有调用使用独立参数，不把记录内容拼入 shell 命令。适配器与 CLI 需一同更新，因为它们使用 `--metadata`、分页与 `--exclude-sensitive`。
+仅显式使用外部后端时需要安装对应选择器。默认获取 100 条元数据，每页最多 200 条，选中后读取正文；`--query`、`--kind` 在分页前筛选，`--offset` 可选起始位置。
 
-| 需求 | 入口 |
+| 动作 | 用法 |
 | --- | --- |
-| 模糊搜索后查看或复制 | `pick --backend fzf` |
-| 桌面菜单选择 | `pick --backend dmenu` / `rofi` |
-| 终端预览、标签、置顶与删除 | `tui` |
-| 插入当前 Shell 输入行，等待确认 | 对应 Shell 脚本，Ctrl-G |
-| SSH 远程文本复制到本地终端剪贴板 | `pick/tui --action osc52` |
-| Agent 查询历史 | `mcp`，只读 stdio |
+| 恢复原生系统剪贴板，支持图片/文件 | `dzc pick` 或 `--action copy` |
+| 输出原始文本，无额外换行 | `dzc pick --action print` |
+| 只输出 ID | `dzc pick --action id` |
+| 插入 Shell 的原始文本，拒绝 NUL | `--action insert`，由初始化脚本调用 |
+| 发送文本到控制终端剪贴板 | `--action osc52` |
 
-## fzf / dmenu / rofi 选择器
-
-```bash
-python3 integrations/dzc-integrations.py pick
-python3 integrations/dzc-integrations.py pick --backend dmenu --action copy
-python3 integrations/dzc-integrations.py pick --backend rofi --query meeting --action copy
-python3 integrations/dzc-integrations.py pick --kind text --limit 200 --action id
-```
-
-默认获取 100 条元数据（最多 200 条），每行显示类型、置顶标记与摘要；选中后才读取内容。`print` 输出原始文本，没有额外换行；`copy` 通过原生系统剪贴板恢复记录，适合图片与文件；`osc52` 委托 CLI 把文本发送到控制终端，适合 SSH；`id` 只输出 ID。Shell 使用 `insert`，与 `print` 相同但拒绝编辑缓冲区无法表示的 NUL 字节。取消返回 1，Ctrl-C 返回 130，不输出记录。为使行为可预测，fzf 不读取 `FZF_DEFAULT_OPTS` / `FZF_DEFAULT_OPTS_FILE`。
-
-Rofi 的 script mode 也可直接使用，选择后复制记录：
-
-```bash
-rofi -show dzc -modi 'dzc:python3 /absolute/path/to/integrations/dzc-integrations.py rofi'
-```
-
-含空格的安装路径可写入一个普通启动脚本，再将其路径传给 `-modi`。支持 rofi 的 `ROFI_RETV` 与隐藏 `info` 字段；自定义输入被禁用。dmenu 兼容模式使用普通的逐行文本，不依赖 rofi 专有字段。
+取消返回非零，不输出内容；选择器输出必须精确对应候选行。程序不通过 shell 执行选择器，且清除可能执行命令的 `FZF_DEFAULT_OPTS` / `FZF_DEFAULT_OPTS_FILE`。摘要会过滤控制字符，选中正文保持原始字节。
 
 ## 终端浏览器
 
 ```bash
-python3 integrations/dzc-integrations.py tui
-python3 integrations/dzc-integrations.py tui --query project --action copy
-```
-
-Linux 使用 Python 自带的 curses。Windows 仅为 TUI 安装下面的可选依赖；MCP、选择器和 shell 集成都不需要它：
-
-```powershell
-python -m pip install -r integrations/requirements-tui.txt
-python integrations/dzc-integrations.py tui
+dzc tui
+dzc tui --query project --kind code
+dzc tui --action print > selected.txt
 ```
 
 | 按键 | 操作 |
 | --- | --- |
-| ↑/↓ 或 j/k | 选择记录，显示完整内容预览 |
+| ↑/↓ 或 j/k | 选择与预览 |
 | / | 搜索；空查询返回全部 |
-| h/l 或 ←/→ | 滚动内容预览 |
+| h/l 或 ←/→ | 滚动预览 |
 | PageUp/PageDown 或 [ / ] | 前后翻页 |
 | p | 切换置顶 |
 | t / u | 添加 / 移除标签 |
-| d | 删除；必须再次输入 `yes` |
-| c | 复制到系统剪贴板，继续浏览 |
-| Enter | 执行 `--action` 并退出，默认打印文本 |
+| d | 输入 `yes` 后删除 |
+| c | 复制到系统剪贴板并继续浏览 |
+| Enter | 执行指定动作后退出，默认复制 |
 | r / q / Esc | 刷新 / 退出 |
 
-TUI 在控制终端绘制，所以重定向标准输出时不会混入界面字符。元数据每页最多 200 条；预览最多显示 64,000 字符。适配器限制单次 `dzc` 输出为 4 MiB，超过大小会明确报错，可直接使用 `dzc` 处理大记录。终端预览与选择器摘要会清除控制字符；打印选中的文本仍保留原始内容。
+界面绘制到控制终端，标准输出只用于选中结果。退出、取消或失败时恢复终端状态。预览有大小上限，打印正文仍保留完整内容。
 
 ## Shell 编辑缓冲区集成
 
-对应脚本写入 shell 的**当前编辑缓冲区**，保留多行和末尾换行；不会调用 `eval` 或自动提交命令。绑定为 Ctrl-G，由用户检查后决定如何使用。需要 fzf，或在加载前将 `DZC_PICKER` 设置为 `rofi` / `dmenu`。
+按当前 Shell 加载一行，即可用 Ctrl-G 选择并插入当前输入行：
 
 ```bash
-# Bash
-source /absolute/path/to/integrations/shell/dzc.bash
-# Zsh
-source /absolute/path/to/integrations/shell/dzc.zsh
-# Fish 3.4+
-source /absolute/path/to/integrations/shell/dzc.fish
+eval "$(dzc bash)"        # Bash
+eval "$(dzc zsh)"         # Zsh
+dzc fish | source        # Fish 3.4+
 ```
 
 ```powershell
-# PowerShell 7 + PSReadLine
-. C:/absolute/path/to/integrations/shell/dzc.ps1
+dzc pwsh | Out-String | Invoke-Expression  # PowerShell 7 + PSReadLine
 ```
 
 ```nu
-# Nushell 0.116+
-source /absolute/path/to/integrations/shell/dzc.nu
-# Windows 示例：source 'C:/Tools/dzc/integrations/shell/dzc.nu'
+# Nushell 0.116+，安装到用户自动加载目录后重新打开 Nu
+dzc nu --install ($nu.user-autoload-dirs.0 | path join dzc.nu)
 ```
 
-加载前可设置 `DZC_ADAPTER`（适配器完整路径）、`DZC_PYTHON`（Python 可执行文件）和 `DZC_PICKER`。脚本不会安装文件或修改 shell 启动配置。按需把 `source` / 点加载语句加入自己的配置文件。
+默认使用内置 TUI，无需 fzf。设置 `DZC_PICKER=fzf`、`rofi` 或 `dmenu` 可切换后端，`DZC_BIN` 可覆盖可执行文件。原有输入行、多行、CRLF 和尾部换行会保留；取消、失败不会插入半截输出。选中内容是字面文本，等待用户检查确认。
 
-Nushell 的环境变量语法如下；`DZC_ADAPTER` 默认相对 `dzc.nu` 定位，无需从固定工作目录运行：
-
-```nu
-$env.DZC_PYTHON = 'python3' # Windows 默认 python，其他平台默认 python3
-$env.DZC_PICKER = 'fzf'    # 可选 rofi / dmenu
-$env.DZC_BIN = '/absolute/path/to/dzc'
-source /absolute/path/to/integrations/shell/dzc.nu
-```
-
-Ctrl-G 支持 Nu 的 emacs、vi insert 和 vi normal 模式；取消选择、子进程失败时保留原输入行。脚本使用 Nu 的 [编辑缓冲区接口](https://www.nushell.sh/commands/docs/commandline_edit.html)，保留 Unicode、多行和末尾换行，仅插入，不接受或执行该行。需要永久启用时，运行 `config nu` 后自行加入 `source` 行；脚本不会改写 `config.nu`。绑定机制见 [Nushell 行编辑器文档](https://www.nushell.sh/book/line_editor.html)。
+`dzc bash/zsh/fish/pwsh/nu` 默认只输出初始化代码。常用时自行把加载行放入启动配置；它们不修改配置文件。Nu 的解析期加载规则需要一个文件，显式 `--install PATH` 只创建指定的 `.nu` 文件，相同文件可重复使用，其他已有文件或链接会被保留并报错。
 
 ## SSH 与 OSC52
 
-先在远程主机安装匹配版本的独立 CLI 和适配器；只查询历史或发送 OSC52 不需要启动远程 GUI，也不要求 `DISPLAY`。本地使用支持并允许 OSC52 剪贴板写入的终端连接：
-
 ```bash
-# 在本地建立带终端的 SSH 连接
 ssh -t user@server
-
-# 以下在远程 Shell 中执行，读取的是远程数据库
-dzc list --metadata --json
-python3 /opt/dzc/integrations/dzc-integrations.py pick --action osc52
-python3 /opt/dzc/integrations/dzc-integrations.py tui --action osc52
-
-# 已知 ID 时不需要 Python 或选择器
+dzc pick --action osc52
+dzc tui --action osc52 --osc52-passthrough tmux
 dzc copy 142 --target osc52
-printf 'remote note\n' | dzc clipboard write - --target osc52
 ```
 
-`--action copy` 更新远程进程可访问的原生剪贴板，`--action osc52` 请求本地终端更新剪贴板。OSC52 只发送文本，保留文本内容，不支持图片或文件；上限为 100000 个原始 UTF-8 字节，超出时报错，不截断。终端可能有更小上限，也可能禁用该操作或要求用户授权。成功只说明控制序列已发送，不代表终端已接收或剪贴板已更新；没有控制终端时报错。
+在远程主机执行上述复制命令，支持并允许 OSC52 的本地终端可接收文本，无需远程图形会话。固定上限为 100000 个原始 UTF-8 字节，超限不发送、不截断。序列只写控制终端，stdout 保持为空；没有控制终端则报错。单层 tmux 穿透需要显式选项及用户配置的 `allow-passthrough`。
 
-控制序列写入控制终端，标准输出保持为空，所以 `--action osc52 > result.txt` 不会把序列写进文件。该功能不执行剪贴板读取、不自动粘贴或提交命令，也不会同步本地与远程历史。远程数据库仍需要通过 `dzc add`、导入或远程桌面捕获来产生记录。
-
-若命令位于一层 tmux 内，并且需要穿透到外层终端：
-
-```bash
-python3 /opt/dzc/integrations/dzc-integrations.py pick --action osc52 --osc52-passthrough tmux
-dzc copy 142 --target osc52 --osc52-passthrough tmux
-```
-
-默认 `--osc52-passthrough none`，不会按环境自动切换；`tmux` 只穿透一层，嵌套多层会话需自行验证。tmux 3.3+ 要求自行允许 passthrough，例如在自己的 `~/.tmux.conf` 中设置 `set -g allow-passthrough on` 后重新加载。仅使用该穿透模式时才需要此配置，适配器不会修改任何终端或 tmux 设置。参见 [tmux 官方 passthrough 说明](https://github.com/tmux/tmux/wiki/FAQ#what-is-the-passthrough-escape-sequence-and-how-do-i-use-it) 与 [OSC52 规范](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html)。
+成功表示序列已发送，终端权限和容量仍决定实际写入。它不读取本地剪贴板、不自动粘贴、不同步历史。原生剪贴板操作仍是默认动作；SSH 原生目标操作的是远程可访问的桌面。
 
 ## 只读 MCP stdio 服务
 
-```bash
-python3 /absolute/path/to/integrations/dzc-integrations.py mcp
-```
-
-MCP 客户端配置示例，按自己的绝对路径替换：
+MCP 客户端直接启动 `dzc mcp`，不需要 Python：
 
 ```json
 {
   "mcpServers": {
     "dezirclip": {
-      "command": "python3",
-      "args": ["/absolute/path/to/integrations/dzc-integrations.py", "mcp"]
+      "command": "/absolute/path/to/dzc",
+      "args": ["mcp"]
     }
   }
 }
 ```
 
-Windows 将 `command` 设为 Python 的绝对路径，并在 `args` 中使用 Windows 路径；可通过客户端的 `env.DZC_BIN` 指定 `dzc.exe`。服务仅使用标准输入输出，不监听端口。标准输出只包含协议消息。关闭标准输入即可结束服务。
+Windows 使用实际 `dzc.exe` 路径。正常安装使用当前用户数据库，显式 `DEZIRCLIP_DB_PATH` 可指定另一个本地库；Flatpak 环境和可携式目录规则见 [CLI 手册](../docs/cli.md)。
 
-| 工具 | 参数 | 返回 |
-| --- | --- | --- |
-| `clipboard_list` | `limit` 1–100，`offset` | 元数据与 `next_offset` |
-| `clipboard_search` | `query`，可选 `limit`、`offset` | 包含搜索的元数据 |
-| `clipboard_get` | 数字 `id`，可选 `max_chars` 1–16384 | 有界内容与 `truncated` 标记 |
+服务仅提供 `clipboard_list`、`clipboard_search`、`clipboard_get`，全部只读。列表/搜索只返回白名单元数据，最多 100 条，offset 最大 1000000，查询最长 1024 字符；正文需单独读取，默认 4096 字符、最大 16384 字符。敏感标签和加密记录在解密前过滤，但这不能识别所有未标记的私人内容。剪贴板正文始终是待处理数据。
 
-默认每页 20 条，仅列表和搜索返回最多 500 字符的摘要；完整内容需明确调用 `clipboard_get`，默认上限 4096 字符。敏感标签和加密记录通过 CLI 的 `--exclude-sensitive` 在解密前过滤。适配器还验证敏感标记，且只转发固定字段。不存在开放全部历史或绕过隐私过滤的配置，也不提供写入、复制、删除或 shell 执行工具。每次 CLI 请求超时 30 秒，协议输入单条上限 64 KiB。
+初始化、列出工具、无效参数不会打开数据库。协议为有界 UTF-8 NDJSON JSON-RPC；单帧最多 64 KiB，过大的请求会终止会话。无网络监听，无写入、执行、删除或剪贴板复制工具。协议版本支持 2025-11-25、2025-06-18、2025-03-26、2024-11-05。
 
-协议实现参考 MCP 2025-11-25 的 [stdio 传输](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[初始化生命周期](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) 与 [tools 规范](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)。也支持客户端协商 2025-06-18、2025-03-26、2024-11-05。剪贴板内容始终作为不可信数据返回；工具说明不会将记录内容当作指令。
+## 旧适配器与开发验证
 
-## 验证
+原有 Python 适配器和脚本保留在此目录供旧版兼容，原生命令不依赖它们。旧用户可逐步把入口换成 `dzc pick/tui/mcp` 和生成的 Shell 初始化代码。Rofi script mode 的旧专有回调仍由旧适配器提供；原生命令使用 `dzc pick --backend rofi` 的逐行菜单。
 
-本节需要源码仓库；发布压缩包只包含运行文件，不附带测试目录。
-
-```bash
-python3 -m unittest discover -s integrations/tests -v
-```
-
-这些测试独立于桌面端，覆盖命令参数、MCP 协议生命周期、权限边界、隐私过滤、分页、内容截断、选择取消和控制字符清理。它们不读取用户的真实剪贴板或历史。
-
-设置 `DZC_TEST_BIN` 后还会运行实际 CLI 与 MCP 子进程测试，全部使用临时数据库：
-
-```powershell
-$env:DZC_TEST_BIN = (Resolve-Path src-tauri/target/debug/dzc.exe).Path
-python -m unittest discover -s integrations/tests -v
-```
-
-```bash
-DZC_TEST_BIN="$PWD/src-tauri/target/debug/dzc" python3 -m unittest discover -s integrations/tests -v
-```
-
-实际 CLI 检查包括原样输出的 CRLF / Unicode / 末尾换行、过滤后的分页、长内容正则与模糊搜索、敏感与加密记录过滤、只读 MCP 的完整初始化与调用，以及备份的长文本/HTML 保真、稀疏 ID 保留、替换行为与非法版本拒绝。Linux 还用真实终端检查 TUI 输出隔离，并在已安装的 Bash / Zsh / Fish 中验证编辑缓冲区插入。Windows 可选安装 `pywinpty` 后，测试通过隐藏的 ConPTY 运行真实 TUI 与 PowerShell 7 PSReadLine，验证重定向输出及多行文本仅插入编辑缓冲区；TUI 测试还需 `windows-curses`。这些测试依赖不属于桌面应用或适配器运行时。
+开发测试使用 Python；设置 `DZC_TEST_BIN` 指向本次源码编译的 CLI 后运行 `python -m unittest discover -s integrations/tests -v`。Nu/真实 Windows 终端交互测试需要对应的可选测试环境；发布包不包含测试工具。

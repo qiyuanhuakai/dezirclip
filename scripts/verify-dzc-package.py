@@ -115,6 +115,55 @@ def verify(archive, expected_version=None):
 
         if run(["--version"]).decode().strip() != f"dzc {version}":
             raise ValueError("binary version does not match the archive version")
+
+        # Native entrypoints must run from the extracted binary without finding
+        # Python, an adapter checkout, or any other executable through PATH.
+        empty_path = base / "no-external-tools"
+        empty_path.mkdir()
+        native_environment = {key: value for key, value in environment.items()
+                              if key.casefold() != "path"}
+        native_environment["PATH"] = str(empty_path)
+        lazy_database = base / "native-handshake-must-not-open.db"
+        handshake_environment = dict(native_environment, DEZIRCLIP_DB_PATH=str(lazy_database))
+        for shell in ("bash", "zsh", "fish", "pwsh", "nu"):
+            script = run([shell], env=handshake_environment).decode("utf-8")
+            if not script.strip() or "__DZC_EXECUTABLE__" in script \
+                    or "dzc-integrations.py" in script or "DZC_PYTHON" in script:
+                raise ValueError(f"{shell} did not emit a self-contained native widget")
+
+        def mcp(requests, env):
+            frames = [
+                {"jsonrpc": "2.0", "id": "initialize", "method": "initialize", "params": {
+                    "protocolVersion": "2025-11-25", "capabilities": {},
+                    "clientInfo": {"name": "package-verifier", "version": "1"}}},
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                *requests,
+            ]
+            payload = b"\n".join(json.dumps(frame).encode("utf-8") for frame in frames) + b"\n"
+            response = [json.loads(line) for line in run(["mcp"], payload, env=env).splitlines()]
+            if len(response) != len(requests) + 1 or any(
+                    frame.get("jsonrpc") != "2.0" or "error" in frame or "result" not in frame
+                    for frame in response):
+                raise ValueError("native MCP did not emit valid request responses")
+            expected_ids = ["initialize", *(frame["id"] for frame in requests)]
+            if [frame.get("id") for frame in response] != expected_ids:
+                raise ValueError("native MCP returned unexpected response IDs")
+            if response[0]["result"].get("serverInfo", {}).get("version") != version:
+                raise ValueError("native MCP server version does not match the archive")
+            return [frame["result"] for frame in response[1:]]
+
+        result = mcp([{"jsonrpc": "2.0", "id": "tools", "method": "tools/list"}],
+                     handshake_environment)[0]
+        tools = result.get("tools", [])
+        if {tool.get("name") for tool in tools} != {"clipboard_list", "clipboard_search", "clipboard_get"} \
+                or len(tools) != 3 or any(
+                    tool.get("annotations", {}).get("readOnlyHint") is not True
+                    or tool.get("inputSchema", {}).get("additionalProperties") is not False
+                    for tool in tools):
+            raise ValueError("native MCP did not expose exactly three read-only tools")
+        if lazy_database.exists():
+            raise ValueError("Shell generation or MCP handshake unexpectedly opened history")
+
         if json.loads(run(["count", "--json"])) != {"count": 0}:
             raise ValueError("isolated package verification must start with an empty history")
         marker = f"  package-{uuid.uuid4().hex} 你好\r\nsecond line\r\n".encode("utf-8")
@@ -138,6 +187,20 @@ def verify(archive, expected_version=None):
                 raise ValueError("history did not persist the edited content, ID, pin and tag")
 
         assert_entry(rows)
+        calls = [
+            {"jsonrpc": "2.0", "id": "list", "method": "tools/call", "params": {
+                "name": "clipboard_list", "arguments": {"limit": 1}}},
+            {"jsonrpc": "2.0", "id": "get", "method": "tools/call", "params": {
+                "name": "clipboard_get", "arguments": {"id": int(entry_id), "max_chars": 16384}}},
+        ]
+        results = mcp(calls, native_environment)
+        if any(result.get("isError") is not False for result in results):
+            raise ValueError("native MCP could not query persisted history without external tools")
+        metadata = json.loads(results[0]["content"][0]["text"])["entries"]
+        content = json.loads(results[1]["content"][0]["text"])
+        if len(metadata) != 1 or metadata[0].get("id") != int(entry_id) or "content" in metadata[0] \
+                or content.get("content") != edited.decode("utf-8") or content.get("truncated") is not False:
+            raise ValueError("native MCP lost persisted content or leaked payload into metadata")
         backup = base / "backup.json"
         run(["export", str(backup), "--quiet"])
         imported_environment = dict(environment, DEZIRCLIP_DB_PATH=str(base / "imported.db"))

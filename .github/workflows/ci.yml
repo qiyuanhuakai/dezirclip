@@ -151,6 +151,17 @@ jobs:
         working-directory: src-tauri
         run: cargo build --release --bin dzc ${{ matrix.cargo_args }}
 
+      - name: Check backend without replacing the standalone binary
+        shell: bash
+        run: |
+          binary="$GITHUB_WORKSPACE/src-tauri/target"
+          if [[ -n '${{ matrix.rust_target }}' ]]; then binary="$binary/${{ matrix.rust_target }}"; fi
+          binary="$binary/release/dzc"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then binary="${binary}.exe"; fi
+          before="$(sha256sum "$binary")"
+          cargo check --manifest-path src-tauri/Cargo.toml --release --lib --bin dzc ${{ matrix.cargo_args }}
+          test "$before" = "$(sha256sum "$binary")"
+
       - name: Package standalone dzc
         id: dzc-package
         shell: bash
