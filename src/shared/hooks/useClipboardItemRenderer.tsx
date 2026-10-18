@@ -77,9 +77,7 @@ export const useClipboardItemRenderer = ({
     (item: ClipboardEntry, index: number, dragControls?: DragControls, disableLayout?: boolean) => {
       const isSensitiveHidden =
         privacyProtection &&
-        (item.tags?.includes("sensitive") ||
-          item.tags?.includes("密码") ||
-          item.tags?.includes("password")) &&
+        item.tags?.some(tag => ["sensitive", "密码", "password"].includes(tag.toLowerCase())) &&
         !revealedIds.has(item.id);
       const isEditingTags = editingTagsId === item.id;
 

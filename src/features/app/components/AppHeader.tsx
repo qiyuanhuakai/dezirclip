@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useId, useRef } from "react";
 import type { RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -13,8 +13,10 @@ import {
   X
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { getTagColor } from "../../../shared/lib/utils";
+import type { TagFilterPickerHandle } from "../../tag/components/TagFilterPicker";
 import { getClipboardTypeName } from "../../../shared/lib/clipboardTypeName";
+
+const TagFilterPicker = lazy(() => import("../../tag/components/TagFilterPicker"));
 
 interface AppHeaderProps {
   t: (key: string) => string;
@@ -37,6 +39,7 @@ interface AppHeaderProps {
   showTagFilter: boolean;
   setShowTagFilter: (val: boolean) => void;
   allTags: string[];
+  tagColors?: Record<string, string>;
   searchIsFocused: boolean;
   setSearchIsFocused: (val: boolean) => void;
   setEditingTagsId: (val: number | null) => void;
@@ -66,6 +69,7 @@ const AppHeader = ({
   showTagFilter,
   setShowTagFilter,
   allTags,
+  tagColors = {},
   searchIsFocused,
   setSearchIsFocused,
   setEditingTagsId,
@@ -86,6 +90,11 @@ const AppHeader = ({
     if (!panelOnTop) visibleBeforePanel.current = searchBoxVisible;
   }, [searchBoxVisible, panelOnTop]);
   const revealSearchBox = searchBoxVisible && !visibleBeforePanel.current;
+  const tagFilter = useRef<TagFilterPickerHandle>(null);
+  const tagFilterId = useId();
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tagFilterVisible = showTagFilter && searchIsFocused;
+  useEffect(() => () => { if (blurTimer.current !== null) clearTimeout(blurTimer.current); }, []);
 
   return (
   <header data-tauri-drag-region>
@@ -172,9 +181,21 @@ const AppHeader = ({
                 <input
                   ref={searchInputRef}
                   type="text"
-                  className={`search-input ${showTagFilter && allTags.length > 0 ? 'dropdown-open' : ''}`}
+                  className={`search-input ${tagFilterVisible ? 'dropdown-open' : ''}`}
                   placeholder={t('search_placeholder')}
+                  aria-label={t('search_placeholder')}
                   value={search}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={tagFilterVisible}
+                  aria-controls={tagFilterVisible ? tagFilterId : undefined}
+                  onKeyDown={event => {
+                    if (tagFilter.current) tagFilter.current.handleInputKeyDown(event);
+                    else if (!event.nativeEvent.isComposing && tagFilterVisible && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) {
+                      event.preventDefault(); event.stopPropagation();
+                      if (event.key === 'Escape') setShowTagFilter(false);
+                    }
+                  }}
                   onCompositionStart={() => setIsComposing(true)}
                   onCompositionEnd={(e) => {
                     setIsComposing(false);
@@ -188,40 +209,31 @@ const AppHeader = ({
                   }}
                   onClick={() => { setShowTagFilter(true); setEditingTagsId(null); }}
                   onFocus={() => {
+                    if (blurTimer.current !== null) clearTimeout(blurTimer.current);
                     invoke("activate_window_focus").catch(console.error);
                     setShowTagFilter(true);
                     setSearchIsFocused(true);
                     setEditingTagsId(null);
                   }}
                   onBlur={() => {
-                    setTimeout(() => {
+                    blurTimer.current = setTimeout(() => {
+                      blurTimer.current = null;
+                      if (document.activeElement?.closest('.dc-tag-filter-picker')) return;
                       setShowTagFilter(false);
                       setSearchIsFocused(false);
                     }, 200);
                   }}
                   style={{ color: 'var(--search-input-text, var(--text-primary))' }}
                 />
-                {showTagFilter && searchIsFocused && allTags.length > 0 && (
-                  <div className="tags-dropdown">
-                    <div className="tags-label">{t('tags') || "Tags"}</div>
-                    <div className="tags-list">
-                      {allTags.map(tag => (
-                        <span
-                          className="tag-chip"
-                          key={tag}
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            setSearch("tag:" + tag);
-                            setShowTagFilter(false);
-                          }}
-                          data-tag={tag}
-                          style={{ background: getTagColor(tag, theme) }}
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                {tagFilterVisible && (
+                  <Suspense fallback={<div className="dc-tag-filter-picker" id={tagFilterId} role="listbox" aria-label={t('tags')}><div className="dc-tag-filter-empty">{t('common_loading')}</div></div>}>
+                    <TagFilterPicker ref={tagFilter} id={tagFilterId} tags={allTags} colors={tagColors} query={search} theme={theme}
+                      inputRef={searchInputRef} t={t} onClose={() => {
+                        setShowTagFilter(false);
+                        if (document.activeElement !== searchInputRef.current) setSearchIsFocused(false);
+                      }}
+                      onSelect={tag => { setSearch("tag:" + tag); setShowTagFilter(false); }} />
+                  </Suspense>
                 )}
               </div>
               <div
@@ -250,7 +262,7 @@ const AppHeader = ({
                       width: 'auto',
                       padding: '4px 8px',
                       fontSize: '11px',
-                      borderRadius: '4px',
+                      borderRadius: 'var(--icon-btn-radius, 4px)',
                       whiteSpace: 'nowrap',
                       flexShrink: 0,
                       opacity: typeFilter === type ? 1 : 0.7

@@ -132,6 +132,7 @@ pub fn set_theme(
     color_mode: Option<String>,
     show_app_border: Option<bool>,
 ) -> AppResult<()> {
+    let effective_base_theme = super::theme_cmd::effective_base_theme(&db_state, &theme);
     let mut effective_color_mode = color_mode.clone();
     if effective_color_mode
         .as_deref()
@@ -223,7 +224,7 @@ pub fn set_theme(
         }
 
         let build = windows_version::OsVersion::current().build;
-        let plan = windows_theme_plan(&theme, build, show_border);
+        let plan = windows_theme_plan(&effective_base_theme, build, show_border);
 
         if plan.clear_native_backdrop {
             clear_windows_backdrop(&window);
@@ -258,12 +259,12 @@ pub fn set_theme(
     #[cfg(not(target_os = "windows"))]
     {
         let _ = window_vibrancy::clear_vibrancy(&window);
-        let material = match theme.as_str() {
+        let material = match effective_base_theme.as_str() {
             "mica" => window_vibrancy::NSVisualEffectMaterial::HudWindow,
             "acrylic" => window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
             _ => window_vibrancy::NSVisualEffectMaterial::HudWindow,
         };
-        if theme == "mica" || theme == "acrylic" {
+        if effective_base_theme == "mica" || effective_base_theme == "acrylic" {
             let _ = window_vibrancy::apply_vibrancy(&window, material, None, None);
         }
     }
@@ -272,7 +273,12 @@ pub fn set_theme(
         "theme-changed",
         ThemeChangedPayload {
             theme,
-            color_mode: resolved_color_mode.to_string(),
+            color_mode: match effective_color_mode.as_deref() {
+                Some("light") => "light",
+                Some("dark") => "dark",
+                _ => "system",
+            }
+            .to_string(),
         },
     );
 

@@ -80,6 +80,8 @@ enum Commands {
     Tui(BrowseCliArgs),
     /// Serve bounded, read-only local history tools over MCP stdio.
     Mcp,
+    /// Validate an importable local CSS theme without opening history or applying it.
+    Theme(ThemeCliArgs),
     /// Print Bash Ctrl-G integration for loading with eval.
     Bash,
     /// Print Zsh Ctrl-G integration for loading with eval.
@@ -148,6 +150,49 @@ struct ShellInstallArgs {
     /// Write to this .nu file; an existing different file is left unchanged.
     #[arg(long, value_name = "PATH")]
     install: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ThemeCliArgs {
+    #[command(subcommand)]
+    command: ThemeCommand,
+}
+
+#[derive(Subcommand)]
+enum ThemeCommand {
+    /// Check the package and reject CSS that references external resources.
+    Validate {
+        path: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+fn run_theme(args: ThemeCliArgs) -> Result<(), String> {
+    use dezirclip::domain::theme::{ThemePackage, MAX_THEME_BYTES};
+    use std::io::Read;
+    match args.command {
+        ThemeCommand::Validate { path, json } => {
+            let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+            if !file.metadata().map_err(|error| error.to_string())?.is_file() {
+                return Err("theme source must be a regular JSON file".into());
+            }
+            let mut bytes = Vec::new();
+            file.take(MAX_THEME_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            let theme = ThemePackage::parse(&bytes)?;
+            if json {
+                println!("{}", serde_json::json!({
+                    "valid": true, "id": theme.id, "name": theme.name,
+                    "base": theme.base, "bytes": bytes.len()
+                }));
+            } else {
+                println!("Valid DezirClip CSS theme: {}", theme.id);
+            }
+            Ok(())
+        }
+    }
 }
 
 #[derive(Args)]
@@ -568,6 +613,7 @@ fn main() {
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
         Commands::Mcp => return cli::mcp::serve(|| open_repos().map(|(repo, _)| repo)),
+        Commands::Theme(args) => return run_theme(args),
         Commands::Bash => return cli::shell::run(cli::shell::Shell::Bash, None),
         Commands::Zsh => return cli::shell::run(cli::shell::Shell::Zsh, None),
         Commands::Fish => return cli::shell::run(cli::shell::Shell::Fish, None),
@@ -604,6 +650,7 @@ fn run(args: Cli) -> Result<(), String> {
             finish_selection(selected, &options, clip_repo.as_ref())
         }
         Commands::Mcp
+        | Commands::Theme(_)
         | Commands::Bash
         | Commands::Zsh
         | Commands::Fish

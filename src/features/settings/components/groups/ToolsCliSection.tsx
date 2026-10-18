@@ -111,7 +111,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
     return (
         <>
             <div className="setting-item">
-                <LabelWithHint label={t("dzc_cli")} hint={t("dzc_cli")} hintKey="dzc_cli" />
+                <LabelWithHint label={t("dzc_cli")} hintKey="dzc_cli" />
             </div>
             {cliInfo?.cli_path && (
                 <div className="setting-item setting-item--detail">
@@ -131,9 +131,6 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
             </div>
             {cliInfo?.cli_path_conflict && (
                 <>
-                    <div className="setting-item setting-item--detail tools-note-item">
-                        <span className="tools-note" role="status">{t("cli_path_other_copy_hint")}</span>
-                    </div>
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("cli_path_active_path")}</span></div>
                         <span className="tools-path-text" title={cliInfo.path_cli_path ?? undefined}>{cliInfo.path_cli_path}</span>
@@ -152,8 +149,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                 </div>
             )}
             <div className="setting-item column tools-skill-card">
-                <LabelWithHint label={t("agent_skill")} hint={t("agent_skill")} hintKey="agent_skill" />
-                <div className="tools-skill-method">{t("skill_acquire_method")}</div>
+                <LabelWithHint label={t("agent_skill")} hintKey="agent_skill" />
                 <button type="button" className="tools-skill-command tools-skill-command--button" onClick={handleOpenInstallFolder} title={t("open_install_folder")}>
                     <FolderOpen size={14} />
                     <span>{t("open_install_folder")}</span>
@@ -166,7 +162,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                 </div>
             )}
             <div className="setting-item">
-                <LabelWithHint label={t("build_info")} hint={t("build_info")} hintKey="build_info" />
+                <LabelWithHint label={t("build_info")} hintKey="build_info" />
             </div>
             {[["app_version", appVersion || "-"], ["platform_label", platformKey ? t(platformKey) : "-"], ["build_date", buildDate || "-"]].map(([labelKey, value]) => (
                 <div key={labelKey} className="setting-item setting-item--detail">

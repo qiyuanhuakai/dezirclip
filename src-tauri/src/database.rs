@@ -393,6 +393,8 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
         [],
     );
 
+    crate::infrastructure::repository::sensitive_tags::ensure_tags_if_protected(conn)?;
+
     Ok(())
 }
 

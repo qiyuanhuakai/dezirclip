@@ -156,7 +156,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('edge_docking')}
-                        hint={t('edge_docking_hint')}
                         hintKey="edge_docking"
                     />
                     <label className="switch">
@@ -196,7 +195,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('disable_webview_gpu')}
-                        hint={t('disable_webview_gpu_hint')}
                         hintKey="disable_webview_gpu"
                     />
                     <label className="switch">
@@ -217,7 +215,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('idle_destroy_enabled')}
-                        hint={t('idle_destroy_enabled_hint')}
                         hintKey="idle_destroy_enabled"
                     />
                     <label className="switch">
@@ -238,7 +235,6 @@ const GeneralSettingsGroup = ({
                     <div className="setting-item setting-item--detail">
                         <LabelWithHint
                             label={t('idle_destroy_seconds')}
-                            hint={t('idle_destroy_seconds_hint')}
                             hintKey="idle_destroy_seconds"
                         />
                         <input
@@ -331,7 +327,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('silent_start')}
-                        hint={t('silent_start_hint')}
                         hintKey="silent_start"
                     />
                     <label className="switch">
@@ -351,7 +346,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('show_search_box')}
-                        hint={t('show_search_box_hint')}
                         hintKey="show_search_box"
                     />
                     <label className="switch">
@@ -371,7 +365,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('scroll_top_button')}
-                        hint={t('scroll_top_button_hint')}
                         hintKey="scroll_top_button"
                     />
                     <label className="switch">
@@ -391,7 +384,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('emoji_panel_enabled') || '表情包开关'}
-                        hint={t('emoji_panel_enabled_hint') || '关闭后隐藏表情包入口'}
                         hintKey="emoji_panel_enabled"
                     />
                     <label className="switch">
@@ -411,7 +403,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('tag_manager_enabled') || '标签管理页开关'}
-                        hint={t('tag_manager_enabled_hint') || '关闭后隐藏标签管理入口'}
                         hintKey="tag_manager_enabled"
                     />
                     <label className="switch">
@@ -431,7 +422,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('arrow_key_selection')}
-                        hint={t('arrow_key_selection_hint')}
                         hintKey="arrow_key_selection"
                     />
                     <label className="switch">
@@ -453,7 +443,6 @@ const GeneralSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('restart_as_admin') || "Restart as Admin"}
-                        hint={t('restart_as_admin_hint') || "Restart with administrator privileges to paste into admin terminals"}
                         hintKey="restart_as_admin"
                     />
                     <button

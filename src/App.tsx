@@ -745,6 +745,7 @@ const App = () => {
     showTagFilter,
     setShowTagFilter,
     allTags,
+    tagColors,
     searchIsFocused,
     setSearchIsFocused,
     setEditingTagsId,
@@ -756,6 +757,15 @@ const App = () => {
   const appMainContentProps = {
     t,
     theme,
+    language,
+    isWindowPinned,
+    privacyProtection,
+    tagColors,
+    richTextSnapshotPreview,
+    onCompactModeChange: (value: boolean) => {
+      setCompactMode(value);
+      saveAppSetting("compact_mode", String(value));
+    },
     showSettings,
     showTagManager: effectiveShowTagManager,
     tagManagerEnabled,

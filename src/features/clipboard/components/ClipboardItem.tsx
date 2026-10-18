@@ -22,10 +22,12 @@ import {
     Files,
     ImageOff,
     FileQuestion,
-    GripVertical
+    GripVertical,
+    Edit2
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { ClipboardItemProps } from "../types";
+import type { ClipboardEntry } from "../../../shared/types";
 import { getConciseTime, getTagColor } from "../../../shared/lib/utils";
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
@@ -715,6 +717,8 @@ const ClipboardItem = ({
     onTransformItem,
     onTransformItemError,
     onTransformItemSuccess,
+    loadFullItem,
+    onEdit,
 }: ClipboardItemProps & {
     compactMode?: boolean;
     className?: string;
@@ -722,8 +726,12 @@ const ClipboardItem = ({
     onTransformItem?: (kind: string) => void;
     onTransformItemError?: (kind: string, message: string) => void;
     onTransformItemSuccess?: (kind: string) => void;
+    loadFullItem?: () => Promise<ClipboardEntry>;
+    onEdit?: () => void;
 }) => {
     const tagInputRef = useRef<HTMLInputElement>(null);
+    const hiddenRef = useRef(isSensitiveHidden);
+    hiddenRef.current = isSensitiveHidden;
     const [localTagInput, setLocalTagInput] = useState(tagInput);
     const [snapshotFailed, setSnapshotFailed] = useState(false);
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
@@ -856,6 +864,17 @@ const ClipboardItem = ({
     };
 
     const showCompactPreview = async (anchor: CompactPreviewAnchor) => {
+        if (hiddenRef.current) return;
+        let previewItem = item;
+        if (loadFullItem) {
+            try {
+                previewItem = await loadFullItem();
+                if (!hoverAnchorRef.current || hiddenRef.current) return;
+            } catch (error) {
+                console.error("Failed to load compact preview content:", error);
+                return;
+            }
+        }
         compactPreviewLog("show preview requested", {
             itemId: item.id,
             contentType: item.content_type,
@@ -876,6 +895,7 @@ const ClipboardItem = ({
         }
 
         try {
+            if (hiddenRef.current) return;
             const rootStyle = getComputedStyle(document.documentElement);
             const clipboardItemFontSizeRaw = parseInt(
                 rootStyle.getPropertyValue("--clipboard-item-font-size")
@@ -900,9 +920,9 @@ const ClipboardItem = ({
             });
             await previewWindow.emit("compact-preview-update", {
                 contentType: item.content_type,
-                content: item.content,
-                preview: item.preview,
-                htmlContent: item.html_content,
+                content: previewItem.content,
+                preview: previewItem.preview,
+                htmlContent: previewItem.html_content,
                 sourceApp: item.source_app,
                 timestamp: item.timestamp,
                 language,
@@ -939,14 +959,15 @@ const ClipboardItem = ({
                 previewWindow = await ensureCompactPreviewWindow();
                 if (!previewWindow) return;
                 try {
+                    if (hiddenRef.current) return;
                     compactPreviewPendingShow = true;
                     compactPreviewPendingAnchor = anchor;
                     compactPreviewLog("emit compact-preview-update after recreate");
                     await previewWindow.emit("compact-preview-update", {
                         contentType: item.content_type,
-                        content: item.content,
-                        preview: item.preview,
-                        htmlContent: item.html_content,
+                        content: previewItem.content,
+                        preview: previewItem.preview,
+                        htmlContent: previewItem.html_content,
                         sourceApp: item.source_app,
                         timestamp: item.timestamp,
                         language,
@@ -1029,10 +1050,10 @@ const ClipboardItem = ({
     }, [isEditingTags]);
 
     useEffect(() => {
-        if (!compactMode) {
+        if (!compactMode || isSensitiveHidden) {
             hideCompactPreview();
         }
-    }, [compactMode]);
+    }, [compactMode, isSensitiveHidden]);
 
     useEffect(() => {
         return () => {
@@ -1124,7 +1145,7 @@ const ClipboardItem = ({
                 });
         };
         onTransformItem?.(kind);
-        invoke<string>("transform_text", { text: item.content, kind })
+        const transform = (entry: ClipboardEntry) => invoke<string>("transform_text", { text: entry.content, kind })
             .then((result) => {
                 if (result) {
                     proceed(result);
@@ -1136,7 +1157,14 @@ const ClipboardItem = ({
                 const msg = err instanceof Error ? err.message : String(err);
                 onTransformItemError?.(kind, msg);
             });
-    }, [item.content, onTransformItem, onTransformItemError, onTransformItemSuccess]);
+        if (loadFullItem) {
+            void loadFullItem().then(transform).catch((error: unknown) => {
+                onTransformItemError?.(kind, error instanceof Error ? error.message : String(error));
+            });
+        } else {
+            void transform(item);
+        }
+    }, [item, loadFullItem, onTransformItem, onTransformItemError, onTransformItemSuccess]);
 
     const handleImageBase64Copy = useCallback(async () => {
         if (item.content_type !== "image") return;
@@ -1185,18 +1213,19 @@ const ClipboardItem = ({
         }
         shareInFlightRef.current = true;
         try {
+            const content = loadFullItem ? (await loadFullItem()).content : item.content;
             if (navigator.share) {
-                await navigator.share({ text: item.content });
+                await navigator.share({ text: content });
                 return;
             }
-            await navigator.clipboard.writeText(item.content);
+            await navigator.clipboard.writeText(content);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             onTransformItemError?.("share", msg);
         } finally {
             shareInFlightRef.current = false;
         }
-    }, [item.content, onTransformItemError, t]);
+    }, [item.content, loadFullItem, onTransformItemError, t]);
 
     const handleContextMenuAction = useCallback((action: string) => {
         switch (action) {
@@ -1262,6 +1291,14 @@ const ClipboardItem = ({
         }
 
         const paths = item.content.split('\n').filter(p => p.trim());
+        if (paths.length === 0) {
+            return (
+                <div className="file-thumbnail-card">
+                    <div className="file-icon-wrapper"><File size={24} /></div>
+                    <div className="file-info-wrapper"><div className="file-name">{item.preview}</div></div>
+                </div>
+            );
+        }
         if (paths.length > 1) {
             return (
                 <div className="file-thumbnail-card" title={item.content}>
@@ -1372,7 +1409,7 @@ const ClipboardItem = ({
                     });
             }}
             onMouseEnter={(e) => {
-                if (!compactMode) return;
+                if (!compactMode || isSensitiveHidden) return;
                 if (contextMenuState) return;
                 compactPreviewLog("mouseenter schedule preview", { itemId: item.id });
                 const target = e.currentTarget;
@@ -1462,7 +1499,13 @@ const ClipboardItem = ({
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div className="item-actions">
-                        {(item.tags?.includes('sensitive') || item.tags?.includes('密码') || item.tags?.includes('password')) && (
+                        {onEdit && (item.content_type === "text" || item.content_type === "code") && (
+                            <button className="btn-icon" title={t('common_edit')} onClick={(event) => {
+                                event.stopPropagation();
+                                onEdit();
+                            }}><Edit2 size={12} /></button>
+                        )}
+                        {item.tags?.some(tag => ['sensitive', '密码', 'password'].includes(tag.toLowerCase())) && (
                             <button
                                 className={`btn-icon ${isRevealed ? "active" : ""}`}
                                 onClick={onToggleReveal}
@@ -1543,7 +1586,7 @@ const ClipboardItem = ({
                                 <ImageOff size={24} style={{ marginBottom: '8px', opacity: 0.5 }} />
                                 <span>{t('image_deleted') || 'Image Deleted'}</span>
                             </div>
-                        ) : (
+                        ) : item.content ? (
                             <img
                                 src={
                                     item.content.startsWith("data:")
@@ -1563,7 +1606,7 @@ const ClipboardItem = ({
                                     e.currentTarget.parentElement?.classList.add('image-load-error');
                                 }}
                             />
-                        )}
+                        ) : <div className="image-preview" aria-label={t('common_loading')}><File size={24} /></div>}
                         {isSensitiveHidden && (
                             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 'bold', opacity: 0.5, fontSize: '10px' }}>
                                 SENSITIVE
@@ -1573,7 +1616,7 @@ const ClipboardItem = ({
                 ) : item.content_type === "video" ? (
                     <div className="video-thumbnail-card">
                         <div className="video-thumbnail-wrapper">
-                            <video
+                            {item.content && <video
                                 src={item.content.startsWith("data:")
                                     ? item.content
                                     : (toTauriLocalImageSrc(item.content) || item.content)}
@@ -1582,7 +1625,7 @@ const ClipboardItem = ({
                                 playsInline
                                 className="video-thumbnail-element"
                                 onLoadedMetadata={(e) => seekVideoPreviewFrame(e.currentTarget)}
-                            />
+                            />}
                             <div className="video-play-overlay">
                                 <Video size={16} />
                             </div>
@@ -1665,9 +1708,9 @@ const ClipboardItem = ({
                                 <span style={{ letterSpacing: '1px' }}>
                                     {item.preview.substring(0, 3)}...
                                 </span>
-                                <span style={{ fontSize: '10px', opacity: 0.7 }}>
+                                {!loadFullItem && <span style={{ fontSize: '10px', opacity: 0.7 }}>
                                     ({item.content.length} {t('chars') || 'chars'})
-                                </span>
+                                </span>}
                             </div>
                         )
                         : item.preview
@@ -1839,6 +1882,8 @@ const ClipboardItem = ({
                     onSelect={() => setContextMenuState(null)}
                     onClose={() => setContextMenuState(null)}
                     onCopy={(withFormat) => onCopy(!!withFormat, false)}
+                    onEdit={onEdit}
+                    editLabel={t('common_edit')}
                     onEditTags={() => handleContextMenuAction("editTags")}
                     onQRCode={() => handleContextMenuAction("qrCode")}
                     onDelete={() => handleContextMenuAction("delete")}

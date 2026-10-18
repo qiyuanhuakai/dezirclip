@@ -68,8 +68,8 @@
 }
 
 .queue-bar .start-btn {
-  background: var(--accent-color);
-  color: #fff !important;
+  background: var(--icon-btn-current-bg, var(--accent-color));
+  color: var(--icon-btn-current-color, #fff) !important;
   font-size: 11px;
   padding: 6px 12px !important;
   height: 28px !important;
@@ -77,33 +77,33 @@
   text-transform: uppercase;
   font-style: italic;
   font-weight: 900;
-  border: 2px solid var(--border-dark) !important;
-  box-shadow: 2px 2px 0 var(--border-dark) !important;
+  border: var(--icon-btn-current-border, var(--icon-btn-border, 2px solid var(--border-dark))) !important;
+  box-shadow: var(--icon-btn-current-shadow, 2px 2px 0 var(--border-dark)) !important;
   cursor: pointer;
 }
 
 .queue-bar .close-btn {
-  background: #ff4d4f;
-  color: #fff !important;
+  background: var(--icon-btn-current-bg, #ff4d4f);
+  color: var(--icon-btn-current-color, #fff) !important;
   width: 28px !important;
   height: 28px !important;
   padding: 0 !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid var(--border-dark) !important;
-  box-shadow: 2px 2px 0 var(--border-dark) !important;
+  border: var(--icon-btn-current-border, var(--icon-btn-border, 2px solid var(--border-dark))) !important;
+  box-shadow: var(--icon-btn-current-shadow, 2px 2px 0 var(--border-dark)) !important;
   cursor: pointer;
 }
 
 .queue-bar .btn-icon:hover {
-  transform: translate(-1px, -1px);
-  box-shadow: 3px 3px 0 var(--border-dark) !important;
+  transform: var(--icon-btn-hover-transform, translate(-1px, -1px));
+  box-shadow: var(--icon-btn-queue-hover-shadow, 3px 3px 0 var(--border-dark)) !important;
 }
 
 .queue-bar .btn-icon:active {
-  transform: translate(1px, 1px);
-  box-shadow: none !important;
+  transform: var(--icon-btn-active-transform, translate(1px, 1px));
+  box-shadow: var(--icon-btn-queue-pressed-shadow, none) !important;
 }
 
 @keyframes slideUpBar {

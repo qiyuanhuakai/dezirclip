@@ -52,6 +52,7 @@ dzc --help
 | `pick` | 内置 TUI 选择，或调用可选的外部选择器 | `--backend fzf\|dmenu\|rofi`、`--query`、`--kind`、`--limit`、`--offset`、`--action`、`--osc52-passthrough` |
 | `tui` | 终端浏览、预览、标签、置顶和删除 | `--query`、`--kind`、`--limit`、`--offset`、`--action`、`--osc52-passthrough` |
 | `mcp` | 标准输入/输出上的只读 MCP 服务 | 无 |
+| `theme validate <FILE>` | 校验完整 CSS 主题包，不打开历史数据库、不导入或应用 | `--json`；见[主题指南](./THEMES.md) |
 | `bash` / `zsh` / `fish` / `pwsh` | 输出当前 CLI 对应的 Ctrl-G Shell 集成脚本 | 无；`powershell` 是 `pwsh` 别名 |
 | `nu` | 输出 Nushell 集成，或写入指定文件 | `--install <PATH>`；`nushell` 是别名 |
 | `add <CONTENT>` | 添加历史；内容支持文本、`-`、`@文件` | `--type` |

@@ -279,6 +279,9 @@ pub fn save_setting(
 ) -> AppResult<()> {
     persist_setting_with_legacy(&db_state, &key, &value)?;
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
+    if key == "app.privacy_protection" {
+        let _ = app_handle.emit("clipboard-changed", ());
+    }
     if is_appearance_override_key(&key) {
         let _ = app_handle.emit("appearance-changed", key);
     }
@@ -387,12 +390,15 @@ pub fn set_delete_after_paste(
 
 #[tauri::command]
 pub fn set_privacy_protection(
+    app: AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
     db_state: State<'_, DbState>,
     enabled: bool,
 ) -> AppResult<()> {
+    save_bool_setting(&db_state, "app.privacy_protection", enabled)?;
     state.privacy_protection.store(enabled, Ordering::Relaxed);
-    save_bool_setting(&db_state, "app.privacy_protection", enabled)
+    let _ = app.emit("clipboard-changed", ());
+    Ok(())
 }
 
 #[tauri::command]

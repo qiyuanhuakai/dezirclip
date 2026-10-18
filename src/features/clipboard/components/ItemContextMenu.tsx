@@ -17,6 +17,8 @@ export interface ItemContextMenuProps {
   onSelect: (key: string) => void;
   onClose: () => void;
   onCopy?: (withFormat?: boolean) => void;
+  onEdit?: () => void;
+  editLabel?: string;
   onEditTags?: () => void;
   onQRCode?: () => void;
   onDelete?: () => void;
@@ -82,6 +84,8 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       onSelect,
       onClose,
       onCopy,
+      onEdit,
+      editLabel = "编辑内容",
       onEditTags,
       onQRCode,
       onDelete,
@@ -128,6 +132,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         { key: "copy", label: "复制" },
         { key: "editTags", label: "编辑标签" },
       ];
+      if (onEdit && (ct === "text" || ct === "code")) {
+        items.splice(1, 0, { key: "editContent", label: editLabel });
+      }
       if (isRichText) {
         items.push({ key: "pasteRichText", label: "以富文本格式粘贴" });
       }
@@ -148,7 +155,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
       return items;
-    }, [entry?.is_pinned, entry?.content_type, ocrRunning, ocrText]);
+    }, [entry?.is_pinned, entry?.content_type, ocrRunning, ocrText, onEdit, editLabel]);
 
 	    const totalItems = menuItems.length;
 	    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
@@ -169,6 +176,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
             break;
           case "editTags":
             onEditTags?.();
+            break;
+          case "editContent":
+            onEdit?.();
             break;
           case "qrCode":
             onQRCode?.();
@@ -196,7 +206,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
           onClose();
         }
       },
-      [onCopy, onEditTags, onQRCode, onDelete, onPin, onShare, onImageBase64, onOcr, onPasteOcr, onClose]
+      [onCopy, onEdit, onEditTags, onQRCode, onDelete, onPin, onShare, onImageBase64, onOcr, onPasteOcr, onClose]
     );
 
     const handleTransformSelect = useCallback(
@@ -295,6 +305,13 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       return () => el.removeEventListener("keydown", handleKeyDown);
     }, [handleKeyDown, resolvedRef]);
 
+    useEffect(() => {
+      if (!onEdit || submenuOpen) return;
+      const el = typeof resolvedRef === "object" ? resolvedRef.current : null;
+      el?.querySelector<HTMLElement>(`[data-test-context-menu-item]:nth-child(${activeIndex + 1})`)
+        ?.scrollIntoView?.({ block: "nearest" });
+    }, [activeIndex, onEdit, resolvedRef, submenuOpen]);
+
 return createPortal(
 	      <>
 	        <div
@@ -307,6 +324,7 @@ return createPortal(
 	            left: pos.left,
 	            top: pos.top,
 	            width: MENU_WIDTH,
+                maxHeight: onEdit ? "calc(100vh - 16px)" : undefined,
 	          }}
 	        >
 	          {menuItems.map((item, index) => (

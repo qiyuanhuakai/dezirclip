@@ -213,10 +213,10 @@
     height: var(--compact-btn-size) !important;
     padding: 3px !important;
     border-radius: var(--compact-btn-radius);
-    background: var(--compact-btn-bg);
+    background: var(--icon-btn-bg, var(--compact-btn-bg));
     color: var(--compact-btn-color);
     border: var(--compact-btn-border);
-    box-shadow: var(--compact-btn-shadow) !important;
+    box-shadow: var(--icon-btn-shadow, var(--compact-btn-shadow)) !important;
     backdrop-filter: var(--compact-btn-backdrop);
     -webkit-backdrop-filter: var(--compact-btn-backdrop);
     transition: all 0.2s ease;
@@ -265,7 +265,7 @@ html.theme-acrylic .history-item.compact .item-actions .btn-icon:hover {
 /* Active/Selected State - Glass style */
 .history-item.compact .item-actions .btn-icon.active {
     color: var(--compact-btn-active-color);
-    background: var(--compact-btn-active-bg);
+    background: var(--icon-btn-bg, var(--compact-btn-active-bg));
     border: var(--compact-btn-active-border);
     box-shadow: var(--compact-btn-active-shadow) !important;
     backdrop-filter: var(--compact-btn-backdrop);

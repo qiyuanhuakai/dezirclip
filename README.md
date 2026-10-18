@@ -47,13 +47,21 @@ dzc --version
 
 - 本地 SQLite 历史，支持文本、富文本、图片、文件、代码、URL、标签和置顶。
 - 快速粘贴浮层、多组快捷键、区域截图、OCR 图片搜索、文本转换和备份导入导出。
-- 六套 CSS 主题；隐藏窗口时降低 WebView 内存占用，可配置空闲销毁与 GPU 行为。
+- 六套内置主题，可导入导出完整 CSS 主题包；隐藏窗口时降低 WebView 内存占用，可配置空闲销毁与 GPU 行为。
 - 新捕获的文本保留首尾空白和原始换行，预览与搜索单独规范化；X11 优先使用 XFixes，必要时回退到包含图片的轮询。
 - “设置 → 剪贴板设置 → 不记录这些应用”可排除后续来源应用捕获，每行一个完整应用名、可执行文件名或路径，忽略大小写，可省略 `.exe`，离开输入框后生效。已有历史不受影响，无法识别的来源不能可靠排除。
 
 复制内容后，用配置的全局快捷键打开历史。Quick Paste 默认快捷键为 `Ctrl+Shift+V`，用 ↑/↓ 选择、Enter 粘贴、Esc 关闭。捕获需要主程序运行；仅打开 CLI 不会启动后台桌面监听。
 
 当前桌面支持 Windows 和 Linux X11。完整 Wayland 支持暂缓；OSC52 文本复制属于终端能力，不代表 Wayland 后台监听、全局快捷键和自动粘贴已适配。项目不提供云同步。
+
+## 标签与自定义主题
+
+标签管理器使用设置页式左边栏与主页行卡片，支持复杂/简洁模式、悬浮操作和右键菜单；标签与内容均虚拟化，滚动自动翻页。移除普通标签保留记录，编辑时读取完整正文。隐私保护关闭时可确认删除「密码」「sensitive」标签及其全部内容；重新开启时恢复系统标签，已删内容不会恢复。
+
+设置的「外观」只提供内置主题选择和文件导入。导入包包含完整 CSS，可定义材质、形状、布局、阴影与控件状态，禁止外部资源。详见[主题指南](./docs/THEMES.md)，Agent 可使用 [dezirclip-theme Skill](./skills/dezirclip-theme/SKILL.md) 编写主题；也可从[森林示例](./skills/dezirclip-theme/assets/forest.theme.json)开始。
+
+改造的测量范围、静态 CSS 审计和验证结果见[标签与主题性能记录](./docs/tag-theme-performance.md)。
 
 ## CLI：历史与当前剪贴板
 
@@ -181,6 +189,8 @@ pnpm run tauri:build
 DezirClip 使用 GPL-3.0，源自同样使用 GPL-3.0 的 [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard)。适用的原始版权和许可证声明予以保留。
 
 ## English
+
+The tag manager shares the settings sidebar and main history rows, with detailed/compact modes, hover actions, context menus and automatic paged scrolling. Removing ordinary tags keeps their items. With privacy protection off, confirmed deletion can clear system sensitive tags and their contents; enabling protection recreates the tags. Appearance offers built-in themes and imported full CSS packages with external resources blocked. See the [theme guide](./docs/THEMES.md) and [theme authoring Skill](./skills/dezirclip-theme/SKILL.md).
 
 DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). This fork removes macOS and cloud/network features, adds X11 support, custom CSS themes and WebView memory controls, and provides a shared Rust storage core for the GUI and `dzc` CLI. Full Wayland desktop support remains deferred.
 

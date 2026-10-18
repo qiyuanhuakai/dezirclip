@@ -132,9 +132,6 @@ body.theme-liquid-glass {
   --lg-range-thumb-shadow: 0 1px 4px rgba(20, 30, 60, 0.12);
   --lg-range-thumb-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.22);
 
-  --lg-tag-chip-border: rgba(60, 60, 67, 0.10);
-  --lg-tag-chip-text: #ffffff;
-
   /* Settings group — light mode */
   --lg-settings-bg: rgba(255, 255, 255, calc(0.50 * var(--surface-layer-scale, 1)));
   --lg-settings-border: rgba(60, 60, 67, 0.10);
@@ -262,36 +259,6 @@ body.theme-liquid-glass {
     inset 0 1px 0 rgba(255, 255, 255, 0.70),
     inset 0 -1px 0 rgba(20, 30, 60, 0.05);
 
-  /* Tag manager — light mode */
-  --lg-tag-sidebar-bg: rgba(255, 255, 255, 0.38);
-  --lg-tag-sidebar-border: rgba(60, 60, 67, 0.08);
-  --lg-tag-search-bg: rgba(255, 255, 255, 0.30);
-  --lg-tag-search-border: rgba(60, 60, 67, 0.08);
-  --lg-tag-item-active-bg: rgba(10, 132, 255, 0.10);
-  --lg-tag-item-active-border: rgba(10, 132, 255, 0.36);
-  --lg-tag-item-hover-bg: rgba(0, 0, 0, 0.03);
-  --lg-tag-card-bg: rgba(255, 255, 255, calc(0.32 * var(--surface-layer-scale, 1)));
-  --lg-tag-card-border: rgba(60, 60, 67, 0.10);
-  --lg-tag-card-shadow:
-    0 2px 10px rgba(20, 30, 60, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  --lg-tag-card-hover-bg: rgba(255, 255, 255, calc(0.50 * var(--surface-layer-scale, 1)));
-  --lg-tag-card-hover-shadow:
-    0 4px 14px rgba(20, 30, 60, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.40);
-  --lg-tag-toolbar-bg: rgba(255, 255, 255, calc(0.42 * var(--surface-layer-scale, 1)));
-  --lg-tag-toolbar-border: rgba(60, 60, 67, 0.08);
-  --lg-tag-sort-border: rgba(60, 60, 67, 0.06);
-  --lg-tag-btn-bg: rgba(255, 255, 255, 0.38);
-  --lg-tag-btn-border: rgba(60, 60, 67, 0.10);
-  --lg-tag-btn-text: var(--text-secondary);
-  --lg-tag-btn-hover-bg: rgba(255, 255, 255, 0.55);
-  --lg-tag-btn-hover-border: rgba(60, 60, 67, 0.18);
-  --lg-tag-textarea-bg: rgba(255, 255, 255, 0.50);
-  --lg-tag-textarea-border: rgba(60, 60, 67, 0.12);
-  --lg-tag-textarea-text: var(--text-primary);
-  --lg-tag-textarea-placeholder: rgba(60, 60, 67, 0.35);
-
   /* Select — light mode */
   --lg-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23636366' d='M2.5 4.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E");
   --lg-select-option-bg: rgba(255, 255, 255, 0.92);
@@ -323,6 +290,9 @@ body.theme-liquid-glass {
   --select-option-selected-color: var(--text-primary);
   --select-group-heading-color: var(--text-secondary);
   --select-group-heading-border: 1px solid rgba(60, 60, 67, 0.10);
+
+  --lg-tag-chip-border: rgba(60, 60, 67, 0.10);
+  --lg-tag-chip-text: #ffffff;
 }
 
 /* 2. Dark mode variables */
@@ -432,9 +402,6 @@ body.dark-mode.theme-liquid-glass {
   --lg-range-thumb-shadow: 0 1px 4px rgba(0, 0, 0, 0.24);
   --lg-range-thumb-focus-shadow: 0 0 0 3px rgba(10, 132, 255, 0.26);
 
-  --lg-tag-chip-border: rgba(255, 255, 255, 0.08);
-  --lg-tag-chip-text: #ffffff;
-
   /* Settings group — dark */
   --lg-settings-bg: rgba(30, 33, 42, calc(0.78 * var(--surface-layer-scale, 1)));
   --lg-settings-border: rgba(255, 255, 255, 0.06);
@@ -537,36 +504,6 @@ body.dark-mode.theme-liquid-glass {
     inset 0 1px 0 rgba(255, 255, 255, 0.10),
     inset 0 -1px 0 rgba(0, 0, 0, 0.20);
 
-  /* Tag manager — dark */
-  --lg-tag-sidebar-bg: rgba(28, 31, 40, 0.40);
-  --lg-tag-sidebar-border: rgba(255, 255, 255, 0.06);
-  --lg-tag-search-bg: rgba(32, 35, 44, 0.35);
-  --lg-tag-search-border: rgba(255, 255, 255, 0.06);
-  --lg-tag-item-active-bg: rgba(10, 132, 255, 0.14);
-  --lg-tag-item-active-border: rgba(10, 132, 255, 0.38);
-  --lg-tag-item-hover-bg: rgba(255, 255, 255, 0.04);
-  --lg-tag-card-bg: rgba(32, 35, 44, calc(0.55 * var(--surface-layer-scale, 1)));
-  --lg-tag-card-border: rgba(255, 255, 255, 0.06);
-  --lg-tag-card-shadow:
-    0 2px 10px rgba(0, 0, 0, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --lg-tag-card-hover-bg: rgba(45, 48, 58, calc(0.65 * var(--surface-layer-scale, 1)));
-  --lg-tag-card-hover-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  --lg-tag-toolbar-bg: rgba(32, 35, 44, calc(0.62 * var(--surface-layer-scale, 1)));
-  --lg-tag-toolbar-border: rgba(255, 255, 255, 0.06);
-  --lg-tag-sort-border: rgba(255, 255, 255, 0.05);
-  --lg-tag-btn-bg: rgba(50, 53, 63, 0.42);
-  --lg-tag-btn-border: rgba(255, 255, 255, 0.08);
-  --lg-tag-btn-text: var(--text-secondary);
-  --lg-tag-btn-hover-bg: rgba(60, 63, 73, 0.55);
-  --lg-tag-btn-hover-border: rgba(255, 255, 255, 0.14);
-  --lg-tag-textarea-bg: rgba(45, 48, 58, 0.50);
-  --lg-tag-textarea-border: rgba(255, 255, 255, 0.08);
-  --lg-tag-textarea-text: var(--text-primary);
-  --lg-tag-textarea-placeholder: rgba(161, 161, 166, 0.45);
-
   /* Select — dark */
   --lg-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a1a1a6' d='M2.5 4.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E");
   --lg-select-option-bg: rgba(40, 43, 54, 0.92);
@@ -598,6 +535,9 @@ body.dark-mode.theme-liquid-glass {
   --select-option-selected-color: var(--text-primary);
   --select-group-heading-color: var(--text-secondary);
   --select-group-heading-border: 1px solid rgba(255, 255, 255, 0.06);
+
+  --lg-tag-chip-border: rgba(255, 255, 255, 0.08);
+  --lg-tag-chip-text: #ffffff;
 }
 
 /* ============================================================
@@ -975,28 +915,6 @@ body.theme-liquid-glass:not(.hide-app-border) {
 /* ============================================================
    7. Buttons — glass pill buttons with edge glow
    ============================================================ */
-.theme-liquid-glass .btn-icon {
-  border-radius: 9px !important;
-  box-shadow:
-    inset 0 1px 0 var(--glass-edge-top),
-    inset 0 -1px 0 var(--glass-edge-bottom) !important;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease !important;
-}
-
-.theme-liquid-glass .btn-icon.active {
-  background: var(--lg-btn-active-bg) !important;
-  border-color: var(--lg-btn-active-border) !important;
-  color: var(--lg-btn-active-text) !important;
-  box-shadow:
-    inset 0 1px 0 var(--glass-edge-top),
-    inset 0 -1px 0 var(--glass-edge-bottom),
-    0 0 8px rgba(10, 132, 255, 0.08) !important;
-}
-
-.theme-liquid-glass .btn-icon:hover:not(.active) {
-  background: var(--lg-btn-hover-bg) !important;
-  border-color: var(--lg-btn-hover-border) !important;
-}
 
 /* Settings-page action buttons. These carry `.setting-btn`, whose base rule in
    `components/settings.css` is written in retro's language — a 2px flat border,
@@ -1123,36 +1041,6 @@ body.theme-liquid-glass:not(.hide-app-border) {
 .theme-liquid-glass .video-thumbnail-card,
 .theme-liquid-glass .file-thumbnail-card {
   border-radius: 10px !important;
-}
-
-/* ============================================================
-   10. Tag chips
-   ============================================================ */
-.theme-liquid-glass .tag-chip {
-  /* No `background` here, deliberately. Both call sites (ClipboardItem.tsx and
-     AppHeader.tsx) pass the tag's own colour as an inline `style`, and an
-     `!important` author declaration outranks a non-important inline style — so
-     setting a background in this theme erases every tag colour and leaves
-     white `--lg-tag-chip-text` on a transparent pill. The chip's fill belongs
-     to the caller. */
-  color: var(--lg-tag-chip-text) !important;
-  border: 1px solid var(--lg-tag-chip-border) !important;
-  border-radius: 999px !important;
-  padding: 3px 10px !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  box-shadow: 0 1px 2px rgba(20, 30, 60, 0.06) !important;
-  transition: transform 0.12s ease, box-shadow 0.12s ease !important;
-}
-
-.theme-liquid-glass .tag-chip:hover {
-  transform: translateY(-1px) !important;
-  box-shadow: 0 3px 8px rgba(20, 30, 60, 0.14) !important;
-}
-
-.theme-liquid-glass .tag-chip:active {
-  transform: translateY(0) !important;
-  box-shadow: 0 1px 2px rgba(20, 30, 60, 0.06) !important;
 }
 
 /* ============================================================
@@ -1412,18 +1300,6 @@ body.theme-liquid-glass:not(.hide-app-border) {
   opacity: 1 !important;
 }
 
-.theme-liquid-glass .tags-dropdown {
-  background: var(--glass-sidebar-bg) !important;
-  border: 1px solid var(--border-dark) !important;
-  border-radius: 14px !important;
-  padding: 12px 14px !important;
-  box-shadow:
-    0 12px 36px rgba(20, 30, 60, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.32) !important;
-  backdrop-filter: blur(22px) saturate(140%);
-  -webkit-backdrop-filter: blur(22px) saturate(140%);
-}
-
 .theme-liquid-glass .tags-label {
   color: var(--text-secondary) !important;
   font-weight: 600 !important;
@@ -1491,617 +1367,6 @@ body.theme-liquid-glass:not(.hide-app-border) {
   background: var(--lg-dialog-button-primary-bg) !important;
   color: var(--lg-dialog-button-primary-text) !important;
   border-color: var(--lg-dialog-button-primary-border) !important;
-}
-
-/* ============================================================
-   15. Tag manager — glass sidebar, cards, and controls
-   ============================================================ */
-.themed-tag-manager.theme-liquid-glass {
-  background: transparent !important;
-  color: var(--text-primary) !important;
-  font-family: var(--font-main) !important;
-}
-
-/* Sidebar and toolbar are navigation chrome, but they live inside the blurred
-   window shell. A full-height blur on top of a full-window blur is the second
-   most expensive thing in this theme after the card list, and it stacked. Both
-   keep the rim and tint — which is what makes them read as separate planes —
-   and drop their own blur. */
-.themed-tag-manager.theme-liquid-glass .tag-sidebar {
-  border-right: 1px solid var(--lg-tag-sidebar-border) !important;
-  background: var(--lg-tag-sidebar-bg) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .sidebar-header {
-  background: transparent !important;
-  color: var(--text-primary) !important;
-  border-bottom: 1px solid var(--lg-settings-header-border) !important;
-  margin: 0 !important;
-  padding: 10px 12px !important;
-  min-height: 38px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .header-label {
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0 !important;
-  text-transform: none !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-search-box {
-  border-bottom: 1px solid var(--lg-tag-sort-border) !important;
-  background: var(--lg-tag-search-bg) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-search-box input::placeholder {
-  color: color-mix(in srgb, var(--text-secondary) 70%, transparent) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-item.active {
-  background: var(--lg-tag-item-active-bg) !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--lg-tag-item-active-border) !important;
-  box-shadow: none !important;
-  border-radius: 9px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-item {
-  border-radius: 9px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-item.active .tag-name,
-.themed-tag-manager.theme-liquid-glass .tag-item.active .tag-badge {
-  color: var(--text-primary) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-item:hover:not(.active) {
-  background: var(--lg-tag-item-hover-bg) !important;
-  border-radius: 9px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-name {
-  font-size: 14px !important;
-  font-weight: 600 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-badge {
-  font-size: 12px !important;
-  opacity: 0.6 !important;
-  font-weight: 600 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-item.active .tag-hover-actions > *:hover {
-  color: var(--accent-color) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-search-box {
-  border-radius: 10px;
-  margin: 6px;
-  border: 1px solid var(--lg-tag-search-border);
-  background: var(--lg-tag-search-bg);
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-search-box input {
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-
-.themed-tag-manager.theme-liquid-glass .collapse-toggle,
-.themed-tag-manager.theme-liquid-glass .sort-btn,
-.themed-tag-manager.theme-liquid-glass .toggle-btn,
-.themed-tag-manager.theme-liquid-glass .add-item-btn,
-.themed-tag-manager.theme-liquid-glass .card-action-btn,
-.themed-tag-manager.theme-liquid-glass .del-btn {
-  border-radius: 8px;
-}
-
-/* Content layer, not chrome: a solid card that keeps the theme's rim language
-   (1px hairline + inset top highlight) but drops the blur. Every card here
-   carried its own `backdrop-filter`, and the list is not virtualised, so the
-   number of simultaneous blur layers grew with the item count — the single
-   largest GPU cost in this theme, on rows Apple classes as content anyway. */
-.themed-tag-manager.theme-liquid-glass .themed-card {
-  border-radius: 12px !important;
-  border: 1px solid var(--lg-content-border) !important;
-  background: var(--lg-content-bg) !important;
-  box-shadow: var(--lg-content-shadow) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .themed-card:hover {
-  transform: none !important;
-  background: var(--lg-content-hover-bg) !important;
-  box-shadow: var(--lg-content-shadow) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .content-toolbar {
-  height: 44px !important;
-  border-bottom: 1px solid var(--lg-tag-toolbar-border) !important;
-  background: var(--lg-tag-toolbar-bg) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .selected-tag-indicator {
-  font-weight: 600 !important;
-  font-size: 13px !important;
-  opacity: 0.85 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .breadcrumb-text {
-  letter-spacing: 0 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .sort-group {
-  border-left: 1px solid var(--lg-tag-sort-border) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .btn-icon,
-.themed-tag-manager.theme-liquid-glass .toggle-btn,
-.themed-tag-manager.theme-liquid-glass .add-item-btn {
-  border-radius: 10px !important;
-  border: 1px solid var(--lg-tag-btn-border) !important;
-  background: var(--lg-tag-btn-bg) !important;
-  color: var(--lg-tag-btn-text) !important;
-  box-shadow:
-    inset 0 1px 0 var(--glass-edge-top),
-    inset 0 -1px 0 var(--glass-edge-bottom) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .btn-icon:hover,
-.themed-tag-manager.theme-liquid-glass .toggle-btn:hover,
-.themed-tag-manager.theme-liquid-glass .add-item-btn:hover {
-  background: var(--lg-tag-btn-hover-bg) !important;
-  border-color: var(--lg-tag-btn-hover-border) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .toggle-btn.active,
-.themed-tag-manager.theme-liquid-glass .add-item-btn.active {
-  background: var(--lg-btn-active-bg) !important;
-  border-color: var(--lg-btn-active-border) !important;
-  color: var(--lg-btn-active-text) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .card-action-btn,
-.themed-tag-manager.theme-liquid-glass .del-btn {
-  border-radius: 8px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .card-action-btn:hover,
-.themed-tag-manager.theme-liquid-glass .del-btn:hover {
-  background: var(--lg-btn-hover-bg) !important;
-  color: var(--accent-color) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .confirm-dialog {
-  background: var(--lg-dialog-bg) !important;
-  backdrop-filter: var(--lg-dialog-blur);
-  -webkit-backdrop-filter: var(--lg-dialog-blur);
-  padding: 24px !important;
-  border-radius: 16px !important;
-  box-shadow: var(--lg-dialog-shadow) !important;
-  border: 1px solid var(--lg-dialog-border) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .confirm-dialog h3 {
-  background: transparent !important;
-  color: var(--text-primary) !important;
-  font-size: 18px !important;
-  font-weight: 700 !important;
-  text-transform: none !important;
-  padding: 0 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .modal-input-field .modal-textarea {
-  border-radius: 10px !important;
-  border: 1px solid var(--lg-tag-textarea-border) !important;
-  background: var(--lg-tag-textarea-bg) !important;
-  color: var(--lg-tag-textarea-text) !important;
-  box-shadow:
-    inset 0 1px 2px rgba(20, 30, 60, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .modal-input-field .modal-textarea::placeholder {
-  color: var(--lg-tag-textarea-placeholder) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .modal-input-field .modal-textarea:focus {
-  border-color: rgba(10, 132, 255, 0.50) !important;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.16) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .confirm-dialog-button {
-  border-radius: 10px !important;
-  box-shadow:
-    inset 0 1px 0 var(--glass-edge-top),
-    inset 0 -1px 0 var(--glass-edge-bottom) !important;
-  font-weight: 600 !important;
-  background: var(--lg-dialog-button-bg) !important;
-  border: 1px solid var(--lg-dialog-button-border) !important;
-  color: var(--lg-dialog-button-text) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .confirm-dialog-button:active {
-  transform: scale(0.95);
-}
-
-.themed-tag-manager.theme-liquid-glass .confirm-dialog-button.primary {
-  background: var(--lg-dialog-button-primary-bg) !important;
-  border-color: var(--lg-dialog-button-primary-border) !important;
-  color: var(--lg-dialog-button-primary-text) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .items-area {
-  background: transparent !important;
-  border-top: 1px solid var(--lg-tag-toolbar-border) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-scroll {
-  background: transparent !important;
-  padding: 6px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .inline-tag-edit {
-  background: var(--lg-input-bg) !important;
-  border: 1px solid var(--lg-input-border) !important;
-  border-radius: 6px !important;
-  color: var(--text-primary) !important;
-  outline: none !important;
-  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.16) !important;
-  padding: 2px 6px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .action-icons {
-  color: var(--text-secondary) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .action-icon {
-  color: var(--text-secondary) !important;
-  opacity: 0.7 !important;
-  border-radius: 4px !important;
-  padding: 2px !important;
-  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .action-icon:hover {
-  opacity: 1 !important;
-  color: var(--accent-color) !important;
-  background: rgba(10, 132, 255, 0.10) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .action-icon.create {
-  color: var(--accent-color) !important;
-  opacity: 0.85 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .search-icon-placeholder {
-  color: var(--text-secondary) !important;
-  opacity: 0.5 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .breadcrumb-marker {
-  color: var(--accent-color) !important;
-  opacity: 0.85 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .sort-btn {
-  color: var(--text-secondary) !important;
-  border-radius: 6px !important;
-  padding: 4px !important;
-  transition: color 0.15s ease, background-color 0.15s ease !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .sort-btn:hover {
-  color: var(--accent-color) !important;
-  background: rgba(10, 132, 255, 0.08) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .sort-btn.active {
-  color: var(--accent-color) !important;
-  background: var(--lg-btn-active-bg) !important;
-  border: 1px solid var(--lg-btn-active-border) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .view-toggle {
-  gap: 4px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .toggle-btn {
-  color: var(--text-secondary) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .header-actions {
-  gap: 6px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .action-btn {
-  color: var(--text-secondary) !important;
-  border-radius: 4px !important;
-  padding: 2px !important;
-  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .action-btn:hover {
-  opacity: 1 !important;
-  color: var(--accent-color) !important;
-  background: rgba(10, 132, 255, 0.10) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .status-msg {
-  color: var(--text-secondary) !important;
-  font-size: 12px !important;
-  padding: 24px 8px !important;
-  text-align: center !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .card-media {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border: 1px solid var(--lg-tag-card-border) !important;
-  border-radius: 6px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .card-body-text {
-  color: var(--text-primary) !important;
-  font-size: 12px !important;
-  line-height: 1.35 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .card-footer {
-  color: var(--text-secondary) !important;
-  opacity: 0.75 !important;
-  font-size: 10px !important;
-  font-weight: 600 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .meta-usage,
-.themed-tag-manager.theme-liquid-glass .meta-time {
-  color: var(--text-secondary) !important;
-  opacity: 0.8 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .del-btn {
-  color: var(--text-secondary) !important;
-  border-radius: 4px !important;
-  padding: 2px !important;
-  opacity: 0.5 !important;
-  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .del-btn:hover {
-  opacity: 1 !important;
-  color: #ff453a !important;
-  background: rgba(255, 69, 58, 0.10) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .card-action-btn {
-  color: var(--text-secondary) !important;
-  border-radius: 4px !important;
-  padding: 2px !important;
-  opacity: 0.6 !important;
-  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .card-action-btn:hover {
-  opacity: 1 !important;
-  color: var(--accent-color) !important;
-  background: rgba(10, 132, 255, 0.10) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-color-dot {
-  border: 1px solid rgba(0, 0, 0, 0.10) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset !important;
-  transition: transform 0.15s ease !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-color-dot:hover {
-  transform: scale(1.25) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-item.create-hint {
-  background: rgba(10, 132, 255, 0.04) !important;
-  border: 1px dashed rgba(10, 132, 255, 0.36) !important;
-  color: var(--text-secondary) !important;
-  border-radius: 9px !important;
-  font-style: italic !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-item.create-hint:hover {
-  background: rgba(10, 132, 255, 0.10) !important;
-  border-style: solid !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .modal-overlay {
-  background: rgba(0, 0, 0, 0.18) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .breadcrumb-marker,
-.themed-tag-manager.theme-liquid-glass .breadcrumb-text {
-  color: var(--text-primary) !important;
-  opacity: 0.9 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .selected-tag-indicator {
-  color: var(--text-primary) !important;
-  opacity: 0.9 !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .toolbar-left {
-  gap: 14px !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .tag-search-box input {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  color: var(--text-primary) !important;
-}
-
-.themed-tag-manager.theme-liquid-glass .themed-card .card-top-row,
-.themed-tag-manager.theme-liquid-glass .themed-card .card-actions-left {
-  background: transparent !important;
-}
-
-/* Dark mode tag manager overrides */
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-content,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .items-area,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-sidebar,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .content-toolbar,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .sidebar-header {
-  color: var(--text-primary) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-sidebar {
-  background: rgba(28, 31, 40, 0.42) !important;
-  border-right-color: rgba(255, 255, 255, 0.06) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .content-toolbar {
-  background: rgba(32, 35, 44, 0.46) !important;
-  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .items-area {
-  background: rgba(15, 18, 28, 0.28) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .sidebar-header {
-  background: rgba(30, 33, 42, 0.40) !important;
-  border-bottom-color: rgba(255, 255, 255, 0.05) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-search-box {
-  background: rgba(32, 35, 44, 0.36) !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .themed-card {
-  background: var(--lg-content-bg) !important;
-  border-color: var(--lg-content-border) !important;
-  box-shadow: var(--lg-content-shadow) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .themed-card:hover {
-  background: var(--lg-content-hover-bg) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .btn-icon,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .toggle-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .add-item-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .card-action-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .del-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .sort-btn {
-  background: rgba(50, 53, 63, 0.44) !important;
-  border-color: rgba(255, 255, 255, 0.08) !important;
-  color: #f5f5f7 !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-color-dot {
-  border-color: rgba(255, 255, 255, 0.20) !important;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16);
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-search-box input,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-name,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .selected-tag-indicator,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .breadcrumb-text,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .card-body-text {
-  color: #f5f5f7 !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-search-box input::placeholder,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-badge,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .card-footer,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .meta-time,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .meta-usage {
-  color: #a1a1a6 !important;
-  opacity: 0.9 !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .card-media {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border-color: var(--lg-tag-card-border) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .modal-overlay {
-  background: rgba(0, 0, 0, 0.44) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-scroll {
-  background: transparent !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .inline-tag-edit {
-  background: var(--lg-input-bg) !important;
-  border-color: var(--lg-input-border) !important;
-  color: var(--text-primary) !important;
-  box-shadow: 0 0 0 2px rgba(112, 191, 255, 0.20) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .action-icons,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .action-icon,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .search-icon-placeholder {
-  color: rgba(245, 245, 247, 0.7) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .action-icon:hover,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .action-btn:hover,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .card-action-btn:hover {
-  background: rgba(10, 132, 255, 0.20) !important;
-  color: #7fc2ff !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .breadcrumb-marker,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .breadcrumb-text {
-  color: #f5f5f7 !important;
-  opacity: 0.95 !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .sort-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .toggle-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .action-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .card-action-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .del-btn,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .header-actions .action-btn {
-  color: rgba(245, 245, 247, 0.7) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .sort-btn:hover {
-  background: rgba(10, 132, 255, 0.20) !important;
-  color: #7fc2ff !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .sort-btn.active {
-  background: rgba(10, 132, 255, 0.20) !important;
-  border-color: rgba(112, 191, 255, 0.42) !important;
-  color: #7fc2ff !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .del-btn:hover {
-  color: #ff6961 !important;
-  background: rgba(255, 69, 58, 0.16) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .status-msg {
-  color: rgba(245, 245, 247, 0.6) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-item.create-hint {
-  background: rgba(10, 132, 255, 0.08) !important;
-  border-color: rgba(112, 191, 255, 0.36) !important;
-  color: rgba(245, 245, 247, 0.7) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-color-dot {
-  border-color: rgba(255, 255, 255, 0.20) !important;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16) inset !important;
 }
 
 body.theme-liquid-glass.quick-paste,
@@ -2202,8 +1467,7 @@ body.dark-mode.theme-liquid-glass .modal-content,
 body.dark-mode.theme-liquid-glass .confirm-dialog,
 body.dark-mode.theme-liquid-glass .confirm-dialog.theme-liquid-glass,
 body.dark-mode .theme-liquid-glass .modal-content,
-body.dark-mode .theme-liquid-glass .confirm-dialog,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog {
+body.dark-mode .theme-liquid-glass .confirm-dialog {
   background: var(--lg-dialog-bg) !important;
   border: 1px solid var(--lg-dialog-border) !important;
   box-shadow: var(--lg-dialog-shadow) !important;
@@ -2213,14 +1477,12 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog {
 }
 
 body.dark-mode.theme-liquid-glass .confirm-dialog-title,
-body.dark-mode.theme-liquid-glass .confirm-dialog h3,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog h3 {
+body.dark-mode.theme-liquid-glass .confirm-dialog h3 {
   color: var(--text-primary) !important;
 }
 
 body.dark-mode.theme-liquid-glass .confirm-dialog-message,
-body.dark-mode.theme-liquid-glass .confirm-dialog p,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog p {
+body.dark-mode.theme-liquid-glass .confirm-dialog p {
   /* Light mode already paints the sheet body with `--text-primary`; dark was
      dropping it to `--text-secondary`, and a dim grey on a dark sheet is the
      exact combination Apple's legibility work keeps calling out. Measured, the
@@ -2230,8 +1492,7 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog p {
   opacity: 0.88 !important;
 }
 
-body.dark-mode.theme-liquid-glass .confirm-dialog-button,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button {
+body.dark-mode.theme-liquid-glass .confirm-dialog-button {
   background: var(--lg-dialog-button-bg) !important;
   border: 1px solid var(--lg-dialog-button-border) !important;
   color: var(--lg-dialog-button-text) !important;
@@ -2240,8 +1501,7 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button {
     inset 0 -1px 0 rgba(0, 0, 0, 0.08) !important;
 }
 
-body.dark-mode.theme-liquid-glass .confirm-dialog-button.primary,
-body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button.primary {
+body.dark-mode.theme-liquid-glass .confirm-dialog-button.primary {
   background: var(--lg-dialog-button-primary-bg) !important;
   border-color: var(--lg-dialog-button-primary-border) !important;
   color: var(--lg-dialog-button-primary-text) !important;
@@ -2618,4 +1878,107 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
 
 .theme-liquid-glass .search-history__item:hover {
   background: var(--lg-btn-hover-bg) !important;
+}
+
+/* Semantic palette: geometry and material remain specific to this theme. */
+:root.theme-liquid-glass {
+  --dc-surface-window: #f5f8ff;
+  --dc-surface-panel: #f4f7ff;
+  --dc-surface-raised: #ffffff;
+  --dc-surface-input: #ffffff;
+  --dc-surface-hover: #e6efff;
+  --dc-surface-active: #006bd6;
+  --dc-text-primary: #1d1d1f;
+  --dc-text-secondary: #636366;
+  --dc-text-muted: #636366;
+  --dc-text-on-accent: #ffffff;
+  --dc-border: #c9d3e6;
+  --dc-border-strong: #879bbd;
+  --dc-accent: #006bd6;
+  --dc-accent-hover: #005fc2;
+  --dc-accent-soft: #dfeeff;
+  --dc-success: #247447;
+  --dc-warning: #976300;
+  --dc-danger: #cb3038;
+  --dc-info: #246bb2;
+  --dc-radius: 9px;
+}
+
+:root.dark-mode.theme-liquid-glass {
+  --dc-surface-window: #151c2d;
+  --dc-surface-panel: #202a40;
+  --dc-surface-raised: #2a3751;
+  --dc-surface-input: #27334b;
+  --dc-surface-hover: #354666;
+  --dc-surface-active: #6aafff;
+  --dc-text-primary: #f4f7ff;
+  --dc-text-secondary: #d1d9eb;
+  --dc-text-muted: #bac7df;
+  --dc-text-on-accent: #111827;
+  --dc-border: #455875;
+  --dc-border-strong: #7088ad;
+  --dc-accent: #6aafff;
+  --dc-accent-hover: #95c7ff;
+  --dc-accent-soft: #263e63;
+  --dc-success: #70d69b;
+  --dc-warning: #f4c96b;
+  --dc-danger: #ff858d;
+  --dc-info: #82b7ff;
+  --dc-radius: 9px;
+}
+
+/* Shared icon buttons consume theme state tokens without priority overrides. */
+.theme-liquid-glass .btn-icon {
+  --icon-btn-radius: 9px;
+  --icon-btn-shadow: inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom);
+  --icon-btn-transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  --icon-btn-hover-shadow: inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom);
+  --icon-btn-pressed-shadow: inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom);
+}
+
+.theme-liquid-glass .btn-icon.active {
+  --icon-btn-active-bg: var(--lg-btn-active-bg);
+  --icon-btn-active-border: var(--lg-btn-active-border);
+  --icon-btn-active-color: var(--lg-btn-active-text);
+  --icon-btn-active-shadow: inset 0 1px 0 var(--glass-edge-top),
+    inset 0 -1px 0 var(--glass-edge-bottom),
+    0 0 8px rgba(10, 132, 255, 0.08);
+  --icon-btn-queue-hover-shadow: var(--icon-btn-active-shadow);
+}
+
+.theme-liquid-glass .btn-icon:hover:not(.active) {
+  --icon-btn-hover-bg: var(--lg-btn-hover-bg);
+  --icon-btn-hover-border: var(--lg-btn-hover-border);
+}
+
+/* Existing clipboard-row tag treatment. */
+
+.theme-liquid-glass .tag-chip {
+  /* No `background` here, deliberately. Both call sites (ClipboardItem.tsx and
+     AppHeader.tsx) pass the tag's own colour as an inline `style`, and an
+     `!important` author declaration outranks a non-important inline style — so
+     setting a background in this theme erases every tag colour and leaves
+     white `--lg-tag-chip-text` on a transparent pill. The chip's fill belongs
+     to the caller. */
+  color: var(--lg-tag-chip-text) !important;
+  border: 1px solid var(--lg-tag-chip-border) !important;
+  border-radius: 999px !important;
+  padding: 3px 10px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 2px rgba(20, 30, 60, 0.06) !important;
+  transition: transform 0.12s ease, box-shadow 0.12s ease !important;
+}
+
+.theme-liquid-glass .tag-chip:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 3px 8px rgba(20, 30, 60, 0.14) !important;
+}
+
+.theme-liquid-glass .tag-chip:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 1px 2px rgba(20, 30, 60, 0.06) !important;
 }

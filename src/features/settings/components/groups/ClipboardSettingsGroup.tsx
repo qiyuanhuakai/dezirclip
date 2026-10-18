@@ -4,10 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";
-import {
-    DEFAULT_RICH_TEXT_SNAPSHOT_CACHE,
-    resolveRichTextSnapshotCacheLimit,
-} from "../../../../shared/lib/richTextSnapshotCache";
+import { resolveRichTextSnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshotCache";
 import { setRichTextSnapshotCacheLimit as applySnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshot";
 
 interface LabelWithHintProps {
@@ -205,7 +202,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('persistent_storage')}
-                            hint={props.t('persistent_hint')}
                             hintKey="persistent_storage"
                         />
                         <label className="switch">
@@ -223,7 +219,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="setting-item">
                                 <props.LabelWithHint
                                     label={props.t('persistent_limit_enabled')}
-                                    hint={props.t('persistent_limit_enabled_hint')}
                                     hintKey="persistent_limit_enabled"
                                 />
                                 <label className="switch">
@@ -243,7 +238,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 <div className="setting-item">
                                     <props.LabelWithHint
                                         label={props.t('persistent_limit')}
-                                        hint={props.t('persistent_limit_hint')}
                                         hintKey="persistent_limit"
                                     />
                                     <input
@@ -282,7 +276,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('merge_duplicates')}
-                            hint={props.t('merge_duplicates_hint') || "Time limit to prevent accidental multiple copies"}
                             hintKey="merge_duplicates"
                         />
                         <label className="switch">
@@ -312,7 +305,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('capture_rich_text') || '捕获富文本'}
-                            hint={props.t('capture_rich_text_hint') || '开启后可记录富文本并支持双击带格式粘贴'}
                             hintKey="capture_rich_text"
                         />
                         <label className="switch">
@@ -331,7 +323,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('rich_text_snapshot_preview') || '富文本快照预览'}
-                            hint={props.t('rich_text_snapshot_preview_hint') || '开启后将富文本转换为内存快照图用于条目与悬浮预览'}
                             hintKey="rich_text_snapshot_preview"
                         />
                         <label className="switch">
@@ -353,7 +344,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         <div className="setting-item setting-item--detail">
                             <props.LabelWithHint
                                 label={props.t('rich_text_snapshot_cache_limit')}
-                                hint={props.t('rich_text_snapshot_cache_limit_hint').replace('{default}', String(DEFAULT_RICH_TEXT_SNAPSHOT_CACHE))}
                                 hintKey="rich_text_snapshot_cache_limit"
                             />
                             <input
@@ -384,18 +374,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <div className="item-label-group">
                             <span className="item-label">{props.t('rich_paste_hotkey_label')}</span>
-                            <span className="hint">
-                                {props.isRecordingRich ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                        <span style={{ color: '#ff9800', fontWeight: 'bold' }}>
-                                            {props.t('win_key_not_recommended')}
-                                        </span>
-                                        <span style={{ fontSize: '11px', opacity: 0.8 }}>
-                                            {props.t('hotkey_recording_esc')}
-                                        </span>
-                                    </div>
-                                ) : props.t('hotkey_click_hint')}
-                            </span>
+
                         </div>
                         <div
                             className={`key-group ${props.isRecordingRich ? 'recording' : ''}`}
@@ -446,18 +425,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <div className="item-label-group">
                             <span className="item-label">{props.t('search_hotkey_label')}</span>
-                            <span className="hint">
-                                {props.isRecordingSearch ? (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                        <span style={{ color: '#ff9800', fontWeight: 'bold' }}>
-                                            {props.t('win_key_not_recommended')}
-                                        </span>
-                                        <span style={{ fontSize: '11px', opacity: 0.8 }}>
-                                            {props.t('hotkey_recording_esc')}
-                                        </span>
-                                    </div>
-                                ) : props.t('hotkey_click_hint')}
-                            </span>
+
                         </div>
                         <div
                             className={`key-group ${props.isRecordingSearch ? 'recording' : ''}`}
@@ -527,7 +495,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('move_to_top_after_paste')}
-                            hint={props.t('move_to_top_after_paste_hint')}
                             hintKey="move_to_top_after_paste"
                         />
                         <label className="switch">
@@ -547,7 +514,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('paste_method')}
-                            hint={props.t(`paste_method_${props.pasteMethod}_hint`)}
                             hintKey="paste_method"
                         />
                         <ThemedSelect
@@ -560,7 +526,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('sequential_paste_mode')}
-                            hint={props.t('sequential_paste_hint').replace('{hotkey}', props.sequentialHotkey || 'Alt+V')}
                             hintKey="sequential_paste_mode"
                         />
                         <label className="switch">
@@ -622,18 +587,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         <div className="setting-item">
                             <div className="item-label-group">
                                 <span className="item-label">{props.t('sequential_paste_hotkey_label')}</span>
-                                <span className="hint">
-                                    {props.isRecordingSequential ? (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                            <span style={{ color: '#ff9800', fontWeight: 'bold' }}>
-                                                {props.t('win_key_not_recommended')}
-                                            </span>
-                                            <span style={{ fontSize: '11px', opacity: 0.8 }}>
-                                                {props.t('hotkey_recording_esc')}
-                                            </span>
-                                        </div>
-                                    ) : props.t('hotkey_click_hint')}
-                                </span>
+
                             </div>
                             <div
                                 className={`key-group ${props.isRecordingSequential ? 'recording' : ''}`}
@@ -687,7 +641,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('privacy_protection')}
-                            hint={props.t('privacy_protection_hint')}
                             hintKey="privacy_protection"
                         />
                         <label className="switch">
@@ -708,7 +661,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item source-exclusion-setting">
                         <props.LabelWithHint
                             label={props.t('excluded_source_apps')}
-                            hint={props.t('excluded_source_apps_hint')}
                             hintKey="excluded_source_apps"
                         />
                         <textarea
@@ -779,7 +731,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             </button>
                             <props.LabelWithHint
                                 label={props.t('privacy_protection_custom_rules')}
-                                hint={props.t('privacy_protection_custom_rules_hint')}
                                 hintKey="privacy_protection_custom_rules"
                                 labelStyle={{ fontWeight: 400 }}
                             />
@@ -805,18 +756,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span className="item-label">{props.t('global_hotkey')}</span>
                             </div>
-                            {props.isRecording && (
-                                <span className="hint">
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                        <span style={{ color: '#ff9800', fontWeight: 'bold' }}>
-                                            {props.t('win_key_not_recommended')}
-                                        </span>
-                                        <span style={{ fontSize: '11px', opacity: 0.8 }}>
-                                            {props.t('hotkey_recording_esc')}
-                                        </span>
-                                    </div>
-                                </span>
-                            )}
+
                             <div
                                 className={`key-group ${props.isRecording ? 'recording' : ''}`}
                                 onClick={(e) => { props.setIsRecording(true); invoke("focus_clipboard_window").catch(console.error); e.currentTarget.focus(); }}
@@ -891,7 +831,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('use_win_v_shortcut')}
-                            hint={props.t('use_win_v_shortcut_hint')}
                             hintKey="use_win_v_shortcut"
                         />
                         <label className="switch">

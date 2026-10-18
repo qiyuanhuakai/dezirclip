@@ -166,7 +166,10 @@ pub fn clear_clipboard_history(
 }
 
 #[tauri::command]
-pub async fn get_tag_items(state: State<'_, DbState>, tag: String) -> AppResult<Vec<ClipboardEntry>> {
+pub async fn get_tag_items(
+    state: State<'_, DbState>,
+    tag: String,
+) -> AppResult<Vec<ClipboardEntry>> {
     let mut history = state
         .tag_repo
         .get_entries_by_tag(&tag)
@@ -183,6 +186,65 @@ pub async fn get_tag_items(state: State<'_, DbState>, tag: String) -> AppResult<
 }
 
 #[tauri::command]
+pub async fn get_tag_items_page(
+    state: State<'_, DbState>,
+    tag: String,
+    query: Option<String>,
+    sort_by: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> AppResult<crate::infrastructure::repository::tag_page::TagItemsPage> {
+    let repository =
+        crate::infrastructure::repository::tag_repo::SqliteTagRepository::new(state.conn.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        repository.get_page(
+            &tag,
+            query.as_deref().unwrap_or(""),
+            sort_by.as_deref().unwrap_or("time"),
+            limit.unwrap_or(60),
+            offset.unwrap_or(0),
+        )
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?
+    .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub async fn get_tag_item_detail(state: State<'_, DbState>, id: i64) -> AppResult<ClipboardEntry> {
+    let repository =
+        crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository::new(
+            state.conn.clone(),
+        );
+    tauri::async_runtime::spawn_blocking(move || repository.get_entry_by_id(id))
+        .await
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .map_err(AppError::from)?
+        .ok_or_else(|| AppError::Validation("Entry not found".into()))
+}
+
+#[tauri::command]
+pub fn remove_tag_from_all(
+    app: tauri::AppHandle,
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
+    tag_name: String,
+) -> AppResult<()> {
+    state
+        .tag_repo
+        .remove_preserving_entries(&tag_name)
+        .map_err(AppError::from)?;
+    if let Ok(mut history) = session.0.lock() {
+        for item in history.iter_mut() {
+            item.tags.retain(|tag| tag != &tag_name);
+        }
+    }
+    use tauri::Emitter;
+    let _ = app.emit("clipboard-updated", ());
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn get_all_tags_info(
     state: State<'_, DbState>,
 ) -> AppResult<std::collections::HashMap<String, i32>> {
@@ -191,11 +253,17 @@ pub async fn get_all_tags_info(
 
 #[tauri::command]
 pub fn rename_tag_globally(
+    app: tauri::AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     old_name: String,
     new_name: String,
 ) -> AppResult<()> {
+    let new_name = new_name.trim().to_string();
+    state
+        .tag_repo
+        .rename(&old_name, &new_name)
+        .map_err(AppError::from)?;
     {
         let mut session_items = session.inner().0.lock().unwrap();
         for item in session_items.iter_mut() {
@@ -209,34 +277,79 @@ pub fn rename_tag_globally(
         }
     }
 
-    state
+    use tauri::Emitter;
+    let _ = app.emit("clipboard-updated", ());
+    Ok(())
+}
+
+fn delete_sensitive_tag_contents(
+    app: &tauri::AppHandle,
+    state: &DbState,
+    session: &SessionHistory,
+    app_data: &AppDataDir,
+    tag_name: &str,
+) -> AppResult<()> {
+    let data_dir = app_data
+        .0
+        .lock()
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .clone();
+    let report = state
         .tag_repo
-        .rename(&old_name, &new_name)
-        .map_err(AppError::from)
+        .delete_globally(tag_name, Some(&data_dir))
+        .map_err(AppError::from)?;
+    if let Ok(mut history) = session.0.lock() {
+        history.retain(|item| {
+            !report.deleted_ids.contains(&item.id) && !item.tags.iter().any(|tag| tag == tag_name)
+        });
+    }
+    state.repo.invalidate_caches();
+    use tauri::Emitter;
+    let _ = app.emit("clipboard-changed", ());
+    if !report.cleanup_errors.is_empty() {
+        return Err(AppError::IO(format!(
+            "history and tag were deleted, but attachment cleanup failed: {}",
+            report.cleanup_errors.join("; ")
+        )));
+    }
+    Ok(())
 }
 
 #[tauri::command]
-pub fn delete_tag_from_all(
+pub fn delete_sensitive_tag_with_contents(
+    app: tauri::AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     app_data: State<'_, AppDataDir>,
     tag_name: String,
 ) -> AppResult<()> {
-    {
-        let mut session_items = session.inner().0.lock().unwrap();
-        session_items.retain(|item| !item.tags.contains(&tag_name));
-    }
+    delete_sensitive_tag_contents(&app, &state, &session, &app_data, &tag_name)
+}
 
-    let data_dir = app_data.0.lock().unwrap();
-    state
-        .tag_repo
-        .delete_globally(&tag_name, Some(&data_dir))
-        .map_err(AppError::from)
+// Preserve the old command name without retaining an unguarded destructive path.
+#[tauri::command]
+pub fn delete_tag_from_all(
+    app: tauri::AppHandle,
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
+    app_data: State<'_, AppDataDir>,
+    tag_name: String,
+) -> AppResult<()> {
+    delete_sensitive_tag_contents(&app, &state, &session, &app_data, &tag_name)
 }
 
 #[tauri::command]
 pub fn create_new_tag(state: State<'_, DbState>, tag_name: String) -> AppResult<()> {
-    state.tag_repo.create(&tag_name).map_err(AppError::from)
+    let tag_name = tag_name.trim();
+    if tag_name.is_empty()
+        || tag_name.chars().count() > 80
+        || tag_name.chars().any(char::is_control)
+    {
+        return Err(AppError::Validation(
+            "tag names must contain 1..80 printable characters".into(),
+        ));
+    }
+    state.tag_repo.create(tag_name).map_err(AppError::from)
 }
 
 #[tauri::command]
