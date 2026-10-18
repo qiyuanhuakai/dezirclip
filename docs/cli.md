@@ -10,6 +10,8 @@
 
 `dzc` 随 DezirClip 作为 sidecar 安装，也可从 [GitHub Releases](https://github.com/qiyuanhuakai/dezirclip/releases) 下载独立 CLI 压缩包。选择匹配 Windows/Linux 与 x86_64/aarch64 的版本，解压后将目录加入 `PATH`，也可直接使用完整路径。桌面安装时可在设置中查看 CLI 路径。Linux 的安装位置随 deb、rpm、AppImage 而不同；AppImage 挂载路径不是永久安装目录。以下新增选项需要相应版本的 CLI，旧版发布包可能尚未包含。
 
+Windows 裸 CLI 不依赖 WebView2；当前 MSVC 二进制依赖 `VCRUNTIME140.dll`，压缩包未附带该运行库。若系统缺失，请安装与 CLI 架构匹配的 [Microsoft Visual C++ v14 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。
+
 AppImage 运行时的临时挂载目录会随退出而失效，不要把其中的 `dzc` 永久软链接到 `PATH`。终端、Shell 插件或 MCP 需要稳定路径时，使用独立 CLI 压缩包并解压到固定目录。
 
 Linux 普通安装的“加入 PATH”会在 `~/.local/bin/dzc` 创建链接；如果当前 Shell 的 PATH 不含 `~/.local/bin`，请自行加入该目录。程序不会修改 Shell 启动文件。设置页会提示 PATH 命中另一份 CLI 的情况，已有独立可执行文件或链接不会被覆盖。

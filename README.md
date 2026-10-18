@@ -19,6 +19,8 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 
 `VERSION` 对应发布版本号。每个独立压缩包包含真正的 `dzc` 二进制、许可证、说明、完整的集成运行文件目录 `integrations/` 和 `skills/dzc-cli/`，不含开发测试文件；对应 `.sha256` 文件用于校验下载。Linux 官方 CLI 构建基于 Ubuntu 24.04，要求 glibc 2.39+ 及其动态库；不宣称静态链接或兼容更早发行版。桌面端使用原生图形依赖，详见 Linux 指南。
 
+Windows 独立 CLI 无需 WebView2，但当前 MSVC 构建依赖 `VCRUNTIME140.dll`。若系统尚未安装，请安装匹配 CLI 架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。压缩包不附带该运行库。
+
 下方命令描述当前分支的能力。旧版发布包可能缺少 `--metadata`、`--target osc52` 等选项，请使用匹配版本的 CLI 与适配器，并用 `dzc --help` 检查。
 
 解压后将二进制目录加入 `PATH`；也可在适配器中用 `DZC_BIN` 指定完整路径。例如：
@@ -195,6 +197,8 @@ printf 'hello\n' | dzc clipboard write -
 ```
 
 The GUI offers history, tags, pinning, rich text, images, files, OCR search, screenshots, text transforms and themes. Quick Paste defaults to Ctrl+Shift+V; use arrows and Enter to paste, or Esc to close. New captures preserve original whitespace and line endings. X11 uses XFixes with image-aware polling fallback. Source application exclusions block future captures when the source can be identified.
+
+The standalone Windows CLI needs no WebView2. Its MSVC build requires the matching architecture's [Microsoft Visual C++ v14 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) (`VCRUNTIME140.dll`), which is not included in the archive.
 
 Optional adapters need Python 3.10+; fzf/dmenu/rofi are installed separately. On Windows use `python`; only the TUI additionally needs `python -m pip install -r integrations/requirements-tui.txt`.
 

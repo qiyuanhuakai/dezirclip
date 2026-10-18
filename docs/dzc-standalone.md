@@ -2,6 +2,8 @@
 
 本压缩包包含 DezirClip 的完整 CLI、匹配版本的可选适配器和 Agent Skill。无需启动桌面主程序即可管理本地 SQLite 历史。`dzc` 不联网，不自动同步其他机器的历史，也不在 CLI 运行时启动桌面捕获服务。
 
+Windows 独立 CLI 无需 WebView2；当前 MSVC 构建需要 `VCRUNTIME140.dll`。压缩包不附带该文件，干净系统请先安装匹配架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。
+
 解压后将 `dzc`（Windows 为 `dzc.exe`）所在目录加入 `PATH`，或直接使用完整路径：
 
 ```bash
