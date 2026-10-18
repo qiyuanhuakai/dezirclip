@@ -56,6 +56,251 @@ pub fn is_encrypted_value(value: &str) -> bool {
     value.starts_with(ENCRYPT_PREFIX) || value.starts_with(LINUX_ENCRYPT_PREFIX)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum StoredText<'a> {
+    Plain(&'a str),
+    Decrypted(String),
+    Failed,
+}
+
+/// Keep the result of decoding a stored field separate from its plaintext.
+pub fn decode_stored_text(value: &str) -> StoredText<'_> {
+    decode_stored_text_with(value, decrypt_value)
+}
+
+fn decode_stored_text_with(
+    value: &str,
+    decrypt: impl FnOnce(&str) -> Option<String>,
+) -> StoredText<'_> {
+    if !is_encrypted_value(value) {
+        return StoredText::Plain(value);
+    }
+    if let Some(plain) = decrypt(value) {
+        return StoredText::Decrypted(plain);
+    }
+    if has_ciphertext_envelope(value) {
+        StoredText::Failed
+    } else {
+        StoredText::Plain(value)
+    }
+}
+
+fn has_ciphertext_envelope(value: &str) -> bool {
+    let (linux, payload) = if let Some(payload) = value.strip_prefix(LINUX_ENCRYPT_PREFIX) {
+        (true, payload)
+    } else if let Some(payload) = value.strip_prefix(ENCRYPT_PREFIX) {
+        (false, payload)
+    } else {
+        return false;
+    };
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) else {
+        return false;
+    };
+    if linux {
+        // AES-GCM stores a 12-byte nonce followed by ciphertext and a 16-byte tag.
+        bytes.len() >= 12 + 16
+    } else {
+        valid_dpapi_envelope(&bytes).is_some()
+    }
+}
+
+fn valid_dpapi_envelope(data: &[u8]) -> Option<()> {
+    struct Reader<'a> {
+        data: &'a [u8],
+        position: usize,
+    }
+    impl<'a> Reader<'a> {
+        fn take(&mut self, count: usize) -> Option<&'a [u8]> {
+            let end = self.position.checked_add(count)?;
+            let bytes = self.data.get(self.position..end)?;
+            self.position = end;
+            Some(bytes)
+        }
+        fn word(&mut self) -> Option<u32> {
+            Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
+        }
+        fn blob(&mut self) -> Option<&'a [u8]> {
+            let count = usize::try_from(self.word()?).ok()?;
+            self.take(count)
+        }
+    }
+    // DPAPI_BLOB layout: https://github.com/fortra/impacket/blob/master/impacket/dpapi.py
+    const PROVIDER: [u8; 16] = [
+        0xd0, 0x8c, 0x9d, 0xdf, 0x01, 0x15, 0xd1, 0x11, 0x8c, 0x7a, 0x00, 0xc0, 0x4f, 0xc2, 0x97,
+        0xeb,
+    ];
+    let mut reader = Reader { data, position: 0 };
+    if reader.word()? != 1 || reader.take(16)? != PROVIDER || reader.word()? != 1 {
+        return None;
+    }
+    reader.take(16)?; // Master key GUID.
+    reader.word()?; // Flags.
+    if reader.blob()?.len() % 2 != 0 {
+        return None;
+    }
+    let cipher_algorithm = reader.word()?;
+    let cipher_bits = reader.word()?;
+    if cipher_algorithm & 0xe000 != 0x6000
+        || cipher_bits == 0
+        || cipher_bits > 4096
+        || cipher_bits % 8 != 0
+    {
+        return None;
+    }
+    if reader.blob()?.is_empty() {
+        return None;
+    } // Salt.
+    reader.blob()?; // Optional HMAC key.
+    let hash_algorithm = reader.word()?;
+    let hash_bits = reader.word()?;
+    if hash_algorithm & 0xe000 != 0x8000 || hash_bits == 0 || hash_bits > 4096 || hash_bits % 8 != 0
+    {
+        return None;
+    }
+    reader.blob()?; // HMAC data.
+    if reader.blob()?.is_empty() || reader.blob()?.is_empty() || reader.position != data.len() {
+        return None;
+    }
+    Some(())
+}
+
+#[cfg(test)]
+mod stored_text_tests {
+    use super::*;
+
+    fn dpapi_blob() -> Vec<u8> {
+        fn word(bytes: &mut Vec<u8>, value: u32) {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        fn blob(bytes: &mut Vec<u8>, value: &[u8]) {
+            word(bytes, value.len() as u32);
+            bytes.extend_from_slice(value);
+        }
+        let mut bytes = Vec::new();
+        word(&mut bytes, 1);
+        bytes.extend_from_slice(&[
+            0xd0, 0x8c, 0x9d, 0xdf, 0x01, 0x15, 0xd1, 0x11, 0x8c, 0x7a, 0x00, 0xc0, 0x4f, 0xc2,
+            0x97, 0xeb,
+        ]);
+        word(&mut bytes, 1);
+        bytes.extend_from_slice(&[42; 16]);
+        word(&mut bytes, 0);
+        blob(&mut bytes, &[0, 0]);
+        word(&mut bytes, 0x6610);
+        word(&mut bytes, 256);
+        blob(&mut bytes, &[1; 32]);
+        blob(&mut bytes, &[]);
+        word(&mut bytes, 0x800e);
+        word(&mut bytes, 512);
+        blob(&mut bytes, &[2; 32]);
+        blob(&mut bytes, &[3; 16]);
+        blob(&mut bytes, &[4; 64]);
+        bytes
+    }
+
+    #[test]
+    fn ordinary_prefix_text_and_short_or_non_dpapi_blobs_are_plain() {
+        for value in [
+            "linux: kernel notes",
+            "dpapi: configuration",
+            "linux:<p>HTML</p>",
+            "dpapi:",
+            "linux:unreadable",
+        ] {
+            assert_eq!(
+                decode_stored_text_with(value, |_| None),
+                StoredText::Plain(value)
+            );
+        }
+        for length in 0..28 {
+            let value = format!(
+                "linux:{}",
+                base64::engine::general_purpose::STANDARD.encode(vec![42; length])
+            );
+            assert_eq!(
+                decode_stored_text_with(&value, |_| None),
+                StoredText::Plain(value.as_str())
+            );
+        }
+        let value = format!(
+            "dpapi:{}",
+            base64::engine::general_purpose::STANDARD.encode([42; 200])
+        );
+        assert_eq!(
+            decode_stored_text_with(&value, |_| None),
+            StoredText::Plain(value.as_str())
+        );
+    }
+
+    #[test]
+    fn failed_complete_envelopes_remain_distinct_from_plaintext() {
+        for value in [
+            format!(
+                "linux:{}",
+                base64::engine::general_purpose::STANDARD.encode([42; 28])
+            ),
+            format!(
+                "dpapi:{}",
+                base64::engine::general_purpose::STANDARD.encode(dpapi_blob())
+            ),
+        ] {
+            assert_eq!(
+                decode_stored_text_with(&value, |_| None),
+                StoredText::Failed
+            );
+            for plain in ["linux: kernel notes", "dpapi:<p>HTML</p>"] {
+                assert_eq!(
+                    decode_stored_text_with(&value, |_| Some(plain.to_string())),
+                    StoredText::Decrypted(plain.to_string())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dpapi_requires_provider_guid_and_all_length_prefixed_fields() {
+        let bytes = dpapi_blob();
+        assert!(valid_dpapi_envelope(&bytes).is_some());
+        for length in 0..bytes.len() {
+            assert!(
+                valid_dpapi_envelope(&bytes[..length]).is_none(),
+                "truncated at {length}"
+            );
+        }
+        let mut trailing = bytes.clone();
+        trailing.push(0);
+        assert!(valid_dpapi_envelope(&trailing).is_none());
+        let mut wrong_provider = bytes.clone();
+        wrong_provider[4] ^= 1;
+        assert!(valid_dpapi_envelope(&wrong_provider).is_none());
+        let mut oversized = bytes;
+        oversized[44..48].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(valid_dpapi_envelope(&oversized).is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn native_dpapi_markers_decrypt_once_and_tampered_signatures_fail() {
+        for plain in ["linux: kernel notes\r\n", "dpapi: literal content"] {
+            let encrypted = encrypt_value(plain).expect("native DPAPI encryption");
+            assert!(has_ciphertext_envelope(&encrypted));
+            assert_eq!(
+                decode_stored_text(&encrypted),
+                StoredText::Decrypted(plain.to_string())
+            );
+            let mut bytes = base64::engine::general_purpose::STANDARD
+                .decode(encrypted.strip_prefix(ENCRYPT_PREFIX).unwrap())
+                .unwrap();
+            *bytes.last_mut().unwrap() ^= 1;
+            let tampered = format!(
+                "{ENCRYPT_PREFIX}{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            );
+            assert_eq!(decode_stored_text(&tampered), StoredText::Failed);
+        }
+    }
+}
+
 #[cfg(windows)]
 pub fn encrypt_value(plain: &str) -> Option<String> {
     let bytes = plain.as_bytes();

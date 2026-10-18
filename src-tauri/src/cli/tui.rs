@@ -8,7 +8,8 @@ use crate::infrastructure::repository::clipboard_repo::{
 use crate::infrastructure::repository::tag_repo::{SqliteTagRepository, TagRepository};
 use crate::infrastructure::terminal_ui::Terminal;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use unicode_width::UnicodeWidthChar;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 mod render;
 
@@ -83,7 +84,7 @@ impl Browser {
             self.preview = if entry.content_type == "image" {
                 format!("[image]\n{}", entry.preview)
             } else {
-                entry.content.chars().take(PREVIEW_CHAR_LIMIT).collect()
+                fit_char_budget(&entry.content, PREVIEW_CHAR_LIMIT).to_string()
             };
         }
         Ok(())
@@ -295,7 +296,9 @@ impl Browser {
                     match key.code {
                         KeyCode::Enter => return Ok(Some(value)),
                         KeyCode::Backspace => {
-                            value.pop();
+                            if let Some((start, _)) = value.grapheme_indices(true).next_back() {
+                                value.truncate(start);
+                            }
                         }
                         KeyCode::Char(character)
                             if !key
@@ -310,7 +313,7 @@ impl Browser {
                 }
                 Event::Paste(text) => {
                     let room = 1024usize.saturating_sub(value.chars().count());
-                    value.push_str(&frontend::display_text(&text, room));
+                    value.push_str(&display_text(&text, room));
                 }
                 _ => {}
             }
@@ -346,34 +349,71 @@ fn changed_tags(mut tags: Vec<String>, tag: &str, adding: bool) -> Vec<String> {
 
 fn fit_columns(text: &str, columns: usize) -> String {
     let mut width = 0usize;
-    text.chars()
-        .take_while(|character| {
-            width = width.saturating_add(character.width().unwrap_or(0));
+    text.graphemes(true)
+        .take_while(|grapheme| {
+            width = width.saturating_add(grapheme.width());
             width <= columns
         })
         .collect()
+}
+
+fn fit_char_budget(text: &str, maximum: usize) -> &str {
+    let mut remaining = maximum;
+    for (start, grapheme) in text.grapheme_indices(true) {
+        let count = grapheme.chars().count();
+        if count > remaining {
+            return &text[..start];
+        }
+        remaining -= count;
+    }
+    text
+}
+
+fn display_text(text: &str, maximum: usize) -> String {
+    // Joiners and non-joiners belong to emoji and script graphemes. Keep them
+    // while retaining the shared policy for whitespace, controls and bidi.
+    let mut sanitized = if text.contains(['\u{200c}', '\u{200d}']) {
+        let mut output = String::with_capacity(text.len());
+        for part in text.split_inclusive(['\u{200c}', '\u{200d}']) {
+            if let Some(joiner) = part
+                .chars()
+                .next_back()
+                .filter(|character| matches!(character, '\u{200c}' | '\u{200d}'))
+            {
+                output.push_str(&frontend::display_text(
+                    &part[..part.len() - joiner.len_utf8()],
+                    usize::MAX,
+                ));
+                output.push(joiner);
+            } else {
+                output.push_str(&frontend::display_text(part, usize::MAX));
+            }
+        }
+        output
+    } else {
+        frontend::display_text(text, usize::MAX)
+    };
+    let length = fit_char_budget(&sanitized, maximum).len();
+    sanitized.truncate(length);
+    sanitized
 }
 
 fn preview_lines(text: &str, columns: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut width = 0usize;
-    let mut characters = text.chars().take(PREVIEW_CHAR_LIMIT).peekable();
-    while let Some(character) = characters.next() {
-        if character == '\n' || character == '\r' {
-            if character == '\r' && characters.peek() == Some(&'\n') {
-                characters.next();
-            }
+    for grapheme in fit_char_budget(text, PREVIEW_CHAR_LIMIT).graphemes(true) {
+        if matches!(grapheme, "\n" | "\r" | "\r\n") {
             lines.push(std::mem::take(&mut line));
             width = 0;
         } else {
-            let clean = if character == '\t' {
+            let clean = if grapheme == "\t" {
                 "    ".to_string()
             } else {
-                frontend::display_text(&character.to_string(), 1)
+                display_text(grapheme, usize::MAX)
             };
-            for character in clean.chars() {
-                let char_width = character.width().unwrap_or(0);
+            for grapheme in clean.graphemes(true) {
+                let char_width = grapheme.width();
                 if char_width > columns {
                     continue;
                 }
@@ -381,7 +421,7 @@ fn preview_lines(text: &str, columns: usize) -> Vec<String> {
                     lines.push(std::mem::take(&mut line));
                     width = 0;
                 }
-                line.push(character);
+                line.push_str(grapheme);
                 width += char_width;
             }
         }
@@ -403,6 +443,7 @@ fn preview_lines(text: &str, columns: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use unicode_width::UnicodeWidthChar;
 
     #[test]
     fn preview_sanitizes_controls_preserving_line_breaks_and_unicode_columns() {
@@ -454,5 +495,24 @@ mod tests {
             KeyCode::Char('c'),
             KeyModifiers::NONE
         )));
+    }
+
+    #[test]
+    fn column_and_character_limits_keep_complete_graphemes() {
+        for cluster in ["e\u{301}", "👩🏽‍💻", "🇨🇳", "✈\u{fe0f}", "ی\u{200c}"] {
+            let width = cluster.width();
+            let characters = cluster.chars().count();
+            assert_eq!(fit_columns(&format!("{cluster}x"), width), cluster);
+            assert_eq!(fit_columns(&format!("x{cluster}"), width), "x");
+            assert_eq!(fit_char_budget(cluster, characters - 1), "");
+            assert_eq!(display_text(&format!("{cluster}x"), characters), cluster);
+            assert_eq!(preview_lines(&cluster.repeat(2), width), [cluster, cluster]);
+        }
+        assert_eq!(display_text("a\u{202e}\x1b\u{200b}b", 100), "ab");
+        assert_eq!(display_text("می\u{200c}روم", 100), "می\u{200c}روم");
+        assert_eq!(
+            display_text("x\u{200c}\u{200d}\u{200e}\u{200f}y", 100),
+            "x\u{200c}\u{200d}y"
+        );
     }
 }

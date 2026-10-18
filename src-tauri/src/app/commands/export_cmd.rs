@@ -37,7 +37,7 @@ fn export_json(
 ) -> Result<ExportSummary, String> {
     let entries = state
         .repo
-        .query_cli(&CliQuery {
+        .query_cli_for_export(&CliQuery {
             limit: i32::MAX,
             ..Default::default()
         })
@@ -53,7 +53,7 @@ fn export_encrypted(
 ) -> Result<ExportSummary, String> {
     let entries = state
         .repo
-        .query_cli(&CliQuery {
+        .query_cli_for_export(&CliQuery {
             limit: i32::MAX,
             ..Default::default()
         })

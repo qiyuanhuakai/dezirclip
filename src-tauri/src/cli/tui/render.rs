@@ -12,6 +12,7 @@ use ratatui::widgets::{
 };
 use ratatui::{Frame, Terminal, TerminalOptions, Viewport};
 use std::fs::File;
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 const BACKGROUND: Color = Color::Rgb(12, 17, 26);
@@ -110,7 +111,7 @@ fn muted(value: impl Into<String>) -> Span<'static> {
 }
 
 fn clean(value: &str, maximum: usize) -> String {
-    frontend::display_text(value, maximum)
+    super::display_text(value, maximum)
 }
 
 pub(super) fn paint(
@@ -502,20 +503,43 @@ fn highlight_text<'a>(text: &'a str, query: &str) -> Vec<Span<'a>> {
     if query.is_empty() {
         return vec![Span::styled(text, Style::default().fg(TEXT))];
     }
+    let mut matches = text.match_indices(query).peekable();
     let mut spans = Vec::new();
-    let mut rest = text;
-    while let Some(index) = rest.find(query) {
-        if index > 0 {
-            spans.push(Span::styled(&rest[..index], Style::default().fg(TEXT)));
+    let mut start = 0;
+    let mut highlighted = false;
+    for (index, grapheme) in text.grapheme_indices(true) {
+        while matches
+            .peek()
+            .is_some_and(|(offset, found)| offset + found.len() <= index)
+        {
+            matches.next();
         }
-        spans.push(Span::styled(
-            &rest[index..index + query.len()],
-            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
-        ));
-        rest = &rest[index + query.len()..];
+        let matching = matches
+            .peek()
+            .is_some_and(|(offset, _)| *offset < index + grapheme.len());
+        if matching != highlighted {
+            if start < index {
+                spans.push(highlight_span(&text[start..index], highlighted));
+            }
+            start = index;
+            highlighted = matching;
+        }
     }
-    spans.push(Span::styled(rest, Style::default().fg(TEXT)));
+    if start < text.len() {
+        spans.push(highlight_span(&text[start..], highlighted));
+    }
     spans
+}
+
+fn highlight_span(text: &str, highlighted: bool) -> Span<'_> {
+    Span::styled(
+        text,
+        if highlighted {
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(TEXT)
+        },
+    )
 }
 
 fn draw_footer(frame: &mut Frame<'_>, area: Rect, view: &View<'_>) {
@@ -601,14 +625,14 @@ fn tail_columns(text: &str, columns: usize) -> String {
     }
     let mut width = 0;
     let tail = text
-        .chars()
+        .graphemes(true)
         .rev()
-        .take_while(|character| {
-            width += unicode_width::UnicodeWidthChar::width(*character).unwrap_or(0);
+        .take_while(|grapheme| {
+            width += grapheme.width();
             width <= columns
         })
-        .collect::<String>();
-    tail.chars().rev().collect()
+        .collect::<Vec<_>>();
+    tail.into_iter().rev().collect()
 }
 
 fn type_label(kind: &str) -> &str {
@@ -824,6 +848,81 @@ mod tests {
             assert_eq!(
                 buffer.content().len(),
                 usize::from(width) * usize::from(height)
+            );
+        }
+    }
+
+    #[test]
+    fn preview_highlights_keep_complete_combining_and_emoji_clusters() {
+        for (preview, query, cluster) in [
+            ("cafe\u{301}", "e", "e\u{301}"),
+            ("cafe\u{301}", "\u{301}", "e\u{301}"),
+            ("👩🏽‍💻", "🏽", "👩🏽‍💻"),
+            ("🇨🇳", "🇨", "🇨🇳"),
+            ("✈\u{fe0f}", "✈", "✈\u{fe0f}"),
+            ("می\u{200c}روم", "ی", "ی\u{200c}"),
+        ] {
+            let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+            let mut options = options();
+            options.query = query.to_string();
+            let entries = [entry()];
+            let view = View {
+                options: &options,
+                entries: &entries,
+                cursor: 0,
+                preview,
+                preview_offset: 0,
+                status: "",
+            };
+            terminal
+                .draw(|frame| {
+                    paint(frame, &view, None, &mut ListState::default());
+                })
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            assert!(
+                buffer
+                    .content()
+                    .iter()
+                    .any(|cell| cell.symbol() == cluster && cell.fg == ACCENT),
+                "grapheme {cluster:?} was split or lost:\n{}",
+                text(buffer)
+            );
+        }
+    }
+
+    #[test]
+    fn list_and_prompt_clipping_keep_emoji_and_combining_cells_whole() {
+        for cluster in ["e\u{301}", "👩🏽‍💻", "🇨🇳", "✈\u{fe0f}", "ی\u{200c}"] {
+            assert_eq!(
+                tail_columns(&format!("x{cluster}"), cluster.width()),
+                cluster
+            );
+            let mut selected = entry();
+            selected.preview = format!("{cluster}{}", "x".repeat(200));
+            let list_buffer = draw(64, 24, std::slice::from_ref(&selected), "", None);
+            assert!(
+                list_buffer
+                    .content()
+                    .iter()
+                    .any(|cell| cell.symbol() == cluster),
+                "grapheme {cluster:?} was split in the list:\n{}",
+                text(&list_buffer)
+            );
+            let buffer = draw(
+                64,
+                24,
+                &[selected],
+                "",
+                Some(Prompt {
+                    label: "Tag to add:",
+                    value: &format!("{}{cluster}", "x".repeat(200)),
+                }),
+            );
+            assert!(
+                (0..64).any(|column| buffer[(column, 11)].symbol() == cluster),
+                "grapheme {cluster:?} was split in the prompt tail:\n{}",
+                text(&buffer)
             );
         }
     }

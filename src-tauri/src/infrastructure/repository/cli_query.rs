@@ -92,6 +92,24 @@ impl SqliteClipboardRepository {
     }
 
     pub fn query_cli(&self, query: &CliQuery<'_>) -> Result<Vec<ClipboardEntry>, String> {
+        self.query_cli_with_decoding(query, false)
+    }
+
+    pub fn query_cli_for_export(
+        &self,
+        query: &CliQuery<'_>,
+    ) -> Result<Vec<ClipboardEntry>, String> {
+        if query.metadata {
+            return Err("export requires complete payloads".to_string());
+        }
+        self.query_cli_with_decoding(query, true)
+    }
+
+    fn query_cli_with_decoding(
+        &self,
+        query: &CliQuery<'_>,
+        strict_decryption: bool,
+    ) -> Result<Vec<ClipboardEntry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let search = query.search.map(|(q, m)| (q.to_owned(), m.to_owned()));
         let regex = match &search {
@@ -177,18 +195,30 @@ impl SqliteClipboardRepository {
         let mut rows = stmt.raw_query();
         let mut result = Vec::new();
         while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let id: i64 = row.get(0).map_err(|e| e.to_string())?;
+            let decode_value = |value: String| -> Result<String, String> {
+                if !strict_decryption {
+                    return Ok(self.maybe_decrypt_text(&value));
+                }
+                match crate::infrastructure::encryption::decode_stored_text(&value) {
+                    crate::infrastructure::encryption::StoredText::Plain(value) => Ok(value.to_owned()),
+                    crate::infrastructure::encryption::StoredText::Decrypted(value) => Ok(value),
+                    crate::infrastructure::encryption::StoredText::Failed => Err(format!("export: entry id={id} could not be decrypted; restore access to its encryption key before backing up")),
+                }
+            };
             let decode = |index| -> Result<String, String> {
                 let value: String = row.get(index).map_err(|e| e.to_string())?;
-                Ok(self.maybe_decrypt_text(&value))
+                decode_value(value)
             };
             result.push(ClipboardEntry {
-                id: row.get(0).map_err(|e| e.to_string())?,
+                id,
                 content_type: row.get(1).map_err(|e| e.to_string())?,
                 content: decode(2)?,
                 html_content: row
                     .get::<_, Option<String>>(3)
                     .map_err(|e| e.to_string())?
-                    .map(|s| self.maybe_decrypt_text(&s)),
+                    .map(decode_value)
+                    .transpose()?,
                 source_app: row.get(4).map_err(|e| e.to_string())?,
                 timestamp: row.get(5).map_err(|e| e.to_string())?,
                 preview: decode(6)?

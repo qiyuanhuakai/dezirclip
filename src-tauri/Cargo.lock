@@ -1261,6 +1261,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
  "tokio",
+ "unicode-segmentation",
  "unicode-width",
  "urlencoding",
  "uuid",

@@ -20,7 +20,7 @@
 //! ## Flow
 //!
 //! 1. Validate args (passphrase length, encrypted+no-passphrase).
-//! 2. Fetch all entries via `repo.query_cli(&CliQuery {limit:i32::MAX,..Default::default()})`.
+//! 2. Fetch all entries via `repo.query_cli_for_export(&CliQuery {limit:i32::MAX,..Default::default()})`.
 //! 3. Map `ClipboardEntry` → `services::backup::ExportEntry`.
 //! 4. Serialize via `export_to_json` or `export_to_encrypted`.
 //! 5. Write to `path` (creates parent dirs if missing).
@@ -97,7 +97,7 @@ pub fn run(args: &ExportArgs, repo: &SqliteClipboardRepository) -> Result<(), St
 
     // Read complete payloads rather than the desktop history preview projection.
     let raw_entries = repo
-        .query_cli(&CliQuery {
+        .query_cli_for_export(&CliQuery {
             limit: i32::MAX,
             ..Default::default()
         })

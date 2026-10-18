@@ -47,6 +47,7 @@ regex = "1.12.2"
 crossterm = "0.29"
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm", "crossterm_0_29"] }
 unicode-width = { version = "0.2", default-features = false }
+unicode-segmentation = "1.13.3"
 tauri-plugin-single-instance = { version = "2", optional = true }
 tauri-plugin-window-state = { version = "2", optional = true }
 uuid = { version = "1.19.0", features = ["v4"] }

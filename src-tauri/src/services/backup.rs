@@ -444,16 +444,8 @@ fn now_unix_secs() -> i64 {
         .unwrap_or(0)
 }
 
+/// Convert decoded domain data; database callers use `query_cli_for_export` first.
 pub fn prepare_export_entry(e: &ClipboardEntry) -> Result<ExportEntry, String> {
-    if [&e.content, &e.preview]
-        .iter()
-        .any(|value| crate::infrastructure::encryption::is_encrypted_value(value))
-        || e.html_content
-            .as_deref()
-            .is_some_and(crate::infrastructure::encryption::is_encrypted_value)
-    {
-        return Err(format!("export: entry id={} could not be decrypted; restore access to its encryption key before backing up",e.id));
-    }
     let content = if e.content_type == "image" {
         let bytes = crate::infrastructure::attachments::image_bytes(&e.content)
             .map_err(|error| format!("export: image attachment id={}: {error}", e.id))?;
@@ -873,6 +865,39 @@ mod data_integrity_tests {
     }
 
     #[test]
+    fn literal_encryption_markers_in_plaintext_fields_export_without_changes() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-marker-export-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let (repo, _) = repository();
+        for prefix in ["linux:", "dpapi:"] {
+            let mut source = entry(7, "rich_text", format!("{prefix} kernel notes\r\n"));
+            source.preview = format!("{prefix} ordinary preview");
+            source.html_content = Some(format!("{prefix}<p>ordinary HTML</p>"));
+            repo.import_cli_entries(&[source.clone()], true).unwrap();
+            let path = directory.join("history.json");
+            crate::cli::export::run(
+                &crate::cli::export::ExportArgs {
+                    path: path.to_string_lossy().into_owned(),
+                    encrypted: false,
+                    passphrase: None,
+                    quiet: true,
+                },
+                &repo,
+            )
+            .unwrap();
+            let exported = entries_from_json(&std::fs::read_to_string(path).unwrap()).unwrap();
+            assert_eq!(exported[0].content, source.content);
+            assert_eq!(
+                exported[0].preview.as_deref(),
+                Some(source.preview.as_str())
+            );
+            assert_eq!(exported[0].html_content, source.html_content);
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn shared_backup_roundtrip_preserves_long_html_images_and_metadata() {
         let directory =
             std::env::temp_dir().join(format!("dezirclip-roundtrip-{}", uuid::Uuid::new_v4()));
@@ -1015,22 +1040,146 @@ mod data_integrity_tests {
     }
 
     #[test]
-    fn unreadable_ciphertext_and_invalid_stored_images_are_not_portable_backups() {
+    fn invalid_stored_images_are_not_portable_backups() {
         let mut original = entry(7, "rich_text", "plain text".to_string());
-        for field in ["content", "preview", "html"] {
-            let mut encrypted = original.clone();
-            match field {
-                "content" => encrypted.content = "dpapi:unreadable".to_string(),
-                "preview" => encrypted.preview = "linux:unreadable".to_string(),
-                _ => encrypted.html_content = Some("dpapi:unreadable".to_string()),
-            }
-            assert!(prepare_export_entry(&encrypted)
-                .unwrap_err()
-                .contains("could not be decrypted"));
-        }
         original.content_type = "image".to_string();
         original.content = "data:image/png;base64,bm90IGFuIGltYWdl".to_string();
         assert!(prepare_export_entry(&original).is_err());
+    }
+
+    fn unavailable_ciphertexts() -> Vec<String> {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        let cipher = Aes256Gcm::new_from_slice(&[173; 32]).unwrap();
+        let nonce = [197; 12];
+        let encrypted = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                b"foreign-key private payload".as_slice(),
+            )
+            .unwrap();
+        let mut bytes = nonce.to_vec();
+        bytes.extend(encrypted);
+        let values = vec![format!("linux:{}", STANDARD.encode(bytes))];
+        #[cfg(windows)]
+        let values = {
+            let mut values = values;
+            let native =
+                crate::infrastructure::encryption::encrypt_value("native private payload").unwrap();
+            let mut bytes = STANDARD
+                .decode(native.strip_prefix("dpapi:").unwrap())
+                .unwrap();
+            *bytes.last_mut().unwrap() ^= 1;
+            values.push(format!("dpapi:{}", STANDARD.encode(bytes)));
+            values
+        };
+        values
+    }
+
+    #[test]
+    fn unavailable_encrypted_fields_abort_export_and_preserve_previous_backup() {
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-failed-decrypt-export-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let (repo, connection) = repository();
+        for cipher in unavailable_ciphertexts() {
+            assert!(crate::infrastructure::encryption::decrypt_value(&cipher).is_none());
+            for field in ["content", "preview", "html_content"] {
+                repo.import_cli_entries(
+                    &[
+                        entry(7, "rich_text", "safe text".to_string()),
+                        entry(8, "text", "visible entry".to_string()),
+                    ],
+                    true,
+                )
+                .unwrap();
+                connection.lock().unwrap().execute(&format!("UPDATE clipboard_history SET {field}=?1,tags='[\"sensitive\"]' WHERE id=7"),[&cipher]).unwrap();
+                for encrypted in [false, true] {
+                    let path = directory.join("previous.json");
+                    std::fs::write(&path, b"previous usable backup").unwrap();
+                    let error = crate::cli::export::run(
+                        &crate::cli::export::ExportArgs {
+                            path: path.to_string_lossy().into_owned(),
+                            encrypted,
+                            passphrase: Some("valid backup passphrase".to_string()),
+                            quiet: true,
+                        },
+                        &repo,
+                    )
+                    .unwrap_err();
+                    assert!(error.contains("could not be decrypted"), "{field}: {error}");
+                    assert!(!error.contains(&cipher));
+                    assert_eq!(std::fs::read(path).unwrap(), b"previous usable backup");
+                }
+                let filtered = repo
+                    .query_cli_for_export(&CliQuery {
+                        limit: i32::MAX,
+                        exclude_sensitive: true,
+                        ..Default::default()
+                    })
+                    .unwrap();
+                assert_eq!(filtered.len(), 1);
+                assert_eq!(filtered[0].content, "visible entry");
+            }
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn successfully_decrypted_sensitive_marker_fields_remain_plain_export_content() {
+        let (repo, connection) = repository();
+        let mut source = entry(7, "rich_text", "linux: kernel notes\r\n".to_string());
+        source.preview = "dpapi: ordinary preview".to_string();
+        source.html_content = Some("linux:<p>HTML</p>".to_string());
+        source.tags = vec!["sensitive".to_string()];
+        repo.import_cli_entries(&[source.clone()], true).unwrap();
+        let encrypted: Vec<_> = [
+            source.content.as_str(),
+            source.preview.as_str(),
+            source.html_content.as_deref().unwrap(),
+        ]
+        .iter()
+        .map(|value| crate::infrastructure::encryption::encrypt_value(value).unwrap())
+        .collect();
+        connection
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE clipboard_history SET content=?1,preview=?2,html_content=?3 WHERE id=7",
+                rusqlite::params![encrypted[0], encrypted[1], encrypted[2]],
+            )
+            .unwrap();
+        let decoded = repo
+            .query_cli_for_export(&CliQuery {
+                limit: i32::MAX,
+                ..Default::default()
+            })
+            .unwrap();
+        let exported = prepare_export_entry(&decoded[0]).unwrap();
+        assert_eq!(exported.content, source.content);
+        assert_eq!(exported.preview.as_deref(), Some(source.preview.as_str()));
+        assert_eq!(exported.html_content, source.html_content);
+        let json = export_to_json(vec![exported]).unwrap();
+        let (restored, _) = repository();
+        apply_entries(
+            &restored,
+            &entries_from_json(&json).unwrap(),
+            ImportMode::Replace,
+        )
+        .unwrap();
+        let output = restored
+            .query_cli_for_export(&CliQuery {
+                limit: i32::MAX,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(output[0].content, source.content);
+        assert_eq!(output[0].html_content, source.html_content);
     }
 
     #[test]
