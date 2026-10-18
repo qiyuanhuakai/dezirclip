@@ -337,8 +337,20 @@ mod tests {
 
     fn file_uri(path: &Path) -> String {
         let path = path.to_str().unwrap().replace('\\', "/");
-        let encoded = path.split('/').map(urlencoding::encode).collect::<Vec<_>>().join("/");
-        format!("{}{}", if path.starts_with('/') { "file://" } else { "file:///" }, encoded)
+        let encoded = path
+            .split('/')
+            .map(urlencoding::encode)
+            .collect::<Vec<_>>()
+            .join("/");
+        format!(
+            "{}{}",
+            if path.starts_with('/') {
+                "file://"
+            } else {
+                "file:///"
+            },
+            encoded
+        )
     }
 
     struct Fixture {
@@ -572,6 +584,62 @@ mod tests {
         );
     }
 
+    fn assert_comment_resource_cleanup(markup: &str, retain: bool) {
+        let fixture = Fixture::new();
+        fixture.settings().set(PRIVACY_SETTING, "false").unwrap();
+        let shared = fixture.file("comment-shared.png");
+        fixture.entry(1, "sensitive", shared.to_str().unwrap(), true, None);
+        let html = markup.replace("RESOURCE", &file_uri(&shared));
+        fixture.entry(2, "keep", "HTML comment", false, Some(&html));
+        let report = fixture
+            .repository()
+            .delete_globally("sensitive", Some(&fixture.directory))
+            .unwrap();
+        assert_eq!(report.deleted_ids, HashSet::from([1]));
+        assert!(report.cleanup_errors.is_empty());
+        assert_eq!(fixture.count("clipboard_history"), 1);
+        assert_eq!(fixture.count("entry_tags"), 1);
+        assert_eq!(shared.exists(), retain, "HTML: {markup}");
+    }
+
+    #[test]
+    fn sensitive_delete_comment_abrupt_empty_close_preserves_surviving_image() {
+        assert_comment_resource_cleanup("<!--><img src='RESOURCE'><!-- tail -->", true);
+    }
+
+    #[test]
+    fn sensitive_delete_comment_abrupt_dash_close_preserves_surviving_image() {
+        assert_comment_resource_cleanup("<!---><img src='RESOURCE'><!-- tail -->", true);
+    }
+
+    #[test]
+    fn sensitive_delete_comment_bang_close_preserves_surviving_image() {
+        assert_comment_resource_cleanup("<!-- bad --!><img src='RESOURCE'><!-- tail -->", true);
+    }
+
+    #[test]
+    fn sensitive_delete_comment_standard_boundaries_preserve_only_live_references() {
+        assert_comment_resource_cleanup("<!-- regular --><img src='RESOURCE'>", true);
+        assert_comment_resource_cleanup("<!-- <img src='RESOURCE'> -->", false);
+        assert_comment_resource_cleanup("<!----><img src='RESOURCE'><!-- harmless -->", true);
+    }
+
+    #[test]
+    fn sensitive_delete_comment_other_error_recovery_retains_attachments() {
+        for markup in [
+            "<!--foo--!><img src='RESOURCE'><!-- tail -->",
+            "<!-->\0<img src='RESOURCE'><!-- tail -->",
+            "<!--\r--!><img src='RESOURCE'><!-- tail -->",
+            "<!-- outer <!-- inner --><img src='RESOURCE'><!-- tail -->",
+            "<!-- outer <!--> <img src='RESOURCE'><!-- tail -->",
+            "<!-- unfinished <img src='RESOURCE'>",
+            "<!-- bad\0comment --><img src='RESOURCE'>",
+            "<!-- bad <!---> <img src='RESOURCE'><!-- tail -->",
+        ] {
+            assert_comment_resource_cleanup(markup, true);
+        }
+    }
+
     #[test]
     fn unresolved_external_alias_stays_conservative_with_plain_html() {
         let fixture = Fixture::new();
@@ -584,8 +652,17 @@ mod tests {
             .join("..")
             .join("attachments")
             .join("shared-alias.png");
-        assert_eq!(alias.canonicalize().unwrap(), shared.canonicalize().unwrap());
-        fixture.entry(2, "keep", alias.to_str().unwrap(), true, Some("<p>keep</p>"));
+        assert_eq!(
+            alias.canonicalize().unwrap(),
+            shared.canonicalize().unwrap()
+        );
+        fixture.entry(
+            2,
+            "keep",
+            alias.to_str().unwrap(),
+            true,
+            Some("<p>keep</p>"),
+        );
         let report = fixture
             .repository()
             .delete_globally("sensitive", Some(&fixture.directory))

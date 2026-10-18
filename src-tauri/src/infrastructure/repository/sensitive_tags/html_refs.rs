@@ -21,7 +21,20 @@ pub(super) fn references(html: &str) -> HtmlReferences {
                 result.complete = false;
                 break;
             };
-            if let Some(payload) = comment[..end].strip_prefix("TIEZ_RICH_IMAGE:") {
+            let body = &comment[..end];
+            // Skip only conforming comments. HTML5 can close malformed comments
+            // before this terminator, so their apparent contents may be live HTML.
+            if body.starts_with('>')
+                || body.starts_with("->")
+                || body.contains("<!--")
+                || body.contains("--!>")
+                || body.ends_with("<!-")
+                || body.contains('\0')
+            {
+                result.complete = false;
+                return result;
+            }
+            if let Some(payload) = body.strip_prefix("TIEZ_RICH_IMAGE:") {
                 result.values.push(payload.trim().to_owned());
             }
             rest = &comment[end + 3..];
