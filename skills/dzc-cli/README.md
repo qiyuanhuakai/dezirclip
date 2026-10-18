@@ -1,6 +1,6 @@
 # dzc-cli skill — Developer Notes
 
-The skill follows the current source tree. **Native `pick`, `tui`, `mcp`, and Shell initialization commands are development additions after `v0.1.20-alpha.1`; the published alpha.1 does not include them.** Check `dzc --help`, use a build containing these commands, and keep skill documentation aligned with the executable version. The native integrations require no Python runtime.
+The skill follows the current source tree. **Native `pick`, `tui`, `mcp`, and Shell initialization commands are available since `v0.1.20-alpha.2`.** Check `dzc --help`, use a build containing these commands, and keep skill documentation aligned with the executable version. The native integrations require no Python runtime.
 
 ## Layout
 
@@ -51,7 +51,7 @@ This skill uses a **symlink/junction model** for installation.
 
 ## Native entrypoints
 
-The same executable now contains the terminal UI, external-picker bridge, Shell widgets, and read-only MCP service. These are post-alpha.1 commands:
+The same executable now contains the terminal UI, external-picker bridge, Shell widgets, and read-only MCP service. These commands are available since `v0.1.20-alpha.2`:
 
 ```bash
 dzc pick                              # Built-in TUI; Enter copies natively

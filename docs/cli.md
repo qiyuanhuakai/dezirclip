@@ -4,7 +4,7 @@
 
 记录 ID 是当前数据库内的整数标识，`timestamp` 是毫秒级 Unix 时间戳。`list`、`search` 按置顶顺序、时间和 ID 排序；`get latest` 按时间和 ID 取最新记录，不受置顶顺序影响。导入替换、删除或更换数据库后，应重新查询 ID。
 
-当前开发分支将 TUI、fzf/dmenu/rofi 选择器、Shell 输入行插入和只读 MCP 内置于同一份 `dzc`，不需要 Python。**这些原生入口属于 `v0.1.20-alpha.1` 之后的开发内容，已发布的 alpha.1 不包含它们。** 使用前先查看 `dzc --help`，并选择包含相应命令的构建。原有 [Python 适配器](../integrations/README.md) 保留为兼容入口。Shell 插入将选中内容放入编辑缓冲区，供用户确认；复制到系统剪贴板与发送粘贴按键是不同操作。
+TUI、fzf/dmenu/rofi 选择器、Shell 输入行插入和只读 MCP 内置于同一份 `dzc`，不需要 Python。**这些原生入口自 `v0.1.20-alpha.2` 起提供。** 使用前先查看 `dzc --help`，并选择包含相应命令的构建。原有 [Python 适配器](../integrations/README.md) 保留为兼容入口。Shell 插入将选中内容放入编辑缓冲区，供用户确认；复制到系统剪贴板与发送粘贴按键是不同操作。
 
 ## 安装与路径
 
@@ -23,6 +23,8 @@ flatpak run --command=dzc io.github.qiyuanhuakai.dezirclip list --metadata --jso
 ```
 
 沙箱权限、图形会话和自定义目录设置仍然适用。不要把宿主机独立 CLI 的默认数据库误认为 Flatpak 数据库；检查各自数据路径，或在对应环境内明确指定 `DEZIRCLIP_DB_PATH`。
+
+Shell 插件和 MCP 在宿主机运行时应使用独立 CLI 的稳定路径；沙箱内的 `/app/bin/dzc` 不能直接作为宿主机启动命令。
 
 Windows 当前用户安装通常位于 `%LOCALAPPDATA%\DezirClip\dzc.exe`，以实际安装目录为准。当前 PowerShell 会话可临时加入路径：
 
@@ -65,7 +67,7 @@ dzc --help
 
 ## 原生选择器与终端管理
 
-本节命令需要 alpha.1 之后包含原生集成的构建。`pick` 不指定后端时打开内置 TUI；`tui` 直接打开同一界面。默认选中后恢复到原生系统剪贴板：
+本节命令自 `v0.1.20-alpha.2` 起提供。`pick` 不指定后端时打开内置 TUI；`tui` 直接打开同一界面。默认选中后恢复到原生系统剪贴板：
 
 ```bash
 dzc pick
@@ -100,7 +102,7 @@ dzc pick --backend fzf --action osc52 --osc52-passthrough tmux
 
 ## Shell：Ctrl-G 插入当前命令行
 
-以下为 alpha.1 之后的原生入口，只依赖 `dzc` 和所用 Shell。将对应初始化行加入自己的 Shell 启动文件可持久启用，也可先在交互会话中运行：
+以下原生入口自 `v0.1.20-alpha.2` 起提供，只依赖 `dzc` 和所用 Shell。将对应初始化行加入自己的 Shell 启动文件可持久启用，也可先在交互会话中运行：
 
 ```bash
 # Bash 5+
@@ -131,7 +133,7 @@ dzc nu --install $widget
 
 ## 原生只读 MCP
 
-alpha.1 之后的原生服务直接使用共享 Rust 数据访问层，不需要 Python、MCP SDK、GUI 或显示会话：
+自 `v0.1.20-alpha.2` 起提供的原生服务直接使用共享 Rust 数据访问层，不需要 Python、MCP SDK、GUI 或显示会话：
 
 ```bash
 dzc mcp

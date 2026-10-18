@@ -9,7 +9,7 @@ description: Query and manage DezirClip history and native clipboard content thr
 
 The CLI talks directly to the same SQLite backend the desktop app uses. There is no daemon, no REST layer, and no network hop between `dzc` and the data. It works while the app is not running.
 
-The native `pick`, `tui`, `mcp`, and Shell initialization commands described here are development changes **after `v0.1.20-alpha.1`**; the published alpha.1 does not include them. Check the installed executable's `--help` and version before selecting a workflow. Native integrations need no Python runtime.
+The native `pick`, `tui`, `mcp`, and Shell initialization commands described here are available **since `v0.1.20-alpha.2`**. Check the installed executable's `--help` and version before selecting a workflow. Native integrations need no Python runtime.
 
 ## When to use this skill
 

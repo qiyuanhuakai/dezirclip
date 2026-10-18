@@ -33,7 +33,7 @@ $env:DZC_BIN = 'C:\Tools\dzc\dzc.exe'
 dzc pick
 ```
 
-原生 `dzc pick`、`dzc tui`、`dzc mcp` 和 `dzc bash/zsh/fish/nu/pwsh` 已内置于 CLI，无需 Python 或单独的脚本目录。默认选择界面和 Ctrl-G 插件使用内置 TUI；只有 `--backend fzf/dmenu/rofi` 需要对应的外部选择器。Shell 加载与 MCP 设置见 [集成指南](./integrations/README.md)。这些原生入口在 v0.1.20-alpha.1 之后加入；旧包应使用自己的随包说明。
+原生 `dzc pick`、`dzc tui`、`dzc mcp` 和 `dzc bash/zsh/fish/nu/pwsh` 已内置于 CLI，无需 Python 或单独的脚本目录。默认选择界面和 Ctrl-G 插件使用内置 TUI；只有 `--backend fzf/dmenu/rofi` 需要对应的外部选择器。Shell 加载与 MCP 设置见 [集成指南](./integrations/README.md)。这些原生入口自 `v0.1.20-alpha.2` 起提供；旧包应使用自己的随包说明。
 
 原生剪贴板读写需要当前系统的图形会话；Linux 官方二进制基于 Ubuntu 24.04，要求 glibc 2.39+ 及其动态库，不是静态兼容构建。在 SSH 终端中，可显式通过 OSC52 将远程文本复制到支持并允许该功能的本地终端：
 

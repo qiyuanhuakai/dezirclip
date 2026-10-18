@@ -21,7 +21,7 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 
 Windows 独立 CLI 无需 WebView2，但当前 MSVC 构建依赖 `VCRUNTIME140.dll`。若系统尚未安装，请安装匹配 CLI 架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。压缩包不附带该运行库。
 
-`dzc pick/tui/mcp` 与 Shell 初始化入口是 `v0.1.20-alpha.1` 之后开发分支新增的能力。已发布的 alpha.1 请使用随包说明；运行 `dzc --help` 可确认当前二进制支持的命令。
+`dzc pick/tui/mcp` 与 Shell 初始化入口自 `v0.1.20-alpha.2` 起提供。较旧发布包请使用各自随包说明；运行 `dzc --help` 可确认当前二进制支持的命令。
 
 解压后将二进制目录加入 `PATH`；也可在适配器中用 `DZC_BIN` 指定完整路径。例如：
 
@@ -193,7 +193,7 @@ The GUI offers history, tags, pinning, rich text, images, files, OCR search, scr
 
 The standalone Windows CLI needs no WebView2. Its MSVC build requires the matching architecture's [Microsoft Visual C++ v14 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist), which is not bundled.
 
-The following native entry points were added after the published `v0.1.20-alpha.1`; check `dzc --help`. They require no Python or curses:
+The following native entry points are available since `v0.1.20-alpha.2`; check `dzc --help` when using older releases. They require no Python or curses:
 
 ```bash
 dzc pick                         # built-in selection, Enter copies

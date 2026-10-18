@@ -1,8 +1,8 @@
 # Example: Native terminal and fzf picker
 
-These native commands are development changes after `v0.1.20-alpha.1` and are
-absent from the published alpha.1. Check `dzc --help` before using them. They do
-not need Python, jq, or a running DezirClip GUI.
+These native commands are available since `v0.1.20-alpha.2`. Check `dzc --help`
+before using them with older releases. They do not need Python, jq, or a running
+DezirClip GUI.
 
 ## Select and copy
 
