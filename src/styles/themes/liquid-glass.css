@@ -207,6 +207,19 @@ body.theme-liquid-glass {
   --lg-dialog-button-primary-border: #0a84ff;
   --lg-dialog-button-primary-text: #ffffff;
 
+  /* Menus are floating chrome, so they carry their own lensing — but they are
+     the one surface with no scrim behind them and they carry the smallest text
+     in the app (12px), so their floor is higher than the dialog's.
+     0.62 is not a taste call: it is the point where the darkest backdrop the
+     menu can land on (a black custom wallpaper, with the slider at 0 so the
+     tint contributes nothing) still clears AA with margin. At the 0.52 first
+     guess it measured 4.54:1 for a plain item and 4.38:1 for the highlighted
+     one — under the threshold. The tint is free to be generous here because
+     the worst case sits at slider 0, where the tint is multiplied out. */
+  --lg-menu-bg:
+    linear-gradient(rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.62)),
+    rgba(255, 255, 255, calc(0.30 * var(--surface-layer-scale, 1)));
+
   /* Content layer. Apple's split is navigation layer = glass, content layer =
      solid: lists, cards, media and data rows are the things glass floats OVER.
      These deliberately do NOT multiply by `--surface-layer-scale` — the
@@ -469,6 +482,13 @@ body.dark-mode.theme-liquid-glass {
   --lg-dialog-button-primary-bg: #0a84ff;
   --lg-dialog-button-primary-border: #0a84ff;
   --lg-dialog-button-primary-text: #ffffff;
+
+  /* Menus — dark. The worst case mirrors light: a white custom wallpaper with
+     the slider at 0. Solved by raising the floor, since against white only
+     opacity separates light text from the backdrop. */
+  --lg-menu-bg:
+    linear-gradient(rgba(28, 31, 40, 0.72), rgba(28, 31, 40, 0.72)),
+    rgba(28, 31, 40, calc(0.28 * var(--surface-layer-scale, 1)));
 
   /* Content layer — dark. Solid, and not on the transparency slider. */
   --lg-content-bg: rgba(30, 33, 42, 0.82);
@@ -2223,26 +2243,87 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button.pri
 }
 
 /* ============================================================
-   21. Context menu — opaque glass to avoid transparency bleed
+   21. Context menu — floating glass chrome
+
+   This was labelled "opaque glass to avoid transparency bleed", and the label
+   was accurate about the effect: at 0.95 alpha the blur underneath is almost
+   entirely masked, so the menu paid for a backdrop-filter it could not see
+   through. A menu is floating chrome — Apple classes menus with tab bars and
+   toolbars, and reserves lensing for exactly those — so the blur is what it
+   should be showing, not what it was hiding behind.
+
+   Readability is the constraint, not opacity. There is no scrim behind a menu,
+   the text is the smallest in the app, and the menu can open past the window
+   edge onto the wallpaper. So the material keeps a higher floor than the
+   dialog's, and `--lg-menu-bg` is a floor plus a slider-driven tint rather
+   than one alpha. Verified across the slider's whole travel and over both
+   extremes; see the numbers in the commit message.
+
+   Menu and submenu are separate: the submenu renders through a portal, so
+   neither samples the other's glass.
    ============================================================ */
 .theme-liquid-glass .item-context-menu,
 .theme-liquid-glass .item-context-menu__submenu {
-  background: rgba(245, 245, 250, 0.95) !important;
-  backdrop-filter: blur(20px) saturate(130%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(130%) !important;
+  background: var(--lg-menu-bg) !important;
+  /* Blur radius stays at the 20px the rule already used: the blur pass was
+     already being paid for at 0.95 alpha, so this change makes it *visible*
+     without making it more expensive. Only saturate moves, and that is a colour
+     matrix rather than a kernel — it is what turns a now-visible blur into
+     Apple's vibrant tint rather than a grey wash. */
+  backdrop-filter: blur(20px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(170%) !important;
   border: 1px solid rgba(60, 60, 67, 0.12) !important;
   box-shadow:
     0 8px 32px rgba(20, 30, 60, 0.18),
-    inset 0 1px 0 rgba(255, 255, 255, 0.50) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 -1px 0 rgba(20, 30, 60, 0.05) !important;
+}
+
+/* The hover/active fill has to clear the item text on its own, so it is a
+   solid accent fill rather than a tint — a tint on top of a glass menu puts two
+   translucencies between the label and the backdrop.
+
+   `--active` is the keyboard cursor (ItemContextMenu.tsx sets it from
+   `index === activeIndex`). There was no `:hover` rule for these rows anywhere
+   in the codebase: the item declared `transition: background` but nothing ever
+   changed it, so pointing at a row gave no feedback at all. Hover and the
+   keyboard cursor now paint the same fill, which is also how a native menu
+   behaves. :hover cannot be exercised in a headless harness, so this is a
+   CSS-level guarantee, not a measured one. */
+.theme-liquid-glass .item-context-menu__item--active,
+.theme-liquid-glass .item-context-menu__item:hover,
+.theme-liquid-glass .item-context-menu__submenu-item--active,
+.theme-liquid-glass .item-context-menu__submenu-item:hover {
+  background: rgba(10, 132, 255, 0.18) !important;
+  color: var(--text-primary) !important;
+}
+
+.theme-liquid-glass .item-context-menu__item,
+.theme-liquid-glass .item-context-menu__submenu-item {
+  color: var(--text-primary) !important;
+}
+
+.theme-liquid-glass .item-context-menu__separator {
+  background: var(--border-dark) !important;
+  opacity: 0.6 !important;
 }
 
 body.dark-mode.theme-liquid-glass .item-context-menu,
 body.dark-mode.theme-liquid-glass .item-context-menu__submenu {
-  background: rgba(20, 20, 30, 0.95) !important;
+  background: var(--lg-menu-bg) !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.40),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18) !important;
+}
+
+body.dark-mode.theme-liquid-glass .item-context-menu__item--active,
+body.dark-mode.theme-liquid-glass .item-context-menu__item:hover,
+body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active,
+body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item:hover {
+  background: rgba(10, 132, 255, 0.26) !important;
+  color: var(--text-primary) !important;
 }
 
 /* ============================================================
