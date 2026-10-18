@@ -1,12 +1,22 @@
 # 可选的 dzc 终端与 Agent 集成
 
-这些适配器通过本地 `dzc` 子进程工作，不增加桌面端依赖，也不启动网络服务。需要 Python 3.10+ 与本次版本的 `dzc`；选择器另需 fzf、rofi 或 dmenu。以下路径均从仓库根目录运行，路径有空格时加引号。
+这些适配器通过本地 `dzc` 子进程工作，不增加桌面端依赖，也不启动网络服务。需要 Python 3.10+ 与匹配版本的 `dzc`；选择器另需 fzf、rofi 或 dmenu。独立 CLI 发布压缩包包含完整的集成运行文件目录 `integrations/`，源码仓库另含开发测试。桌面安装包内的 `dzc` 可搭配同版本仓库中的适配器使用；不要只复制入口文件，保留完整目录结构。旧版 CLI 可能缺少这里使用的新选项，请先检查 `dzc --help`。
 
 ```powershell
-python integrations/dzc-integrations.py --dzc C:/path/to/dzc.exe pick
+$env:DZC_BIN = 'C:\Tools\dzc\dzc.exe'
+python 'C:\Tools\dzc\integrations\dzc-integrations.py' pick --action copy
 ```
 
-Linux 通常用 `python3`。`dzc` 已在 PATH 时省略 `--dzc`；也可设置 `DZC_BIN` 为可执行文件的完整路径。所有调用使用独立参数，不把记录内容拼入 shell 命令。适配器与 CLI 需一同更新，因为它们使用 `--metadata`、分页与 `--exclude-sensitive`。
+Linux 通常用 `python3`。`dzc` 已在 PATH 时无需 `DZC_BIN`，也可在子命令前传 `--dzc /absolute/path/to/dzc`。下方相对路径示例从压缩包解压根目录或仓库根目录运行；其他位置使用完整路径，路径有空格时加引号。所有调用使用独立参数，不把记录内容拼入 shell 命令。适配器与 CLI 需一同更新，因为它们使用 `--metadata`、分页与 `--exclude-sensitive`。
+
+| 需求 | 入口 |
+| --- | --- |
+| 模糊搜索后查看或复制 | `pick --backend fzf` |
+| 桌面菜单选择 | `pick --backend dmenu` / `rofi` |
+| 终端预览、标签、置顶与删除 | `tui` |
+| 插入当前 Shell 输入行，等待确认 | 对应 Shell 脚本，Ctrl-G |
+| SSH 远程文本复制到本地终端剪贴板 | `pick/tui --action osc52` |
+| Agent 查询历史 | `mcp`，只读 stdio |
 
 ## fzf / dmenu / rofi 选择器
 
@@ -17,7 +27,7 @@ python3 integrations/dzc-integrations.py pick --backend rofi --query meeting --a
 python3 integrations/dzc-integrations.py pick --kind text --limit 200 --action id
 ```
 
-默认获取 100 条元数据（最多 200 条），每行显示类型、置顶标记与摘要；选中后才读取内容。`print` 输出原始文本，没有额外换行；`copy` 通过原生系统剪贴板恢复记录，适合图片与文件；`id` 只输出 ID。Shell 使用 `insert`，与 `print` 相同但拒绝编辑缓冲区无法表示的 NUL 字节。取消返回 1，Ctrl-C 返回 130，不输出记录。为使行为可预测，fzf 不读取 `FZF_DEFAULT_OPTS` / `FZF_DEFAULT_OPTS_FILE`。
+默认获取 100 条元数据（最多 200 条），每行显示类型、置顶标记与摘要；选中后才读取内容。`print` 输出原始文本，没有额外换行；`copy` 通过原生系统剪贴板恢复记录，适合图片与文件；`osc52` 委托 CLI 把文本发送到控制终端，适合 SSH；`id` 只输出 ID。Shell 使用 `insert`，与 `print` 相同但拒绝编辑缓冲区无法表示的 NUL 字节。取消返回 1，Ctrl-C 返回 130，不输出记录。为使行为可预测，fzf 不读取 `FZF_DEFAULT_OPTS` / `FZF_DEFAULT_OPTS_FILE`。
 
 Rofi 的 script mode 也可直接使用，选择后复制记录：
 
@@ -74,7 +84,55 @@ source /absolute/path/to/integrations/shell/dzc.fish
 . C:/absolute/path/to/integrations/shell/dzc.ps1
 ```
 
+```nu
+# Nushell 0.116+
+source /absolute/path/to/integrations/shell/dzc.nu
+# Windows 示例：source 'C:/Tools/dzc/integrations/shell/dzc.nu'
+```
+
 加载前可设置 `DZC_ADAPTER`（适配器完整路径）、`DZC_PYTHON`（Python 可执行文件）和 `DZC_PICKER`。脚本不会安装文件或修改 shell 启动配置。按需把 `source` / 点加载语句加入自己的配置文件。
+
+Nushell 的环境变量语法如下；`DZC_ADAPTER` 默认相对 `dzc.nu` 定位，无需从固定工作目录运行：
+
+```nu
+$env.DZC_PYTHON = 'python3' # Windows 默认 python，其他平台默认 python3
+$env.DZC_PICKER = 'fzf'    # 可选 rofi / dmenu
+$env.DZC_BIN = '/absolute/path/to/dzc'
+source /absolute/path/to/integrations/shell/dzc.nu
+```
+
+Ctrl-G 支持 Nu 的 emacs、vi insert 和 vi normal 模式；取消选择、子进程失败时保留原输入行。脚本使用 Nu 的 [编辑缓冲区接口](https://www.nushell.sh/commands/docs/commandline_edit.html)，保留 Unicode、多行和末尾换行，仅插入，不接受或执行该行。需要永久启用时，运行 `config nu` 后自行加入 `source` 行；脚本不会改写 `config.nu`。绑定机制见 [Nushell 行编辑器文档](https://www.nushell.sh/book/line_editor.html)。
+
+## SSH 与 OSC52
+
+先在远程主机安装匹配版本的独立 CLI 和适配器；只查询历史或发送 OSC52 不需要启动远程 GUI，也不要求 `DISPLAY`。本地使用支持并允许 OSC52 剪贴板写入的终端连接：
+
+```bash
+# 在本地建立带终端的 SSH 连接
+ssh -t user@server
+
+# 以下在远程 Shell 中执行，读取的是远程数据库
+dzc list --metadata --json
+python3 /opt/dzc/integrations/dzc-integrations.py pick --action osc52
+python3 /opt/dzc/integrations/dzc-integrations.py tui --action osc52
+
+# 已知 ID 时不需要 Python 或选择器
+dzc copy 142 --target osc52
+printf 'remote note\n' | dzc clipboard write - --target osc52
+```
+
+`--action copy` 更新远程进程可访问的原生剪贴板，`--action osc52` 请求本地终端更新剪贴板。OSC52 只发送文本，保留文本内容，不支持图片或文件；上限为 100000 个原始 UTF-8 字节，超出时报错，不截断。终端可能有更小上限，也可能禁用该操作或要求用户授权。成功只说明控制序列已发送，不代表终端已接收或剪贴板已更新；没有控制终端时报错。
+
+控制序列写入控制终端，标准输出保持为空，所以 `--action osc52 > result.txt` 不会把序列写进文件。该功能不执行剪贴板读取、不自动粘贴或提交命令，也不会同步本地与远程历史。远程数据库仍需要通过 `dzc add`、导入或远程桌面捕获来产生记录。
+
+若命令位于一层 tmux 内，并且需要穿透到外层终端：
+
+```bash
+python3 /opt/dzc/integrations/dzc-integrations.py pick --action osc52 --osc52-passthrough tmux
+dzc copy 142 --target osc52 --osc52-passthrough tmux
+```
+
+默认 `--osc52-passthrough none`，不会按环境自动切换；`tmux` 只穿透一层，嵌套多层会话需自行验证。tmux 3.3+ 要求自行允许 passthrough，例如在自己的 `~/.tmux.conf` 中设置 `set -g allow-passthrough on` 后重新加载。仅使用该穿透模式时才需要此配置，适配器不会修改任何终端或 tmux 设置。参见 [tmux 官方 passthrough 说明](https://github.com/tmux/tmux/wiki/FAQ#what-is-the-passthrough-escape-sequence-and-how-do-i-use-it) 与 [OSC52 规范](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html)。
 
 ## 只读 MCP stdio 服务
 
@@ -108,6 +166,8 @@ Windows 将 `command` 设为 Python 的绝对路径，并在 `args` 中使用 Wi
 协议实现参考 MCP 2025-11-25 的 [stdio 传输](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)、[初始化生命周期](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) 与 [tools 规范](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)。也支持客户端协商 2025-06-18、2025-03-26、2024-11-05。剪贴板内容始终作为不可信数据返回；工具说明不会将记录内容当作指令。
 
 ## 验证
+
+本节需要源码仓库；发布压缩包只包含运行文件，不附带测试目录。
 
 ```bash
 python3 -m unittest discover -s integrations/tests -v

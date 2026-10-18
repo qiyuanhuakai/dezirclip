@@ -29,7 +29,7 @@ jobs:
               --verify-tag \
               --title "DezirClip ${GITHUB_REF_NAME}" \
               --generate-notes \
-              --notes "Download the matching installer for your platform. The \`dzc\` CLI ships inside the app install, not as a separate archive."
+              --notes "Download the matching DezirClip installer or standalone dzc archive for your platform. Both use the same real CLI and local database; standalone archives include optional terminal/Agent adapters and SHA-256 checksums."
           fi
           release_id="$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq '.databaseId')"
           echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
@@ -47,21 +47,25 @@ jobs:
             args: ''
             rust_target: ''
             msvc_arch: ''
+            can_run_dzc: true
           - name: linux-aarch64
             platform: ubuntu-24.04-arm
             args: ''
             rust_target: ''
             msvc_arch: ''
+            can_run_dzc: true
           - name: windows-x86_64
             platform: windows-latest
             args: ''
             rust_target: ''
             msvc_arch: ''
+            can_run_dzc: true
           - name: windows-aarch64
             platform: windows-latest
             args: --target aarch64-pc-windows-msvc
             rust_target: aarch64-pc-windows-msvc
             msvc_arch: amd64_arm64
+            can_run_dzc: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -131,6 +135,29 @@ jobs:
       - name: Set release version
         run: pnpm run release:set-version ${{ github.ref_name }}
 
+      - name: Setup Python for standalone archive validation
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Build the real standalone dzc binary
+        working-directory: src-tauri
+        run: cargo build --release --bin dzc ${{ matrix.args }}
+
+      - name: Test standalone packaging
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Package standalone dzc
+        id: dzc-package
+        shell: bash
+        run: |
+          archive="$(python scripts/package-dzc.py --platform '${{ matrix.name }}' --target '${{ matrix.rust_target }}' --version '${{ github.ref_name }}')"
+          echo "archive=${archive}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the extracted standalone binary
+        if: matrix.can_run_dzc
+        run: python scripts/verify-dzc-package.py '${{ steps.dzc-package.outputs.archive }}' --version '${{ github.ref_name }}'
+
       - name: Publish Tauri bundles
         uses: tauri-apps/tauri-action@v0
         env:
@@ -139,10 +166,17 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: DezirClip ${{ github.ref_name }}
-          releaseBody: Download the matching installer for your platform. The `dzc` CLI ships inside the app install, not as a separate archive.
+          releaseBody: Download the matching DezirClip installer or standalone dzc archive for your platform. Both use the same real CLI and local database; standalone archives include optional terminal/Agent adapters and SHA-256 checksums.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Upload standalone dzc archive and checksum to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${GITHUB_REF_NAME}" artifacts/dzc/* --clobber
 
   publish-flatpak:
     name: Flatpak release (${{ matrix.name }})

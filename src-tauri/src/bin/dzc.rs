@@ -318,6 +318,38 @@ struct CopyArgs {
     id: String,
     #[arg(long, short)]
     quiet: bool,
+    /// Destination; OSC 52 writes text to the controlling terminal.
+    #[arg(long, value_enum, default_value_t = ClipboardTarget::Native)]
+    target: ClipboardTarget,
+    /// Wrap one tmux layer; only applies to --target osc52.
+    #[arg(long, value_enum, default_value_t = Osc52Passthrough::None)]
+    osc52_passthrough: Osc52Passthrough,
+}
+
+#[derive(ValueEnum, Clone, Copy, PartialEq, Eq)]
+enum ClipboardTarget {
+    Native,
+    Osc52,
+}
+
+#[derive(ValueEnum, Clone, Copy, PartialEq, Eq)]
+enum Osc52Passthrough {
+    None,
+    Tmux,
+}
+
+fn osc52_passthrough(
+    target: ClipboardTarget,
+    passthrough: Osc52Passthrough,
+) -> Result<dezirclip::infrastructure::osc52::Passthrough, String> {
+    use dezirclip::infrastructure::osc52::Passthrough;
+    if target == ClipboardTarget::Native && passthrough != Osc52Passthrough::None {
+        return Err("--osc52-passthrough tmux requires --target osc52".to_string());
+    }
+    Ok(match passthrough {
+        Osc52Passthrough::None => Passthrough::None,
+        Osc52Passthrough::Tmux => Passthrough::Tmux,
+    })
 }
 
 #[derive(Args)]
@@ -339,6 +371,12 @@ enum ClipboardCommand {
         content: String,
         #[arg(long, default_value = "text/plain")]
         mime: String,
+        /// OSC 52 accepts text/plain only, with a 100000-byte UTF-8 limit.
+        #[arg(long, value_enum, default_value_t = ClipboardTarget::Native)]
+        target: ClipboardTarget,
+        /// Wrap one tmux layer; only applies to --target osc52.
+        #[arg(long, value_enum, default_value_t = Osc52Passthrough::None)]
+        osc52_passthrough: Osc52Passthrough,
     },
     /// List supported readable MIME representations of the current clipboard.
     Formats {
@@ -390,18 +428,55 @@ fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
             }
             Ok(())
         }
-        ClipboardCommand::Write { content, mime } => {
+        ClipboardCommand::Write {
+            content,
+            mime,
+            target,
+            osc52_passthrough: passthrough,
+        } => {
+            let passthrough = osc52_passthrough(target, passthrough)?;
+            if target == ClipboardTarget::Osc52 && mime != "text/plain" {
+                return Err("OSC 52 only supports --mime text/plain".to_string());
+            }
             let bytes = if content == "-" {
                 let mut bytes = Vec::new();
-                std::io::stdin()
-                    .read_to_end(&mut bytes)
-                    .map_err(|e| e.to_string())?;
+                if target == ClipboardTarget::Osc52 {
+                    std::io::stdin()
+                        .take(dezirclip::infrastructure::osc52::MAX_TEXT_BYTES as u64 + 1)
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    std::io::stdin()
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.to_string())?;
+                }
                 bytes
             } else if let Some(path) = content.strip_prefix('@') {
-                std::fs::read(path).map_err(|e| e.to_string())?
+                if target == ClipboardTarget::Osc52 {
+                    let mut bytes = Vec::new();
+                    std::fs::File::open(path)
+                        .map_err(|e| e.to_string())?
+                        .take(dezirclip::infrastructure::osc52::MAX_TEXT_BYTES as u64 + 1)
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.to_string())?;
+                    bytes
+                } else {
+                    std::fs::read(path).map_err(|e| e.to_string())?
+                }
             } else {
                 content.into_bytes()
             };
+            if target == ClipboardTarget::Osc52 {
+                if bytes.len() > dezirclip::infrastructure::osc52::MAX_TEXT_BYTES {
+                    return Err(format!(
+                        "OSC 52 text exceeds the {}-byte UTF-8 limit; nothing was sent",
+                        dezirclip::infrastructure::osc52::MAX_TEXT_BYTES
+                    ));
+                }
+                let text = String::from_utf8(bytes)
+                    .map_err(|e| format!("OSC 52 input is not UTF-8: {e}"))?;
+                return dezirclip::infrastructure::osc52::write_text(&text, passthrough);
+            }
             native_clipboard::write(native_payload(bytes, &mime)?)
         }
     }
@@ -470,7 +545,20 @@ fn run(args: Cli) -> Result<(), String> {
         ),
         Commands::Copy(a) => {
             use dezirclip::infrastructure::native_clipboard::{self, Payload};
+            let passthrough = osc52_passthrough(a.target, a.osc52_passthrough)?;
             let entry = cli::get::resolve(&a.id, false, clip_repo.as_ref())?;
+            if a.target == ClipboardTarget::Osc52 {
+                if !matches!(
+                    entry.content_type.as_str(),
+                    "text" | "code" | "url" | "rich_text" | "html"
+                ) {
+                    return Err(format!(
+                        "OSC 52 only supports text history entries; entry {} has type {}",
+                        entry.id, entry.content_type
+                    ));
+                }
+                return dezirclip::infrastructure::osc52::write_text(&entry.content, passthrough);
+            }
             let payload = match entry.content_type.as_str() {
                 "image" => Payload::Image(cli::payload::image_bytes(&entry.content)?),
                 "file" | "files" | "video" => Payload::Files(cli::payload::files(&entry.content)?),
@@ -672,6 +760,7 @@ fn open_repos() -> Result<(Arc<SqliteClipboardRepository>, Arc<SqliteTagReposito
         let mut guard = conn
             .lock()
             .map_err(|e| format!("migrations: lock poisoned: {e}"))?;
+        migrations::ensure_supported_schema(&guard).map_err(|e| format!("migrations: {e}"))?;
         migrations::run_migrations(&mut guard).map_err(|e| format!("migrations: {e}"))?;
     }
     let clip_repo = SqliteClipboardRepository::new(conn.clone());
@@ -694,35 +783,18 @@ fn database_path_from_override(path: Option<PathBuf>) -> Result<PathBuf, String>
         }
         return Ok(path);
     }
-    let dir = data_dir()?;
-    let db_path = dir.join("clipboard.db");
-    if db_path.exists() {
-        return Ok(db_path);
-    }
-    let legacy_db_path = legacy_data_dir()?.join("clipboard.db");
-    if legacy_db_path.exists() {
-        return Ok(legacy_db_path);
-    }
-    Ok(db_path)
+    let executable = std::env::current_exe().ok();
+    Ok(dezirclip::infrastructure::data_paths::cli_database_path(
+        &data_dir()?,
+        &legacy_data_dir()?,
+        executable.as_deref().and_then(std::path::Path::parent),
+    ))
 }
 
 fn data_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(p) = std::env::var_os("XDG_DATA_HOME") {
-            return Ok(app_data_dir(PathBuf::from(p)));
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            return Ok(app_data_dir(PathBuf::from(home).join(".local/share")));
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(p) = std::env::var_os("APPDATA") {
-            return Ok(app_data_dir(PathBuf::from(p)));
-        }
-    }
-    Ok(app_data_dir(std::env::temp_dir()))
+    dirs::data_dir().map(app_data_dir).ok_or_else(|| {
+        "cannot locate the application data directory; set DEZIRCLIP_DB_PATH explicitly".to_string()
+    })
 }
 
 fn app_data_dir(base: PathBuf) -> PathBuf {
@@ -734,24 +806,10 @@ fn legacy_app_data_dir(base: PathBuf) -> PathBuf {
 }
 
 fn legacy_data_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(p) = std::env::var_os("XDG_DATA_HOME") {
-            return Ok(legacy_app_data_dir(PathBuf::from(p)));
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            return Ok(legacy_app_data_dir(
-                PathBuf::from(home).join(".local/share"),
-            ));
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(p) = std::env::var_os("APPDATA") {
-            return Ok(legacy_app_data_dir(PathBuf::from(p)));
-        }
-    }
-    Ok(legacy_app_data_dir(std::env::temp_dir()))
+    dirs::data_dir().map(legacy_app_data_dir).ok_or_else(|| {
+        "cannot locate the legacy application data directory; set DEZIRCLIP_DB_PATH explicitly"
+            .to_string()
+    })
 }
 
 #[cfg(test)]

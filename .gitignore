@@ -15,8 +15,10 @@ flatpak/repo/
 # Tauri / Rust build outputs
 src-tauri/target/
 src-tauri/binaries/
+artifacts/dzc/
 
 # Runtime files
+__pycache__/
 *.db
 *.log
 *.tmp

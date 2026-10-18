@@ -138,3 +138,33 @@ jobs:
       - name: Build Tauri crate
         working-directory: src-tauri
         run: cargo build ${{ matrix.cargo_args }}
+
+      - name: Build the real standalone dzc binary
+        working-directory: src-tauri
+        run: cargo build --release --bin dzc ${{ matrix.cargo_args }}
+
+      - name: Setup Python for archive validation
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Test standalone packaging
+        run: python -m unittest discover -s scripts/tests -v
+
+      - name: Package standalone dzc
+        id: dzc-package
+        shell: bash
+        run: |
+          archive="$(python scripts/package-dzc.py --platform '${{ matrix.name }}' --target '${{ matrix.rust_target }}')"
+          echo "archive=${archive}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the extracted standalone binary
+        if: matrix.can_test
+        run: python scripts/verify-dzc-package.py '${{ steps.dzc-package.outputs.archive }}'
+
+      - name: Upload standalone dzc archive and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: dzc-${{ matrix.name }}
+          path: artifacts/dzc/*
+          if-no-files-found: error

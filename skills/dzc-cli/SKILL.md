@@ -50,8 +50,8 @@ The 17 public subcommands cover history, native clipboard access, and backup (`t
 | `clear` | Delete unprotected history (pinned and tagged entries are kept) | `--yes` **required**, `-q` |
 | `pin <ID>` | Pin an entry | `-q` |
 | `unpin <ID>` | Unpin an entry | `-q` |
-| `copy <ID\|latest>` | Restore a record to the native clipboard without injecting keys | `-q` |
-| `clipboard write [CONTENT]` | Write text, stdin (`-`, default), or a binary file (`@path`) | `--mime text/plain\|text/html\|image/png\|text/uri-list` |
+| `copy <ID\|latest>` | Restore a record to the clipboard without injecting keys | `--target native\|osc52`, `--osc52-passthrough none\|tmux`, `-q` |
+| `clipboard write [CONTENT]` | Write text, stdin (`-`, default), or a binary file (`@path`) | `--mime text/plain\|text/html\|image/png\|text/uri-list`, `--target native\|osc52` |
 | `tag` | Add / remove / list tags | `add <id> <tag>`, `remove <id> <tag>`, `list <id>` |
 
 ### WATCH
@@ -63,6 +63,10 @@ The 17 public subcommands cover history, native clipboard access, and backup (`t
 | `import <PATH>` | Restore from a file | `--mode merge/replace`, `--passphrase`, `-q` |
 
 Run `dzc <command> --help` for per-command options.
+
+Standalone release archives contain the same real CLI as desktop installs, plus matching optional adapters. Ordinary installs share the user's database, including `datapath.txt` redirects; an adjacent `data/` directory selects portable storage. Explicit `DEZIRCLIP_DB_PATH` (or legacy `TIEZ_DB_PATH`) overrides this for the CLI. Flatpak uses its own sandbox profile. Check `dzc --version` and the actual executable path when multiple copies are installed; use matching releases and never assume newer database schemas are writable by older binaries.
+
+For SSH, explicit `--target osc52` sends text to the controlling terminal without a remote GUI and leaves stdout empty. It never reads the local clipboard or synchronizes history. The terminal must permit OSC52; success means sent, not acknowledged. Only text is supported, capped at 100000 original UTF-8 bytes without truncation. Single-layer tmux passthrough is explicit. Native clipboard access remains the default.
 
 ## Output conventions
 

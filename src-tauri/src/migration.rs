@@ -4,6 +4,11 @@ use std::path::PathBuf;
 
 /// v0.2.8 legacy data folder migration.
 pub fn perform_migration_v028(default_app_dir: &PathBuf) {
+    // A history created by the standalone CLI is already authoritative, even
+    // when it is smaller than a legacy database. Never replace it by file size.
+    if current_data_is_initialized(default_app_dir) {
+        return;
+    }
     // Check multiple possible locations for old data folder
     let mut old_app_dirs_to_check = Vec::new();
 
@@ -72,7 +77,9 @@ pub fn perform_migration_v028(default_app_dir: &PathBuf) {
 
                     if std::fs::copy(&old_db, &new_db).is_ok() {
                         success = true;
-                        println!(">>> [MIGRATION] Successfully migrated old database to DezirClip.");
+                        println!(
+                            ">>> [MIGRATION] Successfully migrated old database to DezirClip."
+                        );
                         let old_redirect = old_app_dir.join("datapath.txt");
                         if old_redirect.exists() {
                             let _ =
@@ -104,6 +111,31 @@ pub fn perform_migration_v028(default_app_dir: &PathBuf) {
     let custom_path = cleanup_old_install_registry();
     cleanup_old_start_menu();
     cleanup_old_install_folder(custom_path);
+}
+
+fn current_data_is_initialized(dir: &std::path::Path) -> bool {
+    dir.join("clipboard.db").exists() || dir.join("datapath.txt").exists()
+}
+
+#[cfg(test)]
+mod standalone_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn existing_cli_database_and_redirect_prevent_legacy_replacement() {
+        let dir = std::env::temp_dir().join(format!("dzc-migration-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!current_data_is_initialized(&dir));
+        let db = dir.join("clipboard.db");
+        std::fs::write(&db, b"small standalone history").unwrap();
+        assert!(current_data_is_initialized(&dir));
+        perform_migration_v028(&dir);
+        assert_eq!(std::fs::read(&db).unwrap(), b"small standalone history");
+        std::fs::remove_file(db).unwrap();
+        std::fs::write(dir.join("datapath.txt"), "custom data").unwrap();
+        assert!(current_data_is_initialized(&dir));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 /// v0.2.8 Rename Migration: Registry Cleanup - Returns found install location if any

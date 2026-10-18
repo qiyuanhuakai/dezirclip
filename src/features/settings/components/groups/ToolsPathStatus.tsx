@@ -3,6 +3,9 @@ export interface CliInfo {
     readonly cli_version: string;
     readonly skill_path: string | null;
     readonly cli_on_path: boolean;
+    readonly path_cli_path: string | null;
+    readonly path_cli_version: string | null;
+    readonly cli_path_conflict: boolean;
 }
 
 interface ToolsPathStatusProps {
@@ -22,7 +25,9 @@ export const ToolsPathStatus = ({
 }: ToolsPathStatusProps) => {
     const badgeText = cliInfoLoading
         ? t("processing")
-        : cliInfo?.cli_on_path
+        : cliInfo?.cli_path_conflict
+            ? t("cli_path_other_copy_badge")
+            : cliInfo?.cli_on_path
             ? t("cli_path_ready_badge")
             : cliInfo?.cli_path
                 ? t("cli_path_missing_badge")

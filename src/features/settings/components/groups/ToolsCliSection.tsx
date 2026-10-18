@@ -129,6 +129,23 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                 <div className="item-label-group"><span className="item-label">{t("cli_path_status")}</span></div>
                 <ToolsPathStatus t={t} cliInfo={cliInfo} cliInfoLoading={cliInfoLoading} pathUpdating={pathUpdating} onAddToPath={handleAddCliToPath} />
             </div>
+            {cliInfo?.cli_path_conflict && (
+                <>
+                    <div className="setting-item setting-item--detail tools-note-item">
+                        <span className="tools-note" role="status">{t("cli_path_other_copy_hint")}</span>
+                    </div>
+                    <div className="setting-item setting-item--detail">
+                        <div className="item-label-group"><span className="item-label">{t("cli_path_active_path")}</span></div>
+                        <span className="tools-path-text" title={cliInfo.path_cli_path ?? undefined}>{cliInfo.path_cli_path}</span>
+                    </div>
+                    {cliInfo.path_cli_version && (
+                        <div className="setting-item setting-item--detail">
+                            <div className="item-label-group"><span className="item-label">{t("cli_path_active_version")}</span></div>
+                            <span className="tools-note">{cliInfo.path_cli_version}</span>
+                        </div>
+                    )}
+                </>
+            )}
             {pathStatusKey && (
                 <div className="setting-item setting-item--detail tools-note-item">
                     <span className="tools-note">{pathStatusText()}{pathStatusDetail ? ` ${pathStatusDetail}` : ""}</span>

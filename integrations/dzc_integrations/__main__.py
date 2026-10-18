@@ -19,8 +19,10 @@ def parse_args(argv=None):
         command.add_argument("--query", default="", help="Initial contains search")
         command.add_argument("--limit", type=int, choices=range(1, 201), default=100, metavar="1..200")
     for command in (picker, tui):
-        command.add_argument("--action", choices=("print", "copy", "id", "insert"), default="print",
+        command.add_argument("--action", choices=("print", "copy", "id", "insert", "osc52"), default="print",
                              help="insert prints text suitable for a shell buffer and rejects NUL bytes")
+        command.add_argument("--osc52-passthrough", choices=("none", "tmux"), default="none",
+                             help="Explicit terminal passthrough when --action osc52 is selected")
     return parser.parse_args(argv)
 
 
@@ -38,7 +40,7 @@ def main(argv=None):
             selected = run_tui(client, args.query, args.limit, args.action)
         else:
             selected = select(client, args.backend, args.query, args.limit, args.kind)
-        return emit_selection(client, selected, args.action)
+        return emit_selection(client, selected, args.action, args.osc52_passthrough)
     except AdapterError as exc:
         print(f"dzc adapter: {exc}", file=sys.stderr)
         return 1

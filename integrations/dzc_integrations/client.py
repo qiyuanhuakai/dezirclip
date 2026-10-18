@@ -113,6 +113,13 @@ class DzcClient:
         bounded_int(entry_id, "id", 1, 2**63 - 1)
         self.run(["copy", str(entry_id), "--quiet"])
 
+    def copy_osc52(self, entry_id, passthrough="none"):
+        bounded_int(entry_id, "id", 1, 2**63 - 1)
+        if passthrough not in ("none", "tmux"):
+            raise AdapterError("OSC 52 passthrough must be none or tmux")
+        self.run(["copy", str(entry_id), "--target", "osc52",
+                  "--osc52-passthrough", passthrough, "--quiet"])
+
 
 def row_text(entry):
     entry_id = bounded_int(entry.get("id"), "id", 1, 2**63 - 1)

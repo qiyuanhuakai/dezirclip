@@ -45,11 +45,15 @@ def select(client, backend="fzf", query="", limit=100, kind=None):
     return entries[index]
 
 
-def emit_selection(client, entry, action):
+def emit_selection(client, entry, action, osc52_passthrough="none"):
     if entry is None:
         return 1
     if action == "copy":
         client.copy(entry["id"])
+    elif action == "osc52":
+        if entry.get("type") not in TEXT_TYPES:
+            raise AdapterError("OSC 52 only copies text; use native copy for images and files")
+        client.copy_osc52(entry["id"], osc52_passthrough)
     elif action == "id":
         print(entry["id"])
     else:

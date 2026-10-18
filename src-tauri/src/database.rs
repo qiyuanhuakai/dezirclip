@@ -154,6 +154,7 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
 pub fn init_db(path: &str) -> Result<Connection> {
     fn init_db_once(path: &str) -> Result<Connection> {
         let mut conn = Connection::open(path)?;
+        crate::infrastructure::repository::migrations::ensure_supported_schema(&conn)?;
         conn.execute_batch(
             "
             PRAGMA journal_mode = WAL;

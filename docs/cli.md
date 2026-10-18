@@ -1,6 +1,6 @@
 # dzc CLI 使用文档
 
-`dzc` 是 DezirClip 的本地数据与剪贴板接口，支持 Windows 和 Linux X11。历史命令直接访问桌面端共用的 SQLite 数据库，GUI 未运行时仍可使用；系统剪贴板命令直接调用原生 API，需要可访问的图形会话。两者均不发起网络请求。
+`dzc` 是 DezirClip 的本地数据与剪贴板接口，支持 Windows 和 Linux X11。历史命令直接访问桌面端共用的 SQLite 数据库，GUI 未运行时仍可使用；原生系统剪贴板命令需要可访问的图形会话，OSC52 文本写入使用控制终端，可在 SSH 会话中工作。`dzc` 本身不发起网络请求。
 
 记录 ID 是当前数据库内的整数标识，`timestamp` 是毫秒级 Unix 时间戳。`list`、`search` 按置顶顺序、时间和 ID 排序；`get latest` 按时间和 ID 取最新记录，不受置顶顺序影响。导入替换、删除或更换数据库后，应重新查询 ID。
 
@@ -8,7 +8,19 @@
 
 ## 安装与路径
 
-`dzc` 作为 sidecar 随 DezirClip 安装，不单独发布。可在应用设置中查找 CLI 路径并加入 `PATH`，也可直接使用完整路径。Linux 的安装位置随 deb、rpm、AppImage 而不同；AppImage 挂载路径不是永久安装目录。
+`dzc` 随 DezirClip 作为 sidecar 安装，也可从 [GitHub Releases](https://github.com/qiyuanhuakai/dezirclip/releases) 下载独立 CLI 压缩包。选择匹配 Windows/Linux 与 x86_64/aarch64 的版本，解压后将目录加入 `PATH`，也可直接使用完整路径。桌面安装时可在设置中查看 CLI 路径。Linux 的安装位置随 deb、rpm、AppImage 而不同；AppImage 挂载路径不是永久安装目录。以下新增选项需要相应版本的 CLI，旧版发布包可能尚未包含。
+
+AppImage 运行时的临时挂载目录会随退出而失效，不要把其中的 `dzc` 永久软链接到 `PATH`。终端、Shell 插件或 MCP 需要稳定路径时，使用独立 CLI 压缩包并解压到固定目录。
+
+Linux 普通安装的“加入 PATH”会在 `~/.local/bin/dzc` 创建链接；如果当前 Shell 的 PATH 不含 `~/.local/bin`，请自行加入该目录。程序不会修改 Shell 启动文件。设置页会提示 PATH 命中另一份 CLI 的情况，已有独立可执行文件或链接不会被覆盖。
+
+Flatpak 的沙箱数据目录与宿主机独立 CLI 的默认目录不同，两者不会默认共享同一份历史。要访问 Flatpak 应用使用的环境和历史，可运行沙箱内附带的 CLI：
+
+```bash
+flatpak run --command=dzc io.github.qiyuanhuakai.dezirclip list --metadata --json
+```
+
+沙箱权限、图形会话和自定义目录设置仍然适用。不要把宿主机独立 CLI 的默认数据库误认为 Flatpak 数据库；检查各自数据路径，或在对应环境内明确指定 `DEZIRCLIP_DB_PATH`。
 
 Windows 当前用户安装通常位于 `%LOCALAPPDATA%\DezirClip\dzc.exe`，以实际安装目录为准。当前 PowerShell 会话可临时加入路径：
 
@@ -28,9 +40,9 @@ dzc --help
 | `search <QUERY>` | 搜索历史，默认 20 条 | `--mode`、`--limit`、`--offset`、`--json`、`--metadata`、`--tsv`、`--ids`、`--exclude-sensitive`、`-q` |
 | `get <ID\|latest>` | 读取完整存储内容 | `--preview`、`--raw`、`--mime`、`--json`、`--exclude-sensitive`、`-q` |
 | `clipboard read` | 读取当前系统剪贴板 | `--mime`，默认 `text/plain` |
-| `clipboard write [CONTENT]` | 写入当前系统剪贴板，省略内容时读标准输入 | `--mime`，默认 `text/plain`；内容支持文本、`-`、`@文件` |
+| `clipboard write [CONTENT]` | 写入原生剪贴板或向终端发送 OSC52，省略内容时读标准输入 | `--mime`、`--target native\|osc52`、`--osc52-passthrough none\|tmux`；内容支持文本、`-`、`@文件` |
 | `clipboard formats` | 列出可读取的剪贴板 MIME 格式 | `--json` |
-| `copy <ID>` | 将历史记录按内容格式恢复到系统剪贴板 | `--quiet` |
+| `copy <ID>` | 恢复到原生剪贴板，或通过 OSC52 复制文本 | `--target native\|osc52`、`--osc52-passthrough none\|tmux`、`--quiet` |
 | `add <CONTENT>` | 添加历史；内容支持文本、`-`、`@文件` | `--type` |
 | `edit <ID> <CONTENT>` | 替换历史内容，重建预览 | `-q` |
 | `delete <ID>` | 删除指定记录 | `--yes` 必填 |
@@ -164,7 +176,32 @@ dzc copy 142 --quiet
 
 Windows 使用原生剪贴板接口。Linux X11 不依赖 `xclip`、`xsel` 或 `wl-copy`：写入后由轻量后台进程持有 selection 并响应粘贴请求，其他应用替换剪贴板后自动退出。GUI 关闭时也能写入。后台进程被手动终止或 X11 会话结束后，内容可能失效。GUI 自动粘贴按键仍使用 `xdotool`。
 
-无可访问的 X11/Windows 桌面会话时，历史命令仍可工作，系统剪贴板命令会报错。SSH 下操作的是进程能访问的远程图形会话，不自动转发到本地电脑。完整 Wayland 支持暂缓。
+无可访问的 X11/Windows 桌面会话时，历史命令仍可工作，原生系统剪贴板命令会报错。SSH 下 `--target native` 操作的是进程能访问的远程图形会话，不自动转发到本地电脑。完整 Wayland 桌面支持暂缓；通过终端发送 OSC52 文本不等于支持 Wayland 后台剪贴板监听。
+
+### SSH：用 OSC52 将远程文本复制到本地
+
+```bash
+# 在本地连接远程主机；远程已安装相应版本的 dzc
+ssh -t user@server
+
+# 以下命令在 SSH 会话中运行
+dzc copy 142 --target osc52
+printf 'remote note\n' | dzc clipboard write - --target osc52
+```
+
+`--target` 默认为 `native`，不会自动回退到 OSC52。显式使用 `osc52` 时，`dzc` 将文本编码为 [OSC52 剪贴板写入序列](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html)，直接写入控制终端（Unix 的 `/dev/tty`，Windows 的 `CONOUT$`），不把控制序列混入标准输出，也不需要远程 `DISPLAY` 或桌面 GUI。SSH 将终端输出传回本地终端，由它决定是否更新本地剪贴板。
+
+`clipboard write --target osc52` 仅接受 `text/plain`。`copy --target osc52` 接受文本、代码、URL 和富文本的文本正文，拒绝图片、文件列表和视频；HTML 按记录中保存的文本内容发送，不在终端渲染格式。内容最多 **100000 个原始 UTF-8 字节**，超出时报错而不截断；终端自身的大小限制可能更低。没有控制终端时也会报错。
+
+本地终端必须支持并允许 OSC52，可能弹出权限提示或直接拒绝。成功退出仅表示已发送序列，无法确认本地剪贴板已更新；`dzc` 不执行 OSC52 读取或查询。远程 `dzc list/search` 访问远程历史，OSC52 不同步历史，也不会读取本地剪贴板。
+
+如果当前命令运行在 tmux 内，且需要显式穿透到外层终端，可使用：
+
+```bash
+dzc copy 142 --target osc52 --osc52-passthrough tmux
+```
+
+默认穿透模式为 `none`，`tmux` 只包装一层；配合 `native` 目标使用会报错。tmux 3.3+ 需要用户自行允许 passthrough，例如在自己的 `~/.tmux.conf` 中加入 `set -g allow-passthrough on` 并重新加载；仅在确实使用该穿透模式时配置。DezirClip 不修改 tmux 或终端设置。细节见 [tmux 官方说明](https://github.com/tmux/tmux/wiki/FAQ#what-is-the-passthrough-escape-sequence-and-how-do-i-use-it)。
 
 ## 添加与编辑历史
 
@@ -264,6 +301,8 @@ fi
 - Linux：`$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`，未设置时使用 `$HOME/.local/share/io.github.qiyuanhuakai.dezirclip/clipboard.db`。
 
 这些变量选择历史数据库，不改变系统剪贴板会话。Linux 原生剪贴板还依赖 `DISPLAY`、X11 授权等会话环境。
+
+未指定数据库环境变量时，CLI 与 GUI 使用相同的数据目录规则：可执行文件旁已存在的 `data/` 目录优先；否则遵循默认应用数据目录中的 `datapath.txt` 自定义目录指向，再回退到默认目录。处于同一宿主机用户环境的普通独立 CLI 与桌面安装共享历史；Flatpak 沙箱的默认环境单独隔离，见上方安装说明。单独创建 `data/` 会让该解压位置使用独立的可携式历史。GUI 首次启动不会用旧目录的较大数据库覆盖已由 CLI 创建的新数据库。
 
 | 退出码 | 含义 |
 | --- | --- |

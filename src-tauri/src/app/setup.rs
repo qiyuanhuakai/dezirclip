@@ -152,10 +152,12 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let default_app_dir = app.path().app_data_dir()?;
-    migrate_legacy_identifier_data_dir(&default_app_dir);
-
-    // Perform migration if needed
-    crate::migration::perform_migration_v028(&default_app_dir);
+    let executable = std::env::current_exe().ok();
+    let executable_dir = executable.as_deref().and_then(std::path::Path::parent);
+    if crate::infrastructure::data_paths::portable_data_dir(executable_dir).is_none() {
+        migrate_legacy_identifier_data_dir(&default_app_dir);
+        crate::migration::perform_migration_v028(&default_app_dir);
+    }
 
     // Cleanup temp files
     std::thread::spawn(|| {
@@ -171,31 +173,8 @@ fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error:
         }
     });
 
-    let redirect_file = default_app_dir.join("datapath.txt");
-    let mut app_dir = if redirect_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&redirect_file) {
-            let custom_path = content.trim();
-            if !custom_path.is_empty() && std::path::Path::new(custom_path).exists() {
-                std::path::PathBuf::from(custom_path)
-            } else {
-                default_app_dir.clone()
-            }
-        } else {
-            default_app_dir.clone()
-        }
-    } else {
-        default_app_dir.clone()
-    };
-
-    // Portable mode check
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let portable_data = exe_dir.join("data");
-            if portable_data.exists() && portable_data.is_dir() {
-                app_dir = portable_data;
-            }
-        }
-    }
+    let app_dir =
+        crate::infrastructure::data_paths::select_data_dir(&default_app_dir, executable_dir);
 
     match std::fs::create_dir_all(&app_dir) {
         Ok(_) => Ok(app_dir),
