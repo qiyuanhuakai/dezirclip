@@ -497,11 +497,17 @@ body.dark-mode.theme-liquid-glass {
   --lg-dialog-button-text: var(--text-primary);
   --lg-dialog-button-hover-bg: rgba(68, 72, 84, 0.80);
   --lg-dialog-button-hover-border: rgba(255, 255, 255, 0.16);
-  --lg-dialog-button-primary-bg: #0a84ff;
-  --lg-dialog-button-primary-border: #0a84ff;
+  /* Same accent as light mode, deliberately. `#0a84ff` — the iOS dark-mode
+     blue — leaves white label text at 3.65:1 on a solid fill, and no slider or
+     backdrop can improve a solid colour. The label is 13px, so it needs the
+     4.50 body threshold, which only the light-mode value clears. Hover mirrors
+     light exactly, so all six light/dark × normal/hover states resolve to one
+     audited pair of colours. */
+  --lg-dialog-button-primary-bg: #0071e3;
+  --lg-dialog-button-primary-border: #0071e3;
   --lg-dialog-button-primary-text: #ffffff;
-  --lg-dialog-button-primary-hover-bg: #0071e3;
-  --lg-dialog-button-primary-hover-border: #0071e3;
+  --lg-dialog-button-primary-hover-bg: #0064c4;
+  --lg-dialog-button-primary-hover-border: #0064c4;
 
   /* Menus — dark. The worst case mirrors light: a white custom wallpaper with
      the slider at 0. Solved by raising the floor, since against white only
