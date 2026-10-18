@@ -450,6 +450,9 @@ mod vt_input {
         }
 
         pub(super) fn push(&mut self, byte: u8) -> Result<Option<Event>, String> {
+            if byte == 3 && !matches!(self.state, State::Ground | State::Paste(_)) {
+                return Err("tui cancelled an incomplete terminal control sequence".to_string());
+            }
             match std::mem::take(&mut self.state) {
                 State::Ground => self.character(byte, KeyModifiers::NONE),
                 State::Utf8(mut bytes, expected, modifiers) => {
@@ -717,6 +720,38 @@ mod vt_input {
             assert!(unicode.push(0xde42).is_err());
             assert_eq!(unicode.push(0xd83d).unwrap(), None);
             assert!(unicode.push(b'd' as u16).is_err());
+        }
+
+        #[test]
+        fn control_c_cancels_incomplete_controls_without_replaying_their_contents() {
+            for prefix in [
+                b"\x1b]q\x1b".as_slice(),
+                b"\x1bPq\x1b",
+                b"\x1b_q\x1b",
+                b"\x1b^q\x1b",
+                b"\x1bXq\x1b",
+                b"\x1b[200",
+                b"\x1bO",
+                b"\x1b",
+                &[0xf0, 0x9f],
+            ] {
+                let mut decoder = Decoder::default();
+                for &byte in prefix {
+                    assert!(decoder.push(byte).unwrap().is_none());
+                }
+                assert!(decoder
+                    .push(3)
+                    .unwrap_err()
+                    .contains("cancelled an incomplete"));
+            }
+            assert_eq!(
+                decode(b"\x03").unwrap(),
+                vec![key(KeyCode::Char('c'), KeyModifiers::CONTROL).unwrap()]
+            );
+            assert_eq!(
+                decode(b"\x1b[200~q\x1b]\x03dyes\r\x1b[201~").unwrap(),
+                vec![Event::Paste("q\x1b]\x03dyes\r".to_string())]
+            );
         }
     }
 }

@@ -87,6 +87,9 @@ class NativeTuiPasteTests(unittest.TestCase):
 
     def start(self):
         from winpty import PtyProcess
+        self.screen = ""
+        for artifact in (self.result, self.output, self.error):
+            artifact.unlink(missing_ok=True)
         self.process = PtyProcess.spawn(
             [sys.executable, str(self.wrapper), str(self.output), str(self.error),
              str(self.result), str(self.binary), "tui", "--action", "id"],
@@ -124,8 +127,8 @@ class NativeTuiPasteTests(unittest.TestCase):
         self.process.write("\x1b[200~" + value + "\x1b[201~")
         self.settle()
 
-    def finish(self, expected_code=1):
-        self.wait("DZC_TUI_TEST_DONE")
+    def finish(self, expected_code=1, timeout=15):
+        self.wait("DZC_TUI_TEST_DONE", timeout=timeout)
         state = json.loads(self.result.read_text())
         self.assertEqual(state["code"], expected_code, self.error.read_bytes())
         self.assertEqual(state["before"], state["after"], state)
@@ -226,6 +229,35 @@ class NativeTuiPasteTests(unittest.TestCase):
         self.assertIn("中文🙂", self.screen)
         self.process.write("\x1b")
         self.finish()
+
+    def check_unterminated_control(self, prefix, in_prompt):
+        self.start()
+        if in_prompt:
+            self.send_wait("/", "Search (empty = all):")
+        self.process.write(prefix)
+        self.settle(.15)
+        self.process.write("q\x1b")
+        self.settle(.15)
+        self.assertEqual(self.row(), (0, []))
+        self.process.write("\x03")
+        self.finish(timeout=5)
+        self.assertEqual(self.row(), (0, []))
+        self.assertIn(b"cancelled an incomplete terminal control sequence", self.error.read_bytes())
+
+    def test_unterminated_osc_at_top_level_has_a_fatal_control_c_exit(self):
+        self.check_unterminated_control("\x1b]", False)
+
+    def test_unterminated_osc_in_a_prompt_has_a_fatal_control_c_exit(self):
+        self.check_unterminated_control("\x1b]", True)
+
+    def test_other_unterminated_control_strings_can_be_cancelled_in_every_context(self):
+        for prefix in ("\x1bP", "\x1b_", "\x1b^", "\x1bX"):
+            for in_prompt in (False, True):
+                with self.subTest(prefix=prefix, in_prompt=in_prompt):
+                    try:
+                        self.check_unterminated_control(prefix, in_prompt)
+                    finally:
+                        self.close()
 
 
 if __name__ == "__main__":
