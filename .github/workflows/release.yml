@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       release_id: ${{ steps.release.outputs.release_id }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
       - name: Create or reuse release
         id: release
@@ -24,11 +25,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          prerelease=false
+          release_args=()
+          if [[ "${GITHUB_REF_NAME%%+*}" == *-* ]]; then
+            prerelease=true
+            release_args+=(--prerelease --latest=false)
+          fi
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
           if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release create "${GITHUB_REF_NAME}" \
               --verify-tag \
               --title "DezirClip ${GITHUB_REF_NAME}" \
               --generate-notes \
+              "${release_args[@]}" \
               --notes "Download the matching DezirClip installer or standalone dzc archive for your platform. Both use the same real CLI and local database; standalone archives include optional terminal/Agent adapters and SHA-256 checksums."
           fi
           release_id="$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq '.databaseId')"
@@ -176,7 +185,7 @@ jobs:
           releaseName: DezirClip ${{ github.ref_name }}
           releaseBody: Download the matching DezirClip installer or standalone dzc archive for your platform. Both use the same real CLI and local database; standalone archives include optional terminal/Agent adapters and SHA-256 checksums.
           releaseDraft: false
-          prerelease: false
+          prerelease: ${{ needs.create-release.outputs.prerelease == 'true' }}
           args: ${{ matrix.args }}
 
       - name: Upload standalone dzc archive and checksum to release
