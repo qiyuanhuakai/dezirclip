@@ -148,15 +148,25 @@ jobs:
         run: cargo build ${{ matrix.cargo_args }}
 
       - name: Check backend without replacing the built CLI
-        shell: bash
+        shell: python
         run: |
-          binary="$GITHUB_WORKSPACE/src-tauri/target"
-          if [[ -n '${{ matrix.rust_target }}' ]]; then binary="$binary/${{ matrix.rust_target }}"; fi
-          binary="$binary/debug/dzc"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then binary="${binary}.exe"; fi
-          before="$(sha256sum "$binary")"
-          cargo check --manifest-path src-tauri/Cargo.toml --all-targets ${{ matrix.cargo_args }}
-          test "$before" = "$(sha256sum "$binary")"
+          import hashlib
+          import os
+          from pathlib import Path
+          import shlex
+          import subprocess
+          binary = Path(os.environ["GITHUB_WORKSPACE"]) / "src-tauri" / "target"
+          target = "${{ matrix.rust_target }}"
+          if target:
+              binary /= target
+          binary = binary / "debug" / ("dzc.exe" if os.name == "nt" else "dzc")
+          before = hashlib.sha256(binary.read_bytes()).digest()
+          subprocess.run([
+              "cargo", "check", "--manifest-path", "src-tauri/Cargo.toml", "--all-targets",
+              *shlex.split("${{ matrix.cargo_args }}"),
+          ], check=True)
+          if hashlib.sha256(binary.read_bytes()).digest() != before:
+              raise RuntimeError("backend check replaced the built CLI")
 
   standalone-cli:
     name: Compatible standalone CLI
