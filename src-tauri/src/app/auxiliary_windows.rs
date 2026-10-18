@@ -108,18 +108,25 @@ fn build_window(app: &AppHandle, label: &str) -> Result<WebviewWindow, String> {
         .map_err(|err| format!("Failed to build auxiliary window '{label}': {err}"))
 }
 
+fn wait_for_instance_ready(instance: &AuxiliaryInstance, generation: u64, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while !instance.ready(generation) {
+        if started.elapsed() >= timeout {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(8));
+    }
+    true
+}
+
 fn wait_until_ready(label: &str) -> Result<(), String> {
     let Some(instance) = instance(label) else {
         return Ok(());
     };
     let generation = instance.generation.load(Ordering::SeqCst);
-    let started = Instant::now();
-    while !instance.ready(generation) {
-        if started.elapsed() >= Duration::from_millis(1500) {
-            crate::warn!("[auxiliary-windows] '{label}' instance {generation} was not ready in time");
-            return Err(format!("Auxiliary window '{label}' is not ready"));
-        }
-        std::thread::sleep(Duration::from_millis(8));
+    if !wait_for_instance_ready(instance, generation, Duration::from_millis(1500)) {
+        crate::warn!("[auxiliary-windows] '{label}' instance {generation} was not ready in time");
+        return Err(format!("Auxiliary window '{label}' is not ready"));
     }
     Ok(())
 }
@@ -282,7 +289,24 @@ pub fn destroy_windows(
 
 #[cfg(test)]
 mod tests {
-    use super::{append_instance_query, should_collect, AuxiliaryInstance, Ordering};
+    use super::{append_instance_query, should_collect, wait_for_instance_ready, AuxiliaryInstance, Ordering};
+    use std::time::Duration;
+
+    #[test]
+    fn timeout_allows_late_acknowledgement_and_a_recreated_window_requires_a_new_one() {
+        let instance = AuxiliaryInstance::new();
+        instance.generation.store(21, Ordering::SeqCst);
+        assert!(!wait_for_instance_ready(&instance, 21, Duration::ZERO));
+        assert!(instance.mark_ready(21));
+        assert!(wait_for_instance_ready(&instance, 21, Duration::ZERO));
+
+        instance.ready_generation.store(0, Ordering::SeqCst);
+        instance.generation.store(22, Ordering::SeqCst);
+        assert!(!instance.mark_ready(21));
+        assert!(!wait_for_instance_ready(&instance, 22, Duration::ZERO));
+        assert!(instance.mark_ready(22));
+        assert!(wait_for_instance_ready(&instance, 22, Duration::ZERO));
+    }
 
     #[test]
     fn only_the_current_instance_acknowledgement_allows_showing() {

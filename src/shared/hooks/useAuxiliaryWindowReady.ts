@@ -11,19 +11,34 @@ export const useAuxiliaryWindowReady = (enabled: boolean) => {
     if (!Number.isSafeInteger(generation) || generation <= 0) return;
 
     let cancelled = false;
-    let inner = 0;
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => {
+    let retryTimer: number | undefined;
+    let retryDelay = 100;
+
+    // Effects run after the DOM commit. Hidden WebKit pauses animation frames,
+    // so this initialization acknowledgement must not depend on a paint.
+    const reportReady = async () => {
+      try {
+        const accepted = await invoke<boolean>("notify_auxiliary_window_ready", { generation });
         if (cancelled) return;
-        reported.current = true;
-        void invoke("notify_auxiliary_window_ready", { generation }).catch(() => undefined);
-      });
-    });
+        if (accepted) {
+          reported.current = true;
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+      }
+
+      retryTimer = window.setTimeout(() => {
+        retryTimer = undefined;
+        void reportReady();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 1000);
+    };
+    void reportReady();
 
     return () => {
       cancelled = true;
-      cancelAnimationFrame(outer);
-      cancelAnimationFrame(inner);
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
   }, [enabled]);
 };
