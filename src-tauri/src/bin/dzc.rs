@@ -5,7 +5,7 @@
 //! * The matching `cli::<cmd>::run(args, ...)` is invoked.
 //! * History commands share the repository; clipboard commands use native APIs.
 //!
-//! Transport: there is none. This binary opens the same SQLite file the app
+//! History access opens the same SQLite file the app
 //! uses and goes through the same repository types, so it needs no IPC, works
 //! while the app is stopped, and picks up its writes the next time the app
 //! reads the database. It also means a `dzc` write is invisible to a running
@@ -74,8 +74,80 @@ enum Commands {
     Clipboard(ClipboardArgs),
     /// Restore a history entry to the system clipboard; never simulates keys.
     Copy(CopyArgs),
+    /// Select history using the built-in interface or fzf/dmenu/rofi.
+    Pick(PickCliArgs),
+    /// Browse and manage history in the terminal.
+    Tui(BrowseCliArgs),
+    /// Serve bounded, read-only local history tools over MCP stdio.
+    Mcp,
+    /// Print Bash Ctrl-G integration for loading with eval.
+    Bash,
+    /// Print Zsh Ctrl-G integration for loading with eval.
+    Zsh,
+    /// Print Fish Ctrl-G integration for loading with source.
+    Fish,
+    /// Print Nushell integration, or install it at an explicit .nu path.
+    #[command(alias = "nushell")]
+    Nu(ShellInstallArgs),
+    /// Print PowerShell Ctrl-G integration for loading with Invoke-Expression.
+    #[command(alias = "powershell")]
+    Pwsh,
     #[command(hide = true)]
     ClipboardOwner,
+}
+
+#[derive(Args)]
+struct BrowseCliArgs {
+    #[arg(long, default_value = "")]
+    query: String,
+    #[arg(long)]
+    kind: Option<String>,
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(i32).range(1..=200))]
+    limit: i32,
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(i32).range(0..))]
+    offset: i32,
+    #[arg(long, value_enum, default_value_t = cli::frontend::Action::Copy)]
+    action: cli::frontend::Action,
+    /// Explicit single-layer tmux wrapping; requires --action osc52.
+    #[arg(long, value_enum, default_value_t = Osc52Passthrough::None)]
+    osc52_passthrough: Osc52Passthrough,
+}
+
+impl BrowseCliArgs {
+    fn options(self) -> Result<cli::frontend::BrowseOptions, String> {
+        if self.action != cli::frontend::Action::Osc52
+            && self.osc52_passthrough != Osc52Passthrough::None
+        {
+            return Err("--osc52-passthrough tmux requires --action osc52".to_string());
+        }
+        Ok(cli::frontend::BrowseOptions {
+            query: self.query,
+            kind: self.kind,
+            limit: self.limit,
+            offset: self.offset,
+            action: self.action,
+            passthrough: match self.osc52_passthrough {
+                Osc52Passthrough::None => dezirclip::infrastructure::osc52::Passthrough::None,
+                Osc52Passthrough::Tmux => dezirclip::infrastructure::osc52::Passthrough::Tmux,
+            },
+        })
+    }
+}
+
+#[derive(Args)]
+struct PickCliArgs {
+    #[command(flatten)]
+    options: BrowseCliArgs,
+    /// Use an external picker; defaults to the built-in terminal interface.
+    #[arg(long, value_enum)]
+    backend: Option<cli::pick::Backend>,
+}
+
+#[derive(Args)]
+struct ShellInstallArgs {
+    /// Write to this .nu file; an existing different file is left unchanged.
+    #[arg(long, value_name = "PATH")]
+    install: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -495,6 +567,14 @@ fn main() {
 
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
+        Commands::Mcp => return cli::mcp::serve(|| open_repos().map(|(repo, _)| repo)),
+        Commands::Bash => return cli::shell::run(cli::shell::Shell::Bash, None),
+        Commands::Zsh => return cli::shell::run(cli::shell::Shell::Zsh, None),
+        Commands::Fish => return cli::shell::run(cli::shell::Shell::Fish, None),
+        Commands::Nu(args) => {
+            return cli::shell::run(cli::shell::Shell::Nu, args.install.as_deref())
+        }
+        Commands::Pwsh => return cli::shell::run(cli::shell::Shell::Pwsh, None),
         Commands::Clipboard(a) => return run_clipboard(a),
         Commands::ClipboardOwner => {
             return dezirclip::infrastructure::native_clipboard::serve_owner()
@@ -503,6 +583,34 @@ fn run(args: Cli) -> Result<(), String> {
     };
     let (clip_repo, tag_repo) = open_repos()?;
     match command {
+        Commands::Pick(args) => {
+            let options = args.options.options()?;
+            let selected = if let Some(backend) = args.backend {
+                cli::pick::run(
+                    &cli::pick::PickArgs {
+                        options: options.clone(),
+                        backend,
+                    },
+                    clip_repo.as_ref(),
+                )?
+            } else {
+                cli::tui::run(&options, clip_repo.as_ref(), tag_repo.as_ref())?
+            };
+            finish_selection(selected, &options, clip_repo.as_ref())
+        }
+        Commands::Tui(args) => {
+            let options = args.options()?;
+            let selected = cli::tui::run(&options, clip_repo.as_ref(), tag_repo.as_ref())?;
+            finish_selection(selected, &options, clip_repo.as_ref())
+        }
+        Commands::Mcp
+        | Commands::Bash
+        | Commands::Zsh
+        | Commands::Fish
+        | Commands::Nu(_)
+        | Commands::Pwsh => {
+            unreachable!("stdio and shell initialization dispatched before history access")
+        }
         Commands::List(a) => cli::list::run(
             &cli::list::ListArgs {
                 limit: a.limit,
@@ -687,6 +795,18 @@ fn run(args: Cli) -> Result<(), String> {
                 Ok(())
             }
         }
+    }
+}
+
+fn finish_selection(
+    selected: Option<i64>,
+    options: &cli::frontend::BrowseOptions,
+    repo: &SqliteClipboardRepository,
+) -> Result<(), String> {
+    if let Some(id) = selected {
+        cli::frontend::apply_action(id, options, repo)
+    } else {
+        std::process::exit(1);
     }
 }
 
