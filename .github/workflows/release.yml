@@ -140,12 +140,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Test standalone packaging
+        run: python -m unittest discover -s scripts/tests -v
+
       - name: Build the real standalone dzc binary
         working-directory: src-tauri
         run: cargo build --release --bin dzc ${{ matrix.args }}
-
-      - name: Test standalone packaging
-        run: python -m unittest discover -s scripts/tests -v
 
       - name: Package standalone dzc
         id: dzc-package

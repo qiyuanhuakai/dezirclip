@@ -89,7 +89,7 @@ class PackageTests(unittest.TestCase):
         target_directory = self.root / "cargo-output"
         with patch.dict(os.environ, {"CARGO_TARGET_DIR": str(target_directory)}):
             actual = package.default_binary("linux-aarch64", "aarch64-unknown-linux-gnu")
-        self.assertEqual(actual, target_directory / "aarch64-unknown-linux-gnu" / "release" / "dzc")
+        self.assertEqual(actual, target_directory.resolve() / "aarch64-unknown-linux-gnu" / "release" / "dzc")
 
     def test_archive_layout_checksum_and_linux_executable_mode(self):
         for platform in ("linux-x86_64", "windows-x86_64"):

@@ -86,6 +86,14 @@ jobs:
       - name: Check src-tauri/src/bin layout
         run: node scripts/check-tauri-bin-dir.mjs
 
+      - name: Setup Python for archive validation
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Test standalone packaging
+        run: python -m unittest discover -s scripts/tests -v
+
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -142,14 +150,6 @@ jobs:
       - name: Build the real standalone dzc binary
         working-directory: src-tauri
         run: cargo build --release --bin dzc ${{ matrix.cargo_args }}
-
-      - name: Setup Python for archive validation
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-
-      - name: Test standalone packaging
-        run: python -m unittest discover -s scripts/tests -v
 
       - name: Package standalone dzc
         id: dzc-package
