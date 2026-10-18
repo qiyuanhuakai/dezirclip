@@ -20,3 +20,4 @@ scripts/probe-webview-interaction.py export-ignore
 scripts/probe-webview-startup.py export-ignore
 scripts/seed-performance-history.py export-ignore
 scripts/summarize-webview-interaction.py export-ignore
+scripts/tests/test_webview_interaction_summary.py export-ignore

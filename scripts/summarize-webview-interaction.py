@@ -66,7 +66,8 @@ def interaction_events(events, frame_id, capture_bounds):
 
 
 def summarize(profile, driver=None):
-    source = json.loads(profile.read_text(encoding="utf-8"))
+    profile_contents = profile.read_bytes()
+    source = json.loads(profile_contents)
     scenarios = []
     all_samples = source.get("process_samples", [])
     for scenario in source["scenarios"]:
@@ -109,7 +110,7 @@ def summarize(profile, driver=None):
                                                "max": max(durations) if durations else None}
         scenarios.append(row)
     result = {"schema_version": 1, "generated_utc": datetime.now(timezone.utc).isoformat(),
-            "profile": str(profile), "profile_sha256_at_summary": hashlib.sha256(profile.read_bytes()).hexdigest(),
+            "profile": str(profile), "profile_sha256_at_summary": hashlib.sha256(profile_contents).hexdigest(),
             "profile_finished_utc": source.get("finished_utc"), "case": source["case"],
             "fixture_logical_sha256": source["fixture"]["logical_sha256"],
             "browser_version": source.get("browser_version"), "scenarios": scenarios,
@@ -125,13 +126,14 @@ def summarize(profile, driver=None):
         specification = importlib.util.spec_from_file_location("interaction_observer_summary", Path(__file__).with_name("probe-webview-interaction.py"))
         observer = importlib.util.module_from_spec(specification)
         specification.loader.exec_module(observer)
-        driven = json.loads(driver.read_text(encoding="utf-8"))
+        driver_contents = driver.read_bytes()
+        driven = json.loads(driver_contents)
         if not source.get("finished_utc") or not driven.get("completed"):
             raise ValueError("Phase summaries require completed observer and driver artifacts")
         if driven["case"]["sha256"] != source["case"]["sha256"] or driven["fixture_logical_sha256"] != source["fixture"]["logical_sha256"]:
             raise ValueError("Driver and observer executable/fixture differ")
         result["driver"] = str(driver)
-        result["driver_sha256"] = hashlib.sha256(driver.read_bytes()).hexdigest()
+        result["driver_sha256"] = hashlib.sha256(driver_contents).hexdigest()
         result["phases"] = []
         for phase in driven.get("phases", []):
             result["phases"].append({**phase,
