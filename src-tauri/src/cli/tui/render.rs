@@ -1,6 +1,6 @@
 //! Widget rendering is separate from history mutations and terminal input.
 
-use super::{action_name, fit_columns, frontend, preview_lines, BrowseOptions, ClipboardEntry};
+use super::{action_name, fit_columns, preview_lines, BrowseOptions, ClipboardEntry};
 use crate::infrastructure::terminal_ui::Terminal as InputTerminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
@@ -669,6 +669,7 @@ fn entry_time(timestamp: i64) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::frontend;
     use super::*;
     use ratatui::backend::TestBackend;
 

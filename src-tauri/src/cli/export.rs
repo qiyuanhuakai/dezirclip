@@ -326,4 +326,137 @@ mod tests {
         assert!(error.contains(&format!("image attachment id={id}")));
         assert_eq!(existing, b"existing backup");
     }
+    fn backup_repository() -> (
+        SqliteClipboardRepository,
+        std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
+    ) {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        let connection = std::sync::Arc::new(std::sync::Mutex::new(connection));
+        (
+            SqliteClipboardRepository::new(connection.clone()),
+            connection,
+        )
+    }
+
+    fn backup_entry(id: i64, kind: &str, content: String) -> ClipboardEntry {
+        serde_json::from_value(serde_json::json!({"id":id,"content_type":kind,"content":content,"source_app":"fixture","timestamp":1700000000123i64,"preview":"ordinary preview","is_pinned":false,"tags":["work"]})).unwrap()
+    }
+
+    #[test]
+    fn literal_encryption_markers_in_plaintext_fields_export_without_changes() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-marker-export-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let (repo, _) = backup_repository();
+        for prefix in ["linux:", "dpapi:"] {
+            let mut source = backup_entry(7, "rich_text", format!("{prefix} kernel notes\r\n"));
+            source.preview = format!("{prefix} ordinary preview");
+            source.html_content = Some(format!("{prefix}<p>ordinary HTML</p>"));
+            repo.import_cli_entries(&[source.clone()], true).unwrap();
+            let path = directory.join("history.json");
+            crate::cli::export::run(
+                &crate::cli::export::ExportArgs {
+                    path: path.to_string_lossy().into_owned(),
+                    encrypted: false,
+                    passphrase: None,
+                    quiet: true,
+                },
+                &repo,
+            )
+            .unwrap();
+            let exported =
+                crate::services::backup::entries_from_json(&std::fs::read_to_string(path).unwrap())
+                    .unwrap();
+            assert_eq!(exported[0].content, source.content);
+            assert_eq!(
+                exported[0].preview.as_deref(),
+                Some(source.preview.as_str())
+            );
+            assert_eq!(exported[0].html_content, source.html_content);
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn unavailable_ciphertexts() -> Vec<String> {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        let cipher = Aes256Gcm::new_from_slice(&[173; 32]).unwrap();
+        let nonce = [197; 12];
+        let encrypted = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                b"foreign-key private payload".as_slice(),
+            )
+            .unwrap();
+        let mut bytes = nonce.to_vec();
+        bytes.extend(encrypted);
+        let values = vec![format!("linux:{}", STANDARD.encode(bytes))];
+        #[cfg(windows)]
+        let values = {
+            let mut values = values;
+            let native =
+                crate::infrastructure::encryption::encrypt_value("native private payload").unwrap();
+            let mut bytes = STANDARD
+                .decode(native.strip_prefix("dpapi:").unwrap())
+                .unwrap();
+            *bytes.last_mut().unwrap() ^= 1;
+            values.push(format!("dpapi:{}", STANDARD.encode(bytes)));
+            values
+        };
+        values
+    }
+
+    #[test]
+    fn unavailable_encrypted_fields_abort_export_and_preserve_previous_backup() {
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-failed-decrypt-export-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let (repo, connection) = backup_repository();
+        for cipher in unavailable_ciphertexts() {
+            assert!(crate::infrastructure::encryption::decrypt_value(&cipher).is_none());
+            for field in ["content", "preview", "html_content"] {
+                repo.import_cli_entries(
+                    &[
+                        backup_entry(7, "rich_text", "safe text".to_string()),
+                        backup_entry(8, "text", "visible entry".to_string()),
+                    ],
+                    true,
+                )
+                .unwrap();
+                connection.lock().unwrap().execute(&format!("UPDATE clipboard_history SET {field}=?1,tags='[\"sensitive\"]' WHERE id=7"),[&cipher]).unwrap();
+                for encrypted in [false, true] {
+                    let path = directory.join("previous.json");
+                    std::fs::write(&path, b"previous usable backup").unwrap();
+                    let error = crate::cli::export::run(
+                        &crate::cli::export::ExportArgs {
+                            path: path.to_string_lossy().into_owned(),
+                            encrypted,
+                            passphrase: Some("valid backup passphrase".to_string()),
+                            quiet: true,
+                        },
+                        &repo,
+                    )
+                    .unwrap_err();
+                    assert!(error.contains("could not be decrypted"), "{field}: {error}");
+                    assert!(!error.contains(&cipher));
+                    assert_eq!(std::fs::read(path).unwrap(), b"previous usable backup");
+                }
+                let filtered = repo
+                    .query_cli_for_export(&CliQuery {
+                        limit: i32::MAX,
+                        exclude_sensitive: true,
+                        ..Default::default()
+                    })
+                    .unwrap();
+                assert_eq!(filtered.len(), 1);
+                assert_eq!(filtered[0].content, "visible entry");
+            }
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }
