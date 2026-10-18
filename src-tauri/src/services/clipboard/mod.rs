@@ -13,7 +13,7 @@ use tauri::{AppHandle, Manager};
 
 #[cfg(not(target_os = "windows"))]
 use crate::infrastructure::linux_api::window_tracker::{
-    get_active_app_info as get_clipboard_source_app_info, ActiveAppInfo,
+    get_clipboard_capture_app_info as get_clipboard_source_app_info, ActiveAppInfo,
 };
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_api::window_tracker::{
@@ -510,9 +510,16 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         monitor_state.last_seq = current_seq;
 
         let source_snapshot = get_clipboard_source_app_info();
+        if source_app_is_excluded(
+            &app,
+            &source_snapshot.app_name,
+            source_snapshot.process_path.as_deref(),
+        ) {
+            return;
+        }
 
-        // Give source app (especially Excel) time to release lock/finish writing
-        // fixes "Another application is using the clipboard" error
+        // Windows applications can retain their clipboard lock after notifying.
+        #[cfg(target_os = "windows")]
         std::thread::sleep(std::time::Duration::from_millis(100));
 
         // Initialize clipboard for this thread
@@ -529,7 +536,12 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        // Calculate hash of current clipboard content
+        #[cfg(target_os = "windows")]
+        let files_opt = unsafe { clipboard_api::get_clipboard_files() };
+        #[cfg(not(target_os = "windows"))]
+        let files_opt = clipboard_api::get_clipboard_files();
+
+        // Include file lists so rapid copies of different files stay distinct.
         let current_content_hash = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -538,6 +550,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             if let Ok(text) = clipboard.get_text() {
                 text.hash(&mut hasher);
             }
+            files_opt.hash(&mut hasher);
 
             // Also consider image hash if present
 
@@ -570,12 +583,6 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         // --- Core processing logic (same as before) ---
 
         // 1. Check Files (CF_HDROP on Windows, text/uri-list on Linux)
-
-        #[cfg(target_os = "windows")]
-        let files_opt = unsafe { clipboard_api::get_clipboard_files() };
-
-        #[cfg(not(target_os = "windows"))]
-        let files_opt = clipboard_api::get_clipboard_files();
 
         if let Some(files) = files_opt {
             let content = files.join("\n");
@@ -614,10 +621,9 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                 }
 
                 if should_process {
-                    let normalized = crate::database::normalize_text(&content);
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     use std::hash::{Hash, Hasher};
-                    normalized.hash(&mut hasher);
+                    content.hash(&mut hasher);
                     let current_hash = hasher.finish();
 
                     let last_app_hash = crate::LAST_APP_SET_HASH.load(Ordering::SeqCst);
@@ -827,7 +833,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     use std::hash::{Hash, Hasher};
-                    crate::database::normalize_text(&text).hash(&mut hasher);
+                    text.hash(&mut hasher);
                     let current_hash = hasher.finish();
 
                     let last_app_hash = crate::LAST_APP_SET_HASH.load(Ordering::SeqCst);
@@ -927,6 +933,15 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 pub use pipeline::{ClipboardData, ClipboardPipeline, PipelineContext};
 pub use utils::truncate_html_for_preview;
 
+fn source_app_is_excluded(app_handle: &AppHandle, app_name: &str, process_path: Option<&str>) -> bool {
+    let settings = app_handle.state::<SettingsState>();
+    let rules = settings
+        .excluded_source_apps
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    crate::services::source_exclusion::source_app_is_excluded(&rules, app_name, process_path)
+}
+
 pub fn process_new_entry(
     app_handle: &AppHandle,
     data: ClipboardData,
@@ -937,6 +952,10 @@ pub fn process_new_entry(
     if let Some(source) = source_override {
         ctx.source_app = source;
         ctx.source_app_path = None;
+    }
+
+    if source_app_is_excluded(app_handle, &ctx.source_app, ctx.source_app_path.as_deref()) {
+        return;
     }
 
     let pipeline = ClipboardPipeline::new();

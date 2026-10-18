@@ -65,8 +65,8 @@ This skill has **no version field** of its own. It mirrors the in-tree `dzc` CLI
 
 - Add new examples under `examples/` using the filename pattern `<verb>-<noun>.md` (e.g., `search-and-add.md`).
 - Update `SKILL.md`'s patterns section when adding new common workflows so the CLI can surface them.
-- Keep all examples ≥ 30 lines and avoid executable scripts inside examples — they are documentation-only.
+- Keep examples focused and documented; link optional executable adapters from `integrations/README.md`.
 
 ## License
 
-MIT or Apache-2.0, matching the project.
+GPL-3.0, matching the project.

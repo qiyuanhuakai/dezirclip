@@ -70,6 +70,11 @@ fn apply_setting_state_update(
                 .privacy_protection
                 .store(value == "true", Ordering::Relaxed);
         }
+        "app.excluded_source_apps" => {
+            if let Ok(mut rules) = settings_state.excluded_source_apps.lock() {
+                *rules = crate::services::source_exclusion::parse_excluded_source_apps(value);
+            }
+        }
         "app.edge_docking" => {
             settings_state
                 .edge_docking
@@ -526,6 +531,7 @@ pub fn reset_settings(
         .quick_paste_enabled
         .store(true, Ordering::Relaxed);
     settings_state.ocr_enabled.store(true, Ordering::Relaxed);
+    apply_setting_state_update(&app, &settings_state, "app.excluded_source_apps", "");
     sync_hotkeys_from_settings(&app)
 }
 

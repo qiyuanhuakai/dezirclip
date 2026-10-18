@@ -1,0 +1,2 @@
+# Only the optional curses terminal interface needs an extra Windows package.
+windows-curses>=2.4,<3; sys_platform == "win32"

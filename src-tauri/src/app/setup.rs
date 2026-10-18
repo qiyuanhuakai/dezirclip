@@ -288,6 +288,7 @@ pub struct StartupSettings {
     pub privacy_protection: bool,
     pub privacy_kinds: String,
     pub privacy_custom: String,
+    pub excluded_source_apps: String,
     pub sequential_mode: bool,
     pub sequential_hotkey: String,
     pub rich_paste_hotkey: String,
@@ -360,6 +361,10 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .get("app.privacy_protection_custom_rules")
             .unwrap_or(Some("".to_string()))
             .unwrap_or("".to_string()),
+        excluded_source_apps: repo
+            .get("app.excluded_source_apps")
+            .unwrap_or_default()
+            .unwrap_or_default(),
         sequential_mode: repo
             .get("app.sequential_mode")
             .unwrap_or(Some("false".to_string()))
@@ -499,6 +504,9 @@ fn setup_state(
                 .lines()
                 .map(|x| x.trim().to_string())
                 .collect(),
+        ),
+        excluded_source_apps: std::sync::Mutex::new(
+            crate::services::source_exclusion::parse_excluded_source_apps(&s.excluded_source_apps),
         ),
         sequential_mode: AtomicBool::new(s.sequential_mode),
         sequential_paste_hotkey: std::sync::Mutex::new(s.sequential_hotkey.clone()),

@@ -94,6 +94,27 @@ pub fn run(args: &AddArgs, repo: &dyn ClipboardRepository) -> Result<i64, String
 ///
 /// `pub(crate)` because `edit` resolves its content the same way.
 pub(crate) fn read_content(args: &AddArgs) -> Result<String, String> {
+    if args.kind.as_deref().map(normalize_kind).as_deref() == Some("image")
+        && (args.stdin || args.file.is_some())
+    {
+        use base64::Engine;
+        let bytes = if let Some(path) = &args.file {
+            std::fs::read(path).map_err(|e| format!("add: read image: {e}"))?
+        } else {
+            let mut bytes = Vec::new();
+            std::io::stdin()
+                .read_to_end(&mut bytes)
+                .map_err(|e| e.to_string())?;
+            bytes
+        };
+        let format = image::guess_format(&bytes).map_err(|e| format!("add: invalid image: {e}"))?;
+        image::load_from_memory(&bytes).map_err(|e| format!("add: invalid image: {e}"))?;
+        return Ok(format!(
+            "data:{};base64,{}",
+            format.to_mime_type(),
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        ));
+    }
     if args.stdin {
         let mut buf = String::new();
         std::io::stdin()

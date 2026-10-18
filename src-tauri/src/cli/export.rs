@@ -20,7 +20,7 @@
 //! ## Flow
 //!
 //! 1. Validate args (passphrase length, encrypted+no-passphrase).
-//! 2. Fetch all entries via `repo.get_history(i32::MAX, 0, None)`.
+//! 2. Fetch all entries via `repo.query_cli(&CliQuery {limit:i32::MAX,..Default::default()})`.
 //! 3. Map `ClipboardEntry` → `services::backup::ExportEntry`.
 //! 4. Serialize via `export_to_json` or `export_to_encrypted`.
 //! 5. Write to `path` (creates parent dirs if missing).
@@ -36,11 +36,13 @@
 use std::io::Write;
 use std::path::Path;
 
+use base64::{engine::general_purpose::STANDARD, Engine};
+
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-use crate::services::backup::{
-    export_to_encrypted, export_to_json, ExportEntry,
+use crate::infrastructure::repository::{
+    cli_query::CliQuery, clipboard_repo::SqliteClipboardRepository,
 };
+use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
 
 /// Minimum acceptable passphrase length. Matches the
 /// `BackupDialog` validation in the frontend and the G32 hard
@@ -76,7 +78,7 @@ enum ExportFormat {
 ///
 /// Returns `Ok(())` on success. Errors are returned as `Err(String)`
 /// for the binary to surface via `eprintln!` + exit code 1.
-pub fn run(args: &ExportArgs, repo: &dyn ClipboardRepository) -> Result<(), String> {
+pub fn run(args: &ExportArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
     // 1. Determine format from args + path extension.
     let format = resolve_format(&args.path, args.encrypted)?;
 
@@ -93,18 +95,20 @@ pub fn run(args: &ExportArgs, repo: &dyn ClipboardRepository) -> Result<(), Stri
         }
     }
 
-    // 3. Fetch every entry (unlimited). The repo's `get_history` is the
-    //    only enumeration surface on the trait; it accepts a positive
-    //    i32 limit, so we use `i32::MAX` for "all".
+    // Read complete payloads rather than the desktop history preview projection.
     let raw_entries = repo
-        .get_history(i32::MAX, 0, None)
-        .map_err(|e| format!("export: get_history failed: {e}"))?;
+        .query_cli(&CliQuery {
+            limit: i32::MAX,
+            ..Default::default()
+        })
+        .map_err(|e| format!("export: history lookup failed: {e}"))?;
 
-    // 4. Map to the export shape that the backup module knows how to
-    //    serialize. Only fields the backup schema actually carries are
-    //    populated; anything else (e.g. OCR text) stays as `None` for
-    //    now — the backup schema has a forward-compatible `#[serde(default)]`.
-    let export_entries: Vec<ExportEntry> = raw_entries.iter().map(to_export_entry).collect();
+    // Resolve image attachments before opening the destination, so a missing
+    // source cannot overwrite a usable backup with dangling image paths.
+    let export_entries: Vec<ExportEntry> = raw_entries
+        .iter()
+        .map(to_export_entry)
+        .collect::<Result<_, _>>()?;
     let count = export_entries.len();
 
     // 5. Serialize.
@@ -130,8 +134,8 @@ pub fn run(args: &ExportArgs, repo: &dyn ClipboardRepository) -> Result<(), Stri
                 .map_err(|e| format!("export: create_dir_all {parent:?}: {e}"))?;
         }
     }
-    let mut file = std::fs::File::create(path)
-        .map_err(|e| format!("export: create {path:?}: {e}"))?;
+    let mut file =
+        std::fs::File::create(path).map_err(|e| format!("export: create {path:?}: {e}"))?;
     file.write_all(&bytes)
         .map_err(|e| format!("export: write {path:?}: {e}"))?;
 
@@ -163,17 +167,29 @@ fn resolve_format(path: &str, encrypted: bool) -> Result<ExportFormat, String> {
     Ok(ExportFormat::Json)
 }
 
-/// Map a `ClipboardEntry` to a `services::backup::ExportEntry`.
-/// Only the fields the backup schema carries are populated; optional
-/// fields with no source default to `None` so the JSON stays
-/// minimal. `tags` flow through because the backup schema supports
-/// them; `use_count` is intentionally not exported — the backup
-/// format is for migration, not analytics.
-fn to_export_entry(e: &ClipboardEntry) -> ExportEntry {
-    ExportEntry {
+/// Image records carry their original encoded bytes across machines; file
+/// lists and resources linked from HTML remain references to their sources.
+fn to_export_entry(e: &ClipboardEntry) -> Result<ExportEntry, String> {
+    let content = if e.content_type == "image" && !e.content.starts_with("data:image/") {
+        let bytes = super::payload::image_bytes(&e.content)
+            .map_err(|error| format!("export: image attachment id={}: {error}", e.id))?;
+        let format = image::guess_format(&bytes)
+            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
+        image::load_from_memory(&bytes)
+            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
+        format!(
+            "data:{};base64,{}",
+            format.to_mime_type(),
+            STANDARD.encode(bytes)
+        )
+    } else {
+        e.content.clone()
+    };
+
+    Ok(ExportEntry {
         id: e.id,
         content_type: e.content_type.clone(),
-        content: e.content.clone(),
+        content,
         preview: Some(e.preview.clone()),
         html_content: e.html_content.clone(),
         source_app: if e.source_app.is_empty() {
@@ -194,7 +210,7 @@ fn to_export_entry(e: &ClipboardEntry) -> ExportEntry {
         tags: e.tags.clone(),
         ocr_text: e.ocr_text.clone(),
         kinds: e.content_kinds.clone(),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -260,7 +276,7 @@ mod tests {
             ocr_text: None,
             ocr_status: None,
         };
-        let exp = to_export_entry(&e);
+        let exp = to_export_entry(&e).unwrap();
         assert_eq!(exp.id, 42);
         assert_eq!(exp.content_type, "text");
         assert_eq!(exp.content, "hello");
@@ -269,5 +285,94 @@ mod tests {
         assert!(exp.is_pinned);
         assert_eq!(exp.use_count, 7);
         assert_eq!(exp.tags, vec!["work".to_string()]);
+    }
+
+    fn image_entry(content: String) -> ClipboardEntry {
+        ClipboardEntry {
+            id: 51,
+            content_type: "image".to_string(),
+            content,
+            html_content: None,
+            source_app: "test-app".to_string(),
+            source_app_path: None,
+            timestamp: 1234,
+            preview: "image".to_string(),
+            is_pinned: false,
+            tags: Vec::new(),
+            use_count: 0,
+            is_external: true,
+            pinned_order: 0,
+            file_preview_exists: true,
+            content_kinds: vec!["image".to_string()],
+            ocr_text: None,
+            ocr_status: None,
+        }
+    }
+
+    fn temporary_path(label: &str) -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("dzc-export-{label}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn image_attachment_export_survives_source_removal_with_original_bytes() {
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::new(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let bytes = png.into_inner();
+        let path = temporary_path("image%original.png");
+        std::fs::write(&path, &bytes).unwrap();
+        let entry = image_entry(path.to_string_lossy().into_owned());
+        let exported = to_export_entry(&entry);
+        std::fs::remove_file(path).unwrap();
+
+        let json = export_to_json(vec![exported.unwrap()]).unwrap();
+        let imported = crate::services::backup::entries_from_json(&json).unwrap();
+        let (header, payload) = imported[0].content.split_once(',').unwrap();
+        assert_eq!(header, "data:image/png;base64");
+        assert_eq!(STANDARD.decode(payload).unwrap(), bytes);
+        assert_eq!(imported[0].id, entry.id);
+    }
+
+    #[test]
+    fn image_data_urls_are_exported_unchanged() {
+        let content = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///w==";
+        let exported = to_export_entry(&image_entry(content.to_string())).unwrap();
+        assert_eq!(exported.content, content);
+    }
+
+    #[test]
+    fn missing_image_attachment_does_not_overwrite_existing_backup() {
+        use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+        use std::sync::{Arc, Mutex};
+
+        let path = temporary_path("missing.png");
+        let output = temporary_path("backup.json");
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
+        let mut entry = image_entry(path.to_string_lossy().into_owned());
+        entry.id = 0;
+        let id = repo.save(&entry, None).unwrap();
+        std::fs::write(&output, b"existing backup").unwrap();
+        let result = run(
+            &ExportArgs {
+                path: output.to_string_lossy().into_owned(),
+                encrypted: false,
+                passphrase: None,
+                quiet: true,
+            },
+            &repo,
+        );
+        let existing = std::fs::read(&output).unwrap();
+        std::fs::remove_file(output).unwrap();
+
+        let error = result.unwrap_err();
+        assert!(error.contains(&format!("image attachment id={id}")));
+        assert_eq!(existing, b"existing backup");
     }
 }

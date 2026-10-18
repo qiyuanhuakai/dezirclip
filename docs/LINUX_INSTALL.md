@@ -1,169 +1,142 @@
 # DezirClip Linux 安装指南
 
-## 系统要求
+## 支持范围
 
-- **操作系统**: Linux (X11 环境)
-- **架构**: x86_64
-- **显示服务器**: X11 (Wayland 暂不支持)
+当前支持 Linux X11 桌面，发布构建包含 x86_64 与 aarch64；下载与机器架构匹配的安装包。系统需具备可用的 X11 会话和 WebKitGTK 4.1。完整 Wayland 支持暂缓，XWayland 下可能运行的部分功能不代表后台监听、全局快捷键、焦点恢复和自动粘贴都已适配。
+
+历史管理、原生剪贴板读写与终端集成是不同能力：无图形会话时 `dzc list/search/get` 仍可访问数据库，`dzc clipboard read/write` 则需要可访问的 X11 服务。通过 SSH 使用时，它操作的是能访问的远程图形会话。
 
 ## 安装依赖
 
-### Ubuntu/Debian
+以下为源码构建依赖，与 [README](../README.md#linux-dependencies) 保持一致。普通 deb/rpm 安装会由包管理器解析打包声明的运行依赖。Tauri 2 使用 WebKitGTK **4.1**；旧指南中的 `libwebkit2gtk-4.0-dev` 不适用。发行版基础包名参考 [Tauri 2 官方前置依赖](https://v2.tauri.app/start/prerequisites/#linux)。
+
+### Ubuntu / Debian
 
 ```bash
 sudo apt update
-sudo apt install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev xdotool
+sudo apt install -y \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libssl-dev \
+  libxdo-dev \
+  libgtk-3-dev \
+  libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  patchelf \
+  pkg-config \
+  libclang-dev \
+  libpipewire-0.3-dev \
+  libgbm-dev \
+  libx11-dev \
+  libxi-dev \
+  libxrandr-dev \
+  libxtst-dev \
+  tesseract-ocr \
+  tesseract-ocr-eng \
+  tesseract-ocr-chi-sim \
+  xdotool
 ```
 
-### Arch Linux
+### 其他发行版
+
+先按上述 Tauri 官方指南安装本发行版的基础开发依赖，再安装截图、X11 与 OCR 所需的对应包。重要包名区别：
+
+| 发行版 | WebKitGTK 4.1 开发包 | 应用指示器相关包 |
+| --- | --- | --- |
+| Arch Linux | `webkit2gtk-4.1` | `libappindicator-gtk3` |
+| Fedora | `webkit2gtk4.1-devel` | `libappindicator-gtk3-devel` |
+| openSUSE | 官方指南列为 `webkit2gtk3-devel`，需确认提供 `webkit2gtk-4.1` 的 pkg-config 文件 | `libappindicator3-1` |
+
+构建前可确认 WebKit 开发文件：
 
 ```bash
-sudo pacman -S gtk3 webkit2gtk libappindicator-gtk3 xdotool
+pkg-config --modversion webkit2gtk-4.1
 ```
 
-### Fedora
-
-```bash
-sudo dnf install gtk3-devel webkit2gtk3-devel libappindicator-gtk3-devel xdotool
-```
-
-### openSUSE
-
-```bash
-sudo zypper install gtk3-devel webkit2gtk3-devel libappindicator3-devel xdotool
-```
+`tesseract` 用于 Linux OCR，可按需求安装语言数据。`xdotool` 用于自动发送粘贴按键；原生剪贴板读写与 `dzc copy` 不需要它，也不依赖 `xclip`、`xsel` 或 `wl-copy`。Linux 托盘使用 StatusNotifierItem/D-Bus，桌面环境需要能显示对应托盘图标。
 
 ## 从源码构建
 
-### 前置要求
-
-1. **Node.js** (v18 或更高)
-   ```bash
-   # 使用 nvm 安装
-   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-   nvm install 20
-   nvm use 20
-   ```
-
-2. **Rust** (最新稳定版)
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   source $HOME/.cargo/env
-   ```
-
-3. **Tauri CLI**
-   ```bash
-   cargo install tauri-cli
-   ```
-
-### 构建步骤
+准备稳定版 Rust、Node.js 22.12+ 和 `package.json` 固定的 pnpm 11.0.9。当前 Vite 7 的 Node 范围为 `^20.19.0 || >=22.12.0`，Node 18 或较早的 Node 20 不满足要求；参见 [Vite 环境要求](https://vite.dev/guide/#scaffolding-your-first-vite-project)。项目已包含 Tauri CLI，无需另装全局 CLI。
 
 ```bash
-# 克隆仓库
-git clone https://github.com/yourusername/dezirclip.git
+git clone https://github.com/qiyuanhuakai/dezirclip.git
 cd dezirclip
-
-# 安装前端依赖
 pnpm install
-
-# 开发模式运行
 pnpm run tauri:dev
+```
 
-# 构建发布版本
+需要暂时关闭窗口追踪、边缘吸附和鼠标快捷键服务来排查启动问题时：
+
+```bash
+pnpm run tauri:dev:safe
+```
+
+正式构建会先构建前端与 `dzc` sidecar，再打包桌面应用：
+
+```bash
 pnpm run tauri:build
 ```
 
-构建完成后，安装包位于 `src-tauri/target/release/bundle/` 目录：
-- `.deb` - Debian/Ubuntu 安装包
-- `.AppImage` - 通用 Linux 可执行文件
-- `.rpm` - Fedora/openSUSE 安装包
+产物位于 `src-tauri/target/release/bundle/`，包含 deb、AppImage、rpm。不要分发缺少 `dist/web` 的手工桌面构建。只需 CLI 时可运行 `cargo build --manifest-path src-tauri/Cargo.toml --bin dzc --release`，输出 `src-tauri/target/release/dzc`。
 
-## 安装方式
+## 安装发布包
 
-### 方法 1: AppImage (推荐)
+从 [GitHub Releases](https://github.com/qiyuanhuakai/dezirclip/releases) 下载对应架构的文件。以下 `VERSION_ARCH` 是文件名占位，请替换为实际下载的文件名：
 
 ```bash
-# 赋予执行权限
-chmod +x DezirClip_0.3.1_amd64.AppImage
+# AppImage
+chmod +x ./DezirClip_VERSION_ARCH.AppImage
+./DezirClip_VERSION_ARCH.AppImage
 
-# 运行
-./DezirClip_0.3.1_amd64.AppImage
+# Debian / Ubuntu
+sudo apt install ./dezirclip_VERSION_ARCH.deb
 
-# 可选: 移动到系统目录
-sudo mv DezirClip_0.3.1_amd64.AppImage /usr/local/bin/dezirclip
+# Fedora
+sudo dnf install ./dezirclip_VERSION_ARCH.rpm
 ```
 
-### 方法 2: Debian/Ubuntu (.deb)
+openSUSE 使用其包管理器安装 rpm。AppImage 运行依赖还取决于发行版的 FUSE 配置；若挂载失败，先按发行版说明排查，或使用 deb/rpm。`dzc` 随应用安装，位置随打包形式变化；在设置中查看 CLI 路径后加入 `PATH`，详见 [CLI 文档](./cli.md)。
+
+## 剪贴板捕获与内容保真
+
+X11 优先订阅 XFixes 的剪贴板所有者变化，纯图片复制同样会触发读取。XFixes 不可用或连接失败时，回退到 100 ms 轮询；指纹包含文本、文件 URI、图片尺寸和像素，不再只检查文本。轮询仍可能漏掉两次采样间已被覆盖的短暂内容，快速连续复制也会受到来源应用和剪贴板可读取时机影响。
+
+文本正文保留首尾空白和原始 CRLF/LF，预览、分类和搜索规范化单独进行。用 `dzc get ID --raw` 可无额外换行地读取存储正文；图片使用 `--mime image/png`。旧版本已修剪的内容无法从历史中恢复。
+
+设置中的“不记录这些应用”对应新键 `app.excluded_source_apps`，默认空。每行填写应用名、可执行文件名或完整路径，忽略大小写并完整匹配，可省略 `.exe`；离开输入框后生效。它仅阻止后续自动捕获，不删除旧记录。来源识别优先读取剪贴板所有者的 PID，缺少时回退前台应用；权限不足或缺少 PID 时不能保证准确识别，因此不能把来源排除当作绝对隐私边界。
+
+`dzc clipboard write` 和 `dzc copy ID` 在 X11 下启动轻量后台进程持有 selection。主 CLI 返回后内容仍可粘贴；被其他应用替换时持有进程退出，不要求 GUI 保持运行。
+
+## 排错
+
+### 启动或链接失败
+
+检查运行时依赖和图形会话：
 
 ```bash
-sudo dpkg -i dezirclip_0.3.1_amd64.deb
-sudo apt-get install -f  # 修复依赖
+ldd src-tauri/target/release/dezirclip | grep 'not found'
+printf '%s\n' "$XDG_SESSION_TYPE" "$DISPLAY"
+pkg-config --modversion webkit2gtk-4.1
 ```
 
-### 方法 3: Fedora/openSUSE (.rpm)
+在实际 X11 桌面终端运行；只设置 `DISPLAY` 并不能授予另一个用户或容器访问 X11 的权限。
+
+### 复制成功但自动粘贴失败
+
+先用 `dzc clipboard read` 确认内容，再手动粘贴到目标应用。自动按键需要 `xdotool`、正确焦点及目标应用支持的 Ctrl+V/Shift+Insert。`dzc copy` 本身只复制，不模拟按键。
+
+### 没有捕获新记录
+
+确认未暂停监听，且来源应用不在排除列表。日志中可看到 XFixes 启动或轮询回退信息。可单独禁用 XFixes 以检查回退路径：
 
 ```bash
-sudo rpm -i dezirclip-0.3.1-1.x86_64.rpm
+DEZIRCLIP_DISABLE_LINUX_SERVICES=clipboard_xfixes pnpm run tauri:dev
 ```
 
-## 已知问题
+`DEZIRCLIP_DISABLE_LINUX_SERVICES=clipboard_listener` 会完全关闭剪贴板监听；变量还支持逗号分隔的 `window_tracker`、`edge_docking`、`mouse_hotkey` 和 `all`。旧名称 `TIEZ_DISABLE_LINUX_SERVICES` 仍兼容，优先使用新名称。
 
-1. **Wayland 不支持**: 当前仅支持 X11 环境。Wayland 用户需要切换到 X11 会话或使用 XWayland。
-
-2. **xdotool 依赖**: 粘贴功能依赖 xdotool，请确保已安装。
-
-3. **窗口边缘吸附**: Linux 版本暂不支持窗口边缘吸附功能。
-
-4. **应用图标**: 应用来源识别功能有限，可能无法正确识别所有应用。
-
-## 故障排除
-
-### 启动失败
-
-检查依赖是否完整：
-```bash
-ldd src-tauri/target/release/dezirclip | grep "not found"
-```
-
-### 粘贴不工作
-
-检查 xdotool 是否可用：
-```bash
-xdotool key ctrl+v
-```
-
-### 剪贴板监听不工作
-
-确保运行环境是 X11：
-```bash
-echo $XDG_SESSION_TYPE
-# 应该输出: x11
-```
-
-## 技术细节
-
-### 架构
-
-- **前端**: React 19 + TypeScript + Vite
-- **后端**: Rust + Tauri 2
-- **剪贴板库**: arboard + x11-clipboard
-- **粘贴模拟**: xdotool
-- **系统托盘**: Tauri Tray (GTK)
-
-### Linux 特有实现
-
-位于 `src-tauri/src/infrastructure/linux_api/`:
-- `clipboard.rs` - 剪贴板操作
-- `window_tracker.rs` - 窗口追踪 (基础实现)
-- `apps.rs` - 应用信息 (基础实现)
-- `paste.rs` - 粘贴模拟
-
-## 贡献
-
-欢迎提交 PR 改进 Linux 支持！
-
-特别是以下方面：
-- Wayland 支持
-- 窗口边缘吸附
-- 应用图标识别
-- 更多发行版支持
+监听实现位于 `src-tauri/src/infrastructure/linux_api/clipboard_listener.rs`，原生剪贴板实现与来源识别分别位于同目录的 `clipboard.rs`、`window_tracker.rs`。完整接口与可选终端工具见 [CLI 文档](./cli.md)和 [集成指南](../integrations/README.md)。

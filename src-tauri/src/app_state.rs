@@ -15,6 +15,7 @@ pub struct SettingsState {
     pub privacy_protection: AtomicBool,
     pub privacy_protection_kinds: Mutex<Vec<String>>,
     pub privacy_protection_custom_rules: Mutex<Vec<String>>,
+    pub excluded_source_apps: Mutex<Vec<String>>,
     pub sequential_mode: AtomicBool,
     pub sequential_paste_hotkey: Mutex<String>,
     pub rich_paste_hotkey: Mutex<String>,

@@ -349,9 +349,8 @@ async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult
 }
 
 fn calculate_content_hash(content: &str) -> (u64, u64) {
-    let normalized = crate::database::normalize_text(content);
     let mut hasher = DefaultHasher::new();
-    normalized.hash(&mut hasher);
+    content.hash(&mut hasher);
     let content_hash = hasher.finish();
 
     let current_time = std::time::SystemTime::now()
@@ -707,9 +706,8 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
         };
 
         if let Some(path) = gif_temp_path {
-            let normalized = path.trim().replace("\r\n", "\n");
             let mut hasher = DefaultHasher::new();
-            normalized.hash(&mut hasher);
+            path.hash(&mut hasher);
             let path_hash = hasher.finish();
             crate::LAST_APP_SET_HASH.store(path_hash, Ordering::SeqCst);
         }
@@ -1565,23 +1563,18 @@ mod tests {
         assert_eq!(from_vec.finish(), from_slice.finish());
     }
 
-    // The paste path used to build a `content_kinds` JSON string and drop it on
-    // the floor, which ran all twelve classifiers over the whole pasted payload
-    // for a value nothing read. Whatever the hash is built from has to stay
-    // byte-identical to the old `trim().replace("\r\n", "\n")`, or entries
-    // written before and after this change stop matching their own pastes.
     #[test]
-    fn content_hash_survives_the_fold_crlf_change() {
+    fn self_copy_hash_preserves_whitespace_and_line_endings() {
         let hash = |s: &str| calculate_content_hash(s).0;
 
         let lf = "hello\nworld";
         let crlf = "hello\r\nworld";
-        assert_eq!(hash(crlf), hash(lf), "CRLF must fold to LF");
-        assert_eq!(hash("  padded  "), hash("padded"), "outer space must be trimmed");
+        assert_ne!(hash(crlf), hash(lf));
+        assert_ne!(hash("  padded  "), hash("padded"));
 
         let mixed = "a\r\nb\nc";
         let mut hasher = DefaultHasher::new();
-        "a\nb\nc".hash(&mut hasher);
+        mixed.hash(&mut hasher);
         assert_eq!(hash(mixed), hasher.finish());
 
         assert_ne!(hash("alpha"), hash("beta"), "different text must not collide");

@@ -5,6 +5,21 @@
   width: 100%;
 }
 
+.setting-item.source-exclusion-setting {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.source-exclusion-input {
+  width: 100%;
+  max-width: 100%;
+  min-height: 88px;
+  padding: 8px;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
 /* ---------------------------------------------------------------
    Two shapes, chosen in JS by `resolveSettingsLayout` (see
    features/settings/utils/settingsLayout.ts). Only the shape is decided

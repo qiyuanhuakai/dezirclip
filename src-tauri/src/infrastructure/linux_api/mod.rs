@@ -1,5 +1,6 @@
 pub mod apps;
 pub mod clipboard;
+pub mod clipboard_listener;
 pub mod input_grab;
 pub mod mouse_hotkey;
 pub mod paste;
