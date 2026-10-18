@@ -26,6 +26,11 @@ def build(platform, directory):
     directory.mkdir(parents=True, exist_ok=True)
     binary = directory / target / "release" / ("dzc.exe" if platform.startswith("windows-") else "dzc")
     if platform.startswith("windows-"):
+        linker = shutil.which("link.exe")
+        if linker:
+            resolved_linker = Path(linker).resolve()
+            if resolved_linker.parent.name.lower() == "bin" and resolved_linker.parent.parent.name.lower() == "usr":
+                raise ValueError(f"GNU link shadows the MSVC linker: {resolved_linker}; run from PowerShell or a native Python process with the MSVC environment")
         environment = {**os.environ, "CARGO_ENCODED_RUSTFLAGS": "-C\x1ftarget-feature=+crt-static",
                        "CARGO_BUILD_JOBS": "4"}
         environment.pop("RUSTFLAGS", None)

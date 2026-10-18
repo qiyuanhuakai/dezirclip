@@ -88,10 +88,17 @@ jobs:
       # the standalone binary or archive. Windows builds use static MSVC CRT.
       - name: Build isolated compatible CLI
         id: build
-        shell: bash
+        shell: python
         run: |
-          binary="$(python scripts/build-standalone-dzc.py --platform '${{ matrix.name }}')"
-          echo "binary=$binary" >> "$GITHUB_OUTPUT"
+          import os
+          import subprocess
+          import sys
+          binary = subprocess.check_output(
+              [sys.executable, "scripts/build-standalone-dzc.py", "--platform", "${{ matrix.name }}"],
+              text=True,
+          ).strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"binary={binary}\n")
 
       - name: Package actual executable with dependency report
         id: package

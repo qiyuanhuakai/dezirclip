@@ -156,7 +156,7 @@ jobs:
           if [[ "$RUNNER_OS" == "Windows" ]]; then binary="${binary}.exe"; fi
           before="$(sha256sum "$binary")"
           cargo check --manifest-path src-tauri/Cargo.toml --all-targets ${{ matrix.cargo_args }}
-          test "$before" = "$(sha256sum "$binary")
+          test "$before" = "$(sha256sum "$binary")"
 
   standalone-cli:
     name: Compatible standalone CLI
