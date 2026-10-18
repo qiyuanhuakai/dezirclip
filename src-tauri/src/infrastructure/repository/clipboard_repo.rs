@@ -207,12 +207,14 @@ pub struct SqliteClipboardRepository {
     history_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     search_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     content_cache: Arc<Mutex<SimpleLruCache<(String, String, Option<String>)>>>,
+    cache_revision: Mutex<Option<(i64, i64)>>,
 }
 
 impl SqliteClipboardRepository {
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
         Self {
             conn,
+            cache_revision: Mutex::new(None),
             history_cache: Arc::new(Mutex::new(SimpleLruCache::new(
                 64,
                 HISTORY_CACHE_MAX_BYTES,
@@ -241,6 +243,25 @@ impl SqliteClipboardRepository {
         if let Ok(mut content) = self.content_cache.lock() {
             content.clear();
         }
+    }
+
+    fn refresh_cache_revision(&self, conn: &Connection) -> Result<(), String> {
+        let revision: (i64, i64) = conn
+            .query_row(
+                "SELECT data_version, total_changes() FROM pragma_data_version",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|error| error.to_string())?;
+        let mut observed = self
+            .cache_revision
+            .lock()
+            .map_err(|error| error.to_string())?;
+        if observed.is_some_and(|previous| previous != revision) {
+            self.invalidate_caches();
+        }
+        *observed = Some(revision);
+        Ok(())
     }
 
     pub fn encrypt_entry_with_conn(&self, conn: &Connection, id: i64) -> Result<(), String> {
@@ -989,6 +1010,7 @@ impl SqliteClipboardRepository {
         conn: &Connection,
         id: i64,
     ) -> Result<Option<(String, String, Option<String>)>, String> {
+        self.refresh_cache_revision(conn)?;
         let cache_key = id.to_string();
         if let Ok(mut cache) = self.content_cache.lock() {
             if let Some(cached) = cache.get(&cache_key) {
@@ -1106,7 +1128,8 @@ impl SqliteClipboardRepository {
                     source_app_path: row.get(12).ok().flatten(),
                     file_preview_exists: true,
                     content_kinds: serde_json::from_str(
-                        &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                        &row.get::<_, String>(13)
+                            .unwrap_or_else(|_| "[]".to_string()),
                     )
                     .unwrap_or_default(),
                     ocr_text: row.get(14).ok(),
@@ -1172,13 +1195,14 @@ impl ClipboardRepository for SqliteClipboardRepository {
         offset: i32,
         content_type: Option<&str>,
     ) -> Result<Vec<ClipboardEntry>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        self.refresh_cache_revision(&conn)?;
         let cache_key = format!("{}:{}:{}", content_type.unwrap_or("*"), limit, offset);
         if let Ok(mut cache) = self.history_cache.lock() {
             if let Some(cached) = cache.get(&cache_key) {
                 return Ok(cached);
             }
         }
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let map_row = |row: &rusqlite::Row| {
             let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
             let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
@@ -1217,7 +1241,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         }
                     },
                     content_kinds: serde_json::from_str(
-                        &row.get::<_, String>(15).unwrap_or_else(|_| "[]".to_string()),
+                        &row.get::<_, String>(15)
+                            .unwrap_or_else(|_| "[]".to_string()),
                     )
                     .unwrap_or_default(),
                     ocr_text: row.get(13).ok(),
@@ -1304,14 +1329,14 @@ impl ClipboardRepository for SqliteClipboardRepository {
         if term.is_empty() {
             return Ok(Vec::new());
         }
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        self.refresh_cache_revision(&conn)?;
         let cache_key = format!("{}:{}", term, limit);
         if let Ok(mut cache) = self.search_cache.lock() {
             if let Some(cached) = cache.get(&cache_key) {
                 return Ok(cached);
             }
         }
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-
         #[cfg(feature = "portable")]
         {
             // Portable version: Data is NOT encrypted, use conventional SQL LIKE search (fastest)
@@ -1428,7 +1453,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                         source_app_path: row.get(12).unwrap_or(None),
                         file_preview_exists: true,
                         content_kinds: serde_json::from_str(
-                            &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                            &row.get::<_, String>(13)
+                                .unwrap_or_else(|_| "[]".to_string()),
                         )
                         .unwrap_or_default(),
                         ocr_text: row.get(14).ok(),
@@ -1492,7 +1518,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                                 source_app_path: row.get(12).unwrap_or(None),
                                 file_preview_exists: true,
                                 content_kinds: serde_json::from_str(
-                                    &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                                    &row.get::<_, String>(13)
+                                        .unwrap_or_else(|_| "[]".to_string()),
                                 )
                                 .unwrap_or_default(),
                                 ocr_text: row.get(14).ok(),
@@ -1701,6 +1728,118 @@ mod tests {
     }
 
     #[test]
+    fn gui_caches_observe_other_connections_and_shared_tag_writes() {
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-cache-coherence-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("history.db");
+        let gui_connection = Arc::new(Mutex::new(
+            crate::database::init_db(path.to_str().unwrap()).unwrap(),
+        ));
+        let cli_connection = Arc::new(Mutex::new(
+            crate::database::init_db(path.to_str().unwrap()).unwrap(),
+        ));
+        let gui = SqliteClipboardRepository::new(gui_connection.clone());
+        let cli = SqliteClipboardRepository::new(cli_connection.clone());
+        insert_entry(
+            &cli_connection.lock().unwrap(),
+            "alpha original",
+            "fixture",
+            1700000000123,
+        );
+        let id = gui.get_history(10, 0, None).unwrap()[0].id;
+        assert_eq!(gui.search("alpha", 10).unwrap().len(), 1);
+        assert_eq!(
+            gui.get_entry_content(id).unwrap().unwrap(),
+            "alpha original"
+        );
+        cli.update_entry_content(id, "beta updated", "beta updated")
+            .unwrap();
+        assert_eq!(
+            gui.get_history(10, 0, None).unwrap()[0].content,
+            "beta updated"
+        );
+        assert!(gui.search("alpha", 10).unwrap().is_empty());
+        assert_eq!(gui.search("beta", 10).unwrap().len(), 1);
+        assert_eq!(gui.get_entry_content(id).unwrap().unwrap(), "beta updated");
+        gui_connection
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE clipboard_history SET tags='[\"shared-tag\"]' WHERE id=?1",
+                [id],
+            )
+            .unwrap();
+        assert_eq!(
+            gui.get_history(10, 0, None).unwrap()[0].tags,
+            vec!["shared-tag"]
+        );
+        cli.delete(id, None).unwrap();
+        assert!(gui.get_history(10, 0, None).unwrap().is_empty());
+        assert!(gui.search("beta", 10).unwrap().is_empty());
+        assert!(gui.get_entry_content(id).unwrap().is_none());
+        insert_entry(
+            &cli_connection.lock().unwrap(),
+            "gamma new",
+            "fixture",
+            1700000000124,
+        );
+        assert_eq!(
+            gui.get_history(10, 0, None).unwrap()[0].content,
+            "gamma new"
+        );
+        drop(gui);
+        drop(cli);
+        drop(gui_connection);
+        drop(cli_connection);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn simultaneous_gui_and_cli_writes_preserve_every_distinct_entry() {
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-concurrent-writers-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("history.db");
+        let gui = SqliteClipboardRepository::new(Arc::new(Mutex::new(
+            crate::database::init_db(path.to_str().unwrap()).unwrap(),
+        )));
+        let cli = SqliteClipboardRepository::new(Arc::new(Mutex::new(
+            crate::database::init_db(path.to_str().unwrap()).unwrap(),
+        )));
+        assert!(gui.get_history(100, 0, None).unwrap().is_empty());
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            for (writer, repo) in [("gui", &gui), ("cli", &cli)] {
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    for index in 0..20 {
+                        let raw=format!("  {writer} 中文🙂 {index}\r\n");
+                        let entry:ClipboardEntry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":raw,"preview":raw,"source_app":writer,"timestamp":1700000000000i64+index,"is_pinned":false})).unwrap();
+                        repo.save(&entry,None).unwrap();
+                    }
+                });
+            }
+        });
+        let rows = gui.get_history(100, 0, None).unwrap();
+        assert_eq!(rows.len(), 40);
+        let unique: std::collections::HashSet<_> =
+            rows.iter().map(|row| row.content.as_str()).collect();
+        assert_eq!(unique.len(), 40);
+        assert!(rows
+            .iter()
+            .all(|row| row.content.starts_with("  ") && row.content.ends_with("\r\n")));
+        drop(gui);
+        drop(cli);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn test_fts5_creation() {
         let mut conn = Connection::open_in_memory().unwrap();
         run_migrations(&mut conn).expect("migrations failed");
@@ -1834,9 +1973,7 @@ mod tests {
         }
 
         let repo = SqliteClipboardRepository::new(arc);
-        let results = repo
-            .search_fts("quantum", 10)
-            .expect("search_fts failed");
+        let results = repo.search_fts("quantum", 10).expect("search_fts failed");
 
         assert_eq!(results.len(), 1);
         let hit = &results[0];
@@ -1870,7 +2007,12 @@ mod tests {
         {
             let conn = arc.lock().expect("lock");
             insert_entry(&conn, "Rust 是一门系统编程语言", "AppRust", 1_700_000_000);
-            insert_entry(&conn, "你好世界 欢迎使用 DezirClip", "AppCJK", 1_700_000_001);
+            insert_entry(
+                &conn,
+                "你好世界 欢迎使用 DezirClip",
+                "AppCJK",
+                1_700_000_001,
+            );
             insert_entry(
                 &conn,
                 "Memory safety 🎉 zero-cost abstractions",
@@ -1958,11 +2100,8 @@ mod tests {
         // Roll the whole tail back rather than naming the versions that existed
         // when this test was written: the migration gate is `MAX(version)`, so
         // a leftover later marker would skip the block this test re-runs.
-        conn.execute(
-            "DELETE FROM schema_migrations WHERE version >= 13",
-            [],
-        )
-        .expect("version reset failed");
+        conn.execute("DELETE FROM schema_migrations WHERE version >= 13", [])
+            .expect("version reset failed");
         conn.execute(
             "ALTER TABLE clipboard_history DROP COLUMN content_kinds",
             [],
@@ -2053,12 +2192,7 @@ mod tests {
 
         let mut png = Vec::new();
         image::codecs::png::PngEncoder::new(&mut png)
-            .write_image(
-                &[255, 0, 0, 255],
-                1,
-                1,
-                image::ExtendedColorType::Rgba8,
-            )
+            .write_image(&[255, 0, 0, 255], 1, 1, image::ExtendedColorType::Rgba8)
             .expect("png encode");
         let url = format!(
             "data:image/png;base64,{}",
@@ -2094,7 +2228,9 @@ mod tests {
         let new_id = repo
             .save_with_conn_and_image_hash(&conn, &entry, None, Some(dedup_hash))
             .expect("save with handed-in hash");
-        let old_id = repo.save_with_conn(&conn, &entry, None).expect("save recomputing");
+        let old_id = repo
+            .save_with_conn(&conn, &entry, None)
+            .expect("save recomputing");
 
         let read_hash = |id: i64| -> i64 {
             conn.query_row(
@@ -2126,12 +2262,7 @@ mod tests {
 
         let mut png = Vec::new();
         image::codecs::png::PngEncoder::new(&mut png)
-            .write_image(
-                &[12, 34, 56, 255],
-                1,
-                1,
-                image::ExtendedColorType::Rgba8,
-            )
+            .write_image(&[12, 34, 56, 255], 1, 1, image::ExtendedColorType::Rgba8)
             .expect("png encode");
         format!(
             "data:image/png;base64,{}",
@@ -2140,7 +2271,8 @@ mod tests {
     }
 
     fn scratch_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("dz-repo-test-{}-{}", std::process::id(), name));
+        let dir =
+            std::env::temp_dir().join(format!("dz-repo-test-{}-{}", std::process::id(), name));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch dir");
         dir
@@ -2198,7 +2330,10 @@ mod tests {
             "the stored path must point at a real file: {}",
             content
         );
-        assert_eq!(is_external, 1, "an externalized image must be marked external");
+        assert_eq!(
+            is_external, 1,
+            "an externalized image must be marked external"
+        );
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2222,8 +2357,14 @@ mod tests {
             )
             .expect("row should exist");
 
-        assert_eq!(content, url, "with no data dir the caller's string is stored as is");
-        assert_eq!(is_external, 0, "a non-externalized image must not claim to be");
+        assert_eq!(
+            content, url,
+            "with no data dir the caller's string is stored as is"
+        );
+        assert_eq!(
+            is_external, 0,
+            "a non-externalized image must not claim to be"
+        );
     }
 
     #[test]
@@ -2316,17 +2457,22 @@ mod tests {
             }
             for (id, raw) in saved {
                 assert_eq!(
-                    repo.find_by_content_with_conn(&conn, raw, Some("text")).expect("lookup"),
+                    repo.find_by_content_with_conn(&conn, raw, Some("text"))
+                        .expect("lookup"),
                     Some(id),
                     "normalized hash candidates must still match original bytes"
                 );
                 assert_eq!(
-                    repo.get_entry_by_id_with_conn(&conn, id).expect("load").expect("entry").content,
+                    repo.get_entry_by_id_with_conn(&conn, id)
+                        .expect("load")
+                        .expect("entry")
+                        .content,
                     raw
                 );
             }
             assert_eq!(
-                repo.find_by_content_with_conn(&conn, "alpha\n", Some("text")).expect("lookup"),
+                repo.find_by_content_with_conn(&conn, "alpha\n", Some("text"))
+                    .expect("lookup"),
                 None
             );
         }
@@ -2340,11 +2486,13 @@ mod tests {
         insert_entry(&conn, "  original\r\n", "Editor", 1);
         let id = conn.last_insert_rowid();
         assert_eq!(
-            repo.find_by_content_with_conn(&conn, "  original\r\n", Some("text")).expect("lookup"),
+            repo.find_by_content_with_conn(&conn, "  original\r\n", Some("text"))
+                .expect("lookup"),
             Some(id)
         );
         assert_eq!(
-            repo.find_by_content_with_conn(&conn, "original", Some("text")).expect("lookup"),
+            repo.find_by_content_with_conn(&conn, "original", Some("text"))
+                .expect("lookup"),
             None
         );
     }
@@ -2486,8 +2634,12 @@ mod tests {
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                 )
                 .expect("row should exist");
-            assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.0));
-            assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.1));
+            assert!(crate::infrastructure::encryption::is_encrypted_value(
+                &raw.0
+            ));
+            assert!(crate::infrastructure::encryption::is_encrypted_value(
+                &raw.1
+            ));
             assert!(
                 raw.2
                     .as_deref()
@@ -2614,7 +2766,11 @@ mod tests {
             cache.put(format!("page:{page}"), Vec::new());
         }
 
-        assert_eq!(cache.map.len(), 4, "a zero-byte page must not escape the count ceiling");
+        assert_eq!(
+            cache.map.len(),
+            4,
+            "a zero-byte page must not escape the count ceiling"
+        );
     }
 
     #[test]
@@ -2641,7 +2797,11 @@ mod tests {
 
         cache.put("k".to_string(), page_of(10, 1));
 
-        assert_eq!(cache.map.len(), 1, "replacing a key must not add a second entry");
+        assert_eq!(
+            cache.map.len(),
+            1,
+            "replacing a key must not add a second entry"
+        );
         assert!(
             after_large > cache.weight,
             "replacing a heavy page with a light one must shrink the total, not stack on it"
@@ -2692,7 +2852,8 @@ mod tests {
 
         let repo = SqliteClipboardRepository::new(arc);
         for offset in [0, 20, 40, 0] {
-            repo.get_history(20, offset, None).expect("get_history failed");
+            repo.get_history(20, offset, None)
+                .expect("get_history failed");
         }
 
         let cached = repo.history_cache.lock().expect("lock");

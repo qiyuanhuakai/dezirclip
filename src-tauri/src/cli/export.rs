@@ -20,7 +20,7 @@
 //! ## Flow
 //!
 //! 1. Validate args (passphrase length, encrypted+no-passphrase).
-//! 2. Fetch all entries via `repo.query_cli(&CliQuery {limit:i32::MAX,..Default::default()})`.
+//! 2. Fetch all entries via `repo.query_cli_for_export(&CliQuery {limit:i32::MAX,..Default::default()})`.
 //! 3. Map `ClipboardEntry` → `services::backup::ExportEntry`.
 //! 4. Serialize via `export_to_json` or `export_to_encrypted`.
 //! 5. Write to `path` (creates parent dirs if missing).
@@ -33,9 +33,9 @@
 //! actionable messages (e.g. "passphrase required", "passphrase must
 //! be at least 12 characters", "io error: ...").
 
-use std::io::Write;
 use std::path::Path;
 
+#[cfg(test)]
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 use crate::domain::models::ClipboardEntry;
@@ -97,7 +97,7 @@ pub fn run(args: &ExportArgs, repo: &SqliteClipboardRepository) -> Result<(), St
 
     // Read complete payloads rather than the desktop history preview projection.
     let raw_entries = repo
-        .query_cli(&CliQuery {
+        .query_cli_for_export(&CliQuery {
             limit: i32::MAX,
             ..Default::default()
         })
@@ -125,19 +125,9 @@ pub fn run(args: &ExportArgs, repo: &SqliteClipboardRepository) -> Result<(), St
         }
     };
 
-    // 6. Write. Create parent dirs so the user can point at
-    //    `/tmp/backup/2026/dezirclip.dzc` without mkdir first.
-    let path = Path::new(&args.path);
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("export: create_dir_all {parent:?}: {e}"))?;
-        }
-    }
-    let mut file =
-        std::fs::File::create(path).map_err(|e| format!("export: create {path:?}: {e}"))?;
-    file.write_all(&bytes)
-        .map_err(|e| format!("export: write {path:?}: {e}"))?;
+    repo.ensure_export_destination(Path::new(&args.path))?;
+    crate::infrastructure::attachments::write_backup(Path::new(&args.path), &bytes)
+        .map_err(|error| format!("export: {error}"))?;
 
     // 7. Summary. Skipped under --quiet so the user can pipe a fresh
     //    file into another command without `head -1` ceremony.
@@ -169,48 +159,8 @@ fn resolve_format(path: &str, encrypted: bool) -> Result<ExportFormat, String> {
 
 /// Image records carry their original encoded bytes across machines; file
 /// lists and resources linked from HTML remain references to their sources.
-fn to_export_entry(e: &ClipboardEntry) -> Result<ExportEntry, String> {
-    let content = if e.content_type == "image" && !e.content.starts_with("data:image/") {
-        let bytes = super::payload::image_bytes(&e.content)
-            .map_err(|error| format!("export: image attachment id={}: {error}", e.id))?;
-        let format = image::guess_format(&bytes)
-            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
-        image::load_from_memory(&bytes)
-            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
-        format!(
-            "data:{};base64,{}",
-            format.to_mime_type(),
-            STANDARD.encode(bytes)
-        )
-    } else {
-        e.content.clone()
-    };
-
-    Ok(ExportEntry {
-        id: e.id,
-        content_type: e.content_type.clone(),
-        content,
-        preview: Some(e.preview.clone()),
-        html_content: e.html_content.clone(),
-        source_app: if e.source_app.is_empty() {
-            None
-        } else {
-            Some(e.source_app.clone())
-        },
-        source_app_path: e.source_app_path.clone(),
-        // Backup schema splits `timestamp` into created_at / updated_at.
-        // We don't currently track them separately, so both default to
-        // the existing `timestamp`. Future work: derive `updated_at`
-        // from the `updated_at` column when it lands.
-        created_at: e.timestamp,
-        updated_at: e.timestamp,
-        use_count: e.use_count,
-        is_pinned: e.is_pinned,
-        pinned_order: e.pinned_order as i32,
-        tags: e.tags.clone(),
-        ocr_text: e.ocr_text.clone(),
-        kinds: e.content_kinds.clone(),
-    })
+fn to_export_entry(entry: &ClipboardEntry) -> Result<ExportEntry, String> {
+    crate::services::backup::prepare_export_entry(entry)
 }
 
 #[cfg(test)]
@@ -340,7 +290,8 @@ mod tests {
 
     #[test]
     fn image_data_urls_are_exported_unchanged() {
-        let content = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///w==";
+        let content =
+            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
         let exported = to_export_entry(&image_entry(content.to_string())).unwrap();
         assert_eq!(exported.content, content);
     }
@@ -374,5 +325,138 @@ mod tests {
         let error = result.unwrap_err();
         assert!(error.contains(&format!("image attachment id={id}")));
         assert_eq!(existing, b"existing backup");
+    }
+    fn backup_repository() -> (
+        SqliteClipboardRepository,
+        std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
+    ) {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        let connection = std::sync::Arc::new(std::sync::Mutex::new(connection));
+        (
+            SqliteClipboardRepository::new(connection.clone()),
+            connection,
+        )
+    }
+
+    fn backup_entry(id: i64, kind: &str, content: String) -> ClipboardEntry {
+        serde_json::from_value(serde_json::json!({"id":id,"content_type":kind,"content":content,"source_app":"fixture","timestamp":1700000000123i64,"preview":"ordinary preview","is_pinned":false,"tags":["work"]})).unwrap()
+    }
+
+    #[test]
+    fn literal_encryption_markers_in_plaintext_fields_export_without_changes() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-marker-export-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let (repo, _) = backup_repository();
+        for prefix in ["linux:", "dpapi:"] {
+            let mut source = backup_entry(7, "rich_text", format!("{prefix} kernel notes\r\n"));
+            source.preview = format!("{prefix} ordinary preview");
+            source.html_content = Some(format!("{prefix}<p>ordinary HTML</p>"));
+            repo.import_cli_entries(&[source.clone()], true).unwrap();
+            let path = directory.join("history.json");
+            crate::cli::export::run(
+                &crate::cli::export::ExportArgs {
+                    path: path.to_string_lossy().into_owned(),
+                    encrypted: false,
+                    passphrase: None,
+                    quiet: true,
+                },
+                &repo,
+            )
+            .unwrap();
+            let exported =
+                crate::services::backup::entries_from_json(&std::fs::read_to_string(path).unwrap())
+                    .unwrap();
+            assert_eq!(exported[0].content, source.content);
+            assert_eq!(
+                exported[0].preview.as_deref(),
+                Some(source.preview.as_str())
+            );
+            assert_eq!(exported[0].html_content, source.html_content);
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn unavailable_ciphertexts() -> Vec<String> {
+        use aes_gcm::{
+            aead::{Aead, KeyInit},
+            Aes256Gcm, Nonce,
+        };
+        let cipher = Aes256Gcm::new_from_slice(&[173; 32]).unwrap();
+        let nonce = [197; 12];
+        let encrypted = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                b"foreign-key private payload".as_slice(),
+            )
+            .unwrap();
+        let mut bytes = nonce.to_vec();
+        bytes.extend(encrypted);
+        let values = vec![format!("linux:{}", STANDARD.encode(bytes))];
+        #[cfg(windows)]
+        let values = {
+            let mut values = values;
+            let native =
+                crate::infrastructure::encryption::encrypt_value("native private payload").unwrap();
+            let mut bytes = STANDARD
+                .decode(native.strip_prefix("dpapi:").unwrap())
+                .unwrap();
+            *bytes.last_mut().unwrap() ^= 1;
+            values.push(format!("dpapi:{}", STANDARD.encode(bytes)));
+            values
+        };
+        values
+    }
+
+    #[test]
+    fn unavailable_encrypted_fields_abort_export_and_preserve_previous_backup() {
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-failed-decrypt-export-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let (repo, connection) = backup_repository();
+        for cipher in unavailable_ciphertexts() {
+            assert!(crate::infrastructure::encryption::decrypt_value(&cipher).is_none());
+            for field in ["content", "preview", "html_content"] {
+                repo.import_cli_entries(
+                    &[
+                        backup_entry(7, "rich_text", "safe text".to_string()),
+                        backup_entry(8, "text", "visible entry".to_string()),
+                    ],
+                    true,
+                )
+                .unwrap();
+                connection.lock().unwrap().execute(&format!("UPDATE clipboard_history SET {field}=?1,tags='[\"sensitive\"]' WHERE id=7"),[&cipher]).unwrap();
+                for encrypted in [false, true] {
+                    let path = directory.join("previous.json");
+                    std::fs::write(&path, b"previous usable backup").unwrap();
+                    let error = crate::cli::export::run(
+                        &crate::cli::export::ExportArgs {
+                            path: path.to_string_lossy().into_owned(),
+                            encrypted,
+                            passphrase: Some("valid backup passphrase".to_string()),
+                            quiet: true,
+                        },
+                        &repo,
+                    )
+                    .unwrap_err();
+                    assert!(error.contains("could not be decrypted"), "{field}: {error}");
+                    assert!(!error.contains(&cipher));
+                    assert_eq!(std::fs::read(path).unwrap(), b"previous usable backup");
+                }
+                let filtered = repo
+                    .query_cli_for_export(&CliQuery {
+                        limit: i32::MAX,
+                        exclude_sensitive: true,
+                        ..Default::default()
+                    })
+                    .unwrap();
+                assert_eq!(filtered.len(), 1);
+                assert_eq!(filtered[0].content, "visible entry");
+            }
+        }
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

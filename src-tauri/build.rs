@@ -1,3 +1,7 @@
+#[cfg(not(feature = "desktop"))]
+fn main() {}
+
+#[cfg(feature = "desktop")]
 fn main() {
     // Tauri copies externalBin into target/<profile>, where Cargo also writes
     // our real dzc binary. A check or GUI build can otherwise replace it with

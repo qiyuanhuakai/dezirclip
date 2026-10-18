@@ -3,7 +3,6 @@
 
 import argparse
 from contextlib import closing
-import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -11,12 +10,16 @@ import re
 import shutil
 import sqlite3
 import stat
+import struct
 import subprocess
 import sys
 import tarfile
 import tempfile
 import uuid
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from dzc_compat import enforce, inspect_binary, sha256_file
 
 ARCHIVE_NAME = re.compile(r"^dzc-(.+)-(windows|linux)-(x86_64|aarch64)\.(zip|tar\.gz)$")
 
@@ -28,8 +31,7 @@ def verify_checksum(archive):
     match = re.fullmatch(r"([0-9a-fA-F]{64})  (.+)", line)
     if not match or match.group(2) != archive.name:
         raise ValueError("SHA-256 sidecar must name exactly this archive")
-    with archive.open("rb") as stream:
-        actual = hashlib.file_digest(stream, "sha256").hexdigest()
+    actual = sha256_file(archive)
     if actual != match.group(1).lower():
         raise ValueError("archive SHA-256 checksum mismatch")
 
@@ -78,12 +80,12 @@ def extract_archive(archive, root):
                 path.chmod(member.mode & 0o777 or 0o644)
 
 
-def verify(archive, expected_version=None):
+def verify(archive, expected_version=None, static_only=False):
     archive = Path(archive).resolve()
     match = ARCHIVE_NAME.fullmatch(archive.name)
     if not match:
         raise ValueError("archive name must be dzc-VERSION-{windows,linux}-{x86_64,aarch64}.zip or .tar.gz")
-    version, platform, _, _ = match.groups()
+    version, platform, architecture, _ = match.groups()
     if expected_version and expected_version.removeprefix("v") != version:
         raise ValueError("requested version does not match archive name")
     verify_checksum(archive)
@@ -92,11 +94,16 @@ def verify(archive, expected_version=None):
         extracted = base / "distribution"
         extract_archive(archive, extracted)
         binary = extracted / ("dzc.exe" if platform == "windows" else "dzc")
+        compatibility = enforce(inspect_binary(binary, f"{platform}-{architecture}"))
+        if json.loads((extracted / "COMPATIBILITY.json").read_text(encoding="utf-8")) != compatibility:
+            raise ValueError("packaged compatibility report does not match the actual executable")
         for required in (binary, extracted / "LICENSE", extracted / "README.md",
                          extracted / "docs" / "cli.md", extracted / "integrations" / "dzc-integrations.py",
                          extracted / "skills" / "dzc-cli" / "SKILL.md"):
             if not required.is_file():
                 raise ValueError(f"missing packaged resource: {required.relative_to(extracted)}")
+        if static_only:
+            return archive
         unrelated = base / "other-working-directory"
         unrelated.mkdir()
         environment = os.environ.copy()
@@ -239,11 +246,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path)
     parser.add_argument("--version")
+    parser.add_argument("--static-only", action="store_true", help="Inspect architecture/dependencies without executing (cross-built Windows ARM64)")
     args = parser.parse_args(argv)
     try:
-        print(f"Verified {verify(args.archive, args.version).name}")
+        print(f"Verified {verify(args.archive, args.version, args.static_only).name}")
         return 0
-    except (OSError, ValueError, subprocess.TimeoutExpired, zipfile.BadZipFile, tarfile.TarError) as error:
+    except (OSError, ValueError, struct.error, subprocess.TimeoutExpired, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"dzc package verification: {error}", file=sys.stderr)
         return 1
 

@@ -1,6 +1,6 @@
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::infrastructure::repository::cli_query::CliQuery;
 use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
 use tauri::{AppHandle, State};
 
@@ -20,6 +20,9 @@ pub fn export_to_file(
     format: String,
     passphrase: Option<String>,
 ) -> Result<ExportSummary, String> {
+    state
+        .repo
+        .ensure_export_destination(std::path::Path::new(&path))?;
     match format.as_str() {
         "json" => export_json(state, path, format),
         "encrypted" => export_encrypted(state, path, format, passphrase),
@@ -34,7 +37,10 @@ fn export_json(
 ) -> Result<ExportSummary, String> {
     let entries = state
         .repo
-        .get_history(i32::MAX, 0, None)
+        .query_cli_for_export(&CliQuery {
+            limit: i32::MAX,
+            ..Default::default()
+        })
         .map_err(|e| e.to_string())?;
     export_entries(entries, path, format, None)
 }
@@ -47,7 +53,10 @@ fn export_encrypted(
 ) -> Result<ExportSummary, String> {
     let entries = state
         .repo
-        .get_history(i32::MAX, 0, None)
+        .query_cli_for_export(&CliQuery {
+            limit: i32::MAX,
+            ..Default::default()
+        })
         .map_err(|e| e.to_string())?;
     export_entries(entries, path, format, passphrase)
 }
@@ -60,11 +69,17 @@ pub(crate) fn export_entries(
     passphrase: Option<String>,
 ) -> Result<ExportSummary, String> {
     let count = entries.len();
-    let export_entries: Vec<ExportEntry> = entries.into_iter().map(into_export_entry).collect();
+    let export_entries: Vec<ExportEntry> = entries
+        .iter()
+        .map(crate::services::backup::prepare_export_entry)
+        .collect::<Result<_, _>>()?;
     match format.as_str() {
         "json" => {
             let json = export_to_json(export_entries).map_err(|e| e.to_string())?;
-            std::fs::write(&path, json).map_err(|e| e.to_string())?;
+            crate::infrastructure::attachments::write_backup(
+                std::path::Path::new(&path),
+                json.as_bytes(),
+            )?;
             Ok(ExportSummary {
                 count,
                 format,
@@ -80,7 +95,7 @@ pub(crate) fn export_entries(
             }
             let blob =
                 export_to_encrypted(export_entries, &passphrase).map_err(|e| e.to_string())?;
-            std::fs::write(&path, blob).map_err(|e| e.to_string())?;
+            crate::infrastructure::attachments::write_backup(std::path::Path::new(&path), &blob)?;
             Ok(ExportSummary {
                 count,
                 format,
@@ -89,26 +104,6 @@ pub(crate) fn export_entries(
             })
         }
         _ => Err("format must be 'json' or 'encrypted'".to_string()),
-    }
-}
-
-fn into_export_entry(entry: ClipboardEntry) -> ExportEntry {
-    ExportEntry {
-        id: entry.id,
-        content_type: entry.content_type,
-        content: entry.content,
-        preview: Some(entry.preview),
-        html_content: entry.html_content,
-        source_app: Some(entry.source_app),
-        source_app_path: entry.source_app_path,
-        created_at: entry.timestamp,
-        updated_at: entry.timestamp,
-        use_count: entry.use_count,
-        is_pinned: entry.is_pinned,
-        pinned_order: entry.pinned_order as i32,
-        tags: entry.tags,
-        ocr_text: entry.ocr_text,
-        kinds: entry.content_kinds,
     }
 }
 
@@ -166,15 +161,18 @@ mod tests {
 
     #[test]
     fn test_export_to_file_json_writes_valid_file() {
-        let tmp_path = std::env::temp_dir().join(format!(
-            "dezirclip-export-cmd-{}.json",
-            std::process::id()
-        ));
+        let tmp_path =
+            std::env::temp_dir().join(format!("dezirclip-export-cmd-{}.json", std::process::id()));
         let _ = std::fs::remove_file(&tmp_path);
         let repo = setup_test_repo();
         seed_entry(&repo);
 
-        let entries = repo.get_history(i32::MAX, 0, None).expect("load history");
+        let entries = repo
+            .query_cli(&CliQuery {
+                limit: i32::MAX,
+                ..Default::default()
+            })
+            .expect("load history");
         let result = export_entries(
             entries,
             tmp_path.to_string_lossy().to_string(),
@@ -204,7 +202,12 @@ mod tests {
     fn test_export_to_file_encrypted_requires_passphrase() {
         let repo = setup_test_repo();
         seed_entry(&repo);
-        let entries = repo.get_history(i32::MAX, 0, None).expect("load history");
+        let entries = repo
+            .query_cli(&CliQuery {
+                limit: i32::MAX,
+                ..Default::default()
+            })
+            .expect("load history");
 
         let result = export_entries(
             entries,
@@ -257,7 +260,7 @@ mod tests {
             ocr_text: Some("ocr".to_string()),
             ocr_status: Some("done".to_string()),
         };
-        let exported = into_export_entry(entry);
+        let exported = crate::services::backup::prepare_export_entry(&entry).unwrap();
         assert_eq!(exported.id, 1);
         assert_eq!(exported.created_at, 1700000000);
         assert_eq!(exported.updated_at, 1700000000);

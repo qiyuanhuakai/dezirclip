@@ -8,8 +8,10 @@ use crate::infrastructure::repository::clipboard_repo::{
 use crate::infrastructure::repository::tag_repo::{SqliteTagRepository, TagRepository};
 use crate::infrastructure::terminal_ui::Terminal;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use std::fmt::Write;
-use unicode_width::UnicodeWidthChar;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
+mod render;
 
 const PREVIEW_CHAR_LIMIT: usize = 64_000;
 const PREVIEW_LINE_LIMIT: usize = 2_000;
@@ -23,7 +25,9 @@ pub fn run(
     // Validate queries before touching the terminal.
     browser.refresh(repo)?;
     let mut terminal = Terminal::enter()?;
-    let selection = browser.run(&mut terminal, repo, tags);
+    let mut renderer = render::Renderer::new(&terminal)?;
+    let selection = browser.run(&mut terminal, &mut renderer, repo, tags);
+    drop(renderer);
     let restored = terminal.restore();
     selection.and_then(|id| restored.map(|()| id))
 }
@@ -80,7 +84,7 @@ impl Browser {
             self.preview = if entry.content_type == "image" {
                 format!("[image]\n{}", entry.preview)
             } else {
-                entry.content.chars().take(PREVIEW_CHAR_LIMIT).collect()
+                fit_char_budget(&entry.content, PREVIEW_CHAR_LIMIT).to_string()
             };
         }
         Ok(())
@@ -89,6 +93,7 @@ impl Browser {
     fn run(
         &mut self,
         terminal: &mut Terminal,
+        renderer: &mut render::Renderer,
         repo: &SqliteClipboardRepository,
         tags: &SqliteTagRepository,
     ) -> Result<Option<i64>, String> {
@@ -96,7 +101,7 @@ impl Browser {
             if let Err(error) = self.update_preview(repo) {
                 self.preview = error;
             }
-            self.draw(terminal)?;
+            self.draw(terminal, renderer, None)?;
             let Event::Key(key) = terminal.read()? else {
                 continue;
             };
@@ -120,7 +125,7 @@ impl Browser {
                 }
                 continue;
             }
-            if let Err(error) = self.handle_key(key, terminal, repo, tags) {
+            if let Err(error) = self.handle_key(key, terminal, renderer, repo, tags) {
                 self.status = error;
             }
         }
@@ -130,6 +135,7 @@ impl Browser {
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal,
+        renderer: &mut render::Renderer,
         repo: &SqliteClipboardRepository,
         tags: &SqliteTagRepository,
     ) -> Result<(), String> {
@@ -167,7 +173,7 @@ impl Browser {
                 self.preview_offset = self.preview_offset.saturating_sub(3);
             }
             KeyCode::Char('/') => {
-                if let Some(query) = prompt(terminal, "Search (empty = all): ")? {
+                if let Some(query) = self.prompt(terminal, renderer, "Search (empty = all): ")? {
                     self.options.query = query;
                     self.options.offset = 0;
                     self.cursor = 0;
@@ -205,7 +211,7 @@ impl Browser {
                 let id = id.unwrap();
                 let adding = key.code == KeyCode::Char('t');
                 let verb = if adding { "add" } else { "remove" };
-                if let Some(tag) = prompt(terminal, &format!("Tag to {verb}: "))? {
+                if let Some(tag) = self.prompt(terminal, renderer, &format!("Tag to {verb}: "))? {
                     let tag = tag.trim();
                     if !tag.is_empty() {
                         let entry = repo
@@ -224,7 +230,13 @@ impl Browser {
             }
             KeyCode::Char('d') if id.is_some() => {
                 let id = id.unwrap();
-                if prompt(terminal, &format!("Delete entry {id}? Type yes: "))?.as_deref()
+                if self
+                    .prompt(
+                        terminal,
+                        renderer,
+                        &format!("Delete entry {id}? Type yes: "),
+                    )?
+                    .as_deref()
                     == Some("yes")
                 {
                     repo.delete(id, None)?;
@@ -239,96 +251,73 @@ impl Browser {
         Ok(())
     }
 
-    fn draw(&mut self, terminal: &mut Terminal) -> Result<(), String> {
-        let (width, height) = terminal.size()?;
-        let mut frame = String::from("\x1b[0m\x1b[2J\x1b[H");
-        let columns = usize::from(width.saturating_sub(1));
-        put(
-            &mut frame,
-            0,
-            &format!(
-                "DezirClip | search: {} | offset: {}",
-                self.options.query, self.options.offset
-            ),
-            columns,
-            false,
-        );
-        if width < 35 || height < 12 {
-            put(&mut frame, 1, "Enlarge terminal; q exits", columns, false);
-            return terminal.write(&frame);
+    fn draw(
+        &mut self,
+        terminal: &Terminal,
+        renderer: &mut render::Renderer,
+        prompt: Option<&render::Prompt<'_>>,
+    ) -> Result<(), String> {
+        self.preview_offset = renderer.draw(
+            terminal,
+            &render::View {
+                options: &self.options,
+                entries: &self.entries,
+                cursor: self.cursor,
+                preview: &self.preview,
+                preview_offset: self.preview_offset,
+                status: &self.status,
+            },
+            prompt,
+        )?;
+        Ok(())
+    }
+
+    fn prompt(
+        &mut self,
+        terminal: &mut Terminal,
+        renderer: &mut render::Renderer,
+        label: &str,
+    ) -> Result<Option<String>, String> {
+        let mut value = String::new();
+        loop {
+            self.draw(
+                terminal,
+                renderer,
+                Some(&render::Prompt {
+                    label,
+                    value: &value,
+                }),
+            )?;
+            match terminal.read()? {
+                Event::Key(key) if key.kind != KeyEventKind::Release => {
+                    if is_cancel(key) {
+                        return Ok(None);
+                    }
+                    match key.code {
+                        KeyCode::Enter => return Ok(Some(value)),
+                        KeyCode::Backspace => {
+                            if let Some((start, _)) = value.grapheme_indices(true).next_back() {
+                                value.truncate(start);
+                            }
+                        }
+                        KeyCode::Char(character)
+                            if !key
+                                .modifiers
+                                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                                && value.chars().count() < 1024 =>
+                        {
+                            value.push(character);
+                        }
+                        _ => {}
+                    }
+                }
+                Event::Paste(text) => {
+                    let room = 1024usize.saturating_sub(value.chars().count());
+                    value.push_str(&display_text(&text, room));
+                }
+                _ => {}
+            }
         }
-        let list_height = (height / 3).clamp(3, 12) as usize;
-        let start = self.cursor.saturating_sub(list_height - 1);
-        for (index, entry) in self
-            .entries
-            .iter()
-            .enumerate()
-            .skip(start)
-            .take(list_height)
-        {
-            let row = format!(
-                "{} {}  [{}]  {}",
-                if entry.is_pinned { "*" } else { " " },
-                entry.id,
-                entry.content_type,
-                entry.preview
-            );
-            put(
-                &mut frame,
-                (index - start + 2) as u16,
-                &row,
-                columns,
-                self.cursor == index,
-            );
-        }
-        let border = list_height as u16 + 3;
-        let tags = self
-            .selected()
-            .map(|entry| entry.tags.join(", "))
-            .unwrap_or_default();
-        put(
-            &mut frame,
-            border,
-            &format!("Preview | tags: {tags}"),
-            columns,
-            false,
-        );
-        let lines = preview_lines(&self.preview, columns.max(1));
-        let visible = usize::from(height.saturating_sub(border + 5)).max(1);
-        self.preview_offset = self.preview_offset.min(lines.len().saturating_sub(visible));
-        for (position, line) in lines
-            .iter()
-            .skip(self.preview_offset)
-            .take(visible)
-            .enumerate()
-        {
-            put(
-                &mut frame,
-                border + position as u16 + 1,
-                line,
-                columns,
-                false,
-            );
-        }
-        put(
-            &mut frame,
-            height - 3,
-            &format!(
-                "Enter {} | c copy | p pin | t/u tag | d delete | / search | q quit",
-                action_name(self.options.action)
-            ),
-            columns,
-            false,
-        );
-        put(
-            &mut frame,
-            height - 2,
-            "Arrows/jk select | h/l preview | [/]/PgUp/PgDn page | r refresh",
-            columns,
-            false,
-        );
-        put(&mut frame, height - 1, &self.status, columns, false);
-        terminal.write(&frame)
     }
 }
 
@@ -347,49 +336,6 @@ fn is_cancel(key: KeyEvent) -> bool {
         || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'))
 }
 
-fn prompt(terminal: &mut Terminal, label: &str) -> Result<Option<String>, String> {
-    let mut value = String::new();
-    loop {
-        let (width, height) = terminal.size()?;
-        let mut frame = String::new();
-        put(
-            &mut frame,
-            height.saturating_sub(1),
-            &format!("{label}{value}"),
-            usize::from(width.saturating_sub(1)),
-            false,
-        );
-        terminal.write(&frame)?;
-        match terminal.read()? {
-            Event::Key(key) if key.kind != KeyEventKind::Release => {
-                if is_cancel(key) {
-                    return Ok(None);
-                }
-                match key.code {
-                    KeyCode::Enter => return Ok(Some(value)),
-                    KeyCode::Backspace => {
-                        value.pop();
-                    }
-                    KeyCode::Char(character)
-                        if !key
-                            .modifiers
-                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                            && value.chars().count() < 1024 =>
-                    {
-                        value.push(character);
-                    }
-                    _ => {}
-                }
-            }
-            Event::Paste(text) => {
-                let room = 1024usize.saturating_sub(value.chars().count());
-                value.push_str(&frontend::display_text(&text, room));
-            }
-            _ => {}
-        }
-    }
-}
-
 fn changed_tags(mut tags: Vec<String>, tag: &str, adding: bool) -> Vec<String> {
     if adding {
         if !tags.iter().any(|existing| existing == tag) {
@@ -401,48 +347,73 @@ fn changed_tags(mut tags: Vec<String>, tag: &str, adding: bool) -> Vec<String> {
     tags
 }
 
-fn put(frame: &mut String, row: u16, text: &str, columns: usize, selected: bool) {
-    let clean = frontend::display_text(text, PREVIEW_CHAR_LIMIT);
-    let line = fit_columns(&clean, columns);
-    let _ = write!(
-        frame,
-        "\x1b[{};1H\x1b[2K{}{}\x1b[0m",
-        row.saturating_add(1),
-        if selected { "\x1b[7m" } else { "" },
-        line
-    );
-}
-
 fn fit_columns(text: &str, columns: usize) -> String {
     let mut width = 0usize;
-    text.chars()
-        .take_while(|character| {
-            width = width.saturating_add(character.width().unwrap_or(0));
+    text.graphemes(true)
+        .take_while(|grapheme| {
+            width = width.saturating_add(grapheme.width());
             width <= columns
         })
         .collect()
+}
+
+fn fit_char_budget(text: &str, maximum: usize) -> &str {
+    let mut remaining = maximum;
+    for (start, grapheme) in text.grapheme_indices(true) {
+        let count = grapheme.chars().count();
+        if count > remaining {
+            return &text[..start];
+        }
+        remaining -= count;
+    }
+    text
+}
+
+fn display_text(text: &str, maximum: usize) -> String {
+    // Joiners and non-joiners belong to emoji and script graphemes. Keep them
+    // while retaining the shared policy for whitespace, controls and bidi.
+    let mut sanitized = if text.contains(['\u{200c}', '\u{200d}']) {
+        let mut output = String::with_capacity(text.len());
+        for part in text.split_inclusive(['\u{200c}', '\u{200d}']) {
+            if let Some(joiner) = part
+                .chars()
+                .next_back()
+                .filter(|character| matches!(character, '\u{200c}' | '\u{200d}'))
+            {
+                output.push_str(&frontend::display_text(
+                    &part[..part.len() - joiner.len_utf8()],
+                    usize::MAX,
+                ));
+                output.push(joiner);
+            } else {
+                output.push_str(&frontend::display_text(part, usize::MAX));
+            }
+        }
+        output
+    } else {
+        frontend::display_text(text, usize::MAX)
+    };
+    let length = fit_char_budget(&sanitized, maximum).len();
+    sanitized.truncate(length);
+    sanitized
 }
 
 fn preview_lines(text: &str, columns: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut width = 0usize;
-    let mut characters = text.chars().take(PREVIEW_CHAR_LIMIT).peekable();
-    while let Some(character) = characters.next() {
-        if character == '\n' || character == '\r' {
-            if character == '\r' && characters.peek() == Some(&'\n') {
-                characters.next();
-            }
+    for grapheme in fit_char_budget(text, PREVIEW_CHAR_LIMIT).graphemes(true) {
+        if matches!(grapheme, "\n" | "\r" | "\r\n") {
             lines.push(std::mem::take(&mut line));
             width = 0;
         } else {
-            let clean = if character == '\t' {
+            let clean = if grapheme == "\t" {
                 "    ".to_string()
             } else {
-                frontend::display_text(&character.to_string(), 1)
+                display_text(grapheme, usize::MAX)
             };
-            for character in clean.chars() {
-                let char_width = character.width().unwrap_or(0);
+            for grapheme in clean.graphemes(true) {
+                let char_width = grapheme.width();
                 if char_width > columns {
                     continue;
                 }
@@ -450,7 +421,7 @@ fn preview_lines(text: &str, columns: usize) -> Vec<String> {
                     lines.push(std::mem::take(&mut line));
                     width = 0;
                 }
-                line.push(character);
+                line.push_str(grapheme);
                 width += char_width;
             }
         }
@@ -472,6 +443,7 @@ fn preview_lines(text: &str, columns: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use unicode_width::UnicodeWidthChar;
 
     #[test]
     fn preview_sanitizes_controls_preserving_line_breaks_and_unicode_columns() {
@@ -523,5 +495,24 @@ mod tests {
             KeyCode::Char('c'),
             KeyModifiers::NONE
         )));
+    }
+
+    #[test]
+    fn column_and_character_limits_keep_complete_graphemes() {
+        for cluster in ["e\u{301}", "👩🏽‍💻", "🇨🇳", "✈\u{fe0f}", "ی\u{200c}"] {
+            let width = cluster.width();
+            let characters = cluster.chars().count();
+            assert_eq!(fit_columns(&format!("{cluster}x"), width), cluster);
+            assert_eq!(fit_columns(&format!("x{cluster}"), width), "x");
+            assert_eq!(fit_char_budget(cluster, characters - 1), "");
+            assert_eq!(display_text(&format!("{cluster}x"), characters), cluster);
+            assert_eq!(preview_lines(&cluster.repeat(2), width), [cluster, cluster]);
+        }
+        assert_eq!(display_text("a\u{202e}\x1b\u{200b}b", 100), "ab");
+        assert_eq!(display_text("می\u{200c}روم", 100), "می\u{200c}روم");
+        assert_eq!(
+            display_text("x\u{200c}\u{200d}\u{200e}\u{200f}y", 100),
+            "x\u{200c}\u{200d}y"
+        );
     }
 }

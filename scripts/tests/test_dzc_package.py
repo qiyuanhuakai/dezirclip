@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import stat
@@ -26,12 +27,15 @@ verify = load("dzc_package_verify", "verify-dzc-package.py")
 
 def executable_header(platform):
     if platform.startswith("windows-"):
-        data = bytearray(256)
+        data = bytearray(512)
         data[:2] = b"MZ"
         struct.pack_into("<I", data, 0x3C, 0x80)
         data[0x80:0x84] = b"PE\0\0"
         struct.pack_into("<H", data, 0x84, package.PLATFORMS[platform])
+        struct.pack_into("<H", data, 0x94, 240)
         struct.pack_into("<H", data, 0x98, 0x20B)
+        struct.pack_into("<I", data, 0x98 + 60, 512)
+        struct.pack_into("<I", data, 0x98 + 108, 16)
     else:
         data = bytearray(64)
         data[:7] = b"\x7fELF\x02\x01\x01"
@@ -45,7 +49,7 @@ class PackageTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.repo = self.root / "repo"
-        for name in ("LICENSE", "docs/dzc-standalone.md", "docs/cli.md", "docs/LINUX_INSTALL.md",
+        for name in ("LICENSE", "docs/dzc-standalone.md", "docs/data-safety.md", "docs/cli.md", "docs/LINUX_INSTALL.md",
                      "integrations/README.md", "integrations/dzc-integrations.py",
                      "integrations/dzc_integrations/__main__.py",
                      "integrations/dzc_integrations/client.py", "integrations/shell/dzc.nu",
@@ -103,6 +107,9 @@ class PackageTests(unittest.TestCase):
                 verify.extract_archive(archive, extracted)
                 binary_name = "dzc.exe" if platform.startswith("windows-") else "dzc"
                 self.assertTrue((extracted / binary_name).is_file())
+                report = json.loads((extracted / "COMPATIBILITY.json").read_text())
+                self.assertEqual(report["binary_sha256"], hashlib.sha256((extracted / binary_name).read_bytes()).hexdigest())
+                verify.verify(archive, static_only=True)
                 self.assertEqual((extracted / "README.md").read_text(), "docs/dzc-standalone.md")
                 self.assertTrue((extracted / "integrations" / "shell" / "dzc.nu").is_file())
                 self.assertTrue((extracted / "skills" / "dzc-cli" / "SKILL.md").is_file())
@@ -131,6 +138,22 @@ class PackageTests(unittest.TestCase):
         sidecar.unlink()
         with self.assertRaises(FileNotFoundError):
             verify.verify_checksum(archive)
+
+    def test_dependency_report_cannot_claim_a_different_executable(self):
+        archive = package.package("windows-aarch64", self.binary("windows-aarch64"), "1.2.3",
+                                  self.root / "output", self.repo)
+        with zipfile.ZipFile(archive) as source:
+            files = {member.filename: source.read(member) for member in source.infolist()}
+        report = json.loads(files["COMPATIBILITY.json"])
+        report["binary_sha256"] = "0" * 64
+        files["COMPATIBILITY.json"] = json.dumps(report).encode()
+        with zipfile.ZipFile(archive, "w") as output:
+            for name, content in files.items():
+                output.writestr(name, content)
+        checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+        Path(str(archive) + ".sha256").write_text(f"{checksum}  {archive.name}\n", encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "compatibility report"):
+            verify.verify(archive, static_only=True)
 
     def test_extractor_rejects_path_traversal_and_zip_symlinks(self):
         for name in ("../outside", "/absolute", "..\\outside", "C:/outside"):

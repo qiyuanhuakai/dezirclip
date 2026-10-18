@@ -40,7 +40,6 @@
 
 use std::path::Path;
 
-use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
 use crate::services::backup::{decrypt_to_json, entries_from_json, import_from_json, ImportMode};
 
@@ -111,9 +110,8 @@ pub fn run(args: &ImportArgs, repo: &SqliteClipboardRepository) -> Result<(), St
     let total = export_entries.len();
 
     // 7. Apply. Replace mode clears first; merge is upsert-on-id.
-    let entries: Vec<ClipboardEntry> = export_entries.iter().map(to_clipboard_entry).collect();
-    repo.import_cli_entries(&entries, mode == ImportMode::Replace)?;
-    let imported = entries.len();
+    crate::services::backup::apply_entries(repo, &export_entries, mode)?;
+    let imported = export_entries.len();
 
     if !args.quiet {
         let label = if is_encrypted { "encrypted" } else { "json" };
@@ -146,30 +144,6 @@ fn parse_mode(raw: &str) -> Result<ImportMode, String> {
 /// fields the runtime model needs but the export schema doesn't carry
 /// (e.g. `is_external`, `file_preview_exists` — both default to
 /// `false`; `pinned_order` rounds from `i32` back to `i64`).
-fn to_clipboard_entry(exp: &crate::services::backup::ExportEntry) -> ClipboardEntry {
-    ClipboardEntry {
-        id: exp.id,
-        content_type: exp.content_type.clone(),
-        content: exp.content.clone(),
-        html_content: exp.html_content.clone(),
-        source_app: exp.source_app.clone().unwrap_or_default(),
-        source_app_path: exp.source_app_path.clone(),
-        timestamp: exp.updated_at,
-        // `preview` is `Option<String>` in the export schema but
-        // `String` in the domain model — collapse `None` to empty
-        // and let the repo re-derive a fresh preview on next read.
-        preview: exp.preview.clone().unwrap_or_default(),
-        is_pinned: exp.is_pinned,
-        tags: exp.tags.clone(),
-        use_count: exp.use_count,
-        is_external: false,
-        pinned_order: exp.pinned_order as i64,
-        file_preview_exists: false,
-        content_kinds: exp.kinds.clone(),
-        ocr_text: exp.ocr_text.clone(),
-        ocr_status: exp.ocr_text.as_ref().map(|_| "done".to_string()),
-    }
-}
 
 #[cfg(test)]
 mod tests {

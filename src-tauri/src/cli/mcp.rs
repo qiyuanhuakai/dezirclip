@@ -573,6 +573,49 @@ mod tests {
     }
 
     #[test]
+    fn searches_matching_only_excluded_payloads_return_empty_pages() {
+        let connection = database();
+        for (id, tags) in [(7, "[\"Sensitive\"]"), (8, "[\"密码\"]")] {
+            connection.lock().unwrap().execute("INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,tags) VALUES(?1,'text','private-tagged-payload','source',?1,'private-tagged-preview',?2)",rusqlite::params![id,tags]).unwrap();
+        }
+        let mut server =
+            Server::new(move || Ok(Arc::new(SqliteClipboardRepository::new(connection.clone()))));
+        ready(&mut server);
+        for query in [
+            "private",
+            "private-sensitive-payload",
+            "private-tagged-preview",
+        ] {
+            for offset in [0, 1] {
+                let page = data(&call(
+                    &mut server,
+                    "clipboard_search",
+                    json!({"query":query,"limit":1,"offset":offset}),
+                ));
+                assert_eq!(page["entries"], json!([]), "{query}/{offset}: {page}");
+                assert_eq!(page["next_offset"], Value::Null);
+                assert!(!page.to_string().contains("private"));
+            }
+        }
+        for id in [7, 8] {
+            let response = call(&mut server, "clipboard_get", json!({"id":id}));
+            assert_eq!(response["result"]["isError"], true);
+            assert!(!response.to_string().contains("private"));
+        }
+    }
+
+    #[test]
+    fn untagged_plaintext_is_visible_without_automatic_private_content_detection() {
+        let connection = database();
+        connection.lock().unwrap().execute("UPDATE clipboard_history SET content='personal-untagged-note',preview='personal note' WHERE id=1",[]).unwrap();
+        let mut server =
+            Server::new(move || Ok(Arc::new(SqliteClipboardRepository::new(connection.clone()))));
+        ready(&mut server);
+        let result = data(&call(&mut server, "clipboard_get", json!({"id":1})));
+        assert_eq!(result["content"], "personal-untagged-note");
+    }
+
+    #[test]
     fn content_and_metadata_limits_count_unicode_characters() {
         let connection = database();
         let content = format!("  你好\r\n{}", "尾".repeat(20_000));

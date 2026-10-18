@@ -13,6 +13,7 @@ finish-args:
   - --talk-name=org.freedesktop.secrets
   - --talk-name=org.kde.StatusNotifierWatcher
 modules:
+  - clipboard-tools.json
   - name: dezirclip
     buildsystem: simple
     build-commands:

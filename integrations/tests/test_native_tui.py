@@ -1,4 +1,4 @@
-"""Real Windows ConPTY paste boundaries with disposable history and console state."""
+"""Real ConPTY input boundaries; inspect visible cells across incremental redraws."""
 
 from contextlib import closing
 import importlib.util
@@ -53,8 +53,8 @@ with open('CONOUT$', 'wb', buffering=0) as terminal:
 
 
 @unittest.skipUnless(sys.platform == "win32" and os.environ.get("DZC_TEST_BIN")
-                     and importlib.util.find_spec("winpty"),
-                     "Native Windows TUI needs DZC_TEST_BIN and optional pywinpty")
+                     and importlib.util.find_spec("winpty") and importlib.util.find_spec("pyte"),
+                     "Native Windows TUI needs DZC_TEST_BIN and optional pywinpty/pyte")
 class NativeTuiPasteTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dzc-native-tui-paste-")
@@ -85,18 +85,21 @@ class NativeTuiPasteTests(unittest.TestCase):
                                    [self.identifier]).fetchone()
             return None if row is None else (row[0], json.loads(row[1]))
 
-    def start(self):
+    def start(self, dimensions=(30, 110)):
+        import pyte
         from winpty import PtyProcess
         self.screen = ""
+        self.cells = pyte.Screen(dimensions[1], dimensions[0])
+        self.stream = pyte.Stream(self.cells)
         for artifact in (self.result, self.output, self.error):
             artifact.unlink(missing_ok=True)
         self.process = PtyProcess.spawn(
             [sys.executable, str(self.wrapper), str(self.output), str(self.error),
              str(self.result), str(self.binary), "tui", "--action", "id"],
-            env=self.environment, dimensions=(30, 110), backend="0")
+            env=self.environment, dimensions=dimensions, backend="0")
         self.process.fileobj.settimeout(.1)
         self.addCleanup(self.close)
-        self.wait("Preview | tags:")
+        self.wait_browser()
 
     def read(self):
         try:
@@ -104,6 +107,7 @@ class NativeTuiPasteTests(unittest.TestCase):
         except (socket.timeout, EOFError):
             return
         self.screen += chunk
+        self.stream.feed(chunk)
         if "\x1b[6n" in chunk:
             self.process.write("\x1b[1;1R")
 
@@ -114,9 +118,32 @@ class NativeTuiPasteTests(unittest.TestCase):
         self.assertIn(needle, self.screen[start:], self.screen[-5000:])
 
     def send_wait(self, text, needle):
-        start = len(self.screen)
         self.process.write(text)
-        self.wait(needle, start)
+        self.wait_screen(needle)
+
+    def visible_screen(self):
+        # Differential redraws can leave a wide-character continuation cell
+        # temporarily empty. Read cell data directly rather than pyte.display,
+        # which indexes the first character of those empty continuation cells.
+        return "\n".join("".join(self.cells.buffer[y][x].data
+                                 for x in range(self.cells.columns))
+                         for y in range(self.cells.lines))
+
+    def wait_screen(self, needle, timeout=15):
+        deadline = time.monotonic() + timeout
+        while needle not in self.visible_screen() and time.monotonic() < deadline:
+            self.read()
+        self.assertIn(needle, self.visible_screen(), self.screen[-5000:])
+
+    def wait_browser(self, timeout=15):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            visible = self.visible_screen()
+            if ("History" in visible and "Preview" in visible
+                    and "Enter id" in visible and "Enter apply" not in visible):
+                return
+            self.read()
+        self.fail("TUI did not return to the browser:\n" + self.visible_screen())
 
     def settle(self, duration=.4):
         deadline = time.monotonic() + duration
@@ -158,7 +185,8 @@ class NativeTuiPasteTests(unittest.TestCase):
         self.paste("hello\rdyes\r")
         self.assertEqual(self.row(), (0, []), "one search paste crossed into deletion")
         self.assertNotIn("Delete entry", self.screen)
-        self.send_wait("\x03", "Preview | tags:")
+        self.process.write("\x03")
+        self.wait_browser()
         self.process.write("q")
         self.finish()
 
@@ -225,8 +253,10 @@ class NativeTuiPasteTests(unittest.TestCase):
         self.send_wait("/", "Search (empty = all):")
         self.process.write("中文🙂")
         self.settle(.2)
-        self.send_wait("\r", "search: 中文🙂")
-        self.assertIn("中文🙂", self.screen)
+        self.process.write("\r")
+        self.wait_browser()
+        self.wait_screen("中文🙂")
+        self.assertIn("中文🙂", self.visible_screen())
         self.process.write("\x1b")
         self.finish()
 

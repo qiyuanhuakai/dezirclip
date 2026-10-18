@@ -87,6 +87,12 @@ impl Terminal {
             .map_err(|error| format!("tui terminal write failed: {error}"))
     }
 
+    pub fn output_clone(&self) -> Result<File, String> {
+        self.output
+            .try_clone()
+            .map_err(|error| format!("tui cannot duplicate terminal output: {error}"))
+    }
+
     pub fn size(&self) -> Result<(u16, u16), String> {
         #[cfg(target_os = "linux")]
         let result = crossterm::terminal::size();
