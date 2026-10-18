@@ -81,8 +81,8 @@ class DzcClient:
                     "--offset", str(offset)]
         else:
             args = ["list", "--json", "--metadata", "--offset", str(offset)]
-            if kind:
-                args += ["--kind", kind]
+        if kind:
+            args += ["--kind", kind]
         if exclude_sensitive:
             args += ["--exclude-sensitive"]
         args += ["--", query if query else str(limit)]
@@ -90,8 +90,7 @@ class DzcClient:
         if not isinstance(entries, list) or not all(isinstance(row, dict) for row in entries):
             raise AdapterError("dzc returned an unexpected history format")
         return [row for row in entries
-                if (not kind or row.get("type") == kind)
-                and not (exclude_sensitive and sensitive(row))]
+                if not (exclude_sensitive and sensitive(row))]
 
     def entry(self, entry_id, exclude_sensitive=False):
         bounded_int(entry_id, "id", 1, 2**63 - 1)

@@ -162,6 +162,14 @@ jobs:
         if: matrix.can_test
         run: python scripts/verify-dzc-package.py '${{ steps.dzc-package.outputs.archive }}'
 
+      - name: Test CLI integrations against the real binary
+        if: matrix.can_test
+        shell: bash
+        run: |
+          binary="$GITHUB_WORKSPACE/src-tauri/target/release/dzc"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then binary="${binary}.exe"; fi
+          DZC_TEST_BIN="$binary" python -m unittest discover -s integrations/tests -v
+
       - name: Upload standalone dzc archive and checksum
         uses: actions/upload-artifact@v4
         with:

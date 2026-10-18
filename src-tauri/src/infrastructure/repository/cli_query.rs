@@ -249,4 +249,49 @@ mod tests {
             .unwrap();
         assert_eq!(latest[0].id, 2);
     }
+
+    #[test]
+    fn search_kind_precedes_limit_and_offset_for_every_mode() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        super::super::migrations::run_migrations(&mut conn).unwrap();
+        for (id, kind) in [
+            (1, "code"),
+            (2, "text"),
+            (3, "code"),
+            (4, "url"),
+            (5, "text"),
+        ] {
+            conn.execute(
+                "INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,is_pinned,tags)
+                 VALUES(?1,?2,?3,'test',?1,?3,0,'[]')",
+                params![id, kind, format!("needle record {id}")],
+            )
+            .unwrap();
+        }
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+        for (mode, needle) in [
+            ("contains", "needle"),
+            ("fuzzy", "ndl"),
+            ("regex", "n.*dle"),
+            ("fts5", "needle"),
+        ] {
+            for (offset, expected) in [(0, vec![3]), (1, vec![1]), (2, vec![])] {
+                let rows = repo
+                    .query_cli(&CliQuery {
+                        kind: Some("code"),
+                        limit: 1,
+                        offset,
+                        metadata: true,
+                        search: Some((needle, mode)),
+                        ..Default::default()
+                    })
+                    .unwrap();
+                assert_eq!(
+                    rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+                    expected,
+                    "mode={mode}, offset={offset}"
+                );
+            }
+        }
+    }
 }

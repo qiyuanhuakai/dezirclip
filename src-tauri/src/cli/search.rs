@@ -18,6 +18,7 @@ pub enum SearchMode {
 /// Args for the `search` subcommand.
 pub struct SearchArgs {
     pub query: String,
+    pub kind: Option<String>,
     pub mode: SearchMode,
     /// Optional result limit. `None` means "no extra cap" — the repo
     /// will fetch up to its internal default. Most repos use 1000 as
@@ -55,6 +56,7 @@ pub fn run(args: &SearchArgs, repo: &SqliteClipboardRepository) -> Result<(), St
         repo.query_cli(&CliQuery {
             limit,
             offset: args.offset,
+            kind: args.kind.as_deref(),
             metadata: args.metadata,
             exclude_sensitive: args.exclude_sensitive,
             search: Some((&args.query, mode)),
@@ -119,6 +121,7 @@ mod tests {
     fn effective_limit_uses_default_when_none() {
         let args = SearchArgs {
             query: "x".to_string(),
+            kind: None,
             mode: SearchMode::Contains,
             limit: None,
             json: false,
@@ -136,6 +139,7 @@ mod tests {
     fn effective_limit_respects_explicit() {
         let args = SearchArgs {
             query: "x".to_string(),
+            kind: None,
             mode: SearchMode::Contains,
             limit: Some(7),
             json: false,

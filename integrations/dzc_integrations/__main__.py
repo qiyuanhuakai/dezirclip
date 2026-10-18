@@ -14,6 +14,8 @@ def parse_args(argv=None):
     picker.add_argument("--kind", help="Filter by a clipboard content type")
     tui = commands.add_parser("tui", help="Browse, preview and manage history in a terminal")
     rofi = commands.add_parser("rofi", help="Rofi script mode: copy the selected record")
+    rofi.add_argument("selected_row", nargs="?",
+                      help="Display row supplied by rofi; the ID is read only from ROFI_INFO")
     commands.add_parser("mcp", help="Serve read-only local history tools over MCP stdio")
     for command in (picker, tui, rofi):
         command.add_argument("--query", default="", help="Initial contains search")

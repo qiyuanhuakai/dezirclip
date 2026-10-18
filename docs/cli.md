@@ -39,7 +39,7 @@ dzc --help
 | 命令 | 用途 | 常用选项 |
 | --- | --- | --- |
 | `list [N]` | 列出历史，默认 20 条，`-1` 全部 | `--kind`、`--tag`、`--pinned`、`--offset`、`--json`、`--metadata`、`--tsv`、`--ids`、`--exclude-sensitive`、`-q` |
-| `search <QUERY>` | 搜索历史，默认 20 条 | `--mode`、`--limit`、`--offset`、`--json`、`--metadata`、`--tsv`、`--ids`、`--exclude-sensitive`、`-q` |
+| `search <QUERY>` | 搜索历史，默认 20 条 | `--kind`、`--mode`、`--limit`、`--offset`、`--json`、`--metadata`、`--tsv`、`--ids`、`--exclude-sensitive`、`-q` |
 | `get <ID\|latest>` | 读取完整存储内容 | `--preview`、`--raw`、`--mime`、`--json`、`--exclude-sensitive`、`-q` |
 | `clipboard read` | 读取当前系统剪贴板 | `--mime`，默认 `text/plain` |
 | `clipboard write [CONTENT]` | 写入原生剪贴板或向终端发送 OSC52，省略内容时读标准输入 | `--mime`、`--target native\|osc52`、`--osc52-passthrough none\|tmux`；内容支持文本、`-`、`@文件` |
@@ -66,12 +66,13 @@ dzc list --kind text --tag work --pinned 50
 dzc list --json -- -1
 dzc list --metadata --json --offset 20 20
 dzc search "meeting" --limit 20 --offset 20 --metadata --json
+dzc search "meeting" --kind text --limit 1 --offset 1 --metadata --json
 dzc search "meeting" --ids
 ```
 
 `list` 的数量是位置参数，`search` 使用 `--limit`；两者默认 20，`-1` 表示全部，0 表示空结果，其余负值不合法。为避免负数与选项混淆，列表全部记录可写 `dzc list --json -- -1`，搜索可写 `--limit=-1`。`--offset` 默认为 0，只接受非负整数。
 
-类型、标签、置顶、敏感过滤与搜索匹配都在分页前应用。因此 `--limit 20` 表示最多 20 条匹配结果，`--offset 20` 跳过 20 条匹配结果。历史变化会影响后续页；分页不是数据库快照。
+`list` 和 `search` 都支持 `--kind <TYPE>`，按存储类型精确筛选。类型、标签、置顶、敏感过滤与搜索匹配都在分页前应用。因此 `--limit 20` 表示最多 20 条匹配结果，`--offset 20` 跳过 20 条匹配结果。历史变化会影响后续页；分页不是数据库快照。
 
 搜索模式：
 

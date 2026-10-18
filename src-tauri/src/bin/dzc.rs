@@ -111,6 +111,9 @@ struct ListArgs {
 #[derive(Args)]
 struct SearchArgs {
     query: String,
+    /// Restrict results to a stored content type before pagination.
+    #[arg(long)]
+    kind: Option<String>,
     #[arg(long, value_enum, default_value_t = CliSearchMode::Contains)]
     mode: CliSearchMode,
     #[arg(long)]
@@ -519,6 +522,7 @@ fn run(args: Cli) -> Result<(), String> {
         Commands::Search(a) => cli::search::run(
             &cli::search::SearchArgs {
                 query: a.query,
+                kind: a.kind,
                 mode: a.mode.into(),
                 limit: a.limit,
                 json: a.json,
