@@ -66,7 +66,22 @@ body.theme-liquid-glass {
   --glass-glow-dark: rgba(0, 0, 0, 0.02);
 
   /* Element specifics — light mode */
-  --lg-history-bg: rgba(255, 255, 255, 0.30);
+  /* Every translucent layer here is a FLOOR plus a tint, not a single alpha.
+     The transparency slider is meant to dial glass from tinted toward clear,
+     and Apple's rule for that material is that legibility holds across the
+     whole travel rather than only at the default — the iOS 26 complaint that
+     prompted both the v2 retune and the slider was text becoming unreadable at
+     the clear end. Driving one alpha by `--surface-layer-scale` fails exactly
+     there: measured, the confirm dialog fell to 1.06:1 at slider 0.
+
+     So the constant half sets the value the text sits on, and the scaled half
+     is what the slider actually moves. The stack still follows the slider (and
+     still clears for a custom background image), but it stops at a readable
+     floor instead of at nothing. Solved for WCAG AA body text (4.50:1) against
+     the worst backdrop in either direction. */
+  --lg-history-bg:
+    linear-gradient(rgba(255, 255, 255, 0.50), rgba(255, 255, 255, 0.50)),
+    rgba(255, 255, 255, calc(0.22 * var(--surface-layer-scale, 1)));
   --lg-history-hover-bg: rgba(255, 255, 255, 0.48);
   --lg-history-selected-bg: rgba(10, 132, 255, 0.10);
   --lg-history-selected-border: rgba(10, 132, 255, 0.42);
@@ -175,7 +190,9 @@ body.theme-liquid-glass {
      past 100%, so refracted colour comes through more vivid instead of washing
      out. 180% is the value that kept the backdrop's hue recognisable here. */
   --lg-dialog-blur: blur(30px) saturate(180%);
-  --lg-dialog-bg: rgba(255, 255, 255, calc(0.62 * var(--surface-layer-scale, 1)));
+  --lg-dialog-bg:
+    linear-gradient(rgba(255, 255, 255, 0.50), rgba(255, 255, 255, 0.50)),
+    rgba(255, 255, 255, calc(0.28 * var(--surface-layer-scale, 1)));
   --lg-dialog-border: rgba(60, 60, 67, 0.12);
   --lg-dialog-shadow:
     0 16px 48px rgba(20, 30, 60, 0.12),
@@ -190,10 +207,25 @@ body.theme-liquid-glass {
   --lg-dialog-button-primary-border: #0a84ff;
   --lg-dialog-button-primary-text: #ffffff;
 
+  /* Content layer. Apple's split is navigation layer = glass, content layer =
+     solid: lists, cards, media and data rows are the things glass floats OVER.
+     These deliberately do NOT multiply by `--surface-layer-scale` — the
+     transparency slider is meant to dial the glass, and a card that faded out
+     with it would drop its text onto the blurred wallpaper. Content stays
+     legible across the whole range, chrome moves. */
+  --lg-content-bg: rgba(255, 255, 255, 0.78);
+  --lg-content-border: rgba(60, 60, 67, 0.10);
+  --lg-content-shadow:
+    0 1px 3px rgba(20, 30, 60, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  --lg-content-hover-bg: rgba(255, 255, 255, 0.90);
+
   /* Floating surfaces that are not dialogs — toasts, the compact-mode hover
      popover, the QR card. Same material as the sheet, one step lighter, so a
      toast does not carry the weight of a confirmation. */
-  --lg-float-bg: rgba(255, 255, 255, calc(0.55 * var(--surface-layer-scale, 1)));
+  --lg-float-bg:
+    linear-gradient(rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.44)),
+    rgba(255, 255, 255, calc(0.22 * var(--surface-layer-scale, 1)));
   --lg-float-border: rgba(60, 60, 67, 0.10);
   --lg-float-blur: blur(24px) saturate(170%);
   --lg-float-shadow:
@@ -315,7 +347,12 @@ body.dark-mode.theme-liquid-glass {
   --glass-glow-dark: rgba(0, 0, 0, 0.06);
 
   /* Element specifics — dark */
-  --lg-history-bg: rgba(30, 33, 42, 0.32);
+  /* Dark: worst case flips to a light wallpaper behind a clear shell, with
+     light text on a dark row. Solved for AA against the row colour, and the
+     row is the one surface with no scrim in front of it at slider 0. */
+  --lg-history-bg:
+    linear-gradient(rgba(30, 33, 42, 0.66), rgba(30, 33, 42, 0.66)),
+    rgba(30, 33, 42, calc(0.20 * var(--surface-layer-scale, 1)));
   --lg-history-hover-bg: rgba(45, 48, 58, 0.45);
   --lg-history-selected-bg: rgba(10, 132, 255, 0.14);
   --lg-history-selected-border: rgba(10, 132, 255, 0.44);
@@ -416,7 +453,9 @@ body.dark-mode.theme-liquid-glass {
      holds the value up rather than down, so it needs more of it, and the
      specular rim inverts with it (bright top edge, darker underside). */
   --lg-dialog-blur: blur(30px) saturate(180%);
-  --lg-dialog-bg: rgba(38, 41, 52, calc(0.86 * var(--surface-layer-scale, 1)));
+  --lg-dialog-bg:
+    linear-gradient(rgba(38, 41, 52, 0.42), rgba(38, 41, 52, 0.42)),
+    rgba(38, 41, 52, calc(0.34 * var(--surface-layer-scale, 1)));
   --lg-dialog-border: rgba(255, 255, 255, 0.08);
   --lg-dialog-shadow:
     0 16px 48px rgba(0, 0, 0, 0.38),
@@ -431,8 +470,18 @@ body.dark-mode.theme-liquid-glass {
   --lg-dialog-button-primary-border: #0a84ff;
   --lg-dialog-button-primary-text: #ffffff;
 
+  /* Content layer — dark. Solid, and not on the transparency slider. */
+  --lg-content-bg: rgba(30, 33, 42, 0.82);
+  --lg-content-border: rgba(255, 255, 255, 0.07);
+  --lg-content-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --lg-content-hover-bg: rgba(45, 48, 58, 0.92);
+
   /* Floating surfaces — dark. Same one-step-lighter relationship to the sheet. */
-  --lg-float-bg: rgba(35, 38, 48, calc(0.80 * var(--surface-layer-scale, 1)));
+  --lg-float-bg:
+    linear-gradient(rgba(35, 38, 48, 0.38), rgba(35, 38, 48, 0.38)),
+    rgba(35, 38, 48, calc(0.26 * var(--surface-layer-scale, 1)));
   --lg-float-border: rgba(255, 255, 255, 0.07);
   --lg-float-blur: blur(24px) saturate(170%);
   --lg-float-shadow:
@@ -767,10 +816,15 @@ body.theme-liquid-glass:not(.hide-app-border) {
   color: var(--lg-select-option-checked-text);
 }
 
+/* The control sits INSIDE the blurred window shell, so its own blur sampled
+   glass — "glass cannot sample other glass". The shell has already softened
+   everything behind this point, so the control needs a tint and a rim to read
+   as a layer, not a second lens. The dropdown menu below is genuinely floating
+   chrome and keeps its own. */
 .theme-liquid-glass .dezirclip-select__control {
   border-radius: var(--select-control-radius) !important;
-  backdrop-filter: blur(12px) saturate(135%);
-  -webkit-backdrop-filter: blur(12px) saturate(135%);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease !important;
 }
 
@@ -1215,10 +1269,18 @@ body.theme-liquid-glass:not(.hide-app-border) {
 /* ============================================================
    14. Modals — frosted glass overlay and dialog
    ============================================================ */
+/* The scrim is a DIMMING layer, not a second pane of glass.
+   Apple's rule is "glass cannot sample other glass" — a blurred scrim behind a
+   blurred sheet is exactly that, and it shows: the sheet ends up refracting an
+   already-blurred scrim instead of the real backdrop, so the wallpaper colour
+   washes out to grey. Apple prescribes the dimming layer precisely so the
+   sheet's own lensing is what samples the content. Measured here: dropping the
+   scrim blur lifted saturation of the refracted backdrop and removed one
+   full-window blur pass per open dialog. */
 .theme-liquid-glass .modal-overlay {
   background: rgba(0, 0, 0, 0.18) !important;
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .theme-liquid-glass .confirm-dialog,
@@ -1387,11 +1449,16 @@ body.theme-liquid-glass:not(.hide-app-border) {
   font-family: var(--font-main) !important;
 }
 
+/* Sidebar and toolbar are navigation chrome, but they live inside the blurred
+   window shell. A full-height blur on top of a full-window blur is the second
+   most expensive thing in this theme after the card list, and it stacked. Both
+   keep the rim and tint — which is what makes them read as separate planes —
+   and drop their own blur. */
 .themed-tag-manager.theme-liquid-glass .tag-sidebar {
   border-right: 1px solid var(--lg-tag-sidebar-border) !important;
   background: var(--lg-tag-sidebar-bg) !important;
-  backdrop-filter: blur(14px) saturate(125%);
-  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .themed-tag-manager.theme-liquid-glass .sidebar-header {
@@ -1477,27 +1544,32 @@ body.theme-liquid-glass:not(.hide-app-border) {
   border-radius: 8px;
 }
 
+/* Content layer, not chrome: a solid card that keeps the theme's rim language
+   (1px hairline + inset top highlight) but drops the blur. Every card here
+   carried its own `backdrop-filter`, and the list is not virtualised, so the
+   number of simultaneous blur layers grew with the item count — the single
+   largest GPU cost in this theme, on rows Apple classes as content anyway. */
 .themed-tag-manager.theme-liquid-glass .themed-card {
   border-radius: 12px !important;
-  border: 1px solid var(--lg-tag-card-border) !important;
-  background: var(--glass-card-bg) !important;
-  box-shadow: var(--lg-tag-card-shadow) !important;
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid var(--lg-content-border) !important;
+  background: var(--lg-content-bg) !important;
+  box-shadow: var(--lg-content-shadow) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .themed-tag-manager.theme-liquid-glass .themed-card:hover {
   transform: none !important;
-  background: var(--lg-tag-card-hover-bg) !important;
-  box-shadow: var(--lg-tag-card-hover-shadow) !important;
+  background: var(--lg-content-hover-bg) !important;
+  box-shadow: var(--lg-content-shadow) !important;
 }
 
 .themed-tag-manager.theme-liquid-glass .content-toolbar {
   height: 44px !important;
   border-bottom: 1px solid var(--lg-tag-toolbar-border) !important;
   background: var(--lg-tag-toolbar-bg) !important;
-  backdrop-filter: blur(14px) saturate(125%);
-  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .themed-tag-manager.theme-liquid-glass .selected-tag-indicator {
@@ -1553,8 +1625,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
 
 .themed-tag-manager.theme-liquid-glass .confirm-dialog {
   background: var(--lg-dialog-bg) !important;
-  backdrop-filter: blur(20px) saturate(135%);
-  -webkit-backdrop-filter: blur(20px) saturate(135%);
+  backdrop-filter: var(--lg-dialog-blur);
+  -webkit-backdrop-filter: var(--lg-dialog-blur);
   padding: 24px !important;
   border-radius: 16px !important;
   box-shadow: var(--lg-dialog-shadow) !important;
@@ -1791,8 +1863,8 @@ body.theme-liquid-glass:not(.hide-app-border) {
 
 .themed-tag-manager.theme-liquid-glass .modal-overlay {
   background: rgba(0, 0, 0, 0.18) !important;
-  backdrop-filter: blur(20px) saturate(135%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(135%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 .themed-tag-manager.theme-liquid-glass .breadcrumb-marker,
@@ -1856,14 +1928,13 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-search-box {
 }
 
 body.dark-mode .themed-tag-manager.theme-liquid-glass .themed-card {
-  background: rgba(32, 35, 44, 0.36) !important;
-  border-color: rgba(255, 255, 255, 0.06) !important;
-  box-shadow:
-    0 8px 22px rgba(0, 0, 0, 0.30) !important;
+  background: var(--lg-content-bg) !important;
+  border-color: var(--lg-content-border) !important;
+  box-shadow: var(--lg-content-shadow) !important;
 }
 
 body.dark-mode .themed-tag-manager.theme-liquid-glass .themed-card:hover {
-  background: rgba(45, 48, 58, 0.50) !important;
+  background: var(--lg-content-hover-bg) !important;
 }
 
 body.dark-mode .themed-tag-manager.theme-liquid-glass .btn-icon,
@@ -1906,8 +1977,8 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .card-media {
 
 body.dark-mode .themed-tag-manager.theme-liquid-glass .modal-overlay {
   background: rgba(0, 0, 0, 0.44) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 body.dark-mode .themed-tag-manager.theme-liquid-glass .tag-scroll {
@@ -2070,8 +2141,8 @@ body.compact-preview.theme-liquid-glass #root > * {
 body.dark-mode.theme-liquid-glass .modal-overlay,
 body.dark-mode.theme-liquid-glass .theme-liquid-glass .modal-overlay {
   background: rgba(0, 0, 0, 0.42) !important;
-  backdrop-filter: blur(20px) saturate(140%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 body.dark-mode.theme-liquid-glass .modal-content,
@@ -2097,8 +2168,13 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog h3 {
 body.dark-mode.theme-liquid-glass .confirm-dialog-message,
 body.dark-mode.theme-liquid-glass .confirm-dialog p,
 body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog p {
-  color: var(--text-secondary) !important;
-  opacity: 1 !important;
+  /* Light mode already paints the sheet body with `--text-primary`; dark was
+     dropping it to `--text-secondary`, and a dim grey on a dark sheet is the
+     exact combination Apple's legibility work keeps calling out. Measured, the
+     secondary colour put the dark dialog at 2.20:1 at the clear end of the
+     slider. The title was already primary — the body now matches it. */
+  color: var(--text-primary) !important;
+  opacity: 0.88 !important;
 }
 
 body.dark-mode.theme-liquid-glass .confirm-dialog-button,
