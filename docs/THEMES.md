@@ -6,7 +6,7 @@
 
 可以先导入[森林示例](../skills/dezirclip-theme/assets/forest.theme.json)。它包含亮暗模式、渐变标题栏、非对称卡片形状、阴影、表单和选中/悬停/焦点状态。相同 ID 的导入会报错，不静默覆盖；更新时使用新 ID，或先导出备份并删除旧的导入主题。
 
-![默认窗口的主题选择与导入](./images/theme-import.png)
+![主题选择与导入](./images/theme-import.png)
 
 ## 文件格式
 
