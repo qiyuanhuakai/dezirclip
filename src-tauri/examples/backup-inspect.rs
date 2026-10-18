@@ -3,9 +3,9 @@
 //! Companion to `services/backup.rs`. Use for cross-platform verification:
 //! decrypt a file produced on any OS without needing the Tauri runtime.
 //!
-//! Build: `cargo build --example backup-inspect`
-//! Run:   `cargo run --example backup-inspect -- <file> [passphrase]`
-//!        `cargo run --example backup-inspect -- --schema <file>`
+//! Build: `cargo build --no-default-features --example backup-inspect`
+//! Run:   `cargo run --no-default-features --example backup-inspect -- <file> [passphrase]`
+//!        `cargo run --no-default-features --example backup-inspect -- --schema <file>`
 //!
 //! Exit codes:
 //!     0 — success
@@ -13,28 +13,19 @@
 //!     2 — decryption failed (wrong passphrase / corrupted blob)
 //!     3 — JSON parse / version mismatch
 //!
-//! Implementation note: this binary re-includes `services/backup.rs` via
-//! `#[path]` so it doesn't require a `lib.rs` target. Same code path the
-//! real Tauri app uses, same crypto, just no DB / windowing dependencies.
+//! This binary uses the library's shared backup format and cryptography.
 //!
 //! ## Build env note
 //!
-//! This example target is part of the `dezirclip` package, so it shares
-//! Cargo.toml deps. Building it still requires the full Tauri build env
-//! (xcap + libpipewire-0.3-dev on Linux). For a build that does NOT need
-//! those, see `backup-e2e/` (the standalone sub-crate that copies
-//! `services/backup.rs` verbatim and links only the pure-Rust deps).
-
-#[path = "../src/services/backup.rs"]
-#[allow(dead_code)]
-mod backup;
+//! This example shares the CLI library. `--no-default-features` excludes
+//! the desktop dependencies and their graphical build requirements.
 
 use std::env;
 use std::fs;
 use std::io::Write;
 use std::process::ExitCode;
 
-use backup::{decrypt_to_json, entries_from_json, ExportEntry};
+use dezirclip::services::backup::{decrypt_to_json, entries_from_json, ExportEntry};
 use sha2::{Digest, Sha256};
 
 const HEADER_LEN: usize = 12 + 16;

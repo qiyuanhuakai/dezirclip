@@ -1,0 +1,115 @@
+name: Flatpak
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release tag, empty to build and verify without publishing
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  flatpak:
+    name: Flatpak (${{ matrix.name }})
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            platform: ubuntu-24.04
+          - name: linux-aarch64
+            platform: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check src-tauri/src/bin layout
+        run: node scripts/check-tauri-bin-dir.mjs
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            flatpak \
+            flatpak-builder \
+            xvfb \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            pkg-config \
+            libpipewire-0.3-dev \
+            libgbm-dev \
+            libx11-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxtst-dev \
+            libdbus-1-dev \
+            xdg-utils
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set release version
+        if: inputs.version != ''
+        run: pnpm run release:set-version '${{ inputs.version }}'
+
+      - name: Resolve Flatpak artifact name
+        run: |
+          release_version="$(node -p "require('./package.json').version")"
+          echo "FLATPAK_BUNDLE=DezirClip-${release_version}-${{ matrix.name }}.flatpak" >> "$GITHUB_ENV"
+
+      - name: Build Debian bundle for Flatpak root
+        run: pnpm tauri build --bundles deb
+
+      - name: Prepare Flatpak root
+        run: pnpm run flatpak:prepare
+
+      - name: Install Flatpak runtime
+        run: |
+          flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
+
+      - name: Build Flatpak
+        run: |
+          flatpak-builder --user --force-clean --jobs=4 --repo=flatpak/repo flatpak/build flatpak/io.github.qiyuanhuakai.dezirclip.yml
+
+      - name: Verify OCR and paste on the final Platform runtime
+        run: python3 scripts/verify-flatpak.py flatpak/build
+
+      - name: Export verified Flatpak bundle
+        run: flatpak build-bundle flatpak/repo "${FLATPAK_BUNDLE}" io.github.qiyuanhuakai.dezirclip
+
+      - name: Upload Flatpak bundle to release
+        if: inputs.version != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload '${{ inputs.version }}' "${FLATPAK_BUNDLE}" --clobber
+
+      - name: Upload verified Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-${{ matrix.name }}
+          path: "*.flatpak"
+          if-no-files-found: error

@@ -8,8 +8,9 @@ use crate::infrastructure::repository::clipboard_repo::{
 use crate::infrastructure::repository::tag_repo::{SqliteTagRepository, TagRepository};
 use crate::infrastructure::terminal_ui::Terminal;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use std::fmt::Write;
 use unicode_width::UnicodeWidthChar;
+
+mod render;
 
 const PREVIEW_CHAR_LIMIT: usize = 64_000;
 const PREVIEW_LINE_LIMIT: usize = 2_000;
@@ -23,7 +24,9 @@ pub fn run(
     // Validate queries before touching the terminal.
     browser.refresh(repo)?;
     let mut terminal = Terminal::enter()?;
-    let selection = browser.run(&mut terminal, repo, tags);
+    let mut renderer = render::Renderer::new(&terminal)?;
+    let selection = browser.run(&mut terminal, &mut renderer, repo, tags);
+    drop(renderer);
     let restored = terminal.restore();
     selection.and_then(|id| restored.map(|()| id))
 }
@@ -89,6 +92,7 @@ impl Browser {
     fn run(
         &mut self,
         terminal: &mut Terminal,
+        renderer: &mut render::Renderer,
         repo: &SqliteClipboardRepository,
         tags: &SqliteTagRepository,
     ) -> Result<Option<i64>, String> {
@@ -96,7 +100,7 @@ impl Browser {
             if let Err(error) = self.update_preview(repo) {
                 self.preview = error;
             }
-            self.draw(terminal)?;
+            self.draw(terminal, renderer, None)?;
             let Event::Key(key) = terminal.read()? else {
                 continue;
             };
@@ -120,7 +124,7 @@ impl Browser {
                 }
                 continue;
             }
-            if let Err(error) = self.handle_key(key, terminal, repo, tags) {
+            if let Err(error) = self.handle_key(key, terminal, renderer, repo, tags) {
                 self.status = error;
             }
         }
@@ -130,6 +134,7 @@ impl Browser {
         &mut self,
         key: KeyEvent,
         terminal: &mut Terminal,
+        renderer: &mut render::Renderer,
         repo: &SqliteClipboardRepository,
         tags: &SqliteTagRepository,
     ) -> Result<(), String> {
@@ -167,7 +172,7 @@ impl Browser {
                 self.preview_offset = self.preview_offset.saturating_sub(3);
             }
             KeyCode::Char('/') => {
-                if let Some(query) = prompt(terminal, "Search (empty = all): ")? {
+                if let Some(query) = self.prompt(terminal, renderer, "Search (empty = all): ")? {
                     self.options.query = query;
                     self.options.offset = 0;
                     self.cursor = 0;
@@ -205,7 +210,7 @@ impl Browser {
                 let id = id.unwrap();
                 let adding = key.code == KeyCode::Char('t');
                 let verb = if adding { "add" } else { "remove" };
-                if let Some(tag) = prompt(terminal, &format!("Tag to {verb}: "))? {
+                if let Some(tag) = self.prompt(terminal, renderer, &format!("Tag to {verb}: "))? {
                     let tag = tag.trim();
                     if !tag.is_empty() {
                         let entry = repo
@@ -224,7 +229,13 @@ impl Browser {
             }
             KeyCode::Char('d') if id.is_some() => {
                 let id = id.unwrap();
-                if prompt(terminal, &format!("Delete entry {id}? Type yes: "))?.as_deref()
+                if self
+                    .prompt(
+                        terminal,
+                        renderer,
+                        &format!("Delete entry {id}? Type yes: "),
+                    )?
+                    .as_deref()
                     == Some("yes")
                 {
                     repo.delete(id, None)?;
@@ -239,96 +250,71 @@ impl Browser {
         Ok(())
     }
 
-    fn draw(&mut self, terminal: &mut Terminal) -> Result<(), String> {
-        let (width, height) = terminal.size()?;
-        let mut frame = String::from("\x1b[0m\x1b[2J\x1b[H");
-        let columns = usize::from(width.saturating_sub(1));
-        put(
-            &mut frame,
-            0,
-            &format!(
-                "DezirClip | search: {} | offset: {}",
-                self.options.query, self.options.offset
-            ),
-            columns,
-            false,
-        );
-        if width < 35 || height < 12 {
-            put(&mut frame, 1, "Enlarge terminal; q exits", columns, false);
-            return terminal.write(&frame);
+    fn draw(
+        &mut self,
+        terminal: &Terminal,
+        renderer: &mut render::Renderer,
+        prompt: Option<&render::Prompt<'_>>,
+    ) -> Result<(), String> {
+        self.preview_offset = renderer.draw(
+            terminal,
+            &render::View {
+                options: &self.options,
+                entries: &self.entries,
+                cursor: self.cursor,
+                preview: &self.preview,
+                preview_offset: self.preview_offset,
+                status: &self.status,
+            },
+            prompt,
+        )?;
+        Ok(())
+    }
+
+    fn prompt(
+        &mut self,
+        terminal: &mut Terminal,
+        renderer: &mut render::Renderer,
+        label: &str,
+    ) -> Result<Option<String>, String> {
+        let mut value = String::new();
+        loop {
+            self.draw(
+                terminal,
+                renderer,
+                Some(&render::Prompt {
+                    label,
+                    value: &value,
+                }),
+            )?;
+            match terminal.read()? {
+                Event::Key(key) if key.kind != KeyEventKind::Release => {
+                    if is_cancel(key) {
+                        return Ok(None);
+                    }
+                    match key.code {
+                        KeyCode::Enter => return Ok(Some(value)),
+                        KeyCode::Backspace => {
+                            value.pop();
+                        }
+                        KeyCode::Char(character)
+                            if !key
+                                .modifiers
+                                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                                && value.chars().count() < 1024 =>
+                        {
+                            value.push(character);
+                        }
+                        _ => {}
+                    }
+                }
+                Event::Paste(text) => {
+                    let room = 1024usize.saturating_sub(value.chars().count());
+                    value.push_str(&frontend::display_text(&text, room));
+                }
+                _ => {}
+            }
         }
-        let list_height = (height / 3).clamp(3, 12) as usize;
-        let start = self.cursor.saturating_sub(list_height - 1);
-        for (index, entry) in self
-            .entries
-            .iter()
-            .enumerate()
-            .skip(start)
-            .take(list_height)
-        {
-            let row = format!(
-                "{} {}  [{}]  {}",
-                if entry.is_pinned { "*" } else { " " },
-                entry.id,
-                entry.content_type,
-                entry.preview
-            );
-            put(
-                &mut frame,
-                (index - start + 2) as u16,
-                &row,
-                columns,
-                self.cursor == index,
-            );
-        }
-        let border = list_height as u16 + 3;
-        let tags = self
-            .selected()
-            .map(|entry| entry.tags.join(", "))
-            .unwrap_or_default();
-        put(
-            &mut frame,
-            border,
-            &format!("Preview | tags: {tags}"),
-            columns,
-            false,
-        );
-        let lines = preview_lines(&self.preview, columns.max(1));
-        let visible = usize::from(height.saturating_sub(border + 5)).max(1);
-        self.preview_offset = self.preview_offset.min(lines.len().saturating_sub(visible));
-        for (position, line) in lines
-            .iter()
-            .skip(self.preview_offset)
-            .take(visible)
-            .enumerate()
-        {
-            put(
-                &mut frame,
-                border + position as u16 + 1,
-                line,
-                columns,
-                false,
-            );
-        }
-        put(
-            &mut frame,
-            height - 3,
-            &format!(
-                "Enter {} | c copy | p pin | t/u tag | d delete | / search | q quit",
-                action_name(self.options.action)
-            ),
-            columns,
-            false,
-        );
-        put(
-            &mut frame,
-            height - 2,
-            "Arrows/jk select | h/l preview | [/]/PgUp/PgDn page | r refresh",
-            columns,
-            false,
-        );
-        put(&mut frame, height - 1, &self.status, columns, false);
-        terminal.write(&frame)
     }
 }
 
@@ -347,49 +333,6 @@ fn is_cancel(key: KeyEvent) -> bool {
         || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c'))
 }
 
-fn prompt(terminal: &mut Terminal, label: &str) -> Result<Option<String>, String> {
-    let mut value = String::new();
-    loop {
-        let (width, height) = terminal.size()?;
-        let mut frame = String::new();
-        put(
-            &mut frame,
-            height.saturating_sub(1),
-            &format!("{label}{value}"),
-            usize::from(width.saturating_sub(1)),
-            false,
-        );
-        terminal.write(&frame)?;
-        match terminal.read()? {
-            Event::Key(key) if key.kind != KeyEventKind::Release => {
-                if is_cancel(key) {
-                    return Ok(None);
-                }
-                match key.code {
-                    KeyCode::Enter => return Ok(Some(value)),
-                    KeyCode::Backspace => {
-                        value.pop();
-                    }
-                    KeyCode::Char(character)
-                        if !key
-                            .modifiers
-                            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                            && value.chars().count() < 1024 =>
-                    {
-                        value.push(character);
-                    }
-                    _ => {}
-                }
-            }
-            Event::Paste(text) => {
-                let room = 1024usize.saturating_sub(value.chars().count());
-                value.push_str(&frontend::display_text(&text, room));
-            }
-            _ => {}
-        }
-    }
-}
-
 fn changed_tags(mut tags: Vec<String>, tag: &str, adding: bool) -> Vec<String> {
     if adding {
         if !tags.iter().any(|existing| existing == tag) {
@@ -399,18 +342,6 @@ fn changed_tags(mut tags: Vec<String>, tag: &str, adding: bool) -> Vec<String> {
         tags.retain(|existing| existing != tag);
     }
     tags
-}
-
-fn put(frame: &mut String, row: u16, text: &str, columns: usize, selected: bool) {
-    let clean = frontend::display_text(text, PREVIEW_CHAR_LIMIT);
-    let line = fit_columns(&clean, columns);
-    let _ = write!(
-        frame,
-        "\x1b[{};1H\x1b[2K{}{}\x1b[0m",
-        row.saturating_add(1),
-        if selected { "\x1b[7m" } else { "" },
-        line
-    );
 }
 
 fn fit_columns(text: &str, columns: usize) -> String {

@@ -18,14 +18,43 @@ pub struct CliQuery<'a> {
 }
 
 impl SqliteClipboardRepository {
+    pub fn ensure_export_destination(&self, target: &std::path::Path) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        let Some(database) = conn.path().filter(|path| !path.is_empty()) else {
+            return Ok(());
+        };
+        let target = crate::infrastructure::attachments::resolved_path(target)?;
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let database = crate::infrastructure::attachments::resolved_path(
+                std::path::Path::new(&format!("{database}{suffix}")),
+            )?;
+            if target == database
+                || (cfg!(target_os = "windows")
+                    && target
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(&database.to_string_lossy()))
+            {
+                return Err(
+                    "backup destination must not replace the active database or its journal files"
+                        .to_string(),
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Import atomically with original IDs, including rows absent from the target.
     pub fn import_cli_entries(
         &self,
         entries: &[ClipboardEntry],
         replace: bool,
     ) -> Result<(), String> {
-        if entries.iter().any(|entry| entry.id <= 0) {
-            return Err("import: entry IDs must be positive integers".to_string());
+        let mut seen = std::collections::HashSet::new();
+        if entries
+            .iter()
+            .any(|entry| entry.id <= 0 || !seen.insert(entry.id))
+        {
+            return Err("import: entry IDs must be unique positive integers".to_string());
         }
         let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
         let transaction = conn.transaction().map_err(|e| e.to_string())?;
@@ -208,6 +237,33 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     #[test]
+    fn active_database_and_journal_paths_cannot_be_backup_destinations() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-export-target-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("history.db");
+        let connection = crate::database::init_db(path.to_str().unwrap()).unwrap();
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
+        let before = std::fs::read(&path).unwrap();
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let target = directory.join(format!("history.db{suffix}"));
+            assert!(repo
+                .ensure_export_destination(&target)
+                .unwrap_err()
+                .contains("active database"));
+        }
+        assert!(repo
+            .ensure_export_destination(&directory.join("not-created").join("..").join("history.db"))
+            .is_err());
+        assert!(repo
+            .ensure_export_destination(&directory.join("backups").join("history.json"))
+            .is_ok());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        drop(repo);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn filters_precede_pagination_and_metadata_omits_payload() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
@@ -248,6 +304,22 @@ mod tests {
             })
             .unwrap();
         assert_eq!(latest[0].id, 2);
+        for mode in ["contains", "fuzzy", "regex", "fts5"] {
+            for offset in [0, 1] {
+                assert!(
+                    repo.query_cli(&CliQuery {
+                        limit: 1,
+                        offset,
+                        exclude_sensitive: true,
+                        search: Some(("secret", mode)),
+                        ..Default::default()
+                    })
+                    .unwrap()
+                    .is_empty(),
+                    "{mode}/{offset}"
+                );
+            }
+        }
     }
 
     #[test]

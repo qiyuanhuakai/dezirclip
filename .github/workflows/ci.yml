@@ -147,47 +147,21 @@ jobs:
         working-directory: src-tauri
         run: cargo build ${{ matrix.cargo_args }}
 
-      - name: Build the real standalone dzc binary
-        working-directory: src-tauri
-        run: cargo build --release --bin dzc ${{ matrix.cargo_args }}
-
-      - name: Check backend without replacing the standalone binary
+      - name: Check backend without replacing the built CLI
         shell: bash
         run: |
           binary="$GITHUB_WORKSPACE/src-tauri/target"
           if [[ -n '${{ matrix.rust_target }}' ]]; then binary="$binary/${{ matrix.rust_target }}"; fi
-          binary="$binary/release/dzc"
+          binary="$binary/debug/dzc"
           if [[ "$RUNNER_OS" == "Windows" ]]; then binary="${binary}.exe"; fi
           before="$(sha256sum "$binary")"
-          cargo check --manifest-path src-tauri/Cargo.toml --release --lib --bin dzc ${{ matrix.cargo_args }}
-          test "$before" = "$(sha256sum "$binary")"
+          cargo check --manifest-path src-tauri/Cargo.toml --all-targets ${{ matrix.cargo_args }}
+          test "$before" = "$(sha256sum "$binary")
 
-      - name: Package standalone dzc
-        id: dzc-package
-        shell: bash
-        run: |
-          archive="$(python scripts/package-dzc.py --platform '${{ matrix.name }}' --target '${{ matrix.rust_target }}')"
-          echo "archive=${archive}" >> "$GITHUB_OUTPUT"
+  standalone-cli:
+    name: Compatible standalone CLI
+    uses: ./.github/workflows/standalone-cli.yml
 
-      - name: Verify the extracted standalone binary
-        if: matrix.can_test
-        run: python scripts/verify-dzc-package.py '${{ steps.dzc-package.outputs.archive }}'
-
-      - name: Install Windows terminal test support
-        if: runner.os == 'Windows' && matrix.can_test
-        run: python -m pip install --disable-pip-version-check pywinpty==3.1.0 windows-curses==2.4.2
-
-      - name: Test CLI integrations against the real binary
-        if: matrix.can_test
-        shell: bash
-        run: |
-          binary="$GITHUB_WORKSPACE/src-tauri/target/release/dzc"
-          if [[ "$RUNNER_OS" == "Windows" ]]; then binary="${binary}.exe"; fi
-          DZC_TEST_BIN="$binary" python -m unittest discover -s integrations/tests -v
-
-      - name: Upload standalone dzc archive and checksum
-        uses: actions/upload-artifact@v4
-        with:
-          name: dzc-${{ matrix.name }}
-          path: artifacts/dzc/*
-          if-no-files-found: error
+  flatpak:
+    name: Verified Flatpak
+    uses: ./.github/workflows/flatpak.yml

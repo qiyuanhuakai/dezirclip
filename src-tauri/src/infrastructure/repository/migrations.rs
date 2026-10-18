@@ -62,6 +62,137 @@ mod schema_compatibility_tests {
             .unwrap();
         assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
     }
+
+    fn baseline(conn: &Connection) {
+        conn.execute_batch("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES(1);
+            CREATE TABLE clipboard_history(id INTEGER PRIMARY KEY,content_type TEXT NOT NULL,content TEXT NOT NULL,source_app TEXT NOT NULL,timestamp INTEGER NOT NULL,preview TEXT NOT NULL);
+            CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+            INSERT INTO clipboard_history VALUES(7,'text','  原始内容\r\n','fixture',1700000000123,'preview');").unwrap();
+    }
+
+    #[test]
+    fn failed_upgrade_rolls_back_every_schema_step_and_can_retry() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        baseline(&conn);
+        conn.execute_batch("CREATE TRIGGER reject_upgrade BEFORE INSERT ON schema_migrations WHEN new.version=18 BEGIN SELECT RAISE(ABORT,'injected upgrade failure'); END;").unwrap();
+        let before: i64 = conn
+            .query_row("SELECT count(*) FROM sqlite_master", [], |row| row.get(0))
+            .unwrap();
+        assert!(run_migrations(&mut conn)
+            .unwrap_err()
+            .to_string()
+            .contains("injected upgrade failure"));
+        assert_eq!(
+            conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row
+                .get::<_, i32>(
+                0
+            ))
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM sqlite_master", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            before
+        );
+        assert!(!has_column(&conn, "clipboard_history", "html_content").unwrap());
+        assert_eq!(
+            conn.query_row(
+                "SELECT content FROM clipboard_history WHERE id=7",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "  原始内容\r\n"
+        );
+        conn.execute_batch("DROP TRIGGER reject_upgrade;").unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row
+                .get::<_, i32>(
+                0
+            ))
+            .unwrap(),
+            SUPPORTED_SCHEMA_VERSION
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT content FROM clipboard_history WHERE id=7",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "  原始内容\r\n"
+        );
+    }
+
+    #[test]
+    fn simultaneous_upgrade_serializes_without_duplicate_versions() {
+        let path = std::env::temp_dir().join(format!(
+            "dezirclip-concurrent-upgrade-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let conn = Connection::open(&path).unwrap();
+        baseline(&conn);
+        drop(conn);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut conn = Connection::open(path).unwrap();
+                    conn.busy_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                    barrier.wait();
+                    run_migrations(&mut conn).unwrap();
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row
+                .get::<_, i32>(
+                0
+            ))
+            .unwrap(),
+            SUPPORTED_SCHEMA_VERSION
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT content FROM clipboard_history WHERE id=7",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "  原始内容\r\n"
+        );
+        drop(conn);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn future_schema_is_rejected_before_any_file_change() {
+        let path = std::env::temp_dir().join(format!(
+            "dezirclip-future-schema-{}.db",
+            uuid::Uuid::new_v4()
+        ));
+        let mut conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES(99); CREATE TABLE preserved(content TEXT); INSERT INTO preserved VALUES('future history');").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(run_migrations(&mut conn)
+            .unwrap_err()
+            .to_string()
+            .contains("newer than supported"));
+        drop(conn);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(!path.with_extension("db-journal").exists());
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 /// How much stranded page space is worth a rewrite of the whole database file.
@@ -104,6 +235,19 @@ fn reclaim_stranded_pages(conn: &Connection, min_bytes: i64) -> Result<()> {
 }
 
 pub fn run_migrations(conn: &mut Connection) -> Result<()> {
+    ensure_supported_schema(conn)?;
+    let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    apply_schema_migrations(&transaction)?;
+    transaction.commit()?;
+    if let Err(err) = reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
+        eprintln!("[clipboard] history database could not be compacted: {err}; compaction will retry on a later launch.");
+    }
+    Ok(())
+}
+
+fn apply_schema_migrations(conn: &Connection) -> Result<()> {
+    // Recheck after acquiring the writer lock in case another process upgraded.
+    ensure_supported_schema(conn)?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
@@ -112,13 +256,11 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         [],
     )?;
 
-    let current_version: i32 = conn
-        .query_row(
-            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap_or(0);
+    let current_version: i32 = conn.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
 
     // Migration 1: Initial Baseline
     if current_version < 1 {
@@ -227,7 +369,6 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
 
         // Backfill entry_tags from clipboard_history.tags JSON
-        conn.execute("BEGIN", [])?;
         let backfill = (|| -> Result<()> {
             let mut stmt = conn.prepare("SELECT id, tags FROM clipboard_history")?;
             let rows = stmt.query_map([], |row| {
@@ -253,10 +394,8 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         })();
 
         if let Err(err) = backfill {
-            let _ = conn.execute("ROLLBACK", []);
             return Err(err);
         }
-        conn.execute("COMMIT", [])?;
         conn.execute("INSERT INTO schema_migrations (version) VALUES (6)", [])?;
     }
 
@@ -341,7 +480,6 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
     // The FTS5 schema from v12 is rebuilt because FTS5 virtual tables do not
     // support ALTER TABLE — we must drop + recreate to add a column.
     if current_version < 13 {
-        conn.execute("BEGIN", [])?;
         let migration_result = (|| -> Result<()> {
             if !has_column(conn, "clipboard_history", "content_kinds")? {
                 conn.execute(
@@ -399,10 +537,8 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         })();
 
         if let Err(err) = migration_result {
-            let _ = conn.execute("ROLLBACK", []);
             return Err(err);
         }
-        conn.execute("COMMIT", [])?;
         conn.execute("INSERT INTO schema_migrations (version) VALUES (13)", [])?;
     }
 
@@ -415,7 +551,6 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
     // FTS5 'delete' commands locate rows by rowid; the missing column does not
     // affect row resolution, and pre-v14 rows have NULL ocr_text anyway.
     if current_version < 14 {
-        conn.execute("BEGIN", [])?;
         let migration_result = (|| -> Result<()> {
             if !has_column(conn, "clipboard_history", "ocr_text")? {
                 conn.execute("ALTER TABLE clipboard_history ADD COLUMN ocr_text TEXT", [])?;
@@ -477,15 +612,12 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         })();
 
         if let Err(err) = migration_result {
-            let _ = conn.execute("ROLLBACK", []);
             return Err(err);
         }
-        conn.execute("COMMIT", [])?;
         conn.execute("INSERT INTO schema_migrations (version) VALUES (14)", [])?;
     }
 
     if current_version < 15 {
-        conn.execute("BEGIN", [])?;
         let migration_result = (|| -> Result<()> {
             if !has_column(conn, "clipboard_history", "ocr_text")? {
                 conn.execute("ALTER TABLE clipboard_history ADD COLUMN ocr_text TEXT", [])?;
@@ -545,15 +677,12 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         })();
 
         if let Err(err) = migration_result {
-            let _ = conn.execute("ROLLBACK", []);
             return Err(err);
         }
-        conn.execute("COMMIT", [])?;
         conn.execute("INSERT INTO schema_migrations (version) VALUES (15)", [])?;
     }
 
     if current_version < 16 {
-        conn.execute("BEGIN", [])?;
         let migration_result = (|| -> Result<()> {
             // Storage-limit enforcement runs after every single insert, and both
             // of its queries filter on `is_pinned = 0 AND tags = '[]'`. The
@@ -578,32 +707,12 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         })();
 
         if let Err(err) = migration_result {
-            let _ = conn.execute("ROLLBACK", []);
             return Err(err);
         }
-        conn.execute("COMMIT", [])?;
         conn.execute("INSERT INTO schema_migrations (version) VALUES (16)", [])?;
     }
 
-    // Deliberately not a numbered migration. This is a standing invariant rather
-    // than a schema step, because the version table is a running maximum: a step
-    // that is allowed to fail and retry cannot be gated on it. Gating it on
-    // version 17 meant that when the VACUUM failed, the next launch retried —
-    // but only until any later version landed. The first schema step after it
-    // would record a higher number, `MAX(version)` would then hide the failure
-    // permanently, and a database that failed once out of disk space never got
-    // its pages back even after the space came free. Running it every launch
-    // costs one pragma read when there is nothing to do.
-    if let Err(err) = reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
-        eprintln!(
-            "[clipboard] history database still has stranded page space and could \
-             not be compacted: {err}. The app works normally; the space is reclaimed \
-             on a later launch."
-        );
-    }
-
     if current_version < 18 {
-        conn.execute("BEGIN", [])?;
         let migration_result = (|| -> Result<()> {
             // Deduplication runs on every single capture, and its lookup is
             //
@@ -634,10 +743,8 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
         })();
 
         if let Err(err) = migration_result {
-            let _ = conn.execute("ROLLBACK", []);
             return Err(err);
         }
-        conn.execute("COMMIT", [])?;
         conn.execute("INSERT INTO schema_migrations (version) VALUES (18)", [])?;
     }
 
@@ -659,8 +766,8 @@ fn maybe_decrypt_metadata(value: &str) -> Option<String> {
     })
 }
 
-fn repair_encrypted_tags(conn: &mut Connection) -> Result<()> {
-    let tx = conn.transaction()?;
+fn repair_encrypted_tags(conn: &Connection) -> Result<()> {
+    let tx = conn;
 
     let encrypted_tags: Vec<String> = {
         let mut stmt = tx.prepare("SELECT DISTINCT tag FROM entry_tags")?;
@@ -757,7 +864,7 @@ fn repair_encrypted_tags(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    tx.commit()
+    Ok(())
 }
 
 fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> Result<bool> {
@@ -1058,7 +1165,9 @@ mod tests {
     }
 
     fn query_plan(conn: &Connection, sql: &str) -> String {
-        let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).expect("plan");
+        let mut stmt = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .expect("plan");
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(3))
             .expect("plan rows");
@@ -1178,7 +1287,11 @@ mod tests {
             rows.filter_map(|r| r.ok()).collect()
         };
 
-        assert_eq!(ids, vec![1, 2, 3], "eviction order must still be oldest first");
+        assert_eq!(
+            ids,
+            vec![1, 2, 3],
+            "eviction order must still be oldest first"
+        );
     }
 
     fn auto_vacuum_mode(conn: &Connection) -> i32 {
@@ -1223,7 +1336,10 @@ mod tests {
             0,
             "a database with tables cannot be pushed back to NONE unless the pragma took"
         );
-        assert!(free_bytes(&conn) > 0, "the deletions must have stranded pages");
+        assert!(
+            free_bytes(&conn) > 0,
+            "the deletions must have stranded pages"
+        );
         conn
     }
 
@@ -1258,7 +1374,11 @@ mod tests {
 
         reclaim_stranded_pages(&conn, stranded + 1).expect("below threshold");
 
-        assert_eq!(auto_vacuum_mode(&conn), 0, "below the threshold nothing changes");
+        assert_eq!(
+            auto_vacuum_mode(&conn),
+            0,
+            "below the threshold nothing changes"
+        );
         assert_eq!(
             free_bytes(&conn),
             stranded,
@@ -1350,7 +1470,7 @@ mod tests {
     // its highest value, because "did this ever fail?" is not something a
     // version number can express.
     #[test]
-    fn the_reclaim_still_runs_once_the_version_table_is_ahead() {
+    fn the_reclaim_still_runs_at_the_latest_supported_schema() {
         let mut conn = Connection::open_in_memory().unwrap();
         run_migrations(&mut conn).expect("migrations");
         conn.execute_batch("PRAGMA auto_vacuum = NONE; VACUUM;")
@@ -1382,18 +1502,16 @@ mod tests {
         // `current_version < N` guard is now false, so anything still gated on
         // one of them would never run again.
         conn.execute(
-            "INSERT INTO schema_migrations (version) VALUES (99)",
+            "INSERT OR IGNORE INTO schema_migrations (version) VALUES (18)",
             [],
         )
         .expect("insert version");
         let current: i32 = conn
-            .query_row(
-                "SELECT MAX(version) FROM schema_migrations",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .expect("current version");
-        assert_eq!(current, 99, "every version gate must now be closed");
+        assert_eq!(current, 18, "every version gate must now be closed");
 
         run_migrations(&mut conn).expect("migrations again");
 

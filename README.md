@@ -17,9 +17,11 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 | `dzc-VERSION-linux-x86_64.tar.gz` | Linux x64 |
 | `dzc-VERSION-linux-aarch64.tar.gz` | Linux ARM64 |
 
-`VERSION` 对应发布版本号。每个独立压缩包包含真正的 `dzc` 二进制、许可证、说明、完整的集成运行文件目录 `integrations/` 和 `skills/dzc-cli/`，不含开发测试文件；对应 `.sha256` 文件用于校验下载。Linux 官方 CLI 构建基于 Ubuntu 24.04，要求 glibc 2.39+ 及其动态库；不宣称静态链接或兼容更早发行版。桌面端使用原生图形依赖，详见 Linux 指南。
+`VERSION` 对应发布版本号。每个独立压缩包包含真正的 `dzc` 二进制、许可证、说明、完整的集成运行文件目录 `integrations/` 和 `skills/dzc-cli/`，不含开发测试文件；对应 `.sha256` 文件用于校验下载。
 
-Windows 独立 CLI 无需 WebView2，但当前 MSVC 构建依赖 `VCRUNTIME140.dll`。若系统尚未安装，请安装匹配 CLI 架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。压缩包不附带该运行库。
+本轮兼容性改造后的 CI 制品和后续独立发布包附带 `COMPATIBILITY.json`，记录真实二进制的校验值和动态依赖。Linux CLI 在 Ubuntu 22.04 中构建，基线为 glibc 2.35+，并在 Ubuntu 22.04、Debian 12 中验证实际压缩包；仍需要系统的 `libdbus-1-3`、`libgcc-s1`。Windows 独立 CLI 静态链接 MSVC 运行库，无需另装 Visual C++ 运行库或 WebView2。桌面安装包保持自己的图形及运行库要求，详见 [CLI 安装说明](./docs/dzc-standalone.md)和 [Linux 指南](./docs/LINUX_INSTALL.md)。
+
+已发布的 `v0.1.20-alpha.1` / `alpha.2` 附件保持原样：旧 Linux 包仍按发布说明要求 glibc 2.39+，旧 Windows 包缺少 `VCRUNTIME140.dll` 时需安装匹配架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。
 
 `dzc pick/tui/mcp` 与 Shell 初始化入口自 `v0.1.20-alpha.2` 起提供。较旧发布包请使用各自随包说明；运行 `dzc --help` 可确认当前二进制支持的命令。
 
@@ -92,6 +94,10 @@ dzc pick --backend rofi
 
 原生界面无需 Python、curses 或外部选择器。↑/↓ 选择，`/` 搜索，Enter 执行动作，`q` 或 Esc 退出；`p` 置顶，`t/u` 添加/移除标签，`d` 输入 `yes` 后删除。默认动作是复制；`--action print/id/insert/osc52` 可输出正文、ID、Shell 文本或发送到终端剪贴板。界面只绘制到控制终端，重定向输出可得到纯数据。
 
+新版默认界面使用 [Ratatui](https://ratatui.rs/)：历史与预览分栏、内容类型与标签、完整行选中状态、行号和滚动条；窄终端自动改为上下布局。支持终端尺寸变化与 `NO_COLOR`。下图来自真实终端输出，使用虚构示例记录：
+
+![dzc 默认终端界面](./docs/images/dzc-tui.png)
+
 ## Shell：按 Ctrl-G 插入当前输入行
 
 按当前 Shell 选择一行加载；常用时将该行放入自己的启动配置：
@@ -148,6 +154,8 @@ MCP 客户端直接启动 `dzc mcp`：
 
 Windows 将 `command` 改为实际的 `dzc.exe` 路径。服务通过 stdio 提供 `clipboard_list`、`clipboard_search`、`clipboard_get`，无网络监听。列表和搜索只返回有界元数据；正文需单独读取，敏感标签和加密记录在解密前排除。服务不提供写入、复制、删除或执行工具。
 
+过滤依据是已有敏感标签和加密状态，不能识别所有私人内容；未标记的私人明文仍可被 Agent 读取。只有希望提供给客户端的本地数据库才应配置到 MCP，完整边界见 [数据安全说明](./docs/data-safety.md)。
+
 直接使用 CLI 的 Agent 可安装 [`skills/dzc-cli`](./skills/dzc-cli/)。协议边界、配置和旧适配器兼容说明见 [集成指南](./integrations/README.md)。
 
 ## 开发与验证
@@ -166,7 +174,7 @@ python3 -m unittest discover -s scripts/tests -v
 pnpm run tauri:build
 ```
 
-桌面构建产物在 `src-tauri/target/release/bundle/`。只构建 CLI 可运行 `cargo build --manifest-path src-tauri/Cargo.toml --bin dzc --release`。使用 Python 3.11+ 的 `scripts/package-dzc.py --platform windows-x86_64` 等参数打包真实 CLI；`scripts/verify-dzc-package.py 压缩包路径` 会解压后检查独立进程间的数据持久化。发布流程与安装命令以仓库脚本及对应版本说明为准；旧 roadmap 仅作为历史规划，不是当前功能清单。
+桌面构建产物在 `src-tauri/target/release/bundle/`。只构建 CLI 可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，无需编译桌面依赖。分发兼容包使用 Python 3.11+ 的 `scripts/build-standalone-dzc.py --platform windows-x86_64` 等参数构建，再把返回的二进制路径传给 `scripts/package-dzc.py --platform windows-x86_64 --binary 路径`；Linux 构建脚本需要 Docker，在 Ubuntu 22.04 容器中编译、链接。`scripts/verify-dzc-package.py 压缩包路径` 会解压后检查动态依赖、版本和独立进程间的数据持久化。发布流程与安装命令以仓库脚本及对应版本说明为准；旧 roadmap 仅作为历史规划，不是当前功能清单。
 
 ## 许可证与来源
 
@@ -176,7 +184,7 @@ DezirClip 使用 GPL-3.0，源自同样使用 GPL-3.0 的 [jimuzhe/tiez-clipboar
 
 DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). This fork removes macOS and cloud/network features, adds X11 support, custom CSS themes and WebView memory controls, and provides a shared Rust storage core for the GUI and `dzc` CLI. Full Wayland desktop support remains deferred.
 
-Download desktop installers or standalone CLI archives from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux; each includes the real CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256`. Official Linux CLI builds require glibc 2.39+ and their dynamic libraries. Older releases may lack newer flags; keep CLI and adapters on matching versions.
+Download desktop installers or standalone CLI archives from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux; each includes the real CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256`. New CI artifacts and future releases include `COMPATIBILITY.json`: Linux CLI builds target glibc 2.35+ using Ubuntu 22.04 and are verified in Ubuntu 22.04 and Debian 12, with system D-Bus/GCC runtime libraries. Published alpha.1/alpha.2 assets remain unchanged with their original requirements, including glibc 2.39+. Keep CLI and adapters on matching versions.
 
 Add the extracted binary directory to `PATH`, or set `DZC_BIN` to its absolute path. History commands work without the GUI; native clipboard access needs an accessible desktop session. Ordinary host installations share the current user's history; Flatpak defaults are sandboxed, and AppImage mount paths are temporary. See the [CLI reference](./docs/cli.md) for stable installation paths, sandbox access and portable data locations. Archives contain all integration runtime files, excluding development tests.
 
@@ -191,7 +199,7 @@ printf 'hello\n' | dzc clipboard write -
 
 The GUI offers history, tags, pinning, rich text, images, files, OCR search, screenshots, text transforms and themes. Quick Paste defaults to Ctrl+Shift+V; use arrows and Enter to paste, or Esc to close. New captures preserve original whitespace and line endings. X11 uses XFixes with image-aware polling fallback. Source application exclusions block future captures when the source can be identified.
 
-The standalone Windows CLI needs no WebView2. Its MSVC build requires the matching architecture's [Microsoft Visual C++ v14 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist), which is not bundled.
+New standalone Windows builds statically link the MSVC runtime and require no extra Visual C++ runtime or WebView2. Older alpha.1/alpha.2 archives may still require the matching architecture's [Microsoft Visual C++ v14 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist). This does not change desktop installer requirements.
 
 The following native entry points are available since `v0.1.20-alpha.2`; check `dzc --help` when using older releases. They require no Python or curses:
 
@@ -206,8 +214,10 @@ dzc fish | source                # Fish initialization
 
 PowerShell 7: `dzc pwsh | Out-String | Invoke-Expression`. Nushell 0.116+: `dzc nu --install ($nu.user-autoload-dirs.0 | path join dzc.nu)`, then restart Nu. Ctrl-G uses the built-in TUI and inserts literal text into the editing buffer, preserving newlines and waiting for confirmation. Set `DZC_PICKER` to fzf/rofi/dmenu to use an external selector. Shell output commands do not modify startup files; the explicit Nu installer refuses conflicting files.
 
+The redesigned default TUI uses Ratatui, with history/preview panels, type badges, tags, line numbers and a responsive stacked layout on narrow terminals. It respects `NO_COLOR`; the screenshot above shows actual terminal output with synthetic records.
+
 For SSH, use `dzc pick --action osc52` or `dzc copy ID --target osc52`. Text is written to the controlling terminal, capped at 100000 original UTF-8 bytes, without readback or history sync; success means sent. Single-layer tmux passthrough is explicit. The terminal must support and permit OSC52.
 
-Configure MCP with the absolute `dzc` path as `command` and `["mcp"]` as `args`. It provides bounded, read-only list/search/get tools over stdio and excludes sensitive/encrypted records before decoding. See the [integration guide](./integrations/README.md) for details and legacy Python compatibility, or install the [Agent Skill](./skills/dzc-cli/) for direct CLI use.
+Configure MCP with the absolute `dzc` path as `command` and `["mcp"]` as `args`. It provides bounded, read-only list/search/get tools over stdio and excludes sensitive/encrypted records before decoding. Untagged private plaintext remains readable; this filter cannot identify all private content. See [data safety](./docs/data-safety.md), the [integration guide](./integrations/README.md), or install the [Agent Skill](./skills/dzc-cli/) for direct CLI use.
 
 Build with the commands in the development section above. DezirClip and its upstream are licensed under GPL-3.0; applicable original copyright and license notices are retained.

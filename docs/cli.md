@@ -10,7 +10,9 @@ TUI、fzf/dmenu/rofi 选择器、Shell 输入行插入和只读 MCP 内置于同
 
 `dzc` 随 DezirClip 作为 sidecar 安装，也可从 [GitHub Releases](https://github.com/qiyuanhuakai/dezirclip/releases) 下载独立 CLI 压缩包。选择匹配 Windows/Linux 与 x86_64/aarch64 的版本，解压后将目录加入 `PATH`，也可直接使用完整路径。桌面安装时可在设置中查看 CLI 路径。Linux 的安装位置随 deb、rpm、AppImage 而不同；AppImage 挂载路径不是永久安装目录。以下新增选项需要相应版本的 CLI，旧版发布包可能尚未包含。
 
-Windows 裸 CLI 不依赖 WebView2；当前 MSVC 二进制依赖 `VCRUNTIME140.dll`，压缩包未附带该运行库。若系统缺失，请安装与 CLI 架构匹配的 [Microsoft Visual C++ v14 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。
+Windows 裸 CLI 不依赖 WebView2。带 `COMPATIBILITY.json` 的新 CI 制品及后续独立发布包静态链接 MSVC 运行库，无需另装 Visual C++ 运行库。已发布的 alpha.1/alpha.2 旧压缩包保持原样，缺少 `VCRUNTIME140.dll` 时仍需安装匹配架构的 [Microsoft Visual C++ v14 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。该变化不修改桌面安装包的运行要求。
+
+同一兼容性改造后的 Linux 独立包在 Ubuntu 22.04 中构建，面向 glibc 2.35+，并在 Ubuntu 22.04、Debian 12 的干净环境验证；仍需要 D-Bus/GCC 运行库。旧 alpha.1/alpha.2 Linux 附件仍按原发布说明要求 glibc 2.39+。详见 [独立 CLI 说明](./dzc-standalone.md)。
 
 AppImage 运行时的临时挂载目录会随退出而失效，不要把其中的 `dzc` 永久软链接到 `PATH`。终端、Shell 插件或 MCP 需要稳定路径时，使用独立 CLI 压缩包并解压到固定目录。
 
@@ -369,7 +371,13 @@ dzc import /tmp/backup.dzc --mode merge --passphrase "my-strong-pass"
 
 图片记录会将原始图片字节嵌入备份，保留已有数据 URL，迁移后无需原附件路径。图片附件丢失或无法解码时，导出明确报错，并保留已有目标备份。文件列表和视频记录仅保存原文件引用，不打包文件本身；HTML 正文保留，但其中链接的本地图片、样式等资源不会自动嵌入。
 
+桌面端与 CLI 使用相同的完整备份和恢复逻辑。备份通过同目录临时文件完整写入后替换目标，不能覆盖当前数据库或其日志文件。尚未成功解密的记录会使导出报错；请恢复原加密密钥的访问权限后再备份。
+
 `import --mode merge` 保留备份中的 ID，以导入记录覆盖同 ID 记录，其余记录保留；稀疏或乱序的 ID 也保持不变。`--mode replace` 删除全部现有历史，包括置顶和带标签的记录，再导入，应在确认并备份后使用。导入在单次数据库事务中完成，失败时回滚。两者均支持 `--quiet`。
+
+恢复前会验证全部图片；无效图片、非正整数或重复 ID 均会中止操作。正文、HTML、图片原始字节、标签、置顶顺序、使用次数、内容分类及 OCR 文本会保留。恢复失败不会删除既有历史或改写原附件。数据库升级同样按事务执行；较旧程序遇到较新数据库会拒绝打开，请安装匹配的 GUI 与 CLI 版本。GUI 与 CLI 同时访问共享库时，缓存会在其他连接提交后刷新。
+
+升级或磁盘访问失败会保留原数据库并返回错误，不会自动换成空历史。请先排查权限、剩余空间及错误信息，再重试或使用已有备份恢复。
 
 迁移到另一台机器时，手动传输导出文件，再执行导入。DezirClip 不包含云同步或自动跨设备同步功能，也没有对应开发承诺。
 

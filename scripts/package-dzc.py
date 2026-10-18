@@ -2,7 +2,8 @@
 """Package the real dzc executable with its matching local integrations."""
 
 import argparse
-import hashlib
+import io
+import json
 import os
 from pathlib import Path
 import stat
@@ -12,6 +13,9 @@ import tarfile
 import tempfile
 import tomllib
 import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from dzc_compat import enforce, inspect_binary, sha256_file
 
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = {
@@ -77,6 +81,8 @@ def archive_files(binary, platform, repository):
         "LICENSE": repository / "LICENSE",
         "README.md": repository / "docs" / "dzc-standalone.md",
         "docs/cli.md": repository / "docs" / "cli.md",
+        "docs/dzc-standalone.md": repository / "docs" / "dzc-standalone.md",
+        "docs/data-safety.md": repository / "docs" / "data-safety.md",
         "docs/LINUX_INSTALL.md": repository / "docs" / "LINUX_INSTALL.md",
     }
     integrations = repository / "integrations"
@@ -105,6 +111,7 @@ def archive_files(binary, platform, repository):
 def package(platform, binary, version, output_directory, repository=ROOT):
     binary = Path(binary).resolve()
     validate_binary(binary, platform)
+    compatibility = json.dumps(enforce(inspect_binary(binary, platform)), indent=2).encode("utf-8") + b"\n"
     files = archive_files(binary, platform, Path(repository))
     output_directory = Path(output_directory).resolve()
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -123,6 +130,7 @@ def package(platform, binary, version, output_directory, repository=ROOT):
                     info.external_attr = (stat.S_IFREG | mode) << 16
                     info.compress_type = zipfile.ZIP_DEFLATED
                     output.writestr(info, source.read_bytes())
+                output.writestr("COMPATIBILITY.json", compatibility)
         else:
             with tarfile.open(staging, "w:gz") as output:
                 for name, source in files.items():
@@ -132,11 +140,14 @@ def package(platform, binary, version, output_directory, repository=ROOT):
                     info.uname = info.gname = ""
                     with source.open("rb") as stream:
                         output.addfile(info, stream)
+                info = tarfile.TarInfo("COMPATIBILITY.json")
+                info.mode = 0o644
+                info.size = len(compatibility)
+                output.addfile(info, io.BytesIO(compatibility))
         staging.replace(archive)
     finally:
         staging.unlink(missing_ok=True)
-    with archive.open("rb") as stream:
-        checksum = hashlib.file_digest(stream, "sha256").hexdigest()
+    checksum = sha256_file(archive)
     Path(str(archive) + ".sha256").write_text(f"{checksum}  {archive.name}\n", encoding="utf-8")
     return archive
 
@@ -155,7 +166,7 @@ def main(argv=None):
         binary = args.binary or default_binary(args.platform, args.target)
         print(package(args.platform, binary, version, args.output_dir))
         return 0
-    except (OSError, ValueError, KeyError, tarfile.TarError, zipfile.BadZipFile) as error:
+    except (OSError, ValueError, KeyError, struct.error, tarfile.TarError, zipfile.BadZipFile) as error:
         print(f"dzc package: {error}", file=sys.stderr)
         return 1
 

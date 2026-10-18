@@ -32,6 +32,8 @@
 //! 派生出的 `[u8; 32]` key 离开作用域前用 `zeroize::Zeroize::zeroize()`
 //! 清零，防止内存残留。
 
+use crate::domain::models::ClipboardEntry;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use std::fmt;
 
 use aes_gcm::aead::{Aead, KeyInit};
@@ -92,7 +94,7 @@ pub struct ExportEntry {
     #[serde(default)]
     pub is_pinned: bool,
     #[serde(default)]
-    pub pinned_order: i32,
+    pub pinned_order: i64,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -251,10 +253,11 @@ pub fn import_from_json(json: &str, mode: ImportMode) -> Result<ImportSummary, B
     })
 }
 
-/// 从 JSON 字符串直接解析 `Vec<ExportEntry>`，不校验 version。
+/// 从 JSON 字符串解析条目并校验版本，避免调用方遗漏版本保护。
 /// 用于 `import_cmd` 在拿到 summary 后还需要条目列表落库的场景。
 pub fn entries_from_json(json: &str) -> Result<Vec<ExportEntry>, BackupError> {
     let file: ExportFile = serde_json::from_str(json)?;
+    validate_version(&file.version)?;
     Ok(file.entries)
 }
 
@@ -441,9 +444,112 @@ fn now_unix_secs() -> i64 {
         .unwrap_or(0)
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+pub fn prepare_export_entry(e: &ClipboardEntry) -> Result<ExportEntry, String> {
+    if [&e.content, &e.preview]
+        .iter()
+        .any(|value| crate::infrastructure::encryption::is_encrypted_value(value))
+        || e.html_content
+            .as_deref()
+            .is_some_and(crate::infrastructure::encryption::is_encrypted_value)
+    {
+        return Err(format!("export: entry id={} could not be decrypted; restore access to its encryption key before backing up",e.id));
+    }
+    let content = if e.content_type == "image" {
+        let bytes = crate::infrastructure::attachments::image_bytes(&e.content)
+            .map_err(|error| format!("export: image attachment id={}: {error}", e.id))?;
+        let format = image::guess_format(&bytes)
+            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
+        image::load_from_memory(&bytes)
+            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
+        if e.content.starts_with("data:image/") {
+            e.content.clone()
+        } else {
+            format!(
+                "data:{};base64,{}",
+                format.to_mime_type(),
+                STANDARD.encode(bytes)
+            )
+        }
+    } else {
+        e.content.clone()
+    };
+
+    Ok(ExportEntry {
+        id: e.id,
+        content_type: e.content_type.clone(),
+        content,
+        preview: Some(e.preview.clone()),
+        html_content: e.html_content.clone(),
+        source_app: if e.source_app.is_empty() {
+            None
+        } else {
+            Some(e.source_app.clone())
+        },
+        source_app_path: e.source_app_path.clone(),
+        // The domain model exposes one timestamp for both backup fields.
+        created_at: e.timestamp,
+        updated_at: e.timestamp,
+        use_count: e.use_count,
+        is_pinned: e.is_pinned,
+        pinned_order: e.pinned_order,
+        tags: e.tags.clone(),
+        ocr_text: e.ocr_text.clone(),
+        kinds: e.content_kinds.clone(),
+    })
+}
+
+pub fn restore_entry(exp: &crate::services::backup::ExportEntry) -> ClipboardEntry {
+    ClipboardEntry {
+        id: exp.id,
+        content_type: exp.content_type.clone(),
+        content: exp.content.clone(),
+        html_content: exp.html_content.clone(),
+        source_app: exp.source_app.clone().unwrap_or_default(),
+        source_app_path: exp.source_app_path.clone(),
+        timestamp: exp.updated_at,
+        // `preview` is `Option<String>` in the export schema but
+        // `String` in the domain model — collapse `None` to empty
+        // and let the repo re-derive a fresh preview on next read.
+        preview: exp.preview.clone().unwrap_or_default(),
+        is_pinned: exp.is_pinned,
+        tags: exp.tags.clone(),
+        use_count: exp.use_count,
+        is_external: false,
+        pinned_order: exp.pinned_order,
+        file_preview_exists: false,
+        content_kinds: exp.kinds.clone(),
+        ocr_text: exp.ocr_text.clone(),
+        ocr_status: exp.ocr_text.as_ref().map(|_| "done".to_string()),
+    }
+}
+
+pub fn apply_entries(
+    repo: &crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository,
+    entries: &[ExportEntry],
+    mode: ImportMode,
+) -> Result<(), String> {
+    let mut restored: Vec<ClipboardEntry> = entries.iter().map(restore_entry).collect();
+    // Validate every image before replacing history. Imported bytes stay inside
+    // SQLite, so rollback cannot leave partially replaced external attachments.
+    for entry in &mut restored {
+        if entry.content_type == "image" {
+            let bytes = crate::infrastructure::attachments::image_bytes(&entry.content)
+                .map_err(|error| format!("import: image id={}: {error}", entry.id))?;
+            image::load_from_memory(&bytes)
+                .map_err(|error| format!("import: invalid image id={}: {error}", entry.id))?;
+            if !entry.content.starts_with("data:image/") {
+                let format = image::guess_format(&bytes).map_err(|error| error.to_string())?;
+                entry.content = format!(
+                    "data:{};base64,{}",
+                    format.to_mime_type(),
+                    STANDARD.encode(bytes)
+                );
+            }
+            entry.is_external = false;
+        }
+    }
+    repo.import_cli_entries(&restored, mode == ImportMode::Replace)
+}
 
 #[cfg(test)]
 mod tests {
@@ -471,7 +577,7 @@ mod tests {
             updated_at: 1_700_000_001 + i as i64,
             use_count: i as i32,
             is_pinned: i % 7 == 0,
-            pinned_order: if i % 7 == 0 { i as i32 } else { 0 },
+            pinned_order: if i % 7 == 0 { i as i64 } else { 0 },
             tags: (0..(i % 3)).map(|t| format!("tag{t}")).collect(),
             ocr_text: if i % 5 == 0 {
                 Some(format!("ocr-{i}"))
@@ -721,5 +827,249 @@ mod tests {
         let blob = export_to_encrypted(entries, "密码 with spaces").expect("encrypt");
         let s = import_from_encrypted(&blob, "密码 with spaces").expect("decrypt");
         assert_eq!(s.imported, 1);
+    }
+}
+
+#[cfg(test)]
+mod data_integrity_tests {
+    use super::*;
+    use crate::infrastructure::repository::{
+        cli_query::CliQuery,
+        clipboard_repo::{ClipboardRepository, SqliteClipboardRepository},
+    };
+    use std::sync::{Arc, Mutex};
+
+    fn repository() -> (SqliteClipboardRepository, Arc<Mutex<rusqlite::Connection>>) {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut conn).unwrap();
+        let conn = Arc::new(Mutex::new(conn));
+        (SqliteClipboardRepository::new(conn.clone()), conn)
+    }
+
+    fn entry(id: i64, kind: &str, content: String) -> ClipboardEntry {
+        serde_json::from_value(serde_json::json!({
+            "id":id,"content_type":kind,"content":content,"source_app":"fixture",
+            "timestamp":1700000000123i64,"preview":"summary","is_pinned":true,
+            "pinned_order":i64::MAX-100,"tags":["work"],"use_count":23,
+            "content_kinds":["text","code"],"ocr_text":"识别结果","ocr_status":"done"
+        }))
+        .unwrap()
+    }
+
+    fn rows(repo: &SqliteClipboardRepository) -> Vec<ClipboardEntry> {
+        repo.query_cli(&CliQuery {
+            limit: i32::MAX,
+            ..Default::default()
+        })
+        .unwrap()
+    }
+
+    fn png() -> Vec<u8> {
+        let mut data = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::new(2, 2)
+            .write_to(&mut data, image::ImageFormat::Png)
+            .unwrap();
+        data.into_inner()
+    }
+
+    #[test]
+    fn shared_backup_roundtrip_preserves_long_html_images_and_metadata() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-roundtrip-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let source_image = directory.join("原图100%.png");
+        let image = png();
+        std::fs::write(&source_image, &image).unwrap();
+        let (source, _) = repository();
+        let mut rich = entry(
+            80,
+            "rich_text",
+            format!("  {}\r\n\n", "中文🙂".repeat(5000)),
+        );
+        rich.html_content = Some(format!("<p>{}</p>", "<b>保真</b>".repeat(3000)));
+        source
+            .import_cli_entries(
+                &[
+                    rich.clone(),
+                    entry(5, "image", source_image.to_string_lossy().into_owned()),
+                ],
+                true,
+            )
+            .unwrap();
+        let backup = directory.join("history.json");
+        let exported = rows(&source)
+            .iter()
+            .map(prepare_export_entry)
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        crate::infrastructure::attachments::write_backup(
+            &backup,
+            export_to_json(exported).unwrap().as_bytes(),
+        )
+        .unwrap();
+        std::fs::remove_file(&source_image).unwrap();
+        let parsed = entries_from_json(&std::fs::read_to_string(&backup).unwrap()).unwrap();
+        let (restored, _) = repository();
+        apply_entries(&restored, &parsed, ImportMode::Replace).unwrap();
+        let output = rows(&restored);
+        let restored_rich = output.iter().find(|item| item.id == 80).unwrap();
+        assert_eq!(restored_rich.content, rich.content);
+        assert_eq!(restored_rich.html_content, rich.html_content);
+        assert_eq!(restored_rich.pinned_order, rich.pinned_order);
+        assert_eq!(restored_rich.use_count, 23);
+        assert_eq!(restored_rich.content_kinds, rich.content_kinds);
+        assert_eq!(restored_rich.ocr_text, rich.ocr_text);
+        assert_eq!(restored_rich.tags, rich.tags);
+        assert_eq!(
+            crate::infrastructure::attachments::image_bytes(
+                &output.iter().find(|item| item.id == 5).unwrap().content
+            )
+            .unwrap(),
+            image
+        );
+        let encrypted = export_to_encrypted(parsed.clone(), "roundtrip passphrase").unwrap();
+        assert_eq!(
+            entries_from_json(&decrypt_to_json(&encrypted, "roundtrip passphrase").unwrap())
+                .unwrap(),
+            parsed
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_restore_rolls_back_rows_tags_and_preserves_existing_image_files() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-rollback-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let (repo, connection) = repository();
+        let mut original = entry(
+            0,
+            "image",
+            format!("data:image/png;base64,{}", STANDARD.encode(png())),
+        );
+        original.is_pinned = false;
+        let id = repo.save(&original, Some(&directory)).unwrap();
+        let before = rows(&repo);
+        let attachment = std::path::PathBuf::from(&before[0].content);
+        let bytes = std::fs::read(&attachment).unwrap();
+        connection.lock().unwrap().execute_batch("CREATE TRIGGER reject_import BEFORE UPDATE ON clipboard_history WHEN new.id=42 BEGIN SELECT RAISE(ABORT,'injected import failure'); END;").unwrap();
+        let imported = vec![
+            prepare_export_entry(&entry(
+                10,
+                "image",
+                format!("data:image/png;base64,{}", STANDARD.encode(png())),
+            ))
+            .unwrap(),
+            prepare_export_entry(&entry(42, "text", "second".to_string())).unwrap(),
+        ];
+        assert!(apply_entries(&repo, &imported, ImportMode::Replace)
+            .unwrap_err()
+            .contains("injected import failure"));
+        let after = rows(&repo);
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].id, id);
+        assert_eq!(after[0].content, before[0].content);
+        assert_eq!(after[0].tags, before[0].tags);
+        let count: i64 = connection
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT count(*) FROM entry_tags WHERE entry_id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(std::fs::read(&attachment).unwrap(), bytes);
+        let mut invalid = imported[0].clone();
+        invalid.content = "data:image/png;base64,broken".to_string();
+        assert!(apply_entries(&repo, &[invalid], ImportMode::Replace).is_err());
+        assert_eq!(rows(&repo)[0].id, id);
+        assert_eq!(std::fs::read(attachment).unwrap(), bytes);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_ids_and_future_backup_formats_cannot_replace_existing_history() {
+        let (repo, _) = repository();
+        repo.import_cli_entries(&[entry(7, "text", "existing".to_string())], true)
+            .unwrap();
+        let good = prepare_export_entry(&entry(3, "text", "new".to_string())).unwrap();
+        for imported in [
+            vec![{
+                let mut item = good.clone();
+                item.id = 0;
+                item
+            }],
+            vec![good.clone(), good.clone()],
+        ] {
+            assert!(apply_entries(&repo, &imported, ImportMode::Replace).is_err());
+            assert_eq!(rows(&repo)[0].content, "existing");
+        }
+        let json = export_to_json(vec![good])
+            .unwrap()
+            .replace(EXPORT_VERSION, "dezirclip-export-v99");
+        assert!(entries_from_json(&json).is_err());
+        assert!(import_from_json(&json, ImportMode::Replace).is_err());
+        assert_eq!(rows(&repo)[0].id, 7);
+    }
+
+    #[test]
+    fn unreadable_ciphertext_and_invalid_stored_images_are_not_portable_backups() {
+        let mut original = entry(7, "rich_text", "plain text".to_string());
+        for field in ["content", "preview", "html"] {
+            let mut encrypted = original.clone();
+            match field {
+                "content" => encrypted.content = "dpapi:unreadable".to_string(),
+                "preview" => encrypted.preview = "linux:unreadable".to_string(),
+                _ => encrypted.html_content = Some("dpapi:unreadable".to_string()),
+            }
+            assert!(prepare_export_entry(&encrypted)
+                .unwrap_err()
+                .contains("could not be decrypted"));
+        }
+        original.content_type = "image".to_string();
+        original.content = "data:image/png;base64,bm90IGFuIGltYWdl".to_string();
+        assert!(prepare_export_entry(&original).is_err());
+    }
+
+    #[test]
+    fn restored_sensitive_rich_text_uses_the_repository_encryption_path() {
+        let (repo, connection) = repository();
+        let mut source = entry(9, "rich_text", "  私人文本\r\n".to_string());
+        source.preview = "私人摘要".to_string();
+        source.html_content = Some("<p>私人文本</p>".to_string());
+        source.tags = vec!["sensitive".to_string()];
+        apply_entries(
+            &repo,
+            &[prepare_export_entry(&source).unwrap()],
+            ImportMode::Replace,
+        )
+        .unwrap();
+        let restored = rows(&repo);
+        assert_eq!(restored[0].content, source.content);
+        assert_eq!(restored[0].html_content, source.html_content);
+        if crate::infrastructure::encryption::encrypt_value(&source.content).is_some() {
+            let stored: (String, String, String) = connection
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT content,preview,html_content FROM clipboard_history WHERE id=9",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .unwrap();
+            assert!([&stored.0, &stored.1, &stored.2]
+                .iter()
+                .all(|value| crate::infrastructure::encryption::is_encrypted_value(value)));
+        }
+        assert!(repo
+            .query_cli(&CliQuery {
+                limit: 100,
+                exclude_sensitive: true,
+                ..Default::default()
+            })
+            .unwrap()
+            .is_empty());
     }
 }

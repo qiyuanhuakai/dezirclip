@@ -33,9 +33,9 @@
 //! actionable messages (e.g. "passphrase required", "passphrase must
 //! be at least 12 characters", "io error: ...").
 
-use std::io::Write;
 use std::path::Path;
 
+#[cfg(test)]
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 use crate::domain::models::ClipboardEntry;
@@ -125,19 +125,9 @@ pub fn run(args: &ExportArgs, repo: &SqliteClipboardRepository) -> Result<(), St
         }
     };
 
-    // 6. Write. Create parent dirs so the user can point at
-    //    `/tmp/backup/2026/dezirclip.dzc` without mkdir first.
-    let path = Path::new(&args.path);
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("export: create_dir_all {parent:?}: {e}"))?;
-        }
-    }
-    let mut file =
-        std::fs::File::create(path).map_err(|e| format!("export: create {path:?}: {e}"))?;
-    file.write_all(&bytes)
-        .map_err(|e| format!("export: write {path:?}: {e}"))?;
+    repo.ensure_export_destination(Path::new(&args.path))?;
+    crate::infrastructure::attachments::write_backup(Path::new(&args.path), &bytes)
+        .map_err(|error| format!("export: {error}"))?;
 
     // 7. Summary. Skipped under --quiet so the user can pipe a fresh
     //    file into another command without `head -1` ceremony.
@@ -169,48 +159,8 @@ fn resolve_format(path: &str, encrypted: bool) -> Result<ExportFormat, String> {
 
 /// Image records carry their original encoded bytes across machines; file
 /// lists and resources linked from HTML remain references to their sources.
-fn to_export_entry(e: &ClipboardEntry) -> Result<ExportEntry, String> {
-    let content = if e.content_type == "image" && !e.content.starts_with("data:image/") {
-        let bytes = super::payload::image_bytes(&e.content)
-            .map_err(|error| format!("export: image attachment id={}: {error}", e.id))?;
-        let format = image::guess_format(&bytes)
-            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
-        image::load_from_memory(&bytes)
-            .map_err(|error| format!("export: invalid image attachment id={}: {error}", e.id))?;
-        format!(
-            "data:{};base64,{}",
-            format.to_mime_type(),
-            STANDARD.encode(bytes)
-        )
-    } else {
-        e.content.clone()
-    };
-
-    Ok(ExportEntry {
-        id: e.id,
-        content_type: e.content_type.clone(),
-        content,
-        preview: Some(e.preview.clone()),
-        html_content: e.html_content.clone(),
-        source_app: if e.source_app.is_empty() {
-            None
-        } else {
-            Some(e.source_app.clone())
-        },
-        source_app_path: e.source_app_path.clone(),
-        // Backup schema splits `timestamp` into created_at / updated_at.
-        // We don't currently track them separately, so both default to
-        // the existing `timestamp`. Future work: derive `updated_at`
-        // from the `updated_at` column when it lands.
-        created_at: e.timestamp,
-        updated_at: e.timestamp,
-        use_count: e.use_count,
-        is_pinned: e.is_pinned,
-        pinned_order: e.pinned_order as i32,
-        tags: e.tags.clone(),
-        ocr_text: e.ocr_text.clone(),
-        kinds: e.content_kinds.clone(),
-    })
+fn to_export_entry(entry: &ClipboardEntry) -> Result<ExportEntry, String> {
+    crate::services::backup::prepare_export_entry(entry)
 }
 
 #[cfg(test)]
@@ -340,7 +290,8 @@ mod tests {
 
     #[test]
     fn image_data_urls_are_exported_unchanged() {
-        let content = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///w==";
+        let content =
+            "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
         let exported = to_export_entry(&image_entry(content.to_string())).unwrap();
         assert_eq!(exported.content, content);
     }

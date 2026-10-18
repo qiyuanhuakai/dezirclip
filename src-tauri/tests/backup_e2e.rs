@@ -2,10 +2,7 @@
 //!
 //! **Build env note**: this integration test target is part of the
 //! `dezirclip` package, so it shares Cargo.toml deps. Running it requires
-//! the full Tauri build env (xcap + libpipewire-0.3-dev on Linux). For
-//! a build that does NOT need those system libs, see `backup-e2e/tests/`
-//! (the standalone sub-crate that copies `services/backup.rs` verbatim
-//! and uses sha256 + hex for byte-level content comparison).
+//! the full Tauri build env (xcap + libpipewire-0.3-dev on Linux).
 //!
 //! This file uses only `std` + the in-tree `services::backup` module
 //! (no dev-dep additions) so the test stays compatible with the
@@ -57,7 +54,7 @@ fn make_10_entries() -> Vec<ExportEntry> {
             updated_at: 1_700_000_001 + i as i64,
             use_count: i as i32 * 7,
             is_pinned: i % 3 == 0,
-            pinned_order: if i % 3 == 0 { (i as i32) + 1 } else { 0 },
+            pinned_order: if i % 3 == 0 { (i as i64) + 1 } else { 0 },
             tags: (0..(i % 4)).map(|t| format!("tag-{i}-{t}")).collect(),
             ocr_text: if i % 5 == 0 {
                 Some(format!("ocr-text-{i}"))

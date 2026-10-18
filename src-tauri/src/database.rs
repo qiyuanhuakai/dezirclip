@@ -60,7 +60,8 @@ pub fn calc_text_hash(content: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
     let normalized = normalize_text(content);
-    let mut hasher = DefaultHasher::new();    normalized.hash(&mut hasher);
+    let mut hasher = DefaultHasher::new();
+    normalized.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -152,95 +153,17 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
 }
 
 pub fn init_db(path: &str) -> Result<Connection> {
-    fn init_db_once(path: &str) -> Result<Connection> {
-        let mut conn = Connection::open(path)?;
-        crate::infrastructure::repository::migrations::ensure_supported_schema(&conn)?;
-        conn.execute_batch(
-            "
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
-            PRAGMA auto_vacuum = FULL;
-        ",
-        )?;
-        crate::infrastructure::repository::migrations::run_migrations(&mut conn)?;
-        seed_defaults(&conn)?;
-        Ok(conn)
-    }
-
-    fn is_disk_io_error(err: &rusqlite::Error) -> bool {
-        err.to_string()
-            .to_ascii_lowercase()
-            .contains("disk i/o error")
-    }
-
-    fn quarantine_corrupted_db(path: &str) {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let db_path = std::path::PathBuf::from(path);
-        if !db_path.exists() {
-            return;
-        }
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let base = db_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("clipboard");
-        let ext = db_path.extension().and_then(|s| s.to_str()).unwrap_or("db");
-        let mut backup = db_path.clone();
-        backup.set_file_name(format!("{base}.corrupt-{ts}.{ext}"));
-        let _ = std::fs::rename(&db_path, &backup);
-
-        let mut wal_path = db_path.clone();
-        wal_path.set_file_name(format!(
-            "{}-wal",
-            db_path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("clipboard.db")
-        ));
-        if wal_path.exists() {
-            let mut wal_backup = backup.clone();
-            wal_backup.set_file_name(format!(
-                "{}-wal",
-                backup
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("clipboard.corrupt.db")
-            ));
-            let _ = std::fs::rename(&wal_path, &wal_backup);
-        }
-
-        let mut shm_path = db_path.clone();
-        shm_path.set_file_name(format!(
-            "{}-shm",
-            db_path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("clipboard.db")
-        ));
-        if shm_path.exists() {
-            let mut shm_backup = backup.clone();
-            shm_backup.set_file_name(format!(
-                "{}-shm",
-                backup
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("clipboard.corrupt.db")
-            ));
-            let _ = std::fs::rename(&shm_path, &shm_backup);
-        }
-    }
-
-    match init_db_once(path) {
-        Ok(conn) => Ok(conn),
-        Err(err) if is_disk_io_error(&err) => {
-            quarantine_corrupted_db(path);
-            init_db_once(path)
-        }
-        Err(err) => Err(err),
-    }
+    let mut conn = Connection::open(path)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    crate::infrastructure::repository::migrations::ensure_supported_schema(&conn)?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL;
+         PRAGMA synchronous = NORMAL;
+         PRAGMA auto_vacuum = FULL;",
+    )?;
+    crate::infrastructure::repository::migrations::run_migrations(&mut conn)?;
+    seed_defaults(&conn)?;
+    Ok(conn)
 }
 
 // save_entry removed (migrated to repository)
@@ -481,11 +404,73 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_database_upgrade_never_quarantines_or_replaces_history() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-init-failure-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("history.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES(1);
+            CREATE TABLE clipboard_history(id INTEGER PRIMARY KEY,content_type TEXT NOT NULL,content TEXT NOT NULL,source_app TEXT NOT NULL,timestamp INTEGER NOT NULL,preview TEXT NOT NULL);
+            CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+            INSERT INTO clipboard_history VALUES(7,'text','preserve existing history','fixture',1,'preview');
+            CREATE TRIGGER reject_upgrade BEFORE INSERT ON schema_migrations WHEN new.version=18 BEGIN SELECT RAISE(ABORT,'disk I/O error'); END;").unwrap();
+        drop(conn);
+        assert!(init_db(path.to_str().unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("disk I/O error"));
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT content FROM clipboard_history WHERE id=7",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "preserve existing history"
+        );
+        assert_eq!(
+            conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row
+                .get::<_, i32>(
+                0
+            ))
+            .unwrap(),
+            1
+        );
+        assert!(!std::fs::read_dir(&directory).unwrap().any(|entry| entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("corrupt-")));
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn gui_database_initialization_rejects_future_versions_without_mutation() {
+        let path =
+            std::env::temp_dir().join(format!("dezirclip-gui-future-{}.db", uuid::Uuid::new_v4()));
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES(99); CREATE TABLE preserved(content TEXT); INSERT INTO preserved VALUES('newer history');").unwrap();
+        drop(conn);
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(init_db(path.to_str().unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("newer than supported"));
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(!path.with_extension("db-wal").exists());
+        std::fs::remove_file(path).unwrap();
+    }
     use crate::infrastructure::repository::clipboard_repo::{
         ClipboardRepository, SqliteClipboardRepository,
     };
     use crate::infrastructure::repository::settings_repo::{
-        SettingsRepository, SqliteSettingsRepository,    };
+        SettingsRepository, SqliteSettingsRepository,
+    };
 
     // 辅助函数：创建一个内存中的临时测试数据库
     fn setup_test_db() -> Connection {
@@ -621,7 +606,10 @@ mod tests {
 
     #[test]
     fn image_hash_rejects_non_image_payloads() {
-        assert_eq!(calc_image_hash("data:image/png;base64,bm90IGFuIGltYWdl"), None);
+        assert_eq!(
+            calc_image_hash("data:image/png;base64,bm90IGFuIGltYWdl"),
+            None
+        );
         assert_eq!(calc_image_hash(""), None);
     }
 
@@ -639,10 +627,7 @@ mod tests {
             .expect("payload decodes");
         let decoded_image = image::load_from_memory(&decoded).expect("payload decodes to image");
 
-        assert_eq!(
-            calc_image_hash(&url),
-            Some(thumbnail_hash(&decoded_image))
-        );
+        assert_eq!(calc_image_hash(&url), Some(thumbnail_hash(&decoded_image)));
     }
 
     // The same picture reached through two routes must hash identically, since
@@ -760,7 +745,11 @@ mod tests {
                 for (i, entry) in table.iter_mut().enumerate() {
                     let mut c = i as u32;
                     for _ in 0..8 {
-                        c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
+                        c = if c & 1 != 0 {
+                            0xEDB8_8320 ^ (c >> 1)
+                        } else {
+                            c >> 1
+                        };
                     }
                     *entry = c;
                 }

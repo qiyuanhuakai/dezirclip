@@ -1,5 +1,4 @@
 use crate::domain::models::ClipboardEntry;
-use base64::{engine::general_purpose::STANDARD, Engine};
 
 pub fn mime_for(entry: &ClipboardEntry) -> &'static str {
     match entry.content_type.as_str() {
@@ -12,41 +11,8 @@ pub fn mime_for(entry: &ClipboardEntry) -> &'static str {
     }
 }
 
-fn path_from_uri(value: &str) -> Result<String, String> {
-    let Some(uri) = value.strip_prefix("file://") else {
-        return Ok(value.to_owned());
-    };
-    let raw = if uri.starts_with('/') || (uri.as_bytes().get(1) == Some(&b':')) {
-        uri.to_owned()
-    } else {
-        let (host, path) = uri.split_once('/').ok_or("file URI has no path")?;
-        if host.eq_ignore_ascii_case("localhost") {
-            format!("/{path}")
-        } else {
-            format!("//{host}/{path}")
-        }
-    };
-    let path = urlencoding::decode(&raw)
-        .map_err(|e| e.to_string())?
-        .into_owned();
-    #[cfg(target_os = "windows")]
-    let path = if path.starts_with('/') && path.chars().nth(2) == Some(':') {
-        path[1..].to_owned()
-    } else {
-        path
-    };
-    Ok(path)
-}
-
-pub fn image_bytes(content: &str) -> Result<Vec<u8>, String> {
-    if content.starts_with("data:image/") {
-        let (_, payload) = content.split_once(',').ok_or("invalid image data URL")?;
-        STANDARD.decode(payload).map_err(|e| e.to_string())
-    } else {
-        let path = path_from_uri(content)?;
-        std::fs::read(&path).map_err(|e| format!("read image: {e}"))
-    }
-}
+pub use crate::infrastructure::attachments::image_bytes;
+use crate::infrastructure::attachments::path_from_uri;
 
 pub fn files(content: &str) -> Result<Vec<String>, String> {
     let values = if content.trim_start().starts_with('[') {

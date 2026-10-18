@@ -97,3 +97,4 @@ pub mod windows_api {
         pub fn register_emoji_drag_drop(_app_handle: tauri::AppHandle) {}
     }
 }
+pub mod attachments;

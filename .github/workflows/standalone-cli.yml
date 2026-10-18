@@ -1,0 +1,132 @@
+name: Standalone CLI
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Expected release version (empty for PR builds)
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  standalone:
+    name: Standalone (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            msvc_arch: ''
+            can_run: true
+          - name: linux-aarch64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            msvc_arch: ''
+            can_run: true
+          - name: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            msvc_arch: amd64
+            can_run: true
+          - name: windows-aarch64
+            runner: windows-latest
+            target: aarch64-pc-windows-msvc
+            msvc_arch: amd64_arm64
+            can_run: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js for release version
+        if: inputs.version != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set release version
+        if: inputs.version != ''
+        run: node scripts/set-release-version.mjs '${{ inputs.version }}'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup MSVC toolchain
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Cache isolated CLI artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .harness/cli-target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: standalone-ubuntu22-static-crt-v1-${{ matrix.name }}-${{ hashFiles('src-tauri/Cargo.lock', 'scripts/compat/ubuntu22.Dockerfile') }}
+          restore-keys: standalone-ubuntu22-static-crt-v1-${{ matrix.name }}-
+
+      - name: Test executable inspection and packaging
+        run: python -m unittest discover -s scripts/tests -v
+
+      # Linux hosts are 24.04, but every Rust target object is built and linked
+      # inside 22.04. GUI jobs use a different target directory and cannot replace
+      # the standalone binary or archive. Windows builds use static MSVC CRT.
+      - name: Build isolated compatible CLI
+        id: build
+        shell: bash
+        run: |
+          binary="$(python scripts/build-standalone-dzc.py --platform '${{ matrix.name }}')"
+          echo "binary=$binary" >> "$GITHUB_OUTPUT"
+
+      - name: Package actual executable with dependency report
+        id: package
+        shell: bash
+        run: |
+          args=()
+          if [[ -n '${{ inputs.version }}' ]]; then args+=(--version '${{ inputs.version }}'); fi
+          archive="$(python scripts/package-dzc.py --platform '${{ matrix.name }}' --binary '${{ steps.build.outputs.binary }}' "${args[@]}")"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Verify extracted CLI and persistent history
+        if: matrix.can_run
+        run: python scripts/verify-dzc-package.py '${{ steps.package.outputs.archive }}'
+
+      - name: Verify cross-built ARM64 architecture and static CRT
+        if: '!matrix.can_run'
+        run: python scripts/verify-dzc-package.py '${{ steps.package.outputs.archive }}' --static-only
+
+      - name: Run actual archive in Ubuntu 22.04 and Debian 12
+        if: runner.os == 'Linux'
+        run: python scripts/verify-dzc-linux-runtime.py '${{ steps.package.outputs.archive }}'
+
+      - name: Install Windows terminal test support
+        if: runner.os == 'Windows' && matrix.can_run
+        run: python -m pip install --disable-pip-version-check pywinpty==3.1.0 windows-curses==2.4.2 pyte==0.8.2
+
+      - name: Test integrations against the isolated actual binary
+        if: matrix.can_run
+        env:
+          DZC_TEST_BIN: ${{ steps.build.outputs.binary }}
+        run: python -m unittest discover -s integrations/tests -v
+
+      - name: Upload standalone archive and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: dzc-${{ matrix.name }}
+          path: artifacts/dzc/*
+          if-no-files-found: error
