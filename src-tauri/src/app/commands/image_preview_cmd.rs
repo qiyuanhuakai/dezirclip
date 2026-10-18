@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
@@ -9,18 +9,50 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use image::metadata::Orientation;
 use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, Limits};
+use crate::infrastructure::image_preview_file::{open_regular_file, PreviewFile};
 
 const PREVIEW_EDGE: u32 = 480;
 const MAX_INPUT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_RAW_INPUT_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION: u32 = 16_384;
 const MAX_IMAGE_PIXELS: u64 = 40_000_000;
 const MAX_DECODE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_CACHE_ENTRIES: usize = 24;
 const MAX_CACHE_BYTES: usize = 8 * 1024 * 1024;
 
-// The same lock protects the LRU and the decode, bounding simultaneous source
-// image allocations to one even when the list requests several previews.
+// Filesystem work must not hold either mutex: a stalled source cannot prevent
+// other requests from using the cache or decoding a different image.
 static PREVIEW_CACHE: OnceLock<Mutex<PreviewCache>> = OnceLock::new();
+static PREVIEW_DECODE: Mutex<()> = Mutex::new(());
+static RAW_INPUT_BUDGET: RawInputBudget = RawInputBudget::new(MAX_RAW_INPUT_BYTES);
+
+struct RawInputBudget {
+    used: AtomicU64,
+    limit: u64,
+}
+
+struct RawInputReservation<'a> {
+    budget: &'a RawInputBudget,
+    bytes: u64,
+}
+
+impl RawInputBudget {
+    const fn new(limit: u64) -> Self {
+        Self { used: AtomicU64::new(0), limit }
+    }
+
+    fn try_reserve(&self, bytes: u64) -> Option<RawInputReservation<'_>> {
+        self.used.fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+            used.checked_add(bytes).filter(|total| *total <= self.limit)
+        }).ok().map(|_| RawInputReservation { budget: self, bytes })
+    }
+}
+
+impl Drop for RawInputReservation<'_> {
+    fn drop(&mut self) {
+        self.budget.used.fetch_sub(self.bytes, Ordering::AcqRel);
+    }
+}
 
 #[derive(Clone, PartialEq, Eq)]
 struct PreviewKey {
@@ -159,40 +191,48 @@ fn decode_preview(bytes: Vec<u8>) -> Result<String, String> {
     encode_preview(image, orientation)
 }
 
-fn load_preview(path: &Path) -> Result<String, String> {
-    let mut cache = PREVIEW_CACHE
+fn cached_preview(key: &PreviewKey) -> Result<Option<String>, String> {
+    PREVIEW_CACHE
         .get_or_init(|| Mutex::new(PreviewCache::default()))
         .lock()
-        .map_err(|err| format!("Preview cache lock failed: {err}"))?;
-    let canonical = path.canonicalize().map_err(|err| format!("Invalid image path: {err}"))?;
-    let mut file = File::open(&canonical).map_err(|err| format!("Failed to open image: {err}"))?;
-    let metadata = file.metadata().map_err(|err| err.to_string())?;
-    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_INPUT_BYTES {
-        return Err("Image file exceeds the preview input limit".to_string());
-    }
+        .map_err(|err| format!("Preview cache lock failed: {err}"))
+        .map(|mut cache| cache.get(key))
+}
+
+fn load_preview_with_reader(
+    path: &Path,
+    read: impl FnOnce(PreviewFile) -> Result<Vec<u8>, String>,
+) -> Result<String, String> {
+    let source = open_regular_file(path, MAX_INPUT_BYTES)
+        .map_err(|err| format!("Failed to open preview image: {err}"))?;
     let key = PreviewKey {
-        path: canonical,
-        size: metadata.len(),
-        modified: metadata.modified().map_err(|err| err.to_string())?,
+        path: source.canonical_path.clone(),
+        size: source.metadata.len(),
+        modified: source.metadata.modified().map_err(|err| err.to_string())?,
     };
-    if let Some(preview) = cache.get(&key) {
+    if let Some(preview) = cached_preview(&key)? {
         return Ok(preview);
     }
-    let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    (&mut file)
-        .take(MAX_INPUT_BYTES)
-        .read_to_end(&mut bytes)
-        .map_err(|err| format!("Failed to read preview image: {err}"))?;
-    let current = file.metadata().map_err(|err| err.to_string())?;
-    if bytes.len() as u64 != key.size
-        || current.len() != key.size
-        || current.modified().map_err(|err| err.to_string())? != key.modified
-    {
-        return Err("Image changed while its preview was being read".to_string());
+    // Fail immediately rather than queueing unbounded compressed-image buffers.
+    // The reservation survives the read and any wait for the single decoder.
+    let _raw_input = RAW_INPUT_BUDGET.try_reserve(key.size)
+        .ok_or_else(|| "Image preview input budget is busy".to_string())?;
+    let bytes = read(source)?;
+    let _decode = PREVIEW_DECODE.lock()
+        .map_err(|err| format!("Preview decoder lock failed: {err}"))?;
+    if let Some(preview) = cached_preview(&key)? {
+        return Ok(preview);
     }
     let preview = decode_preview(bytes)?;
-    cache.insert(key, preview.clone());
+    PREVIEW_CACHE.get_or_init(|| Mutex::new(PreviewCache::default()))
+        .lock().map_err(|err| format!("Preview cache lock failed: {err}"))?
+        .insert(key, preview.clone());
     Ok(preview)
+}
+
+fn load_preview(path: &Path) -> Result<String, String> {
+    load_preview_with_reader(path, |source| source.read_checked()
+        .map_err(|err| format!("Failed to read preview image: {err}")))
 }
 
 #[tauri::command]
@@ -268,5 +308,68 @@ mod tests {
         changed = key(1);
         changed.size += 1;
         assert!(cache.get(&changed).is_none());
+    }
+
+    #[test]
+    fn raw_input_budget_refuses_excess_and_reuses_capacity_after_drop() {
+        let budget = RawInputBudget::new(8);
+        let first = budget.try_reserve(6).unwrap();
+        assert!(budget.try_reserve(3).is_none());
+        let second = budget.try_reserve(2).unwrap();
+        assert_eq!(budget.used.load(Ordering::Acquire), 8);
+        assert!(budget.try_reserve(1).is_none());
+        drop(first);
+        let replacement = budget.try_reserve(6).unwrap();
+        assert_eq!(budget.used.load(Ordering::Acquire), 8);
+        drop(second);
+        drop(replacement);
+        assert_eq!(budget.used.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn raw_input_budget_rejects_counter_overflow_without_leaking_capacity() {
+        let budget = RawInputBudget::new(u64::MAX);
+        let reservation = budget.try_reserve(u64::MAX).unwrap();
+        assert!(budget.try_reserve(1).is_none());
+        assert_eq!(budget.used.load(Ordering::Acquire), u64::MAX);
+        drop(reservation);
+        assert_eq!(budget.used.load(Ordering::Acquire), 0);
+        assert!(budget.try_reserve(1).is_some());
+    }
+
+    #[test]
+    fn a_stalled_source_read_does_not_block_a_normal_preview() {
+        use std::sync::mpsc;
+
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-preview-concurrency-{}-{}", std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let first_path = directory.join("stalled.png");
+        let second_path = directory.join("normal.png");
+        let mut image = Cursor::new(Vec::new());
+        DynamicImage::new_rgba8(2, 2).write_to(&mut image, ImageFormat::Png).unwrap();
+        std::fs::write(&first_path, image.get_ref()).unwrap();
+        std::fs::write(&second_path, image.get_ref()).unwrap();
+        let (entered, entered_receiver) = mpsc::channel();
+        let (resume, resume_receiver) = mpsc::channel();
+        let stalled = std::thread::spawn(move || load_preview_with_reader(&first_path, |source| {
+            entered.send(()).map_err(|err| err.to_string())?;
+            resume_receiver.recv_timeout(Duration::from_secs(5)).map_err(|err| err.to_string())?;
+            source.read_checked().map_err(|err| err.to_string())
+        }));
+        entered_receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (completed, completed_receiver) = mpsc::channel();
+        let normal = std::thread::spawn(move || {
+            completed.send(load_preview(&second_path)).unwrap();
+        });
+        let independent_result = completed_receiver.recv_timeout(Duration::from_secs(2));
+        let _ = resume.send(());
+        let stalled_result = stalled.join().unwrap();
+        normal.join().unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+        assert!(independent_result.unwrap().unwrap().starts_with("data:image/png;base64,"));
+        assert!(stalled_result.is_ok());
     }
 }
