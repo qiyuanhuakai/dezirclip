@@ -203,9 +203,17 @@ body.theme-liquid-glass {
   --lg-dialog-button-bg: rgba(255, 255, 255, 0.48);
   --lg-dialog-button-border: rgba(60, 60, 67, 0.12);
   --lg-dialog-button-text: var(--text-primary);
-  --lg-dialog-button-primary-bg: #0a84ff;
-  --lg-dialog-button-primary-border: #0a84ff;
+  --lg-dialog-button-hover-bg: rgba(255, 255, 255, 0.74);
+  --lg-dialog-button-hover-border: rgba(60, 60, 67, 0.20);
+  /* `#0a84ff` leaves white label text at 3.65:1, under the 4.50 body
+     threshold, and these labels are 13–14px. `#0071e3` is the same hue family
+     and reaches 4.70:1, so the accent now clears AA instead of inheriting the
+     iOS-dark-mode blue into the light theme. */
+  --lg-dialog-button-primary-bg: #0071e3;
+  --lg-dialog-button-primary-border: #0071e3;
   --lg-dialog-button-primary-text: #ffffff;
+  --lg-dialog-button-primary-hover-bg: #0064c4;
+  --lg-dialog-button-primary-hover-border: #0064c4;
 
   /* Menus are floating chrome, so they carry their own lensing — but they are
      the one surface with no scrim behind them and they carry the smallest text
@@ -235,10 +243,18 @@ body.theme-liquid-glass {
 
   /* Floating surfaces that are not dialogs — toasts, the compact-mode hover
      popover, the QR card. Same material as the sheet, one step lighter, so a
-     toast does not carry the weight of a confirmation. */
+     toast does not carry the weight of a confirmation.
+
+     The floor is solved, not chosen, and it is higher than the "one step
+     lighter" wording suggests. A toast floats over the app window with no
+     scrim, at 12–13px, and `--surface-layer-scale` reaches 0 at the clear end
+     of the slider — so the tint layer vanishes and the floor is all that
+     stands between 13px text and a black wallpaper. At the original 0.44 that
+     measured 3.30:1. 0.62 is the same value the context menu uses, and the
+     same worst case drives both. */
   --lg-float-bg:
-    linear-gradient(rgba(255, 255, 255, 0.44), rgba(255, 255, 255, 0.44)),
-    rgba(255, 255, 255, calc(0.22 * var(--surface-layer-scale, 1)));
+    linear-gradient(rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.62)),
+    rgba(255, 255, 255, calc(0.26 * var(--surface-layer-scale, 1)));
   --lg-float-border: rgba(60, 60, 67, 0.10);
   --lg-float-blur: blur(24px) saturate(170%);
   --lg-float-shadow:
@@ -479,9 +495,13 @@ body.dark-mode.theme-liquid-glass {
   --lg-dialog-button-bg: rgba(50, 53, 63, 0.52);
   --lg-dialog-button-border: rgba(255, 255, 255, 0.08);
   --lg-dialog-button-text: var(--text-primary);
+  --lg-dialog-button-hover-bg: rgba(68, 72, 84, 0.80);
+  --lg-dialog-button-hover-border: rgba(255, 255, 255, 0.16);
   --lg-dialog-button-primary-bg: #0a84ff;
   --lg-dialog-button-primary-border: #0a84ff;
   --lg-dialog-button-primary-text: #ffffff;
+  --lg-dialog-button-primary-hover-bg: #0071e3;
+  --lg-dialog-button-primary-hover-border: #0071e3;
 
   /* Menus — dark. The worst case mirrors light: a white custom wallpaper with
      the slider at 0. Solved by raising the floor, since against white only
@@ -498,10 +518,12 @@ body.dark-mode.theme-liquid-glass {
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --lg-content-hover-bg: rgba(45, 48, 58, 0.92);
 
-  /* Floating surfaces — dark. Same one-step-lighter relationship to the sheet. */
+  /* Floating surfaces — dark. Same worst case as light, mirrored: a white
+     custom wallpaper at the clear end of the slider, where the tint is
+     multiplied out and only the floor remains. */
   --lg-float-bg:
-    linear-gradient(rgba(35, 38, 48, 0.38), rgba(35, 38, 48, 0.38)),
-    rgba(35, 38, 48, calc(0.26 * var(--surface-layer-scale, 1)));
+    linear-gradient(rgba(35, 38, 48, 0.72), rgba(35, 38, 48, 0.72)),
+    rgba(35, 38, 48, calc(0.28 * var(--surface-layer-scale, 1)));
   --lg-float-border: rgba(255, 255, 255, 0.07);
   --lg-float-blur: blur(24px) saturate(170%);
   --lg-float-shadow:
@@ -1101,7 +1123,12 @@ body.theme-liquid-glass:not(.hide-app-border) {
    10. Tag chips
    ============================================================ */
 .theme-liquid-glass .tag-chip {
-  background: var(--lg-tag-chip-bg) !important;
+  /* No `background` here, deliberately. Both call sites (ClipboardItem.tsx and
+     AppHeader.tsx) pass the tag's own colour as an inline `style`, and an
+     `!important` author declaration outranks a non-important inline style — so
+     setting a background in this theme erases every tag colour and leaves
+     white `--lg-tag-chip-text` on a transparent pill. The chip's fill belongs
+     to the caller. */
   color: var(--lg-tag-chip-text) !important;
   border: 1px solid var(--lg-tag-chip-border) !important;
   border-radius: 999px !important;
@@ -2279,21 +2306,15 @@ body.dark-mode .themed-tag-manager.theme-liquid-glass .confirm-dialog-button.pri
     inset 0 -1px 0 rgba(20, 30, 60, 0.05) !important;
 }
 
-/* The hover/active fill has to clear the item text on its own, so it is a
-   solid accent fill rather than a tint — a tint on top of a glass menu puts two
-   translucencies between the label and the backdrop.
-
-   `--active` is the keyboard cursor (ItemContextMenu.tsx sets it from
-   `index === activeIndex`). There was no `:hover` rule for these rows anywhere
-   in the codebase: the item declared `transition: background` but nothing ever
-   changed it, so pointing at a row gave no feedback at all. Hover and the
-   keyboard cursor now paint the same fill, which is also how a native menu
-   behaves. :hover cannot be exercised in a headless harness, so this is a
-   CSS-level guarantee, not a measured one. */
+/* `--active` is the ONLY highlight, and it is also the hover feedback:
+   ItemContextMenu.tsx's `onMouseEnter` calls `setActiveIndex(index)`, so
+   pointing at a row already moves the cursor. Adding a `:hover` rule on top
+   of that paints two rows at once — hover A, press the arrow keys to B, and
+   A still matches `:hover` while B matches `--active`, while Enter executes
+   B. Visual feedback stops being unique. Do not re-add `:hover` here without
+   also removing `onMouseEnter`. */
 .theme-liquid-glass .item-context-menu__item--active,
-.theme-liquid-glass .item-context-menu__item:hover,
-.theme-liquid-glass .item-context-menu__submenu-item--active,
-.theme-liquid-glass .item-context-menu__submenu-item:hover {
+.theme-liquid-glass .item-context-menu__submenu-item--active {
   background: rgba(10, 132, 255, 0.18) !important;
   color: var(--text-primary) !important;
 }
@@ -2319,9 +2340,7 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu {
 }
 
 body.dark-mode.theme-liquid-glass .item-context-menu__item--active,
-body.dark-mode.theme-liquid-glass .item-context-menu__item:hover,
-body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active,
-body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item:hover {
+body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item--active {
   background: rgba(10, 132, 255, 0.26) !important;
   color: var(--text-primary) !important;
 }
@@ -2400,6 +2419,16 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item:hover {
   color: var(--lg-dialog-button-primary-text) !important;
 }
 
+/* The generic `.qr-dialog__btn:hover` above is (0,3,0) and the primary rule is
+   (0,2,0), so without this the primary button drops its accent fill on hover
+   and is left as white label text on a transparent background. Repeating the
+   primary class here lifts the selector to (0,4,0) so it wins regardless of
+   source order. */
+.theme-liquid-glass .qr-dialog__btn.qr-dialog__btn--primary:hover {
+  background: var(--lg-dialog-button-primary-hover-bg) !important;
+  border-color: var(--lg-dialog-button-primary-hover-border) !important;
+}
+
 /* --- Announcement modal + ticker: a sheet and a floating chip --- */
 .theme-liquid-glass .announcement-modal {
   background: var(--lg-dialog-bg) !important;
@@ -2464,6 +2493,12 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item:hover {
   background: var(--lg-dialog-button-primary-bg) !important;
   border-color: var(--lg-dialog-button-primary-border) !important;
   color: var(--lg-dialog-button-primary-text) !important;
+}
+
+/* Same (0,3,0) hover vs (0,2,0) primary collision as the QR dialog above. */
+.theme-liquid-glass .announcement-btn.announcement-btn.primary:hover {
+  background: var(--lg-dialog-button-primary-hover-bg) !important;
+  border-color: var(--lg-dialog-button-primary-hover-border) !important;
 }
 
 .theme-liquid-glass .announcement-ticker {
@@ -2535,6 +2570,17 @@ body.dark-mode.theme-liquid-glass .item-context-menu__submenu-item:hover {
 
 .theme-liquid-glass .progress-toast-close {
   border-radius: 6px !important;
+}
+
+/* The percentage and the close glyph inherit `--text-secondary`, which on a
+   glass chip measures 3.73:1 in light and 3.06:1 in dark at the strongest
+   floor the solver tried (0.80) — no floor reaches AA, because the text colour
+   itself is too close to the surface. Raising the floor cannot fix this one;
+   the colour has to move. These are xs/small labels sitting directly on the
+   toast, so they follow the same rule as the dialog body and the menu rows. */
+.theme-liquid-glass .progress-toast-percent,
+.theme-liquid-glass .progress-toast-close {
+  color: var(--text-primary) !important;
 }
 
 .theme-liquid-glass .progress-toast-bar-track {
