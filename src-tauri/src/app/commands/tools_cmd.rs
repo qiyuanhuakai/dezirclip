@@ -10,6 +10,9 @@ pub struct CliInfo {
     pub cli_version: String,
     pub skill_path: Option<String>,
     pub cli_on_path: bool,
+    pub path_cli_path: Option<String>,
+    pub path_cli_version: Option<String>,
+    pub cli_path_conflict: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,9 +31,30 @@ pub async fn get_cli_info(app: AppHandle) -> Result<CliInfo, String> {
 }
 
 fn build_cli_info(app: &AppHandle) -> Result<CliInfo, String> {
-    let cli_on_path = find_cli_on_path().is_some();
-    let cli_path = find_cli_binary();
-    let cli_version = get_cli_version(&cli_path);
+    let path_cli_path = find_cli_on_path();
+    let cli_on_path = path_cli_path.is_some();
+    let cli_path = find_bundled_cli_binary()
+        .map(|path| path.to_string_lossy().to_string())
+        .or_else(|| path_cli_path.clone());
+    let cli_path_conflict = match (&cli_path, &path_cli_path) {
+        (Some(selected), Some(on_path)) => {
+            cli_path::cli_paths_differ(Path::new(selected), Path::new(on_path))
+        }
+        _ => false,
+    };
+    let selected_version = cli_path
+        .as_deref()
+        .and_then(|path| cli_path::read_cli_version(Path::new(path)));
+    let path_cli_version = if cli_path_conflict {
+        path_cli_path
+            .as_deref()
+            .and_then(|path| cli_path::read_cli_version(Path::new(path)))
+    } else if cli_on_path {
+        selected_version.clone()
+    } else {
+        None
+    };
+    let cli_version = selected_version.unwrap_or_else(|| "-".to_string());
     let skill_path = find_skill_path(&app);
 
     Ok(CliInfo {
@@ -38,6 +62,9 @@ fn build_cli_info(app: &AppHandle) -> Result<CliInfo, String> {
         cli_version,
         skill_path,
         cli_on_path,
+        path_cli_path,
+        path_cli_version,
+        cli_path_conflict,
     })
 }
 
@@ -67,21 +94,15 @@ fn install_cli_path() -> Result<CliPathResult, String> {
     })
 }
 
-fn find_cli_binary() -> Option<String> {
-    find_bundled_cli_binary()
-        .map(|path| path.to_string_lossy().to_string())
-        .or_else(find_cli_on_path)
-}
-
 fn find_bundled_cli_binary() -> Option<PathBuf> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let win_path = dir.join("dzc.exe");
-            if win_path.exists() {
+            if win_path.is_file() {
                 return Some(win_path);
             }
             let unix_path = dir.join("dzc");
-            if unix_path.exists() {
+            if unix_path.is_file() {
                 return Some(unix_path);
             }
         }
@@ -97,9 +118,7 @@ fn find_cli_on_path() -> Option<String> {
 }
 
 fn find_cli_on_path_in(path_value: &OsStr, binary_name: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_value)
-        .map(|entry| entry.join(binary_name))
-        .find(|candidate| candidate.is_file())
+    cli_path::find_cli_on_path_in(path_value, binary_name)
 }
 
 fn cli_binary_name() -> &'static str {
@@ -107,14 +126,6 @@ fn cli_binary_name() -> &'static str {
         "dzc.exe"
     } else {
         "dzc"
-    }
-}
-
-fn get_cli_version(cli_path: &Option<String>) -> String {
-    if cli_path.is_some() {
-        env!("CARGO_PKG_VERSION").to_string()
-    } else {
-        "not installed".to_string()
     }
 }
 
@@ -187,24 +198,6 @@ fn open_folder(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_find_cli_on_path_scans_path_without_shell_command() {
-        let binary_name = cli_binary_name();
-        let temp_dir = std::env::temp_dir().join(format!(
-            "dezirclip-cli-path-test-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
-        let cli_path = temp_dir.join(binary_name);
-        std::fs::write(&cli_path, b"").expect("create cli file");
-
-        let path_value = std::env::join_paths([temp_dir.clone()]).expect("join path");
-
-        assert_eq!(find_cli_on_path_in(&path_value, binary_name), Some(cli_path));
-
-        std::fs::remove_dir_all(temp_dir).expect("remove temp dir");
-    }
 
     #[test]
     fn test_install_folder_from_skill_path_returns_app_root() {

@@ -1,5 +1,14 @@
 #[path = "infrastructure/encryption.rs"]
 pub mod encryption;
 
+#[path = "infrastructure/data_paths.rs"]
+pub mod data_paths;
+
 #[path = "infrastructure/repository/mod.rs"]
 pub mod repository;
+
+#[path = "infrastructure/native_clipboard.rs"]
+pub mod native_clipboard;
+
+#[path = "infrastructure/osc52.rs"]
+pub mod osc52;

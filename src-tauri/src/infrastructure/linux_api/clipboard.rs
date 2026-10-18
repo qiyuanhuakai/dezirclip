@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 static SEQ: AtomicU32 = AtomicU32::new(1);
 static FILE_CLIPBOARD_OWNER: OnceLock<Mutex<Option<x11_clipboard::Clipboard>>> = OnceLock::new();
+static FILE_CLIPBOARD_READER: OnceLock<Mutex<Option<x11_clipboard::Clipboard>>> = OnceLock::new();
 static SYSTEM_CLIPBOARD_OWNER: OnceLock<Mutex<Option<Arc<arboard::Clipboard>>>> = OnceLock::new();
 
 pub struct ImageData {
@@ -32,7 +33,19 @@ pub fn get_clipboard_image() -> Option<ImageData> {
 pub fn get_clipboard_files() -> Option<Vec<String>> {
     use std::time::Duration;
 
-    let clipboard = x11_clipboard::Clipboard::new().ok()?;
+    let reader = FILE_CLIPBOARD_READER.get_or_init(|| Mutex::new(None));
+    let mut reader = reader.lock().ok()?;
+    if reader.is_none() {
+        *reader = x11_clipboard::Clipboard::new().ok();
+    }
+    let clipboard = reader.as_ref()?;
+    let targets = match available_clipboard_targets(clipboard) {
+        Ok(targets) => targets,
+        Err(_) => {
+            *reader = None;
+            return None;
+        }
+    };
 
     for target_name in [
         "x-special/gnome-copied-files",
@@ -42,6 +55,9 @@ pub fn get_clipboard_files() -> Option<Vec<String>> {
         let Ok(target_atom) = clipboard.getter.get_atom(target_name) else {
             continue;
         };
+        if !targets.contains(&target_atom) {
+            continue;
+        }
 
         let Ok(data) = clipboard.load(
             clipboard.getter.atoms.clipboard,
@@ -64,6 +80,63 @@ pub fn get_clipboard_files() -> Option<Vec<String>> {
     }
 
     None
+}
+
+fn available_clipboard_targets(
+    clipboard: &x11_clipboard::Clipboard,
+) -> Result<Vec<x11rb::protocol::xproto::Atom>, String> {
+    use std::time::{Duration, Instant};
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
+    use x11rb::protocol::Event;
+
+    let getter = &clipboard.getter;
+    getter
+        .connection
+        .convert_selection(
+            getter.window,
+            getter.atoms.clipboard,
+            getter.atoms.targets,
+            getter.atoms.property,
+            x11rb::CURRENT_TIME,
+        )
+        .map_err(|error| error.to_string())?
+        .check()
+        .map_err(|error| error.to_string())?;
+    let deadline = Instant::now() + Duration::from_millis(200);
+    while Instant::now() < deadline {
+        match getter
+            .connection
+            .poll_for_event()
+            .map_err(|error| error.to_string())?
+        {
+            Some(Event::SelectionNotify(event))
+                if event.selection == getter.atoms.clipboard
+                    && event.target == getter.atoms.targets =>
+            {
+                if event.property == x11rb::NONE {
+                    return Ok(Vec::new());
+                }
+                let reply = getter
+                    .connection
+                    .get_property(
+                        true,
+                        getter.window,
+                        event.property,
+                        AtomEnum::ATOM,
+                        0,
+                        u32::MAX,
+                    )
+                    .map_err(|error| error.to_string())?
+                    .reply()
+                    .map_err(|error| error.to_string())?;
+                return Ok(reply.value32().map(Iterator::collect).unwrap_or_default());
+            }
+            Some(_) => {}
+            None => std::thread::sleep(Duration::from_millis(1)),
+        }
+    }
+    Err("Timed out reading X11 clipboard targets".to_string())
 }
 
 pub fn get_clipboard_raw_format(_name: &str) -> Option<Vec<u8>> {

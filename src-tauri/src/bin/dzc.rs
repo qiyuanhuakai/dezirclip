@@ -3,7 +3,7 @@
 //! Wire-up:
 //! * clap parses `Cli` → `Commands::*` (each variant owns its `*Args`).
 //! * The matching `cli::<cmd>::run(args, ...)` is invoked.
-//! * All 15 subcommands are real implementations; none of them are stubs.
+//! * History commands share the repository; clipboard commands use native APIs.
 //!
 //! Transport: there is none. This binary opens the same SQLite file the app
 //! uses and goes through the same repository types, so it needs no IPC, works
@@ -24,7 +24,6 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use dezirclip::cli;
 use dezirclip::cli::search::SearchMode;
-use dezirclip::domain::models::ClipboardEntry;
 use dezirclip::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
 use dezirclip::infrastructure::repository::migrations;
 use dezirclip::infrastructure::repository::tag_repo::SqliteTagRepository;
@@ -71,6 +70,12 @@ enum Commands {
     Stats(StatsArgs),
     /// Watch new entries as they arrive.
     Watch(WatchArgs),
+    /// Read or write the current native system clipboard (independent of history).
+    Clipboard(ClipboardArgs),
+    /// Restore a history entry to the system clipboard; never simulates keys.
+    Copy(CopyArgs),
+    #[command(hide = true)]
+    ClipboardOwner,
 }
 
 #[derive(Args)]
@@ -84,17 +89,31 @@ struct ListArgs {
     tag: Option<String>,
     #[arg(long)]
     pinned: bool,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "tsv")]
     json: bool,
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["json", "tsv"])]
     ids: bool,
     #[arg(long, short)]
     quiet: bool,
+    /// Omit content payloads from JSON; bounded preview and metadata only.
+    #[arg(long)]
+    metadata: bool,
+    /// ID and sanitized single-line preview separated by a tab.
+    #[arg(long)]
+    tsv: bool,
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(i32).range(0..))]
+    offset: i32,
+    /// Exclude sensitive-tagged and encrypted records before decoding.
+    #[arg(long)]
+    exclude_sensitive: bool,
 }
 
 #[derive(Args)]
 struct SearchArgs {
     query: String,
+    /// Restrict results to a stored content type before pagination.
+    #[arg(long)]
+    kind: Option<String>,
     #[arg(long, value_enum, default_value_t = CliSearchMode::Contains)]
     mode: CliSearchMode,
     #[arg(long)]
@@ -103,6 +122,16 @@ struct SearchArgs {
     json: bool,
     #[arg(long, short)]
     quiet: bool,
+    #[arg(long, conflicts_with_all = ["json", "tsv"])]
+    ids: bool,
+    #[arg(long)]
+    metadata: bool,
+    #[arg(long, conflicts_with = "json")]
+    tsv: bool,
+    #[arg(long, default_value_t = 0, value_parser = clap::value_parser!(i32).range(0..))]
+    offset: i32,
+    #[arg(long)]
+    exclude_sensitive: bool,
 }
 
 #[derive(ValueEnum, Clone, Copy)]
@@ -134,6 +163,14 @@ struct GetArgs {
     json: bool,
     #[arg(long, short)]
     quiet: bool,
+    /// Write stored content bytes without appending a newline.
+    #[arg(long, conflicts_with_all = ["json", "mime"])]
+    raw: bool,
+    /// Export the requested representation without appending a newline.
+    #[arg(long, conflicts_with_all = ["json", "preview"])]
+    mime: Option<String>,
+    #[arg(long)]
+    exclude_sensitive: bool,
 }
 
 /// CLI args for `add`. The positional `content` is dispatched into one
@@ -279,6 +316,175 @@ struct WatchArgs {
     quiet: bool,
 }
 
+#[derive(Args)]
+struct CopyArgs {
+    id: String,
+    #[arg(long, short)]
+    quiet: bool,
+    /// Destination; OSC 52 writes text to the controlling terminal.
+    #[arg(long, value_enum, default_value_t = ClipboardTarget::Native)]
+    target: ClipboardTarget,
+    /// Wrap one tmux layer; only applies to --target osc52.
+    #[arg(long, value_enum, default_value_t = Osc52Passthrough::None)]
+    osc52_passthrough: Osc52Passthrough,
+}
+
+#[derive(ValueEnum, Clone, Copy, PartialEq, Eq)]
+enum ClipboardTarget {
+    Native,
+    Osc52,
+}
+
+#[derive(ValueEnum, Clone, Copy, PartialEq, Eq)]
+enum Osc52Passthrough {
+    None,
+    Tmux,
+}
+
+fn osc52_passthrough(
+    target: ClipboardTarget,
+    passthrough: Osc52Passthrough,
+) -> Result<dezirclip::infrastructure::osc52::Passthrough, String> {
+    use dezirclip::infrastructure::osc52::Passthrough;
+    if target == ClipboardTarget::Native && passthrough != Osc52Passthrough::None {
+        return Err("--osc52-passthrough tmux requires --target osc52".to_string());
+    }
+    Ok(match passthrough {
+        Osc52Passthrough::None => Passthrough::None,
+        Osc52Passthrough::Tmux => Passthrough::Tmux,
+    })
+}
+
+#[derive(Args)]
+struct ClipboardArgs {
+    #[command(subcommand)]
+    command: ClipboardCommand,
+}
+
+#[derive(Subcommand)]
+enum ClipboardCommand {
+    /// Read native clipboard bytes to stdout, without a trailing newline.
+    Read {
+        #[arg(long, default_value = "text/plain")]
+        mime: String,
+    },
+    /// Write literal text, stdin (-), or file (@path) to the native clipboard.
+    Write {
+        #[arg(default_value = "-")]
+        content: String,
+        #[arg(long, default_value = "text/plain")]
+        mime: String,
+        /// OSC 52 accepts text/plain only, with a 100000-byte UTF-8 limit.
+        #[arg(long, value_enum, default_value_t = ClipboardTarget::Native)]
+        target: ClipboardTarget,
+        /// Wrap one tmux layer; only applies to --target osc52.
+        #[arg(long, value_enum, default_value_t = Osc52Passthrough::None)]
+        osc52_passthrough: Osc52Passthrough,
+    },
+    /// List supported readable MIME representations of the current clipboard.
+    Formats {
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+fn native_payload(
+    content: Vec<u8>,
+    mime: &str,
+) -> Result<dezirclip::infrastructure::native_clipboard::Payload, String> {
+    use dezirclip::infrastructure::native_clipboard::Payload;
+    if mime == "image/png" {
+        return Ok(Payload::Image(content));
+    }
+    let text =
+        String::from_utf8(content).map_err(|e| format!("clipboard input is not UTF-8: {e}"))?;
+    match mime {
+        "text/plain" => Ok(Payload::Text(text)),
+        "text/html" => Ok(Payload::Html {
+            html: text.clone(),
+            text,
+        }),
+        "text/uri-list" => Ok(Payload::Files(cli::payload::files(&text)?)),
+        _ => Err(format!("unsupported clipboard MIME: {mime}")),
+    }
+}
+
+fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
+    use dezirclip::infrastructure::native_clipboard;
+    use std::io::{Read, Write};
+    match args.command {
+        ClipboardCommand::Read { mime } => std::io::stdout()
+            .lock()
+            .write_all(&native_clipboard::read(&mime)?)
+            .map_err(|e| e.to_string()),
+        ClipboardCommand::Formats { json } => {
+            let formats = native_clipboard::formats()?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&formats).map_err(|e| e.to_string())?
+                );
+            } else {
+                for mime in formats {
+                    println!("{mime}");
+                }
+            }
+            Ok(())
+        }
+        ClipboardCommand::Write {
+            content,
+            mime,
+            target,
+            osc52_passthrough: passthrough,
+        } => {
+            let passthrough = osc52_passthrough(target, passthrough)?;
+            if target == ClipboardTarget::Osc52 && mime != "text/plain" {
+                return Err("OSC 52 only supports --mime text/plain".to_string());
+            }
+            let bytes = if content == "-" {
+                let mut bytes = Vec::new();
+                if target == ClipboardTarget::Osc52 {
+                    std::io::stdin()
+                        .take(dezirclip::infrastructure::osc52::MAX_TEXT_BYTES as u64 + 1)
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.to_string())?;
+                } else {
+                    std::io::stdin()
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.to_string())?;
+                }
+                bytes
+            } else if let Some(path) = content.strip_prefix('@') {
+                if target == ClipboardTarget::Osc52 {
+                    let mut bytes = Vec::new();
+                    std::fs::File::open(path)
+                        .map_err(|e| e.to_string())?
+                        .take(dezirclip::infrastructure::osc52::MAX_TEXT_BYTES as u64 + 1)
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.to_string())?;
+                    bytes
+                } else {
+                    std::fs::read(path).map_err(|e| e.to_string())?
+                }
+            } else {
+                content.into_bytes()
+            };
+            if target == ClipboardTarget::Osc52 {
+                if bytes.len() > dezirclip::infrastructure::osc52::MAX_TEXT_BYTES {
+                    return Err(format!(
+                        "OSC 52 text exceeds the {}-byte UTF-8 limit; nothing was sent",
+                        dezirclip::infrastructure::osc52::MAX_TEXT_BYTES
+                    ));
+                }
+                let text = String::from_utf8(bytes)
+                    .map_err(|e| format!("OSC 52 input is not UTF-8: {e}"))?;
+                return dezirclip::infrastructure::osc52::write_text(&text, passthrough);
+            }
+            native_clipboard::write(native_payload(bytes, &mime)?)
+        }
+    }
+}
+
 fn main() {
     let cli_args = Cli::parse();
     if let Err(e) = run(cli_args) {
@@ -288,8 +494,15 @@ fn main() {
 }
 
 fn run(args: Cli) -> Result<(), String> {
+    let command = match args.command {
+        Commands::Clipboard(a) => return run_clipboard(a),
+        Commands::ClipboardOwner => {
+            return dezirclip::infrastructure::native_clipboard::serve_owner()
+        }
+        command => command,
+    };
     let (clip_repo, tag_repo) = open_repos()?;
-    match args.command {
+    match command {
         Commands::List(a) => cli::list::run(
             &cli::list::ListArgs {
                 limit: a.limit,
@@ -299,16 +512,26 @@ fn run(args: Cli) -> Result<(), String> {
                 json: a.json,
                 ids: a.ids,
                 quiet: a.quiet,
+                metadata: a.metadata,
+                tsv: a.tsv,
+                offset: a.offset,
+                exclude_sensitive: a.exclude_sensitive,
             },
             clip_repo.as_ref(),
         ),
         Commands::Search(a) => cli::search::run(
             &cli::search::SearchArgs {
                 query: a.query,
+                kind: a.kind,
                 mode: a.mode.into(),
                 limit: a.limit,
                 json: a.json,
                 quiet: a.quiet,
+                ids: a.ids,
+                metadata: a.metadata,
+                tsv: a.tsv,
+                offset: a.offset,
+                exclude_sensitive: a.exclude_sensitive,
             },
             clip_repo.as_ref(),
         ),
@@ -318,9 +541,55 @@ fn run(args: Cli) -> Result<(), String> {
                 preview: a.preview,
                 json: a.json,
                 quiet: a.quiet,
+                raw: a.raw,
+                mime: a.mime,
+                exclude_sensitive: a.exclude_sensitive,
             },
             clip_repo.as_ref(),
         ),
+        Commands::Copy(a) => {
+            use dezirclip::infrastructure::native_clipboard::{self, Payload};
+            let passthrough = osc52_passthrough(a.target, a.osc52_passthrough)?;
+            let entry = cli::get::resolve(&a.id, false, clip_repo.as_ref())?;
+            if a.target == ClipboardTarget::Osc52 {
+                if !matches!(
+                    entry.content_type.as_str(),
+                    "text" | "code" | "url" | "rich_text" | "html"
+                ) {
+                    return Err(format!(
+                        "OSC 52 only supports text history entries; entry {} has type {}",
+                        entry.id, entry.content_type
+                    ));
+                }
+                return dezirclip::infrastructure::osc52::write_text(&entry.content, passthrough);
+            }
+            let payload = match entry.content_type.as_str() {
+                "image" => Payload::Image(cli::payload::image_bytes(&entry.content)?),
+                "file" | "files" | "video" => Payload::Files(cli::payload::files(&entry.content)?),
+                "html" => Payload::Html {
+                    html: entry.html_content.unwrap_or_else(|| entry.content.clone()),
+                    text: entry.content,
+                },
+                _ => {
+                    if let Some(html) = entry.html_content {
+                        Payload::Html {
+                            html,
+                            text: entry.content,
+                        }
+                    } else {
+                        Payload::Text(entry.content)
+                    }
+                }
+            };
+            native_clipboard::write(payload)?;
+            if !a.quiet {
+                println!("Copied: id={}", entry.id);
+            }
+            Ok(())
+        }
+        Commands::Clipboard(_) | Commands::ClipboardOwner => {
+            unreachable!("clipboard dispatched before opening history")
+        }
         Commands::Add(a) => {
             let add_args = parse_add_source(&a.content, a.kind.as_deref());
             let id = cli::add::run(&add_args, clip_repo.as_ref())?;
@@ -343,12 +612,8 @@ fn run(args: Cli) -> Result<(), String> {
             let tag_args = cli::tag::TagArgs { command };
             cli::tag::run(&tag_args, clip_repo.as_ref(), tag_repo.as_ref())
         }
-        Commands::Pin(a) => {
-            report_pin(&a, true, clip_repo.as_ref())
-        }
-        Commands::Unpin(a) => {
-            report_pin(&a, false, clip_repo.as_ref())
-        }
+        Commands::Pin(a) => report_pin(&a, true, clip_repo.as_ref()),
+        Commands::Unpin(a) => report_pin(&a, false, clip_repo.as_ref()),
         Commands::Edit(a) => {
             let id = cli::edit::run(
                 &cli::edit::EditArgs {
@@ -363,7 +628,8 @@ fn run(args: Cli) -> Result<(), String> {
             Ok(())
         }
         Commands::Clear(a) => {
-            let removed = cli::clear::run(&cli::clear::ClearArgs { yes: a.yes }, clip_repo.as_ref())?;
+            let removed =
+                cli::clear::run(&cli::clear::ClearArgs { yes: a.yes }, clip_repo.as_ref())?;
             if !a.quiet {
                 println!("Cleared {removed} entries");
             }
@@ -498,6 +764,7 @@ fn open_repos() -> Result<(Arc<SqliteClipboardRepository>, Arc<SqliteTagReposito
         let mut guard = conn
             .lock()
             .map_err(|e| format!("migrations: lock poisoned: {e}"))?;
+        migrations::ensure_supported_schema(&guard).map_err(|e| format!("migrations: {e}"))?;
         migrations::run_migrations(&mut guard).map_err(|e| format!("migrations: {e}"))?;
     }
     let clip_repo = SqliteClipboardRepository::new(conn.clone());
@@ -520,35 +787,18 @@ fn database_path_from_override(path: Option<PathBuf>) -> Result<PathBuf, String>
         }
         return Ok(path);
     }
-    let dir = data_dir()?;
-    let db_path = dir.join("clipboard.db");
-    if db_path.exists() {
-        return Ok(db_path);
-    }
-    let legacy_db_path = legacy_data_dir()?.join("clipboard.db");
-    if legacy_db_path.exists() {
-        return Ok(legacy_db_path);
-    }
-    Ok(db_path)
+    let executable = std::env::current_exe().ok();
+    Ok(dezirclip::infrastructure::data_paths::cli_database_path(
+        &data_dir()?,
+        &legacy_data_dir()?,
+        executable.as_deref().and_then(std::path::Path::parent),
+    ))
 }
 
 fn data_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(p) = std::env::var_os("XDG_DATA_HOME") {
-            return Ok(app_data_dir(PathBuf::from(p)));
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            return Ok(app_data_dir(PathBuf::from(home).join(".local/share")));
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(p) = std::env::var_os("APPDATA") {
-            return Ok(app_data_dir(PathBuf::from(p)));
-        }
-    }
-    Ok(app_data_dir(std::env::temp_dir()))
+    dirs::data_dir().map(app_data_dir).ok_or_else(|| {
+        "cannot locate the application data directory; set DEZIRCLIP_DB_PATH explicitly".to_string()
+    })
 }
 
 fn app_data_dir(base: PathBuf) -> PathBuf {
@@ -560,28 +810,11 @@ fn legacy_app_data_dir(base: PathBuf) -> PathBuf {
 }
 
 fn legacy_data_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(p) = std::env::var_os("XDG_DATA_HOME") {
-            return Ok(legacy_app_data_dir(PathBuf::from(p)));
-        }
-        if let Some(home) = std::env::var_os("HOME") {
-            return Ok(legacy_app_data_dir(PathBuf::from(home).join(".local/share")));
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(p) = std::env::var_os("APPDATA") {
-            return Ok(legacy_app_data_dir(PathBuf::from(p)));
-        }
-    }
-    Ok(legacy_app_data_dir(std::env::temp_dir()))
+    dirs::data_dir().map(legacy_app_data_dir).ok_or_else(|| {
+        "cannot locate the legacy application data directory; set DEZIRCLIP_DB_PATH explicitly"
+            .to_string()
+    })
 }
-
-// Re-export so the placeholder `add` etc. can use the domain types
-// without an extra `use` once Tasks 57–58 fill them in.
-#[allow(dead_code)]
-type _Entry = ClipboardEntry;
 
 #[cfg(test)]
 mod tests {
@@ -606,8 +839,8 @@ mod tests {
 
     #[test]
     fn test_database_path_honors_dezirclip_db_path() {
-        let path =
-            database_path_from_override(Some(PathBuf::from("/tmp/dezirclip-test.db"))).expect("db path");
+        let path = database_path_from_override(Some(PathBuf::from("/tmp/dezirclip-test.db")))
+            .expect("db path");
         assert_eq!(path, PathBuf::from("/tmp/dezirclip-test.db"));
     }
 

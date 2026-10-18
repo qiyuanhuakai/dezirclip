@@ -454,6 +454,10 @@ pub fn get_active_app_info() -> ActiveAppInfo {
     get_foreground_window_info().unwrap_or_else(|_| unknown_app_info())
 }
 
+pub fn get_clipboard_capture_app_info() -> ActiveAppInfo {
+    get_clipboard_source_app_info().unwrap_or_else(|_| get_active_app_info())
+}
+
 pub fn launch_uwp_with_file(_package: &str, _file: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }

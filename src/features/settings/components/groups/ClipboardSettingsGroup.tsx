@@ -130,6 +130,12 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     const [snapshotCacheLimitDraft, setSnapshotCacheLimitDraft] = useState(
         props.richTextSnapshotCacheLimit.toString()
     );
+    const excludedSourceApps = props.appSettings['app.excluded_source_apps'] || '';
+    const [excludedSourceAppsDraft, setExcludedSourceAppsDraft] = useState(excludedSourceApps);
+
+    useEffect(() => {
+        setExcludedSourceAppsDraft(excludedSourceApps);
+    }, [excludedSourceApps]);
     const isWinVHotkey = (value: string) => {
         const parts = value
             .split('+')
@@ -697,6 +703,24 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
+                    </div>
+
+                    <div className="setting-item source-exclusion-setting">
+                        <props.LabelWithHint
+                            label={props.t('excluded_source_apps')}
+                            hint={props.t('excluded_source_apps_hint')}
+                            hintKey="excluded_source_apps"
+                        />
+                        <textarea
+                            className="search-input source-exclusion-input"
+                            aria-label={props.t('excluded_source_apps')}
+                            placeholder={props.t('excluded_source_apps_placeholder')}
+                            value={excludedSourceAppsDraft}
+                            onFocus={() => invoke('focus_clipboard_window').catch(console.error)}
+                            onChange={(event) => setExcludedSourceAppsDraft(event.target.value)}
+                            onBlur={() => props.saveAppSetting('excluded_source_apps', excludedSourceAppsDraft)}
+                            spellCheck={false}
+                        />
                     </div>
 
                     <div className="setting-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>

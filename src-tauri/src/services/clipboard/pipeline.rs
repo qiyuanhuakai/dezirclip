@@ -5,7 +5,7 @@ use crate::domain::models::ClipboardEntry;
 use crate::global_state::IS_DESTROYED;
 #[cfg(not(target_os = "windows"))]
 use crate::infrastructure::linux_api::window_tracker::{
-    get_active_app_info as get_clipboard_source_app_info, ActiveAppInfo,
+    get_clipboard_capture_app_info as get_clipboard_source_app_info, ActiveAppInfo,
 };
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_api::window_tracker::{
@@ -133,67 +133,81 @@ fn classify_file_path(path: &str) -> &'static str {
     }
 }
 
+fn entry_from_capture(
+    data: ClipboardData,
+    source_app: String,
+    source_app_path: Option<String>,
+    timestamp: i64,
+) -> ClipboardEntry {
+    let (content_type, content, html_content) = match data {
+        ClipboardData::Text(t) => (detect_content_type(&t), t, None),
+        ClipboardData::RichText { text, html } => {
+            ("rich_text".to_string(), text, Some(html))
+        }
+        ClipboardData::Image { data_url } => ("image".to_string(), data_url, None),
+        ClipboardData::Files(mut f) => {
+            // A single path never needs the join: on one element `join`
+            // returns that element, and every branch used either the path or
+            // that same value. Only the multi-file case actually concatenates.
+            if f.len() == 1 {
+                let path = f.pop().expect("length checked above");
+                (classify_file_path(&path).to_string(), path, None)
+            } else {
+                ("file".to_string(), f.join("\n"), None)
+            }
+        }
+    };
+
+    let preview = if content_type == "image" {
+        "[Image Content]".to_string()
+    } else {
+        let normalized = crate::database::normalize_text(&content);
+        if normalized.chars().count() > 500 {
+            let preview_text: String = normalized.chars().take(497).collect();
+            format!("{}...", preview_text.replace('\n', " "))
+        } else {
+            normalized.replace('\n', " ")
+        }
+    };
+
+    let is_external =
+        (content_type == "file" || content_type == "video" || content_type == "image")
+            && !content.starts_with("data:");
+
+    ClipboardEntry {
+        id: 0,
+        content_type,
+        content,
+        html_content,
+        source_app,
+        source_app_path,
+        timestamp,
+        preview,
+        is_pinned: false,
+        tags: Vec::new(),
+        use_count: 0,
+        is_external,
+        pinned_order: 0,
+        file_preview_exists: true,
+        content_kinds: Vec::new(),
+        ocr_text: None,
+        ocr_status: None,
+    }
+}
+
 pub struct DiscoveryStage;
 impl PipelineStage for DiscoveryStage {
     fn process(&self, ctx: &mut PipelineContext) {
-        // Taken by value: every arm below hands the payload straight to the entry
-        // instead of copying it. Discovery is the first stage and the only reader,
-        // so the strings it moves are the only copies of a capture that exist.
         let data = ctx
             .data
             .take()
             .expect("discovery runs first and is the only reader of the payload");
-        let (content_type, content, html_content) = match data {
-            ClipboardData::Text(t) => (detect_content_type(&t), t, None),
-            ClipboardData::RichText { text, html } => {
-                ("rich_text".to_string(), text, Some(html))
-            }
-            ClipboardData::Image { data_url } => ("image".to_string(), data_url, None),
-            ClipboardData::Files(mut f) => {
-                // A single path never needs the join: on one element `join`
-                // returns that element, and every branch used either the path or
-                // that same value. Only the multi-file case actually concatenates.
-                if f.len() == 1 {
-                    let path = f.pop().expect("length checked above");
-                    (classify_file_path(&path).to_string(), path, None)
-                } else {
-                    ("file".to_string(), f.join("\n"), None)
-                }
-            }
-        };
-
-        let preview = if content_type == "image" {
-            "[Image Content]".to_string()
-        } else if content.chars().count() > 500 {
-            let preview_text: String = content.chars().take(497).collect();
-            format!("{}...", preview_text.replace('\n', " "))
-        } else {
-            content.replace('\n', " ")
-        };
-
-        let is_external =
-            (content_type == "file" || content_type == "video" || content_type == "image")
-                && !content.starts_with("data:");
-
-        ctx.entry = Some(ClipboardEntry {
-            id: 0,
-            content_type,
-            content,
-            html_content,
-            source_app: ctx.source_app.clone(),
-            source_app_path: ctx.source_app_path.clone(),
-            timestamp: ctx.timestamp,
-            preview,
-            is_pinned: false,
-            tags: Vec::new(),
-            use_count: 0,
-            is_external,
-            pinned_order: 0,
-            file_preview_exists: true,
-            content_kinds: Vec::new(),
-            ocr_text: None,
-            ocr_status: None,
-        });
+        ctx.entry = Some(entry_from_capture(
+            data,
+            ctx.source_app.clone(),
+            ctx.source_app_path.clone(),
+            ctx.timestamp,
+        ));
     }
 }
 
@@ -203,15 +217,6 @@ impl PipelineStage for TransformationStage {
     fn process(&self, ctx: &mut PipelineContext) {
         let entry = ctx.entry.as_mut().unwrap();
         let settings = ctx.app_handle.state::<SettingsState>();
-
-        // Normalization (already partially done but let's be thorough).
-        // Only rebuild the string when there is actually something to change:
-        // this runs for every content type, and an image capture carries a
-        // multi-megabyte data URL that is already trimmed and LF-only.
-        let trimmed = entry.content.trim();
-        if trimmed.len() != entry.content.len() || trimmed.contains("\r\n") {
-            entry.content = trimmed.replace("\r\n", "\n");
-        }
 
         // Sensitive Info
         let protect_kinds = settings.privacy_protection_kinds.lock().unwrap().clone();
@@ -273,9 +278,7 @@ impl ValidationStage {
         let htmls_equivalent = |a: Option<&str>, b: Option<&str>| -> bool {
             match (a, b) {
                 (None, None) => true,
-                (Some(left), Some(right)) => {
-                    crate::database::normalize_text(left) == crate::database::normalize_text(right)
-                }
+                (Some(left), Some(right)) => left == right,
                 _ => false,
             }
         };
@@ -292,7 +295,6 @@ impl ValidationStage {
             let content_type = entry.content_type.as_str();
             let html_content = entry.html_content.as_deref();
 
-            let normalized_content = crate::database::normalize_text(content);
             let rich_text_html_matches = |id: i64| -> bool {
                 if let Ok(Some((_content, c_type, h_content))) = db_state
                     .repo
@@ -312,12 +314,7 @@ impl ValidationStage {
                 vec![content_type]
             };
 
-            // An image hash comes from the decoded pixels, so every lookup repeats a
-            // base64 decode plus a full image decode. Both lookups below run against
-            // the same picture — the second differs only by trimmed / CRLF-folded
-            // whitespace, which `calc_image_hash` strips anyway — so decode once and
-            // hand the result to both. The persistence stage stores the same value
-            // as `content_hash`, so it is kept on the context for that stage too.
+            // Reuse the decoded image hash for lookup and persistence.
             let image_hash = if content_type == "image" {
                 crate::database::calc_image_hash(content)
             } else {
@@ -330,19 +327,6 @@ impl ValidationStage {
                         .repo
                         .find_by_content_with_hash(&conn, content, Some(t), image_hash)
                 {
-                    if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id)
-                    {
-                        continue;
-                    }
-                    existing_id = Some(id);
-                    break;
-                }
-                if let Ok(Some(id)) = db_state.repo.find_by_content_with_hash(
-                    &conn,
-                    &normalized_content,
-                    Some(t),
-                    image_hash,
-                ) {
                     if content_type == "rich_text" && t == "rich_text" && !rich_text_html_matches(id)
                     {
                         continue;
@@ -368,7 +352,6 @@ impl ValidationStage {
         {
             let session = session_history.0.lock().unwrap();
             let entry = ctx.entry.as_ref().expect("entry exists");
-            let normalized_entry_content = crate::database::normalize_text(&entry.content);
             for item in session.iter() {
                 let html_match = if entry.content_type == "rich_text"
                     && item.content_type == "rich_text"
@@ -377,14 +360,7 @@ impl ValidationStage {
                 } else {
                     true
                 };
-                // The exact comparison answers almost every item, and only the
-                // remainder needs the CRLF-folded form. Normalising first meant
-                // copying every remembered item's full content once per capture —
-                // with a full 500-item session that is 500 copies of every
-                // payload, for a comparison the first term already decides.
-                let match_found = (item.content == entry.content
-                    || crate::database::normalize_text(&item.content) == normalized_entry_content)
-                    && html_match;
+                let match_found = item.content == entry.content && html_match;
                 if match_found {
                     removed_ids.push(item.id);
                     if !persistent_enabled {
@@ -670,6 +646,36 @@ impl PipelineStage for DistributionStage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn captures_preserve_raw_whitespace_and_line_endings() {
+        for raw in ["  indented\r\n\tsecond line\r\n", " \t\r\n", "trailing \n\n"] {
+            let entry = entry_from_capture(
+                ClipboardData::Text(raw.to_string()),
+                "Editor".to_string(),
+                None,
+                1,
+            );
+            assert_eq!(entry.content, raw);
+            assert!(!entry.preview.contains('\r'));
+            assert!(!entry.preview.contains('\n'));
+        }
+    }
+
+    #[test]
+    fn rich_captures_preserve_both_original_payloads() {
+        let text = "  first\r\nsecond\r\n";
+        let html = "\r\n<pre>  first\r\nsecond</pre>\r\n";
+        let entry = entry_from_capture(
+            ClipboardData::RichText { text: text.to_string(), html: html.to_string() },
+            "Editor".to_string(),
+            None,
+            1,
+        );
+        assert_eq!(entry.content, text);
+        assert_eq!(entry.html_content.as_deref(), Some(html));
+        assert_eq!(entry.preview, "first second");
+    }
 
     // Every payload type discovery has to classify, and the file case in
     // particular: the extension table decides whether one copied path is shown

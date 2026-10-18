@@ -203,7 +203,7 @@ pub trait ClipboardRepository {
 }
 
 pub struct SqliteClipboardRepository {
-    conn: Arc<Mutex<Connection>>,
+    pub(super) conn: Arc<Mutex<Connection>>,
     history_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     search_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     content_cache: Arc<Mutex<SimpleLruCache<(String, String, Option<String>)>>>,
@@ -354,7 +354,7 @@ impl SqliteClipboardRepository {
         }
     }
 
-    fn maybe_decrypt_text(&self, value: &str) -> String {
+    pub(super) fn maybe_decrypt_text(&self, value: &str) -> String {
         if encryption::is_encrypted_value(value) {
             encryption::decrypt_value(value).unwrap_or_else(|| value.to_string())
         } else {
@@ -683,10 +683,10 @@ impl SqliteClipboardRepository {
         let hash = calc_text_hash(content) as i64;
 
         if let Some(ct) = content_type {
-            first_matching_id(
+            self.find_exact_text_candidate(
                 conn,
                 (
-                    "SELECT id FROM clipboard_history \
+                    "SELECT id, content FROM clipboard_history \
                      WHERE content_type = ? AND content_hash = ?",
                     &params![ct, hash],
                 ),
@@ -695,12 +695,13 @@ impl SqliteClipboardRepository {
                      WHERE content_type = ? AND content = ?",
                     &params![ct, content],
                 ),
+                content,
             )
         } else {
-            first_matching_id(
+            self.find_exact_text_candidate(
                 conn,
                 (
-                    "SELECT id FROM clipboard_history \
+                    "SELECT id, content FROM clipboard_history \
                      WHERE content_type IN ('text', 'rich_text', 'code', 'url') \
                        AND content_hash = ?",
                     &params![hash],
@@ -709,8 +710,38 @@ impl SqliteClipboardRepository {
                     "SELECT id FROM clipboard_history WHERE content = ?",
                     &params![content],
                 ),
+                content,
             )
         }
+    }
+
+    fn find_exact_text_candidate(
+        &self,
+        conn: &Connection,
+        hash_arm: (&str, &[&dyn ToSql]),
+        content_arm: (&str, &[&dyn ToSql]),
+        content: &str,
+    ) -> Result<Option<i64>, String> {
+        // Historical hashes fold whitespace and line endings. They remain an
+        // index hint so existing encrypted rows stay discoverable, but only the
+        // original payload decides whether two captures are interchangeable.
+        let mut stmt = conn.prepare(hash_arm.0).map_err(|e| e.to_string())?;
+        let mut rows = stmt.query(hash_arm.1).map_err(|e| e.to_string())?;
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let stored: String = row.get(1).map_err(|e| e.to_string())?;
+            if stored == content
+                || (encryption::is_encrypted_value(&stored)
+                    && self.maybe_decrypt_text(&stored) == content)
+            {
+                return Ok(Some(row.get(0).map_err(|e| e.to_string())?));
+            }
+        }
+        let mut stmt = conn.prepare(content_arm.0).map_err(|e| e.to_string())?;
+        let mut rows = stmt.query(content_arm.1).map_err(|e| e.to_string())?;
+        rows.next()
+            .map_err(|e| e.to_string())?
+            .map(|row| row.get(0).map_err(|e| e.to_string()))
+            .transpose()
     }
 
     pub fn enforce_limit_with_conn(
@@ -2263,6 +2294,59 @@ mod tests {
                 "a sensitive entry must not be readable in the database"
             );
         }
+    }
+
+    #[test]
+    fn text_dedup_compares_raw_payloads_for_every_hash_candidate() {
+        for sensitive in [false, true] {
+            let arc = setup_fts_db();
+            let repo = SqliteClipboardRepository::new(arc);
+            let conn = repo.conn.lock().expect("lock");
+            let mut saved = Vec::new();
+            for raw in ["  alpha  ", "alpha", "a\r\nb", "a\nb"] {
+                let mut entry = weighted_entry(0);
+                entry.content_type = "text".to_string();
+                entry.content = raw.to_string();
+                entry.preview = raw.to_string();
+                if sensitive {
+                    entry.tags = vec!["sensitive".to_string()];
+                }
+                let id = repo.save_with_conn(&conn, &entry, None).expect("save");
+                saved.push((id, raw));
+            }
+            for (id, raw) in saved {
+                assert_eq!(
+                    repo.find_by_content_with_conn(&conn, raw, Some("text")).expect("lookup"),
+                    Some(id),
+                    "normalized hash candidates must still match original bytes"
+                );
+                assert_eq!(
+                    repo.get_entry_by_id_with_conn(&conn, id).expect("load").expect("entry").content,
+                    raw
+                );
+            }
+            assert_eq!(
+                repo.find_by_content_with_conn(&conn, "alpha\n", Some("text")).expect("lookup"),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn text_dedup_keeps_exact_content_fallback_for_historical_hashes() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let conn = repo.conn.lock().expect("lock");
+        insert_entry(&conn, "  original\r\n", "Editor", 1);
+        let id = conn.last_insert_rowid();
+        assert_eq!(
+            repo.find_by_content_with_conn(&conn, "  original\r\n", Some("text")).expect("lookup"),
+            Some(id)
+        );
+        assert_eq!(
+            repo.find_by_content_with_conn(&conn, "original", Some("text")).expect("lookup"),
+            None
+        );
     }
 
     // The three payloads are handed to `rusqlite` as borrows now, which means a

@@ -4,6 +4,66 @@ use rusqlite::{params, Connection, Result};
 /// The value `PRAGMA auto_vacuum` reports for the mode `init_db` asks for.
 const AUTO_VACUUM_FULL: i32 = 1;
 
+pub const SUPPORTED_SCHEMA_VERSION: i32 = 18;
+
+/// Reject a database from a newer release before either binary changes it.
+pub fn ensure_supported_schema(conn: &Connection) -> Result<()> {
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations')",
+        [], |row| row.get(0),
+    )?;
+    if exists {
+        let version: i32 = conn.query_row(
+            "SELECT COALESCE(MAX(version),0) FROM schema_migrations",
+            [],
+            |row| row.get(0),
+        )?;
+        if version > SUPPORTED_SCHEMA_VERSION {
+            return Err(rusqlite::Error::InvalidParameterName(format!(
+                "database schema {version} is newer than supported {SUPPORTED_SCHEMA_VERSION}; update DezirClip and dzc to matching releases"
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod schema_compatibility_tests {
+    use super::*;
+
+    #[test]
+    fn newer_history_is_rejected_without_rewriting_any_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY); INSERT INTO schema_migrations VALUES(99); CREATE TABLE preserved(content TEXT); INSERT INTO preserved VALUES('standalone history');").unwrap();
+        let error = ensure_supported_schema(&conn).unwrap_err().to_string();
+        assert!(error.contains("newer than supported"));
+        let value: String = conn
+            .query_row("SELECT content FROM preserved", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(value, "standalone history");
+        let version: i32 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, 99);
+    }
+
+    #[test]
+    fn fresh_and_matching_databases_are_compatible() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        ensure_supported_schema(&conn).unwrap();
+        run_migrations(&mut conn).unwrap();
+        ensure_supported_schema(&conn).unwrap();
+        let version: i32 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, SUPPORTED_SCHEMA_VERSION);
+    }
+}
+
 /// How much stranded page space is worth a rewrite of the whole database file.
 ///
 /// Converting costs a VACUUM, so the conversion is only worth its stall once

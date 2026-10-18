@@ -12,6 +12,7 @@ pub mod qr;
 pub mod screenshot;
 pub mod search;
 pub mod sensitive_align;
+pub mod source_exclusion;
 pub mod transforms;
 
 pub use backup::{BackupError, ExportEntry, ExportFile, ImportMode, ImportSummary, EXPORT_VERSION};

@@ -154,6 +154,7 @@ pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
 pub fn init_db(path: &str) -> Result<Connection> {
     fn init_db_once(path: &str) -> Result<Connection> {
         let mut conn = Connection::open(path)?;
+        crate::infrastructure::repository::migrations::ensure_supported_schema(&conn)?;
         conn.execute_batch(
             "
             PRAGMA journal_mode = WAL;
@@ -336,6 +337,10 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
     );
     let _ = conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.privacy_protection_kinds', 'phone,idcard,email,secret,password')", []);
     let _ = conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('app.privacy_protection_custom_rules', '')", []);
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.excluded_source_apps', '')",
+        [],
+    );
     let _ = conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.use_win_v_shortcut', 'false')",
         [],

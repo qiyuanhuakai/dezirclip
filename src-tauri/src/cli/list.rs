@@ -1,21 +1,11 @@
-//! `dzc list` — list clipboard history with optional filters.
-//!
-//! All persistence goes through `ClipboardRepository::get_history`; the
-//! `--tag` and `--pinned` filters are applied in-memory after the repo
-//! returns candidates because the repo's signature does not yet accept
-//! those fields. Filter ordering (type → tag → pinned) is stable so
-//! callers see the same result set on identical inputs.
-//!
-//! Output:
-//! * human:  `📋 [text] preview...` / `📌 [html] preview...`
-//! * `--json`: JSON array of `CliEntry`
-//! * `--ids`:  one ID per line
-//! * `--quiet`: silent on success
+//! List history with filters and privacy exclusions applied before pagination.
+//! Metadata queries omit stored content; JSON payload queries return complete entries.
 
 use serde::Serialize;
 
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::infrastructure::repository::cli_query::CliQuery;
+use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
 
 /// CLI-shaped view of a `ClipboardEntry`. Only the fields surfaced via
 /// `dzc` are serialized; internal fields (`html_content`,
@@ -45,6 +35,10 @@ pub struct ListArgs {
     pub json: bool,
     pub ids: bool,
     pub quiet: bool,
+    pub metadata: bool,
+    pub tsv: bool,
+    pub offset: i32,
+    pub exclude_sensitive: bool,
 }
 
 /// Default row count when `--limit` is omitted and no positional limit
@@ -59,47 +53,105 @@ pub const UNLIMITED: i32 = i32::MAX;
 /// Run the `list` subcommand. Returns `Ok(())` on success; any IO or
 /// parse failure is propagated as `Err(String)` (no custom error type
 /// needed for a CLI surface).
-pub fn run(args: &ListArgs, repo: &dyn ClipboardRepository) -> Result<(), String> {
-    let raw_limit = args.limit.unwrap_or(DEFAULT_LIMIT);
-    let limit = if raw_limit < 0 { UNLIMITED } else { raw_limit };
+pub fn run(args: &ListArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
+    let limit = checked_limit(args.limit)?;
+    let entries = repo.query_cli(&CliQuery {
+        limit,
+        offset: args.offset,
+        kind: args.kind.as_deref(),
+        tag: args.tag.as_deref(),
+        pinned: args.pinned,
+        metadata: args.metadata,
+        exclude_sensitive: args.exclude_sensitive,
+        ..Default::default()
+    })?;
+    emit(
+        &entries,
+        args.quiet,
+        args.json,
+        args.ids,
+        args.tsv,
+        args.metadata,
+    )
+}
 
-    let candidates = repo
-        .get_history(limit, 0, args.kind.as_deref())
-        .map_err(|e| format!("list: get_history failed: {e}"))?;
+pub fn checked_limit(limit: Option<i32>) -> Result<i32, String> {
+    match limit.unwrap_or(DEFAULT_LIMIT) {
+        -1 => Ok(UNLIMITED),
+        n if n >= 0 => Ok(n),
+        _ => Err("limit must be -1 or a nonnegative integer".to_string()),
+    }
+}
 
-    let entries: Vec<ClipboardEntry> = candidates
-        .into_iter()
-        .filter(|e| match &args.tag {
-            Some(t) => e.tags.iter().any(|et| et == t),
-            None => true,
-        })
-        .filter(|e| !args.pinned || e.is_pinned)
-        .collect();
+#[derive(Serialize)]
+pub struct OutputEntry<'a> {
+    id: i64,
+    #[serde(rename = "type")]
+    content_type: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<&'a str>,
+    preview: &'a str,
+    tags: &'a [String],
+    pinned: bool,
+    timestamp: i64,
+    mime: &'static str,
+    sensitive: bool,
+}
 
-    if args.quiet {
+pub fn json_view(entry: &ClipboardEntry, metadata: bool) -> Result<OutputEntry<'_>, String> {
+    Ok(OutputEntry {
+        id: entry.id,
+        content_type: &entry.content_type,
+        content: (!metadata).then_some(entry.content.as_str()),
+        preview: &entry.preview,
+        tags: &entry.tags,
+        pinned: entry.is_pinned,
+        timestamp: entry.timestamp,
+        mime: super::payload::mime_for(entry),
+        sensitive: crate::database::has_sensitive_tag(&entry.tags),
+    })
+}
+
+pub fn emit(
+    entries: &[ClipboardEntry],
+    quiet: bool,
+    json: bool,
+    ids: bool,
+    tsv: bool,
+    metadata: bool,
+) -> Result<(), String> {
+    if quiet {
         return Ok(());
     }
-    if args.ids {
-        for e in &entries {
-            println!("{}", e.id);
+    if json {
+        let values: Result<Vec<_>, _> = entries.iter().map(|e| json_view(e, metadata)).collect();
+        println!(
+            "{}",
+            serde_json::to_string(&values?).map_err(|e| e.to_string())?
+        );
+    } else {
+        for entry in entries {
+            if ids {
+                println!("{}", entry.id);
+            } else if tsv {
+                println!(
+                    "{}\t{}",
+                    entry.id,
+                    preview_line(&entry.preview)
+                        .chars()
+                        .filter(|c| !c.is_control())
+                        .collect::<String>()
+                );
+            } else {
+                println!("{}", format_human(entry));
+            }
         }
-        return Ok(());
-    }
-    if args.json {
-        let cli_entries: Vec<CliEntry> = entries.iter().map(cli_view).collect();
-        let json = serde_json::to_string(&cli_entries)
-            .map_err(|e| format!("list: serialize json: {e}"))?;
-        println!("{json}");
-        return Ok(());
-    }
-
-    for e in &entries {
-        println!("{}", format_human(e));
     }
     Ok(())
 }
 
 /// Project a domain entry onto the CLI-facing subset.
+#[cfg(test)]
 fn cli_view(e: &ClipboardEntry) -> CliEntry {
     CliEntry {
         id: e.id,
@@ -199,7 +251,10 @@ mod tests {
     fn format_human_shows_pin_when_pinned() {
         let e = entry(1, "html", "<b>x</b>", true);
         let line = format_human(&e);
-        assert!(line.starts_with("\u{1F4CC} \u{1F310}"), "wrong prefix: {line}");
+        assert!(
+            line.starts_with("\u{1F4CC} \u{1F310}"),
+            "wrong prefix: {line}"
+        );
         assert!(line.contains("[html]"));
     }
 

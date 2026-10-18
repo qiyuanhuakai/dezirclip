@@ -82,34 +82,8 @@ pub fn listen_clipboard(callback: Arc<dyn Fn() + Send + Sync + 'static>) {
         }
     });
 
-    #[cfg(not(target_os = "windows"))]
-    std::thread::spawn(move || {
-        let mut last_hash = 0u64;
-        let mut clipboard = arboard::Clipboard::new().unwrap();
-        loop {
-            // Very primitive polling, relies on higher layers to deduplicate properly.
-            // Check both text and file URIs so that copying files is detected on Linux.
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-
-            if let Ok(text) = clipboard.get_text() {
-                text.hash(&mut hasher);
-            }
-
-            if let Some(files) = crate::infrastructure::linux_api::clipboard::get_clipboard_files()
-            {
-                files.hash(&mut hasher);
-            }
-
-            let current_hash = hasher.finish();
-            if current_hash != last_hash {
-                last_hash = current_hash;
-                callback();
-            }
-
-            std::thread::sleep(std::time::Duration::from_millis(500));
-        }
-    });
+    #[cfg(target_os = "linux")]
+    crate::infrastructure::linux_api::clipboard_listener::listen_clipboard(callback);
 }
 
 #[cfg(target_os = "windows")]

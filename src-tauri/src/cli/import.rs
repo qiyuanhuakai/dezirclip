@@ -29,8 +29,8 @@
 //! 3. For encrypted backups: decrypt with `--passphrase`. For `.json`: parse
 //!    JSON directly.
 //! 4. Resolve `ImportMode` from the `--mode` arg.
-//! 5. For each entry: `repo.save(...)` in `merge` mode, or
-//!    `repo.clear(...)` + save-all in `replace` mode.
+//! 5. Import all entries in one transaction, preserving IDs and metadata.
+//!    Replace removes all existing rows; merge overwrites matching IDs.
 //!
 //! ## Output
 //!
@@ -41,10 +41,8 @@
 use std::path::Path;
 
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-use crate::services::backup::{
-    decrypt_to_json, entries_from_json, ImportMode,
-};
+use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+use crate::services::backup::{decrypt_to_json, entries_from_json, import_from_json, ImportMode};
 
 /// Args for the `import` subcommand.
 pub struct ImportArgs {
@@ -63,10 +61,7 @@ pub struct ImportArgs {
 ///
 /// Returns `Ok(())` on success. Errors are returned as `Err(String)`
 /// for the binary to surface via `eprintln!` + exit code 1.
-pub fn run(
-    args: &ImportArgs,
-    repo: &dyn ClipboardRepository,
-) -> Result<(), String> {
+pub fn run(args: &ImportArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
     // 1. Mode spelling.
     let mode = parse_mode(&args.mode)?;
 
@@ -80,15 +75,20 @@ pub fn run(
 
     // 3. encrypted backups require a passphrase up-front. Fail fast before doing
     //    the (expensive) Argon2id KDF derivation.
-    if is_encrypted && args.passphrase.as_deref().map(str::is_empty).unwrap_or(true) {
+    if is_encrypted
+        && args
+            .passphrase
+            .as_deref()
+            .map(str::is_empty)
+            .unwrap_or(true)
+    {
         return Err("import: passphrase required for encrypted backups".to_string());
     }
 
     // 4. Read the file. Surface the underlying IO error verbatim —
     //    a `No such file or directory` message is the most useful
     //    thing we can show the user here.
-    let bytes = std::fs::read(path)
-        .map_err(|e| format!("import: read {path:?}: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| format!("import: read {path:?}: {e}"))?;
 
     // 5. Decode → JSON string.
     let json = if is_encrypted {
@@ -98,44 +98,22 @@ pub fn run(
         // Plain JSON: convert bytes to string (lossy is fine — the
         // backup module's serde_json will reject anything that isn't
         // strict UTF-8 anyway).
-        String::from_utf8(bytes)
-            .map_err(|e| format!("import: file is not valid UTF-8: {e}"))?
+        String::from_utf8(bytes).map_err(|e| format!("import: file is not valid UTF-8: {e}"))?
     };
 
     // 6. Parse → Vec<ExportEntry>. The backup module's
     //    `entries_from_json` does NOT validate the version field —
     //    it's a structural parse only. We re-parse via
     //    `import_from_json` below to surface version errors.
-    let export_entries = entries_from_json(&json)
-        .map_err(|e| format!("import: parse json: {e}"))?;
+    import_from_json(&json, mode).map_err(|e| format!("import: invalid backup: {e}"))?;
+    let export_entries =
+        entries_from_json(&json).map_err(|e| format!("import: parse json: {e}"))?;
     let total = export_entries.len();
 
     // 7. Apply. Replace mode clears first; merge is upsert-on-id.
-    match mode {
-        ImportMode::Replace => {
-            repo.clear(None)
-                .map_err(|e| format!("import: clear failed: {e}"))?;
-        }
-        ImportMode::Merge => {
-            // Nothing to do up-front; `save` is upsert.
-        }
-    }
-
-    let mut imported = 0usize;
-    for exp in &export_entries {
-        let mut entry = to_clipboard_entry(exp);
-        if entry.id > 0
-            && repo
-                .get_entry_by_id(entry.id)
-                .map_err(|e| format!("import: lookup entry {}: {e}", entry.id))?
-                .is_none()
-        {
-            entry.id = 0;
-        }
-        repo.save(&entry, None)
-            .map_err(|e| format!("import: save entry {}: {e}", exp.id))?;
-        imported += 1;
-    }
+    let entries: Vec<ClipboardEntry> = export_entries.iter().map(to_clipboard_entry).collect();
+    repo.import_cli_entries(&entries, mode == ImportMode::Replace)?;
+    let imported = entries.len();
 
     if !args.quiet {
         let label = if is_encrypted { "encrypted" } else { "json" };

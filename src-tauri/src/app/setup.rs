@@ -152,10 +152,12 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
 fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let default_app_dir = app.path().app_data_dir()?;
-    migrate_legacy_identifier_data_dir(&default_app_dir);
-
-    // Perform migration if needed
-    crate::migration::perform_migration_v028(&default_app_dir);
+    let executable = std::env::current_exe().ok();
+    let executable_dir = executable.as_deref().and_then(std::path::Path::parent);
+    if crate::infrastructure::data_paths::portable_data_dir(executable_dir).is_none() {
+        migrate_legacy_identifier_data_dir(&default_app_dir);
+        crate::migration::perform_migration_v028(&default_app_dir);
+    }
 
     // Cleanup temp files
     std::thread::spawn(|| {
@@ -171,31 +173,8 @@ fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error:
         }
     });
 
-    let redirect_file = default_app_dir.join("datapath.txt");
-    let mut app_dir = if redirect_file.exists() {
-        if let Ok(content) = std::fs::read_to_string(&redirect_file) {
-            let custom_path = content.trim();
-            if !custom_path.is_empty() && std::path::Path::new(custom_path).exists() {
-                std::path::PathBuf::from(custom_path)
-            } else {
-                default_app_dir.clone()
-            }
-        } else {
-            default_app_dir.clone()
-        }
-    } else {
-        default_app_dir.clone()
-    };
-
-    // Portable mode check
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let portable_data = exe_dir.join("data");
-            if portable_data.exists() && portable_data.is_dir() {
-                app_dir = portable_data;
-            }
-        }
-    }
+    let app_dir =
+        crate::infrastructure::data_paths::select_data_dir(&default_app_dir, executable_dir);
 
     match std::fs::create_dir_all(&app_dir) {
         Ok(_) => Ok(app_dir),
@@ -288,6 +267,7 @@ pub struct StartupSettings {
     pub privacy_protection: bool,
     pub privacy_kinds: String,
     pub privacy_custom: String,
+    pub excluded_source_apps: String,
     pub sequential_mode: bool,
     pub sequential_hotkey: String,
     pub rich_paste_hotkey: String,
@@ -360,6 +340,10 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .get("app.privacy_protection_custom_rules")
             .unwrap_or(Some("".to_string()))
             .unwrap_or("".to_string()),
+        excluded_source_apps: repo
+            .get("app.excluded_source_apps")
+            .unwrap_or_default()
+            .unwrap_or_default(),
         sequential_mode: repo
             .get("app.sequential_mode")
             .unwrap_or(Some("false".to_string()))
@@ -499,6 +483,9 @@ fn setup_state(
                 .lines()
                 .map(|x| x.trim().to_string())
                 .collect(),
+        ),
+        excluded_source_apps: std::sync::Mutex::new(
+            crate::services::source_exclusion::parse_excluded_source_apps(&s.excluded_source_apps),
         ),
         sequential_mode: AtomicBool::new(s.sequential_mode),
         sequential_paste_hotkey: std::sync::Mutex::new(s.sequential_hotkey.clone()),

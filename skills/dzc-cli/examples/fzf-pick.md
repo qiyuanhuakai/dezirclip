@@ -1,5 +1,16 @@
 # Example: FZF interactive picker
 
+The optional adapter handles cancellation and native copying directly:
+
+```bash
+python3 integrations/dzc-integrations.py pick --backend fzf --action copy
+```
+
+It requires Python 3.10+, fzf and the matching dzc version. Windows uses
+`python`. See `integrations/README.md` for the TUI, dmenu/rofi and shell
+editing-buffer widgets. These adapters live in the source checkout and are
+separate from the bundled skill.
+
 ## Scenario
 
 You have dozens of clipboard entries and you want to pick exactly one to inspect
@@ -32,8 +43,7 @@ dzc list --ids | fzf | xargs dzc get
    chosen entry.
 
 ```bash
-dzc list --json -- -1 \
-  | jq -r '.[] | "\(.id)\t\(.preview)"' \
+dzc list --tsv -- -1 \
   | fzf --with-nth=2 --delimiter='\t' \
   | cut -f1 \
   | xargs dzc get
@@ -70,3 +80,8 @@ dzc list --ids | fzf --multi | tr '\n' '\0' | xargs -0 -n1 dzc get
   `jq -r '.[] | "\(.id)\t\(.type)\t\(.tags | join(","))"'`.
 - Pipe the result straight into another command — `get` writes content only, so
   `dzc list --ids | fzf | xargs -I {} dzc get {} > picked.txt` is safe.
+
+Use `dzc get ID --raw` when an added newline would change the selected text.
+Use `dzc copy ID` to restore images/files as native clipboard content without
+xclip/xsel/wl-copy. Printing a record does not insert it into a parent shell's
+edit line; use the optional shell widgets for that purpose.

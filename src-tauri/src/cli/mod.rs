@@ -25,6 +25,7 @@ pub mod get;
 pub mod import;
 pub mod list;
 pub mod pin;
+pub mod payload;
 pub mod search;
 pub mod stats;
 pub mod tag;
