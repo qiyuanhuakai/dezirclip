@@ -14,6 +14,7 @@ pub struct CaptureNotificationState {
     timestamp_ms: u64,
     image_hash: Option<u64>,
     file_hash: Option<u64>,
+    persistence_mode: Option<bool>,
 }
 
 impl CaptureNotificationState {
@@ -30,6 +31,16 @@ impl CaptureNotificationState {
         }
         self.sequence = Some(sequence);
         true
+    }
+
+    /// A new destination must receive its first capture even if the payload is unchanged.
+    pub fn set_persistence_mode(&mut self, persistent: bool) {
+        if self.persistence_mode.replace(persistent) != Some(persistent) {
+            self.fingerprint = None;
+            self.timestamp_ms = 0;
+            self.image_hash = None;
+            self.file_hash = None;
+        }
     }
 
     pub fn inspect(
@@ -244,5 +255,22 @@ mod tests {
         assert!(state
             .inspect(image, 1200, OwnClipboardCopy::default(), false)
             .is_ok());
+    }
+
+    #[test]
+    fn changing_persistence_destination_clears_payload_suppression_but_keeps_sequence() {
+        let mut state = CaptureNotificationState::at_sequence(4);
+        let file = CaptureReadMetadata { files: true, ..metadata(1) };
+        state.set_persistence_mode(true);
+        assert!(state.inspect(file, 1000, OwnClipboardCopy::default(), false).is_ok());
+        state.set_persistence_mode(true);
+        assert!(state.repeats_file(file));
+        state.set_persistence_mode(false);
+        assert!(!state.repeats_file(file));
+        assert!(!state.accept_sequence(4));
+        assert!(state.inspect(file, 1050, OwnClipboardCopy::default(), false).is_ok());
+        state.set_persistence_mode(true);
+        assert!(!state.repeats_file(file));
+        assert!(state.inspect(file, 1100, OwnClipboardCopy::default(), true).is_ok());
     }
 }

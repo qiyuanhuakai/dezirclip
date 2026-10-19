@@ -11,12 +11,13 @@ const MAX_PERSISTED_TEXT_BYTES: usize = 10 * 1024 * 1024;
 pub struct CaptureEngine;
 
 impl CaptureEngine {
-    /// Resolve a repeated file notification against its actual durable representation.
+    /// Durable rows suppress repeated files only while durable capture is selected.
     pub fn file_history_exists(
+        context: &CaptureContext<'_>,
         frame: &CaptureFrame,
         store: &dyn CaptureStore,
     ) -> Result<bool, CaptureFailure> {
-        if !frame.metadata.files {
+        if !context.settings.persistent || !frame.metadata.files {
             return Ok(false);
         }
         if let Some(hash) = frame.metadata.image_content_hash {

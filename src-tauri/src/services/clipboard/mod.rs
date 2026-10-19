@@ -261,6 +261,7 @@ pub fn start_clipboard_monitor(app: AppHandle) {
         };
         let session = app.state::<SessionHistory>();
         let context = context(&app, source.clone(), timestamp, &session);
+        notifications.set_persistence_mode(context.settings.persistent);
         let mut events = DesktopEvents { app: &app };
         let Ok(frame) =
             CaptureEngine::read(&context, &mut NativeCaptureReader::default(), &mut events)
@@ -276,7 +277,7 @@ pub fn start_clipboard_monitor(app: AppHandle) {
                 .clone();
             let database = app.state::<DbState>();
             let store = database.capture_store(&data);
-            let exists = CaptureEngine::file_history_exists(&frame, &store);
+            let exists = CaptureEngine::file_history_exists(&context, &frame, &store);
             match exists {
                 Ok(exists) => exists,
                 Err(error) => {

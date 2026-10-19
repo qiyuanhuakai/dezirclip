@@ -434,7 +434,7 @@ mod tests {
         let store = state.capture_store(&directory);
         let session = Mutex::new(VecDeque::new());
         let mut notifications = CaptureNotificationState::default();
-        let process = |notifications: &mut CaptureNotificationState, timestamp| {
+        let process_mode = |notifications: &mut CaptureNotificationState, timestamp, persistent| {
             let context = CaptureContext {
                 source: CaptureSource {
                     app_name: "File manager".into(),
@@ -442,7 +442,7 @@ mod tests {
                 },
                 timestamp,
                 settings: CaptureSettings {
-                    persistent: true,
+                    persistent,
                     deduplicate: true,
                     ..CaptureSettings::default()
                 },
@@ -463,8 +463,9 @@ mod tests {
                 assert!(metadata.image && metadata.files && metadata.image_content_hash.is_some());
             }
             let frame = CaptureFrame { data, metadata };
+            notifications.set_persistence_mode(persistent);
             let exists = notifications.repeats_file(metadata)
-                && CaptureEngine::file_history_exists(&frame, &store).unwrap();
+                && CaptureEngine::file_history_exists(&context, &frame, &store).unwrap();
             if let Err(reason) = notifications.inspect(
                 metadata,
                 timestamp as u64,
@@ -484,6 +485,9 @@ mod tests {
                 assert!(store.contains_image_hash(hash).unwrap());
             }
             outcome
+        };
+        let process = |notifications: &mut CaptureNotificationState, timestamp| {
+            process_mode(notifications, timestamp, true)
         };
         let copy_file = |path: &std::path::Path| {
             super::super::x11_clipboard::set_clipboard_files(vec![path
@@ -569,6 +573,33 @@ mod tests {
         };
         assert_eq!(changed_to_existing.entry.id, second.entry.id);
         assert_eq!(changed_to_existing.entry.timestamp, 3250);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(session_capture) =
+            process_mode(&mut notifications, 3300, false) else {
+                panic!("switching from persistent image to session must capture");
+            };
+        assert!(session_capture.entry.id < 0 && !session_capture.persistent);
+        assert_eq!(session.lock().unwrap().len(), 1);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(session_repeat) =
+            process_mode(&mut notifications, 3900, false) else {
+                panic!("session repeats must use the session deduplicator");
+            };
+        assert_eq!(session_repeat.entry.id, session_capture.entry.id);
+        session.lock().unwrap().retain(|entry| entry.id != session_capture.entry.id);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(after_session_delete) =
+            process_mode(&mut notifications, 3950, false) else {
+                panic!("deleting a session image must allow recapture despite an old durable row");
+            };
+        assert!(after_session_delete.entry.id < 0 && !after_session_delete.persistent);
+        assert_eq!(session.lock().unwrap().len(), 1);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(back_to_persistent) = process(&mut notifications, 4000) else {
+            panic!("returning to persistent capture must reach the durable deduplicator");
+        };
+        assert_eq!(back_to_persistent.entry.id, second.entry.id);
+        assert_eq!(back_to_persistent.entry.timestamp, 4000);
         assert_eq!(
             state
                 .conn
