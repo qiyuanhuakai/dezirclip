@@ -1,1 +1,1 @@
-pub use dzc_core::database::*;
+pub use dzc_core::legacy::database::*;

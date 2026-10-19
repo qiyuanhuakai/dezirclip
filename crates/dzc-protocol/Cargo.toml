@@ -1,0 +1,11 @@
+[package]
+name = "dzc-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Versioned capability and error values shared by DezirClip clients"
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

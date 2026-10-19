@@ -1,1 +1,1 @@
-pub use dzc_core::infrastructure::encryption::*;
+pub use dzc_core::legacy::infrastructure::encryption::*;

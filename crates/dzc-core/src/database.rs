@@ -33,6 +33,16 @@ pub fn ensure_writable(conn: &Connection) -> std::result::Result<(), String> {
     }
 }
 
+#[cfg(feature = "legacy-bridge")]
+impl DbState {
+    /// Migration adapter: share the existing cache budgets and connection through the business facade.
+    pub fn history_service(&self) -> crate::api::HistoryService {
+        crate::api::HistoryService::from_legacy_parts(
+            Arc::new(self.repo.clone()), Arc::new(self.tag_repo.clone()),
+        )
+    }
+}
+
 const SENSITIVE_KEYS: &[&str] = &[];
 
 pub const SENSITIVE_TAGS: &[&str] = &["sensitive", "密码"];

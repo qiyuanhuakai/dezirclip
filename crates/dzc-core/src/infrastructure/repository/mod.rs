@@ -9,3 +9,5 @@ pub mod tag_batch;
 pub mod custom_themes;
 
 pub mod protection;
+
+mod desktop_search;

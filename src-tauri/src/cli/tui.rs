@@ -2,10 +2,8 @@
 
 use super::frontend::{self, BrowseOptions};
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::{
-    ClipboardRepository, SqliteClipboardRepository,
-};
-use crate::infrastructure::repository::tag_repo::{SqliteTagRepository, TagRepository};
+use crate::api::HistoryService;
+
 use crate::infrastructure::terminal_ui::Terminal;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use unicode_segmentation::UnicodeSegmentation;
@@ -18,8 +16,8 @@ const PREVIEW_LINE_LIMIT: usize = 2_000;
 
 pub fn run(
     options: &BrowseOptions,
-    repo: &SqliteClipboardRepository,
-    tags: &SqliteTagRepository,
+    repo: &HistoryService,
+    tags: &HistoryService,
 ) -> Result<Option<i64>, String> {
     let mut browser = Browser::new(options.clone());
     // Validate queries before touching the terminal.
@@ -55,7 +53,7 @@ impl Browser {
         }
     }
 
-    fn refresh(&mut self, repo: &SqliteClipboardRepository) -> Result<(), String> {
+    fn refresh(&mut self, repo: &HistoryService) -> Result<(), String> {
         let entries = frontend::query_rows(&self.options, repo)?;
         self.entries = entries;
         self.cursor = self.cursor.min(self.entries.len().saturating_sub(1));
@@ -68,7 +66,7 @@ impl Browser {
         self.entries.get(self.cursor)
     }
 
-    fn update_preview(&mut self, repo: &SqliteClipboardRepository) -> Result<(), String> {
+    fn update_preview(&mut self, repo: &HistoryService) -> Result<(), String> {
         let Some(id) = self.selected().map(|entry| entry.id) else {
             self.preview.clear();
             self.preview
@@ -94,8 +92,8 @@ impl Browser {
         &mut self,
         terminal: &mut Terminal,
         renderer: &mut render::Renderer,
-        repo: &SqliteClipboardRepository,
-        tags: &SqliteTagRepository,
+        repo: &HistoryService,
+        tags: &HistoryService,
     ) -> Result<Option<i64>, String> {
         loop {
             if let Err(error) = self.update_preview(repo) {
@@ -136,8 +134,8 @@ impl Browser {
         key: KeyEvent,
         terminal: &mut Terminal,
         renderer: &mut render::Renderer,
-        repo: &SqliteClipboardRepository,
-        tags: &SqliteTagRepository,
+        repo: &HistoryService,
+        tags: &HistoryService,
     ) -> Result<(), String> {
         let id = self.selected().map(|entry| entry.id);
         match key.code {

@@ -18,8 +18,8 @@
 //!   that's already present — this matches the GUI's behavior)
 //! * `remove` of a non-present tag is a no-op (still `Ok(())`)
 
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-use crate::infrastructure::repository::tag_repo::TagRepository;
+use crate::api::HistoryService;
+
 
 /// Subcommand for the `tag` command. The bin parses this from clap's
 /// subcommand block; the cli module just dispatches on the variant.
@@ -40,8 +40,8 @@ pub struct TagArgs {
 /// list of tags) is written to stdout by `run`.
 pub fn run(
     args: &TagArgs,
-    clip_repo: &dyn ClipboardRepository,
-    tag_repo: &dyn TagRepository,
+    clip_repo: &HistoryService,
+    tag_repo: &HistoryService,
 ) -> Result<(), String> {
     match &args.command {
         TagCommand::Add { id, tag } => {
@@ -87,7 +87,7 @@ pub fn run(
 
 /// Fetch the entry's current tags. Returns `Err` if the entry does
 /// not exist; an entry with no tags is a valid `Ok(vec![])`.
-fn fetch_tags(id: i64, clip_repo: &dyn ClipboardRepository) -> Result<Vec<String>, String> {
+fn fetch_tags(id: i64, clip_repo: &HistoryService) -> Result<Vec<String>, String> {
     let entry = clip_repo
         .get_entry_by_id(id)
         .map_err(|e| format!("tag: lookup failed: {e}"))?;

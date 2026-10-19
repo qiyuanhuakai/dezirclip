@@ -72,7 +72,7 @@ fn looks_encrypted(data: &[u8]) -> bool {
 
 fn apply_import(app: AppHandle, mode: ImportMode, entries: &[ExportEntry]) -> Result<(), String> {
     let db = app.state::<DbState>();
-    crate::services::backup::apply_entries(&db.repo, entries, mode)
+    dzc_core::api::BackupService::new(db.history_service()).apply(entries, mode).map_err(Into::into)
 }
 
 #[cfg(test)]

@@ -35,7 +35,24 @@ pub struct PrivacyEvidence {
 
 impl PrivacyEvidence {
     pub fn new(source: EvidenceSource, level: EvidenceLevel, reason: PrivacyReason) -> Self {
-        Self { source, level, reason, rule_id: None }
+        let rule_id = match reason {
+            PrivacyReason::ConfiguredRuleMatched | PrivacyReason::ScanIncomplete => {
+                Some("legacy_configured_detector")
+            }
+            PrivacyReason::SourceExcluded => Some("source_exclusion_rules"),
+            PrivacyReason::ExistingRecordProtected => Some("stored_record_protection"),
+            PrivacyReason::UserRequestedProtection => Some("manual_sensitive_tag"),
+            PrivacyReason::CapturePaused => Some("capture_pause_control"),
+            PrivacyReason::SessionOnlyRequested => Some("session_persistence_control"),
+            _ => None,
+        }
+        .map(str::to_owned);
+        Self {
+            source,
+            level,
+            reason,
+            rule_id,
+        }
     }
 }
 
@@ -105,6 +122,7 @@ mod tests {
             PrivacyReason::SourceExcluded);
         assert_eq!(PrivacyPolicy.decide(vec![encrypted, excluded]).action, PrivacyAction::Skip);
         let detected = PrivacyPolicy::configured_rule(true).unwrap();
+        assert_eq!(detected.rule_id.as_deref(), Some("legacy_configured_detector"));
         assert_eq!(PrivacyPolicy.decide(vec![detected]).action, PrivacyAction::Encrypt);
         assert!(PrivacyPolicy::configured_rule(false).is_none());
     }

@@ -2,7 +2,7 @@ mod utils;
 
 use crate::app_state::{AppDataDir, PasteQueue, SessionHistory, SettingsState};
 pub use crate::database::DbState;
-use dzc_core::services::capture::{
+use dzc_core::capture::{
     CaptureContext, CaptureEngine, CaptureEvent, CaptureFrame, CaptureNotificationState,
     CaptureOutcome, CaptureReadMetadata, CaptureSettings, CaptureSource, EventSink,
     OwnClipboardCopy, StoredCapture,
@@ -23,7 +23,7 @@ use crate::infrastructure::windows_api::window_tracker::{
     get_clipboard_source_app_info as resolve_source, ActiveAppInfo,
 };
 
-pub use dzc_core::services::capture::CaptureData as ClipboardData;
+pub use dzc_core::capture::CaptureData as ClipboardData;
 pub use utils::truncate_html_for_preview;
 
 pub(crate) fn summarize_captured_entry(
@@ -204,7 +204,8 @@ fn process(task: CaptureTask) {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone();
     let database = task.app.state::<DbState>();
-    let store = database.capture_store(&data);
+    let history = database.history_service();
+    let store = history.capture_store(&data);
     let mut events = DesktopEvents { app: &task.app };
     if let CaptureOutcome::Stored(capture) =
         CaptureEngine::capture_frame(&context, task.frame, &store, &mut events)
@@ -276,9 +277,9 @@ pub fn start_clipboard_monitor(app: AppHandle) {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
             let database = app.state::<DbState>();
-            let store = database.capture_store(&data);
-            let exists = CaptureEngine::file_history_exists(&context, &frame, &store);
-            match exists {
+            let history = database.history_service();
+            let store = history.capture_store(&data);
+            match CaptureEngine::file_history_exists(&context, &frame, &store) {
                 Ok(exists) => exists,
                 Err(error) => {
                     events.emit(CaptureEvent::Failed(error));
@@ -294,7 +295,7 @@ pub fn start_clipboard_monitor(app: AppHandle) {
             own_copy(timestamp),
             repeated_file_exists,
         ) {
-            if reason == dzc_core::services::capture::CaptureSkip::OwnClipboard {
+            if reason == dzc_core::capture::CaptureSkip::OwnClipboard {
                 clear_own_copy();
             }
             events.emit(CaptureEvent::Skipped(reason));
@@ -370,7 +371,8 @@ mod tests {
             paused: false,
             sequential_echo: None,
         };
-        let store = state.capture_store(&directory);
+        let history = state.history_service();
+        let store = history.capture_store(&directory);
         let text = "ordinary manually protected text";
         let frame = || CaptureFrame {
             data: ClipboardData::Text(text.into()),

@@ -50,12 +50,12 @@ extern "system" {
 }
 
 #[cfg(not(windows))]
-use dzc_core::infrastructure::encryption::encrypt_with_key;
-use dzc_core::infrastructure::encryption::EncryptionError;
+use dzc_core::crypto::encrypt_with_key;
+use dzc_core::crypto::EncryptionError;
 #[cfg(windows)]
-use dzc_core::infrastructure::encryption::ENCRYPT_PREFIX;
+use dzc_core::crypto::ENCRYPT_PREFIX;
 #[cfg(not(windows))]
-use dzc_core::infrastructure::encryption::LINUX_ENCRYPT_PREFIX;
+use dzc_core::crypto::LINUX_ENCRYPT_PREFIX;
 
 static DIAGNOSTIC_SINK: std::sync::OnceLock<fn(&str)> = std::sync::OnceLock::new();
 pub fn set_diagnostic_sink(sink: fn(&str)) {
@@ -1508,7 +1508,7 @@ mod tests {
 #[ignore]
 fn dpapi_per_value_cost() {
     crate::install_default_key_provider();
-    use dzc_core::infrastructure::encryption::encrypt_value;
+    use dzc_core::crypto::encrypt_value;
     use std::time::{Duration, Instant};
 
     let long = format!("<div>{}</div>", "b".repeat(3000));
@@ -1560,7 +1560,7 @@ fn dpapi_per_value_cost() {
 #[cfg(all(test, windows))]
 mod native_contract_tests {
     use super::*;
-    use dzc_core::infrastructure::encryption::{
+    use dzc_core::crypto::{
         decode_for_mutation, decode_stored_text, encrypt_sensitive, encrypt_value, StoredText,
     };
     #[cfg(windows)]

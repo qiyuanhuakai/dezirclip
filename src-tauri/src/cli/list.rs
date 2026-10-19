@@ -4,8 +4,8 @@
 use serde::Serialize;
 
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::cli_query::CliQuery;
-use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+use crate::api::HistoryQuery;
+use crate::api::HistoryService;
 
 /// CLI-shaped view of a `ClipboardEntry`. Only the fields surfaced via
 /// `dzc` are serialized; internal fields (`html_content`,
@@ -53,9 +53,9 @@ pub const UNLIMITED: i32 = i32::MAX;
 /// Run the `list` subcommand. Returns `Ok(())` on success; any IO or
 /// parse failure is propagated as `Err(String)` (no custom error type
 /// needed for a CLI surface).
-pub fn run(args: &ListArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
+pub fn run(args: &ListArgs, repo: &HistoryService) -> Result<(), String> {
     let limit = checked_limit(args.limit)?;
-    let entries = repo.query_cli(&CliQuery {
+    let entries = repo.query(&HistoryQuery {
         limit,
         offset: args.offset,
         kind: args.kind.as_deref(),

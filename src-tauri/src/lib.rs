@@ -11,3 +11,7 @@ pub mod infrastructure;
 pub mod services;
 
 pub mod cli;
+
+pub use dzc_core::api;
+pub use dzc_core::ports;
+pub use dzc_core::protocol;

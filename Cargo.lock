@@ -1562,6 +1562,7 @@ dependencies = [
  "chrono",
  "cssparser 0.37.0",
  "dirs 5.0.1",
+ "dzc-protocol",
  "image",
  "libc",
  "rand 0.8.6",
@@ -1582,6 +1583,7 @@ dependencies = [
  "arboard",
  "base64 0.22.1",
  "dzc-core",
+ "dzc-protocol",
  "image",
  "keyring",
  "libc",
@@ -1593,6 +1595,14 @@ dependencies = [
  "windows 0.61.3",
  "x11-clipboard",
  "x11rb",
+]
+
+[[package]]
+name = "dzc-protocol"
+version = "0.1.20"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

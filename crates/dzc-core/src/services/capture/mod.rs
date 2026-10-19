@@ -12,3 +12,5 @@ pub use engine::CaptureEngine;
 pub use notifications::{CaptureNotificationState, OwnClipboardCopy};
 pub use store::{CaptureCommit, CaptureDuplicate, CaptureStore, PreparedCapture};
 pub use types::*;
+
+pub(crate) use store::sqlite_capture_store;

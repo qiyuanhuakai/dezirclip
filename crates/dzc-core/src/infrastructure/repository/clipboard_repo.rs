@@ -202,20 +202,25 @@ pub trait ClipboardRepository {
     ) -> Result<Option<(String, String, Option<String>)>, String>;
 }
 
+#[derive(Clone)]
 pub struct SqliteClipboardRepository {
     pub(super) conn: Arc<Mutex<Connection>>,
     history_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     search_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     content_cache: Arc<Mutex<SimpleLruCache<(String, String, Option<String>)>>>,
-    cache_revision: Mutex<Option<(i64, i64)>>,
+    cache_revision: Arc<Mutex<Option<(i64, i64)>>>,
     pub(super) encrypt_text: fn(&str) -> Result<EncryptedPayload, EncryptionError>,
 }
 
 impl SqliteClipboardRepository {
+    pub(crate) fn capture_store<'a>(&'a self,directory:&'a std::path::Path)->impl crate::capture::CaptureStore+'a {
+        crate::services::capture::sqlite_capture_store(self,self.conn.clone(),directory)
+    }
+
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
         Self {
             conn,
-            cache_revision: Mutex::new(None),
+            cache_revision: Arc::new(Mutex::new(None)),
             encrypt_text: encryption::encrypt_sensitive,
             history_cache: Arc::new(Mutex::new(SimpleLruCache::new(
                 64,

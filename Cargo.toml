@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/dzc-core", "crates/dzc-platform"]
+members = ["src-tauri", "crates/dzc-core", "crates/dzc-platform", "crates/dzc-protocol"]
 default-members = ["src-tauri"]
 resolver = "2"
 
@@ -11,6 +11,7 @@ authors = ["qiyuanhuakai"]
 [workspace.dependencies]
 dzc-core = { path = "crates/dzc-core" }
 dzc-platform = { path = "crates/dzc-platform" }
+dzc-protocol = { path = "crates/dzc-protocol" }
 tauri-build = { version = "2", features = [] }
 serde_json = "1"
 tauri = { version = "2.11", features = ["tray-icon", "image-png", "protocol-asset"] }

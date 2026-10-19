@@ -2,7 +2,10 @@ use super::{CaptureFailure, CaptureStage};
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::attachments::{plan_html_attachments, HtmlAttachmentPlan};
+use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+use rusqlite::Connection;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 pub struct PreparedCapture {
     pub entry: ClipboardEntry,
@@ -52,7 +55,8 @@ pub trait CaptureStore {
 }
 
 struct SqliteCaptureStore<'a> {
-    state: &'a DbState,
+    repository: &'a SqliteClipboardRepository,
+    connection: Arc<Mutex<Connection>>,
     directory: &'a Path,
 }
 
@@ -75,10 +79,19 @@ fn failure(stage: CaptureStage, error: impl ToString) -> CaptureFailure {
 impl DbState {
     /// Transitional embedded adapter; the capture contract itself exposes no connection.
     pub fn capture_store<'a>(&'a self, directory: &'a Path) -> impl CaptureStore + 'a {
-        SqliteCaptureStore {
-            state: self,
-            directory,
-        }
+        self.repo.capture_store(directory)
+    }
+}
+
+pub(crate) fn sqlite_capture_store<'a>(
+    repository: &'a SqliteClipboardRepository,
+    connection: Arc<Mutex<Connection>>,
+    directory: &'a Path,
+) -> impl CaptureStore + 'a {
+    SqliteCaptureStore {
+        repository,
+        connection,
+        directory,
     }
 }
 
@@ -107,21 +120,18 @@ impl CaptureStore for SqliteCaptureStore<'_> {
         image_hash: Option<i64>,
     ) -> Result<Option<CaptureDuplicate>, CaptureFailure> {
         let connection = self
-            .state
-            .conn
+            .connection
             .lock()
             .map_err(|error| failure(CaptureStage::Deduplicate, error))?;
         let id = self
-            .state
-            .repo
+            .repository
             .find_by_content_with_hash(&connection, &entry.content, Some(content_type), image_hash)
             .map_err(|error| failure(CaptureStage::Deduplicate, error))?;
         let Some(id) = id else {
             return Ok(None);
         };
         let (_, content_type, html_content) = self
-            .state
-            .repo
+            .repository
             .get_entry_content_with_html_with_conn(&connection, id)
             .map_err(|error| failure(CaptureStage::Deduplicate, error))?
             .ok_or_else(|| failure(CaptureStage::Deduplicate, "ClipboardRecordUnavailable"))?;
@@ -144,12 +154,10 @@ impl CaptureStore for SqliteCaptureStore<'_> {
 
     fn contains(&self, content: &str) -> Result<bool, CaptureFailure> {
         let connection = self
-            .state
-            .conn
+            .connection
             .lock()
             .map_err(|error| failure(CaptureStage::Deduplicate, error))?;
-        self.state
-            .repo
+        self.repository
             .find_by_content_with_conn(&connection, content, None)
             .map(|entry| entry.is_some())
             .map_err(|error| failure(CaptureStage::Deduplicate, error))
@@ -157,8 +165,7 @@ impl CaptureStore for SqliteCaptureStore<'_> {
 
     fn contains_image_hash(&self, image_hash: i64) -> Result<bool, CaptureFailure> {
         let connection = self
-            .state
-            .conn
+            .connection
             .lock()
             .map_err(|error| failure(CaptureStage::Deduplicate, error))?;
         connection.query_row("SELECT EXISTS(SELECT 1 FROM clipboard_history WHERE content_type='image' AND content_hash=?1)", [image_hash], |row| row.get(0))
@@ -167,13 +174,11 @@ impl CaptureStore for SqliteCaptureStore<'_> {
 
     fn commit(&self, capture: &PreparedCapture) -> Result<CaptureCommit, CaptureFailure> {
         let connection = self
-            .state
-            .conn
+            .connection
             .lock()
             .map_err(|error| failure(CaptureStage::Persist, error))?;
         let id = self
-            .state
-            .repo
+            .repository
             .save_capture_with_conn(
                 &connection,
                 &capture.entry,
@@ -183,8 +188,7 @@ impl CaptureStore for SqliteCaptureStore<'_> {
             )
             .map_err(|error| failure(CaptureStage::Persist, error))?;
         let removed_ids = self
-            .state
-            .repo
+            .repository
             .enforce_limit_with_conn(&connection, Some(self.directory))
             .unwrap_or_default();
         Ok(CaptureCommit { id, removed_ids })

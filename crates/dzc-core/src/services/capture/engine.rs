@@ -101,7 +101,11 @@ impl CaptureEngine {
 }
 
 fn source_decision(context: &CaptureContext<'_>) -> PrivacyDecision {
-    let mut evidence = Vec::new();
+    let mut evidence = vec![PrivacyEvidence::new(
+        EvidenceSource::PlatformHint,
+        EvidenceLevel::Unavailable,
+        PrivacyReason::PrivacyHintsUnavailable,
+    )];
     if context.paused {
         evidence.push(PrivacyEvidence::new(
             EvidenceSource::UserControl,

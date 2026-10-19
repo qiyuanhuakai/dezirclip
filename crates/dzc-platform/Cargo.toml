@@ -10,6 +10,7 @@ publish = false
 portable = ["dzc-core/portable"]
 
 [dependencies]
+dzc-protocol.workspace = true
 dzc-core.workspace = true
 uuid.workspace = true
 serde.workspace = true

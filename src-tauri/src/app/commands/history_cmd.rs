@@ -2,8 +2,6 @@ use crate::app_state::{AppDataDir, SessionHistory};
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-use crate::infrastructure::repository::tag_repo::TagRepository;
 use crate::services::clipboard::truncate_html_for_preview;
 use tauri::State;
 
@@ -49,7 +47,7 @@ fn normalize_limit(limit: i32) -> i32 {
 }
 
 fn captured_entry_summary(
-    repository: &dyn ClipboardRepository,
+    repository: &dzc_core::api::HistoryService,
     session: &SessionHistory,
     id: i64,
 ) -> AppResult<ClipboardEntry> {
@@ -80,7 +78,7 @@ pub async fn get_captured_entry_summary(
     session: State<'_, SessionHistory>,
     id: i64,
 ) -> AppResult<ClipboardEntry> {
-    captured_entry_summary(&state.repo, &session, id)
+    captured_entry_summary(&state.history_service(), &session, id)
 }
 
 #[tauri::command]
@@ -94,7 +92,7 @@ pub async fn get_clipboard_history(
     let limit = normalize_limit(limit);
     // 1. Get history from repository
     let mut history = state
-        .repo
+        .history_service()
         .get_history(limit, offset, content_type.as_deref())?;
 
     // 2. Add session history items (non-persisted) ONLY on the first page
@@ -141,7 +139,7 @@ pub async fn search_clipboard_history(
     limit: i32,
 ) -> AppResult<Vec<ClipboardEntry>> {
     let limit = normalize_limit(limit);
-    let mut history = state.repo.search(&search_term, limit)?;
+    let mut history = state.history_service().search(&search_term, limit)?;
 
     let term = search_term.to_lowercase();
     let session_items = session.inner().0.lock().unwrap();
@@ -181,7 +179,7 @@ pub fn delete_clipboard_entry(
 
     if id > 0 {
         let data_dir = app_data.0.lock().unwrap();
-        state.repo.delete(id, Some(&data_dir))?;
+        state.history_service().delete(id, Some(&data_dir))?;
     }
     Ok(())
 }
@@ -197,7 +195,7 @@ pub fn clear_clipboard_history(
         session_items.retain(|item| item.is_pinned || !item.tags.is_empty());
     }
     let data_dir = app_data.0.lock().unwrap();
-    state.repo.clear(Some(&data_dir)).map_err(AppError::from)
+    state.history_service().clear(Some(&data_dir)).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -206,7 +204,7 @@ pub async fn get_tag_items(
     tag: String,
 ) -> AppResult<Vec<ClipboardEntry>> {
     let mut history = state
-        .tag_repo
+        .history_service()
         .get_entries_by_tag(&tag)
         .map_err(AppError::from)?;
 
@@ -228,11 +226,10 @@ pub async fn get_tag_items_page(
     sort_by: Option<String>,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> AppResult<crate::infrastructure::repository::tag_page::TagItemsPage> {
-    let repository =
-        crate::infrastructure::repository::tag_repo::SqliteTagRepository::new(state.conn.clone());
+) -> AppResult<dzc_core::api::TagItemsPage> {
+    let repository = state.history_service();
     tauri::async_runtime::spawn_blocking(move || {
-        repository.get_page(
+        repository.tag_page(
             &tag,
             query.as_deref().unwrap_or(""),
             sort_by.as_deref().unwrap_or("time"),
@@ -247,10 +244,7 @@ pub async fn get_tag_items_page(
 
 #[tauri::command]
 pub async fn get_tag_item_detail(state: State<'_, DbState>, id: i64) -> AppResult<ClipboardEntry> {
-    let repository =
-        crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository::new(
-            state.conn.clone(),
-        );
+    let repository = state.history_service();
     tauri::async_runtime::spawn_blocking(move || repository.get_entry_by_id(id))
         .await
         .map_err(|error| AppError::Internal(error.to_string()))?
@@ -266,8 +260,8 @@ pub fn remove_tag_from_all(
     tag_name: String,
 ) -> AppResult<()> {
     state
-        .tag_repo
-        .remove_preserving_entries(&tag_name)
+        .history_service()
+        .remove_tag_preserving_entries(&tag_name)
         .map_err(AppError::from)?;
     if let Ok(mut history) = session.0.lock() {
         for item in history.iter_mut() {
@@ -283,7 +277,7 @@ pub fn remove_tag_from_all(
 pub async fn get_all_tags_info(
     state: State<'_, DbState>,
 ) -> AppResult<std::collections::HashMap<String, i32>> {
-    state.tag_repo.get_all_with_counts().map_err(AppError::from)
+    state.history_service().tag_counts().map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -296,8 +290,8 @@ pub fn rename_tag_globally(
 ) -> AppResult<()> {
     let new_name = new_name.trim().to_string();
     state
-        .tag_repo
-        .rename(&old_name, &new_name)
+        .history_service()
+        .rename_tag(&old_name, &new_name)
         .map_err(AppError::from)?;
     {
         let mut session_items = session.inner().0.lock().unwrap();
@@ -330,15 +324,14 @@ fn delete_sensitive_tag_contents(
         .map_err(|error| AppError::Internal(error.to_string()))?
         .clone();
     let report = state
-        .tag_repo
-        .delete_globally(tag_name, Some(&data_dir))
+        .history_service()
+        .delete_tag_with_entries(tag_name, Some(&data_dir))
         .map_err(AppError::from)?;
     if let Ok(mut history) = session.0.lock() {
         history.retain(|item| {
             !report.deleted_ids.contains(&item.id) && !item.tags.iter().any(|tag| tag == tag_name)
         });
     }
-    state.repo.invalidate_caches();
     use tauri::Emitter;
     let _ = app.emit("clipboard-changed", ());
     if !report.cleanup_errors.is_empty() {
@@ -386,17 +379,16 @@ pub async fn delete_tag_entries(
     session: State<'_, SessionHistory>,
     app_data: State<'_, AppDataDir>,
     tag_name: String,
-    selection: crate::infrastructure::repository::tag_batch::TagEntrySelection,
+    selection: dzc_core::api::TagEntrySelection,
 ) -> AppResult<TagEntriesDeleted> {
     let data_dir = app_data
         .0
         .lock()
         .map_err(|error| AppError::Internal(error.to_string()))?
         .clone();
-    let repository =
-        crate::infrastructure::repository::tag_repo::SqliteTagRepository::new(state.conn.clone());
+    let repository = state.history_service();
     let report = tauri::async_runtime::spawn_blocking(move || {
-        repository.delete_entries_for_tag(&tag_name, selection, Some(&data_dir))
+        repository.delete_tag_entries(&tag_name, selection, Some(&data_dir))
     })
     .await
     .map_err(|error| AppError::Internal(error.to_string()))?
@@ -404,7 +396,6 @@ pub async fn delete_tag_entries(
     if let Ok(mut history) = session.0.lock() {
         history.retain(|item| !report.deleted_ids.contains(&item.id));
     }
-    state.repo.invalidate_caches();
     use tauri::Emitter;
     let _ = app.emit("clipboard-changed", ());
     if !report.cleanup_errors.is_empty() {
@@ -429,7 +420,7 @@ pub fn create_new_tag(state: State<'_, DbState>, tag_name: String) -> AppResult<
             "tag names must contain 1..80 printable characters".into(),
         ));
     }
-    state.tag_repo.create(tag_name).map_err(AppError::from)
+    state.history_service().create_tag(tag_name).map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -446,7 +437,7 @@ pub async fn get_clipboard_content(
     }
 
     state
-        .repo
+        .history_service()
         .get_entry_content(id)
         .map_err(AppError::from)?
         .ok_or_else(|| AppError::Validation("Entry not found".to_string()))
@@ -455,14 +446,14 @@ pub async fn get_clipboard_content(
 #[tauri::command]
 pub fn update_pinned_order(state: State<'_, DbState>, orders: Vec<(i64, i64)>) -> AppResult<()> {
     state
-        .repo
+        .history_service()
         .update_pinned_order(orders)
         .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn get_db_count(state: State<'_, DbState>) -> AppResult<i64> {
-    state.repo.get_count().map_err(AppError::from)
+    state.history_service().get_count().map_err(AppError::from)
 }
 
 #[cfg(test)]
@@ -494,8 +485,8 @@ mod capture_summary_tests {
         }
     }
 
-    fn repository() -> SqliteClipboardRepository {
-        SqliteClipboardRepository::new(Arc::new(Mutex::new(
+    fn repository() -> dzc_core::api::HistoryService {
+        dzc_core::api::HistoryService::from_legacy_connection(Arc::new(Mutex::new(
             crate::database::init_db(":memory:").unwrap(),
         )))
     }
@@ -538,7 +529,8 @@ mod capture_summary_tests {
             .save_with_conn(&connection.lock().unwrap(), &image, Some(&directory))
             .unwrap();
         let session = SessionHistory(Mutex::new(VecDeque::new()));
-        let summary = captured_entry_summary(&repository, &session, id).unwrap();
+        let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
+        let summary = captured_entry_summary(&history, &session, id).unwrap();
         assert_eq!(summary.id, id);
         assert!(summary.is_external);
         assert!(!summary.content.starts_with("data:"));
@@ -553,14 +545,14 @@ mod capture_summary_tests {
     #[test]
     fn summary_read_failures_do_not_expose_storage_errors_or_payloads() {
         let connection = Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap()));
-        let repository = SqliteClipboardRepository::new(connection.clone());
         connection
             .lock()
             .unwrap()
             .execute_batch("DROP TABLE clipboard_history")
             .unwrap();
         let session = SessionHistory(Mutex::new(VecDeque::new()));
-        let error = captured_entry_summary(&repository, &session, 1)
+        let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
+        let error = captured_entry_summary(&history, &session, 1)
             .unwrap_err()
             .to_string();
         assert!(error.ends_with("CapturedEntryReadFailed"));
