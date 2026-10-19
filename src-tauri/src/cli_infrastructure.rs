@@ -7,6 +7,9 @@ pub mod data_paths;
 #[path = "infrastructure/attachments.rs"]
 pub mod attachments;
 
+#[path = "infrastructure/local_file.rs"]
+pub mod local_file;
+
 #[path = "infrastructure/repository/mod.rs"]
 pub mod repository;
 

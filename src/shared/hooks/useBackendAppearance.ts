@@ -12,6 +12,7 @@ import {
 import { followsSystemTheme, normalizeColorMode, readSystemIsDark } from "../lib/systemTheme";
 import { resolveRichTextSnapshotCacheLimit } from "../lib/richTextSnapshotCache";
 import { setRichTextSnapshotCacheLimit } from "../lib/richTextSnapshot";
+import { getCustomThemes, loadCustomThemesFromSettings, replaceCustomThemes } from "../lib/themeCatalog";
 
 // Backend-driven appearance for the auxiliary webviews.
 //
@@ -85,6 +86,8 @@ export const useBackendAppearance = (): void => {
   useEffect(() => {
     let disposed = false;
     let currentColorMode: ThemeColorMode = "system";
+    let appearanceVersion = 0;
+    let modeVersion = 0;
     const cleanups: Array<() => void> = [];
 
     const applyPlatformClasses = async () => {
@@ -104,21 +107,25 @@ export const useBackendAppearance = (): void => {
 
     const applyMode = async () => {
       if (disposed) return;
+      const version = ++modeVersion;
       const mode = resolveThemeMode(currentColorMode, await readSystemIsDark());
-      if (disposed) return;
+      if (disposed || version !== modeVersion) return;
       applyModeClass(document.documentElement, document.body, mode);
     };
 
     const load = async () => {
+      const version = ++appearanceVersion;
+      const catalog = getCustomThemes();
       try {
         const settings = await invoke<Record<string, string>>("get_settings");
-        if (disposed) return;
+        if (disposed || version !== appearanceVersion) return;
+        if (catalog === getCustomThemes()) loadCustomThemesFromSettings(settings ?? {});
         const { theme, colorMode } = applyTokens(settings ?? {});
         currentColorMode = colorMode;
         await applyMode();
-        if (disposed) return;
+        if (disposed || version !== appearanceVersion) return;
         await ensureThemeCssLoaded(theme);
-        if (disposed) return;
+        if (disposed || version !== appearanceVersion) return;
         applyThemeClass(document.documentElement, document.body, theme);
       } catch (err) {
         console.warn("[appearance] Failed to load appearance from backend:", err);
@@ -133,11 +140,12 @@ export const useBackendAppearance = (): void => {
       try {
         const off = await listen<ThemeChangedPayload>("theme-changed", async (event) => {
           if (disposed) return;
+          const version = ++appearanceVersion;
           const { theme, color_mode: colorMode } = event.payload;
           currentColorMode = normalizeColorMode(colorMode);
           await applyMode();
           await ensureThemeCssLoaded(theme);
-          if (disposed) return;
+          if (disposed || version !== appearanceVersion) return;
           applyThemeClass(document.documentElement, document.body, theme);
         });
         if (disposed) {
@@ -148,6 +156,17 @@ export const useBackendAppearance = (): void => {
       } catch (err) {
         console.warn("[appearance] Failed to subscribe to theme changes:", err);
       }
+    })();
+
+    void (async () => {
+      try {
+        const off = await listen<{ themes: unknown }>("custom-themes-changed", event => {
+          if (disposed) return;
+          try { replaceCustomThemes(event.payload.themes); }
+          catch (error) { console.warn("[appearance] Invalid theme update", error); }
+        });
+        if (disposed) off(); else cleanups.push(off);
+      } catch (error) { console.warn("[appearance] Failed to observe custom themes", error); }
     })();
 
     // Font, shell opacity, and the clipboard font sizes have no payload channel.

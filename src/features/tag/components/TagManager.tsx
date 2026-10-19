@@ -1,937 +1,424 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-import { listen, emit } from '@tauri-apps/api/event';
-import {
-    Edit2, Trash2, X, ChevronRight, LayoutGrid, List,
-    Clock, MousePointer2, ChevronLeft, Plus, Search, ExternalLink
-} from 'lucide-react';
-import { getTagColor } from "../../../shared/lib/utils";
-import type { ClipboardEntry } from "../../../shared/types";
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { emit } from '@tauri-apps/api/event';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
+import type { ClipboardEntry, Locale } from '../../../shared/types';
+import { errorMessage } from '../../../shared/lib/errorMessage';
+import { useTagLibrary } from '../hooks/useTagLibrary';
+import { TagDialog } from './TagDialog';
+import { TagHistoryRow } from './TagHistoryRow';
+import { useSettingsLayout } from '../../settings/hooks/useSettingsLayout';
+import { emptyTagSelection, MAX_TAG_BATCH_IDS, selectAllTagEntries, tagEntrySelected, tagSelectionCount, toggleTagEntry, type TagBatchSelection } from '../utils/tagBatchSelection';
+
+const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
 interface TagManagerProps {
     t: (key: string) => string;
     theme: string;
+    language?: Locale;
+    compactMode?: boolean;
+    isWindowPinned?: boolean;
+    privacyProtection?: boolean;
+    tagColors?: Record<string, string>;
+    richTextSnapshotPreview?: boolean;
+    onCompactModeChange?: (compact: boolean) => void;
 }
+type Dialog = { kind: 'createTag' }
+    | { kind: 'renameTag'; tag: string }
+    | { kind: 'removeTag'; tag: string }
+    | { kind: 'createItem'; tag: string }
+    | { kind: 'editItem'; id: number }
+    | { kind: 'deleteSelection'; tag: string; selection: TagBatchSelection; count: number; scope: string }
+    | { kind: 'deleteItem'; item: ClipboardEntry };
 
-interface TagInfo {
-    name: string;
-    count: number;
-}
+function protectedTag(name: string): boolean { return name.toLowerCase() === 'sensitive' || name === '密码'; }
 
-export default function TagManager({ t, theme }: TagManagerProps) {
-    const [tags, setTags] = useState<TagInfo[]>([]);
+export default function TagManager({ t, theme, language = 'zh', compactMode = false, isWindowPinned = false,
+    privacyProtection = true, tagColors, richTextSnapshotPreview = false, onCompactModeChange }: TagManagerProps) {
+    const library = useTagLibrary();
+    const { selectedTag, selectTag, refresh } = library;
     const [tagSearch, setTagSearch] = useState('');
-    const [selectedTag, setSelectedTag] = useState<string | null>(null);
-    const [tagItems, setTagItems] = useState<ClipboardEntry[]>([]);
-    const [tagColors, setTagColors] = useState<Record<string, string>>({});
-    const [editingTag, setEditingTag] = useState<string | null>(null);
-    const [newTagName, setNewTagName] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [deleteConfirmation, setDeleteConfirmation] = useState<{ show: boolean, tagName: string | null }>({ show: false, tagName: null });
-    const [itemDeleteConfirmation, setItemDeleteConfirmation] = useState<{ show: boolean, id: number | null }>({ show: false, id: null });
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const [sortBy, setSortBy] = useState<'time' | 'count'>('time');
-    const [isCreatingItem, setIsCreatingItem] = useState(false);
-    const [editingItem, setEditingItem] = useState<{ id: number, content: string } | null>(null);
-    const [newItemContent, setNewItemContent] = useState('');
-
-    const selectedTagRef = useRef<string | null>(null);
-    useEffect(() => { selectedTagRef.current = selectedTag; }, [selectedTag]);
+    const { split } = useSettingsLayout();
+    const [collapsed, setCollapsed] = useState(false);
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const [pickerActiveTag, setPickerActiveTag] = useState<string | null>(null);
+    const [managementMode, setManagementMode] = useState(false);
+    const selectionContext = JSON.stringify([selectedTag, library.query]);
+    const selectionScope = JSON.stringify([selectedTag, library.query, library.contentRevision, library.total]);
+    const [entrySelection, setEntrySelection] = useState(() => ({ context: selectionContext, scope: selectionScope, selection: emptyTagSelection() as TagBatchSelection }));
+    const selection = entrySelection.scope === selectionScope ? entrySelection.selection : emptyTagSelection();
+    const selectedCount = tagSelectionCount(selection, library.total);
+    const [batchFeedback, setBatchFeedback] = useState<{ message: string; error: boolean } | null>(null);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [selectedId, setSelectedId] = useState<number | null>(null);
+    const [detailRevision, setDetailRevision] = useState(0);
+    const [dialog, setDialog] = useState<Dialog | null>(null);
+    const [qrEntry, setQrEntry] = useState<ClipboardEntry | null>(null);
+    const [value, setValue] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [dialogError, setDialogError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState(false);
+    const root = useRef<HTMLDivElement>(null);
+    const menu = useRef<HTMLDivElement>(null);
+    const menuButton = useRef<HTMLButtonElement>(null);
+    const manageButton = useRef<HTMLButtonElement>(null);
+    const picker = useRef<HTMLDivElement>(null);
+    const pickerButton = useRef<HTMLButtonElement>(null);
+    const pickerId = useId();
+    const tagListId = useId();
+    const searchInput = useRef<HTMLInputElement>(null);
+    const tagSearchInput = useRef<HTMLInputElement>(null);
+    const tagList = useRef<VirtuosoHandle>(null);
+    const list = useRef<VirtuosoHandle>(null);
+    const detailSequence = useRef(0);
+    const focusSequence = useRef(0);
+    const mounted = useRef(true);
+    const colors = tagColors ?? library.colors;
+    const filteredTags = useMemo(() => {
+        const filter = tagSearch.trim().toLocaleLowerCase();
+        return library.tags.filter(tag => tag.name.toLocaleLowerCase().includes(filter));
+    }, [library.tags, tagSearch]);
+    const notifyError = useCallback(() => { if (mounted.current) setActionError(true); }, []);
+    const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
 
     useEffect(() => {
-        let disposed = false;
-        const unlisteners: (() => void)[] = [];
-        const setupListeners = async () => {
-            const handleUpdate = () => {
-                // Don't refresh if we're in the middle of a delete operation
-                if (disposed || isDeleting) return;
-                fetchTags();
-                if (selectedTagRef.current) loadTagItems(selectedTagRef.current);
-            };
-            for (const event of ['clipboard-changed', 'clipboard-updated', 'clipboard-removed']) {
-                const unlisten = await listen(event, handleUpdate);
-                if (disposed) {
-                    unlisten();
-                    return;
-                }
-                unlisteners.push(unlisten);
-            }
+        mounted.current = true;
+        return () => { mounted.current = false; detailSequence.current += 1; focusSequence.current += 1; };
+    }, []);
+    useEffect(() => { detailSequence.current += 1; setActionError(false); setSelectedId(null); setMenuOpen(false); }, [selectedTag, library.query, library.sortBy]);
+    useEffect(() => {
+        const hadSelection = entrySelection.selection.mode === 'all' || entrySelection.selection.ids.length > 0;
+        if (entrySelection.context !== selectionContext) setBatchFeedback(null);
+        else if (entrySelection.scope !== selectionScope && hadSelection) {
+            setBatchFeedback({ message: t('tag_selection_changed'), error: false });
+        }
+        setEntrySelection({ context: selectionContext, scope: selectionScope, selection: emptyTagSelection() });
+        setDialog(current => current?.kind === 'deleteSelection' && current.scope !== selectionScope && !busy ? null : current);
+    }, [selectionScope]);
+    useEffect(() => {
+        if (!actionError) return;
+        const timer = setTimeout(() => setActionError(false), 4000);
+        return () => clearTimeout(timer);
+    }, [actionError]);
+    useEffect(() => {
+        if (!menuOpen) return;
+        const dismiss = (event: PointerEvent) => {
+            if (event.target instanceof Node && !menu.current?.contains(event.target) && !menuButton.current?.contains(event.target)) setMenuOpen(false);
         };
-        void setupListeners().catch(console.error);
-        return () => {
-            disposed = true;
-            unlisteners.forEach(f => f());
+        document.addEventListener('pointerdown', dismiss);
+        menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
+        return () => document.removeEventListener('pointerdown', dismiss);
+    }, [menuOpen]);
+    useEffect(() => { setPickerOpen(false); }, [split]);
+    useEffect(() => {
+        if (!pickerOpen) return;
+        const dismiss = (event: PointerEvent) => {
+            if (event.target instanceof Node && !picker.current?.contains(event.target) && !pickerButton.current?.contains(event.target)) setPickerOpen(false);
         };
-    }, [isDeleting]);
+        document.addEventListener('pointerdown', dismiss);
+        tagSearchInput.current?.focus();
+        return () => { document.removeEventListener('pointerdown', dismiss); focusSequence.current += 1; };
+    }, [pickerOpen]);
 
-    useEffect(() => { fetchTags(); }, []);
-
-    const fetchTags = async () => {
+    const clearSelection = () => setEntrySelection({ context: selectionContext, scope: selectionScope, selection: emptyTagSelection() });
+    const selectAll = () => {
+        if (!selectedTag || library.loading || library.error || library.total === 0) return;
+        setEntrySelection({ context: selectionContext, scope: selectionScope, selection: selection.mode === 'all' && selection.excludedIds.length === 0
+            ? emptyTagSelection() : selectAllTagEntries(library.query) });
+        setBatchFeedback(null);
+    };
+    const toggleEntry = (id: number) => {
         try {
-            const [tagMap, colors] = await Promise.all([
-                invoke<Record<string, number>>('get_all_tags_info'),
-                invoke<Record<string, string>>('get_tag_colors')
-            ]);
-
-            const tagArray = Object.entries(tagMap).map(([name, count]) => ({ name, count }));
-            tagArray.sort((a, b) => b.count - a.count);
-            setTags(tagArray);
-            setTagColors(colors || {});
-
-            if (!selectedTag && tagArray.length > 0) loadTagItems(tagArray[0].name);
-        } catch (err) { console.error(err); }
+            setEntrySelection({ context: selectionContext, scope: selectionScope, selection: toggleTagEntry(selection, id) });
+            setBatchFeedback(null);
+        } catch {
+            setBatchFeedback({ message: t('tag_selection_limit').replace('{limit}', String(MAX_TAG_BATCH_IDS)), error: true });
+        }
+    };
+    const toggleManagement = () => {
+        detailSequence.current += 1;
+        setManagementMode(current => !current); clearSelection(); setBatchFeedback(null); setMenuOpen(false); setPickerOpen(false);
     };
 
-    const loadTagItems = async (tagName: string) => {
-        setLoading(true);
-        setSelectedTag(tagName);
-        try {
-            const items = await invoke<ClipboardEntry[]>('get_tag_items', { tag: tagName });
-            setTagItems(items || []);
-        } catch (err) { console.error(err); setTagItems([]); }
-        finally { setLoading(false); }
+    const openDialog = useCallback((next: Dialog) => {
+        detailSequence.current += 1;
+        setMenuOpen(false); setPickerOpen(false); setDialogError(null);
+        setValue(next.kind === 'renameTag' ? next.tag : next.kind === 'createTag' ? tagSearch.trim() : '');
+        setDialog(next);
+    }, [tagSearch]);
+    const editItem = useCallback((item: ClipboardEntry) => {
+        const request = ++detailSequence.current;
+        void invoke<ClipboardEntry>('get_tag_item_detail', { id: item.id }).then(detail => {
+            if (!mounted.current || request !== detailSequence.current) return;
+            setDialogError(null); setValue(detail.content); setDialog({ kind: 'editItem', id: item.id });
+        }).catch(() => { if (request === detailSequence.current) notifyError(); });
+    }, [notifyError]);
+    const deleteItem = useCallback((item: ClipboardEntry) => openDialog({ kind: 'deleteItem', item }), [openDialog]);
+    const closeDialog = () => {
+        if (busy) return;
+        if (dialog?.kind === 'createTag' && !split) requestAnimationFrame(() => pickerButton.current?.focus());
+        setDialog(null);
     };
 
-    // Helper for color collision detection
+    const focusVirtualItem = (selector: string, scroll: () => void) => {
+        const request = ++focusSequence.current;
+        const focus = (target: HTMLElement) => { target.scrollIntoView({ block: 'nearest' }); target.focus({ preventScroll: true }); };
+        const existing = root.current?.querySelector<HTMLElement>(selector);
+        if (existing) { focus(existing); return; }
+        const attempt = (remaining: number) => requestAnimationFrame(() => {
+            if (!mounted.current || request !== focusSequence.current) return;
+            const target = root.current?.querySelector<HTMLElement>(selector);
+            if (target) focus(target);
+            else if (remaining > 0) { scroll(); attempt(remaining - 1); }
+        });
+        scroll(); attempt(30);
+    };
 
-
-
-
-    const handleRenameTag = async (oldName: string) => {
-        const trimmed = newTagName.trim();
-        if (!trimmed || trimmed === oldName) { setEditingTag(null); return; }
-
-        if (oldName === 'sensitive' || oldName === '密码') {
-            setEditingTag(null);
+    const saveDialog = async () => {
+        if (!dialog || busy) return;
+        const current = dialog;
+        if (current.kind === 'deleteSelection' && current.scope !== selectionScope) {
+            setDialog(null); clearSelection();
+            setBatchFeedback({ message: t('tag_selection_changed'), error: false });
             return;
         }
-
+        const trimmed = value.trim();
+        if (['createTag', 'renameTag', 'createItem', 'editItem'].includes(current.kind) && !trimmed) return;
+        if (current.kind === 'renameTag' && protectedTag(trimmed)) { setDialogError(t('tag_sensitive_target')); return; }
+        if (current.kind === 'removeTag' && protectedTag(current.tag) && privacyProtection) { setDialogError(t('tag_sensitive_delete_locked')); return; }
+        setBusy(true); setDialogError(null);
         try {
-            await invoke('rename_tag_globally', { oldName, newName: trimmed });
-            if (selectedTag === oldName) setSelectedTag(trimmed);
-            await fetchTags();
-            await loadTagItems(trimmed);
-            setEditingTag(null);
-            setNewTagName('');
-        } catch (err) { console.error(err); }
+            let deletedCount: number | null = null;
+            if (current.kind === 'createTag') {
+                const existing = library.tags.find(tag => tag.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase());
+                if (!existing) await invoke('create_new_tag', { tagName: trimmed });
+                selectTag(existing?.name ?? trimmed); setTagSearch('');
+            } else if (current.kind === 'renameTag') {
+                await invoke('rename_tag_globally', { oldName: current.tag, newName: trimmed });
+                if (selectedTag === current.tag) selectTag(trimmed);
+            } else if (current.kind === 'removeTag') {
+                if (protectedTag(current.tag)) await invoke('delete_sensitive_tag_with_contents', { tagName: current.tag });
+                else await invoke('remove_tag_from_all', { tagName: current.tag });
+                if (selectedTag === current.tag) selectTag(null);
+            } else if (current.kind === 'createItem') {
+                await invoke('add_manual_item', { content: value, contentType: 'text', tags: [current.tag] });
+            } else if (current.kind === 'editItem') {
+                await invoke('update_item_content', { id: current.id, newContent: value });
+            } else if (current.kind === 'deleteSelection') {
+                const result = await invoke<{ deletedCount: number }>('delete_tag_entries', { tagName: current.tag, selection: current.selection });
+                deletedCount = result.deletedCount;
+            } else await invoke('delete_clipboard_entry', { id: current.item.id });
+            if (!mounted.current) return;
+            setDialog(null); changed();
+            if (deletedCount !== null) {
+                clearSelection(); setBatchFeedback({ message: t('tag_batch_deleted').replace('{count}', String(deletedCount)), error: false });
+            }
+            if (current.kind === 'createTag' && !split) requestAnimationFrame(() => pickerButton.current?.focus());
+            void emit('clipboard-changed').catch(console.error);
+        } catch (reason) {
+            if (mounted.current) {
+                if (current.kind === 'deleteSelection') {
+                    setDialog(null); clearSelection(); changed();
+                    setBatchFeedback({ message: errorMessage(reason) || t('tag_action_failed'), error: true });
+                } else setDialogError(current.kind === 'removeTag' && protectedTag(current.tag)
+                    ? errorMessage(reason) || t('tag_action_failed') : t('tag_action_failed'));
+            }
+        }
+        finally { if (mounted.current) setBusy(false); }
     };
 
-    const handleDeleteTag = async (tagName: string) => {
-        if (tagName === 'sensitive' || tagName === '密码') return;
-        setIsDeleting(true);
-        try {
-            await invoke('delete_tag_from_all', { tagName });
-            await emit('clipboard-changed'); // Notify App.tsx to refresh
-            await fetchTags();
-            if (selectedTag === tagName) { setSelectedTag(null); setTagItems([]); }
-        } catch (err) { console.error(err); }
-        finally {
-            setIsDeleting(false);
+    const handleKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+        const target = event.target as HTMLElement;
+        if (target.closest('dialog')) return;
+        if (pickerOpen && event.key === 'Escape') {
+            event.preventDefault(); event.stopPropagation(); setPickerOpen(false); pickerButton.current?.focus(); return;
+        }
+        if (pickerOpen && target === tagSearchInput.current && ['ArrowDown', 'ArrowUp'].includes(event.key) && filteredTags.length) {
+            const next = event.key === 'ArrowDown' ? 0 : filteredTags.length - 1;
+            event.preventDefault();
+            focusVirtualItem(`[data-tag-index="${next}"]`, () => tagList.current?.scrollToIndex({ index: next, align: 'start' }));
+            return;
+        }
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+            event.preventDefault(); searchInput.current?.focus(); return;
+        }
+        const editable = target.closest('textarea, input:not([type="checkbox"])');
+        if (managementMode && !editable) {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAll(); return; }
+            if (event.key === 'Escape') { event.preventDefault(); toggleManagement(); manageButton.current?.focus(); return; }
+            if (event.key === 'Delete' && selectedTag && selectedCount > 0 && !busy) {
+                event.preventDefault(); openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: selectionScope }); return;
+            }
+        }
+        if (target.closest('input, textarea, [role="menu"]')) return;
+        if (event.key === 'F2' && !managementMode && selectedTag && !protectedTag(selectedTag)) {
+            event.preventDefault(); openDialog({ kind: 'renameTag', tag: selectedTag }); return;
+        }
+        const tagIndex = target.dataset.tagIndex;
+        if (tagIndex !== undefined && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            const index = Number(tagIndex);
+            const next = Math.max(0, Math.min(filteredTags.length - 1, event.key === 'Home' ? 0 : event.key === 'End' ? filteredTags.length - 1 : index + (event.key === 'ArrowDown' ? 1 : -1)));
+            event.preventDefault();
+            focusVirtualItem(`[data-tag-index="${next}"]`, () => tagList.current?.scrollToIndex({ index: next, align: 'start' }));
+        }
+        const itemIndex = target.dataset.entryIndex;
+        if (itemIndex !== undefined && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            const next = Math.max(0, Math.min(library.items.length - 1, event.key === 'Home' ? 0 : event.key === 'End' ? library.items.length - 1 : Number(itemIndex) + (event.key === 'ArrowDown' ? 1 : -1)));
+            event.preventDefault();
+            focusVirtualItem(`[data-entry-index="${next}"]`, () => list.current?.scrollToIndex({ index: next, align: 'center' }));
         }
     };
 
-    const handleAddManualItem = async () => {
-        if (!newItemContent.trim() || !selectedTag) return;
-        try {
-            await invoke('add_manual_item', {
-                content: newItemContent,
-                contentType: 'text',
-                tags: [selectedTag]
-            });
-            setNewItemContent('');
-            setIsCreatingItem(false);
-            await loadTagItems(selectedTag);
-        } catch (err) { console.error(err); }
-    };
+    const isTextDialog = dialog?.kind === 'createItem' || dialog?.kind === 'editItem';
+    const isNameDialog = dialog?.kind === 'createTag' || dialog?.kind === 'renameTag';
+    const destructiveTag = dialog?.kind === 'removeTag' && protectedTag(dialog.tag);
+    const dialogTitle = dialog?.kind === 'deleteSelection' ? t('tag_batch_delete_title') : dialog?.kind === 'createTag' ? t('tag_create') : dialog?.kind === 'renameTag' ? t('tag_rename')
+        : dialog?.kind === 'removeTag' ? destructiveTag ? t('tag_sensitive_delete_title') : t('tag_remove_title').replace('{tag}', dialog.tag)
+            : dialog?.kind === 'createItem' ? t('add_item') : dialog?.kind === 'editItem' ? t('edit_item') : t('confirm_delete');
+    const menuItem = (icon: ReactNode, label: string, action: () => void, disabled = false) => <button type="button"
+        className="item-context-menu__item" role="menuitem" disabled={disabled}
+        onClick={() => { setMenuOpen(false); action(); }}><span className="item-context-menu__item-label">{icon}{label}</span></button>;
+    const renderTagList = (dropdown: boolean) => <Virtuoso ref={tagList} id={tagListId} data={filteredTags} fixedItemHeight={38}
+        role={dropdown ? 'listbox' : undefined} aria-label={t('tags')} computeItemKey={(_, tag) => tag.name}
+        itemContent={(index, tag) => <div className="tag-manager-tag-cell"><button type="button" data-tag-index={index}
+            className={dropdown ? `item-context-menu__item tag-manager-tag${pickerActiveTag === tag.name ? ' item-context-menu__item--active' : ''}`
+                : `settings-rail-item tag-manager-tag${selectedTag === tag.name ? ' is-active' : ''}`}
+            role={dropdown ? 'option' : undefined} aria-selected={dropdown ? selectedTag === tag.name : undefined}
+            onMouseEnter={dropdown ? () => setPickerActiveTag(tag.name) : undefined} onFocus={dropdown ? () => setPickerActiveTag(tag.name) : undefined}
+            onClick={() => {
+                selectTag(tag.name);
+                if (dropdown) { setPickerOpen(false); pickerButton.current?.focus(); }
+            }} aria-label={`${tag.name} · ${tag.count}`} aria-current={!dropdown && selectedTag === tag.name ? 'page' : undefined} title={`${tag.name} · ${tag.count}`}>
+            {collapsed && !dropdown ? <span className="tag-manager-tag-initial" aria-hidden="true">{Array.from(tag.name)[0]}</span>
+                : <><span className={`tag-manager-tag-name${dropdown ? ' item-context-menu__item-label' : ''}`}>{tag.name}</span><small>{tag.count}</small></>}
+        </button></div>} />;
 
-    const handleUpdateItemContent = async () => {
-        if (!editingItem || !editingItem.content.trim()) return;
-        try {
-            await invoke('update_item_content', {
-                id: editingItem.id,
-                newContent: editingItem.content
-            });
-            setEditingItem(null);
-            if (selectedTag) await loadTagItems(selectedTag);
-        } catch (err) { console.error(err); }
-    };
-
-    const copyToClipboard = async (id: number, content: string, type: string) => {
-        try {
-            await invoke('copy_to_clipboard', { content, contentType: type, paste: true, id, deleteAfterUse: false });
-        } catch (err) { console.error(err); }
-    };
-
-    const filteredTags = useMemo(() => {
-        return tags.filter(t => t.name.toLowerCase().includes(tagSearch.toLowerCase()));
-    }, [tags, tagSearch]);
-
-    const sortedItems = [...tagItems].sort((a, b) => {
-        if (sortBy === 'count') return (b.use_count || 0) - (a.use_count || 0);
-        return b.timestamp - a.timestamp;
-    });
-
-    return (
-        <div
-            className={`themed-tag-manager theme-${theme} ${isCollapsed ? 'sidebar-collapsed' : ''}`}
-            onMouseDown={() => invoke('activate_window_focus').catch(console.error)}
-        >
-            {/* Sidebar with CRUD support */}
-            {/* Sidebar with Unified Search & Create */}
-            <div className="tag-sidebar">
-                <div className="sidebar-header">
-                    {!isCollapsed && <span className="header-label">{t('tags')}</span>}
-                    <button
-                        className="collapse-toggle"
-                        title={isCollapsed ? (t('collapse') || '展开') : (t('collapse') || '收起')}
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                    >
-                        {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+    return <div ref={root} className={`tag-manager${split && collapsed ? ' tag-manager--collapsed' : ''}`} onKeyDown={handleKeyboard}
+        onPointerDownCapture={() => { void invoke('activate_window_focus').catch(console.error); }}>
+        {split && <aside className="settings-rail tag-manager-rail" aria-label={t('tags')}>
+            <div className="tag-manager-rail-tools">
+                <button type="button" className="btn-icon" onClick={() => setCollapsed(current => !current)}
+                    title={t(collapsed ? 'tag_expand_navigation' : 'tag_collapse_navigation')} aria-label={t(collapsed ? 'tag_expand_navigation' : 'tag_collapse_navigation')}>
+                    {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                </button>
+                {!collapsed && <button type="button" className="btn-icon" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>}
+            </div>
+            {collapsed ? <button type="button" className="btn-icon tag-manager-rail-search-toggle" title={t('tag_search_label')} aria-label={t('tag_search_label')}
+                onClick={() => { setCollapsed(false); requestAnimationFrame(() => tagSearchInput.current?.focus()); }}><Search size={15} /></button>
+                : <div className="search-container tag-manager-rail-search"><Search className="search-icon" size={13} /><input ref={tagSearchInput} className="search-input"
+                    value={tagSearch} onChange={event => setTagSearch(event.target.value)} placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} /></div>}
+            <div className="tag-manager-tag-list" aria-busy={library.metadataLoading}>
+                {renderTagList(false)}
+            </div>
+            {collapsed && <button type="button" className="btn-icon tag-manager-rail-add" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>}
+        </aside>}
+        <section className="tag-manager-content" aria-label={selectedTag ?? t('tag_manager')}>
+            <div className="tag-manager-toolbar">
+                {split ? <span className="tag-manager-current" title={selectedTag ?? ''}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span></span>
+                    : <button ref={pickerButton} type="button" className={`btn-icon tag-manager-current tag-manager-picker-trigger${pickerOpen ? ' active' : ''}`}
+                        aria-label={`${t('tags')}: ${selectedTag ?? t('tags')}`} title={selectedTag ?? t('tags')}
+                        aria-haspopup="dialog" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined}
+                        onClick={() => { setMenuOpen(false); setPickerActiveTag(selectedTag); setPickerOpen(current => !current); }}
+                        onKeyDown={event => {
+                            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                            if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); setMenuOpen(false); setPickerActiveTag(selectedTag); setPickerOpen(true); }
+                        }}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span><ChevronDown size={13} /></button>}
+                {!split && pickerOpen && <div ref={picker} id={pickerId} role="dialog" aria-label={t('tag_search_label')}
+                    className="item-context-menu tag-manager-picker" onBlur={event => {
+                        if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== pickerButton.current) setPickerOpen(false);
+                    }}>
+                    <div className="tag-manager-picker-tools">
+                        <div className="search-container tag-manager-picker-search"><Search className="search-icon" size={13} />
+                            <input ref={tagSearchInput} className="search-input" value={tagSearch} onChange={event => { focusSequence.current += 1; setTagSearch(event.target.value); }}
+                                placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={tagListId} />
+                        </div>
+                        <button type="button" className="btn-icon" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>
+                    </div>
+                    {filteredTags.length ? <div className={`tag-manager-tag-list tag-manager-picker-size-${Math.min(filteredTags.length, 6)}`} aria-busy={library.metadataLoading}>{renderTagList(true)}</div>
+                        : <div id={tagListId} className="dc-tag-filter-empty" role="listbox" aria-label={t('tags')}><span role="status">{t(library.metadataLoading ? 'common_loading' : library.metadataError ? 'tag_load_failed' : 'tag_no_matching_tags')}</span></div>}
+                </div>}
+                <button type="button" className={`btn-icon${compactMode ? ' active' : ''}`} onClick={() => onCompactModeChange?.(!compactMode)}
+                    disabled={!onCompactModeChange} title={t(compactMode ? 'tag_mode_detailed' : 'tag_mode_simple')}
+                    aria-label={t(compactMode ? 'tag_mode_detailed' : 'tag_mode_simple')} aria-pressed={compactMode}>
+                    {compactMode ? <List size={16} /> : <ListCollapse size={16} />}
+                </button>
+                <button ref={manageButton} type="button" className={`btn-icon${managementMode ? ' active' : ''}`}
+                    disabled={busy || (!managementMode && !selectedTag)} aria-pressed={managementMode} onClick={toggleManagement}
+                    title={t(managementMode ? 'tag_manage_done' : 'tag_manage')} aria-label={t(managementMode ? 'tag_manage_done' : 'tag_manage')}>
+                    {managementMode ? <Check size={16} /> : <ListChecks size={16} />}
+                </button>
+                <button type="button" className="btn-icon" disabled={!selectedTag || managementMode || busy} title={t('add_item')} aria-label={t('add_item')}
+                    onClick={() => { if (selectedTag) openDialog({ kind: 'createItem', tag: selectedTag }); }}><Plus size={16} /></button>
+                <button ref={menuButton} type="button" className={`btn-icon${menuOpen ? ' active' : ''}`} title={t('tag_actions')} aria-label={t('tag_actions')}
+                    disabled={!selectedTag || managementMode || busy} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(current => !current)}><MoreHorizontal size={17} /></button>
+                {menuOpen && selectedTag && <div ref={menu} className="item-context-menu tag-manager-menu" role="menu" onKeyDown={event => {
+                    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMenuOpen(false); menuButton.current?.focus(); }
+                    if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+                        event.preventDefault();
+                        const options = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+                        const index = options.indexOf(document.activeElement as HTMLButtonElement);
+                        const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+                        options[next]?.focus();
+                    }
+                }}>
+                    {menuItem(<ArrowDownWideNarrow size={14} />, t(library.sortBy === 'time' ? 'sort_usage' : 'sort_time'), () => library.setSortBy(library.sortBy === 'time' ? 'count' : 'time'))}
+                    {menuItem(<Edit2 size={14} />, t('tag_rename'), () => openDialog({ kind: 'renameTag', tag: selectedTag }), protectedTag(selectedTag))}
+                    <div className="item-context-menu__separator" />
+                    {menuItem(<Trash2 size={14} />, t(protectedTag(selectedTag) ? 'common_delete' : 'tag_remove'), () => openDialog({ kind: 'removeTag', tag: selectedTag }), protectedTag(selectedTag) && privacyProtection)}
+                </div>}
+            </div>
+            <div className="search-container tag-manager-search"><Search className="search-icon" size={14} />
+                <input ref={searchInput} className="search-input" value={library.query} maxLength={256} disabled={!selectedTag}
+                    onChange={event => library.setQuery(event.target.value)} placeholder={t('tag_content_search')} aria-label={t('tag_content_search')}
+                    onKeyDown={event => {
+                        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                        if (event.key === 'Escape' && library.query) { event.stopPropagation(); library.setQuery(''); }
+                    }} />
+                {library.query && <button type="button" className="btn-icon tag-manager-clear" onClick={() => library.setQuery('')} aria-label={t('tag_clear_search')}><X size={13} /></button>}
+            </div>
+            {managementMode && <div className="tag-manager-batch-toolbar">
+                <button type="button" className="btn-icon tag-manager-text-button" disabled={busy || library.loading || library.error || library.total === 0} onClick={selectAll}
+                    aria-pressed={selection.mode === 'all' && selection.excludedIds.length === 0}>
+                    {t(selection.mode === 'all' && selection.excludedIds.length === 0 ? 'tag_clear_selection' : library.query ? 'tag_select_all_matches' : 'tag_select_all')}
+                </button>
+                <span role="status" aria-live="polite">{t('tag_selected_count').replace('{count}', String(selectedCount))}</span>
+                <button type="button" className="btn-icon tag-manager-text-button tag-manager-batch-delete" disabled={busy || selectedCount === 0 || !selectedTag}
+                    onClick={() => { if (selectedTag) openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount, scope: selectionScope }); }}>{t('common_delete')}</button>
+            </div>}
+            <div className="history-list-container tag-manager-results" aria-busy={library.loading}>
+                {library.loading || (library.metadataLoading && library.tags.length === 0) ? <div className="tag-manager-empty" role="status"><LoaderCircle className="tag-manager-spinner" size={22} /></div>
+                    : library.items.length ? <div className="virtual-list-wrapper"><Virtuoso ref={list} key={`${selectedTag}:${library.query}:${library.sortBy}`} data={library.items}
+                        computeItemKey={(_, item) => item.id} endReached={library.loadMore} increaseViewportBy={100}
+                        itemContent={(index, item) => <TagHistoryRow key={`${item.id}:${library.contentRevision}:${detailRevision}`} item={item} index={index} selected={selectedId === item.id}
+                            compactMode={compactMode} isWindowPinned={isWindowPinned}
+                            managementMode={managementMode} selectedForDeletion={managementMode && Number.isSafeInteger(item.id) && item.id > 0 && tagEntrySelected(selection, item.id)} onToggleSelection={toggleEntry}
+                            richTextSnapshotPreview={richTextSnapshotPreview} theme={theme} language={language} t={t} tagColors={colors}
+                            onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} />}
+                        components={{ Footer: () => library.loadingMore ? <div className="tag-manager-loading"><LoaderCircle size={15} className="tag-manager-spinner" /></div> : null }} /></div>
+                        : <div className="tag-manager-empty">{t(library.error || library.metadataError ? 'tag_load_failed' : !selectedTag ? 'tag_library_empty' : library.query ? 'tag_no_matching_entries' : 'tag_no_entries')}</div>}
+            </div>
+            {(batchFeedback || actionError) && <div className="tag-manager-notice" role={batchFeedback && !batchFeedback.error ? 'status' : 'alert'}>{batchFeedback?.message ?? t('tag_action_failed')}
+                <button type="button" className="btn-icon" aria-label={t('common_close')} onClick={() => { setActionError(false); setBatchFeedback(null); }}><X size={13} /></button></div>}
+        </section>
+        {dialog && <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog} wide={isTextDialog}>
+            <form onSubmit={event => { event.preventDefault(); void saveDialog(); }}>
+                {isNameDialog && <label className="tag-manager-field"><span>{t('tag_name')}</span><input className="search-input" autoFocus value={value} maxLength={80} readOnly={busy} onChange={event => setValue(event.target.value)} /></label>}
+                {isTextDialog && <label className="tag-manager-field"><span>{t('input_content_placeholder')}</span><textarea className="modal-textarea" autoFocus value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
+                {dialog.kind === 'removeTag' && <p className="confirm-dialog-message">{t(destructiveTag ? 'tag_sensitive_delete_hint' : 'tag_remove_hint')}</p>}
+                {dialog.kind === 'deleteItem' && <p className="confirm-dialog-message">{t('confirm_delete_desc')}</p>}
+                {dialog.kind === 'deleteSelection' && <p className="confirm-dialog-message">{t(dialog.selection.mode === 'all' ? 'tag_batch_delete_all_confirm' : 'tag_batch_delete_confirm')
+                    .replace('{count}', String(dialog.count)).replace('{tag}', dialog.tag)}</p>}
+                {dialogError && <p className="tag-manager-dialog-error" role="alert">{dialogError}</p>}
+                <div className="confirm-dialog-buttons">
+                    <button type="button" className="confirm-dialog-button" disabled={busy} onClick={closeDialog}>{t('cancel')}</button>
+                    <button type="submit" className="confirm-dialog-button primary" disabled={busy || ((isNameDialog || isTextDialog) && !value.trim())}>
+                        {t(dialog.kind === 'deleteItem' || dialog.kind === 'deleteSelection' || destructiveTag ? 'common_delete' : dialog.kind === 'removeTag' ? 'tag_remove' : dialog.kind === 'createTag' ? 'tag_create' : 'common_save')}
                     </button>
                 </div>
-
-                {!isCollapsed && (
-                    <div className="tag-search-box">
-                        <input
-                            placeholder={t('find_or_create')}
-                            value={tagSearch}
-                            onMouseDown={() => invoke('activate_window_focus').catch(console.error)}
-                            onFocus={() => invoke('activate_window_focus').catch(console.error)}
-                            onChange={e => setTagSearch(e.target.value)}
-                            onKeyDown={async (e) => {
-                                if (e.key === 'Enter' && tagSearch.trim()) {
-                                    // If exact match exists, select it. If not, create new.
-                                    const exactMatch = tags.find(t => t.name.toLowerCase() === tagSearch.trim().toLowerCase());
-                                    if (exactMatch) {
-                                        loadTagItems(exactMatch.name);
-                                    } else {
-                                        // Create new persistence tag
-                                        try {
-                                            await invoke('create_new_tag', { tagName: tagSearch.trim() });
-                                            setNewTagName('');
-                                            setTagSearch('');
-                                            await fetchTags();
-                                        } catch (err) { console.error(err); }
-                                    }
-                                }
-                            }}
-                        />
-                        {tagSearch ? (
-                            <div className="action-icons">
-                                { /* If no exact match, show Plus to indicate creation */}
-                                {!tags.some(t => t.name.toLowerCase() === tagSearch.trim().toLowerCase()) ? (
-                                    <span
-                                        title={t('create_new_tag_tooltip')}
-                                        className="action-icon create"
-                                        onClick={async () => {
-                                            try {
-                                                await invoke('create_new_tag', { tagName: tagSearch.trim() });
-                                                setNewTagName('');
-                                                setTagSearch('');
-                                                await fetchTags();
-                                            } catch (err) { console.error(err); }
-                                        }}
-                                    >
-                                        <Plus size={12} />
-                                    </span>
-                                ) : (
-                                    <Search size={12} className="action-icon search" />
-                                )}
-                                <X size={12} className="action-icon clear" onClick={() => setTagSearch('')} />
-                            </div>
-                        ) : (
-                            <Search size={12} className="search-icon-placeholder" />
-                        )}
-                    </div>
-                )}
-
-                <div className="tag-scroll custom-scrollbar">
-                    {filteredTags.map(tag => (
-                        <div
-                            key={tag.name}
-                            className={`tag-item ${selectedTag === tag.name ? 'active' : ''}`}
-                            onClick={() => loadTagItems(tag.name)}
-                        >
-                            <div className="tag-color-wrapper" onClick={(e) => e.stopPropagation()}>
-                                <div
-                                    className="tag-color-dot"
-                                    style={{ background: tagColors[tag.name] || getTagColor(tag.name, theme) }}
-                                    onClick={() => document.getElementById(`color-picker-${tag.name}`)?.click()}
-                                />
-                                <input
-                                    type="color"
-                                    id={`color-picker-${tag.name}`}
-                                    style={{ display: 'none' }}
-                                    value={tagColors[tag.name] || '#888888'} // Approximation if not set, or maybe convert HSL to Hex?
-                                    onChange={async (e) => {
-                                        const newColor = e.target.value;
-                                        setTagColors(prev => ({ ...prev, [tag.name]: newColor }));
-                                        await invoke('set_tag_color', { name: tag.name, color: newColor });
-                                        await emit('tag-colors-updated');
-                                    }}
-                                />
-                            </div>
-                            {editingTag === tag.name ? (
-                                <input
-                                    className="inline-tag-edit"
-                                    value={newTagName}
-                                    onMouseDown={() => invoke('activate_window_focus').catch(console.error)}
-                                    onFocus={() => invoke('activate_window_focus').catch(console.error)}
-                                    onChange={(e) => setNewTagName(e.target.value)}
-                                    autoFocus
-                                    onKeyDown={async (e) => {
-                                        if (e.key === 'Enter') {
-                                            await handleRenameTag(tag.name);
-                                        } else if (e.key === 'Escape') {
-                                            setEditingTag(null);
-                                        }
-                                    }}
-                                    onBlur={() => setEditingTag(null)}
-                                    onClick={(e) => e.stopPropagation()}
-                                />
-                            ) : (
-                                <>
-                                    <span className="tag-name">{tag.name}</span>
-                                    <div className="tag-hover-actions">
-                                        <span title="重命名" onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (tag.name === 'sensitive' || tag.name === '密码') return;
-                                            setEditingTag(tag.name);
-                                            setNewTagName(tag.name);
-                                        }} style={{
-                                            opacity: (tag.name === 'sensitive' || tag.name === '密码') ? 0.2 : 1,
-                                            cursor: (tag.name === 'sensitive' || tag.name === '密码') ? 'not-allowed' : 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center'
-                                        }}>
-                                            <Edit2 size={12} />
-                                        </span>
-                                        {(tag.name !== 'sensitive' && tag.name !== '密码') && (
-                                            <span title="删除" onClick={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                setDeleteConfirmation({ show: true, tagName: tag.name });
-                                            }} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                                <Trash2 size={12} />
-                                            </span>
-                                        )}
-                                    </div>
-                                    <span className="tag-badge">{tag.count}</span>
-                                </>
-                            )}
-                        </div>
-                    ))}
-                    {/* Visual cue for creating new tag when filtering shows no results */}
-                    {!isCollapsed && tagSearch && filteredTags.length === 0 && (
-                        <div className="tag-item create-hint" onClick={async () => {
-                            try {
-                                await invoke('create_new_tag', { tagName: tagSearch.trim() });
-                                setNewTagName('');
-                                setTagSearch('');
-                                await fetchTags();
-                            } catch (err) { console.error(err); }
-                        }}>
-                            <div className="tag-color-dot" style={{ border: '1px dashed currentColor', background: 'transparent' }} />
-                            <span className="tag-name" style={{ opacity: 0.7 }}>{t('create_tag_hint').replace('{tag}', tagSearch.trim())}</span>
-                            <Plus size={10} />
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Right Main Area */}
-            <div className="tag-content">
-                <div className="content-toolbar">
-                    <div className="toolbar-left">
-                        <div className="selected-tag-indicator">
-                            <span className="breadcrumb-marker">#</span>
-                            <span className="breadcrumb-text">{selectedTag?.toUpperCase()}</span>
-                        </div>
-                        <div className="sort-group">
-                            <button
-                                className={`sort-btn ${sortBy === 'time' ? 'active' : ''}`}
-                                title={t('sort_time') || '按时间'}
-                                onClick={() => setSortBy('time')}
-                            >
-                                <Clock size={12} />
-                            </button>
-                            <button
-                                className={`sort-btn ${sortBy === 'count' ? 'active' : ''}`}
-                                title={t('sort_usage') || '按频率'}
-                                onClick={() => setSortBy('count')}
-                            >
-                                <MousePointer2 size={12} />
-                            </button>
-                        </div>
-                        {selectedTag && (
-                            <button className="add-item-btn btn-icon" onClick={() => setIsCreatingItem(true)} title={t('add_item')}>
-                                <Plus size={14} />
-                            </button>
-                        )}
-                    </div>
-                    <div className="view-toggle">
-                        <button
-                            type="button"
-                            className={`toggle-btn btn-icon ${viewMode === 'list' ? 'active' : ''}`}
-                            title="列表视图"
-                            onClick={() => setViewMode('list')}
-                        ><List size={14} /></button>
-                        <button
-                            type="button"
-                            className={`toggle-btn btn-icon ${viewMode === 'grid' ? 'active' : ''}`}
-                            title="卡片视图"
-                            onClick={() => setViewMode('grid')}
-                        ><LayoutGrid size={14} /></button>
-                    </div>
-                </div>
-
-                <div className="items-area custom-scrollbar">
-                    {loading ? <div className="status-msg">{t('processing')}</div> : (
-                        <div className={`items-${viewMode}`}>
-                            {sortedItems.map(item => (
-                                <div key={item.id} className="themed-card" onClick={() => copyToClipboard(item.id, item.content, item.content_type)}>
-                                    <div className="card-top-row">
-                                        <div className="card-actions-left">
-                                            {item.content_type === 'text' || item.content_type === 'code' ? (
-                                                <button className="card-action-btn" title="编辑" onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setEditingItem({ id: item.id, content: item.content });
-                                                }}>
-                                                    <Edit2 size={10} />
-                                                </button>
-                                            ) : null}
-                                            <button
-                                                className="card-action-btn"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    invoke('open_content', {
-                                                        id: item.id,
-                                                        content: item.content,
-                                                        contentType: item.content_type
-                                                    });
-                                                }}
-                                                title={t('open')}
-                                            >
-                                                <ExternalLink size={10} />
-                                            </button>
-                                        </div>
-                                        <button className="del-btn" title="删除" onClick={(e) => {
-                                            e.stopPropagation();
-                                            setItemDeleteConfirmation({ show: true, id: item.id });
-                                        }}>
-                                            <X size={10} />
-                                        </button>
-                                    </div>
-
-                                    {item.content_type === 'image' ? (
-                                        <div className="card-media">
-                                            <img
-                                                src={item.content.startsWith('data:') ? item.content : convertFileSrc(item.content)}
-                                                alt=""
-                                                className="image-preview"
-                                                loading="lazy"
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="card-body-text">{item.preview || item.content}</div>
-                                    )}
-
-                                    <div className="card-footer">
-                                        <span className="meta-time">{new Date(item.timestamp).toLocaleDateString()}</span>
-                                        <div className="meta-usage"><MousePointer2 size={8} /> {item.use_count || 0}</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Modals for Create (Rename is handled inline now) */}
-            {/* Kept minimal if needed for future extensions, but currently inline handles rename */}
-
-            {/* Tag Delete Confirmation Modal */}
-            {deleteConfirmation.show && (
-                <div className="modal-overlay" onClick={() => setDeleteConfirmation({ show: false, tagName: null })}>
-                    <div className={`confirm-dialog theme-${theme}`} onClick={(e) => e.stopPropagation()}>
-                        <h3>{t('confirm_delete')}</h3>
-                        <p>
-                            {t('confirm_delete_tag')}
-                            <br />
-                            <span className="tag-highlight" style={{ marginTop: '8px', display: 'inline-block' }}>
-                                {deleteConfirmation.tagName}
-                            </span>
-                        </p>
-                        <div className="confirm-dialog-buttons">
-                            <button className="confirm-dialog-button" onClick={() => setDeleteConfirmation({ show: false, tagName: null })}>
-                                {t('cancel')}
-                            </button>
-                            <button className="confirm-dialog-button primary" onClick={() => {
-                                if (deleteConfirmation.tagName) {
-                                    handleDeleteTag(deleteConfirmation.tagName);
-                                }
-                                setDeleteConfirmation({ show: false, tagName: null });
-                            }}>
-                                {t('delete')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Item Delete Confirmation Modal */}
-            {itemDeleteConfirmation.show && (
-                <div className="modal-overlay" onClick={() => setItemDeleteConfirmation({ show: false, id: null })}>
-                    <div className={`confirm-dialog theme-${theme}`} onClick={e => e.stopPropagation()}>
-                        <h3>{t('confirm_delete')}</h3>
-                        <p>{t('confirm_delete_desc') || "确定要删除这条记录吗？"}</p>
-                        <div className="confirm-dialog-buttons">
-                            <button className="confirm-dialog-button" onClick={() => setItemDeleteConfirmation({ show: false, id: null })}>
-                                {t('cancel')}
-                            </button>
-                            <button className="confirm-dialog-button primary" onClick={async () => {
-                                if (itemDeleteConfirmation.id) {
-                                    await invoke('delete_clipboard_entry', { id: itemDeleteConfirmation.id });
-                                    loadTagItems(selectedTag!);
-                                    emit('clipboard-changed');
-                                }
-                                setItemDeleteConfirmation({ show: false, id: null });
-                            }}>
-                                {t('delete')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Create Item Modal */}
-            {isCreatingItem && (
-                <div className="modal-overlay" onClick={() => setIsCreatingItem(false)}>
-                    <div className={`confirm-dialog theme-${theme}`} onClick={e => e.stopPropagation()}>
-                        <h3>{t('add_item')}</h3>
-                        <div className="modal-input-field">
-                            <textarea
-                                className="modal-textarea modal-textarea-create"
-                                value={newItemContent}
-                                onChange={e => setNewItemContent(e.target.value)}
-                                placeholder={t('input_content_placeholder')}
-                                autoFocus
-                            />
-                        </div>
-                        <div className="confirm-dialog-buttons">
-                            <button className="confirm-dialog-button" onClick={() => setIsCreatingItem(false)}>
-                                {t('cancel')}
-                            </button>
-                            <button className="confirm-dialog-button primary" onClick={handleAddManualItem}>
-                                {t('confirm')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Edit Item Modal */}
-            {editingItem && (
-                <div className="modal-overlay" onClick={() => setEditingItem(null)}>
-                    <div className={`confirm-dialog theme-${theme}`} onClick={e => e.stopPropagation()}>
-                        <h3>{t('edit_item')}</h3>
-                        <div className="modal-input-field">
-                            <textarea
-                                className="modal-textarea modal-textarea-edit"
-                                value={editingItem.content}
-                                onChange={e => setEditingItem({ ...editingItem, content: e.target.value })}
-                                autoFocus
-                            />
-                        </div>
-                        <div className="confirm-dialog-buttons">
-                            <button className="confirm-dialog-button" onClick={() => setEditingItem(null)}>
-                                {t('cancel')}
-                            </button>
-                            <button className="confirm-dialog-button primary" onClick={handleUpdateItemContent}>
-                                {t('save')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-            <style>{`
-                .themed-tag-manager {
-                    display: flex;
-                    height: 100%;
-                    background: var(--bg-content);
-                    font-family: var(--font-main, ui-monospace, monospace);
-                    color: var(--text-primary);
-                }
-
-                /* Sidebar */
-                .tag-sidebar {
-                    width: 140px;
-                    border-right: 2px solid var(--border-dark);
-                    background: var(--bg-toolbar);
-                    display: flex;
-                    flex-direction: column;
-                    transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-                    flex-shrink: 0;
-                }
-                .sidebar-collapsed .tag-sidebar { width: 40px; }
-                
-                .sidebar-header {
-                    padding: 8px 10px;
-                    background: var(--bg-element);
-                    color: var(--text-primary);
-                    font-size: 10px; font-weight: 900; text-transform: uppercase;
-                    display: flex; justify-content: space-between; align-items: center;
-                    min-height: 32px;
-                    border-bottom: 2px solid var(--border-dark);
-                }
-                .header-actions { display: flex; align-items: center; gap: 8px; }
-                .action-btn { background: transparent; border: none; color: inherit; cursor: pointer; padding: 2px; opacity: 0.7; transition: opacity 0.2s; }
-                .action-btn:hover { opacity: 1; }
-                .collapse-toggle { background: transparent; border: none; color: inherit; cursor: pointer; display: flex; align-items: center; }
-
-                /* Tag Search Box */
-                .tag-search-box {
-                    padding: 6px 10px;
-                    display: flex; align-items: center; gap: 6px;
-                    background: var(--bg-input);
-                    border-bottom: 2px solid var(--border-dark);
-                    margin: 0;
-                    min-height: 34px;
-                    position: relative;
-                }
-                .tag-search-box .search-icon-placeholder { opacity: 0.3; color: var(--text-primary); flex-shrink: 0; }
-                .tag-search-box input {
-                    background: transparent; border: none; outline: none;
-                    font-size: 11px; font-weight: 700; width: 100%;
-                    color: var(--text-primary);
-                    padding: 2px 0;
-                    flex: 1;
-                    min-width: 0; 
-                }
-                .tag-search-box input::placeholder { color: var(--text-muted); opacity: 0.5; font-style: italic; font-size: 10px; }
-                
-                .action-icons { display: flex; align-items: center; gap: 4px; }
-                .action-icon { cursor: pointer; opacity: 0.5; color: var(--text-primary); transition: all 0.1s; }
-                .action-icon:hover { opacity: 1; transform: scale(1.1); }
-                .action-icon.create { color: var(--accent-color); opacity: 0.8; }
-                .action-icon.create:hover { opacity: 1; }
-
-                .tag-scroll { flex: 1; overflow-y: auto; padding: 4px; overflow-x: hidden; }
-                /* Tag Item Layout: [Color] [Name (Flex)] [Actions (Hover)] [Badge] */
-                .tag-item {
-                    display: flex; align-items: center; gap: 8px;
-                    padding: 8px 10px; cursor: pointer;
-                    margin-bottom: 2px; border: 1px solid transparent;
-                    transition: all 0.1s;
-                    position: relative;
-                }
-                .tag-item.active { background: var(--bg-element); border: 2px solid var(--border-dark); box-shadow: 3px 3px 0 var(--shadow-color); }
-                .tag-item.create-hint { border: 1px dashed var(--border-dark); opacity: 0.8; font-style: italic; }
-                .tag-item.create-hint:hover { background: var(--bg-input); border-style: solid; }
-
-                .sidebar-collapsed .tag-item { justify-content: center; padding: 10px 0; gap: 0; }
-                .sidebar-collapsed .tag-name,
-                .sidebar-collapsed .tag-badge,
-                .sidebar-collapsed .tag-hover-actions { display: none; }
-                .sidebar-collapsed .tag-color-wrapper { width: 100%; justify-content: center; }
-                .tag-color-wrapper { display: flex; align-items: center; justify-content: center; }
-                .tag-color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; cursor: pointer; border: 1px solid rgba(0,0,0,0.1); transition: transform 0.2s; }
-                .tag-color-dot:hover { transform: scale(1.2); }
-                .tag-name { flex: 1; font-size: 11px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-                
-                /* Inline Edit Input */
-                .inline-tag-edit {
-                    flex: 1; border: none; background: var(--bg-input); 
-                    color: var(--text-primary); font-size: 11px; font-weight: 800;
-                    padding: 0 4px; border-radius: 2px;
-                    min-width: 0; outline: 1px solid var(--accent-color);
-                }
-
-                /* Actions group: Hidden by default, Flex on hover. Static position (displaces name) */
-                .tag-hover-actions { display: none; gap: 8px; align-items: center; }
-                .tag-item:hover .tag-hover-actions { display: flex; }
-                
-                .tag-badge { font-size: 9px; opacity: 0.6; min-width: 16px; text-align: right; }
-                
-                .tag-hover-actions > *:hover { color: var(--accent-color); }
-                .tag-item.active .tag-hover-actions > * { opacity: 0.8; }
-                .tag-item.active .tag-hover-actions > *:hover { opacity: 1; color: white; }
-
-                /* Content Area */
-                .tag-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-                .content-toolbar {
-                    height: 32px; border-bottom: 2px solid var(--border-dark);
-                    background: var(--bg-toolbar);
-                    display: flex; align-items: center; justify-content: space-between; padding: 0 12px;
-                }
-                .toolbar-left { display: flex; align-items: center; gap: 16px; }
-                .selected-tag-indicator { display: flex; align-items: center; gap: 4px; font-weight: 900; font-size: 10px; opacity: 0.7; }
-                .breadcrumb-marker { color: var(--accent-color); }
-
-                .sort-group { display: flex; gap: 4px; padding-left: 12px; border-left: 1px dashed var(--border-dark); }
-                .sort-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; padding: 2px; }
-                .sort-btn.active { color: var(--accent-color); opacity: 1; }
-
-                .view-toggle {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    padding: 0;
-                    border: none;
-                    background: transparent;
-                }
-                .toggle-btn {
-                    padding: 6px;
-                }
-
-                .items-area { flex: 1; overflow-y: auto; padding: 8px; background: var(--bg-content); }
-
-                .items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
-                .items-list { display: flex; flex-direction: column; gap: 4px; }
-
-                .themed-card {
-                    background: var(--bg-element);
-                    border: 2px solid var(--border-dark);
-                    padding: 6px; cursor: pointer;
-                    position: relative;
-                    box-shadow: 3px 3px 0 var(--border-dark);
-                    transition: all 0.1s;
-                }
-                .themed-card:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--border-dark); background: var(--bg-input); }
-
-                .del-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; opacity: 0.2; }
-                .del-btn:hover { opacity: 1; color: #ff0000; }
-
-                .card-media { min-height: 40px; border: 1px solid var(--border-dark); margin: 4px 0; overflow: hidden; background: transparent; display: flex; justify-content: center; }
-                .card-media.image-preview { max-width: 100%; max-height: 120px; object-fit: contain; }
-                
-                .card-body-text { font-size: 12px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; }
-                .card-footer { display: flex; justify-content: space-between; margin-top: 4px; font-size: 8px; font-weight: 900; opacity: 0.4; }
-                .meta-usage { display: flex; align-items: center; gap: 2px; }
-                
-                .add-item-btn {
-                    margin-left: 12px;
-                }
-
-                .card-top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-                .card-actions-left { display: flex; gap: 4px; }
-                .card-action-btn {
-                    background: transparent;
-                    border: none;
-                    color: var(--text-muted);
-                    cursor: pointer;
-                    display: flex;
-                    align-items: center;
-                    padding: 2px;
-                    opacity: 0.3;
-                    transition: opacity 0.2s;
-                }
-                .card-action-btn:hover { opacity: 1; color: var(--accent-color); }
-
-                /* Overlay */
-                .modal-overlay {
-                    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-                    background: rgba(0, 0, 0, 0.4);
-                    backdrop-filter: blur(4px);
-                    display: flex; align-items: center; justify-content: center;
-                    z-index: 2000;
-                }
-
-
-                /* Confirm Dialog - Base Retro (Brutalist) Style */
-                .modal-overlay .confirm-dialog {
-                    background: var(--surface-confirm-bg, var(--surface-dialog-bg, var(--bg-window))) !important;
-                    padding: 24px;
-                    border: 3px solid var(--surface-confirm-border, var(--border-dark)) !important;
-                    box-shadow: var(--surface-confirm-shadow, 8px 8px 0 var(--shadow-color)) !important;
-                    border-radius: 0 !important;
-                    width: 360px;
-                    max-width: 90%;
-                    color: var(--text-primary);
-                    animation: modal-pop 0.15s cubic-bezier(0.17, 0.89, 0.32, 1.28);
-                }
-
-                @keyframes modal-pop {
-                    0% { transform: scale(0.9); opacity: 0; }
-                    100% { transform: scale(1); opacity: 1; }
-                }
-
-                .modal-overlay .confirm-dialog h3 {
-                    margin: 0 0 12px 0;
-                    font-size: 16px;
-                    font-weight: 900;
-                    text-transform: uppercase;
-                    background: var(--border-dark) !important;
-                    color: var(--bg-window) !important;
-                    padding: 4px 8px;
-                    display: inline-block;
-                }
-
-                .modal-overlay .confirm-dialog p {
-                    margin: 12px 0 24px 0;
-                    font-size: 14px;
-                    font-weight: 700;
-                    line-height: 1.4;
-                    color: var(--text-primary);
-                }
-
-                .modal-overlay .confirm-dialog-buttons {
-                    display: flex;
-                    justify-content: flex-end;
-                    gap: 12px;
-                }
-
-                .modal-overlay .confirm-dialog-button {
-                    padding: 6px 20px;
-                    font-size: 12px;
-                    font-weight: 900;
-                    cursor: pointer;
-                    background: var(--control-confirm-btn-bg, var(--bg-button)) !important;
-                    border: 2px solid var(--control-confirm-btn-border, var(--border-dark)) !important;
-                    color: var(--control-confirm-btn-text, var(--text-primary)) !important;
-                    box-shadow: var(--control-confirm-btn-shadow, 3px 3px 0 var(--border-dark)) !important;
-                    transition: all 0.1s;
-                    border-radius: 0;
-                }
-                .modal-overlay .confirm-dialog-button:active {
-                    transform: translate(2px, 2px);
-                    box-shadow: 0 0 0 !important;
-                }
-
-                .modal-overlay .confirm-dialog-button.primary {
-                    background: var(--accent-color) !important;
-                    color: #fff !important;
-                }
-
-                .modal-input-field input {
-                    width: 100%; background: var(--bg-input);
-                    border: 2px solid var(--border-dark);
-                    padding: 8px; color: var(--text-primary);
-                    font-family: inherit; font-size: 12px; font-weight: 700;
-                    outline: none; margin-bottom: 20px;
-                }
-                .modal-input-field .modal-textarea {
-                    width: 100%;
-                    background: var(--bg-input);
-                    border: 2px solid var(--surface-confirm-border, var(--border-dark));
-                    padding: 12px;
-                    color: var(--text-primary);
-                    font-family: inherit;
-                    font-size: 14px;
-                    line-height: 1.45;
-                    outline: none;
-                    resize: vertical;
-                    margin-bottom: 20px;
-                }
-                .modal-input-field .modal-textarea::placeholder {
-                    color: var(--text-muted);
-                    opacity: 0.72;
-                }
-                .modal-input-field .modal-textarea-create {
-                    min-height: 120px;
-                }
-                .modal-input-field .modal-textarea-edit {
-                    min-height: 150px;
-                }
-                .modal-buttons { display: flex; gap: 12px; justify-content: flex-end; }
-                .modal-buttons button {
-                    padding: 6px 16px; cursor: pointer;
-                    font-size: 11px; font-weight: 900;
-                    border: 2px solid var(--border-dark);
-                    background: var(--bg-button);
-                    color: var(--text-primary);
-                    box-shadow: 3px 3px 0 var(--border-dark);
-                    transition: all 0.1s;
-                }
-                .modal-buttons button:active { transform: translate(2px, 2px); box-shadow: 0 0 0; }
-                .btn-save { background: var(--accent-color); color: white; }
-
-                body.dark-mode .themed-tag-manager .tag-search-box input::placeholder {
-                    color: var(--text-muted);
-                    opacity: 0.76;
-                }
-
-                body.dark-mode .themed-tag-manager .search-icon-placeholder,
-                body.dark-mode .themed-tag-manager .action-icon {
-                    opacity: 0.72;
-                }
-
-                body.dark-mode .themed-tag-manager .tag-color-dot {
-                    border-color: color-mix(in srgb, var(--text-primary) 28%, transparent);
-                }
-
-                body.dark-mode .themed-tag-manager .tag-badge,
-                body.dark-mode .themed-tag-manager .card-footer,
-                body.dark-mode .themed-tag-manager .selected-tag-indicator {
-                    opacity: 0.84;
-                }
-
-                body.dark-mode .themed-tag-manager .sort-btn,
-                body.dark-mode .themed-tag-manager .card-action-btn,
-                body.dark-mode .themed-tag-manager .del-btn {
-                    color: var(--text-secondary);
-                    opacity: 0.72;
-                }
-
-                body.dark-mode .themed-tag-manager .sort-btn:hover,
-                body.dark-mode .themed-tag-manager .card-action-btn:hover {
-                    color: var(--accent-color);
-                    opacity: 1;
-                }
-
-                body.dark-mode .themed-tag-manager .del-btn:hover {
-                    color: #ff6b6b;
-                    opacity: 1;
-                }
-
-                body.dark-mode .themed-tag-manager .modal-overlay {
-                    background: var(--surface-overlay-bg, rgba(0, 0, 0, 0.58));
-                    backdrop-filter: blur(var(--surface-overlay-blur, 8px));
-                    -webkit-backdrop-filter: blur(var(--surface-overlay-blur, 8px));
-                }
-
-                body.dark-mode .themed-tag-manager .modal-overlay .confirm-dialog {
-                    background: var(--surface-confirm-bg, var(--surface-dialog-bg, #151515)) !important;
-                    border-color: var(--surface-confirm-border, color-mix(in srgb, var(--text-primary) 16%, transparent)) !important;
-                    box-shadow: var(--surface-confirm-shadow, 0 16px 40px rgba(0, 0, 0, 0.45)) !important;
-                }
-
-                body.dark-mode .themed-tag-manager .modal-overlay .confirm-dialog h3 {
-                    background: transparent !important;
-                    color: var(--text-primary) !important;
-                    padding: 0;
-                }
-
-                body.dark-mode .themed-tag-manager.theme-retro .tag-sidebar,
-                body.dark-mode .themed-tag-manager.theme-retro .content-toolbar {
-                    border-color: var(--border-dark);
-                    background: var(--bg-toolbar);
-                }
-
-                body.dark-mode .themed-tag-manager.theme-retro .tag-item.active,
-                body.dark-mode .themed-tag-manager.theme-retro .themed-card {
-                    border-color: var(--border-dark);
-                    background: var(--bg-element);
-                    box-shadow: 3px 3px 0 var(--shadow-color);
-                }
-
-                body.dark-mode .themed-tag-manager.theme-retro .themed-card:hover,
-                body.dark-mode .themed-tag-manager.theme-retro .tag-item:hover:not(.active) {
-                    background: var(--bg-input);
-                }
-
-                body.dark-mode .themed-tag-manager.theme-scifi .tag-badge,
-                body.dark-mode .themed-tag-manager.theme-scifi .card-footer,
-                body.dark-mode .themed-tag-manager.theme-scifi .card-action-btn,
-                body.dark-mode .themed-tag-manager.theme-scifi .del-btn {
-                    opacity: 0.82 !important;
-                }
-
-                .custom-scrollbar::-webkit-scrollbar { width: 3px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border-dark); border-radius: 10px; }
-            `}</style>
-        </div >
-    );
+            </form>
+        </TagDialog>}
+        {qrEntry && <Suspense fallback={null}><QrCodeDialog entry={qrEntry} onClose={() => setQrEntry(null)} /></Suspense>}
+    </div>;
 }

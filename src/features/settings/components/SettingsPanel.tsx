@@ -1,6 +1,5 @@
 import { memo, useState, useEffect } from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { HelpCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import type { LabelWithHintProps, SettingsPanelProps } from "./SettingsPanel.types";
 import SettingsGroups from "./SettingsGroups";
@@ -16,7 +15,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
     const [activeGroup, setActiveGroup] = useState<SettingsGroupId>(DEFAULT_SETTINGS_GROUP);
 
     const [appVersion, setAppVersion] = useState("");
-    const [openHints, setOpenHints] = useState<Set<string>>(new Set());
     const [privacyKindsOpen, setPrivacyKindsOpen] = useState(false);
     const [privacyRulesOpen, setPrivacyRulesOpen] = useState(false);
 
@@ -36,36 +34,9 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         return val !== "false";
     });
 
-    const toggleHint = (key: string) => {
-        setOpenHints(prev => {
-            const next = new Set(prev);
-            if (next.has(key)) next.delete(key);
-            else next.add(key);
-            return next;
-        });
-    };
-
-    const LabelWithHint = ({ label, hint, hintKey, labelStyle }: LabelWithHintProps) => (
+    const LabelWithHint = ({ label, labelStyle }: LabelWithHintProps) => (
         <div className="item-label-group">
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span className="item-label" style={labelStyle}>{label}</span>
-                {hint && (
-                    <button
-                        type="button"
-                        className="hint-icon-btn"
-                        title={typeof hint === "string" ? hint : undefined}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            toggleHint(hintKey);
-                        }}
-                    >
-                        <HelpCircle size={12} />
-                    </button>
-                )}
-            </div>
-            {hint && openHints.has(hintKey) && (
-                typeof hint === "string" ? <span className="hint">{hint}</span> : hint
-            )}
+            <span className="item-label" style={labelStyle}>{label}</span>
         </div>
     );
 

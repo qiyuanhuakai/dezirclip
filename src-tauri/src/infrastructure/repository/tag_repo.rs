@@ -10,14 +10,17 @@ pub trait TagRepository {
     fn get_all_with_counts(&self) -> Result<HashMap<String, i32>, String>;
     fn create(&self, name: &str) -> Result<(), String>;
     fn rename(&self, old_name: &str, new_name: &str) -> Result<(), String>;
-    fn delete_globally(&self, name: &str, data_dir: Option<&std::path::Path>)
-        -> Result<(), String>;
+    fn delete_globally(
+        &self,
+        name: &str,
+        data_dir: Option<&std::path::Path>,
+    ) -> Result<super::sensitive_tags::SensitiveTagDeletion, String>;
     fn get_entries_by_tag(&self, tag: &str) -> Result<Vec<ClipboardEntry>, String>;
     fn update_entry_tags(&self, id: i64, tags: Vec<String>) -> Result<(), String>;
 }
 
 pub struct SqliteTagRepository {
-    conn: Arc<Mutex<Connection>>,
+    pub(super) conn: Arc<Mutex<Connection>>,
 }
 
 impl SqliteTagRepository {
@@ -25,7 +28,7 @@ impl SqliteTagRepository {
         Self { conn }
     }
 
-    fn maybe_decrypt_text(&self, value: &str) -> String {
+    pub(super) fn maybe_decrypt_text(&self, value: &str) -> String {
         if encryption::is_encrypted_value(value) {
             encryption::decrypt_value(value).unwrap_or_else(|| value.to_string())
         } else {
@@ -33,7 +36,7 @@ impl SqliteTagRepository {
         }
     }
 
-    fn maybe_decrypt_tags(&self, tags: Vec<String>) -> Vec<String> {
+    pub(super) fn maybe_decrypt_tags(&self, tags: Vec<String>) -> Vec<String> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut decrypted = Vec::new();
 
@@ -53,7 +56,7 @@ impl SqliteTagRepository {
         decrypted
     }
 
-    fn refresh_entry_tags_json(conn: &Connection, entry_id: i64) -> Result<(), String> {
+    pub(super) fn refresh_entry_tags_json(conn: &Connection, entry_id: i64) -> Result<(), String> {
         let mut stmt = conn
             .prepare("SELECT tag FROM entry_tags WHERE entry_id = ? ORDER BY tag")
             .map_err(|e| e.to_string())?;
@@ -169,7 +172,24 @@ impl TagRepository for SqliteTagRepository {
     }
 
     fn rename(&self, old_name: &str, new_name: &str) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let new_name = new_name.trim();
+        if new_name.is_empty()
+            || new_name.chars().count() > 80
+            || new_name.chars().any(char::is_control)
+        {
+            return Err("tag names must contain 1..80 printable characters".into());
+        }
+        if old_name == new_name {
+            return Ok(());
+        }
+        if crate::database::has_sensitive_tag(&[old_name.to_string(), new_name.to_string()]) {
+            return Err(
+                "system sensitive tags require per-entry updates and cannot be renamed globally"
+                    .into(),
+            );
+        }
+        let mut guard = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = guard.transaction().map_err(|error| error.to_string())?;
 
         // Update saved_tags table: merge color info if exists
         let old_color: Option<String> = conn
@@ -186,7 +206,8 @@ impl TagRepository for SqliteTagRepository {
         )
         .map_err(|e| e.to_string())?;
 
-        let _ = conn.execute("DELETE FROM saved_tags WHERE name = ?", params![old_name]);
+        conn.execute("DELETE FROM saved_tags WHERE name = ?", params![old_name])
+            .map_err(|error| error.to_string())?;
 
         // Update entry_tags and refresh JSON cache
         let mut stmt = conn
@@ -195,8 +216,9 @@ impl TagRepository for SqliteTagRepository {
         let ids: Vec<i64> = stmt
             .query_map(params![old_name], |row| row.get(0))
             .map_err(|e| e.to_string())?
-            .filter_map(Result::ok)
-            .collect();
+            .collect::<Result<_, _>>()
+            .map_err(|error| error.to_string())?;
+        drop(stmt);
 
         for id in ids {
             conn.execute(
@@ -211,55 +233,15 @@ impl TagRepository for SqliteTagRepository {
             .map_err(|e| e.to_string())?;
             Self::refresh_entry_tags_json(&conn, id)?;
         }
-        Ok(())
+        conn.commit().map_err(|error| error.to_string())
     }
 
     fn delete_globally(
         &self,
         name: &str,
         data_dir: Option<&std::path::Path>,
-    ) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-
-        // Remove from saved_tags
-        let _ = conn.execute("DELETE FROM saved_tags WHERE name = ?", params![name]);
-
-        // Delete all entries that carry this tag
-        let mut stmt = conn
-            .prepare("SELECT entry_id FROM entry_tags WHERE tag = ?")
-            .map_err(|e| e.to_string())?;
-        let ids: Vec<i64> = stmt
-            .query_map(params![name], |row| row.get(0))
-            .map_err(|e| e.to_string())?
-            .filter_map(Result::ok)
-            .collect();
-
-        for id in ids {
-            if let Some(dir) = data_dir {
-                let attachments_dir = dir.join("attachments");
-                let mut stmt_content = conn
-                    .prepare("SELECT content, is_external FROM clipboard_history WHERE id = ?")
-                    .map_err(|e| e.to_string())?;
-
-                if let Ok(entry) = stmt_content.query_row([id], |row| {
-                    let content_raw: String = row.get(0)?;
-                    let is_ext: i32 = row.get(1)?;
-                    Ok((content_raw, is_ext == 1))
-                }) {
-                    if entry.1 {
-                        // is_external
-                        let content_path = self.maybe_decrypt_text(&entry.0);
-                        let path = std::path::Path::new(&content_path);
-                        if path.starts_with(&attachments_dir) && path.exists() {
-                            let _ = std::fs::remove_file(path);
-                        }
-                    }
-                }
-            }
-            let _ = conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", params![id]);
-            let _ = conn.execute("DELETE FROM clipboard_history WHERE id = ?", params![id]);
-        }
-        Ok(())
+    ) -> Result<super::sensitive_tags::SensitiveTagDeletion, String> {
+        self.delete_sensitive_with_contents(name, data_dir)
     }
 
     fn get_entries_by_tag(&self, tag: &str) -> Result<Vec<ClipboardEntry>, String> {
@@ -300,7 +282,8 @@ impl TagRepository for SqliteTagRepository {
                     source_app_path: row.get(12).unwrap_or(None),
                     file_preview_exists: true, // simplified
                     content_kinds: serde_json::from_str(
-                        &row.get::<_, String>(13).unwrap_or_else(|_| "[]".to_string()),
+                        &row.get::<_, String>(13)
+                            .unwrap_or_else(|_| "[]".to_string()),
                     )
                     .unwrap_or_default(),
                     ocr_text: row.get(14).ok(),
@@ -321,7 +304,8 @@ impl TagRepository for SqliteTagRepository {
     }
 
     fn update_entry_tags(&self, id: i64, tags: Vec<String>) -> Result<(), String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut guard = self.conn.lock().map_err(|e| e.to_string())?;
+        let conn = guard.transaction().map_err(|error| error.to_string())?;
         let mut seen: HashSet<String> = HashSet::new();
         let mut cleaned: Vec<String> = Vec::new();
         for tag in tags {
@@ -351,7 +335,7 @@ impl TagRepository for SqliteTagRepository {
             params![tags_json, id],
         )
         .map_err(|e| e.to_string())?;
-        Ok(())
+        conn.commit().map_err(|error| error.to_string())
     }
 }
 

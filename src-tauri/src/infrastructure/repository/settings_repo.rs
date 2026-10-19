@@ -122,14 +122,23 @@ impl SqliteSettingsRepository {
 
 impl SettingsRepository for SqliteSettingsRepository {
     fn set(&self, key: &str, value: &str) -> Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
         let final_value = self.maybe_encrypt(key, value);
-
-        conn.execute(
+        if key == super::sensitive_tags::PRIVACY_SETTING && !matches!(value, "true" | "false") {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "privacy protection must be true or false".into(),
+            ));
+        }
+        let transaction =
+            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        transaction.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             params![key, final_value],
         )?;
-        Ok(())
+        if key == super::sensitive_tags::PRIVACY_SETTING && value == "true" {
+            super::sensitive_tags::ensure_system_tags(&transaction)?;
+        }
+        transaction.commit()
     }
 
     fn get(&self, key: &str) -> Result<Option<String>> {

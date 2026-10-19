@@ -94,6 +94,51 @@ fn run_dzc_expecting_failure(db_path: &Path, args: &[&str]) -> (i32, String) {
     (output.status.code().unwrap_or(-1), combined)
 }
 
+#[test]
+fn theme_validation_rejects_resources_without_opening_history_or_applying_settings() {
+    let db = scratch_db("theme-validation");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../skills/dezirclip-theme/assets/forest.theme.json");
+    let result = run_dzc(
+        &db,
+        &["theme", "validate", fixture.to_str().unwrap(), "--json"],
+    );
+    let result: serde_json::Value = serde_json::from_str(&result).unwrap();
+    assert_eq!(result["valid"], true);
+    assert_eq!(result["id"], "forest");
+    assert!(!db.exists());
+
+    let source = db.with_extension("theme.json");
+    let mut package: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixture).unwrap()).unwrap();
+    package["css"] = serde_json::json!(".theme-custom { background: url(https://example.invalid/resource); }");
+    std::fs::write(&source, serde_json::to_vec(&package).unwrap()).unwrap();
+    let (code, _) = run_dzc_expecting_failure(
+        &db,
+        &["theme", "validate", source.to_str().unwrap()],
+    );
+    assert_eq!(code, 1);
+    assert!(!db.exists());
+    std::fs::remove_file(source).unwrap();
+}
+
+#[test]
+fn theme_validation_rejects_directories_and_oversized_files_without_creating_history() {
+    let db = scratch_db("theme-file-types");
+    let directory = db.with_extension("directory");
+    let oversized = db.with_extension("oversized.json");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(&oversized, vec![b' '; dezirclip::domain::theme::MAX_THEME_BYTES + 1]).unwrap();
+    for (path, message) in [(&directory, "regular JSON file"), (&oversized, "size limit")] {
+        let (code, output) = run_dzc_expecting_failure(&db, &["theme", "validate", path.to_str().unwrap()]);
+        assert_ne!(code, 0, "invalid theme file must be rejected");
+        assert!(output.contains(message), "unexpected error: {output}");
+        assert!(!db.exists(), "theme validation must not create clipboard history");
+    }
+    std::fs::remove_file(oversized).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+}
+
 /// Pin then unpin has to actually move the row's flag, and `list --pinned`
 /// is the only way to observe it from outside.
 #[test]

@@ -1,0 +1,45 @@
+/* Public semantic palette. Built-in themes map these literals on :root;
+   shared components consume the same colors, radii, and material helpers. */
+:root {
+  --dc-surface-window: #fcfcfc;
+  --dc-surface-panel: #f5f6f8;
+  --dc-surface-raised: #ffffff;
+  --dc-surface-input: #ffffff;
+  --dc-surface-hover: #eceff4;
+  --dc-surface-active: #356ac8;
+  --dc-text-primary: #373737;
+  --dc-text-secondary: #626975;
+  --dc-text-muted: #687080;
+  --dc-text-on-accent: #ffffff;
+  --dc-border: #d6dae2;
+  --dc-border-strong: #9ca5b4;
+  --dc-accent: #356ac8;
+  --dc-accent-hover: #3d69bc;
+  --dc-accent-soft: #e6edfb;
+  --dc-success: #26724a;
+  --dc-warning: #976300;
+  --dc-danger: #c9363e;
+  --dc-info: #246bb2;
+  --dc-radius: 8px;
+
+  --dc-radius-sm: calc(var(--dc-radius) * 0.6);
+  --dc-radius-md: var(--dc-radius);
+  --dc-radius-lg: calc(var(--dc-radius) * 1.5);
+  --dc-font-ui: var(--font-main);
+  --dc-font-mono: var(--font-mono);
+  --dc-shadow-panel: var(--surface-dialog-shadow);
+  --dc-focus-ring: 0 0 0 3px color-mix(in srgb, var(--dc-accent) 28%, transparent);
+
+  /* Window alpha remains the absolute user setting. Content gets a readable
+     floor rather than another blur layer, including at the clear endpoint. */
+  --dc-material-window: color-mix(in srgb, var(--dc-surface-window) calc(var(--surface-opacity) * 100%), transparent);
+  --dc-material-panel: var(--dc-surface-panel);
+  --dc-material-raised: var(--dc-surface-raised);
+  --dc-material-input: var(--dc-surface-input);
+}
+
+:root:is(.theme-mica, .theme-acrylic, .theme-macos, .theme-liquid-glass) {
+  --dc-material-panel: color-mix(in srgb, var(--dc-surface-panel) calc(88% + var(--surface-opacity) * 12%), transparent);
+  --dc-material-raised: color-mix(in srgb, var(--dc-surface-raised) calc(92% + var(--surface-opacity) * 8%), transparent);
+  --dc-material-input: color-mix(in srgb, var(--dc-surface-input) calc(92% + var(--surface-opacity) * 8%), transparent);
+}

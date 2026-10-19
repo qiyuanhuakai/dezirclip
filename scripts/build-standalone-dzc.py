@@ -57,7 +57,7 @@ if [ -d /registry-seed ] && [ ! -d /cargo/registry/index ]; then
     cp -a /registry-seed/. /cargo/registry/
 fi
 tar -C /source --exclude=src-tauri/target --exclude=src-tauri/binaries --exclude=src-tauri/gen \
-    --exclude=src-tauri/.env --exclude='src-tauri/.env.*' -cf - src-tauri skills/dzc-cli \
+    --exclude=src-tauri/.env --exclude='src-tauri/.env.*' -cf - src-tauri skills/dzc-cli skills/dezirclip-theme \
     | tar -C /work/project -xf -
 cd /work/project
 cargo build --manifest-path src-tauri/Cargo.toml --release --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"

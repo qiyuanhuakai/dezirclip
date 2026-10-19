@@ -5,7 +5,7 @@ import type { DragControls } from "framer-motion";
 import { ArrowUp, Clipboard } from "lucide-react";
 import { sameIdOrder } from "../../../shared/lib/idOrder";
 import { VirtualClipboardList } from "../../clipboard/components/VirtualClipboardList";
-import type { ClipboardEntry } from "../../../shared/types";
+import type { ClipboardEntry, Locale } from "../../../shared/types";
 import type { VirtualClipboardListHandle } from "../../clipboard/types";
 
 const SettingsPanel = lazy(() => import("../../settings/components/SettingsPanel"));
@@ -25,6 +25,12 @@ type RenderItem = (
 interface AppMainContentProps {
   t: (key: string) => string;
   theme: string;
+  language?: Locale;
+  isWindowPinned?: boolean;
+  privacyProtection?: boolean;
+  tagColors?: Record<string, string>;
+  richTextSnapshotPreview?: boolean;
+  onCompactModeChange?: (value: boolean) => void;
   showSettings: boolean;
   showTagManager: boolean;
   tagManagerEnabled: boolean;
@@ -92,6 +98,12 @@ const SortableItem = ({
 const AppMainContent = ({
   t,
   theme,
+  language = "zh",
+  isWindowPinned = false,
+  privacyProtection = true,
+  tagColors = {},
+  richTextSnapshotPreview = false,
+  onCompactModeChange,
   showSettings,
   showTagManager,
   tagManagerEnabled,
@@ -209,7 +221,10 @@ const AppMainContent = ({
       <Suspense fallback={<div style={{ height: "100%" }} />}>
         {tagManagerVisible && (
           <div style={{ height: "100%" }}>
-            <TagManager t={t} theme={theme} />
+            <TagManager t={t} theme={theme} language={language} compactMode={compactMode}
+              isWindowPinned={isWindowPinned} privacyProtection={privacyProtection}
+              tagColors={tagColors} richTextSnapshotPreview={richTextSnapshotPreview}
+              onCompactModeChange={onCompactModeChange} />
           </div>
         )}
       </Suspense>

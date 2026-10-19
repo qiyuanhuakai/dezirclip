@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyModeClass, applyThemeClass, ensureThemeCssLoaded, resolveThemeMode } from "../lib/themeRuntime";
 import { applyFontOverrides, applySurfaceOpacity } from "../lib/appearanceRuntime";
 import { readSystemIsDark, mediaSystemIsDark } from "../lib/systemTheme";
+import { getCustomTheme, getCustomThemes, subscribeCustomThemes } from "../lib/themeCatalog";
 
 type PlatformInfo = {
   platform: string;
@@ -37,6 +38,7 @@ export const useSettingsApply = ({
   fontMain,
   fontMono
 }: UseSettingsApplyOptions) => {
+  useSyncExternalStore(subscribeCustomThemes, getCustomThemes);
   // Last system darkness the UI was resolved to, so the poll can tell an
   // actual change from another tick of the same theme. The ref belongs to the
   // hook, not to the effect: a `useRef` called inside the effect body is a hook
@@ -133,6 +135,11 @@ export const useSettingsApply = ({
       show_app_border: showAppBorder
     }).catch(console.error);
 
+    const unsubscribeCatalog = subscribeCustomThemes(() => {
+      if (disposed || !getCustomTheme(theme)) return;
+      invoke("set_theme", { theme, color_mode: colorMode, show_app_border: showAppBorder }).catch(console.error);
+    });
+
     let unlistenThemeChanged: (() => void) | null = null;
     let cleanupMedia: (() => void) | null = null;
     let cleanupPoll: (() => void) | null = null;
@@ -192,6 +199,7 @@ export const useSettingsApply = ({
         ensureFallbackTimer = null;
       }
       if (unlistenThemeChanged) unlistenThemeChanged();
+      unsubscribeCatalog();
       if (cleanupMedia) cleanupMedia();
       if (cleanupPoll) cleanupPoll();
     };

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Locale } from "../types";
+import { getCustomThemes, loadCustomThemesFromSettings, replaceCustomThemes } from "../lib/themeCatalog";
 
 interface UseSettingsInitOptions {
   setAppSettings: (settings: Record<string, string>) => void;
@@ -24,13 +25,17 @@ export const useSettingsInit = ({
 
   useEffect(() => {
     let alive = true;
-    let unlisten: (() => void) | undefined;
+    const cleanups: Array<() => void> = [];
+    let loadVersion = 0;
 
     const loadSettings = async () => {
+      const version = ++loadVersion;
+      const catalog = getCustomThemes();
       try {
         const result = await invoke<Record<string, string>>("get_settings");
-        if (!alive) return;
+        if (!alive || version !== loadVersion) return;
 
+        if (catalog === getCustomThemes()) loadCustomThemesFromSettings(result);
         setAppSettings(result);
         if (result["app.hotkey"]) setHotkey(result["app.hotkey"]);
 
@@ -66,17 +71,29 @@ export const useSettingsInit = ({
 
     (async () => {
       try {
-        unlisten = await listen("settings-changed", () => {
+        const off = await listen("settings-changed", () => {
           void loadSettings();
         });
+        if (alive) cleanups.push(off); else off();
       } catch (e) {
         console.error(e);
       }
     })();
 
+    void (async () => {
+      try {
+        const off = await listen<{ themes: unknown }>("custom-themes-changed", event => {
+          if (!alive) return;
+          try { replaceCustomThemes(event.payload.themes); }
+          catch (error) { console.warn("[theme] Invalid theme update", error); }
+        });
+        if (alive) cleanups.push(off); else off();
+      } catch (error) { console.warn("[theme] Failed to subscribe to theme updates", error); }
+    })();
+
     return () => {
       alive = false;
-      if (unlisten) unlisten();
+      for (const cleanup of cleanups) cleanup();
     };
   }, [setAppSettings, setHotkey, setTheme, setColorMode, setCompactMode, setLanguage]);
 

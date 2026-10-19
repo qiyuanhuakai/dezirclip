@@ -18,6 +18,7 @@ pub mod tag_color_cmd;
 pub mod tools_cmd;
 pub mod transform_cmd;
 pub mod ui_cmd;
+pub mod theme_cmd;
 
 // Re-export all commands for convenience in main.rs if needed,
 // though tauri usually expects them to be referenced via module path in generate_handler!
@@ -40,3 +41,4 @@ pub use tag_color_cmd::*;
 pub use tools_cmd::*;
 pub use transform_cmd::*;
 pub use ui_cmd::*;
+pub use theme_cmd::*;

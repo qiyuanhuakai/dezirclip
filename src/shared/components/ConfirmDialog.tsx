@@ -1,3 +1,5 @@
+import { resolveBuiltinTheme } from "../lib/themeRuntime";
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
@@ -23,7 +25,7 @@ const ConfirmDialog = ({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className={`confirm-dialog theme-${theme}`} onClick={(e) => e.stopPropagation()}>
+      <div className={`confirm-dialog${theme.startsWith("custom:") ? "" : ` theme-${resolveBuiltinTheme(theme)}`}`} onClick={(e) => e.stopPropagation()}>
         <div className="confirm-dialog-title">{title}</div>
         <div className="confirm-dialog-message">{message}</div>
         <div className="confirm-dialog-buttons">

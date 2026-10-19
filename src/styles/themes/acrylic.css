@@ -22,20 +22,9 @@ body.dark-mode.theme-acrylic {
   --text-primary: #f6f7fb;
   --text-secondary: #c7ccd8;
   --text-muted: #c7ccd8;
-  --tag-manager-text-primary: #f6f7fb;
-  --tag-manager-text-muted: #d4d8e2;
   --border-dark: rgba(255, 255, 255, 0.13) !important;
   --border-light: rgba(255, 255, 255, 0.09);
   --shadow-color: rgba(0, 0, 0, 0.2) !important;
-  --tag-manager-panel-bg: rgba(255, 255, 255, 0.075);
-  --tag-manager-content-bg: rgba(255, 255, 255, 0.028);
-  --tag-manager-card-bg: rgba(255, 255, 255, 0.09);
-  --tag-manager-card-hover-bg: rgba(255, 255, 255, 0.135);
-  --tag-manager-input-bg: rgba(255, 255, 255, 0.105);
-  --tag-manager-button-bg: rgba(255, 255, 255, 0.1);
-  --tag-manager-button-hover-bg: rgba(255, 255, 255, 0.145);
-  --tag-manager-border: rgba(255, 255, 255, 0.1);
-  --tag-manager-strong-border: rgba(255, 255, 255, 0.145);
   --surface-overlay-bg: rgba(0, 0, 0, 0.62);
   --surface-overlay-blur: 22px;
   --surface-dialog-bg: rgba(20, 22, 28, 0.82);
@@ -136,8 +125,8 @@ body.has-custom-bg.theme-acrylic::before {
 /* Exclude compact mode buttons from transparent styling */
 .theme-acrylic .item-actions:not(.compact) .btn-icon,
 body:not(.compact-mode) .theme-acrylic .item-actions .btn-icon {
-  background: transparent !important;
-  box-shadow: none !important;
+  --icon-btn-bg: transparent;
+  --icon-btn-shadow: none;
 }
 
 .theme-acrylic header {
@@ -298,34 +287,9 @@ body:not(.compact-mode) .theme-acrylic .item-actions .btn-icon {
 }
 
 /* Buttons - exclude compact mode */
-.theme-acrylic .btn-icon:not(.compact .btn-icon),
-body:not(.compact-mode) .theme-acrylic .btn-icon {
-  border-radius: 6px !important;
-  border: 1px solid var(--modern-btn-border) !important;
-  background: var(--modern-btn-bg) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
-  transition: all 0.2s !important;
-  transform: none !important;
-  color: var(--modern-btn-text) !important;
-}
-
-.theme-acrylic .btn-icon:not(.compact .btn-icon):hover,
-body:not(.compact-mode) .theme-acrylic .btn-icon:hover {
-  background: var(--modern-btn-hover-bg) !important;
-  border-color: var(--modern-btn-hover-border) !important;
-}
-
-.theme-acrylic .btn-icon:not(.compact .btn-icon).active,
-body:not(.compact-mode) .theme-acrylic .btn-icon.active {
-  background: var(--modern-btn-active-bg) !important;
-  color: var(--modern-btn-active-text) !important;
-  border-color: var(--modern-btn-active-border) !important;
-  box-shadow: var(--modern-btn-active-shadow) !important;
-}
 
 body.dark-mode.theme-acrylic .modal-overlay,
-body.dark-mode.theme-acrylic .theme-acrylic .modal-overlay,
-body.dark-mode .themed-tag-manager.theme-acrylic .modal-overlay {
+body.dark-mode.theme-acrylic .theme-acrylic .modal-overlay {
   background: var(--surface-overlay-bg) !important;
   backdrop-filter: blur(var(--surface-overlay-blur)) saturate(155%) !important;
   -webkit-backdrop-filter: blur(var(--surface-overlay-blur)) saturate(155%) !important;
@@ -335,8 +299,7 @@ body.dark-mode.theme-acrylic .modal-content,
 body.dark-mode.theme-acrylic .confirm-dialog,
 body.dark-mode.theme-acrylic .confirm-dialog.theme-acrylic,
 body.dark-mode .theme-acrylic .modal-content,
-body.dark-mode .theme-acrylic .confirm-dialog,
-body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog {
+body.dark-mode .theme-acrylic .confirm-dialog {
   background: var(--surface-confirm-bg) !important;
   border: 1px solid var(--surface-confirm-border) !important;
   box-shadow: var(--surface-confirm-shadow) !important;
@@ -348,35 +311,110 @@ body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog {
 body.dark-mode.theme-acrylic .confirm-dialog-title,
 body.dark-mode.theme-acrylic .confirm-dialog-message,
 body.dark-mode.theme-acrylic .confirm-dialog h3,
-body.dark-mode.theme-acrylic .confirm-dialog p,
-body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog h3,
-body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog p {
+body.dark-mode.theme-acrylic .confirm-dialog p {
   color: var(--text-primary) !important;
 }
 
 body.dark-mode.theme-acrylic .confirm-dialog-message,
-body.dark-mode.theme-acrylic .confirm-dialog p,
-body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog p {
+body.dark-mode.theme-acrylic .confirm-dialog p {
   color: var(--text-secondary) !important;
   opacity: 1 !important;
 }
 
-body.dark-mode.theme-acrylic .confirm-dialog-button,
-body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog-button {
+body.dark-mode.theme-acrylic .confirm-dialog-button {
   background: var(--control-confirm-btn-bg) !important;
   border: 1px solid var(--control-confirm-btn-border) !important;
   color: var(--control-confirm-btn-text) !important;
   box-shadow: none !important;
 }
 
-body.dark-mode.theme-acrylic .confirm-dialog-button:hover,
-body.dark-mode .themed-tag-manager.theme-acrylic .confirm-dialog-button:hover {
+body.dark-mode.theme-acrylic .confirm-dialog-button:hover {
   background: var(--control-confirm-btn-hover-bg) !important;
 }
 
-body.dark-mode.theme-acrylic .modal-input-field .modal-textarea,
-body.dark-mode .themed-tag-manager.theme-acrylic .modal-input-field .modal-textarea {
+body.dark-mode.theme-acrylic .modal-input-field .modal-textarea {
   background: rgba(255, 255, 255, 0.085) !important;
   border-color: rgba(255, 255, 255, 0.14) !important;
   color: var(--text-primary) !important;
+}
+
+/* Semantic palette: geometry and material remain specific to this theme. */
+:root.theme-acrylic {
+  --dc-surface-window: #f6f8fd;
+  --dc-surface-panel: #edf2fb;
+  --dc-surface-raised: #ffffff;
+  --dc-surface-input: #ffffff;
+  --dc-surface-hover: #e5ecf8;
+  --dc-surface-active: #356ac8;
+  --dc-text-primary: #28364b;
+  --dc-text-secondary: #536780;
+  --dc-text-muted: #61718a;
+  --dc-text-on-accent: #ffffff;
+  --dc-border: #cdd8e9;
+  --dc-border-strong: #8b9eb9;
+  --dc-accent: #356ac8;
+  --dc-accent-hover: #3d69bc;
+  --dc-accent-soft: #e1eafa;
+  --dc-success: #26724a;
+  --dc-warning: #976300;
+  --dc-danger: #c9363e;
+  --dc-info: #246bb2;
+  --dc-radius: 8px;
+}
+
+:root.dark-mode.theme-acrylic {
+  --dc-surface-window: #14161c;
+  --dc-surface-panel: #1c202a;
+  --dc-surface-raised: #252b37;
+  --dc-surface-input: #232936;
+  --dc-surface-hover: #303a4b;
+  --dc-surface-active: #6aa3f5;
+  --dc-text-primary: #f6f7fb;
+  --dc-text-secondary: #d4d8e2;
+  --dc-text-muted: #bac2d0;
+  --dc-text-on-accent: #111827;
+  --dc-border: #3e4c62;
+  --dc-border-strong: #637894;
+  --dc-accent: #6aa3f5;
+  --dc-accent-hover: #93bfff;
+  --dc-accent-soft: #263d61;
+  --dc-success: #70d69b;
+  --dc-warning: #f4c96b;
+  --dc-danger: #ff858d;
+  --dc-info: #82b7ff;
+  --dc-radius: 8px;
+}
+
+/* Shared icon buttons consume theme state tokens without priority overrides. */
+.theme-acrylic .btn-icon:not(.compact .btn-icon),
+body:not(.compact-mode) .theme-acrylic .btn-icon {
+  --icon-btn-radius: 6px;
+  --icon-btn-border-width: 1px;
+  --icon-btn-border: 1px solid var(--modern-btn-border);
+  --icon-btn-bg: var(--modern-btn-bg);
+  --icon-btn-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --icon-btn-transition: all 0.2s;
+  --icon-btn-transform: none;
+  --icon-btn-color: var(--modern-btn-text);
+  --icon-btn-hover-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --icon-btn-pressed-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --icon-btn-queue-hover-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --icon-btn-queue-pressed-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --icon-btn-hover-transform: none;
+  --icon-btn-active-transform: none;
+}
+
+.theme-acrylic .btn-icon:not(.compact .btn-icon):hover,
+body:not(.compact-mode) .theme-acrylic .btn-icon:hover {
+  --icon-btn-hover-bg: var(--modern-btn-hover-bg);
+  --icon-btn-hover-border: var(--modern-btn-hover-border);
+}
+
+.theme-acrylic .btn-icon:not(.compact .btn-icon).active,
+body:not(.compact-mode) .theme-acrylic .btn-icon.active {
+  --icon-btn-active-bg: var(--modern-btn-active-bg);
+  --icon-btn-active-color: var(--modern-btn-active-text);
+  --icon-btn-active-border: var(--modern-btn-active-border);
+  --icon-btn-active-shadow: var(--modern-btn-active-shadow);
+  --icon-btn-queue-hover-shadow: var(--icon-btn-active-shadow);
 }

@@ -86,11 +86,11 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
         }
     };
 
-    const handleOpenInstallFolder = async () => {
+    const handleOpenSkillFolder = async (skill: string) => {
         try {
-            await invoke("open_install_folder");
+            await invoke("open_agent_skill_folder", { skill });
         } catch (e: unknown) {
-            setPathStatusKey("open_install_folder_failed");
+            setPathStatusKey("open_skill_folder_failed");
             setPathStatusDetail(e instanceof Error ? e.message : String(e));
         }
     };
@@ -101,7 +101,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
             case "cli_path_added_restart":
             case "cli_path_already_linked":
             case "cli_path_add_failed":
-            case "open_install_folder_failed":
+            case "open_skill_folder_failed":
                 return t(pathStatusKey);
             default:
                 return "";
@@ -111,7 +111,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
     return (
         <>
             <div className="setting-item">
-                <LabelWithHint label={t("dzc_cli")} hint={t("dzc_cli")} hintKey="dzc_cli" />
+                <LabelWithHint label={t("dzc_cli")} hintKey="dzc_cli" />
             </div>
             {cliInfo?.cli_path && (
                 <div className="setting-item setting-item--detail">
@@ -131,9 +131,6 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
             </div>
             {cliInfo?.cli_path_conflict && (
                 <>
-                    <div className="setting-item setting-item--detail tools-note-item">
-                        <span className="tools-note" role="status">{t("cli_path_other_copy_hint")}</span>
-                    </div>
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("cli_path_active_path")}</span></div>
                         <span className="tools-path-text" title={cliInfo.path_cli_path ?? undefined}>{cliInfo.path_cli_path}</span>
@@ -151,22 +148,26 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                     <span className="tools-note">{pathStatusText()}{pathStatusDetail ? ` ${pathStatusDetail}` : ""}</span>
                 </div>
             )}
-            <div className="setting-item column tools-skill-card">
-                <LabelWithHint label={t("agent_skill")} hint={t("agent_skill")} hintKey="agent_skill" />
-                <div className="tools-skill-method">{t("skill_acquire_method")}</div>
-                <button type="button" className="tools-skill-command tools-skill-command--button" onClick={handleOpenInstallFolder} title={t("open_install_folder")}>
-                    <FolderOpen size={14} />
-                    <span>{t("open_install_folder")}</span>
-                </button>
-            </div>
-            {cliInfo?.skill_path && (
-                <div className="setting-item setting-item--detail">
-                    <div className="item-label-group"><span className="item-label">{t("skill_path")}</span></div>
-                    <span className="tools-path-text">{cliInfo.skill_path}</span>
-                </div>
-            )}
             <div className="setting-item">
-                <LabelWithHint label={t("build_info")} hint={t("build_info")} hintKey="build_info" />
+                <LabelWithHint label={t("agent_skill")} hintKey="agent_skill" />
+            </div>
+            {[
+                { id: "dzc-cli", label: "skill_cli", path: cliInfo?.skill_path },
+                { id: "dezirclip-theme", label: "skill_theme", path: cliInfo?.theme_skill_path },
+            ].map(skill => (
+                <div key={skill.id} className="setting-item setting-item--detail tools-action-row">
+                    <div className="item-label-group"><span className="item-label">{t(skill.label)}</span>
+                        <span className="tools-path-text" title={skill.path ?? undefined}>{skill.path || skill.id}</span>
+                    </div>
+                    <button type="button" className="setting-btn setting-btn--compact" disabled={!skill.path}
+                        onClick={() => void handleOpenSkillFolder(skill.id)} title={t("open_skill_folder")}
+                        aria-label={`${t("open_skill_folder")}: ${t(skill.label)}`}>
+                        <FolderOpen size={14} />
+                    </button>
+                </div>
+            ))}
+            <div className="setting-item">
+                <LabelWithHint label={t("build_info")} hintKey="build_info" />
             </div>
             {[["app_version", appVersion || "-"], ["platform_label", platformKey ? t(platformKey) : "-"], ["build_date", buildDate || "-"]].map(([labelKey, value]) => (
                 <div key={labelKey} className="setting-item setting-item--detail">

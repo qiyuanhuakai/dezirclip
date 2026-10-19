@@ -296,18 +296,26 @@
   box-shadow: var(--surface-segment-active-shadow) !important;
 }
 
-:is(.theme-mica, .theme-acrylic) .tags-dropdown {
-  background: var(--surface-tags-dropdown-bg) !important;
-  border: 1px solid var(--surface-tags-dropdown-border) !important;
-  box-shadow: none !important;
-  border-radius: 10px !important;
-}
-
 :is(.theme-mica, .theme-acrylic) .search-input.dropdown-open {
   border-radius: 10px !important;
   background: var(--search-input-dropdown-open-bg) !important;
   border-color: var(--search-input-dropdown-open-border) !important;
 }
+
+:is(.theme-mica, .theme-acrylic) .history-item.selected {
+  background: var(--surface-history-selected-bg) !important;
+}
+
+/* Search readability belongs to the shared shell, independently of tag UI. */
+:is(.theme-mica, .theme-acrylic) .search-input {
+  color: var(--search-input-text) !important;
+}
+
+:is(.theme-mica, .theme-acrylic) .search-input::placeholder {
+  color: var(--search-input-placeholder) !important;
+}
+
+/* Existing clipboard-row tag treatment. */
 
 :is(.theme-mica, .theme-acrylic) .tag-chip {
   border: none !important;
@@ -325,8 +333,4 @@
 :is(.theme-mica, .theme-acrylic) .tag-chip:active {
   transform: scale(0.95);
   box-shadow: none !important;
-}
-
-:is(.theme-mica, .theme-acrylic) .history-item.selected {
-  background: var(--surface-history-selected-bg) !important;
 }

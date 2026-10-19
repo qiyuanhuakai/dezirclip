@@ -3,9 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Locale } from "../../../../shared/types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import ThemedSelect from "../ThemedSelect";
 import { shouldRequestSystemFonts } from "../../utils/systemFontLoading";
+import ThemeManager from "../ThemeManager";
+import { resolveBuiltinTheme } from "../../../../shared/lib/themeRuntime";
+import { getCustomThemes, subscribeCustomThemes } from "../../../../shared/lib/themeCatalog";
 
 interface LabelWithHintProps {
     label: string;
@@ -59,28 +62,6 @@ const buildRangeStyle = (value: number, min: number, max: number) =>
         "--range-progress": clampProgress(value, min, max)
     }) as CSSProperties;
 
-const themeCssModules = import.meta.glob("../../../../styles/themes/*.css");
-const hiddenThemeIds = new Set(["dark", "index"]);
-const preferredThemeOrder = ["retro", "mica", "acrylic", "liquid-glass"];
-const discoveredThemeIds = Object.keys(themeCssModules)
-    .map(path => path.split("/").pop()?.replace(".css", "") ?? "")
-    .filter(id => id && !hiddenThemeIds.has(id));
-const availableThemeIds = Array.from(new Set([...preferredThemeOrder, ...discoveredThemeIds]))
-    .filter(id => preferredThemeOrder.includes(id) || discoveredThemeIds.includes(id))
-    .sort((a, b) => {
-        const ai = preferredThemeOrder.indexOf(a);
-        const bi = preferredThemeOrder.indexOf(b);
-        if (ai !== -1 || bi !== -1) return (ai === -1 ? Number.MAX_SAFE_INTEGER : ai) - (bi === -1 ? Number.MAX_SAFE_INTEGER : bi);
-        return a.localeCompare(b);
-    });
-
-const formatThemeFallbackName = (id: string) =>
-    id
-        .split(/[-_]/g)
-        .filter(Boolean)
-        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-        .join(' ');
-
 type SystemFont = { family: string; is_mono: boolean; path: string };
 
 // `list_system_fonts` enumerates every installed font and loads each one on the
@@ -129,6 +110,7 @@ const AppearanceSettingsGroup = ({
     setSurfaceOpacity,
     saveAppSetting
 }: AppearanceSettingsGroupProps) => {
+    useSyncExternalStore(subscribeCustomThemes, getCustomThemes);
     const [systemFonts, setSystemFonts] = useState<SystemFont[]>([]);
     const [systemFontsLoaded, setSystemFontsLoaded] = useState(false);
     useEffect(() => {
@@ -164,29 +146,7 @@ const AppearanceSettingsGroup = ({
         {!collapsed && (
             <div className="group-content">
                 <div className="setting-item column">
-                    <div className="item-label-group" style={{ marginBottom: '8px' }}>
-                        <span className="item-label">{t('visual_theme')}</span>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px', width: '100%' }}>
-                        {availableThemeIds.map(themeId => {
-                            const localeKey = `theme_${themeId}`;
-                            const translated = t(localeKey);
-                            const themeName = translated && translated !== localeKey ? translated : formatThemeFallbackName(themeId);
-                            return (
-                            <button
-                                key={themeId}
-                                onClick={() => {
-                                    setTheme(themeId);
-                                    saveAppSetting('theme', themeId);
-                                }}
-                                className={`btn-icon ${theme === themeId ? 'active' : ''}`}
-                                style={{ width: '100%', height: '36px', fontSize: '12px', fontWeight: 'bold' }}
-                            >
-                                {themeName}
-                            </button>
-                        );
-                        })}
-                    </div>
+                    <ThemeManager t={t} theme={theme} setTheme={setTheme} saveAppSetting={saveAppSetting} />
                 </div>
 
                 <div className="setting-item column">
@@ -242,7 +202,6 @@ const AppearanceSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('show_app_border') || '显示应用边框'}
-                        hint={t('show_app_border_hint') || '关闭后隐藏主窗口边框和阴影'}
                         hintKey="show_app_border"
                     />
                     <label className="switch">
@@ -263,7 +222,6 @@ const AppearanceSettingsGroup = ({
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('compact_mode') || 'Compact Mode'}
-                        hint={t('compact_mode_hint') || 'When enabled, clipboard list displays more densely with more entries visible. Hover to preview.'}
                         hintKey="compact_mode"
                     />
                     <label className="switch">
@@ -285,7 +243,6 @@ const AppearanceSettingsGroup = ({
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                         <LabelWithHint
                             label={t('clipboard_item_font_size') || '条目字体大小'}
-                            hint={t('clipboard_item_font_size_hint') || '调整剪贴板首页条目内容的字体大小'}
                             hintKey="clipboard_item_font_size"
                         />
                         <span className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
@@ -311,7 +268,6 @@ const AppearanceSettingsGroup = ({
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                         <LabelWithHint
                             label={t('clipboard_tag_font_size') || '标签字体大小'}
-                            hint={t('clipboard_tag_font_size_hint') || '调整剪贴板条目标签的字体大小'}
                             hintKey="clipboard_tag_font_size"
                         />
                         <span className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
@@ -336,7 +292,6 @@ const AppearanceSettingsGroup = ({
                 <div className="setting-item column">
                     <LabelWithHint
                         label={t('font_main') || '界面字体'}
-                        hint={t('font_main_hint') || '选择整个界面使用的字体（留空则使用主题默认）'}
                         hintKey="font_main"
                     />
                     <ThemedSelect
@@ -355,7 +310,6 @@ const AppearanceSettingsGroup = ({
                 <div className="setting-item column">
                     <LabelWithHint
                         label={t('font_mono') || '等宽字体'}
-                        hint={t('font_mono_hint') || '选择代码、路径等显示使用的等宽字体（留空则使用主题默认）'}
                         hintKey="font_mono"
                     />
                     <ThemedSelect
@@ -371,7 +325,7 @@ const AppearanceSettingsGroup = ({
                     />
                 </div>
 
-                {(theme === 'mica' || theme === 'acrylic' || theme === 'liquid-glass') && (
+                {(['mica', 'acrylic', 'liquid-glass'].includes(resolveBuiltinTheme(theme))) && (
                     <>
                         <div className="setting-item column no-border">
                             <div className="item-label-group" style={{ marginBottom: '8px' }}>
@@ -469,9 +423,7 @@ const AppearanceSettingsGroup = ({
                                 }}
                                 style={buildRangeStyle(surfaceOpacity, 0, 100)}
                             />
-                            <div className="hint" style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '6px', lineHeight: 1.5 }}>
-                                {t('opacity_composition_hint') || '底板为绝对不透明度：100% 完全遮住背景，0% 完全透明。同一数值在所有主题与深浅色下效果一致。背景图透过底板的可见程度 = 背景图片透明度 × (1 − 底板不透明度)。'}
-                            </div>
+
                         </div>
                     </>
                 )}

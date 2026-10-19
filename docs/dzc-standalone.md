@@ -39,6 +39,8 @@ dzc pick
 
 原生 `dzc pick`、`dzc tui`、`dzc mcp` 和 `dzc bash/zsh/fish/nu/pwsh` 已内置于 CLI，无需 Python 或单独的脚本目录。默认选择界面和 Ctrl-G 插件使用内置 TUI；只有 `--backend fzf/dmenu/rofi` 需要对应的外部选择器。Shell 加载与 MCP 设置见 [集成指南](./integrations/README.md)。这些原生入口自 `v0.1.20-alpha.2` 起提供；旧包应使用自己的随包说明。
 
+包内提供两个 Agent Skill：[CLI 工作流](./skills/dzc-cli/SKILL.md)和[主题构建](./skills/dezirclip-theme/SKILL.md)。将需要的整个目录复制到 Agent 的 skills 目录；Codex 例如使用 `~/.codex/skills/dezirclip-theme/`。用 `$dezirclip-theme` 描述材质、布局和风格，生成包含完整 CSS 的主题包，再从桌面应用的「设置 → 外观 → 导入主题」导入。[森林示例](./skills/dezirclip-theme/assets/forest.theme.json)可直接试用，导入前可运行 `dzc theme validate FILE --json` 校验。
+
 新 Linux 独立 CLI 在 Ubuntu 22.04 的构建环境中编译、链接，目标为 glibc 2.35+，并在 Ubuntu 22.04 与 Debian 12 的干净容器中运行解压后的实际压缩包。构建不启用桌面依赖，压缩包与 Ubuntu 24.04 桌面构建使用独立目录。该基线仅针对独立 CLI，桌面安装包的系统要求保持其各自说明。
 
 Linux 仍动态依赖系统的 D-Bus 库和 GCC 运行库；Ubuntu / Debian 缺失时可安装：

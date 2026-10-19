@@ -1,3 +1,7 @@
+import { getCustomThemes, loadCachedCustomThemes, subscribeCustomThemes } from "./themeCatalog";
+import { resolveThemeSelection, type BuiltinTheme } from "./themePackage";
+import { applyImportedThemeCss } from "./themeStylesheet";
+
 export type ThemeMode = "light" | "dark";
 export type ThemeColorMode = "light" | "dark" | "system";
 
@@ -6,13 +10,23 @@ const loadedThemes = new Set<string>();
 
 /** What the app falls back to before a theme has ever been chosen. */
 const DEFAULT_THEME = "mica";
+let currentTheme: string | null = null;
+const pendingThemeLoads = new Map<string, Promise<void>>();
+
+export const resolveBuiltinTheme = (theme: string): BuiltinTheme =>
+  resolveThemeSelection(theme, getCustomThemes()).base;
 
 export const ensureThemeCssLoaded = async (theme: string) => {
-  if (!theme || loadedThemes.has(theme)) return;
-  const loader = themeCssLoaders[`../../styles/themes/${theme}.css`];
+  if (resolveThemeSelection(theme, getCustomThemes()).custom) return;
+  const base = resolveBuiltinTheme(theme);
+  if (loadedThemes.has(base)) return;
+  const pending = pendingThemeLoads.get(base);
+  if (pending) return pending;
+  const loader = themeCssLoaders[`../../styles/themes/${base}.css`];
   if (!loader) return;
-  await loader();
-  loadedThemes.add(theme);
+  const request = loader().then(() => { loadedThemes.add(base); }).finally(() => { pendingThemeLoads.delete(base); });
+  pendingThemeLoads.set(base, request);
+  await request;
 };
 
 /**
@@ -36,19 +50,19 @@ const clearThemeClasses = (element: HTMLElement) => {
     .forEach((className) => element.classList.remove(className));
 };
 
-const hasOnly = (element: HTMLElement, wanted: string, prefix: string) =>
-  element.classList.contains(wanted) &&
-  !Array.from(element.classList).some((name) => name !== wanted && name.startsWith(prefix));
-
 export const applyThemeClass = (root: HTMLElement, body: HTMLElement, theme: string) => {
-  const next = `theme-${theme}`;
+  currentTheme = theme;
+  const { base, custom } = resolveThemeSelection(theme, getCustomThemes());
+  applyImportedThemeCss(custom?.css ?? null);
+  const wanted = [custom ? "theme-custom" : `theme-${base}`];
   // Every classList write on <html>/<body> invalidates style for the whole
   // document, so converge only when the DOM is not already in the target state.
-  if (hasOnly(root, next, "theme-") && hasOnly(body, next, "theme-")) return;
-  clearThemeClasses(root);
-  clearThemeClasses(body);
-  root.classList.add(next);
-  body.classList.add(next);
+  for (const element of [root, body]) {
+    const present = Array.from(element.classList).filter(name => name.startsWith("theme-"));
+    if (present.length === wanted.length && wanted.every(name => element.classList.contains(name))) continue;
+    clearThemeClasses(element);
+    element.classList.add(...wanted);
+  }
 };
 
 export const applyModeClass = (root: HTMLElement, body: HTMLElement, mode: ThemeMode) => {
@@ -59,11 +73,12 @@ export const applyModeClass = (root: HTMLElement, body: HTMLElement, mode: Theme
   // no-op case keeps a following-the-OS window from recalculating constantly.
   const settled = (element: HTMLElement) =>
     element.classList.contains(next) && !element.classList.contains(other);
-  if (settled(root) && settled(body)) return;
-  root.classList.remove("light-mode", "dark-mode");
-  body.classList.remove("light-mode", "dark-mode");
-  root.classList.add(next);
-  body.classList.add(next);
+  if (!settled(root) || !settled(body)) {
+    root.classList.remove("light-mode", "dark-mode");
+    body.classList.remove("light-mode", "dark-mode");
+    root.classList.add(next);
+    body.classList.add(next);
+  }
 };
 
 export const resolveThemeMode = (colorMode: ThemeColorMode, systemIsDark: boolean): ThemeMode => {
@@ -88,8 +103,11 @@ const readBootColorMode = (): string => {
   }
 };
 
-const hasThemeSheet = (theme: string): boolean =>
-  Boolean(themeCssLoaders[`../../styles/themes/${theme}.css`]);
+subscribeCustomThemes(() => {
+  if (currentTheme === null) return;
+  applyThemeClass(document.documentElement, document.body, currentTheme);
+  void ensureThemeCssLoaded(currentTheme).catch(console.error);
+});
 
 /**
  * Put the saved theme on screen before the app has rendered anything.
@@ -113,6 +131,7 @@ const hasThemeSheet = (theme: string): boolean =>
  * native read disagrees.
  */
 export const applyBootAppearance = () => {
+  loadCachedCustomThemes();
   const theme = readBootTheme();
   const mode = resolveThemeMode(normalizeColorMode(readBootColorMode()), mediaSystemIsDark());
   const root = document.documentElement;
@@ -125,5 +144,5 @@ export const applyBootAppearance = () => {
   // Deliberately not awaited: the fetch starts now and has normally finished
   // before React commits. Blocking the first paint on 62 KB of theme CSS would
   // trade a cosmetic gap for a slower window, on the largest themes only.
-  void ensureThemeCssLoaded(hasThemeSheet(theme) ? theme : DEFAULT_THEME);
+  void ensureThemeCssLoaded(theme).catch(console.error);
 };

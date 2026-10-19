@@ -579,7 +579,8 @@ const App = () => {
       pushToast
     });
 
-  useNavigationSync({ showSettings, showTagManager: effectiveShowTagManager, showEmojiPanel: effectiveShowEmojiPanel });
+  const searchTagPickerOpen = showTagFilter && searchIsFocused;
+  useNavigationSync({ showSettings, showTagManager: effectiveShowTagManager, showEmojiPanel: effectiveShowEmojiPanel, searchTagPickerOpen });
 
   const { copyToClipboard, openContent, deleteEntry, togglePin, handleUpdateTags } =
     useClipboardActions({
@@ -647,6 +648,7 @@ const App = () => {
     showSettings,
     showTagManager: effectiveShowTagManager,
     chatMode: false,
+    searchTagPickerOpen,
     editingTagsId,
     arrowKeySelection,
     richPasteHotkey,
@@ -745,6 +747,7 @@ const App = () => {
     showTagFilter,
     setShowTagFilter,
     allTags,
+    tagColors,
     searchIsFocused,
     setSearchIsFocused,
     setEditingTagsId,
@@ -756,6 +759,15 @@ const App = () => {
   const appMainContentProps = {
     t,
     theme,
+    language,
+    isWindowPinned,
+    privacyProtection,
+    tagColors,
+    richTextSnapshotPreview,
+    onCompactModeChange: (value: boolean) => {
+      setCompactMode(value);
+      saveAppSetting("compact_mode", String(value));
+    },
     showSettings,
     showTagManager: effectiveShowTagManager,
     tagManagerEnabled,

@@ -186,23 +186,6 @@ body.theme-macos:not(.hide-app-border) {
   color: var(--macos-select-option-checked-text);
 }
 
-.theme-macos .btn-icon {
-  border-radius: 9px !important;
-  box-shadow: none !important;
-}
-
-.theme-macos .btn-icon.active {
-  background: var(--macos-btn-active-bg) !important;
-  border-color: var(--macos-btn-active-border) !important;
-  color: var(--macos-btn-active-text) !important;
-  box-shadow: var(--macos-btn-active-shadow) !important;
-}
-
-.theme-macos .btn-icon:hover:not(.active) {
-  background: var(--macos-btn-hover-bg) !important;
-  border-color: var(--macos-btn-hover-border) !important;
-}
-
 /* Settings-page action buttons. Same treatment as
    `.app-selector-action-btn` below — flat, 10px, no drop shadow, the dialog
    button colours — because that is this theme's shape for an action button.
@@ -341,12 +324,6 @@ body.dark-mode.theme-macos .compact-popover-portal .rich-text-preview {
 .theme-macos .video-thumbnail-card,
 .theme-macos .file-thumbnail-card {
   border-radius: 10px !important;
-}
-
-.theme-macos .tag-chip {
-  border-radius: 999px !important;
-  border: 1px solid var(--macos-tag-chip-border) !important;
-  box-shadow: none !important;
 }
 
 .theme-macos .switch {
@@ -512,9 +489,9 @@ body.dark-mode.theme-macos .compact-popover-portal .rich-text-preview {
 
 .theme-macos .app-selector-modal {
   border-radius: 16px !important;
-  border: 1px solid var(--macos-tag-dialog-border) !important;
-  background: var(--macos-tag-dialog-bg) !important;
-  box-shadow: var(--macos-tag-dialog-shadow) !important;
+  border: 1px solid var(--macos-sheet-border) !important;
+  background: var(--macos-sheet-bg) !important;
+  box-shadow: var(--macos-sheet-shadow) !important;
   padding: 18px !important;
 }
 
@@ -537,10 +514,10 @@ body.dark-mode.theme-macos .compact-popover-portal .rich-text-preview {
 }
 
 .theme-macos .app-selector-modal .selector-container {
-  border: 1px solid var(--macos-tag-search-border) !important;
+  border: 1px solid var(--macos-search-border) !important;
   border-radius: 12px !important;
   padding: 6px !important;
-  background: var(--macos-tag-search-bg) !important;
+  background: var(--macos-search-bg) !important;
   box-shadow: none !important;
 }
 
@@ -563,315 +540,6 @@ body.dark-mode.theme-macos .compact-popover-portal .rich-text-preview {
   border-color: var(--macos-dialog-button-primary-border) !important;
 }
 
-
-.themed-tag-manager.theme-macos {
-  background: transparent !important;
-  color: var(--text-primary) !important;
-  font-family: var(--font-main) !important;
-}
-
-.themed-tag-manager.theme-macos .tag-sidebar {
-  border-right: 1px solid var(--macos-tag-sidebar-border) !important;
-  background: var(--macos-tag-sidebar-bg) !important;
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-}
-
-.themed-tag-manager.theme-macos .sidebar-header {
-  background: transparent !important;
-  color: var(--text-primary) !important;
-  border-bottom: 1px solid var(--macos-settings-header-border) !important;
-  margin: 0 !important;
-  padding: 10px 12px !important;
-  min-height: 38px !important;
-}
-
-.themed-tag-manager.theme-macos .header-label {
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0 !important;
-  text-transform: none !important;
-}
-
-.themed-tag-manager.theme-macos .tag-search-box {
-  border-bottom: 1px solid var(--macos-tag-sort-border) !important;
-  background: var(--macos-tag-search-bg) !important;
-}
-
-.themed-tag-manager.theme-macos .tag-search-box input::placeholder {
-  color: color-mix(in srgb, var(--text-secondary) 70%, transparent) !important;
-}
-
-.themed-tag-manager.theme-macos .tag-item.active {
-  background: var(--macos-tag-item-active-bg) !important;
-  color: var(--text-primary) !important;
-  border: 1px solid var(--macos-tag-item-active-border) !important;
-  box-shadow: none !important;
-  border-radius: 9px !important;
-}
-
-.themed-tag-manager.theme-macos .tag-item {
-  border-radius: 9px !important;
-}
-
-.themed-tag-manager.theme-macos .tag-item.active .tag-name,
-.themed-tag-manager.theme-macos .tag-item.active .tag-badge {
-  color: var(--text-primary) !important;
-}
-
-.themed-tag-manager.theme-macos .tag-item:hover:not(.active) {
-  background: var(--macos-tag-item-hover-bg) !important;
-  border-radius: 9px !important;
-}
-
-.themed-tag-manager.theme-macos .tag-name {
-  font-size: 14px !important;
-  font-weight: 600 !important;
-}
-
-.themed-tag-manager.theme-macos .tag-badge {
-  font-size: 12px !important;
-  opacity: 0.6 !important;
-  font-weight: 600 !important;
-}
-
-.themed-tag-manager.theme-macos .tag-item.active .tag-hover-actions > *:hover {
-  color: var(--accent-color) !important;
-}
-
-.themed-tag-manager.theme-macos .tag-search-box {
-  border-radius: 10px;
-  margin: 6px;
-  border: 1px solid var(--macos-tag-search-border);
-  background: var(--macos-tag-search-bg);
-}
-
-.themed-tag-manager.theme-macos .tag-search-box input {
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-
-.themed-tag-manager.theme-macos .collapse-toggle,
-.themed-tag-manager.theme-macos .sort-btn,
-.themed-tag-manager.theme-macos .toggle-btn,
-.themed-tag-manager.theme-macos .add-item-btn,
-.themed-tag-manager.theme-macos .card-action-btn,
-.themed-tag-manager.theme-macos .del-btn {
-  border-radius: 8px;
-}
-
-.themed-tag-manager.theme-macos .themed-card {
-  border-radius: 12px !important;
-  border: 1px solid var(--macos-tag-card-border) !important;
-  background: var(--macos-tag-card-bg) !important;
-  box-shadow: var(--macos-tag-card-shadow) !important;
-}
-
-.themed-tag-manager.theme-macos .themed-card:hover {
-  transform: none !important;
-  background: var(--macos-tag-card-hover-bg) !important;
-  box-shadow: var(--macos-tag-card-hover-shadow) !important;
-}
-
-.themed-tag-manager.theme-macos .content-toolbar {
-  height: 44px !important;
-  border-bottom: 1px solid var(--macos-tag-toolbar-border) !important;
-  background: var(--macos-tag-toolbar-bg) !important;
-  backdrop-filter: blur(14px) saturate(120%);
-  -webkit-backdrop-filter: blur(14px) saturate(120%);
-}
-
-.themed-tag-manager.theme-macos .selected-tag-indicator {
-  font-weight: 600 !important;
-  font-size: 13px !important;
-  opacity: 0.85 !important;
-}
-
-.themed-tag-manager.theme-macos .breadcrumb-text {
-  letter-spacing: 0 !important;
-}
-
-.themed-tag-manager.theme-macos .sort-group {
-  border-left: 1px solid var(--macos-tag-sort-border) !important;
-}
-
-.themed-tag-manager.theme-macos .btn-icon,
-.themed-tag-manager.theme-macos .toggle-btn,
-.themed-tag-manager.theme-macos .add-item-btn {
-  border-radius: 10px !important;
-  border: 1px solid var(--macos-tag-btn-border) !important;
-  background: var(--macos-tag-btn-bg) !important;
-  color: var(--macos-tag-btn-text) !important;
-  box-shadow: none !important;
-}
-
-.themed-tag-manager.theme-macos .btn-icon:hover,
-.themed-tag-manager.theme-macos .toggle-btn:hover,
-.themed-tag-manager.theme-macos .add-item-btn:hover {
-  background: var(--macos-tag-btn-hover-bg) !important;
-  border-color: var(--macos-tag-btn-hover-border) !important;
-}
-
-.themed-tag-manager.theme-macos .toggle-btn.active,
-.themed-tag-manager.theme-macos .add-item-btn.active {
-  background: var(--macos-btn-active-bg) !important;
-  border-color: var(--macos-btn-active-border) !important;
-  color: var(--macos-btn-active-text) !important;
-}
-
-.themed-tag-manager.theme-macos .card-action-btn,
-.themed-tag-manager.theme-macos .del-btn {
-  border-radius: 8px !important;
-}
-
-.themed-tag-manager.theme-macos .card-action-btn:hover,
-.themed-tag-manager.theme-macos .del-btn:hover {
-  background: var(--macos-btn-hover-bg) !important;
-  color: var(--accent-color) !important;
-}
-
-.themed-tag-manager.theme-macos .confirm-dialog {
-  background: var(--macos-tag-dialog-bg) !important;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  padding: 24px !important;
-  border-radius: 16px !important;
-  box-shadow: var(--macos-tag-dialog-shadow) !important;
-  border: 1px solid var(--macos-tag-dialog-border) !important;
-}
-
-.themed-tag-manager.theme-macos .confirm-dialog h3 {
-  background: transparent !important;
-  color: var(--text-primary) !important;
-  font-size: 18px !important;
-  font-weight: 700 !important;
-  text-transform: none !important;
-  padding: 0 !important;
-}
-
-.themed-tag-manager.theme-macos .modal-input-field .modal-textarea {
-  border-radius: 10px !important;
-  border: 1px solid var(--macos-tag-textarea-border) !important;
-  background: var(--macos-tag-textarea-bg) !important;
-  color: var(--macos-tag-textarea-text) !important;
-  box-shadow: var(--macos-tag-textarea-shadow) !important;
-}
-
-.themed-tag-manager.theme-macos .modal-input-field .modal-textarea::placeholder {
-  color: var(--macos-tag-textarea-placeholder) !important;
-}
-
-.themed-tag-manager.theme-macos .modal-input-field .modal-textarea:focus {
-  border-color: rgba(10, 132, 255, 0.55) !important;
-  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18) !important;
-}
-
-.themed-tag-manager.theme-macos .confirm-dialog-button {
-  border-radius: 10px !important;
-  border: none !important;
-  box-shadow: none !important;
-  font-weight: 600 !important;
-  background: var(--macos-dialog-button-bg) !important;
-  border: 1px solid var(--macos-dialog-button-border) !important;
-  color: var(--macos-dialog-button-text) !important;
-}
-
-.themed-tag-manager.theme-macos .confirm-dialog-button:active {
-  transform: scale(0.95);
-}
-
-.themed-tag-manager.theme-macos .confirm-dialog-button.primary {
-  background: var(--macos-dialog-button-primary-bg) !important;
-  border-color: var(--macos-dialog-button-primary-border) !important;
-  color: var(--macos-dialog-button-primary-text) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .tag-content,
-body.dark-mode .themed-tag-manager.theme-macos .items-area,
-body.dark-mode .themed-tag-manager.theme-macos .tag-sidebar,
-body.dark-mode .themed-tag-manager.theme-macos .content-toolbar,
-body.dark-mode .themed-tag-manager.theme-macos .sidebar-header {
-  color: var(--text-primary) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .tag-sidebar {
-  background: rgba(24, 25, 30, 0.88) !important;
-  border-right-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .content-toolbar {
-  background: rgba(24, 25, 30, 0.9) !important;
-  border-bottom-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .items-area {
-  background: rgba(12, 13, 16, 0.86) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .sidebar-header {
-  background: rgba(30, 32, 38, 0.88) !important;
-  border-bottom-color: rgba(255, 255, 255, 0.1) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .tag-search-box {
-  background: rgba(32, 34, 40, 0.9) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .themed-card {
-  background: rgba(28, 30, 36, 0.94) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .themed-card:hover {
-  background: rgba(38, 40, 48, 0.96) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .btn-icon,
-body.dark-mode .themed-tag-manager.theme-macos .toggle-btn,
-body.dark-mode .themed-tag-manager.theme-macos .add-item-btn,
-body.dark-mode .themed-tag-manager.theme-macos .card-action-btn,
-body.dark-mode .themed-tag-manager.theme-macos .del-btn,
-body.dark-mode .themed-tag-manager.theme-macos .sort-btn {
-  background: rgba(44, 46, 54, 0.86) !important;
-  border-color: rgba(255, 255, 255, 0.14) !important;
-  color: #f6f7fb !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .tag-color-dot {
-  border-color: rgba(255, 255, 255, 0.28) !important;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .tag-search-box input,
-body.dark-mode .themed-tag-manager.theme-macos .tag-name,
-body.dark-mode .themed-tag-manager.theme-macos .selected-tag-indicator,
-body.dark-mode .themed-tag-manager.theme-macos .breadcrumb-text,
-body.dark-mode .themed-tag-manager.theme-macos .card-body-text {
-  color: #f6f7fb !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .tag-search-box input::placeholder,
-body.dark-mode .themed-tag-manager.theme-macos .tag-badge,
-body.dark-mode .themed-tag-manager.theme-macos .card-footer,
-body.dark-mode .themed-tag-manager.theme-macos .meta-time,
-body.dark-mode .themed-tag-manager.theme-macos .meta-usage {
-  color: #c7ccd8 !important;
-  opacity: 0.9 !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .card-media {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border-color: var(--macos-tag-card-border) !important;
-}
-
-body.dark-mode .themed-tag-manager.theme-macos .modal-overlay {
-  background: rgba(0, 0, 0, 0.52) !important;
-  backdrop-filter: blur(20px) !important;
-  -webkit-backdrop-filter: blur(20px) !important;
-}
-
 body.dark-mode.theme-macos .modal-overlay,
 body.dark-mode.theme-macos .theme-macos .modal-overlay {
   background: rgba(0, 0, 0, 0.56) !important;
@@ -883,40 +551,111 @@ body.dark-mode.theme-macos .modal-content,
 body.dark-mode.theme-macos .confirm-dialog,
 body.dark-mode.theme-macos .confirm-dialog.theme-macos,
 body.dark-mode .theme-macos .modal-content,
-body.dark-mode .theme-macos .confirm-dialog,
-body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog {
-  background: var(--macos-tag-dialog-bg) !important;
-  border: 1px solid var(--macos-tag-dialog-border) !important;
-  box-shadow: var(--macos-tag-dialog-shadow) !important;
+body.dark-mode .theme-macos .confirm-dialog {
+  background: var(--macos-sheet-bg) !important;
+  border: 1px solid var(--macos-sheet-border) !important;
+  box-shadow: var(--macos-sheet-shadow) !important;
   color: var(--text-primary) !important;
   backdrop-filter: blur(22px) saturate(145%) !important;
   -webkit-backdrop-filter: blur(22px) saturate(145%) !important;
 }
 
 body.dark-mode.theme-macos .confirm-dialog-title,
-body.dark-mode.theme-macos .confirm-dialog h3,
-body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog h3 {
+body.dark-mode.theme-macos .confirm-dialog h3 {
   color: var(--text-primary) !important;
 }
 
 body.dark-mode.theme-macos .confirm-dialog-message,
-body.dark-mode.theme-macos .confirm-dialog p,
-body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog p {
+body.dark-mode.theme-macos .confirm-dialog p {
   color: var(--text-secondary) !important;
   opacity: 1 !important;
 }
 
-body.dark-mode.theme-macos .confirm-dialog-button,
-body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog-button {
+body.dark-mode.theme-macos .confirm-dialog-button {
   background: var(--macos-dialog-button-bg) !important;
   border: 1px solid var(--macos-dialog-button-border) !important;
   color: var(--macos-dialog-button-text) !important;
   box-shadow: none !important;
 }
 
-body.dark-mode.theme-macos .confirm-dialog-button.primary,
-body.dark-mode .themed-tag-manager.theme-macos .confirm-dialog-button.primary {
+body.dark-mode.theme-macos .confirm-dialog-button.primary {
   background: var(--macos-dialog-button-primary-bg) !important;
   border-color: var(--macos-dialog-button-primary-border) !important;
   color: var(--macos-dialog-button-primary-text) !important;
+}
+
+/* Semantic palette: geometry and material remain specific to this theme. */
+:root.theme-macos {
+  --dc-surface-window: #f5f6f8;
+  --dc-surface-panel: #eef1f5;
+  --dc-surface-raised: #ffffff;
+  --dc-surface-input: #ffffff;
+  --dc-surface-hover: #e7ebf1;
+  --dc-surface-active: #006bd6;
+  --dc-text-primary: #1d1d1f;
+  --dc-text-secondary: #636366;
+  --dc-text-muted: #636366;
+  --dc-text-on-accent: #ffffff;
+  --dc-border: #d3d6dd;
+  --dc-border-strong: #9196a0;
+  --dc-accent: #006bd6;
+  --dc-accent-hover: #005fc2;
+  --dc-accent-soft: #dfedff;
+  --dc-success: #247447;
+  --dc-warning: #976300;
+  --dc-danger: #cb3038;
+  --dc-info: #246bb2;
+  --dc-radius: 9px;
+}
+
+:root.dark-mode.theme-macos {
+  --dc-surface-window: #202024;
+  --dc-surface-panel: #29292e;
+  --dc-surface-raised: #34343a;
+  --dc-surface-input: #303036;
+  --dc-surface-hover: #414148;
+  --dc-surface-active: #66acff;
+  --dc-text-primary: #f5f5f7;
+  --dc-text-secondary: #d1d1d6;
+  --dc-text-muted: #b8b8bf;
+  --dc-text-on-accent: #111827;
+  --dc-border: #4f4f57;
+  --dc-border-strong: #787881;
+  --dc-accent: #66acff;
+  --dc-accent-hover: #91c5ff;
+  --dc-accent-soft: #263e5d;
+  --dc-success: #70d69b;
+  --dc-warning: #f4c96b;
+  --dc-danger: #ff858d;
+  --dc-info: #82b7ff;
+  --dc-radius: 9px;
+}
+
+/* Shared icon buttons consume theme state tokens without priority overrides. */
+.theme-macos .btn-icon {
+  --icon-btn-radius: 9px;
+  --icon-btn-shadow: none;
+  --icon-btn-hover-shadow: none;
+  --icon-btn-pressed-shadow: none;
+}
+
+.theme-macos .btn-icon.active {
+  --icon-btn-active-bg: var(--macos-btn-active-bg);
+  --icon-btn-active-border: var(--macos-btn-active-border);
+  --icon-btn-active-color: var(--macos-btn-active-text);
+  --icon-btn-active-shadow: var(--macos-btn-active-shadow);
+  --icon-btn-queue-hover-shadow: var(--icon-btn-active-shadow);
+}
+
+.theme-macos .btn-icon:hover:not(.active) {
+  --icon-btn-hover-bg: var(--macos-btn-hover-bg);
+  --icon-btn-hover-border: var(--macos-btn-hover-border);
+}
+
+/* Existing clipboard-row tag treatment. */
+
+.theme-macos .tag-chip {
+  border-radius: 999px !important;
+  border: 1px solid var(--macos-tag-chip-border) !important;
+  box-shadow: none !important;
 }

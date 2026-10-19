@@ -71,9 +71,9 @@
 body.dark-mode .theme-macos .modal-content,
 body.dark-mode .theme-macos .confirm-dialog,
 body.dark-mode .confirm-dialog.theme-macos {
-  background: var(--surface-confirm-bg, var(--macos-tag-dialog-bg, rgba(30, 30, 30, 0.86))) !important;
-  border-color: var(--surface-confirm-border, var(--macos-tag-dialog-border, rgba(255, 255, 255, 0.12))) !important;
-  box-shadow: var(--surface-confirm-shadow, var(--macos-tag-dialog-shadow, 0 14px 36px rgba(0, 0, 0, 0.48))) !important;
+  background: var(--surface-confirm-bg, var(--macos-sheet-bg, rgba(30, 30, 30, 0.86))) !important;
+  border-color: var(--surface-confirm-border, var(--macos-sheet-border, rgba(255, 255, 255, 0.12))) !important;
+  box-shadow: var(--surface-confirm-shadow, var(--macos-sheet-shadow, 0 14px 36px rgba(0, 0, 0, 0.48))) !important;
   color: var(--text-primary) !important;
 }
 

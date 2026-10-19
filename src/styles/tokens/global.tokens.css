@@ -1,3 +1,5 @@
+@import "./semantic.tokens.css";
+
 :root {
   --bg-body: #dcdcdc;
   --bg-window: #e8e8e8;

@@ -52,7 +52,6 @@ const SettingsFooter = ({
             <div className="settings-footer-version">
                 DezirClip {appVersion ? `v${appVersion}` : "v0.2.0"}
             </div>
-            <div className="settings-footer-slogan">{t('slogan')}</div>
             <div className="settings-footer-links">
                 <button type="button" className="settings-footer-link" onClick={() => openUrl(REPO_URL)}>
                     {t('official_website')}

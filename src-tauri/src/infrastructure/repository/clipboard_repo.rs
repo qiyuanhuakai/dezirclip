@@ -233,7 +233,7 @@ impl SqliteClipboardRepository {
         }
     }
 
-    fn invalidate_caches(&self) {
+    pub(crate) fn invalidate_caches(&self) {
         if let Ok(mut history) = self.history_cache.lock() {
             history.clear();
         }
@@ -383,7 +383,7 @@ impl SqliteClipboardRepository {
         }
     }
 
-    fn extract_rich_image_fallback_payload(html: &str) -> Option<String> {
+    pub(super) fn extract_rich_image_fallback_payload(html: &str) -> Option<String> {
         if let Some(start) = html.rfind(RICH_IMAGE_FALLBACK_PREFIX) {
             let marker_start = start + RICH_IMAGE_FALLBACK_PREFIX.len();
             if let Some(end_rel) = html[marker_start..].find(RICH_IMAGE_FALLBACK_SUFFIX) {

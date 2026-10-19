@@ -1,22 +1,28 @@
 /* Shared Icon Buttons */
 .btn-icon{
-  background: var(--bg-button);
-  border: 2px solid var(--border-dark);
-  color: var(--text-primary);
+  --icon-btn-current-bg: var(--icon-btn-bg);
+  --icon-btn-current-color: var(--icon-btn-color);
+  --icon-btn-current-border: var(--icon-btn-border);
+  --icon-btn-current-shadow: var(--icon-btn-shadow);
+  background: var(--icon-btn-bg, var(--bg-button));
+  border: var(--icon-btn-border, 2px solid var(--border-dark));
+  color: var(--icon-btn-color, var(--text-primary));
+  border-radius: var(--icon-btn-radius, 0);
   padding: 6px;
   cursor: pointer;
-  box-shadow: 2px 2px 0 0 var(--shadow-color);
+  box-shadow: var(--icon-btn-shadow, 2px 2px 0 0 var(--shadow-color));
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.1s;
+  transition: var(--icon-btn-transition, all 0.1s);
+  transform: var(--icon-btn-transform, none);
 }
 
 .btn-icon-scalable {
   width: var(--btn-control-size, auto);
   height: var(--btn-control-size, auto);
   padding: var(--btn-control-padding, 6px);
-  border-radius: var(--btn-control-radius, 4px);
+  border-radius: var(--icon-btn-radius, var(--btn-control-radius, 4px));
   flex-shrink: 0;
 }
 
@@ -43,21 +49,28 @@
 }
 
 .btn-icon:hover{
-  transform: translateY(-1px);
-  transform: translateY(-1px);
-  box-shadow: 3px 3px 0 0 var(--shadow-color);
-  background: var(--bg-input);
+  --icon-btn-current-bg: var(--icon-btn-hover-bg, var(--icon-btn-bg));
+  --icon-btn-current-border: var(--icon-btn-border-width, 2px) solid var(--icon-btn-hover-border);
+  transform: var(--icon-btn-hover-transform, translateY(-1px));
+  box-shadow: var(--icon-btn-hover-shadow, 3px 3px 0 0 var(--shadow-color));
+  background: var(--icon-btn-hover-bg, var(--bg-input));
+  border-color: var(--icon-btn-hover-border, var(--border-dark));
 }
 
 .btn-icon:active{
-  transform: translate(2px, 2px);
-  box-shadow: 0 0 0 0 var(--shadow-color);
+  transform: var(--icon-btn-active-transform, translate(2px, 2px));
+  box-shadow: var(--icon-btn-pressed-shadow, 0 0 0 0 var(--shadow-color));
 }
 
 .btn-icon.active{
-  background: var(--accent-color);
-  color: #fff;
-  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.2);
-  transform: translate(2px, 2px);
+  --icon-btn-current-bg: var(--icon-btn-active-bg, var(--icon-btn-bg));
+  --icon-btn-current-color: var(--icon-btn-active-color, var(--icon-btn-color));
+  --icon-btn-current-border: var(--icon-btn-border-width, 2px) solid var(--icon-btn-active-border);
+  --icon-btn-current-shadow: var(--icon-btn-active-shadow, var(--icon-btn-shadow));
+  background: var(--icon-btn-active-bg, var(--accent-color));
+  border-color: var(--icon-btn-active-border, var(--border-dark));
+  color: var(--icon-btn-active-color, #fff);
+  box-shadow: var(--icon-btn-active-shadow, inset 2px 2px 0 rgba(0, 0, 0, 0.2));
+  transform: var(--icon-btn-active-transform, translate(2px, 2px));
   /* Pushed in state */
 }

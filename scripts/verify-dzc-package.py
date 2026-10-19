@@ -99,7 +99,9 @@ def verify(archive, expected_version=None, static_only=False):
             raise ValueError("packaged compatibility report does not match the actual executable")
         for required in (binary, extracted / "LICENSE", extracted / "README.md",
                          extracted / "docs" / "cli.md", extracted / "integrations" / "dzc-integrations.py",
-                         extracted / "skills" / "dzc-cli" / "SKILL.md"):
+                         extracted / "skills" / "dzc-cli" / "SKILL.md",
+                         extracted / "skills" / "dezirclip-theme" / "SKILL.md",
+                         extracted / "skills" / "dezirclip-theme" / "assets" / "forest.theme.json"):
             if not required.is_file():
                 raise ValueError(f"missing packaged resource: {required.relative_to(extracted)}")
         if static_only:

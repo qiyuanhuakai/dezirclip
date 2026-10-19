@@ -31,6 +31,11 @@ def verify(build_dir):
             timeout=45, **kwargs,
         ).stdout
 
+    for resource in ("dzc-cli/SKILL.md", "dezirclip-theme/SKILL.md",
+                     "dezirclip-theme/assets/forest.theme.json"):
+        run(["test", "-s", f"/app/share/dezirclip/skills/{resource}"])
+    print("PASS bundled CLI and theme Skills", flush=True)
+
     # --runtime uses org.gnome.Platform, so SDK-only shared libraries cannot mask gaps.
     run(["/app/bin/xdotool", "version"])
     languages = run(["/app/bin/tesseract", "--list-langs"])

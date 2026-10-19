@@ -1,5 +1,5 @@
 use crate::infrastructure::cli_path;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use tauri::{path::BaseDirectory, AppHandle, Manager};
@@ -9,6 +9,7 @@ pub struct CliInfo {
     pub cli_path: Option<String>,
     pub cli_version: String,
     pub skill_path: Option<String>,
+    pub theme_skill_path: Option<String>,
     pub cli_on_path: bool,
     pub path_cli_path: Option<String>,
     pub path_cli_version: Option<String>,
@@ -21,6 +22,22 @@ pub struct CliPathResult {
     pub path_entry: String,
     pub already_linked: bool,
     pub requires_new_terminal: bool,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentSkill {
+    DzcCli,
+    DezirclipTheme,
+}
+
+impl AgentSkill {
+    fn name(self) -> &'static str {
+        match self {
+            Self::DzcCli => "dzc-cli",
+            Self::DezirclipTheme => "dezirclip-theme",
+        }
+    }
 }
 
 #[tauri::command]
@@ -55,12 +72,16 @@ fn build_cli_info(app: &AppHandle) -> Result<CliInfo, String> {
         None
     };
     let cli_version = selected_version.unwrap_or_else(|| "-".to_string());
-    let skill_path = find_skill_path(&app);
+    let skill_path = find_skill_path_buf(app, AgentSkill::DzcCli)
+        .map(|path| path.to_string_lossy().to_string());
+    let theme_skill_path = find_skill_path_buf(app, AgentSkill::DezirclipTheme)
+        .map(|path| path.to_string_lossy().to_string());
 
     Ok(CliInfo {
         cli_path,
         cli_version,
         skill_path,
+        theme_skill_path,
         cli_on_path,
         path_cli_path,
         path_cli_version,
@@ -72,6 +93,13 @@ fn build_cli_info(app: &AppHandle) -> Result<CliInfo, String> {
 pub fn open_install_folder(app: AppHandle) -> Result<(), String> {
     let folder = find_install_folder(&app).ok_or_else(|| "install folder not found".to_string())?;
     open_folder(&folder).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn open_agent_skill_folder(app: AppHandle, skill: AgentSkill) -> Result<(), String> {
+    let folder = find_skill_path_buf(&app, skill)
+        .ok_or_else(|| format!("{} skill folder not found", skill.name()))?;
+    open_folder(&folder).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -129,45 +157,36 @@ fn cli_binary_name() -> &'static str {
     }
 }
 
-fn find_skill_path(app: &AppHandle) -> Option<String> {
-    find_skill_path_buf(app).map(|path| path.to_string_lossy().to_string())
+fn find_skill_path_buf(app: &AppHandle, skill: AgentSkill) -> Option<PathBuf> {
+    bundled_skill_path(app, skill).or_else(|| find_filesystem_skill_path(skill))
 }
 
-fn find_skill_path_buf(app: &AppHandle) -> Option<PathBuf> {
-    bundled_skill_path(app).or_else(find_filesystem_skill_path)
-}
-
-fn bundled_skill_path(app: &AppHandle) -> Option<PathBuf> {
-    ["../skills/dzc-cli", "skills/dzc-cli"]
+fn bundled_skill_path(app: &AppHandle, skill: AgentSkill) -> Option<PathBuf> {
+    [format!("skills/{}", skill.name()), format!("../skills/{}", skill.name())]
         .into_iter()
         .find_map(|resource| {
             app.path()
                 .resolve(resource, BaseDirectory::Resource)
                 .ok()
-                .filter(|path| path.exists())
+                .filter(|path| path.join("SKILL.md").is_file())
         })
 }
 
-fn find_filesystem_skill_path() -> Option<PathBuf> {
-    let candidates: Vec<PathBuf> = if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            vec![
-                dir.join("skills").join("dzc-cli"),
-                dir.join("../skills").join("dzc-cli"),
-                dir.join("../../skills").join("dzc-cli"),
-            ]
-        } else {
-            vec![]
-        }
-    } else {
-        vec![]
-    };
+fn find_filesystem_skill_path(skill: AgentSkill) -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    find_filesystem_skill_path_in(executable.parent()?, skill)
+}
 
-    candidates.into_iter().find(|path| path.exists())
+fn find_filesystem_skill_path_in(dir: &Path, skill: AgentSkill) -> Option<PathBuf> {
+    [dir.join("skills"), dir.join("../share/dezirclip/skills"), dir.join("../skills"), dir.join("../../skills")]
+        .into_iter()
+        .map(|root| root.join(skill.name()))
+        .find(|path| path.join("SKILL.md").is_file())
 }
 
 fn find_install_folder(app: &AppHandle) -> Option<PathBuf> {
-    find_skill_path_buf(app)
+    find_skill_path_buf(app, AgentSkill::DzcCli)
+        .or_else(|| find_skill_path_buf(app, AgentSkill::DezirclipTheme))
         .and_then(|path| install_folder_from_skill_path(&path))
         .or_else(|| {
             std::env::current_exe()
@@ -198,6 +217,49 @@ fn open_folder(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skill_folder_requests_accept_only_bundled_skill_names() {
+        for (json, name) in [("\"dzc-cli\"", "dzc-cli"), ("\"dezirclip-theme\"", "dezirclip-theme")] {
+            assert_eq!(serde_json::from_str::<AgentSkill>(json).unwrap().name(), name);
+        }
+        for json in ["\"../dezirclip-theme\"", "\"C:/secrets\"", "\"unknown\"", "\"\""] {
+            assert!(serde_json::from_str::<AgentSkill>(json).is_err());
+        }
+    }
+
+    #[test]
+    fn skills_resolve_independently_and_require_their_manifest() {
+        let fixture = std::env::temp_dir().join(format!("dezirclip-agent-skills-{}", uuid::Uuid::new_v4()));
+        let executable_dir = fixture.join("bin/debug");
+        let cli = executable_dir.join("skills/dzc-cli");
+        let empty_theme = executable_dir.join("skills/dezirclip-theme");
+        let theme = fixture.join("skills/dezirclip-theme");
+        std::fs::create_dir_all(&cli).unwrap();
+        std::fs::create_dir_all(&empty_theme).unwrap();
+        std::fs::write(cli.join("SKILL.md"), "CLI").unwrap();
+        assert_eq!(find_filesystem_skill_path_in(&executable_dir, AgentSkill::DzcCli), Some(cli));
+        assert_eq!(find_filesystem_skill_path_in(&executable_dir, AgentSkill::DezirclipTheme), None);
+        std::fs::create_dir_all(&theme).unwrap();
+        std::fs::write(theme.join("SKILL.md"), "Theme").unwrap();
+        assert_eq!(
+            find_filesystem_skill_path_in(&executable_dir, AgentSkill::DezirclipTheme).unwrap().canonicalize().unwrap(),
+            theme.canonicalize().unwrap()
+        );
+        let flatpak_executable_dir = fixture.join("app/bin");
+        let flatpak_theme = fixture.join("app/share/dezirclip/skills/dezirclip-theme");
+        std::fs::create_dir_all(&flatpak_executable_dir).unwrap();
+        std::fs::create_dir_all(&flatpak_theme).unwrap();
+        std::fs::write(flatpak_theme.join("SKILL.md"), "Bundled theme").unwrap();
+        assert_eq!(
+            find_filesystem_skill_path_in(&flatpak_executable_dir, AgentSkill::DezirclipTheme).unwrap().canonicalize().unwrap(),
+            flatpak_theme.canonicalize().unwrap()
+        );
+        let resolved = fixture.canonicalize().unwrap();
+        assert!(resolved.starts_with(std::env::temp_dir().canonicalize().unwrap()));
+        assert!(resolved.file_name().unwrap().to_string_lossy().starts_with("dezirclip-agent-skills-"));
+        std::fs::remove_dir_all(resolved).unwrap();
+    }
 
     #[test]
     fn test_install_folder_from_skill_path_returns_app_root() {

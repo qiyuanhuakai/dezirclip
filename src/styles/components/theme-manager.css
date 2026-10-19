@@ -1,0 +1,22 @@
+.theme-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+.theme-manager-heading, .theme-manager-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.theme-manager-heading { justify-content: space-between; }
+.theme-manager .btn-icon { box-sizing: border-box; min-width: 0; }
+.theme-choices, .theme-custom-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.theme-manager-actions > .btn-icon { width: auto; min-width: 0; height: 36px; padding-inline: 12px; }
+.theme-custom-list > .btn-icon { width: 100%; height: auto; min-height: 36px; padding: 8px 12px; white-space: normal; overflow-wrap: anywhere; }
+.theme-manager-hint, .theme-operation-error { margin: 0; overflow-wrap: anywhere; }
