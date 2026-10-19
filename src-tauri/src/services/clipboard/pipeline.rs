@@ -249,7 +249,10 @@ impl PipelineStage for TransformationStage {
             let data_dir = app_data_dir.0.lock().unwrap().clone();
 
             entry.html_content = if settings.persistent.load(Ordering::Relaxed) {
-                let plan = crate::infrastructure::attachments::plan_html_attachments(html, &data_dir);
+                let plan = match crate::infrastructure::attachments::plan_html_attachments(html, &data_dir) {
+                    Ok(plan) => plan,
+                    Err(_) => { ctx.should_stop = true; return; }
+                };
                 let html = plan.html().to_owned();
                 ctx.html_attachments = Some(plan);
                 Some(html)

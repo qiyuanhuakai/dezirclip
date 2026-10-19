@@ -73,6 +73,7 @@ fn run_alignment(app_handle: AppHandle) {
             Option<String>,
             String,
         )> = Vec::new();
+        let mut batch_valid = true;
         {
             let mut stmt = match conn_guard.prepare(&sql) {
                 Ok(s) => s,
@@ -110,29 +111,37 @@ fn run_alignment(app_handle: AppHandle) {
             for row in rows {
                 match row {
                     Ok(item) => batch.push(item),
-                    Err(_) => complete = false,
+                    Err(_) => batch_valid = false,
                 }
             }
         }
 
         if batch.is_empty() {
+            if !batch_valid {
+                complete = false;
+            }
             break;
         }
 
+        let mut candidates = Vec::new();
         for (id, _ts, content, preview, html, linked_sensitive, ocr, raw_tags) in batch.iter() {
             let Ok(tags) = serde_json::from_str::<Vec<String>>(raw_tags) else {
-                complete = false;
-                continue;
+                batch_valid = false;
+                break;
             };
             if (*linked_sensitive || crate::database::has_sensitive_tag(&tags))
                 && needs_alignment(content, preview, html.as_deref(), ocr.as_deref())
-                && db_state
-                    .repo
-                    .encrypt_entry_with_conn(&conn_guard, *id)
-                    .is_err()
             {
-                complete = false;
+                candidates.push(*id);
             }
+        }
+        if !batch_valid
+            || db_state
+                .repo
+                .encrypt_entries_with_conn(&conn_guard, &candidates)
+                .is_err()
+        {
+            complete = false;
         }
 
         if let Some((id, ts, _, _, _, _, _, _)) = batch.last() {

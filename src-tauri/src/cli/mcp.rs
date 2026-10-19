@@ -322,11 +322,11 @@ fn metadata(entry: &ClipboardEntry) -> Result<Value, String> {
     if crate::database::has_sensitive_tag(&entry.tags)
         || [&entry.content, &entry.preview]
             .iter()
-            .any(|value| crate::infrastructure::encryption::is_encrypted_value(value))
+            .any(|value| crate::infrastructure::encryption::has_ciphertext_envelope(value))
         || entry
             .html_content
             .as_deref()
-            .is_some_and(crate::infrastructure::encryption::is_encrypted_value)
+            .is_some_and(crate::infrastructure::encryption::has_ciphertext_envelope)
     {
         return Err("This entry is unavailable to the MCP adapter".to_string());
     }
@@ -450,6 +450,12 @@ mod tests {
             connection.execute("INSERT INTO clipboard_history(id,content_type,content,preview,source_app,source_app_path,timestamp,tags,html_content)
                 VALUES(?1,'rich_text',?2,?3,'source','/private/source/path',?1,?4,?5)",rusqlite::params![id,content,preview,tags,html]).unwrap();
         }
+        // These fixtures represent unavailable ciphertext, not ordinary prefix text.
+        use base64::Engine;
+        let cipher = format!("linux:{}", base64::engine::general_purpose::STANDARD.encode([0u8;28]));
+        connection.execute("UPDATE clipboard_history SET content=?1 WHERE id=3", [&cipher]).unwrap();
+        connection.execute("UPDATE clipboard_history SET html_content=?1 WHERE id=5", [&cipher]).unwrap();
+        connection.execute("UPDATE clipboard_history SET preview=?1 WHERE id=6", [&cipher]).unwrap();
         Arc::new(Mutex::new(connection))
     }
 
@@ -613,6 +619,19 @@ mod tests {
         ready(&mut server);
         let result = data(&call(&mut server, "clipboard_get", json!({"id":1})));
         assert_eq!(result["content"], "personal-untagged-note");
+    }
+
+    #[test]
+    fn literal_prefix_body_preview_and_ocr_remain_available_before_pagination() {
+        let connection = database();
+        connection.lock().unwrap().execute("UPDATE clipboard_history SET content='linux: ordinary body',preview='dpapi: ordinary preview',ocr_text='linux: kernel notes' WHERE id=1", []).unwrap();
+        let mut server = Server::new(move || Ok(Arc::new(SqliteClipboardRepository::new(connection.clone()))));
+        ready(&mut server);
+        let item = data(&call(&mut server, "clipboard_get", json!({"id":1})));
+        assert_eq!(item["content"], "linux: ordinary body");
+        assert_eq!(item["preview"], "dpapi: ordinary preview");
+        let page = data(&call(&mut server, "clipboard_search", json!({"query":"kernel notes","limit":1})));
+        assert_eq!(page["entries"][0]["id"], 1);
     }
 
     #[test]
