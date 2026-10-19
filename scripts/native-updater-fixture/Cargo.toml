@@ -1,0 +1,11 @@
+[package]
+name = "dezirclip-native-updater-acceptance"
+version = "0.0.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+tauri = { version = "=2.12.4", default-features = false, features = ["test"] }
+tauri-plugin-updater = { version = "=2.14.0", default-features = false, features = ["rustls-tls"] }
+serde_json = "1"
