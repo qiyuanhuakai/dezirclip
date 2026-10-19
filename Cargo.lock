@@ -1563,6 +1563,7 @@ dependencies = [
  "cssparser 0.37.0",
  "dirs 5.0.1",
  "image",
+ "libc",
  "rand 0.8.6",
  "regex",
  "rusqlite",

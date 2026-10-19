@@ -268,7 +268,31 @@ impl SqliteClipboardRepository {
     }
 
     pub fn encrypt_entry_with_conn(&self, conn: &Connection, id: i64) -> Result<(), String> {
-        super::protection::atomic(conn, |conn| self.encrypt_entry_with_conn_inner(conn, id))
+        self.encrypt_entries_with_conn(conn, &[id])
+    }
+
+    /// Protect one startup batch and discard obsolete search segments once.
+    pub fn encrypt_entries_with_conn(&self, conn: &Connection, ids: &[i64]) -> Result<(), String> {
+        self.encrypt_entries_with_rebuild(conn, ids, super::protection::rebuild_search)
+    }
+
+    pub(super) fn encrypt_entries_with_rebuild(
+        &self,
+        conn: &Connection,
+        ids: &[i64],
+        rebuild: impl FnOnce(&Connection) -> Result<(), String>,
+    ) -> Result<(), String> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        super::protection::atomic(conn, |conn| {
+            for id in ids {
+                self.encrypt_entry_with_conn_inner(conn, *id)?;
+            }
+            rebuild(conn)?;
+            self.invalidate_caches();
+            Ok(())
+        })
     }
 
     fn encrypt_entry_with_conn_inner(&self, conn: &Connection, id: i64) -> Result<(), String> {
@@ -304,8 +328,6 @@ impl SqliteClipboardRepository {
             "UPDATE clipboard_history SET content = ?, preview = ?, html_content = ?, content_hash = ?, ocr_text = ? WHERE id = ?",
             params![content_enc, preview_enc, html_enc, new_hash, ocr_enc, id],
         ).map_err(|e| e.to_string())?;
-        super::protection::rebuild_search(conn)?;
-        self.invalidate_caches();
         Ok(())
     }
 
@@ -498,7 +520,12 @@ impl SqliteClipboardRepository {
         image_hash: Option<i64>,
     ) -> Result<i64, String> {
         crate::database::ensure_writable(conn)?;
-        super::protection::atomic(conn, |conn| self.save_entry_with_conn(conn, entry, data_dir, image_hash))
+        super::protection::atomic(conn, |conn| self.save_entry_with_conn(conn, entry, data_dir, image_hash, true))
+    }
+
+    pub(super) fn save_restored_with_conn(&self, conn: &Connection, entry: &ClipboardEntry) -> Result<i64, String> {
+        crate::database::ensure_writable(conn)?;
+        super::protection::atomic(conn, |conn| self.save_entry_with_conn(conn, entry, None, None, false))
     }
 
     /// Captured HTML assets are materialized only after protection checks and SQL succeed.
@@ -517,7 +544,7 @@ impl SqliteClipboardRepository {
         }
         let transaction = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
-        let id = self.save_entry_with_conn(&transaction, entry, data_dir, image_hash)?;
+        let id = self.save_entry_with_conn(&transaction, entry, data_dir, image_hash, true)?;
         let created = attachments.map(|plan| plan.materialize()).transpose()?;
         transaction.commit().map_err(|error| error.to_string())?;
         if let Some(created) = created { created.keep(); }
@@ -530,6 +557,7 @@ impl SqliteClipboardRepository {
         entry: &ClipboardEntry,
         data_dir: Option<&std::path::Path>,
         image_hash: Option<i64>,
+        inherit_missing_ocr: bool,
     ) -> Result<i64, String> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut cleaned_tags: Vec<String> = Vec::new();
@@ -560,7 +588,7 @@ impl SqliteClipboardRepository {
             };
             {
                 let existing_ocr = stored_ocr.as_deref().map(encryption::decode_for_mutation).transpose().map_err(|error| error.to_string())?;
-                if ocr_to_store.is_none() { ocr_to_store = existing_ocr; }
+                if inherit_missing_ocr && ocr_to_store.is_none() { ocr_to_store = existing_ocr; }
                 let mut protected = false;
                 for value in [
                     Some(content.as_str()),
@@ -670,7 +698,7 @@ impl SqliteClipboardRepository {
                     is_external = ?9,
                     source_app_path = ?10,
                     use_count = use_count + 1,
-                    ocr_text = ?12, ocr_status = COALESCE(?13, ocr_status)
+                    ocr_text = ?12, ocr_status = CASE WHEN ?14 THEN COALESCE(?13, ocr_status) ELSE COALESCE(?13, 'pending') END
                  WHERE id = ?11",
                 params![
                     entry.content_type,
@@ -684,7 +712,7 @@ impl SqliteClipboardRepository {
                     if final_is_external { 1 } else { 0 },
                     entry.source_app_path.as_deref(),
                     entry.id,
-                    ocr_text, entry.ocr_status.as_deref()
+                    ocr_text, entry.ocr_status.as_deref(), inherit_missing_ocr
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -1865,7 +1893,7 @@ mod tests {
             "source_app":"test","timestamp":1,"is_pinned":false,"tags":[" \u{3000}SENSITIVE\n "]
         })).unwrap();
         assert_eq!(repo.save_with_conn(&conn, &entry, Some(&directory)).unwrap_err(), "KeyUnavailable");
-        let plan = plan_html_attachments("<img src='private.png'><!--TIEZ_RICH_IMAGE:data:image/png;base64,b3RoZXI=-->", &directory);
+        let plan = plan_html_attachments("<img src='private.png'><!--TIEZ_RICH_IMAGE:data:image/png;base64,b3RoZXI=-->", &directory).unwrap();
         entry.content_type = "rich_text".to_string();
         entry.html_content = Some(plan.html().to_owned());
         assert_eq!(repo.save_capture_with_conn(&conn, &entry, Some(&directory), None, Some(&plan)).unwrap_err(), "SensitivePersistenceRejected");
@@ -1928,7 +1956,7 @@ mod tests {
         let other = crate::database::init_db(database.to_str().unwrap()).unwrap();
         let repo = SqliteClipboardRepository::new(connection.clone());
         let html = "<p>ordinary</p><!--TIEZ_RICH_IMAGE:data:image/png;base64,b3RoZXI=-->";
-        let plan = plan_html_attachments(html, &directory);
+        let plan = plan_html_attachments(html, &directory).unwrap();
         let mut entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
             "id":0,"content_type":"rich_text","content":"ordinary","preview":"ordinary",
             "html_content":plan.html(),"source_app":"test","timestamp":1,"is_pinned":false

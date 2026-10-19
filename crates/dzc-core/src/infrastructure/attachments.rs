@@ -96,14 +96,25 @@ pub fn write_backup(path: &Path, bytes: &[u8]) -> Result<(), String> {
 pub struct HtmlAttachmentPlan {
     html: String,
     files: Vec<(PathBuf, Vec<u8>)>,
+    input_bytes: usize,
 }
+
+#[derive(Clone, Copy)]
+struct HtmlAttachmentBudget { image: usize, total: usize, count: usize }
+const HTML_ATTACHMENT_BUDGET: HtmlAttachmentBudget = HtmlAttachmentBudget {
+    image: 16 * 1024 * 1024, total: 32 * 1024 * 1024, count: 64,
+};
 
 impl HtmlAttachmentPlan {
     pub fn html(&self) -> &str {
         &self.html
     }
 
-    fn add_image(&mut self, directory: &Path, bytes: Vec<u8>, extension: &str) -> PathBuf {
+    fn add_image(&mut self, directory: &Path, bytes: Vec<u8>, extension: &str, budget: HtmlAttachmentBudget) -> Result<PathBuf, String> {
+        if bytes.len() > budget.image || bytes.len() > budget.total.saturating_sub(self.input_bytes) {
+            return Err("AttachmentBudgetExceeded".into());
+        }
+        self.input_bytes += bytes.len();
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         bytes.hash(&mut hasher);
@@ -111,7 +122,7 @@ impl HtmlAttachmentPlan {
         if !self.files.iter().any(|(existing, _)| existing == &path) {
             self.files.push((path.clone(), bytes));
         }
-        path
+        Ok(path)
     }
 
     pub fn materialize(&self) -> Result<CreatedAttachments, String> {
@@ -163,16 +174,24 @@ impl Drop for CreatedAttachments {
     }
 }
 
-pub fn plan_html_attachments(html: &str, data_dir: &Path) -> HtmlAttachmentPlan {
+pub fn plan_html_attachments(html: &str, data_dir: &Path) -> Result<HtmlAttachmentPlan, String> {
+    plan_html_attachments_with_budget(html, data_dir, HTML_ATTACHMENT_BUDGET)
+}
+
+fn plan_html_attachments_with_budget(html: &str, data_dir: &Path, budget: HtmlAttachmentBudget) -> Result<HtmlAttachmentPlan, String> {
     let directory = data_dir.join("attachments");
     let mut plan = HtmlAttachmentPlan {
         html: String::new(),
         files: Vec::new(),
+        input_bytes: 0,
     };
+    let mut count = 0;
+    let mut failure = None;
     let pattern = regex::Regex::new(r#"(<img\s+[^>]*src=["'])([^"']+)(["'][^>]*>)"#)
         .expect("fixed image attribute expression");
     let rewritten = pattern
         .replace_all(html, |captures: &regex::Captures| {
+            if failure.is_some() { return captures[0].to_owned(); }
             let src = &captures[2];
             let local = src.starts_with("file://")
                 || (src.len() > 2
@@ -195,15 +214,26 @@ pub fn plan_html_attachments(html: &str, data_dir: &Path) -> HtmlAttachmentPlan 
             if source.starts_with(&directory) {
                 return captures[0].to_owned();
             }
-            let Ok(bytes) = std::fs::read(source) else {
-                return captures[0].to_owned();
+            count += 1;
+            if count > budget.count { failure = Some("AttachmentBudgetExceeded".to_string()); return captures[0].to_owned(); }
+            let maximum = budget.image.min(budget.total.saturating_sub(plan.input_bytes));
+            let bytes = match crate::infrastructure::local_file::read_bounded_regular(source, maximum) {
+                Ok(bytes) => bytes,
+                Err(error) if error.kind() == std::io::ErrorKind::InvalidData => {
+                    failure = Some("AttachmentBudgetExceeded".to_string()); return captures[0].to_owned();
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound || error.kind() == std::io::ErrorKind::PermissionDenied => return captures[0].to_owned(),
+                Err(_) => { failure = Some("AttachmentReadRejected".to_string()); return captures[0].to_owned(); }
             };
             let extension = source
                 .extension()
                 .and_then(|value| value.to_str())
                 .unwrap_or("png")
                 .to_lowercase();
-            let path = plan.add_image(&directory, bytes, &extension);
+            let path = match plan.add_image(&directory, bytes, &extension, budget) {
+                Ok(path) => path,
+                Err(error) => { failure = Some(error); return captures[0].to_owned(); }
+            };
             let path = path.to_string_lossy().replace('\\', "/");
             let uri = if path.starts_with('/') {
                 format!("file://{path}")
@@ -213,6 +243,7 @@ pub fn plan_html_attachments(html: &str, data_dir: &Path) -> HtmlAttachmentPlan 
             format!("{}{uri}{}", &captures[1], &captures[3])
         })
         .into_owned();
+    if let Some(error) = failure { return Err(error); }
 
     const PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
     const SUFFIX: &str = "-->";
@@ -223,6 +254,11 @@ pub fn plan_html_attachments(html: &str, data_dir: &Path) -> HtmlAttachmentPlan 
             let payload_end = payload_start + end;
             let payload = plan.html[payload_start..payload_end].trim();
             if payload.starts_with("data:image/") {
+                let maximum = budget.image.min(budget.total.saturating_sub(plan.input_bytes));
+                let encoded = payload.split_once(',').map(|(_, value)| value).unwrap_or("");
+                if count >= budget.count || encoded.len() > maximum.saturating_add(2) / 3 * 4 {
+                    return Err("AttachmentBudgetExceeded".into());
+                }
                 if let Some(bytes) = payload
                     .split_once(',')
                     .and_then(|(_, value)| STANDARD.decode(value).ok())
@@ -235,7 +271,7 @@ pub fn plan_html_attachments(html: &str, data_dir: &Path) -> HtmlAttachmentPlan 
                     } else {
                         clean.to_owned()
                     };
-                    let path = plan.add_image(&directory, bytes, "png");
+                    let path = plan.add_image(&directory, bytes, "png", budget)?;
                     plan.html = format!(
                         "{}\n{PREFIX}{}{SUFFIX}",
                         base.trim_end(),
@@ -245,12 +281,40 @@ pub fn plan_html_attachments(html: &str, data_dir: &Path) -> HtmlAttachmentPlan 
             }
         }
     }
-    plan
+    Ok(plan)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn html_planning_enforces_single_total_and_reference_limits_before_writes() {
+        let root = std::env::temp_dir().join(format!("dezirclip-html-budget-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source.png");
+        std::fs::write(&source, [1u8;8]).unwrap();
+        let image = format!("<img src='file://{}'>", source.to_string_lossy().replace('\\', "/"));
+        for (html,budget) in [
+            (image.clone(), HtmlAttachmentBudget { image: 7, total: 100, count: 10 }),
+            (image.repeat(2), HtmlAttachmentBudget { image: 8, total: 15, count: 10 }),
+            (image.repeat(2), HtmlAttachmentBudget { image: 8, total: 100, count: 1 }),
+            ("<!--TIEZ_RICH_IMAGE:data:image/png;base64,AQIDBAUGBwg=-->".into(), HtmlAttachmentBudget { image: 7, total: 100, count: 10 }),
+        ] {
+            assert_eq!(plan_html_attachments_with_budget(&html, &root, budget).err().unwrap(), "AttachmentBudgetExceeded");
+            assert!(!root.join("attachments").exists());
+        }
+        let plan = plan_html_attachments_with_budget(&image, &root, HtmlAttachmentBudget { image: 8, total: 8, count: 1 }).unwrap();
+        assert_eq!(plan.input_bytes, 8);
+        assert_eq!(plan.files.len(), 1);
+        let file = std::fs::File::create(&source).unwrap();
+        file.set_len(HTML_ATTACHMENT_BUDGET.image as u64 + 1).unwrap();
+        drop(file);
+        assert_eq!(plan_html_attachments(&image, &root).err().unwrap(), "AttachmentBudgetExceeded");
+        assert!(!root.join("attachments").exists());
+        assert!(source.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn html_planning_never_creates_files_and_failed_materialization_preserves_shared_assets() {
@@ -260,7 +324,7 @@ mod tests {
         let source = directory.join("source.PNG");
         std::fs::write(&source, b"original image").unwrap();
         let html = format!("<p>ordinary</p><img src='file://{}'><!--TIEZ_RICH_IMAGE:data:image/png;base64,b3RoZXI=-->", source.to_string_lossy().replace('\\', "/"));
-        let plan = plan_html_attachments(&html, &directory);
+        let plan = plan_html_attachments(&html, &directory).unwrap();
         assert_eq!(plan.files.len(), 2);
         assert!(!directory.join("attachments").exists());
         assert!(plan.html().contains("img_"));
