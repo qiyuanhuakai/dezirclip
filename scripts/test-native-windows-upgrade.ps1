@@ -202,6 +202,68 @@ function Assert-CliHistory([string]$Text, [Nullable[long]]$ExpectedId, [string]$
     $entries = @(($output | Out-String | ConvertFrom-Json) | Where-Object { $_.content -eq $Text })
     if ($entries.Count -ne 1 -or ($null -ne $ExpectedId -and $entries[0].id -ne $ExpectedId)) { throw 'CLI and GUI did not observe the same single stored entry.' }
 }
+function Get-ActualProcessImageSnapshot([System.Diagnostics.Process]$Application) {
+    $observedPath = $null
+    $hasExited = $null
+    $errors = @()
+    $fresh = $null
+    try {
+        $Application.Refresh()
+        $hasExited = $Application.HasExited
+        if (-not $hasExited) {
+            $fresh = Get-Process -Id $Application.Id -ErrorAction Stop
+            $fresh.Refresh()
+            $observedPath = $fresh.Path
+            # Recheck the original process handle so a PID reused after exit
+            # cannot establish the identity of the process we launched.
+            $hasExited = $null
+            $Application.Refresh()
+            $hasExited = $Application.HasExited
+        }
+    } catch {
+        $errors += $_.Exception.GetType().FullName + ': ' + $_.Exception.Message
+        $hasExited = $null
+        try { $Application.Refresh(); $hasExited = $Application.HasExited }
+        catch { $errors += $_.Exception.GetType().FullName + ': ' + $_.Exception.Message }
+    } finally { if ($fresh) { $fresh.Dispose() } }
+    return [pscustomobject]@{ processId = $Application.Id; observedPath = $observedPath; hasExited = $hasExited; error = ($errors -join '; '); pathSource = 'fresh Get-Process.Path' }
+}
+function Wait-ActualProcessImage {
+    param(
+        [Parameter(Mandatory)][string]$ExpectedPath,
+        [Parameter(Mandatory)][scriptblock]$ReadProcess,
+        [scriptblock]$Delay = { param($Milliseconds) Start-Sleep -Milliseconds $Milliseconds },
+        [ValidateRange(1, 10000)][int]$TimeoutMilliseconds = 2000,
+        [ValidateRange(1, 1000)][int]$PollMilliseconds = 50,
+        [ValidateRange(1, 201)][int]$MaximumAttempts = 41
+    )
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    $result = [ordered]@{ expectedPath = $ExpectedPath; verified = $false; reason = 'image_path_unavailable'; timeoutMilliseconds = $TimeoutMilliseconds; maximumAttempts = $MaximumAttempts; attempts = @() }
+    for ($attempt = 1; $attempt -le $MaximumAttempts; $attempt++) {
+        try { $snapshot = & $ReadProcess }
+        catch { $snapshot = [pscustomobject]@{ observedPath = $null; hasExited = $null; error = $_.Exception.GetType().FullName + ': ' + $_.Exception.Message } }
+        $observed = $snapshot.observedPath
+        $result.attempts += [pscustomobject]@{ attempt = $attempt; elapsedMilliseconds = $timer.ElapsedMilliseconds; processId = $snapshot.processId; observedPath = $observed; hasExited = $snapshot.hasExited; error = $snapshot.error; pathSource = $snapshot.pathSource }
+        if ($snapshot.hasExited -eq $true) { $result.reason = 'process_exited'; break }
+        if ($null -ne $observed -and $observed -cne '') {
+            if ($observed -isnot [string] -or -not [string]::Equals($observed, $ExpectedPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $result.reason = 'unexpected_image_path'
+                break
+            }
+            if ($snapshot.hasExited -is [bool] -and -not $snapshot.hasExited) {
+                $result.verified = $true
+                $result.reason = 'identity_verified'
+                break
+            }
+            $result.reason = 'process_state_unavailable'
+        }
+        $remaining = $TimeoutMilliseconds - $timer.ElapsedMilliseconds
+        if ($attempt -eq $MaximumAttempts -or $remaining -le 0) { break }
+        & $Delay ([int][Math]::Min($PollMilliseconds, $remaining))
+    }
+    $result.elapsedMilliseconds = $timer.ElapsedMilliseconds
+    return [pscustomobject]$result
+}
 function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCapture, [string]$Label) {
     Assert-InstalledCandidate $Manifest $Label
     $port = 9222
@@ -213,9 +275,13 @@ function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCaptu
     $evidence = Join-Path $fixtureRoot ($Label + '-gui-evidence.json')
     $stdout = Join-Path $fixtureRoot ($Label + '-stdout.txt')
     $stderr = Join-Path $fixtureRoot ($Label + '-stderr.txt')
-    $application = Start-Process -FilePath (Join-Path $installDirectory 'dezirclip.exe') -WorkingDirectory $installDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $expectedApplication = Join-Path $installDirectory 'dezirclip.exe'
+    $identity = $null
+    $application = Start-Process -FilePath $expectedApplication -WorkingDirectory $installDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     try {
-        if (-not [string]::Equals($application.Path, (Join-Path $installDirectory 'dezirclip.exe'), [System.StringComparison]::OrdinalIgnoreCase)) { throw 'Launched GUI process is not the installed candidate.' }
+        $identity = Wait-ActualProcessImage -ExpectedPath $expectedApplication -ReadProcess { Get-ActualProcessImageSnapshot $application }
+        $identity | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $fixtureRoot ($Label + '-process-identity.json'))
+        if (-not $identity.verified) { throw "Launched GUI process identity was not verified: $($identity.reason)." }
         & node (Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs') $port $evidence $configuration
         if ($LASTEXITCODE -ne 0) { throw 'Actual GUI profile, version, ownership or native capture acceptance failed.' }
         $observed = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json
@@ -226,8 +292,8 @@ function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCaptu
         }
     } finally {
         $application.Refresh()
-        @{ Id = $application.Id; HasExited = $application.HasExited; ExitCode = $(if ($application.HasExited) { $application.ExitCode } else { $null }); Port = $port } |
-            ConvertTo-Json | Set-Content (Join-Path $fixtureRoot ($Label + '-process.json'))
+        @{ Id = $application.Id; HasExited = $application.HasExited; ExitCode = $(if ($application.HasExited) { $application.ExitCode } else { $null }); Port = $port; ExpectedPath = $expectedApplication; Identity = $identity } |
+            ConvertTo-Json -Depth 7 | Set-Content (Join-Path $fixtureRoot ($Label + '-process.json'))
         Get-Content -LiteralPath $stderr -Tail 60 -ErrorAction SilentlyContinue | Write-Output
         if (-not $application.HasExited) {
             $application.Kill($true)

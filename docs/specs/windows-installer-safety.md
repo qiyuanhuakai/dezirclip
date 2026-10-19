@@ -252,6 +252,21 @@ match the candidate manifest. This app/version permission is already present
 in the main window's capability. Old history must both round-trip through the
 GUI command and render in the actual WebView.
 
+Before the WebView checks, acceptance verifies the launched process's actual
+image path. It refreshes the process handle and reads `Path` from a fresh
+`Get-Process` query, then rechecks the original handle for exit so PID reuse
+cannot establish identity. Only an empty or temporarily unreadable path is
+retried, for at most 2 seconds and 41 observations with 50 ms polling. A nonempty
+different path or an exited process fails immediately; a correct path also
+requires a reliable alive state. The launch command and `StartInfo` are never
+used as evidence of the observed image. Each `*-process-identity.json` retains
+the expected path, every observed path, elapsed time, alive/exit state and query
+errors, and `*-process.json` includes the same identity result even on failure.
+The whole-file GUI/CLI and NSIS token proofs remain mandatory before launch.
+`scripts/tests/native-process-identity.ps1` exercises injected observations
+without starting or inspecting a real process. A subsequent successful
+disposable-runner job is required to establish actual upgrade acceptance.
+
 For the three current-candidate scenarios, a runner-only CDP connection observes
 the real listener while a PowerShell STA subprocess executes `Set-Clipboard`
 with synthetic A, B and A again. Text travels as environment data, never shell
