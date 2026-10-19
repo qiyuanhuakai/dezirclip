@@ -1,4 +1,5 @@
 use crate::app_state::AppDataDir;
+use crate::database::DbState;
 use crate::infrastructure::encryption::{rewrite_stored_text, EncryptionError};
 use crate::error::{AppError, AppResult};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -446,95 +447,118 @@ pub fn check_is_admin() -> bool {
 
 #[tauri::command]
 pub fn set_data_path(app_handle: AppHandle, new_path: String) -> AppResult<()> {
-    let clean_path = new_path.trim().to_string();
-    let new_data_path = std::path::Path::new(&clean_path);
-    if !new_data_path.exists() {
+    let new_data_path = std::path::Path::new(new_path.trim());
+    if !new_data_path.is_dir() {
         return Err(AppError::Validation("Directory does not exist".to_string()));
     }
 
+    let new_data_path = std::path::absolute(new_data_path).map_err(AppError::from)?;
     let old_path_buf = app_handle.state::<AppDataDir>().0.lock().unwrap().clone();
-    if old_path_buf == new_data_path {
+    if old_path_buf.canonicalize().map_err(AppError::from)? == new_data_path.canonicalize().map_err(AppError::from)? {
         return Ok(());
     }
-    // Complete protected-field rewrites before moving any source data.
-    let old_db_path = old_path_buf.join("clipboard.db");
-    let existing_new_db = new_data_path.join("clipboard.db");
-    let rewrite_source = if old_db_path.exists() {
-        &old_db_path
-    } else {
-        &existing_new_db
-    };
-    let path_rewrites = if rewrite_source.exists() {
-        prepare_attachment_path_rewrites(rewrite_source, &old_path_buf, new_data_path)?
-    } else {
-        Vec::new()
-    };
-
-    // 1. Migrate data folders if they exist in the OLD path
-    {
-        for folder in ["attachments", "emoji_favorites"] {
-            let old_folder = old_path_buf.join(folder);
-            let new_folder = new_data_path.join(folder);
-
-            if old_folder.exists() && old_folder.is_dir() {
-                if let Err(_) = std::fs::rename(&old_folder, &new_folder) {
-                    if let Err(copy_err) = copy_dir_recursive(&old_folder, &new_folder) {
-                        return Err(AppError::Internal(format!(
-                            "Failed to copy {}: {}",
-                            folder, copy_err
-                        )));
-                    } else {
-                        let _ = std::fs::remove_dir_all(&old_folder);
-                    }
-                }
-            }
-        }
-
-        // 1.2 Migrate database files (main + WAL/SHM)
-        let db_files = ["clipboard.db", "clipboard.db-wal", "clipboard.db-shm"];
-        for name in db_files {
-            let old_db = old_path_buf.join(name);
-            if !old_db.exists() {
-                continue;
-            }
-            let new_db = new_data_path.join(name);
-            if new_db.exists() {
-                let backup = new_data_path.join(format!("{}.backup", name));
-                if backup.exists() {
-                    let _ = std::fs::remove_file(&backup);
-                }
-                let _ = std::fs::rename(&new_db, &backup);
-            }
-            if let Err(_) = std::fs::rename(&old_db, &new_db) {
-                if let Err(copy_err) = std::fs::copy(&old_db, &new_db) {
-                    return Err(AppError::Internal(format!(
-                        "Failed to copy {}: {}",
-                        name, copy_err
-                    )));
-                } else {
-                    let _ = std::fs::remove_file(&old_db);
-                }
-            }
-        }
+    let executable = std::env::current_exe().map_err(AppError::from)?;
+    if cfg!(feature = "portable") || crate::infrastructure::data_paths::portable_data_dir(executable.parent()).is_some() {
+        return Err(AppError::Validation("Portable storage uses the data folder beside the executable; move the complete portable directory instead".into()));
     }
-
-    // 1.3 Rewrite internal attachment paths inside DB (if DB exists in new path)
-    let new_db_path = new_data_path.join("clipboard.db");
-    if new_db_path.exists() {
-        apply_attachment_path_rewrites(&new_db_path, &path_rewrites)?;
-        rewrite_emoji_favorites_in_db(&new_db_path, &old_path_buf, new_data_path)?;
-    }
-
-    // 2. Save new path to a persistent config file
     let config_dir = app_handle.path().app_data_dir().map_err(AppError::from)?;
-    if !config_dir.exists() {
-        std::fs::create_dir_all(&config_dir).map_err(AppError::from)?;
-    }
-
     let redirect_file = config_dir.join("datapath.txt");
-    std::fs::write(&redirect_file, &clean_path).map_err(AppError::from)?;
+    // The live shared connection stays read-only after cutover until relaunch.
+    // Other connections cannot commit while the source write reservation is held.
+    let db = app_handle.state::<DbState>();
+    let mut conn = db.conn.lock().map_err(|_| AppError::Internal("Database lock poisoned".into()))?;
+    migrate_with_connection(&mut conn, &old_path_buf, &new_data_path, &redirect_file)
+}
 
-    Ok(())
+fn migrate_with_connection(
+    conn: &mut Connection,
+    old_base: &std::path::Path,
+    new_base: &std::path::Path,
+    redirect_file: &std::path::Path,
+) -> AppResult<()> {
+    if conn.pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0)).map_err(AppError::from)? {
+        return Err(AppError::Validation("Data migration is complete; restart the application".into()));
+    }
+    let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(AppError::from)?;
+    transaction.pragma_update(None, "query_only", true).map_err(AppError::from)?;
+    let result = migrate_data_directory(old_base, new_base, redirect_file);
+    transaction.rollback().map_err(AppError::from)?;
+    if result.is_err() {
+        conn.pragma_update(None, "query_only", false).map_err(AppError::from)?;
+    }
+    result
+}
+
+fn migrate_data_directory(
+    old_base: &std::path::Path,
+    new_base: &std::path::Path,
+    redirect_file: &std::path::Path,
+) -> AppResult<()> {
+    let old_canonical = old_base.canonicalize().map_err(AppError::from)?;
+    let new_canonical = new_base.canonicalize().map_err(AppError::from)?;
+    if new_canonical.starts_with(&old_canonical) || old_canonical.starts_with(&new_canonical) {
+        return Err(AppError::Validation("Data directories must not contain one another".into()));
+    }
+    let names = ["clipboard.db", "attachments", "emoji_favorites"];
+    for name in names.into_iter().chain(["clipboard.db-wal", "clipboard.db-shm"]) {
+        if new_base.join(name).symlink_metadata().is_ok() {
+            return Err(AppError::Validation(format!("Destination already contains {name}; choose an empty data directory")));
+        }
+    }
+    let stage = new_base.join(format!(".dezirclip-migration-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&stage).map_err(AppError::from)?;
+    let result = (|| {
+        // SQLite reads committed WAL pages into a standalone snapshot. Never copy
+        // a live DB/WAL/SHM file set with filesystem operations.
+        let source = Connection::open_with_flags(old_base.join("clipboard.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(AppError::from)?;
+        let staged_db = stage.join("clipboard.db");
+        source.execute("VACUUM main INTO ?1", [staged_db.to_string_lossy().as_ref()]).map_err(AppError::from)?;
+        drop(source);
+        let updates = prepare_attachment_path_rewrites(&staged_db, old_base, new_base)?;
+        apply_attachment_path_rewrites(&staged_db, &updates)?;
+        rewrite_emoji_favorites_in_db(&staged_db, old_base, new_base)?;
+        // Close every staging connection and consolidate its own WAL before
+        // publishing the DB. The source remains untouched on every error path.
+        let snapshot = Connection::open(&staged_db).map_err(AppError::from)?;
+        let mode: String = snapshot.query_row("PRAGMA journal_mode=DELETE", [], |row| row.get(0)).map_err(AppError::from)?;
+        if !mode.eq_ignore_ascii_case("delete") {
+            return Err(AppError::Internal("Could not finalize migration snapshot".into()));
+        }
+        drop(snapshot);
+        for folder in ["attachments", "emoji_favorites"] {
+            let source = old_base.join(folder);
+            if source.exists() {
+                copy_dir_recursive(&source, &stage.join(folder)).map_err(AppError::from)?;
+            }
+        }
+        for name in names {
+            let source = stage.join(name);
+            if source.is_dir() {
+                copy_dir_recursive(&source, &new_base.join(name)).map_err(AppError::from)?;
+            } else if source.is_file() {
+                copy_file_new(&source, &new_base.join(name)).map_err(AppError::from)?;
+            }
+        }
+        crate::infrastructure::attachments::write_backup(redirect_file, new_base.to_string_lossy().as_bytes())
+            .map_err(AppError::Internal)
+    })();
+    // This is the unique staging folder created above, never a user path.
+    let _ = std::fs::remove_dir_all(&stage);
+    result
+}
+
+fn copy_file_new(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    let mut input = std::fs::File::open(source)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut output = options.open(destination)?;
+    std::io::copy(&mut input, &mut output)?;
+    output.sync_all()
 }
 
 #[derive(Debug)]
@@ -758,18 +782,22 @@ fn rewrite_html_paths(
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
-    if !dst.exists() {
-        std::fs::create_dir_all(dst)?;
+    if src.symlink_metadata()?.is_symlink() {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Data migration does not follow symbolic links"));
     }
+    std::fs::create_dir(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let ty = entry.file_type()?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
+        if ty.is_symlink() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Data migration does not follow symbolic links"));
+        }
         if ty.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            std::fs::copy(&src_path, &dst_path)?;
+            copy_file_new(&src_path, &dst_path)?;
         }
     }
     Ok(())
@@ -786,8 +814,109 @@ mod path_rewrite_tests {
         std::fs::create_dir(&directory).unwrap();
         let path = directory.join("clipboard.db");
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("CREATE TABLE clipboard_history(id INTEGER PRIMARY KEY, content TEXT NOT NULL, html_content TEXT, is_external INTEGER NOT NULL);").unwrap();
+        conn.execute_batch("CREATE TABLE clipboard_history(id INTEGER PRIMARY KEY, content TEXT NOT NULL, html_content TEXT, is_external INTEGER NOT NULL); CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);").unwrap();
         (directory, path)
+    }
+
+    fn migration_fixture() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf, Connection) {
+        let (root, _) = database();
+        let old = root.join("old");
+        let new = root.join("new");
+        std::fs::create_dir(&old).unwrap();
+        std::fs::create_dir(&new).unwrap();
+        std::fs::rename(root.join("clipboard.db"), old.join("clipboard.db")).unwrap();
+        let conn = Connection::open(old.join("clipboard.db")).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
+        std::fs::create_dir(old.join("attachments")).unwrap();
+        std::fs::write(old.join("attachments/image.png"), b"fixture image").unwrap();
+        let image = old.join("attachments/image.png").to_string_lossy().to_string();
+        conn.execute("INSERT INTO clipboard_history VALUES(1,?1,NULL,1)", [&image]).unwrap();
+        (root, old, new, conn)
+    }
+
+    #[test]
+    fn directory_migration_sql_rejection_keeps_live_source_files_and_redirect_usable() {
+        let (root, old, new, mut conn) = migration_fixture();
+        conn.execute_batch("CREATE TRIGGER reject_rewrite BEFORE UPDATE ON clipboard_history BEGIN SELECT RAISE(ABORT,'fixture rejection'); END;").unwrap();
+        let redirect = root.join("datapath.txt");
+        std::fs::write(&redirect, old.to_string_lossy().as_bytes()).unwrap();
+        assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
+        assert_eq!(std::fs::read_to_string(&redirect).unwrap(), old.to_string_lossy());
+        assert_eq!(std::fs::read(old.join("attachments/image.png")).unwrap(), b"fixture image");
+        assert!(old.join("clipboard.db").exists());
+        assert!(!new.join("clipboard.db").exists());
+        conn.execute("INSERT INTO clipboard_history VALUES(2,'still writable',NULL,0)", []).unwrap();
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn directory_migration_snapshots_committed_wal_and_preserves_source_until_restart() {
+        let (root, old, new, mut conn) = migration_fixture();
+        let second = Connection::open(old.join("clipboard.db")).unwrap();
+        second.execute("INSERT INTO clipboard_history VALUES(2,'concurrent committed row',NULL,0)", []).unwrap();
+        let redirect = root.join("datapath.txt");
+        migrate_with_connection(&mut conn, &old, &new, &redirect).unwrap();
+        assert_eq!(std::fs::read_to_string(&redirect).unwrap(), new.to_string_lossy());
+        let migrated = Connection::open(new.join("clipboard.db")).unwrap();
+        let expected_new = new.join("attachments/image.png").to_string_lossy().to_string();
+        let expected_old = old.join("attachments/image.png").to_string_lossy().to_string();
+        assert_eq!(migrated.query_row("SELECT content FROM clipboard_history WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), expected_new);
+        assert_eq!(conn.query_row("SELECT content FROM clipboard_history WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), expected_old);
+        assert_eq!(migrated.query_row("SELECT content FROM clipboard_history WHERE id=2", [], |row| row.get::<_, String>(0)).unwrap(), "concurrent committed row");
+        assert_eq!(std::fs::read(old.join("attachments/image.png")).unwrap(), std::fs::read(new.join("attachments/image.png")).unwrap());
+        assert!(conn.execute("INSERT INTO clipboard_history VALUES(3,'blocked until relaunch',NULL,0)", []).is_err());
+        assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
+        assert!(conn.pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0)).unwrap());
+        drop(migrated);
+        drop(second);
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn directory_migration_redirect_failure_retains_source_and_restores_writes() {
+        let (root, old, new, mut conn) = migration_fixture();
+        let redirect = root.join("datapath.txt");
+        std::fs::create_dir(&redirect).unwrap();
+        std::fs::write(redirect.join("keep"), b"existing configuration obstacle").unwrap();
+        assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
+        assert_eq!(std::fs::read(redirect.join("keep")).unwrap(), b"existing configuration obstacle");
+        assert!(old.join("clipboard.db").exists());
+        assert!(old.join("attachments/image.png").exists());
+        conn.execute("INSERT INTO clipboard_history VALUES(2,'still writable',NULL,0)", []).unwrap();
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn directory_migration_never_overwrites_existing_destination_data() {
+        let (root, old, new, mut conn) = migration_fixture();
+        std::fs::write(new.join("clipboard.db"), b"existing target history").unwrap();
+        let redirect = root.join("datapath.txt");
+        std::fs::write(&redirect, old.to_string_lossy().as_bytes()).unwrap();
+        assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
+        assert_eq!(std::fs::read(new.join("clipboard.db")).unwrap(), b"existing target history");
+        assert_eq!(std::fs::read_to_string(&redirect).unwrap(), old.to_string_lossy());
+        assert!(old.join("clipboard.db").exists());
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn directory_migration_source_reservation_blocks_other_writers_through_snapshot() {
+        let (root, old, new, mut conn) = migration_fixture();
+        let writer = Connection::open(old.join("clipboard.db")).unwrap();
+        writer.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();
+        assert!(writer.execute("INSERT INTO clipboard_history VALUES(2,'blocked',NULL,0)", []).is_err());
+        migrate_data_directory(&old, &new, &root.join("datapath.txt")).unwrap();
+        assert!(writer.execute("INSERT INTO clipboard_history VALUES(2,'blocked',NULL,0)", []).is_err());
+        transaction.rollback().unwrap();
+        drop(writer);
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

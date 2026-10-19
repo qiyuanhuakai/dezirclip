@@ -482,6 +482,7 @@ impl SqliteClipboardRepository {
         data_dir: Option<&std::path::Path>,
         image_hash: Option<i64>,
     ) -> Result<i64, String> {
+        crate::database::ensure_writable(conn)?;
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&entry.tags);
         if should_encrypt
@@ -521,6 +522,8 @@ impl SqliteClipboardRepository {
                 if !should_encrypt && (protected || has_sensitive_tag(&old_tags)) {
                     return Err(EncryptionError::SensitivePersistenceRejected.to_string());
                 }
+            } else {
+                return Err("ClipboardRecordUnavailable".into());
             }
         }
         // Prepare all protected values before a file or database write can occur.
@@ -670,6 +673,7 @@ impl SqliteClipboardRepository {
         id: i64,
         data_dir: Option<&std::path::Path>,
     ) -> Result<(), String> {
+        crate::database::ensure_writable(conn)?;
         // Check for external files to delete
         if let Some(dir) = data_dir {
             let attachments_dir = dir.join("attachments");
@@ -2485,6 +2489,57 @@ mod tests {
         )
         .expect("rejected sensitive save must leave the FTS index consistent");
         eprintln!("native key unavailable: sensitive save rejected without row, tag, or FTS writes");
+    }
+
+    #[test]
+    fn read_only_connection_rejects_file_side_effects_before_save_or_delete() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let directory = std::env::temp_dir().join(format!("dezirclip-readonly-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(directory.join("attachments")).unwrap();
+        let image = directory.join("attachments/retained.png");
+        std::fs::write(&image, b"source attachment").unwrap();
+        let mut entry = weighted_entry(0);
+        entry.content = image.to_string_lossy().to_string();
+        entry.is_external = true;
+        let conn = repo.conn.lock().unwrap();
+        let id = repo.save_with_conn(&conn, &entry, Some(&directory)).unwrap();
+        conn.pragma_update(None, "query_only", true).unwrap();
+        assert_eq!(repo.delete_with_conn(&conn, id, Some(&directory)), Err("DatabaseIsReadOnly".into()));
+        assert_eq!(repo.save_with_conn(&conn, &entry, Some(&directory)), Err("DatabaseIsReadOnly".into()));
+        assert_eq!(std::fs::read(&image).unwrap(), b"source attachment");
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn missing_existing_id_is_rejected_without_rows_or_tag_links() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let conn = repo.conn.lock().unwrap();
+        let mut entry = weighted_entry(12);
+        entry.id = 999;
+        entry.tags = vec!["work".into()];
+        assert_eq!(repo.save_with_conn(&conn, &entry, None), Err("ClipboardRecordUnavailable".into()));
+        for table in ["clipboard_history", "entry_tags", "clipboard_fts"] {
+            assert_eq!(conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        }
+    }
+
+    #[cfg(all(windows, not(feature = "portable")))]
+    #[test]
+    fn whitespace_sensitive_tags_are_protected_before_normalized_storage() {
+        let arc = setup_fts_db();
+        let repo = SqliteClipboardRepository::new(arc);
+        let conn = repo.conn.lock().unwrap();
+        let mut entry = weighted_entry(12);
+        entry.tags = vec![" \tSENSITIVE\u{3000}".into()];
+        let id = repo.save_with_conn(&conn, &entry, None).unwrap();
+        let (content, tags): (String, String) = conn.query_row("SELECT content,tags FROM clipboard_history WHERE id=?1", [id], |row| Ok((row.get(0)?,row.get(1)?))).unwrap();
+        assert!(crate::infrastructure::encryption::is_encrypted_value(&content));
+        assert_eq!(crate::infrastructure::encryption::decode_for_mutation(&content).unwrap(), entry.content);
+        assert_eq!(serde_json::from_str::<Vec<String>>(&tags).unwrap(), vec!["SENSITIVE"]);
     }
 
     #[cfg(not(feature = "portable"))]

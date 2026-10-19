@@ -251,6 +251,12 @@ impl PipelineStage for TransformationStage {
 }
 
 // Stage 3: Validation (Deduplication & Sequential Echo)
+fn preserve_deduplicated_tags(current: &mut Vec<String>, previous: Vec<String>) {
+    for tag in previous {
+        if !current.contains(&tag) { current.push(tag); }
+    }
+}
+
 pub struct ValidationStage;
 impl ValidationStage {
     fn should_stop_for_sequential_echo(&self, ctx: &PipelineContext) -> bool {
@@ -289,7 +295,7 @@ impl ValidationStage {
         // `entry_mut.id = id` further down — which copies the whole payload, and
         // for a rich-text capture that payload includes the HTML with its embedded
         // images.
-        let image_hash = {
+        let (image_hash, stored_tags) = {
             let entry = ctx.entry.as_ref().expect("discovery produced an entry");
             let content = entry.content.as_str();
             let content_type = entry.content_type.as_str();
@@ -335,7 +341,18 @@ impl ValidationStage {
                     break;
                 }
             }
-            image_hash
+            let stored_tags = if persistent_enabled {
+                if let Some(id) = existing_id {
+                    match conn.query_row("SELECT tags FROM clipboard_history WHERE id = ?1", [id],
+                        |row| row.get::<_, String>(0)).ok()
+                        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+                    {
+                        Some(tags) => Some(tags),
+                        None => { ctx.should_stop = true; return; }
+                    }
+                } else { None }
+            } else { None };
+            (image_hash, stored_tags)
         };
         ctx.image_hash = image_hash;
 
@@ -343,6 +360,7 @@ impl ValidationStage {
             if let Some(id) = existing_id {
                 let entry_mut = ctx.entry.as_mut().unwrap();
                 entry_mut.id = id;
+                if let Some(tags) = stored_tags { preserve_deduplicated_tags(&mut entry_mut.tags, tags); }
             }
         }
 
@@ -650,6 +668,40 @@ impl PipelineStage for DistributionStage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recapture_preserves_manual_sensitive_and_custom_tags() {
+        let mut current = vec!["detected".to_string()];
+        preserve_deduplicated_tags(&mut current, vec!["sensitive".to_string(), "work".to_string()]);
+        preserve_deduplicated_tags(&mut current, vec!["sensitive".to_string(), "work".to_string()]);
+        assert_eq!(current, vec!["detected", "sensitive", "work"]);
+    }
+
+    #[cfg(all(windows, not(feature = "portable")))]
+    #[test]
+    fn recapture_of_manually_protected_text_updates_the_same_encrypted_row() {
+        dzc_platform::install_default_key_provider();
+        use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+        use crate::infrastructure::repository::tag_repo::{SqliteTagRepository, TagRepository};
+        let conn = std::sync::Arc::new(std::sync::Mutex::new(crate::database::init_db(":memory:").unwrap()));
+        let repo = SqliteClipboardRepository::new(conn.clone());
+        let tags = SqliteTagRepository::new(conn.clone());
+        let entry = entry_from_capture(ClipboardData::Text("ordinary manually protected text".into()), "Editor".into(), None, 1);
+        let id = repo.save_with_conn(&conn.lock().unwrap(), &entry, None).unwrap();
+        tags.update_entry_tags(id, vec!["sensitive".into(), "work".into()]).unwrap();
+        // No new automatic detection label: inherit the manual protection at dedup.
+        let mut capture = entry_from_capture(ClipboardData::Text(entry.content.clone()), "Editor".into(), None, 2);
+        let connection = conn.lock().unwrap();
+        capture.id = repo.find_by_content_with_conn(&connection, &capture.content, Some("text")).unwrap().unwrap();
+        let stored: String = connection.query_row("SELECT tags FROM clipboard_history WHERE id=?1", [id], |row| row.get(0)).unwrap();
+        preserve_deduplicated_tags(&mut capture.tags, serde_json::from_str(&stored).unwrap());
+        assert_eq!(repo.save_with_conn(&connection, &capture, None).unwrap(), id);
+        let (ciphertext, timestamp): (String, i64) = connection.query_row("SELECT content,timestamp FROM clipboard_history WHERE id=?1", [id], |row| Ok((row.get(0)?,row.get(1)?))).unwrap();
+        assert!(crate::infrastructure::encryption::is_encrypted_value(&ciphertext));
+        assert_eq!(crate::infrastructure::encryption::decode_for_mutation(&ciphertext).unwrap(), entry.content);
+        assert_eq!(timestamp, 2);
+        assert_eq!(capture.tags, vec!["sensitive", "work"]);
+    }
+
 
     #[test]
     fn captures_preserve_raw_whitespace_and_line_endings() {
