@@ -157,9 +157,19 @@
     "externalBin": [
       "binaries/dzc"
     ],
-    "resources": [
-      "../skills/dzc-cli"
-    ],
+    "resources": {
+      "../skills/dzc-cli/SKILL.md": "skills/dzc-cli/SKILL.md",
+      "../skills/dzc-cli/README.md": "skills/dzc-cli/README.md",
+      "../skills/dzc-cli/install.ps1": "skills/dzc-cli/install.ps1",
+      "../skills/dzc-cli/install.sh": "skills/dzc-cli/install.sh",
+      "../skills/dzc-cli/examples/bulk-tag.md": "skills/dzc-cli/examples/bulk-tag.md",
+      "../skills/dzc-cli/examples/export-encrypted.md": "skills/dzc-cli/examples/export-encrypted.md",
+      "../skills/dzc-cli/examples/fzf-pick.md": "skills/dzc-cli/examples/fzf-pick.md",
+      "../skills/dzc-cli/examples/search-and-add.md": "skills/dzc-cli/examples/search-and-add.md",
+      "../skills/dzc-cli/examples/watch-trigger.md": "skills/dzc-cli/examples/watch-trigger.md",
+      "../skills/dezirclip-theme/SKILL.md": "skills/dezirclip-theme/SKILL.md",
+      "../skills/dezirclip-theme/assets/forest.theme.json": "skills/dezirclip-theme/assets/forest.theme.json"
+    },
     "targets": [
       "nsis",
       "deb",

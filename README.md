@@ -17,7 +17,7 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 | `dzc-VERSION-linux-x86_64.tar.gz` | Linux x64 |
 | `dzc-VERSION-linux-aarch64.tar.gz` | Linux ARM64 |
 
-`VERSION` 对应发布版本号。每个独立压缩包包含真正的 `dzc` 二进制、许可证、说明、完整的集成运行文件目录 `integrations/` 和 `skills/dzc-cli/`，不含开发测试文件；对应 `.sha256` 文件用于校验下载。
+`VERSION` 对应发布版本号。每个独立压缩包包含真正的 `dzc` 二进制、许可证、说明、完整的集成运行文件目录 `integrations/`、CLI Skill `skills/dzc-cli/` 和主题构建 Skill `skills/dezirclip-theme/`，不含开发测试文件；对应 `.sha256` 文件用于校验下载。
 
 本轮兼容性改造后的 CI 制品和后续独立发布包附带 `COMPATIBILITY.json`，记录真实二进制的校验值和动态依赖。Linux CLI 在 Ubuntu 22.04 中构建，基线为 glibc 2.35+，并在 Ubuntu 22.04、Debian 12 中验证实际压缩包；仍需要系统的 `libdbus-1-3`、`libgcc-s1`。Windows 独立 CLI 静态链接 MSVC 运行库，无需另装 Visual C++ 运行库或 WebView2。桌面安装包保持自己的图形及运行库要求，详见 [CLI 安装说明](./docs/dzc-standalone.md)和 [Linux 指南](./docs/LINUX_INSTALL.md)。
 
@@ -59,7 +59,7 @@ dzc --version
 
 标签管理器使用主页行卡片，支持复杂/简洁模式、悬浮操作和右键菜单；宽窗口显示设置页式侧栏，低于设置页相同的 560px 切换点时，从当前标签名展开带搜索和创建入口的下拉栏，复用各主题的原生菜单样式。标签与内容均虚拟化，滚动自动翻页。标签页始终显示内容，包括敏感条目，不提供隐藏开关。点击“管理”清单图标可多选、跨页全选当前搜索结果并确认批量删除内容，标签本身保留。移除普通标签保留记录，编辑时读取完整正文。隐私保护关闭时可确认删除「密码」「sensitive」标签及其全部内容；重新开启时恢复系统标签，已删内容不会恢复。
 
-设置的「外观」只提供内置主题选择和文件导入。导入包包含完整 CSS，可定义材质、形状、布局、阴影与控件状态，禁止外部资源。详见[主题指南](./docs/THEMES.md)，Agent 可使用 [dezirclip-theme Skill](./skills/dezirclip-theme/SKILL.md) 编写主题；也可从[森林示例](./skills/dezirclip-theme/assets/forest.theme.json)开始。
+设置的「外观」只提供内置主题选择和文件导入。导入包包含完整 CSS，可定义材质、形状、布局、阴影与控件状态，禁止外部资源。详见[主题指南](./docs/THEMES.md)，Agent 可使用 [dezirclip-theme Skill](./skills/dezirclip-theme/SKILL.md) 编写主题；也可从[森林示例](./skills/dezirclip-theme/assets/forest.theme.json)开始。安装包附带该 Skill，在「设置 → 工具 → Agent Skill → 主题构建」打开目录后，将整个目录复制到 Agent 的 skills 目录，即可用 `$dezirclip-theme` 请求生成完整主题包。
 
 改造的测量范围、静态 CSS 审计和验证结果见[标签与主题性能记录](./docs/tag-theme-performance.md)。
 
@@ -191,6 +191,8 @@ DezirClip 使用 GPL-3.0，源自同样使用 GPL-3.0 的 [jimuzhe/tiez-clipboar
 ## English
 
 The tag manager shares the main history rows, with detailed/compact modes, hover actions, context menus and automatic paged scrolling. Below the settings page's shared 560px breakpoint, the wide sidebar becomes a dropdown under the current tag name, with search and tag creation using each theme's native menu style. Tag management always displays sensitive content and has no visibility toggle. The Manage checklist icon enables selection, selecting all matching entries across unloaded pages, and confirmed batch deletion while keeping the tag. Removing ordinary tags keeps their items. With privacy protection off, confirmed deletion can clear system sensitive tags and their contents; enabling protection recreates the tags. Appearance offers built-in themes and imported full CSS packages with external resources blocked. See the [theme guide](./docs/THEMES.md) and [theme authoring Skill](./skills/dezirclip-theme/SKILL.md).
+
+Desktop and standalone packages include `skills/dzc-cli/` and `skills/dezirclip-theme/`. Open the theme Skill from Settings → Tools → Agent Skill → Theme authoring, copy that whole folder into your Agent's skills directory, then use `$dezirclip-theme` to request a full theme package. Import the generated file from Settings → Appearance → Import theme.
 
 DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). This fork removes macOS and cloud/network features, adds X11 support, custom CSS themes and WebView memory controls, and provides a shared Rust storage core for the GUI and `dzc` CLI. Full Wayland desktop support remains deferred.
 

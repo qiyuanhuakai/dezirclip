@@ -36,7 +36,7 @@ dzc --version
 dzc --help
 ```
 
-`skills/dzc-cli/` 是随应用打包的 Agent 技能文档；其中的安装脚本链接技能文档，不安装 CLI 二进制。源码构建与 Linux 依赖见 [安装指南](./LINUX_INSTALL.md)。
+应用和独立包附带 `skills/dzc-cli/`（CLI 工作流）及 `skills/dezirclip-theme/`（完整 CSS 主题构建）。工具设置提供各自的目录入口；复制整个 Skill 目录到 Agent 的 skills 目录即可使用。`dzc-cli` 中的安装脚本只链接技能文档，不安装 CLI 二进制。源码构建与 Linux 依赖见 [安装指南](./LINUX_INSTALL.md)。
 
 ## 命令速查
 

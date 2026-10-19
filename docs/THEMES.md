@@ -61,7 +61,9 @@
 
 ## 给 Agent 编写主题
 
-仓库提供 [dezirclip-theme Skill](../skills/dezirclip-theme/SKILL.md) 和完整示例。将该目录复制到 Codex 的 skills 目录，或让 Agent 直接阅读。用相同的原生解析器校验文件，无需导入或打开历史数据库：
+仓库提供 [dezirclip-theme Skill](../skills/dezirclip-theme/SKILL.md) 和完整示例。安装包和独立 CLI 压缩包均包含 `skills/dezirclip-theme/`；应用内可从「设置 → 工具 → Agent Skill → 主题构建」打开该目录。将整个目录复制到 Codex 的 `~/.codex/skills/dezirclip-theme/`，或让 Agent 直接阅读其中的 `SKILL.md`。安装后可用 `$dezirclip-theme` 指定材质、布局和风格，生成完整主题包，再从「设置 → 外观 → 导入主题」导入。
+
+用相同的原生解析器校验文件，无需导入或打开历史数据库：
 
 ```text
 dzc theme validate /absolute/path/to/my.theme.json --json

@@ -4,8 +4,10 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import struct
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -54,9 +56,11 @@ class PackageTests(unittest.TestCase):
                      "integrations/dzc_integrations/__main__.py",
                      "integrations/dzc_integrations/client.py", "integrations/shell/dzc.nu",
                      "integrations/requirements-tui.txt", "skills/dzc-cli/SKILL.md",
+                     "skills/dezirclip-theme/SKILL.md", "skills/dezirclip-theme/assets/forest.theme.json",
                      "integrations/tests/test_private.py", "integrations/.venv/private.txt",
                      "integrations/dzc_integrations/__pycache__/client.pyc",
-                     "skills/dzc-cli/.private"):
+                     "skills/dzc-cli/.private", "skills/dezirclip-theme/.private",
+                     "skills/dezirclip-theme/scripts/__pycache__/private.pyc"):
             path = self.repo / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(name, encoding="utf-8")
@@ -113,14 +117,114 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual((extracted / "README.md").read_text(), "docs/dzc-standalone.md")
                 self.assertTrue((extracted / "integrations" / "shell" / "dzc.nu").is_file())
                 self.assertTrue((extracted / "skills" / "dzc-cli" / "SKILL.md").is_file())
+                self.assertTrue((extracted / "skills" / "dezirclip-theme" / "SKILL.md").is_file())
+                self.assertTrue((extracted / "skills" / "dezirclip-theme" / "assets" / "forest.theme.json").is_file())
                 self.assertTrue((extracted / "docs" / "LINUX_INSTALL.md").is_file())
                 self.assertFalse((extracted / "integrations" / "tests").exists())
                 self.assertFalse((extracted / "integrations" / ".venv").exists())
                 self.assertFalse((extracted / "integrations" / "dzc_integrations" / "__pycache__").exists())
                 self.assertFalse((extracted / "skills" / "dzc-cli" / ".private").exists())
+                self.assertFalse((extracted / "skills" / "dezirclip-theme" / ".private").exists())
+                self.assertFalse((extracted / "skills" / "dezirclip-theme" / "scripts" / "__pycache__").exists())
                 if platform.startswith("linux-"):
                     with tarfile.open(archive, "r:gz") as source:
                         self.assertEqual(source.getmember("dzc").mode, 0o755)
+
+    def test_desktop_resource_map_matches_both_complete_visible_skills(self):
+        repository = Path(__file__).resolve().parents[2]
+        config = json.loads((repository / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+        resources = config["bundle"]["resources"]
+        self.assertIsInstance(resources, dict)
+        expected = {name for name in package.archive_files(self.binary("windows-x86_64"), "windows-x86_64", repository)
+                    if name.startswith("skills/")}
+        self.assertEqual(set(resources.values()), expected)
+        for source, target in resources.items():
+            original = (repository / "src-tauri" / source).resolve()
+            self.assertTrue(original.is_file())
+            self.assertEqual(target, "skills/" + original.relative_to(repository / "skills").as_posix())
+
+    def test_theme_skill_and_its_example_are_required_distribution_resources(self):
+        for name in ("SKILL.md", "assets/forest.theme.json"):
+            resource = self.repo / "skills" / "dezirclip-theme" / name
+            original = resource.read_bytes()
+            resource.unlink()
+            with self.assertRaisesRegex(ValueError, "missing matching distribution resource"):
+                package.archive_files(self.binary("linux-x86_64"), "linux-x86_64", self.repo)
+            resource.write_bytes(original)
+
+    def test_verifier_rejects_a_package_missing_the_theme_example(self):
+        archive = package.package("windows-x86_64", self.binary("windows-x86_64"), "1.2.3", self.root / "output", self.repo)
+        with zipfile.ZipFile(archive) as source:
+            files = {name: source.read(name) for name in source.namelist()
+                     if name != "skills/dezirclip-theme/assets/forest.theme.json"}
+        with zipfile.ZipFile(archive, "w") as output:
+            for name, content in files.items():
+                output.writestr(name, content)
+        Path(str(archive) + ".sha256").write_text(f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n", encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "missing packaged resource"):
+            verify.verify(archive, static_only=True)
+
+    def prepare_resource_fixture(self, script_name):
+        script = self.repo / "scripts" / script_name
+        script.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(Path(__file__).resolve().parents[1] / script_name, script)
+        resources = {}
+        for skill in ("dzc-cli", "dezirclip-theme"):
+            directory = self.repo / "skills" / skill
+            for path in directory.rglob("*"):
+                if package.visible_file(path, directory):
+                    relative = path.relative_to(self.repo).as_posix()
+                    resources["../" + relative] = relative
+        config = self.repo / "src-tauri" / "tauri.conf.json"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(json.dumps({"bundle": {"resources": resources}}), encoding="utf-8")
+        return script
+
+    @unittest.skipUnless(shutil.which("powershell") or shutil.which("pwsh"), "PowerShell is not available")
+    def test_portable_packages_both_skills_and_failed_resource_copy_preserves_previous_archive(self):
+        script = self.prepare_resource_fixture("package-portable.ps1")
+        binaries = self.root / "portable-binaries"
+        binaries.mkdir()
+        for name in ("dezirclip.exe", "dzc.exe"):
+            (binaries / name).write_bytes(executable_header("windows-x86_64"))
+        output = self.root / "portable-output"
+        command = [shutil.which("powershell") or shutil.which("pwsh"), "-NoProfile", "-ExecutionPolicy", "Bypass",
+                   "-File", str(script), "-TargetDirectory", str(binaries), "-OutputDirectory", str(output)]
+        subprocess.run(command, check=True, capture_output=True, text=True, timeout=45)
+        archive = output / "dezirclip-portable.zip"
+        original = archive.read_bytes()
+        with zipfile.ZipFile(archive) as package_file:
+            names = set(package_file.namelist())
+            self.assertTrue({"dezirclip.exe", "dzc.exe", "skills/dzc-cli/SKILL.md", "skills/dezirclip-theme/SKILL.md",
+                             "skills/dezirclip-theme/assets/forest.theme.json"} <= names)
+            self.assertFalse(any("__pycache__" in name or "/.private" in name for name in names))
+        (self.repo / "skills" / "dezirclip-theme" / "assets" / "forest.theme.json").unlink()
+        result = subprocess.run(command, capture_output=True, text=True, timeout=45)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(archive.read_bytes(), original)
+        self.assertFalse(any(path.name.startswith(".dezirclip-portable-") for path in output.iterdir()))
+
+    @unittest.skipUnless(shutil.which("dpkg-deb") and shutil.which("node"), "Debian packaging tools are not available")
+    def test_flatpak_staging_has_both_skills_at_the_manifest_share_location(self):
+        script = self.prepare_resource_fixture("prepare-flatpak-root.mjs")
+        icon = self.repo / "src-tauri" / "icons" / "icon.png"
+        icon.parent.mkdir()
+        icon.write_bytes(b"fixture icon")
+        deb_root = self.root / "deb-root"
+        control = deb_root / "DEBIAN" / "control"
+        control.parent.mkdir(parents=True)
+        control.write_text("Package: dezirclip\nVersion: 1.2.3\nArchitecture: all\nMaintainer: Test <test@example.invalid>\nDescription: packaging fixture\n", encoding="utf-8")
+        desktop = deb_root / "usr" / "share" / "applications" / "DezirClip.desktop"
+        desktop.parent.mkdir(parents=True)
+        desktop.write_text("[Desktop Entry]\nExec=old\nIcon=old\n", encoding="utf-8")
+        deb_directory = self.repo / "src-tauri" / "target" / "release" / "bundle" / "deb"
+        deb_directory.mkdir(parents=True)
+        subprocess.run(["dpkg-deb", "--build", str(deb_root), str(deb_directory / "fixture.deb")], check=True, capture_output=True, timeout=30)
+        subprocess.run(["node", str(script)], check=True, capture_output=True, timeout=30)
+        resources = self.repo / "flatpak" / "build-root" / "usr" / "share" / "dezirclip" / "skills"
+        for name in ("dzc-cli/SKILL.md", "dezirclip-theme/SKILL.md", "dezirclip-theme/assets/forest.theme.json"):
+            self.assertEqual((resources / name).read_bytes(), (self.repo / "skills" / name).read_bytes())
+        self.assertFalse((resources / "dezirclip-theme" / "scripts" / "__pycache__").exists())
 
     def test_checksum_rejects_tampering_wrong_filename_and_missing_sidecar(self):
         archive = package.package("linux-x86_64", self.binary("linux-x86_64"), "1.2.3",
