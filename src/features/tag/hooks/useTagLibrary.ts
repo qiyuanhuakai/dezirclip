@@ -74,7 +74,7 @@ export function useTagLibrary() {
         mounted.current = true;
         let disposed = false;
         const unlisteners: (() => void)[] = [];
-        for (const event of ['clipboard-changed', 'clipboard-updated', 'clipboard-removed', 'tag-colors-updated']) {
+        for (const event of ['clipboard-changed', 'clipboard-captured', 'clipboard-updated', 'clipboard-removed', 'tag-colors-updated']) {
             void listen(event, event === 'tag-colors-updated' ? refreshMetadata : refresh).then(unlisten => {
                 if (disposed) void Promise.resolve(unlisten()).catch(console.error);
                 else unlisteners.push(unlisten);

@@ -175,6 +175,7 @@ fn main() {
             services::clipboard_ops::copy_to_clipboard,
             services::clipboard_ops::paste_latest_rich,
             app::commands::get_clipboard_history,
+            app::commands::get_captured_entry_summary,
             app::commands::search_clipboard_history,
             app::commands::delete_clipboard_entry,
             app::commands::clear_clipboard_history,

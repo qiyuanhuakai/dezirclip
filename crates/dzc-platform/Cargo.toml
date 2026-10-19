@@ -25,3 +25,7 @@ aes-gcm.workspace = true
 keyring.workspace = true
 x11rb.workspace = true
 libc.workspace = true
+x11-clipboard.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows.workspace = true
