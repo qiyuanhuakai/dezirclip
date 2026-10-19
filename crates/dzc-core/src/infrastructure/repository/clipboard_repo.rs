@@ -210,6 +210,7 @@ pub struct SqliteClipboardRepository {
     content_cache: Arc<Mutex<SimpleLruCache<(String, String, Option<String>)>>>,
     cache_revision: Arc<Mutex<Option<(i64, i64)>>>,
     pub(super) encrypt_text: fn(&str) -> Result<EncryptedPayload, EncryptionError>,
+    pub(super) maintain_search: fn(&Connection) -> Result<(), String>,
 }
 
 impl SqliteClipboardRepository {
@@ -222,6 +223,7 @@ impl SqliteClipboardRepository {
             conn,
             cache_revision: Arc::new(Mutex::new(None)),
             encrypt_text: encryption::encrypt_sensitive,
+            maintain_search: super::protection::compact_search,
             history_cache: Arc::new(Mutex::new(SimpleLruCache::new(
                 64,
                 HISTORY_CACHE_MAX_BYTES,
@@ -273,7 +275,13 @@ impl SqliteClipboardRepository {
     }
 
     pub fn encrypt_entry_with_conn(&self, conn: &Connection, id: i64) -> Result<(), String> {
-        self.encrypt_entries_with_conn(conn, &[id])
+        super::protection::atomic(conn, |conn| {
+            if self.encrypt_entry_with_conn_inner(conn, id)? {
+                (self.maintain_search)(conn)?;
+            }
+            self.invalidate_caches();
+            Ok(())
+        })
     }
 
     /// Protect one startup batch and discard obsolete search segments once.
@@ -300,14 +308,23 @@ impl SqliteClipboardRepository {
         })
     }
 
-    fn encrypt_entry_with_conn_inner(&self, conn: &Connection, id: i64) -> Result<(), String> {
-        let (content_raw, preview_raw, html_raw, content_type, content_hash, external, ocr_raw): (String, String, Option<String>, String, i64, bool, Option<String>) =
+    fn encrypt_entry_with_conn_inner(&self, conn: &Connection, id: i64) -> Result<bool, String> {
+        let (content_raw, preview_raw, html_raw, content_type, content_hash, external, ocr_raw, tags): (String, String, Option<String>, String, i64, bool, Option<String>, String) =
             conn.query_row(
-                "SELECT content, preview, html_content, content_type, content_hash, is_external, ocr_text FROM clipboard_history WHERE id = ?",
+                "SELECT content, preview, html_content, content_type, content_hash, is_external, ocr_text, tags FROM clipboard_history WHERE id = ?",
                 params![id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2).ok(), row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2).ok(), row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
             ).map_err(|e| e.to_string())?;
 
+        let was_visible = super::migrations::search_visible(
+            Some(&tags),
+            [
+                Some(&content_raw),
+                Some(&preview_raw),
+                html_raw.as_deref(),
+                ocr_raw.as_deref(),
+            ],
+        );
         let content_plain =
             encryption::decode_for_mutation(&content_raw).map_err(|e| e.to_string())?;
         let preview_plain =
@@ -333,7 +350,7 @@ impl SqliteClipboardRepository {
             "UPDATE clipboard_history SET content = ?, preview = ?, html_content = ?, content_hash = ?, ocr_text = ? WHERE id = ?",
             params![content_enc, preview_enc, html_enc, new_hash, ocr_enc, id],
         ).map_err(|e| e.to_string())?;
-        Ok(())
+        Ok(was_visible)
     }
 
     pub fn decrypt_entry_with_conn(&self, conn: &Connection, id: i64) -> Result<(), String> {
@@ -582,6 +599,7 @@ impl SqliteClipboardRepository {
         if should_encrypt {
             super::protection::validate_sensitive_record(&entry.content_type, entry.is_external, entry.html_content.as_deref())?;
         }
+        let mut was_visible = false;
         let mut ocr_to_store = entry.ocr_text.clone();
         if entry.id > 0 {
             let current: Option<(String, String, Option<String>, String, Option<String>)> = conn.query_row(
@@ -591,6 +609,15 @@ impl SqliteClipboardRepository {
             let Some((content, preview, html, tags, stored_ocr)) = current else {
                 return Err("ClipboardRecordUnavailable".to_string());
             };
+            was_visible = super::migrations::search_visible(
+                Some(&tags),
+                [
+                    Some(&content),
+                    Some(&preview),
+                    html.as_deref(),
+                    stored_ocr.as_deref(),
+                ],
+            );
             {
                 let existing_ocr = stored_ocr.as_deref().map(encryption::decode_for_mutation).transpose().map_err(|error| error.to_string())?;
                 if inherit_missing_ocr && ocr_to_store.is_none() { ocr_to_store = existing_ocr; }
@@ -722,7 +749,9 @@ impl SqliteClipboardRepository {
             )
             .map_err(|e| e.to_string())?;
             self.sync_entry_tags_with_conn(conn, entry.id, &cleaned_tags)?;
-            if should_encrypt { super::protection::rebuild_search(conn)?; }
+            if should_encrypt && was_visible {
+                (self.maintain_search)(conn)?;
+            }
             self.invalidate_caches();
             Ok(entry.id)
         } else {
@@ -1100,6 +1129,15 @@ impl SqliteClipboardRepository {
             || [Some(old_content_raw.as_str()), Some(old_preview_raw.as_str()), old_html_raw.as_deref(), old_ocr_raw.as_deref()].into_iter().flatten()
                 .any(|value| matches!(encryption::decode_stored_text(value), encryption::StoredText::Decrypted(_)));
 
+        let was_visible = super::migrations::search_visible(
+            Some(&tags_json),
+            [
+                Some(&old_content_raw),
+                Some(&old_preview_raw),
+                old_html_raw.as_deref(),
+                old_ocr_raw.as_deref(),
+            ],
+        );
         let protected_ocr = if should_encrypt {
             super::protection::validate_sensitive_record(&content_type, external, old_html.as_deref())?;
             old_ocr.as_deref().map(|value| (self.encrypt_text)(value).map(EncryptedPayload::into_string)).transpose().map_err(|error| error.to_string())?
@@ -1124,7 +1162,9 @@ impl SqliteClipboardRepository {
                     params![content, preview, hash, new_type, protected_ocr, id],
                 ).map_err(|e| e.to_string())?;
             }
-            if should_encrypt { super::protection::rebuild_search(conn)?; }
+            if should_encrypt && was_visible {
+                (self.maintain_search)(conn)?;
+            }
             self.invalidate_caches();
             return Ok(());
         }
@@ -1141,7 +1181,9 @@ impl SqliteClipboardRepository {
                 params![content, preview, protected_ocr, id],
             ).map_err(|e| e.to_string())?;
         }
-        if should_encrypt { super::protection::rebuild_search(conn)?; }
+        if should_encrypt && was_visible {
+            (self.maintain_search)(conn)?;
+        }
         self.invalidate_caches();
         Ok(())
     }

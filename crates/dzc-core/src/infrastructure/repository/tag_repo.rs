@@ -445,6 +445,75 @@ mod protection_transaction_tests {
     }
 
     #[test]
+    fn deferred_tag_commit_failure_restores_fields_tags_index_and_cached_history() {
+        use super::super::clipboard_repo::ClipboardRepository;
+        let (mut tags, repo, shared) = repository();
+        tags.encrypt_text = |value| {
+            encryption::encrypt_with_key(
+                value,
+                || Ok([37; 32]),
+                |nonce| {
+                    nonce.fill(17);
+                    Ok(())
+                },
+            )
+            .map(encryption::EncryptedPayload::for_test)
+        };
+        let cached = repo.get_history(10, 0, None).unwrap();
+        let before = snapshot(&shared.lock().unwrap());
+        let shadow = |conn: &Connection| {
+            conn.prepare("SELECT id,block FROM clipboard_fts_data ORDER BY id")
+                .unwrap()
+                .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+        };
+        let index_before = shadow(&shared.lock().unwrap());
+        shared.lock().unwrap().execute_batch(
+            "PRAGMA foreign_keys=ON;
+             CREATE TABLE parent(id INTEGER PRIMARY KEY);
+             CREATE TABLE delayed_failure(
+                 parent INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED
+             );
+             CREATE TRIGGER fail_commit AFTER UPDATE OF tags ON clipboard_history
+             WHEN instr(new.tags,'sensitive')>0
+             BEGIN INSERT INTO delayed_failure VALUES(42); END;",
+        ).unwrap();
+        assert!(tags.update_entry_tags(1, vec!["sensitive".into()]).is_err());
+        {
+            let conn = shared.lock().unwrap();
+            assert_eq!(snapshot(&conn), before);
+            assert_eq!(shadow(&conn), index_before);
+            assert_eq!(
+                conn.query_row("SELECT tag FROM entry_tags WHERE entry_id=1", [], |r| {
+                    r.get::<_, String>(0)
+                })
+                .unwrap(),
+                "work"
+            );
+            conn.execute(
+                "INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)",
+                [],
+            )
+            .unwrap();
+            assert_eq!(
+                conn.query_row(
+                    "SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'privateocr'",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+                1
+            );
+        }
+        assert_eq!(
+            repo.get_history(10, 0, None).unwrap()[0].content,
+            cached[0].content
+        );
+    }
+
+    #[test]
     fn removing_sensitive_tag_cannot_overwrite_unavailable_protected_ocr() {
         let (tags, _, shared) = repository();
         let cipher = format!("linux:{}", base64::engine::general_purpose::STANDARD.encode([0u8;28]));
