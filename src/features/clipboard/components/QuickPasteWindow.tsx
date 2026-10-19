@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from "r
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
+import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
 import { applyHistoryUpdate } from "../../../shared/lib/historyInsert";
 import { createSnapshotRefresh } from "../../../shared/lib/snapshotRefresh";
 import {
@@ -18,6 +19,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   ref
 ) {
   const [entries, setEntries] = useState<ClipboardEntry[]>([]);
+  const [initialFetchSettled, setInitialFetchSettled] = useState(false);
+  const [listenersReady, setListenersReady] = useState(false);
   // The selection is an entry id, not a position. Every mutation of this list
   // reorders it -- pinned first, then newest first -- so an index goes stale the
   // moment anything is copied while the panel is open, and the highlight silently
@@ -75,7 +78,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     () => replaceEntries([]),
   ), [replaceEntries]);
   const fetchRecent = useCallback(() => {
-    void refreshReader.refresh();
+    void refreshReader.refresh().finally(() => setInitialFetchSettled(true));
   }, [refreshReader]);
 
   // Entry updates are incremental; bulk changes need an authoritative snapshot.
@@ -106,6 +109,11 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       if (!disposed) fetchRecent();
     });
     fetchRecent();
+    void Promise.all([unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown])
+      .then(() => {
+        if (!disposed) setListenersReady(true);
+      })
+      .catch((error) => console.error("Failed to register quick-paste listeners", error));
     return () => {
       disposed = true;
       refreshReader.cancel();
@@ -178,6 +186,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       activeItem.scrollIntoView({ block: "nearest" });
     }
   }, [activeIndex]);
+
+  useAuxiliaryWindowReady(initialFetchSettled && listenersReady);
 
   return (
     <div className="quick-paste-window">

@@ -13,3 +13,11 @@
 *.yaml text eol=lf
 integrations/** text eol=lf
 src-tauri/src/cli/shell/** text eol=lf
+scripts/benchmark-windows.py export-ignore
+scripts/drive-webview-performance.py export-ignore
+scripts/observe-webview-response.py export-ignore
+scripts/probe-webview-interaction.py export-ignore
+scripts/probe-webview-startup.py export-ignore
+scripts/seed-performance-history.py export-ignore
+scripts/summarize-webview-interaction.py export-ignore
+scripts/tests/test_webview_interaction_summary.py export-ignore

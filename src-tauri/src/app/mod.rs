@@ -1,4 +1,5 @@
 pub mod app_exit;
+pub mod auxiliary_windows;
 pub mod commands;
 pub mod gpu_switcher;
 pub mod hooks;

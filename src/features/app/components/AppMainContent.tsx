@@ -132,11 +132,16 @@ const AppMainContent = ({
   showScrollTop,
   onScrollTop
 }: AppMainContentProps) => {
+  const [settingsMounted, setSettingsMounted] = useState(showSettings);
   const [pinnedOrderIds, setPinnedOrderIds] = useState<number[]>(
     () => pinnedItems.map((item) => item.id)
   );
   const pinnedOrderRef = useRef<number[]>(pinnedItems.map((item) => item.id));
   const [isDraggingPinned, setIsDraggingPinned] = useState(false);
+
+  useEffect(() => {
+    if (showSettings) setSettingsMounted(true);
+  }, [showSettings]);
 
   useEffect(() => {
     if (isDraggingPinned) return;
@@ -213,19 +218,19 @@ const AppMainContent = ({
 
   return (
     <>
-      {tagManagerVisible && (
-        <div style={{ height: "100%" }}>
-          <Suspense fallback={<div style={{ height: "100%" }} />}>
+      <Suspense fallback={<div style={{ height: "100%" }} />}>
+        {tagManagerVisible && (
+          <div style={{ height: "100%" }}>
             <TagManager t={t} theme={theme} language={language} compactMode={compactMode}
               isWindowPinned={isWindowPinned} privacyProtection={privacyProtection}
               tagColors={tagColors} richTextSnapshotPreview={richTextSnapshotPreview}
               onCompactModeChange={onCompactModeChange} />
-          </Suspense>
-        </div>
-      )}
-      {showEmojiPanel && (
-        <div style={{ height: "100%", overflow: "hidden" }}>
-          <Suspense fallback={<div style={{ height: "100%" }} />}>
+          </div>
+        )}
+      </Suspense>
+      <Suspense fallback={<div style={{ height: "100%" }} />}>
+        {showEmojiPanel && (
+          <div style={{ height: "100%", overflow: "hidden" }}>
             <EmojiPanel
               t={t}
               favorites={emojiFavorites}
@@ -234,9 +239,9 @@ const AppMainContent = ({
               setActiveTab={setEmojiPanelTab}
               saveSetting={saveSetting}
             />
-          </Suspense>
-        </div>
-      )}
+          </div>
+        )}
+      </Suspense>
       <div
         className="settings-view"
         style={{
@@ -248,7 +253,9 @@ const AppMainContent = ({
         }}
       >
         <Suspense fallback={<div style={{ minHeight: "240px" }} />}>
-          <SettingsPanel {...settingsPanelProps} />
+          {(showSettings || settingsMounted) && (
+            <SettingsPanel {...settingsPanelProps} />
+          )}
         </Suspense>
       </div>
       <div

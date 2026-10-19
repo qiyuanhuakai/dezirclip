@@ -31,6 +31,7 @@ import type { ClipboardEntry } from "../../../shared/types";
 import { getConciseTime, getTagColor } from "../../../shared/lib/utils";
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
+import { useImagePreview } from "../../../shared/hooks/useImagePreview";
 import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
@@ -746,6 +747,12 @@ const ClipboardItem = ({
     const [ocrText, setOcrText] = useState<string | null>(item.ocr_text ?? null);
     const [ocrStatus, setOcrStatus] = useState<string | null>(item.ocr_status ?? null);
     const [ocrTextExpanded, setOcrTextExpanded] = useState(false);
+    const imagePreview = useImagePreview(
+        item.content_type === "image" && !(item.is_external && item.file_preview_exists === false)
+            ? item.content
+            : null,
+        item.timestamp
+    );
     const isComposing = useRef(false);
     const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
     const richSnapshotFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1588,21 +1595,27 @@ const ClipboardItem = ({
                                 <ImageOff size={24} style={{ marginBottom: '8px', opacity: 0.5 }} />
                                 <span>{t('image_deleted') || 'Image Deleted'}</span>
                             </div>
+                        ) : imagePreview.pending ? (
+                            <div className="image-preview image-preview-pending" aria-hidden="true" />
                         ) : item.content ? (
                             <img
                                 src={
-                                    item.content.startsWith("data:")
+                                    imagePreview.src || (item.content.startsWith("data:")
                                         ? item.content
                                         : (
                                             toTauriLocalImageSrc(item.content) ||
                                             (item.is_external ? convertFileSrc(item.content) : item.content)
-                                        )
+                                        ))
                                 }
                                 alt={t('image_preview')}
                                 className="image-preview"
                                 loading="lazy"
                                 style={isSensitiveHidden ? { filter: 'blur(8px)' } : {}}
                                 onError={(e) => {
+                                    if (imagePreview.src) {
+                                        imagePreview.fallback();
+                                        return;
+                                    }
                                     // Fallback for load errors even if backend said it exists (e.g. deleted after fetch)
                                     e.currentTarget.style.display = 'none';
                                     e.currentTarget.parentElement?.classList.add('image-load-error');

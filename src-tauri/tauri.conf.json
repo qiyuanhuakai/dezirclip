@@ -30,6 +30,7 @@
       },
       {
         "label": "quick-paste",
+        "create": false,
         "title": "",
         "url": "index.html?window=quick-paste",
         "width": 480,
@@ -46,6 +47,7 @@
       },
       {
         "label": "region-select",
+        "create": false,
         "title": "",
         "url": "index.html?window=region-select",
         "width": 1920,

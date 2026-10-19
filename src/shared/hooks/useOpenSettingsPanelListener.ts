@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { startTransition, useEffect } from "react";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 interface UseOpenSettingsPanelListenerOptions {
@@ -17,9 +17,11 @@ export const useOpenSettingsPanelListener = ({
     let unlisten: UnlistenFn | null = null;
 
     listen("open-settings-panel", () => {
-      setShowTagManager(false);
-      setShowEmojiPanel(false);
-      setShowSettings(true);
+      startTransition(() => {
+        setShowTagManager(false);
+        setShowEmojiPanel(false);
+        setShowSettings(true);
+      });
       void emit("open-settings-panel-consumed");
     }).then((off) => {
       if (disposed) {

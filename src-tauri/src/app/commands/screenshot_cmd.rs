@@ -54,21 +54,19 @@ fn global_cursor(app: &AppHandle) -> Option<(i32, i32)> {
 /// dispatches onto the main thread and waits, which is what makes it callable
 /// from an async command. This is the same call `show_quick_paste` makes.
 ///
-/// Best-effort by design: if the query or the monitor list fails, the window
-/// keeps its previous geometry. That is the behaviour from before, not a new
-/// failure path.
+/// If the cursor cannot pick a monitor, use the window's current monitor or the
+/// primary display. Failed geometry stays hidden: the parked selector starts
+/// at 1×1 and must never show until it covers a real monitor.
 ///
 /// The chosen rectangle is remembered so `reassert_overlay_geometry` can put it
 /// back after the OS has second thoughts about the size.
-fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
-    let Ok(monitors) = window.available_monitors() else {
-        return;
-    };
+fn cover_cursor_monitor(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let monitors = window.available_monitors().unwrap_or_default();
 
     // Half-open containment, matching the bounds test `capture_region` uses:
     // the pixel at a monitor's right edge belongs to the next monitor.
-    let target = global_cursor(window.app_handle()).and_then(|(cursor_x, cursor_y)| {
-        monitors.into_iter().find(|monitor| {
+    let target = global_cursor(window.app_handle())
+        .and_then(|(cursor_x, cursor_y)| monitors.into_iter().find(|monitor| {
             let position = monitor.position();
             let size = monitor.size();
             screenshot::rect_holds_cursor(
@@ -82,12 +80,11 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
                 cursor_x,
                 cursor_y,
             )
-        })
-    });
+        }))
+        .or_else(|| window.current_monitor().ok().flatten())
+        .or_else(|| window.primary_monitor().ok().flatten());
 
-    let Some(monitor) = target else {
-        return;
-    };
+    let monitor = target.ok_or_else(|| "No monitor available for the region selector".to_string())?;
     let pos = monitor.position();
     let size = monitor.size();
     let rect = MonitorRect {
@@ -104,7 +101,8 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) {
     // it. Clearing here rather than leaving a stale flag to spend on this
     // write avoids a redundant second resize; a DPI change later re-raises it.
     OVERLAY_SIZE_UNCONFIRMED.store(false, Ordering::SeqCst);
-    apply_overlay_rect(window, rect);
+    apply_overlay_rect(window, rect)
+        .map_err(|err| format!("Failed to size region selector to its monitor: {err}"))
 }
 
 /// The rectangle the region selector was last asked to cover.
@@ -131,15 +129,15 @@ static OVERLAY_SIZE_UNCONFIRMED: AtomicBool = AtomicBool::new(false);
 /// Size before position on purpose: on Windows, resizing a window that hangs
 /// off the right edge gets clamped back into the work area, which would leave
 /// it short by however far it stuck out.
-fn apply_overlay_rect(window: &tauri::WebviewWindow, rect: MonitorRect) {
-    let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+fn apply_overlay_rect(window: &tauri::WebviewWindow, rect: MonitorRect) -> tauri::Result<()> {
+    window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
         width: rect.width,
         height: rect.height,
-    }));
-    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+    }))?;
+    window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
         x: rect.x,
         y: rect.y,
-    }));
+    }))
 }
 
 /// Put the region selector back on the rectangle it was last asked to cover.
@@ -210,7 +208,7 @@ fn apply_remembered_overlay_rect(window: &tauri::Window) {
     let Some(overlay) = window.app_handle().get_webview_window(REGION_SELECT_LABEL) else {
         return;
     };
-    apply_overlay_rect(&overlay, rect);
+    let _ = apply_overlay_rect(&overlay, rect);
 }
 
 /// Bring the region selector back if the idle destroyer took it away.
@@ -225,48 +223,35 @@ fn apply_remembered_overlay_rect(window: &tauri::Window) {
 /// which deadlocks if this runs on the main thread.
 #[tauri::command]
 pub async fn show_region_selector(app: AppHandle) -> Result<(), String> {
-    let window = match app.get_webview_window(REGION_SELECT_LABEL) {
-        Some(window) => window,
-        None => rebuild_region_select(&app)?,
-    };
-    let _ = window.set_focusable(true);
-    // Before `show`: sizing a hidden window is free, while doing it after the
-    // overlay is on screen would flash the old rectangle first.
-    cover_cursor_monitor(&window);
-    crate::app::webview_memory::restore_window_memory(&window, "region-select-show");
-    window
-        .show()
-        .map_err(|e| format!("Failed to show region selector: {e}"))?;
-    window
-        .set_focus()
-        .map_err(|e| format!("Failed to focus region selector: {e}"))?;
-    Ok(())
-}
-
-fn rebuild_region_select(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
-    let config = app
-        .config()
-        .app
-        .windows
-        .iter()
-        .find(|c| c.label == REGION_SELECT_LABEL)
-        .ok_or_else(|| "Region selector window is not configured".to_string())?;
-
-    tauri::WebviewWindowBuilder::from_config(app, config)
-        .and_then(|b| b.build())
-        .map_err(|e| format!("Failed to rebuild region selector: {e}"))
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::app::auxiliary_windows::with_window(&app, REGION_SELECT_LABEL, |window, _created| {
+            crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
+            let _ = window.set_focusable(true);
+            // Before `show`: sizing a hidden window is free, while doing it after the
+            // overlay is on screen would flash the old rectangle first.
+            cover_cursor_monitor(window)?;
+            crate::app::webview_memory::restore_window_memory(window, "region-select-show");
+            window
+                .show()
+                .map_err(|e| format!("Failed to show region selector: {e}"))?;
+            window
+                .set_focus()
+                .map_err(|e| format!("Failed to focus region selector: {e}"))?;
+            Ok(())
+        })
+    })
+    .await
+    .map_err(|err| format!("Region selector worker failed: {err}"))?
 }
 
 /// Park the region selector after a cancel.
 ///
-/// The overlay is fullscreen and idle the moment a selection is abandoned, and
-/// it holds a whole display's worth of compositor surface while it sits there.
-/// Releasing it on cancel is what keeps the startup saving in place for anyone
-/// who opens the screenshot tool and then backs out. Safe to call when no
-/// selector exists.
+/// Lower its memory target immediately, retaining the webview for another use
+/// within the configured idle timeout. Safe to call when no selector exists.
 #[tauri::command]
 pub fn hide_region_select(app: AppHandle) {
     if let Some(window) = app.get_webview_window("region-select") {
+        crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
         let _ = window.set_focusable(false);
         let _ = window.hide();
         crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
@@ -310,6 +295,8 @@ pub async fn capture_region(
     height: u32,
     app: AppHandle,
 ) -> Result<ScreenshotResult, String> {
+    // The frontend already hid the overlay so it does not appear in the capture.
+    crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
     let result = screenshot::capture_region(x, y, width, height).map_err(|e| e.to_string())?;
     copy_screenshot_to_clipboard(&result)?;
     save_screenshot_to_history(&app, &result);
