@@ -194,6 +194,7 @@ impl NativeCaptureReader {
             echo_hash: Some(hash),
             image: true,
             files: false,
+            image_content_hash: None,
         };
         CaptureData::RgbaImage {
             width: image.width,
@@ -232,13 +233,24 @@ impl CaptureReader for NativeCaptureReader {
                     .any(|suffix| lower.ends_with(suffix))
                 {
                     if let Ok(image) = image::open(&files[0]) {
+                        let image = image::DynamicImage::ImageRgba8(image.into_rgba8());
+                        let content_hash = dzc_core::services::capture::thumbnail_hash(&image);
                         let image = image.into_rgba8();
                         let (width, height) = image.dimensions();
-                        return Ok(Some(self.image(Pixels {
+                        let data = self.image(Pixels {
                             width,
                             height,
                             bytes: image.into_raw(),
-                        })));
+                        });
+                        self.metadata.files = true;
+                        self.metadata.fingerprint = Some(fingerprint((
+                            files.as_slice(),
+                            width,
+                            height,
+                            self.metadata.echo_hash,
+                        )));
+                        self.metadata.image_content_hash = Some(content_hash);
+                        return Ok(Some(data));
                     }
                 }
             }
@@ -252,6 +264,7 @@ impl CaptureReader for NativeCaptureReader {
                 echo_hash: Some(hash),
                 image: false,
                 files: true,
+                image_content_hash: None,
             };
             return Ok(Some(CaptureData::Files(files)));
         }
@@ -262,7 +275,7 @@ impl CaptureReader for NativeCaptureReader {
                 code: "ClipboardReadUnavailable".into(),
             })?;
             text = clipboard.get_text().ok().filter(|text| !text.is_empty());
-            if text.as_ref().is_some_and(|text| !text.trim().is_empty()) {
+            if text.as_ref().is_some_and(|text| !text.is_empty()) {
                 if let Some(mut html) = html(&mut clipboard) {
                     if let Some(fallback) = image_fallback() {
                         html = format!("{}\n<!--TIEZ_RICH_IMAGE:{fallback}-->", html.trim_end());
@@ -273,6 +286,7 @@ impl CaptureReader for NativeCaptureReader {
                         echo_hash: Some(fingerprint(&text)),
                         image: false,
                         files: false,
+                        image_content_hash: None,
                     };
                     return Ok(Some(CaptureData::RichText { text, html }));
                 }
@@ -286,6 +300,7 @@ impl CaptureReader for NativeCaptureReader {
                 echo_hash: Some(hash),
                 image: true,
                 files: false,
+                image_content_hash: None,
             };
             return Ok(Some(CaptureData::EncodedImage {
                 bytes,
@@ -309,6 +324,7 @@ impl CaptureReader for NativeCaptureReader {
                 echo_hash: Some(hash),
                 image: false,
                 files: false,
+                image_content_hash: None,
             };
             return Ok(Some(CaptureData::Text(text)));
         }
@@ -352,6 +368,16 @@ mod tests {
         assert!(
             matches!(reader.read(CaptureReadRequest { files: false, rich_text: true }).unwrap(), Some(CaptureData::RichText { text: value, html: markup }) if value == text && markup == html)
         );
+        let whitespace = " \t\r\n";
+        let whitespace_html = "<p><br></p>";
+        super::super::x11_clipboard::set_clipboard_text_and_html(
+            whitespace.into(),
+            Some(whitespace_html.into()),
+        )
+        .unwrap();
+        assert!(
+            matches!(reader.read(CaptureReadRequest { files: false, rich_text: true }).unwrap(), Some(CaptureData::RichText { text: value, html: markup }) if value == whitespace && markup == whitespace_html)
+        );
         let path =
             std::env::temp_dir().join(format!("dezirclip-reader-{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&path, b"fixture").unwrap();
@@ -361,6 +387,236 @@ mod tests {
             matches!(reader.read(CaptureReadRequest { files: true, rich_text: true }).unwrap(), Some(CaptureData::Files(files)) if files == vec![path.to_string_lossy().into_owned()])
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn isolated_x11_file_images_recapture_after_delete_text_and_another_image() {
+        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
+            return;
+        }
+        use super::{CaptureData, CaptureReadRequest, CaptureReader, NativeCaptureReader};
+        use dzc_core::{
+            database::DbState,
+            infrastructure::repository::{
+                clipboard_repo::SqliteClipboardRepository, settings_repo::SqliteSettingsRepository,
+                tag_repo::SqliteTagRepository,
+            },
+            services::capture::*,
+        };
+        use std::{
+            collections::VecDeque,
+            sync::{Arc, Mutex},
+        };
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-native-file-recapture-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let database_path = directory.join("clipboard.db");
+        let connection = Arc::new(Mutex::new(
+            dzc_core::database::init_db(database_path.to_str().unwrap()).unwrap(),
+        ));
+        let state = DbState {
+            repo: SqliteClipboardRepository::new(connection.clone()),
+            settings_repo: SqliteSettingsRepository::new(connection.clone()),
+            tag_repo: SqliteTagRepository::new(connection.clone()),
+            conn: connection,
+        };
+        let first_file = directory.join("a.png");
+        let second_file = directory.join("b.png");
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]))
+            .save(&first_file)
+            .unwrap();
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([7, 8, 9, 255]))
+            .save(&second_file)
+            .unwrap();
+        let store = state.capture_store(&directory);
+        let session = Mutex::new(VecDeque::new());
+        let mut notifications = CaptureNotificationState::default();
+        let process_mode = |notifications: &mut CaptureNotificationState, timestamp, persistent| {
+            let context = CaptureContext {
+                source: CaptureSource {
+                    app_name: "File manager".into(),
+                    process_path: None,
+                },
+                timestamp,
+                settings: CaptureSettings {
+                    persistent,
+                    deduplicate: true,
+                    ..CaptureSettings::default()
+                },
+                session: &session,
+                paused: false,
+                sequential_echo: None,
+            };
+            let mut reader = NativeCaptureReader::default();
+            let data = reader
+                .read(CaptureReadRequest {
+                    files: false,
+                    rich_text: true,
+                })
+                .unwrap()
+                .unwrap();
+            let metadata = reader.metadata();
+            if matches!(&data, CaptureData::RgbaImage { .. }) {
+                assert!(metadata.image && metadata.files && metadata.image_content_hash.is_some());
+            }
+            let frame = CaptureFrame { data, metadata };
+            notifications.set_persistence_mode(persistent);
+            let exists = notifications.repeats_file(metadata)
+                && CaptureEngine::file_history_exists(&context, &frame, &store).unwrap();
+            if let Err(reason) = notifications.inspect(
+                metadata,
+                timestamp as u64,
+                OwnClipboardCopy::default(),
+                exists,
+            ) {
+                return CaptureOutcome::Skipped(reason);
+            }
+            let outcome = CaptureEngine::capture_frame(&context, frame, &store, &mut ());
+            if let (CaptureOutcome::Stored(capture), Some(hash)) =
+                (&outcome, metadata.image_content_hash)
+            {
+                assert_eq!(
+                    dzc_core::database::calc_image_hash(&capture.entry.content),
+                    Some(hash)
+                );
+                assert!(store.contains_image_hash(hash).unwrap());
+            }
+            outcome
+        };
+        let process = |notifications: &mut CaptureNotificationState, timestamp| {
+            process_mode(notifications, timestamp, true)
+        };
+        let copy_file = |path: &std::path::Path| {
+            super::super::x11_clipboard::set_clipboard_files(vec![path
+                .to_string_lossy()
+                .into_owned()])
+            .unwrap()
+        };
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(first) = process(&mut notifications, 1000) else {
+            panic!("first native file image should store");
+        };
+        copy_file(&first_file);
+        assert!(matches!(
+            process(&mut notifications, 1600),
+            CaptureOutcome::Skipped(CaptureSkip::DuplicateNotification)
+        ));
+        let external = dzc_core::database::init_db(database_path.to_str().unwrap()).unwrap();
+        external
+            .execute(
+                "DELETE FROM clipboard_history WHERE id=?1",
+                [first.entry.id],
+            )
+            .unwrap();
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(restored_inside_window) = process(&mut notifications, 1650)
+        else {
+            panic!("deleted native file image should recapture within debounce window");
+        };
+        copy_file(&first_file);
+        assert!(matches!(
+            process(&mut notifications, 2300),
+            CaptureOutcome::Skipped(CaptureSkip::DuplicateNotification)
+        ));
+        external
+            .execute(
+                "DELETE FROM clipboard_history WHERE id=?1",
+                [restored_inside_window.entry.id],
+            )
+            .unwrap();
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(restored) = process(&mut notifications, 2900) else {
+            panic!("deleted native file image should recapture after debounce window");
+        };
+        super::super::x11_clipboard::set_clipboard_text_and_html("intervening text".into(), None)
+            .unwrap();
+        assert!(matches!(
+            process(&mut notifications, 3000),
+            CaptureOutcome::Stored(_)
+        ));
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(after_text) = process(&mut notifications, 3050) else {
+            panic!("file image after text should recapture");
+        };
+        assert_eq!(restored.entry.id, after_text.entry.id);
+        assert_eq!(after_text.entry.timestamp, 3050);
+        copy_file(&second_file);
+        let CaptureOutcome::Stored(second) = process(&mut notifications, 3100) else {
+            panic!("different file image should store");
+        };
+        assert_ne!(second.entry.id, after_text.entry.id);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(after_other_image) = process(&mut notifications, 3150) else {
+            panic!("file image after another image should recapture");
+        };
+        assert_eq!(after_other_image.entry.id, restored.entry.id);
+        assert_eq!(after_other_image.entry.timestamp, 3150);
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([10, 11, 12, 255]))
+            .save(&first_file)
+            .unwrap();
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(changed_bytes) = process(&mut notifications, 3200) else {
+            panic!("changed file bytes at the same path should capture");
+        };
+        assert_ne!(changed_bytes.entry.id, restored.entry.id);
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([7, 8, 9, 255]))
+            .save(&first_file)
+            .unwrap();
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(changed_to_existing) = process(&mut notifications, 3250) else {
+            panic!(
+                "changed file bytes should update even when another row already has those pixels"
+            );
+        };
+        assert_eq!(changed_to_existing.entry.id, second.entry.id);
+        assert_eq!(changed_to_existing.entry.timestamp, 3250);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(session_capture) =
+            process_mode(&mut notifications, 3300, false) else {
+                panic!("switching from persistent image to session must capture");
+            };
+        assert!(session_capture.entry.id < 0 && !session_capture.persistent);
+        assert_eq!(session.lock().unwrap().len(), 1);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(session_repeat) =
+            process_mode(&mut notifications, 3900, false) else {
+                panic!("session repeats must use the session deduplicator");
+            };
+        assert_eq!(session_repeat.entry.id, session_capture.entry.id);
+        session.lock().unwrap().retain(|entry| entry.id != session_capture.entry.id);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(after_session_delete) =
+            process_mode(&mut notifications, 3950, false) else {
+                panic!("deleting a session image must allow recapture despite an old durable row");
+            };
+        assert!(after_session_delete.entry.id < 0 && !after_session_delete.persistent);
+        assert_eq!(session.lock().unwrap().len(), 1);
+        copy_file(&first_file);
+        let CaptureOutcome::Stored(back_to_persistent) = process(&mut notifications, 4000) else {
+            panic!("returning to persistent capture must reach the durable deduplicator");
+        };
+        assert_eq!(back_to_persistent.entry.id, second.entry.id);
+        assert_eq!(back_to_persistent.entry.timestamp, 4000);
+        assert_eq!(
+            state
+                .conn
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT count(*) FROM clipboard_history WHERE content_type='image'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            3
+        );
+        drop(external);
+        drop(store);
+        drop(state);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     // --- the gate -----------------------------------------------------------

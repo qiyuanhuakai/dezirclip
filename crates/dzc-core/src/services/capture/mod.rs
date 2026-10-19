@@ -7,6 +7,7 @@ pub mod source_exclusion;
 mod store;
 mod types;
 
+pub use crate::database::thumbnail_hash;
 pub use engine::CaptureEngine;
 pub use notifications::{CaptureNotificationState, OwnClipboardCopy};
 pub use store::{CaptureCommit, CaptureDuplicate, CaptureStore, PreparedCapture};

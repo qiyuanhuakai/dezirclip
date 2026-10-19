@@ -11,6 +11,24 @@ const MAX_PERSISTED_TEXT_BYTES: usize = 10 * 1024 * 1024;
 pub struct CaptureEngine;
 
 impl CaptureEngine {
+    /// Durable rows suppress repeated files only while durable capture is selected.
+    pub fn file_history_exists(
+        context: &CaptureContext<'_>,
+        frame: &CaptureFrame,
+        store: &dyn CaptureStore,
+    ) -> Result<bool, CaptureFailure> {
+        if !context.settings.persistent || !frame.metadata.files {
+            return Ok(false);
+        }
+        if let Some(hash) = frame.metadata.image_content_hash {
+            return store.contains_image_hash(hash);
+        }
+        if let CaptureData::Files(files) = &frame.data {
+            return store.contains(&files.join("\n"));
+        }
+        Ok(false)
+    }
+
     pub fn capture(
         context: &CaptureContext<'_>,
         reader: &mut dyn CaptureReader,
@@ -136,6 +154,7 @@ fn process(
     frame: CaptureFrame,
     store: &dyn CaptureStore,
 ) -> CaptureOutcome {
+    let read_image_hash = frame.metadata.image_content_hash;
     let initial_decision = source_decision(context);
     if let Some(reason) = policy_skip(&initial_decision) {
         return CaptureOutcome::Skipped(reason);
@@ -205,6 +224,9 @@ fn process(
         PreparedCapture::without_attachments(entry)
     };
     let entry = &mut prepared.entry;
+    if entry.content_type == "image" {
+        prepared.image_hash = read_image_hash;
+    }
     if is_text_type(&entry.content_type)
         && entry
             .content
@@ -217,7 +239,9 @@ fn process(
     }
     if context.settings.deduplicate && persistent {
         prepared.image_hash = if entry.content_type == "image" {
-            crate::database::calc_image_hash(&entry.content)
+            prepared
+                .image_hash
+                .or_else(|| crate::database::calc_image_hash(&entry.content))
         } else {
             None
         };

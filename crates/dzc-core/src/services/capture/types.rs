@@ -66,6 +66,8 @@ pub struct CaptureReadMetadata {
     pub echo_hash: Option<u64>,
     pub image: bool,
     pub files: bool,
+    /// Durable dedup identity for a decoded image whose clipboard source was a file.
+    pub image_content_hash: Option<i64>,
 }
 
 #[derive(Debug)]
