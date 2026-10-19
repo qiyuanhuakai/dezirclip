@@ -48,6 +48,41 @@ fn normalize_limit(limit: i32) -> i32 {
     limit.clamp(MIN_HISTORY_LIMIT, MAX_HISTORY_LIMIT)
 }
 
+fn captured_entry_summary(
+    repository: &dyn ClipboardRepository,
+    session: &SessionHistory,
+    id: i64,
+) -> AppResult<ClipboardEntry> {
+    let entry = if id < 0 {
+        session
+            .0
+            .lock()
+            .map_err(|_| AppError::Internal("CapturedEntryReadFailed".into()))?
+            .iter()
+            .find(|entry| entry.id == id)
+            .cloned()
+    } else if id > 0 {
+        repository
+            .get_entry_by_id(id)
+            .map_err(|_| AppError::Internal("CapturedEntryReadFailed".into()))?
+    } else {
+        None
+    };
+    let mut entry = entry.ok_or_else(|| AppError::Validation("CapturedEntryUnavailable".into()))?;
+    normalize_entries_for_ui(std::slice::from_mut(&mut entry));
+    Ok(crate::services::clipboard::summarize_captured_entry(entry))
+}
+
+/// Hydrate a committed capture on demand; capture notifications contain only its ID.
+#[tauri::command]
+pub async fn get_captured_entry_summary(
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
+    id: i64,
+) -> AppResult<ClipboardEntry> {
+    captured_entry_summary(&state.repo, &session, id)
+}
+
 #[tauri::command]
 pub async fn get_clipboard_history(
     state: State<'_, DbState>,
@@ -428,4 +463,107 @@ pub fn update_pinned_order(state: State<'_, DbState>, orders: Vec<(i64, i64)>) -
 #[tauri::command]
 pub async fn get_db_count(state: State<'_, DbState>) -> AppResult<i64> {
     state.repo.get_count().map_err(AppError::from)
+}
+
+#[cfg(test)]
+mod capture_summary_tests {
+    use super::*;
+    use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
+
+    fn entry(id: i64) -> ClipboardEntry {
+        ClipboardEntry {
+            id,
+            content_type: "rich_text".into(),
+            content: "body ".repeat(1000),
+            html_content: Some("<p>body</p>".repeat(1000)),
+            source_app: "Editor".into(),
+            source_app_path: None,
+            timestamp: 1,
+            preview: "body ".repeat(1000),
+            is_pinned: true,
+            tags: vec!["work".into()],
+            use_count: 2,
+            is_external: false,
+            pinned_order: 3,
+            file_preview_exists: true,
+            content_kinds: Vec::new(),
+            ocr_text: None,
+            ocr_status: None,
+        }
+    }
+
+    fn repository() -> SqliteClipboardRepository {
+        SqliteClipboardRepository::new(Arc::new(Mutex::new(
+            crate::database::init_db(":memory:").unwrap(),
+        )))
+    }
+
+    #[test]
+    fn session_summary_is_bounded_preserves_metadata_and_does_not_mutate_source() {
+        let repository = repository();
+        let session = SessionHistory(Mutex::new(VecDeque::from([entry(-1)])));
+        let summary = captured_entry_summary(&repository, &session, -1).unwrap();
+        assert_eq!(summary.id, -1);
+        assert!(summary.content.chars().count() < 2100);
+        assert!(summary.html_content.unwrap().chars().count() < 5100);
+        assert!(summary.preview.chars().count() <= 500);
+        assert!(summary.is_pinned);
+        assert_eq!(summary.tags, vec!["work"]);
+        assert_eq!(summary.pinned_order, 3);
+        assert_eq!(session.0.lock().unwrap()[0].content.len(), 5000);
+        for id in [-2, 0, 1] {
+            assert!(captured_entry_summary(&repository, &session, id)
+                .unwrap_err()
+                .to_string()
+                .ends_with("CapturedEntryUnavailable"));
+        }
+    }
+
+    #[test]
+    fn persistent_image_summary_uses_the_committed_attachment_path() {
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-capture-summary-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let connection = Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap()));
+        let repository = SqliteClipboardRepository::new(connection.clone());
+        let mut image = entry(0);
+        image.content_type = "image".into();
+        image.html_content = None;
+        image.content = "data:image/png;base64,b3RoZXI=".into();
+        let id = repository
+            .save_with_conn(&connection.lock().unwrap(), &image, Some(&directory))
+            .unwrap();
+        let session = SessionHistory(Mutex::new(VecDeque::new()));
+        let summary = captured_entry_summary(&repository, &session, id).unwrap();
+        assert_eq!(summary.id, id);
+        assert!(summary.is_external);
+        assert!(!summary.content.starts_with("data:"));
+        assert!(std::path::Path::new(&summary.content).starts_with(directory.join("attachments")));
+        assert_eq!(std::fs::read(&summary.content).unwrap(), b"other");
+        assert!(image.content.starts_with("data:"));
+        drop(repository);
+        drop(connection);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn summary_read_failures_do_not_expose_storage_errors_or_payloads() {
+        let connection = Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap()));
+        let repository = SqliteClipboardRepository::new(connection.clone());
+        connection
+            .lock()
+            .unwrap()
+            .execute_batch("DROP TABLE clipboard_history")
+            .unwrap();
+        let session = SessionHistory(Mutex::new(VecDeque::new()));
+        let error = captured_entry_summary(&repository, &session, 1)
+            .unwrap_err()
+            .to_string();
+        assert!(error.ends_with("CapturedEntryReadFailed"));
+        assert!(!error.contains("clipboard_history"));
+    }
 }

@@ -1,6 +1,8 @@
 //! OS adapters depend on Core's ports; Core never depends on this crate.
 pub mod encryption;
+pub mod capture;
 pub mod local_file;
+pub mod runtime_display;
 pub mod native_clipboard;
 
 pub struct NativeKeyProvider;

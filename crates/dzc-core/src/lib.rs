@@ -3,3 +3,4 @@ pub mod database;
 pub mod domain;
 pub mod infrastructure;
 pub mod services;
+pub mod privacy;

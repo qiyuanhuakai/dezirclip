@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { createCapturedEntryReader } from "../lib/capturedEntryReader";
 import type { ClipboardEntry } from "../types";
 
 interface UseClipboardEventsOptions {
   onUpdated: (entry: ClipboardEntry) => void;
   onRemoved: (id: number) => void;
-  onChanged?: () => void;
+  onChanged: () => void;
 }
 
 export const useClipboardEvents = ({ onUpdated, onRemoved, onChanged }: UseClipboardEventsOptions) => {
@@ -26,20 +28,43 @@ export const useClipboardEvents = ({ onUpdated, onRemoved, onChanged }: UseClipb
   }, [onChanged]);
 
   useEffect(() => {
+    let disposed = false;
+    const captured = createCapturedEntryReader(
+      (id) => invoke<ClipboardEntry>("get_captured_entry_summary", { id }),
+      (entry) => onUpdatedRef.current(entry),
+      () => onChangedRef.current(),
+    );
+    const unlistenCaptured = listen<{ id: number }>("clipboard-captured", (event) => {
+      captured.capture(event.payload.id);
+    });
     const unlistenUpdate = listen<ClipboardEntry>("clipboard-updated", (event) => {
+      if (disposed) return;
+      const interrupted = captured.invalidate();
       onUpdatedRef.current(event.payload);
+      if (interrupted) onChangedRef.current();
     });
     const unlistenRemove = listen<number>("clipboard-removed", (event) => {
+      if (disposed) return;
+      const interrupted = captured.invalidate();
       onRemovedRef.current(event.payload);
+      if (interrupted) onChangedRef.current();
     });
     const unlistenChanged = listen("clipboard-changed", () => {
-      onChangedRef.current?.();
+      if (disposed) return;
+      captured.invalidate();
+      onChangedRef.current();
     });
+    void Promise.all([unlistenCaptured, unlistenUpdate, unlistenRemove, unlistenChanged])
+      .catch(() => {
+        if (!disposed) onChangedRef.current();
+      });
 
     return () => {
-      unlistenUpdate.then((f) => f());
-      unlistenRemove.then((f) => f());
-      unlistenChanged.then((f) => f());
+      disposed = true;
+      captured.dispose();
+      for (const unlisten of [unlistenCaptured, unlistenUpdate, unlistenRemove, unlistenChanged]) {
+        void unlisten.then((f) => f(), () => undefined);
+      }
     };
   }, []);
 };
