@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, forwardRef } from "r
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
+import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
 import { applyHistoryUpdate } from "../../../shared/lib/historyInsert";
 import {
   resolveActiveIndex,
@@ -17,6 +18,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   ref
 ) {
   const [entries, setEntries] = useState<ClipboardEntry[]>([]);
+  const [initialFetchSettled, setInitialFetchSettled] = useState(false);
+  const [listenersReady, setListenersReady] = useState(false);
   // The selection is an entry id, not a position. Every mutation of this list
   // reorders it -- pinned first, then newest first -- so an index goes stale the
   // moment anything is copied while the panel is open, and the highlight silently
@@ -71,7 +74,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       contentType: null,
     })
       .then((data) => replaceEntries(data ?? []))
-      .catch(() => replaceEntries([]));
+      .catch(() => replaceEntries([]))
+      .finally(() => setInitialFetchSettled(true));
   }, [replaceEntries]);
 
   // Fetch recent entries on mount
@@ -121,6 +125,11 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       if (disposed) return;
       fetchRecent();
     });
+    void Promise.all([unlistenUpdated, unlistenRemoved, unlistenShown])
+      .then(() => {
+        if (!disposed) setListenersReady(true);
+      })
+      .catch((error) => console.error("Failed to register quick-paste listeners", error));
     return () => {
       disposed = true;
       unlistenUpdated.then((f) => f());
@@ -191,6 +200,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       activeItem.scrollIntoView({ block: "nearest" });
     }
   }, [activeIndex]);
+
+  useAuxiliaryWindowReady(initialFetchSettled && listenersReady);
 
   return (
     <div className="quick-paste-window">

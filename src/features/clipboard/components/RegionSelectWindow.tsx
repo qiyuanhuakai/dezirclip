@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
+import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
 import "./RegionSelectWindow.css";
 
 type Selection = {
@@ -249,6 +250,8 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onCancel, clearSelection]);
+
+  useAuxiliaryWindowReady(true);
 
   return (
     <div

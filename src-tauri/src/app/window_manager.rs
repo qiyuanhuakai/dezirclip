@@ -601,12 +601,12 @@ pub fn set_navigation_mode(active: bool) -> Result<(), String> {
 /// The main webview reports that it has drawn a frame worth showing, so a window
 /// rebuilt by the idle destroyer or the GPU switch can stop waiting and appear.
 ///
-/// Only the main window calls this. The auxiliary windows are created on demand
-/// by a user gesture and are shown by that gesture, so there is nothing to wait
-/// for.
+/// Only the main window calls this. Auxiliary windows acknowledge their own
+/// instance readiness separately.
 #[tauri::command]
-pub fn notify_main_window_painted() -> Result<(), String> {
+pub fn notify_main_window_painted(app: AppHandle) -> Result<(), String> {
     idle_destroyer::mark_main_window_painted();
+    crate::app::auxiliary_windows::schedule_prewarm(app);
     Ok(())
 }
 

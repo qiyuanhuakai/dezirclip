@@ -113,10 +113,6 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // 6. Window Initialization (Pinned/Focus)
     setup_main_window(app, &settings);
 
-    // 6.0a Hide auxiliary windows on startup (Windows-only regression: fullscreen
-    // region-select flashes above all other windows even with visible:false).
-    hide_auxiliary_windows(app);
-
     // 6.1 External Drag-Drop (Web Images)
     #[cfg(windows)]
     crate::infrastructure::windows_api::drag_drop::register_emoji_drag_drop(app_handle.clone());
@@ -514,26 +510,6 @@ fn setup_state(
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));
     app.manage(PasteQueue::default());
     app.manage(SearchHistory::default());
-}
-
-/// Park the auxiliary overlays for the rest of the session.
-///
-/// They are built at startup and stay hidden until their hotkey fires, but a
-/// hidden WebView2 renderer still holds its compositor surface. Dropping them to
-/// the low memory target is what the main window already does on blur-hide, and
-/// it is worth far more here than the cache eviction it sounds like: with all
-/// three windows present the GPU process sat at 209.7 MB and the whole WebView2
-/// tree at 676.6 MB, and with the two overlays parked they measure 6.1 MB and
-/// 161.3 MB on the same machine and window size. Their show paths raise the
-/// target again before the window is used.
-fn hide_auxiliary_windows(app: &App) {
-    for label in ["quick-paste", "region-select"] {
-        if let Some(window) = app.get_webview_window(label) {
-            let _ = window.hide();
-            let _ = window.set_focusable(false);
-            crate::app::webview_memory::lower_window_memory(&window, "auxiliary-startup-hide");
-        }
-    }
 }
 
 fn setup_main_window(app: &App, s: &StartupSettings) {
@@ -1759,11 +1735,14 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
             val.replace("Win", "Super").parse::<Shortcut>()
         } {
             if shortcut == &quick_s {
-                if crate::app::commands::quick_paste_cmd::is_quick_paste_visible(app.clone()) {
-                    let _ = crate::app::commands::quick_paste_cmd::hide_quick_paste(app.clone());
-                } else {
-                    let _ = crate::app::commands::quick_paste_cmd::show_quick_paste(app.clone());
-                }
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(err) =
+                        crate::app::commands::quick_paste_cmd::toggle_quick_paste(app).await
+                    {
+                        crate::warn!("[hotkey] Failed to toggle quick-paste: {err}");
+                    }
+                });
             }
         }
     }

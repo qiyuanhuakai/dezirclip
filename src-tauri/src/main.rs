@@ -140,7 +140,15 @@ fn main() {
                 })
                 .build(),
         )
-        .plugin(tauri_plugin_window_state::Builder::default().build());
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        & !tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .with_filter(|label| label == "main")
+                .build(),
+        );
 
     if !cfg!(debug_assertions) {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
@@ -159,6 +167,7 @@ fn main() {
             app::window_manager::set_navigation_enabled,
             app::window_manager::set_navigation_mode,
             app::window_manager::notify_main_window_painted,
+            app::commands::notify_auxiliary_window_ready,
             app::hooks::set_recording_mode,
             services::content_handler::open_content,
             services::clipboard_ops::copy_to_clipboard,
@@ -175,6 +184,7 @@ fn main() {
             app::commands::update_pinned_order,
             app::commands::get_db_count,
             app::commands::get_clipboard_content,
+            app::commands::get_image_preview,
             app::commands::set_sequential_mode,
             app::commands::set_sequential_hotkey,
             app::commands::set_rich_paste_hotkey,

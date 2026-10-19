@@ -25,6 +25,11 @@ struct ThemeChangedPayload {
 }
 
 #[tauri::command]
+pub fn notify_auxiliary_window_ready(window: WebviewWindow, generation: u64) -> bool {
+    crate::app::auxiliary_windows::mark_ready(window.label(), generation)
+}
+
+#[tauri::command]
 pub fn get_platform_info() -> PlatformInfo {
     #[cfg(target_os = "windows")]
     {

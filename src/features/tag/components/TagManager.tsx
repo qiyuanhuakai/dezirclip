@@ -41,20 +41,29 @@ export default function TagManager({ t, theme }: TagManagerProps) {
     useEffect(() => { selectedTagRef.current = selectedTag; }, [selectedTag]);
 
     useEffect(() => {
-        let unlisteners: (() => void)[] = [];
+        let disposed = false;
+        const unlisteners: (() => void)[] = [];
         const setupListeners = async () => {
             const handleUpdate = () => {
                 // Don't refresh if we're in the middle of a delete operation
-                if (isDeleting) return;
+                if (disposed || isDeleting) return;
                 fetchTags();
                 if (selectedTagRef.current) loadTagItems(selectedTagRef.current);
             };
-            unlisteners.push(await listen('clipboard-changed', handleUpdate));
-            unlisteners.push(await listen('clipboard-updated', handleUpdate));
-            unlisteners.push(await listen('clipboard-removed', handleUpdate));
+            for (const event of ['clipboard-changed', 'clipboard-updated', 'clipboard-removed']) {
+                const unlisten = await listen(event, handleUpdate);
+                if (disposed) {
+                    unlisten();
+                    return;
+                }
+                unlisteners.push(unlisten);
+            }
         };
-        setupListeners();
-        return () => unlisteners.forEach(f => f());
+        void setupListeners().catch(console.error);
+        return () => {
+            disposed = true;
+            unlisteners.forEach(f => f());
+        };
     }, [isDeleting]);
 
     useEffect(() => { fetchTags(); }, []);

@@ -9,8 +9,8 @@
 //!
 //! - [`show_quick_paste`] — bring the overlay up near the current cursor and
 //!   hide the main window so it does not steal focus.
-//! - [`hide_quick_paste`] — collapse the overlay back without destroying the
-//!   webview, so the next show is instant.
+//! - [`hide_quick_paste`] — park the overlay for reuse until its own idle
+//!   timeout releases it.
 //! - [`is_quick_paste_visible`] — frontend heartbeat / pre-flight check.
 //! - [`paste_quick_paste_selection`] — fetch an entry by id, then dispatch
 //!   the existing [`crate::services::clipboard_ops::copy_to_clipboard`]
@@ -163,11 +163,34 @@ fn record_dispatch(id: i64) {
 /// lookup fails, the overlay is shown at its current position rather than
 /// surfacing an error to the user.
 #[tauri::command]
-pub fn show_quick_paste(app: AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(QUICK_PASTE_LABEL)
-        .ok_or_else(|| format!("Quick-paste window '{QUICK_PASTE_LABEL}' is not configured"))?;
+pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, _created| {
+            show_quick_paste_window(&app, window)
+        })
+    })
+    .await
+    .map_err(|err| format!("Quick-paste window worker failed: {err}"))?
+}
 
+/// Evaluate toggles inside the same operation as a possible cold build, so two
+/// hotkey presses during creation still open and then close the overlay.
+pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, created| {
+            if !created && window.is_visible().unwrap_or(false) {
+                hide_quick_paste(app.clone())
+            } else {
+                show_quick_paste_window(&app, window)
+            }
+        })
+    })
+    .await
+    .map_err(|err| format!("Quick-paste toggle worker failed: {err}"))?
+}
+
+fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<(), String> {
+    crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
     if let Ok(cursor) = window.cursor_position() {
         let cursor_x = cursor.x.round() as i32;
         let cursor_y = cursor.y.round() as i32;
@@ -193,13 +216,15 @@ pub fn show_quick_paste(app: AppHandle) -> Result<(), String> {
         if main.is_visible().unwrap_or(false) {
             let _ = main.set_focusable(false);
             let _ = main.hide();
+            crate::app::webview_memory::lower_window_memory(&main, "quick-paste-hide-main");
+            crate::app::idle_destroyer::mark_hidden();
         }
     }
 
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.set_always_on_top(true);
     let _ = window.set_focusable(true);
-    crate::app::webview_memory::restore_window_memory(&window, "quick-paste-show");
+    crate::app::webview_memory::restore_window_memory(window, "quick-paste-show");
     window
         .show()
         .map_err(|e| format!("Failed to show quick-paste window: {e}"))?;
@@ -215,18 +240,18 @@ pub fn show_quick_paste(app: AppHandle) -> Result<(), String> {
     // screen far less often than the main window and is not the window that
     // gating looks at, so without an explicit signal it keeps showing whatever
     // the database held the last time its webview was built.
-    let _ = app.emit("quick-paste-shown", ());
+    let _ = app.emit_to(QUICK_PASTE_LABEL, "quick-paste-shown", ());
     Ok(())
 }
 
-/// Hide the quick-paste overlay without destroying the webview. A subsequent
-/// `show_quick_paste` is therefore instant. If the window does not exist
-/// (e.g. tear-down race) this is a silent no-op so callers can fire-and-
-/// forget from a global hotkey without worrying about timing.
+/// Park the quick-paste overlay for reuse until the configured idle timeout.
+/// A missing window is a silent no-op so callers can fire and forget from a
+/// global hotkey without worrying about a teardown race.
 #[tauri::command]
 pub fn hide_quick_paste(app: AppHandle) -> Result<(), String> {
     match app.get_webview_window(QUICK_PASTE_LABEL) {
         Some(window) => {
+            crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
             let _ = window.set_focusable(false);
             crate::app::webview_memory::lower_window_memory(&window, "quick-paste-hide");
             window
@@ -280,6 +305,8 @@ pub async fn paste_quick_paste_selection(
 
     reset_dispatch();
     record_dispatch(plan.id);
+    // The paste pipeline hides the overlay before it returns to its caller.
+    crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
 
     clipboard_ops::copy_to_clipboard(
         app,
