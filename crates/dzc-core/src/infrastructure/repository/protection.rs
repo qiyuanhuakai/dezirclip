@@ -57,6 +57,19 @@ pub(super) fn rebuild_search(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// Finish a visible-to-protected transition before commit. Merging removes old delete-keys
+/// and their postings without retokenizing every surviving history row or changing format 4.
+pub(super) fn compact_search(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch("PRAGMA secure_delete = ON;")
+        .map_err(|error| error.to_string())?;
+    conn.execute(
+        "INSERT INTO clipboard_fts(clipboard_fts) VALUES('optimize')",
+        [],
+    )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,7 +305,7 @@ mod batch_tests {
     }
 
     #[test]
-    fn startup_batch_rebuilds_the_actual_index_once_and_single_record_still_rebuilds() {
+    fn startup_batch_rebuilds_once_and_single_record_compacts() {
         let (repo, shared) = fixture();
         let conn = shared.lock().unwrap();
         let ids: Vec<i64> = (1..=20).collect();
@@ -339,7 +352,7 @@ mod batch_tests {
         assert_eq!(baseline_rebuilds.get(), 20);
         // Disable update triggers so this failure can only come from the single-record cleanup call.
         conn.execute_batch("DROP TRIGGER clipboard_history_ai; DROP TRIGGER clipboard_history_ad; DROP TRIGGER clipboard_history_au;
-            DROP TABLE clipboard_fts; CREATE TABLE clipboard_fts(clipboard_fts TEXT CHECK(clipboard_fts!='rebuild'));").unwrap();
+            DROP TABLE clipboard_fts; CREATE TABLE clipboard_fts(clipboard_fts TEXT CHECK(clipboard_fts!='optimize'));").unwrap();
         assert!(repo.encrypt_entry_with_conn(&conn, 21).is_err());
         let content: String = conn
             .query_row(
@@ -409,5 +422,407 @@ mod batch_tests {
             [],
         )
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod transition_tests {
+    use super::super::{
+        clipboard_repo::{ClipboardRepository, SqliteClipboardRepository},
+        migrations,
+    };
+    use super::*;
+    use crate::{domain::models::ClipboardEntry, infrastructure::encryption};
+    use std::sync::{Arc, Mutex};
+
+    fn seal(value: &str) -> Result<encryption::EncryptedPayload, EncryptionError> {
+        encryption::encrypt_with_key(
+            value,
+            || Ok([37; 32]),
+            |nonce| {
+                nonce.fill(17);
+                Ok(())
+            },
+        )
+        .map(encryption::EncryptedPayload::for_test)
+    }
+    fn reject_maintenance(_: &Connection) -> Result<(), String> {
+        Err("UnexpectedIndexMaintenance".into())
+    }
+    fn compact_then_fail(conn: &Connection) -> Result<(), String> {
+        compact_search(conn)?;
+        conn.execute("INSERT INTO missing_cleanup_table VALUES(1)", [])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    fn repository() -> SqliteClipboardRepository {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations::run_migrations(&mut conn).unwrap();
+        let mut repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+        repo.encrypt_text = seal;
+        repo
+    }
+    fn entry() -> ClipboardEntry {
+        serde_json::from_value(serde_json::json!({
+            "id": 0,
+            "content_type": "text",
+            "content": "manualprotected",
+            "preview": "summary",
+            "source_app": "fixture",
+            "timestamp": 1,
+            "is_pinned": false,
+            "tags": ["sensitive"],
+        }))
+        .unwrap()
+    }
+    fn seed(repo: &SqliteClipboardRepository, tags: &str) {
+        let conn = repo.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO clipboard_history(id,content_type,content,preview,html_content,source_app,timestamp,tags,ocr_text)
+             VALUES(1,'text','manualprotected','summary','<p>body</p>','fixture',1,?1,'qvx')",
+            [tags],
+        )
+        .unwrap();
+    }
+    fn shadow(conn: &Connection) -> Vec<(String, i64, Vec<u8>)> {
+        let mut result = Vec::new();
+        for (table, id, column) in [
+            ("clipboard_fts_data", "id", "block"),
+            ("clipboard_fts_idx", "segid", "term"),
+        ] {
+            let mut stmt = conn
+                .prepare(&format!(
+                    "SELECT {id},{column} FROM {table} ORDER BY {id},{column}"
+                ))
+                .unwrap();
+            result.extend(
+                stmt.query_map([], |r| Ok((table.to_owned(), r.get(0)?, r.get(1)?)))
+                    .unwrap()
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .unwrap(),
+            );
+        }
+        result
+    }
+    fn has_secret(conn: &Connection) -> bool {
+        shadow(conn)
+            .iter()
+            .any(|(_, _, b)| b.windows(3).any(|w| w == b"qvx"))
+    }
+    fn fields(conn: &Connection) -> (String, String, Option<String>, String, Option<String>) {
+        conn.query_row(
+            "SELECT content,preview,html_content,tags,ocr_text FROM clipboard_history WHERE id=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn visibility_planning_matches_the_five_field_sql_function() {
+        let repo = repository();
+        let conn = repo.conn.lock().unwrap();
+        let cipher = seal("value").unwrap().into_string();
+        for tags in [
+            None,
+            Some("[]"),
+            Some(r#"[" sensitive "]"#),
+            Some(r#"["\u0073ensitive"]"#),
+            Some("invalid"),
+            Some(r#"["密码"]"#),
+        ] {
+            for protected_column in 0..5 {
+                let mut f = [
+                    Some("linux: ordinary"),
+                    Some("dpapi: ordinary"),
+                    None,
+                    Some("plain OCR"),
+                ];
+                if protected_column < 4 {
+                    f[protected_column] = Some(&cipher);
+                }
+                let planned = migrations::search_visible(tags, f);
+                let actual: bool = conn
+                    .query_row(
+                        "SELECT dc_search_visible(?1,?2,?3,?4,?5)",
+                        rusqlite::params![tags, f[0], f[1], f[2], f[3]],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(planned, actual);
+                if protected_column < 4 {
+                    assert!(!planned);
+                }
+            }
+        }
+        assert!(migrations::search_visible(
+            Some("[]"),
+            [Some("dpapi: ordinary"), Some("linux: ordinary"), None, None]
+        ));
+        let typed: bool = conn
+            .query_row("SELECT dc_search_visible(42,'a','b',NULL,NULL)", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(!typed);
+    }
+    #[test]
+    fn compaction_removes_shadow_secret_without_removing_shared_public_terms_or_format_four() {
+        let repo = repository();
+        seed(&repo, "[]");
+        let conn = repo.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO clipboard_history(content_type,content,preview,source_app,timestamp,tags)
+             VALUES('text','manualprotected public','summary','fixture',2,'[]')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO clipboard_fts(clipboard_fts) VALUES('optimize')",
+            [],
+        )
+        .unwrap();
+        assert!(has_secret(&conn));
+        atomic(&conn, |c| {
+            let cipher = seal("value").unwrap().into_string();
+            c.execute(
+                "UPDATE clipboard_history SET content=?1,preview=?1,html_content=?1,ocr_text=?1,tags='[\"sensitive\"]' WHERE id=1",
+                [cipher],
+            )
+            .map_err(|e| e.to_string())?;
+            assert!(has_secret(c), "delete-keys alone leave old shadow bytes");
+            compact_search(c)?;
+            assert!(!has_secret(c));
+            Ok(())
+        })
+        .unwrap();
+        let remaining: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'manualprotected'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(remaining, 1);
+        let private: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'qvx'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(private, 0);
+        conn.execute(
+            "INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)",
+            [],
+        )
+        .unwrap();
+        let version: i64 = conn
+            .query_row(
+                "SELECT v FROM clipboard_fts_config WHERE k='version'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(version, 4);
+        conn.execute(
+            "CREATE VIRTUAL TABLE terms USING fts5vocab(clipboard_fts,'instance')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM terms WHERE doc=1 OR term='qvx'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert!(
+            conn.query_row(
+                "SELECT count(*) FROM terms WHERE doc=2 AND term='man'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap()
+                > 0
+        );
+    }
+    #[test]
+    fn cleanup_sql_failure_rolls_back_fields_shadow_and_cached_results() {
+        let mut repo = repository();
+        seed(&repo, "[]");
+        let cached = repo.get_history(10, 0, None).unwrap();
+        let (before, index) = {
+            let c = repo.conn.lock().unwrap();
+            (fields(&c), shadow(&c))
+        };
+        repo.maintain_search = compact_then_fail;
+        {
+            let c = repo.conn.lock().unwrap();
+            assert!(repo.encrypt_entry_with_conn(&c, 1).is_err());
+            assert_eq!(fields(&c), before);
+            assert_eq!(shadow(&c), index);
+        }
+        assert_eq!(
+            repo.get_history(10, 0, None).unwrap()[0].content,
+            cached[0].content
+        );
+    }
+    #[test]
+    fn protected_new_and_legacy_protected_repeat_do_not_run_global_maintenance() {
+        let mut repo = repository();
+        repo.maintain_search = reject_maintenance;
+        let id = repo.save(&entry(), None).unwrap();
+        assert!(id > 0);
+        let mut repeat = entry();
+        repeat.id = id;
+        assert_eq!(repo.save(&repeat, None).unwrap(), id);
+        repo.update_entry_content(id, "changed protected", "updated")
+            .unwrap();
+        let legacy = repository();
+        seed(&legacy, "[\"sensitive\"]");
+        let mut repeated = entry();
+        repeated.id = 1;
+        let mut legacy = legacy;
+        legacy.maintain_search = reject_maintenance;
+        assert_eq!(legacy.save(&repeated, None).unwrap(), 1);
+        let c = legacy.conn.lock().unwrap();
+        assert!(encryption::has_ciphertext_envelope(&fields(&c).0));
+        c.execute(
+            "INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)",
+            [],
+        )
+        .unwrap();
+    }
+    #[test]
+    fn actual_capture_engine_manual_sensitive_duplicate_skips_global_maintenance() {
+        use crate::capture::*;
+        use std::collections::VecDeque;
+        let mut repo = repository();
+        repo.maintain_search = reject_maintenance;
+        let id = repo.save(&entry(), None).unwrap();
+        assert_eq!(id, 1);
+        let directory = std::env::temp_dir();
+        let store = repo.capture_store(&directory);
+        let session = Mutex::new(VecDeque::new());
+        let context = CaptureContext {
+            source: CaptureSource {
+                app_name: "fixture".into(),
+                process_path: None,
+            },
+            timestamp: 2,
+            settings: CaptureSettings {
+                persistent: true,
+                deduplicate: true,
+                ..Default::default()
+            },
+            session: &session,
+            paused: false,
+            sequential_echo: None,
+        };
+        let result = CaptureEngine::capture_frame(
+            &context,
+            CaptureFrame {
+                data: CaptureData::Text("manualprotected".into()),
+                metadata: Default::default(),
+            },
+            &store,
+            &mut (),
+        );
+        let CaptureOutcome::Stored(capture) = result else {
+            panic!("actual sensitive duplicate must commit without index maintenance");
+        };
+        assert_eq!(capture.entry.id, 1);
+        assert!(capture.entry.tags.iter().any(|t| t == "sensitive"));
+    }
+    #[test]
+    fn save_transition_cleanup_failure_rolls_back_new_tags_fields_and_shadow() {
+        let mut repo = repository();
+        seed(&repo, "[]");
+        repo.maintain_search = reject_maintenance;
+        let (before, index) = {
+            let c = repo.conn.lock().unwrap();
+            (fields(&c), shadow(&c))
+        };
+        let mut value = entry();
+        value.id = 1;
+        assert_eq!(
+            repo.save(&value, None).unwrap_err(),
+            "UnexpectedIndexMaintenance"
+        );
+        let c = repo.conn.lock().unwrap();
+        assert_eq!(fields(&c), before);
+        assert_eq!(shadow(&c), index);
+    }
+    #[test]
+    fn readable_envelope_with_ordinary_tags_preserves_protection_without_maintenance() {
+        let mut repo = repository();
+        seed(&repo, "[]");
+        repo.maintain_search = reject_maintenance;
+        {
+            let c = repo.conn.lock().unwrap();
+            c.execute(
+                "UPDATE clipboard_history SET content=?1 WHERE id=1",
+                [seal("manualprotected").unwrap().into_string()],
+            )
+            .unwrap();
+            compact_search(&c).unwrap();
+        }
+        let mut value = entry();
+        value.id = 1;
+        assert_eq!(repo.save(&value, None).unwrap(), 1);
+        let c = repo.conn.lock().unwrap();
+        let stored = fields(&c);
+        assert!(encryption::has_ciphertext_envelope(&stored.0));
+        assert!(stored
+            .4
+            .as_deref()
+            .is_some_and(encryption::has_ciphertext_envelope));
+        assert_eq!(
+            c.query_row(
+                "SELECT count(*) FROM clipboard_search_content WHERE id=1",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+    #[test]
+    fn encrypted_body_with_ordinary_tags_stays_unindexed_and_unavailable_mutation_fails_closed() {
+        let mut repo = repository();
+        seed(&repo, "[]");
+        repo.maintain_search = reject_maintenance;
+        {
+            let c = repo.conn.lock().unwrap();
+            let cipher = format!(
+                "linux:{}",
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [0u8; 28])
+            );
+            c.execute(
+                "UPDATE clipboard_history SET content=?1 WHERE id=1",
+                [cipher],
+            )
+            .unwrap();
+            compact_search(&c).unwrap();
+        }
+        let mut value = entry();
+        value.id = 1;
+        assert_eq!(
+            repo.save(&value, None).unwrap_err(),
+            "ProtectedRecordUnavailable"
+        );
+        let c = repo.conn.lock().unwrap();
+        assert!(encryption::has_ciphertext_envelope(&fields(&c).0));
+        assert_eq!(
+            c.query_row(
+                "SELECT count(*) FROM clipboard_search_content WHERE id=1",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
     }
 }

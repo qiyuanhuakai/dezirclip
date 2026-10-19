@@ -24,29 +24,34 @@ pub fn register_privacy_functions(conn: &Connection) -> Result<()> {
                 },
                 _ => return Ok(false),
             };
-            let Ok(tags) = serde_json::from_str::<Vec<String>>(tags) else {
-                return Ok(false);
-            };
-            if crate::database::has_sensitive_tag(&tags) {
-                return Ok(false);
-            }
-            for index in 1..5 {
-                match context.get_raw(index) {
-                    ValueRef::Null => {},
+            let mut fields = [None; 4];
+            for (index, field) in fields.iter_mut().enumerate() {
+                match context.get_raw(index + 1) {
+                    ValueRef::Null => {}
                     ValueRef::Text(bytes) => {
                         let Ok(value) = std::str::from_utf8(bytes) else {
                             return Ok(false);
                         };
-                        if encryption::has_ciphertext_envelope(value) {
-                            return Ok(false);
-                        }
-                    },
+                        *field = Some(value);
+                    }
                     _ => return Ok(false),
                 }
             }
-            Ok(true)
+            Ok(search_visible(Some(tags), fields))
         },
     )
+}
+
+/// Shared with mutation planning so index cleanup uses exactly the view's raw-field policy.
+pub(super) fn search_visible(tags: Option<&str>, fields: [Option<&str>; 4]) -> bool {
+    let Ok(tags) = serde_json::from_str::<Vec<String>>(tags.unwrap_or("[]")) else {
+        return false;
+    };
+    !crate::database::has_sensitive_tag(&tags)
+        && !fields
+            .into_iter()
+            .flatten()
+            .any(encryption::has_ciphertext_envelope)
 }
 
 /// Reject a database from a newer release before either binary changes it.
