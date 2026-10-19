@@ -57,7 +57,7 @@ dzc --version
 
 ## 标签与自定义主题
 
-标签管理器使用设置页式左边栏与主页行卡片，支持复杂/简洁模式、悬浮操作和右键菜单；标签与内容均虚拟化，滚动自动翻页。移除普通标签保留记录，编辑时读取完整正文。隐私保护关闭时可确认删除「密码」「sensitive」标签及其全部内容；重新开启时恢复系统标签，已删内容不会恢复。
+标签管理器使用主页行卡片，支持复杂/简洁模式、悬浮操作和右键菜单；宽窗口显示设置页式侧栏，低于设置页相同的 560px 切换点时，从当前标签名展开带搜索和创建入口的下拉栏。标签与内容均虚拟化，滚动自动翻页。标签页始终显示内容，包括敏感条目，不提供隐藏开关。移除普通标签保留记录，编辑时读取完整正文。隐私保护关闭时可确认删除「密码」「sensitive」标签及其全部内容；重新开启时恢复系统标签，已删内容不会恢复。
 
 设置的「外观」只提供内置主题选择和文件导入。导入包包含完整 CSS，可定义材质、形状、布局、阴影与控件状态，禁止外部资源。详见[主题指南](./docs/THEMES.md)，Agent 可使用 [dezirclip-theme Skill](./skills/dezirclip-theme/SKILL.md) 编写主题；也可从[森林示例](./skills/dezirclip-theme/assets/forest.theme.json)开始。
 
@@ -190,7 +190,7 @@ DezirClip 使用 GPL-3.0，源自同样使用 GPL-3.0 的 [jimuzhe/tiez-clipboar
 
 ## English
 
-The tag manager shares the settings sidebar and main history rows, with detailed/compact modes, hover actions, context menus and automatic paged scrolling. Removing ordinary tags keeps their items. With privacy protection off, confirmed deletion can clear system sensitive tags and their contents; enabling protection recreates the tags. Appearance offers built-in themes and imported full CSS packages with external resources blocked. See the [theme guide](./docs/THEMES.md) and [theme authoring Skill](./skills/dezirclip-theme/SKILL.md).
+The tag manager shares the main history rows, with detailed/compact modes, hover actions, context menus and automatic paged scrolling. Below the settings page's shared 560px breakpoint, the wide sidebar becomes a dropdown under the current tag name, with search and tag creation. Tag management always displays sensitive content and has no visibility toggle. Removing ordinary tags keeps their items. With privacy protection off, confirmed deletion can clear system sensitive tags and their contents; enabling protection recreates the tags. Appearance offers built-in themes and imported full CSS packages with external resources blocked. See the [theme guide](./docs/THEMES.md) and [theme authoring Skill](./skills/dezirclip-theme/SKILL.md).
 
 DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). This fork removes macOS and cloud/network features, adds X11 support, custom CSS themes and WebView memory controls, and provides a shared Rust storage core for the GUI and `dzc` CLI. Full Wayland desktop support remains deferred.
 

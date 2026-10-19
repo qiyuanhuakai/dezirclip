@@ -1,13 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDownWideNarrow, ChevronLeft, ChevronRight, Edit2, List, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowDownWideNarrow, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
 import { useTagLibrary } from '../hooks/useTagLibrary';
 import { TagDialog } from './TagDialog';
 import { TagHistoryRow } from './TagHistoryRow';
+import { useSettingsLayout } from '../../settings/hooks/useSettingsLayout';
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -36,7 +37,9 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const library = useTagLibrary();
     const { selectedTag, selectTag, refresh } = library;
     const [tagSearch, setTagSearch] = useState('');
-    const [collapsed, setCollapsed] = useState(() => window.innerWidth < 500);
+    const { split } = useSettingsLayout();
+    const [collapsed, setCollapsed] = useState(false);
+    const [pickerOpen, setPickerOpen] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [detailRevision, setDetailRevision] = useState(0);
@@ -49,6 +52,10 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const root = useRef<HTMLDivElement>(null);
     const menu = useRef<HTMLDivElement>(null);
     const menuButton = useRef<HTMLButtonElement>(null);
+    const picker = useRef<HTMLDivElement>(null);
+    const pickerButton = useRef<HTMLButtonElement>(null);
+    const pickerId = useId();
+    const tagListId = useId();
     const searchInput = useRef<HTMLInputElement>(null);
     const tagSearchInput = useRef<HTMLInputElement>(null);
     const tagList = useRef<VirtuosoHandle>(null);
@@ -83,10 +90,20 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         menu.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
         return () => document.removeEventListener('pointerdown', dismiss);
     }, [menuOpen]);
+    useEffect(() => { setPickerOpen(false); }, [split]);
+    useEffect(() => {
+        if (!pickerOpen) return;
+        const dismiss = (event: PointerEvent) => {
+            if (event.target instanceof Node && !picker.current?.contains(event.target) && !pickerButton.current?.contains(event.target)) setPickerOpen(false);
+        };
+        document.addEventListener('pointerdown', dismiss);
+        tagSearchInput.current?.focus();
+        return () => { document.removeEventListener('pointerdown', dismiss); focusSequence.current += 1; };
+    }, [pickerOpen]);
 
     const openDialog = useCallback((next: Dialog) => {
         detailSequence.current += 1;
-        setMenuOpen(false); setDialogError(null);
+        setMenuOpen(false); setPickerOpen(false); setDialogError(null);
         setValue(next.kind === 'renameTag' ? next.tag : next.kind === 'createTag' ? tagSearch.trim() : '');
         setDialog(next);
     }, [tagSearch]);
@@ -98,7 +115,11 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         }).catch(() => { if (request === detailSequence.current) notifyError(); });
     }, [notifyError]);
     const deleteItem = useCallback((item: ClipboardEntry) => openDialog({ kind: 'deleteItem', item }), [openDialog]);
-    const closeDialog = () => { if (!busy) setDialog(null); };
+    const closeDialog = () => {
+        if (busy) return;
+        if (dialog?.kind === 'createTag' && !split) requestAnimationFrame(() => pickerButton.current?.focus());
+        setDialog(null);
+    };
 
     const focusVirtualItem = (selector: string, scroll: () => void) => {
         const request = ++focusSequence.current;
@@ -141,6 +162,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             } else await invoke('delete_clipboard_entry', { id: current.item.id });
             if (!mounted.current) return;
             setDialog(null); changed();
+            if (current.kind === 'createTag' && !split) requestAnimationFrame(() => pickerButton.current?.focus());
             void emit('clipboard-changed').catch(console.error);
         } catch (reason) {
             if (mounted.current) setDialogError(current.kind === 'removeTag' && protectedTag(current.tag)
@@ -152,6 +174,15 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const handleKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
         const target = event.target as HTMLElement;
         if (target.closest('dialog')) return;
+        if (pickerOpen && event.key === 'Escape') {
+            event.preventDefault(); event.stopPropagation(); setPickerOpen(false); pickerButton.current?.focus(); return;
+        }
+        if (pickerOpen && target === tagSearchInput.current && ['ArrowDown', 'ArrowUp'].includes(event.key) && filteredTags.length) {
+            const next = event.key === 'ArrowDown' ? 0 : filteredTags.length - 1;
+            event.preventDefault();
+            focusVirtualItem(`[data-tag-index="${next}"]`, () => tagList.current?.scrollToIndex({ index: next, align: 'start' }));
+            return;
+        }
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
             event.preventDefault(); searchInput.current?.focus(); return;
         }
@@ -183,10 +214,23 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const menuItem = (icon: ReactNode, label: string, action: () => void, disabled = false) => <button type="button"
         className="item-context-menu__item" role="menuitem" disabled={disabled}
         onClick={() => { setMenuOpen(false); action(); }}><span className="item-context-menu__item-label">{icon}{label}</span></button>;
+    const renderTagList = (dropdown: boolean) => <Virtuoso ref={tagList} id={tagListId} data={filteredTags} fixedItemHeight={38}
+        role={dropdown ? 'listbox' : undefined} aria-label={t('tags')} computeItemKey={(_, tag) => tag.name}
+        itemContent={(index, tag) => <div className="tag-manager-tag-cell"><button type="button" data-tag-index={index}
+            className={dropdown ? `dc-tag-filter-option tag-manager-tag${selectedTag === tag.name ? ' dc-tag-filter-active' : ''}`
+                : `settings-rail-item tag-manager-tag${selectedTag === tag.name ? ' is-active' : ''}`}
+            role={dropdown ? 'option' : undefined} aria-selected={dropdown ? selectedTag === tag.name : undefined}
+            onClick={() => {
+                selectTag(tag.name);
+                if (dropdown) { setPickerOpen(false); pickerButton.current?.focus(); }
+            }} aria-label={`${tag.name} · ${tag.count}`} aria-current={!dropdown && selectedTag === tag.name ? 'page' : undefined} title={`${tag.name} · ${tag.count}`}>
+            {collapsed && !dropdown ? <span className="tag-manager-tag-initial" aria-hidden="true">{Array.from(tag.name)[0]}</span>
+                : <><span className="tag-manager-tag-name">{tag.name}</span><small>{tag.count}</small></>}
+        </button></div>} />;
 
-    return <div ref={root} className={`tag-manager${collapsed ? ' tag-manager--collapsed' : ''}`} onKeyDown={handleKeyboard}
+    return <div ref={root} className={`tag-manager${split && collapsed ? ' tag-manager--collapsed' : ''}`} onKeyDown={handleKeyboard}
         onPointerDownCapture={() => { void invoke('activate_window_focus').catch(console.error); }}>
-        <aside className="settings-rail tag-manager-rail" aria-label={t('tags')}>
+        {split && <aside className="settings-rail tag-manager-rail" aria-label={t('tags')}>
             <div className="tag-manager-rail-tools">
                 <button type="button" className="btn-icon" onClick={() => setCollapsed(current => !current)}
                     title={t(collapsed ? 'tag_expand_navigation' : 'tag_collapse_navigation')} aria-label={t(collapsed ? 'tag_expand_navigation' : 'tag_collapse_navigation')}>
@@ -199,19 +243,34 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 : <div className="search-container tag-manager-rail-search"><Search className="search-icon" size={13} /><input ref={tagSearchInput} className="search-input"
                     value={tagSearch} onChange={event => setTagSearch(event.target.value)} placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} /></div>}
             <div className="tag-manager-tag-list" aria-busy={library.metadataLoading}>
-                <Virtuoso ref={tagList} data={filteredTags} fixedItemHeight={38} computeItemKey={(_, tag) => tag.name}
-                    itemContent={(index, tag) => <div className="tag-manager-tag-cell"><button type="button" data-tag-index={index}
-                        className={`settings-rail-item tag-manager-tag${selectedTag === tag.name ? ' is-active' : ''}`}
-                        onClick={() => selectTag(tag.name)} aria-label={`${tag.name} · ${tag.count}`} aria-current={selectedTag === tag.name ? 'page' : undefined} title={`${tag.name} · ${tag.count}`}>
-                        {collapsed ? <span className="tag-manager-tag-initial" aria-hidden="true">{Array.from(tag.name)[0]}</span>
-                            : <><span className="tag-manager-tag-name">{tag.name}</span><small>{tag.count}</small></>}
-                    </button></div>} />
+                {renderTagList(false)}
             </div>
             {collapsed && <button type="button" className="btn-icon tag-manager-rail-add" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>}
-        </aside>
+        </aside>}
         <section className="tag-manager-content" aria-label={selectedTag ?? t('tag_manager')}>
             <div className="tag-manager-toolbar">
-                <span className="tag-manager-current" title={selectedTag ?? ''}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span></span>
+                {split ? <span className="tag-manager-current" title={selectedTag ?? ''}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span></span>
+                    : <button ref={pickerButton} type="button" className={`btn-icon tag-manager-current tag-manager-picker-trigger${pickerOpen ? ' active' : ''}`}
+                        aria-label={`${t('tags')}: ${selectedTag ?? t('tags')}`} title={selectedTag ?? t('tags')}
+                        aria-haspopup="dialog" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined}
+                        onClick={() => { setMenuOpen(false); setPickerOpen(current => !current); }}
+                        onKeyDown={event => {
+                            if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); setMenuOpen(false); setPickerOpen(true); }
+                        }}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span><ChevronDown size={13} /></button>}
+                {!split && pickerOpen && <div ref={picker} id={pickerId} role="dialog" aria-label={t('tag_search_label')}
+                    className="dc-tag-filter-picker tag-manager-picker" onBlur={event => {
+                        if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== pickerButton.current) setPickerOpen(false);
+                    }}>
+                    <div className="tag-manager-picker-tools">
+                        <div className="search-container tag-manager-picker-search"><Search className="search-icon" size={13} />
+                            <input ref={tagSearchInput} className="search-input" value={tagSearch} onChange={event => { focusSequence.current += 1; setTagSearch(event.target.value); }}
+                                placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={tagListId} />
+                        </div>
+                        <button type="button" className="btn-icon" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>
+                    </div>
+                    {filteredTags.length ? <div className={`tag-manager-tag-list tag-manager-picker-size-${Math.min(filteredTags.length, 6)}`} aria-busy={library.metadataLoading}>{renderTagList(true)}</div>
+                        : <div id={tagListId} className="dc-tag-filter-empty" role="listbox" aria-label={t('tags')}><span role="status">{t(library.metadataLoading ? 'common_loading' : library.metadataError ? 'tag_load_failed' : 'tag_no_matching_tags')}</span></div>}
+                </div>}
                 <button type="button" className={`btn-icon${compactMode ? ' active' : ''}`} onClick={() => onCompactModeChange?.(!compactMode)}
                     disabled={!onCompactModeChange} title={t(compactMode ? 'tag_mode_detailed' : 'tag_mode_simple')}
                     aria-label={t(compactMode ? 'tag_mode_detailed' : 'tag_mode_simple')} aria-pressed={compactMode}>
@@ -248,7 +307,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     : library.items.length ? <div className="virtual-list-wrapper"><Virtuoso ref={list} key={`${selectedTag}:${library.query}:${library.sortBy}`} data={library.items}
                         computeItemKey={(_, item) => item.id} endReached={library.loadMore} increaseViewportBy={100}
                         itemContent={(index, item) => <TagHistoryRow key={`${item.id}:${library.contentRevision}:${detailRevision}`} item={item} index={index} selected={selectedId === item.id}
-                            compactMode={compactMode} isWindowPinned={isWindowPinned} privacyProtection={privacyProtection}
+                            compactMode={compactMode} isWindowPinned={isWindowPinned}
                             richTextSnapshotPreview={richTextSnapshotPreview} theme={theme} language={language} t={t} tagColors={colors}
                             onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} />}
                         components={{ Footer: () => library.loadingMore ? <div className="tag-manager-loading"><LoaderCircle size={15} className="tag-manager-spinner" /></div> : null }} /></div>

@@ -691,6 +691,7 @@ const ClipboardItem = ({
     windowPinned,
     isSensitiveHidden,
     isRevealed,
+    showSensitiveVisibilityControl = true,
     isEditingTags,
     tagInput,
     theme,
@@ -720,6 +721,7 @@ const ClipboardItem = ({
     loadFullItem,
     onEdit,
 }: ClipboardItemProps & {
+    showSensitiveVisibilityControl?: boolean;
     compactMode?: boolean;
     className?: string;
     onQRCode?: () => void;
@@ -1505,7 +1507,7 @@ const ClipboardItem = ({
                                 onEdit();
                             }}><Edit2 size={12} /></button>
                         )}
-                        {item.tags?.some(tag => ['sensitive', '密码', 'password'].includes(tag.toLowerCase())) && (
+                        {showSensitiveVisibilityControl && item.tags?.some(tag => ['sensitive', '密码', 'password'].includes(tag.toLowerCase())) && (
                             <button
                                 className={`btn-icon ${isRevealed ? "active" : ""}`}
                                 onClick={onToggleReveal}
