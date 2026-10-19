@@ -1,5 +1,4 @@
 use crate::domain::models::ClipboardEntry;
-use crate::services::encryption_queue::EncryptionQueue;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
@@ -50,8 +49,6 @@ pub struct PasteQueue(pub Mutex<PasteQueueState>);
 pub struct SessionHistory(pub Mutex<VecDeque<ClipboardEntry>>);
 
 pub struct AppDataDir(pub Mutex<std::path::PathBuf>);
-
-pub struct EncryptionQueueState(pub EncryptionQueue);
 
 const SEARCH_HISTORY_MAX: usize = 20;
 

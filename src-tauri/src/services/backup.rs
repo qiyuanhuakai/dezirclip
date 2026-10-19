@@ -1070,7 +1070,7 @@ mod data_integrity_tests {
     }
 
     #[test]
-    fn sensitive_restore_with_ocr_rejects_without_replacing_history() {
+    fn sensitive_restore_with_resources_rejects_without_replacing_history() {
         let (repo, _) = repository();
         let original = entry(1, "text", "ordinary original".to_string());
         apply_entries(
@@ -1082,6 +1082,7 @@ mod data_integrity_tests {
         let before = rows(&repo);
         let mut source = entry(9, "rich_text", "private body".to_string());
         source.tags = vec!["sensitive".to_string()];
+        source.html_content = Some("<img src='private.png'>".to_string());
         source.ocr_text = Some("private OCR".to_string());
         assert_eq!(
             apply_entries(
@@ -1117,7 +1118,7 @@ mod data_integrity_tests {
         source.preview = "私人摘要".to_string();
         source.html_content = Some("<p>私人文本</p>".to_string());
         source.tags = vec!["sensitive".to_string()];
-        source.ocr_text = None;
+        source.ocr_text = Some("私人OCR".to_string());
         let result = apply_entries(
             &repo,
             &[prepare_export_entry(&source).unwrap()],
@@ -1131,16 +1132,17 @@ mod data_integrity_tests {
                 assert_eq!(restored[0].content, source.content);
                 assert_eq!(restored[0].preview, source.preview);
                 assert_eq!(restored[0].html_content, source.html_content);
-                let stored: (String, String, String) = connection
+                assert_eq!(restored[0].ocr_text, source.ocr_text);
+                let stored: (String, String, String, String) = connection
                     .lock()
                     .unwrap()
                     .query_row(
-                        "SELECT content,preview,html_content FROM clipboard_history WHERE id=9",
+                        "SELECT content,preview,html_content,ocr_text FROM clipboard_history WHERE id=9",
                         [],
-                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                     )
                     .unwrap();
-                assert!([&stored.0, &stored.1, &stored.2]
+                assert!([&stored.0, &stored.1, &stored.2, &stored.3]
                     .iter()
                     .all(|value| crate::infrastructure::encryption::is_encrypted_value(value)));
                 assert!(repo

@@ -511,6 +511,7 @@ fn migrate_data_directory(
         // SQLite reads committed WAL pages into a standalone snapshot. Never copy
         // a live DB/WAL/SHM file set with filesystem operations.
         let source = Connection::open_with_flags(old_base.join("clipboard.db"), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(AppError::from)?;
+        crate::infrastructure::repository::migrations::register_privacy_functions(&source).map_err(AppError::from)?;
         let staged_db = stage.join("clipboard.db");
         source.execute("VACUUM main INTO ?1", [staged_db.to_string_lossy().as_ref()]).map_err(AppError::from)?;
         drop(source);
@@ -659,6 +660,7 @@ fn apply_attachment_path_rewrites(
     updates: &[AttachmentPathRewrite],
 ) -> AppResult<()> {
     let mut conn = Connection::open(db_path).map_err(AppError::from)?;
+    crate::infrastructure::repository::migrations::register_privacy_functions(&conn).map_err(AppError::from)?;
     let transaction = conn.transaction().map_err(AppError::from)?;
     let candidates: i64 = transaction.query_row(
         "SELECT COUNT(*) FROM clipboard_history WHERE is_external = 1 OR html_content IS NOT NULL", [],
@@ -832,6 +834,25 @@ mod path_rewrite_tests {
         let image = old.join("attachments/image.png").to_string_lossy().to_string();
         conn.execute("INSERT INTO clipboard_history VALUES(1,?1,NULL,1)", [&image]).unwrap();
         (root, old, new, conn)
+    }
+
+    #[test]
+    fn directory_migration_preserves_schema19_filtered_fts_and_rewrites_html() {
+        let (root, old, new, mut conn) = migration_fixture();
+        conn.execute_batch("DROP TABLE clipboard_history; DROP TABLE settings;").unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut conn).unwrap();
+        let original = old.join("attachments/image.png").to_string_lossy().to_string();
+        let html = format!("<p>ordinaryprobe</p><img src='{original}'>");
+        conn.execute("INSERT INTO clipboard_history(id,content_type,content,html_content,source_app,timestamp,preview,tags) VALUES(1,'rich_text','ordinaryprobe',?1,'test',1,'ordinaryprobe','[]')", [&html]).unwrap();
+        migrate_with_connection(&mut conn, &old, &new, &root.join("datapath.txt")).unwrap();
+        let migrated = crate::database::init_db(new.join("clipboard.db").to_str().unwrap()).unwrap();
+        let html: String = migrated.query_row("SELECT html_content FROM clipboard_history WHERE id=1", [], |row| row.get(0)).unwrap();
+        assert!(html.contains(new.join("attachments/image.png").to_string_lossy().as_ref()));
+        assert_eq!(migrated.query_row("SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'ordinaryprobe'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        migrated.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)", []).unwrap();
+        assert!(old.join("attachments/image.png").is_file());
+        drop(migrated); drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

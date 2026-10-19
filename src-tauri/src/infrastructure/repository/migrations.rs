@@ -4,7 +4,50 @@ use rusqlite::{params, Connection, Result};
 /// The value `PRAGMA auto_vacuum` reports for the mode `init_db` asks for.
 const AUTO_VACUUM_FULL: i32 = 1;
 
-pub const SUPPORTED_SCHEMA_VERSION: i32 = 18;
+pub const SUPPORTED_SCHEMA_VERSION: i32 = 19;
+
+pub(crate) fn register_privacy_functions(conn: &Connection) -> Result<()> {
+    use rusqlite::functions::FunctionFlags;
+    conn.create_scalar_function(
+        "dc_search_visible",
+        5,
+        FunctionFlags::SQLITE_UTF8
+            | FunctionFlags::SQLITE_DETERMINISTIC
+            | FunctionFlags::SQLITE_INNOCUOUS,
+        |context| {
+            use rusqlite::types::ValueRef;
+            let tags = match context.get_raw(0) {
+                ValueRef::Null => "[]",
+                ValueRef::Text(bytes) => match std::str::from_utf8(bytes) {
+                    Ok(value) => value,
+                    Err(_) => return Ok(false),
+                },
+                _ => return Ok(false),
+            };
+            let Ok(tags) = serde_json::from_str::<Vec<String>>(tags) else {
+                return Ok(false);
+            };
+            if crate::database::has_sensitive_tag(&tags) {
+                return Ok(false);
+            }
+            for index in 1..5 {
+                match context.get_raw(index) {
+                    ValueRef::Null => {},
+                    ValueRef::Text(bytes) => {
+                        let Ok(value) = std::str::from_utf8(bytes) else {
+                            return Ok(false);
+                        };
+                        if encryption::has_ciphertext_envelope(value) {
+                            return Ok(false);
+                        }
+                    },
+                    _ => return Ok(false),
+                }
+            }
+            Ok(true)
+        },
+    )
+}
 
 /// Reject a database from a newer release before either binary changes it.
 pub fn ensure_supported_schema(conn: &Connection) -> Result<()> {
@@ -235,6 +278,8 @@ fn reclaim_stranded_pages(conn: &Connection, min_bytes: i64) -> Result<()> {
 }
 
 pub fn run_migrations(conn: &mut Connection) -> Result<()> {
+    register_privacy_functions(conn)?;
+    conn.execute_batch("PRAGMA secure_delete = ON;")?;
     ensure_supported_schema(conn)?;
     let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     apply_schema_migrations(&transaction)?;
@@ -748,6 +793,34 @@ fn apply_schema_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (18)", [])?;
     }
 
+    if current_version < 19 {
+        conn.execute_batch(r#"PRAGMA secure_delete=ON;
+            DROP TRIGGER IF EXISTS clipboard_history_ai;
+            DROP TRIGGER IF EXISTS clipboard_history_ad;
+            DROP TRIGGER IF EXISTS clipboard_history_au;
+            DROP TABLE IF EXISTS clipboard_fts;
+            DROP VIEW IF EXISTS clipboard_search_content;
+            CREATE VIEW clipboard_search_content AS SELECT * FROM clipboard_history ch WHERE dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text);
+            CREATE VIRTUAL TABLE clipboard_fts USING fts5(content,preview,source_app,content_kinds,ocr_text,
+                content='clipboard_search_content',content_rowid='id',tokenize='trigram');
+            CREATE TRIGGER clipboard_history_ai AFTER INSERT ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(rowid,content,preview,source_app,content_kinds,ocr_text)
+                SELECT new.id,new.content,new.preview,new.source_app,new.content_kinds,new.ocr_text WHERE dc_search_visible(new.tags,new.content,new.preview,new.html_content,new.ocr_text);
+            END;
+            CREATE TRIGGER clipboard_history_ad AFTER DELETE ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(clipboard_fts,rowid,content,preview,source_app,content_kinds,ocr_text)
+                SELECT 'delete',old.id,old.content,old.preview,old.source_app,old.content_kinds,old.ocr_text WHERE dc_search_visible(old.tags,old.content,old.preview,old.html_content,old.ocr_text);
+            END;
+            CREATE TRIGGER clipboard_history_au AFTER UPDATE ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(clipboard_fts,rowid,content,preview,source_app,content_kinds,ocr_text)
+                SELECT 'delete',old.id,old.content,old.preview,old.source_app,old.content_kinds,old.ocr_text WHERE dc_search_visible(old.tags,old.content,old.preview,old.html_content,old.ocr_text);
+                INSERT INTO clipboard_fts(rowid,content,preview,source_app,content_kinds,ocr_text)
+                SELECT new.id,new.content,new.preview,new.source_app,new.content_kinds,new.ocr_text WHERE dc_search_visible(new.tags,new.content,new.preview,new.html_content,new.ocr_text);
+            END;
+            INSERT INTO clipboard_fts(clipboard_fts) VALUES('rebuild');
+            DELETE FROM settings WHERE key='db.sensitive_alignment_done';"#)?;
+        conn.execute("INSERT INTO schema_migrations(version) VALUES(19)", [])?;
+    }
     Ok(())
 }
 
@@ -1511,7 +1584,7 @@ mod tests {
                 row.get(0)
             })
             .expect("current version");
-        assert_eq!(current, 18, "every version gate must now be closed");
+        assert_eq!(current, super::SUPPORTED_SCHEMA_VERSION, "every version gate must now be closed");
 
         run_migrations(&mut conn).expect("migrations again");
 

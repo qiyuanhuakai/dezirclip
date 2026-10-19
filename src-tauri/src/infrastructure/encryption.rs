@@ -167,7 +167,7 @@ fn decode_stored_text_with(
     }
 }
 
-fn has_ciphertext_envelope(value: &str) -> bool {
+pub(crate) fn has_ciphertext_envelope(value: &str) -> bool {
     let (linux, payload) = if let Some(payload) = value.strip_prefix(LINUX_ENCRYPT_PREFIX) {
         (true, payload)
     } else if let Some(payload) = value.strip_prefix(ENCRYPT_PREFIX) {

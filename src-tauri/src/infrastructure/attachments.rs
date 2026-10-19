@@ -92,9 +92,201 @@ pub fn write_backup(path: &Path, bytes: &[u8]) -> Result<(), String> {
     result
 }
 
+/// A capture can determine stable HTML and deduplication keys without creating files.
+pub(crate) struct HtmlAttachmentPlan {
+    html: String,
+    files: Vec<(PathBuf, Vec<u8>)>,
+}
+
+impl HtmlAttachmentPlan {
+    pub(crate) fn html(&self) -> &str {
+        &self.html
+    }
+
+    fn add_image(&mut self, directory: &Path, bytes: Vec<u8>, extension: &str) -> PathBuf {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        let path = directory.join(format!("img_{:x}.{extension}", hasher.finish()));
+        if !self.files.iter().any(|(existing, _)| existing == &path) {
+            self.files.push((path.clone(), bytes));
+        }
+        path
+    }
+
+    pub(crate) fn materialize(&self) -> Result<CreatedAttachments, String> {
+        let mut created = CreatedAttachments { paths: Vec::new() };
+        for (path, bytes) in &self.files {
+            let parent = path.parent().ok_or("AttachmentPersistenceFailed")?;
+            std::fs::create_dir_all(parent).map_err(|_| "AttachmentPersistenceFailed")?;
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(target_os = "linux")]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = match options.open(path) {
+                Ok(file) => file,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::AlreadyExists && path.is_file() =>
+                {
+                    continue
+                }
+                Err(_) => return Err("AttachmentPersistenceFailed".to_string()),
+            };
+            created.paths.push(path.clone());
+            file.write_all(bytes)
+                .and_then(|()| file.sync_all())
+                .map_err(|_| "AttachmentPersistenceFailed")?;
+        }
+        Ok(created)
+    }
+}
+
+/// Only files created by this capture are removed when its transaction fails.
+pub(crate) struct CreatedAttachments {
+    paths: Vec<PathBuf>,
+}
+
+impl CreatedAttachments {
+    pub(crate) fn keep(mut self) {
+        self.paths.clear();
+    }
+}
+
+impl Drop for CreatedAttachments {
+    fn drop(&mut self) {
+        for path in &self.paths {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+pub(crate) fn plan_html_attachments(html: &str, data_dir: &Path) -> HtmlAttachmentPlan {
+    let directory = data_dir.join("attachments");
+    let mut plan = HtmlAttachmentPlan {
+        html: String::new(),
+        files: Vec::new(),
+    };
+    let pattern = regex::Regex::new(r#"(<img\s+[^>]*src=["'])([^"']+)(["'][^>]*>)"#)
+        .expect("fixed image attribute expression");
+    let rewritten = pattern
+        .replace_all(html, |captures: &regex::Captures| {
+            let src = &captures[2];
+            let local = src.starts_with("file://")
+                || (src.len() > 2
+                    && src.as_bytes()[1] == b':'
+                    && matches!(src.as_bytes()[2], b'\\' | b'/'));
+            if !local {
+                return captures[0].to_owned();
+            }
+            let raw = src.strip_prefix("file://").unwrap_or(src);
+            let raw = if raw.starts_with('/') && raw.as_bytes().get(2) == Some(&b':') {
+                &raw[1..]
+            } else {
+                raw
+            };
+            let decoded = urlencoding::decode(raw)
+                .map(|path| path.into_owned())
+                .unwrap_or_else(|_| raw.to_string());
+            let clean = decoded.split(['?', '#']).next().unwrap_or(&decoded);
+            let source = Path::new(clean);
+            if source.starts_with(&directory) {
+                return captures[0].to_owned();
+            }
+            let Ok(bytes) = std::fs::read(source) else {
+                return captures[0].to_owned();
+            };
+            let extension = source
+                .extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("png")
+                .to_lowercase();
+            let path = plan.add_image(&directory, bytes, &extension);
+            let path = path.to_string_lossy().replace('\\', "/");
+            let uri = if path.starts_with('/') {
+                format!("file://{path}")
+            } else {
+                format!("file:///{path}")
+            };
+            format!("{}{uri}{}", &captures[1], &captures[3])
+        })
+        .into_owned();
+
+    const PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
+    const SUFFIX: &str = "-->";
+    plan.html = rewritten;
+    if let Some(start) = plan.html.rfind(PREFIX) {
+        let payload_start = start + PREFIX.len();
+        if let Some(end) = plan.html[payload_start..].find(SUFFIX) {
+            let payload_end = payload_start + end;
+            let payload = plan.html[payload_start..payload_end].trim();
+            if payload.starts_with("data:image/") {
+                if let Some(bytes) = payload
+                    .split_once(',')
+                    .and_then(|(_, value)| STANDARD.decode(value).ok())
+                {
+                    let mut clean = plan.html[..start].to_owned();
+                    clean.push_str(&plan.html[payload_end + SUFFIX.len()..]);
+                    let clean = clean.trim();
+                    let base = if clean.is_empty() {
+                        plan.html.clone()
+                    } else {
+                        clean.to_owned()
+                    };
+                    let path = plan.add_image(&directory, bytes, "png");
+                    plan.html = format!(
+                        "{}\n{PREFIX}{}{SUFFIX}",
+                        base.trim_end(),
+                        path.to_string_lossy()
+                    );
+                }
+            }
+        }
+    }
+    plan
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn html_planning_never_creates_files_and_failed_materialization_preserves_shared_assets() {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-html-plan-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let source = directory.join("source.PNG");
+        std::fs::write(&source, b"original image").unwrap();
+        let html = format!("<p>ordinary</p><img src='file://{}'><!--TIEZ_RICH_IMAGE:data:image/png;base64,b3RoZXI=-->", source.to_string_lossy().replace('\\', "/"));
+        let plan = plan_html_attachments(&html, &directory);
+        assert_eq!(plan.files.len(), 2);
+        assert!(!directory.join("attachments").exists());
+        assert!(plan.html().contains("img_"));
+        assert!(!plan.html().contains("base64,"));
+        std::fs::create_dir(directory.join("attachments")).unwrap();
+        let shared = &plan.files[0].0;
+        std::fs::write(shared, b"shared content").unwrap();
+        let blocked = &plan.files[1].0;
+        std::fs::create_dir(blocked).unwrap();
+        assert_eq!(
+            plan.materialize().err().unwrap(),
+            "AttachmentPersistenceFailed"
+        );
+        assert_eq!(std::fs::read(shared).unwrap(), b"shared content");
+        assert_eq!(std::fs::read(&source).unwrap(), b"original image");
+        std::fs::remove_dir(blocked).unwrap();
+        let receipt = plan.materialize().unwrap();
+        assert!(blocked.is_file());
+        drop(receipt);
+        assert!(!blocked.exists());
+        assert!(shared.is_file());
+        let receipt = plan.materialize().unwrap();
+        receipt.keep();
+        assert_eq!(std::fs::read(blocked).unwrap(), b"other");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn replacement_is_complete_and_failed_rename_preserves_existing_target() {

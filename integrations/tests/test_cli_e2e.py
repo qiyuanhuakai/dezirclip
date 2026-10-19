@@ -13,8 +13,11 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from dzc_integrations.client import AdapterError, DzcClient
+from sqlite_history_fixture import (LINUX_ENVELOPE_FIXTURE, connect_fixture_database,
+                                    mark_legacy_plaintext_sensitive_fixture)
 
 
 @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN to run checks against a built dzc")
@@ -152,11 +155,11 @@ class RealCliTests(unittest.TestCase):
     def test_sensitive_tags_and_untagged_encrypted_fields_are_not_exposed(self):
         public_id = self.add("public marker")
         secret_id = self.add("secret marker")
-        self.client.run(["tag", "add", str(secret_id), "密码"])
         encrypted_id = self.add("encrypted marker")
-        with closing(sqlite3.connect(self.database)) as database:
+        with closing(connect_fixture_database(self.database)) as database:
+            mark_legacy_plaintext_sensitive_fixture(database, secret_id, "密码")
             database.execute("UPDATE clipboard_history SET content = ?, preview = ? WHERE id = ?",
-                             ("dpapi:opaque", "dpapi:opaque", encrypted_id))
+                             (LINUX_ENVELOPE_FIXTURE, LINUX_ENVELOPE_FIXTURE, encrypted_id))
             database.commit()
         rows = self.client.entries(exclude_sensitive=True)
         self.assertEqual([row["id"] for row in rows], [public_id])
@@ -169,7 +172,9 @@ class RealCliTests(unittest.TestCase):
     def test_actual_stdio_mcp_is_readonly_bounded_and_excludes_sensitive_data(self):
         public_id = self.add("public\r\n多行\n\n")
         secret_id = self.add("private-do-not-return")
-        self.client.run(["tag", "add", str(secret_id), "sensitive"])
+        with closing(connect_fixture_database(self.database)) as database:
+            mark_legacy_plaintext_sensitive_fixture(database, secret_id)
+            database.commit()
         messages = [
             {"id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25",
                                                            "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
