@@ -2,7 +2,7 @@
 
 本压缩包包含 DezirClip 的完整 CLI、匹配版本的可选适配器和 Agent Skill。无需启动桌面主程序即可管理本地 SQLite 历史。`dzc` 不联网，不自动同步其他机器的历史，也不在 CLI 运行时启动桌面捕获服务。
 
-本说明适用于增加 `COMPATIBILITY.json` 的新流水线制品及后续发布。已经发布的 `v0.1.20-alpha.1` / `alpha.2` 压缩包保持原样，仍有原来的运行库和 Linux 兼容限制。
+本说明的 glibc 2.28 基线适用于 `v0.1.21-beta.1` 起的 Linux 独立包，包内附 `COMPATIBILITY.json`。已发布的资产保持原样：`v0.1.20` / `v0.1.20-alpha.3` Linux 包仍要求 glibc 2.35+，`v0.1.20-alpha.1` / `alpha.2` 仍要求 glibc 2.39+；alpha.1 / alpha.2 旧 Windows 包仍有原来的运行库要求。
 
 新 Windows 独立 CLI 静态链接 MSVC C 运行库，无需 WebView2 或另装 Visual C++ 运行库。打包时会检查实际 PE 的普通导入和延迟导入，拒绝依赖 `VCRUNTIME`、`MSVCP` 或动态 UCRT 的产物。Windows ARM64 包由交叉编译产生，检查架构和导入表；尚未声称在 ARM64 机器上完成运行验证。
 
@@ -41,7 +41,9 @@ dzc pick
 
 包内提供两个 Agent Skill：[CLI 工作流](./skills/dzc-cli/SKILL.md)和[主题构建](./skills/dezirclip-theme/SKILL.md)。将需要的整个目录复制到 Agent 的 skills 目录；Codex 例如使用 `~/.codex/skills/dezirclip-theme/`。用 `$dezirclip-theme` 描述材质、布局和风格，生成包含完整 CSS 的主题包，再从桌面应用的「设置 → 外观 → 导入主题」导入。[森林示例](./skills/dezirclip-theme/assets/forest.theme.json)可直接试用，导入前可运行 `dzc theme validate FILE --json` 校验。
 
-新 Linux 独立 CLI 在 Ubuntu 22.04 的构建环境中编译、链接，目标为 glibc 2.35+，并在 Ubuntu 22.04 与 Debian 12 的干净容器中运行解压后的实际压缩包。构建不启用桌面依赖，压缩包与 Ubuntu 24.04 桌面构建使用独立目录。该基线仅针对独立 CLI，桌面安装包的系统要求保持其各自说明。
+自 `v0.1.21-beta.1` 起，Linux 独立 CLI 在对应 x86_64 / aarch64 架构的 AlmaLinux 8 容器中原生编译、链接，目标为 glibc 2.28+；CI 在 AlmaLinux 8（glibc 2.28）、Ubuntu 22.04 与 Debian 12 的干净容器中运行解压后的实际压缩包。构建不启用桌面依赖，压缩包与 Ubuntu 24.04 桌面构建使用独立目录。本机直接运行 Cargo 构建时，运行库要求取决于本机工具链和链接环境，不自动获得此基线。
+
+这是 GNU/glibc 动态链接构建，不是 musl 静态包，不承诺 Alpine 原生兼容。glibc 2.28 门槛仅针对独立 CLI；Linux 桌面安装包仍在 Ubuntu 24.04 构建，保留 X11、WebKitGTK 4.1 及各自桌面运行库要求。
 
 Linux 仍动态依赖系统的 D-Bus 库和 GCC 运行库；Ubuntu / Debian 缺失时可安装：
 
@@ -49,9 +51,11 @@ Linux 仍动态依赖系统的 D-Bus 库和 GCC 运行库；Ubuntu / Debian 缺�
 sudo apt-get install libdbus-1-3 libgcc-s1
 ```
 
-包内 `COMPATIBILITY.json` 记录实际二进制 SHA-256、直接动态依赖、glibc 符号版本（包括弱符号）。CI 会拒绝高于 glibc 2.35 的要求或混入 GTK、WebKit、PipeWire 等桌面库。校验下载包时，先核对同名 `.sha256` 文件；兼容报告也与打包的二进制一起验证。
+AlmaLinux / RHEL 8 对应为 `sudo dnf install dbus-libs libgcc`。Bash 输入行集成需要 Bash 5+；AlmaLinux 8 默认的 Bash 4.4 不支持该集成，CLI、TUI 和 MCP 可照常使用。
 
-原生剪贴板读写需要当前系统的 X11 图形会话，Wayland 原生适配仍未提供。在 SSH 终端中，可显式通过 OSC52 将远程文本复制到支持并允许该功能的本地终端：
+包内 `COMPATIBILITY.json` 记录实际二进制 SHA-256、直接动态依赖、glibc 符号版本（包括弱符号）。CI 会拒绝高于 glibc 2.28 的要求或混入 GTK、WebKit、PipeWire 等桌面库。校验下载包时，先核对同名 `.sha256` 文件；兼容报告也与打包的二进制一起验证。
+
+Linux 原生剪贴板读写需要当前系统的 X11 图形会话，Wayland 原生适配仍未提供。在 SSH 终端中，可显式通过 OSC52 将远程文本复制到支持并允许该功能的本地终端：
 
 ```bash
 dzc copy 142 --target osc52
