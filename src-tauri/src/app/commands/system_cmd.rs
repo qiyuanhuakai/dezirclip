@@ -127,73 +127,10 @@ pub fn is_autostart_enabled() -> AppResult<bool> {
 #[tauri::command]
 pub fn set_windows_clipboard_history(enabled: bool) -> AppResult<()> {
     #[cfg(target_os = "windows")]
-    {
-        use winreg::enums::*;
-        use winreg::RegKey;
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let mut needs_restart = false;
-
-        if let Ok((key, _)) = hkcu.create_subkey("Software\\Microsoft\\Clipboard") {
-            let value: u32 = if enabled { 1 } else { 0 };
-            let _ = key.set_value("EnableClipboardHistory", &value);
-            let _ = key.set_value("EnableCloudClipboard", &value);
-        }
-
-        if let Ok((adv_key, _)) =
-            hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced")
-        {
-            let current_disabled: String = adv_key.get_value("DisabledHotkeys").unwrap_or_default();
-            if current_disabled.to_uppercase().contains('V') {
-                let new_val = current_disabled.to_uppercase().replace('V', "");
-                if new_val.is_empty() {
-                    let _ = adv_key.delete_value("DisabledHotkeys");
-                } else {
-                    let _ = adv_key.set_value("DisabledHotkeys", &new_val);
-                }
-                needs_restart = true;
-            }
-        }
-
-        if let Ok((policy_key, _)) =
-            hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer")
-        {
-            if policy_key
-                .get_value::<u32, _>("DisallowClipboardHistory")
-                .unwrap_or(0)
-                != 0
-            {
-                let _ = policy_key.delete_value("DisallowClipboardHistory");
-                needs_restart = true;
-            }
-        }
-
-        if enabled {
-            if let Ok((sys_policy, _)) =
-                hkcu.create_subkey("Software\\Policies\\Microsoft\\Windows\\System")
-            {
-                if sys_policy
-                    .get_value::<u32, _>("AllowClipboardHistory")
-                    .unwrap_or(1)
-                    == 0
-                {
-                    let _ = sys_policy.delete_value("AllowClipboardHistory");
-                    needs_restart = true;
-                }
-                if sys_policy
-                    .get_value::<u32, _>("AllowCrossDeviceClipboard")
-                    .unwrap_or(1)
-                    == 0
-                {
-                    let _ = sys_policy.delete_value("AllowCrossDeviceClipboard");
-                    needs_restart = true;
-                }
-            }
-        }
-
-        if needs_restart {
-            restart_explorer().ok();
-        }
-    }
+    crate::infrastructure::windows_api::system_settings::set_clipboard_history(enabled)
+        .map_err(|error| {
+            AppError::Internal(format!("Could not update Windows clipboard settings: {}", error))
+        })?;
 
     let _ = enabled;
     Ok(())
@@ -203,76 +140,10 @@ pub fn set_windows_clipboard_history(enabled: bool) -> AppResult<()> {
 pub fn trigger_registry_win_v_optimization(enable: bool) -> AppResult<bool> {
     #[cfg(target_os = "windows")]
     {
-        use winreg::enums::*;
-        use winreg::RegKey;
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let mut changed = false;
-
-        if let Ok((adv_key, _)) =
-            hkcu.create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced")
-        {
-            let current: String = adv_key.get_value("DisabledHotkeys").unwrap_or_default();
-            if enable && !current.to_uppercase().contains('V') {
-                let _ = adv_key.set_value("DisabledHotkeys", &format!("{}V", current));
-                changed = true;
-            } else if !enable && current.to_uppercase().contains('V') {
-                let clean = current.to_uppercase().replace('V', "");
-                if clean.is_empty() {
-                    let _ = adv_key.delete_value("DisabledHotkeys");
-                } else {
-                    let _ = adv_key.set_value("DisabledHotkeys", &clean);
-                }
-                changed = true;
-            }
-        }
-
-        if let Ok((cb_key, _)) = hkcu.create_subkey("Software\\Microsoft\\Clipboard") {
-            let val: u32 = if enable { 0 } else { 1 };
-            let prev_history = cb_key.get_value::<u32, _>("EnableClipboardHistory").ok();
-            let prev_cloud = cb_key.get_value::<u32, _>("EnableCloudClipboard").ok();
-            let _ = cb_key.set_value("EnableClipboardHistory", &val);
-            let _ = cb_key.set_value("EnableCloudClipboard", &val);
-            if prev_history != Some(val) || prev_cloud != Some(val) {
-                changed = true;
-            }
-        }
-
-        if !enable {
-            if let Ok((policy_key, _)) = hkcu
-                .create_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer")
-            {
-                if policy_key
-                    .get_value::<u32, _>("DisallowClipboardHistory")
-                    .unwrap_or(0)
-                    != 0
-                {
-                    let _ = policy_key.delete_value("DisallowClipboardHistory");
-                    changed = true;
-                }
-            }
-
-            if let Ok((sys_policy, _)) =
-                hkcu.create_subkey("Software\\Policies\\Microsoft\\Windows\\System")
-            {
-                if sys_policy
-                    .get_value::<u32, _>("AllowClipboardHistory")
-                    .unwrap_or(1)
-                    == 0
-                {
-                    let _ = sys_policy.delete_value("AllowClipboardHistory");
-                    changed = true;
-                }
-                if sys_policy
-                    .get_value::<u32, _>("AllowCrossDeviceClipboard")
-                    .unwrap_or(1)
-                    == 0
-                {
-                    let _ = sys_policy.delete_value("AllowCrossDeviceClipboard");
-                    changed = true;
-                }
-            }
-        }
-        Ok(changed)
+        crate::infrastructure::windows_api::system_settings::set_win_v_optimization(enable)
+            .map_err(|error| {
+                AppError::Internal(format!("Could not update Windows shortcut settings: {}", error))
+            })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -283,10 +154,41 @@ pub fn trigger_registry_win_v_optimization(enable: bool) -> AppResult<bool> {
 }
 
 #[tauri::command]
+pub fn begin_registry_win_v_change(enable: bool) -> AppResult<(bool, String)> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::infrastructure::windows_api::system_settings::begin_win_v_change(enable)
+            .map_err(|error| AppError::Internal(format!("Could not change Windows shortcut settings: {}", error)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = enable;
+        Ok((false, String::new()))
+    }
+}
+
+#[tauri::command]
+pub fn finish_registry_win_v_change(token: String, rollback: bool) -> AppResult<bool> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::infrastructure::windows_api::system_settings::finish_win_v_change(&token, rollback)
+            .map_err(|error| AppError::Internal(format!("Could not finish Windows shortcut settings change: {}", error)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (token, rollback);
+        Ok(false)
+    }
+}
+
+#[tauri::command]
 pub fn is_registry_win_v_optimized() -> AppResult<bool> {
     #[cfg(target_os = "windows")]
     {
-        Ok(get_registry_win_v_optimized_status())
+        crate::infrastructure::windows_api::system_settings::win_v_optimized()
+            .map_err(|error| {
+                AppError::Internal(format!("Could not read Windows shortcut settings: {}", error))
+            })
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -297,19 +199,7 @@ pub fn is_registry_win_v_optimized() -> AppResult<bool> {
 
 #[cfg(target_os = "windows")]
 pub fn get_registry_win_v_optimized_status() -> bool {
-    use winreg::enums::*;
-    use winreg::RegKey;
-    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    if let Ok(key) =
-        hkcu.open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced")
-    {
-        return key
-            .get_value::<String, _>("DisabledHotkeys")
-            .unwrap_or_default()
-            .to_uppercase()
-            .contains('V');
-    }
-    false
+    crate::infrastructure::windows_api::system_settings::win_v_optimized().unwrap_or(false)
 }
 
 #[tauri::command]

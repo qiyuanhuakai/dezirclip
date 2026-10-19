@@ -124,6 +124,11 @@ fn apply_webview2_gpu_switch() {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    if let Some(exit_code) = infrastructure::windows_api::system_settings::run_maintenance_command() {
+        std::process::exit(exit_code);
+    }
+
     let _ = dotenvy::dotenv();
     apply_webview2_gpu_switch();
 
@@ -228,6 +233,8 @@ fn main() {
             app::commands::is_autostart_enabled,
             app::commands::set_windows_clipboard_history,
             app::commands::trigger_registry_win_v_optimization,
+            app::commands::begin_registry_win_v_change,
+            app::commands::finish_registry_win_v_change,
             app::commands::is_registry_win_v_optimized,
             app::commands::restart_explorer,
             app::commands::restart_as_admin,
