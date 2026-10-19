@@ -130,7 +130,7 @@ pub async fn save_emoji_favorite(
         }
     };
 
-    let bytes = std::fs::read(source_path).map_err(AppError::from)?;
+    let bytes = crate::infrastructure::local_file::read_regular_nofollow(Path::new(source_path)).map_err(AppError::from)?;
 
     let data_dir = app_data.0.lock().unwrap().clone();
     save_emoji_favorite_bytes_to_dir(&data_dir, &bytes, ext)

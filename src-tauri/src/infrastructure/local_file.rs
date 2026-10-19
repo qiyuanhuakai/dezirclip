@@ -14,6 +14,35 @@ fn open_readonly(path: &Path) -> io::Result<File> {
     options.open(path)
 }
 
+/// Migration and attachment inputs must be ordinary files at the opened handle.
+pub fn open_regular_nofollow(path: &Path) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY | libc::O_NOFOLLOW);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Source must be a regular file"));
+    }
+    Ok(file)
+}
+
+pub fn read_regular_nofollow(path: &Path) -> io::Result<Vec<u8>> {
+    let mut file = open_regular_nofollow(path)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
 fn read_regular_handle(file: File, maximum: usize) -> io::Result<Vec<u8>> {
     let metadata = file.metadata()?;
     if !metadata.is_file() {
@@ -156,6 +185,25 @@ mod tests {
             assert!(ensure_regular_destination(&pipe).is_err());
             assert!(ensure_regular_destination(&link).is_err());
             assert!(std::fs::metadata(&pipe).unwrap().file_type().is_fifo());
+        }
+
+        #[test]
+        fn strict_attachment_inputs_reject_special_files_and_replaced_paths_promptly() {
+            let directory = Directory::new();
+            let pipe = directory.path("image.png");
+            fifo(&pipe);
+            let read_path = pipe.clone();
+            assert!(promptly(move || read_regular_nofollow(&read_path)).is_err());
+            let regular = directory.path("ordinary.png");
+            let link = directory.path("alias.png");
+            std::fs::write(&regular, b"ordinary").unwrap();
+            symlink(&regular, &link).unwrap();
+            assert!(open_regular_nofollow(&link).is_err());
+            assert_eq!(read_regular_nofollow(&regular).unwrap(), b"ordinary");
+            std::fs::remove_file(&regular).unwrap();
+            fifo(&regular);
+            let opened = regular.clone();
+            assert!(promptly(move || open_regular_nofollow(&opened)).is_err());
         }
 
         #[test]
