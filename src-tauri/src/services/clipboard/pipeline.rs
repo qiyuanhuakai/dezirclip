@@ -472,7 +472,11 @@ impl PipelineStage for PersistenceStage {
                             }
                             Some(id)
                         }
-                        Err(_) => None,
+                        Err(error) => {
+                            ctx.should_stop = true;
+                            crate::warn!("[capture] persistence rejected: {}", error);
+                            None
+                        },
                     };
                 (is_new_image, saved_id)
             };

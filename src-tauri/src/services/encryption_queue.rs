@@ -45,8 +45,8 @@ pub fn init_encryption_queue(app_handle: AppHandle) -> EncryptionQueue {
 /// which puts the sleep at 90-96% of a job. Treat that as an upper bound and a
 /// local estimate, not a portable ratio: a real job also runs a SELECT, an
 /// UPDATE and a text hash under the lock, it encrypts 2 values or 3 depending on
-/// whether the entry carries `html_content`, and under `--features portable`
-/// `maybe_encrypt_text` returns the value untouched, so its DPAPI cost is zero.
+/// whether the entry carries `html_content`. Portable builds reject sensitive
+/// persistence before DPAPI, so that timing does not describe portable jobs.
 /// See `dpapi_per_value_cost` in `crate::infrastructure::encryption`.
 ///
 /// What the pacing is actually for is to leave the database connection free for

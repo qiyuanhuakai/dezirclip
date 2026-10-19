@@ -1,5 +1,5 @@
 use crate::app_state::AppDataDir;
-use crate::database::ENCRYPT_PREFIX;
+use crate::infrastructure::encryption::{rewrite_stored_text, EncryptionError};
 use crate::error::{AppError, AppResult};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json;
@@ -453,6 +453,22 @@ pub fn set_data_path(app_handle: AppHandle, new_path: String) -> AppResult<()> {
     }
 
     let old_path_buf = app_handle.state::<AppDataDir>().0.lock().unwrap().clone();
+    if old_path_buf == new_data_path {
+        return Ok(());
+    }
+    // Complete protected-field rewrites before moving any source data.
+    let old_db_path = old_path_buf.join("clipboard.db");
+    let existing_new_db = new_data_path.join("clipboard.db");
+    let rewrite_source = if old_db_path.exists() {
+        &old_db_path
+    } else {
+        &existing_new_db
+    };
+    let path_rewrites = if rewrite_source.exists() {
+        prepare_attachment_path_rewrites(rewrite_source, &old_path_buf, new_data_path)?
+    } else {
+        Vec::new()
+    };
 
     // 1. Migrate data folders if they exist in the OLD path
     {
@@ -505,7 +521,7 @@ pub fn set_data_path(app_handle: AppHandle, new_path: String) -> AppResult<()> {
     // 1.3 Rewrite internal attachment paths inside DB (if DB exists in new path)
     let new_db_path = new_data_path.join("clipboard.db");
     if new_db_path.exists() {
-        rewrite_attachment_paths_in_db(&new_db_path, &old_path_buf, new_data_path)?;
+        apply_attachment_path_rewrites(&new_db_path, &path_rewrites)?;
         rewrite_emoji_favorites_in_db(&new_db_path, &old_path_buf, new_data_path)?;
     }
 
@@ -521,17 +537,26 @@ pub fn set_data_path(app_handle: AppHandle, new_path: String) -> AppResult<()> {
     Ok(())
 }
 
-fn rewrite_attachment_paths_in_db(
+#[derive(Debug)]
+struct AttachmentPathRewrite {
+    id: i64,
+    original_content: String,
+    original_html: Option<String>,
+    content: String,
+    html: Option<String>,
+}
+
+fn prepare_attachment_path_rewrites(
     db_path: &std::path::Path,
     old_base: &std::path::Path,
     new_base: &std::path::Path,
-) -> AppResult<()> {
+) -> AppResult<Vec<AttachmentPathRewrite>> {
     let old_attach = old_base.join("attachments");
     let new_attach = new_base.join("attachments");
     let old_prefix = old_attach.to_string_lossy().to_string();
     let new_prefix = new_attach.to_string_lossy().to_string();
     if old_prefix == new_prefix {
-        return Ok(());
+        return Ok(Vec::new());
     }
 
     let old_prefix_slash = old_prefix.replace('\\', "/");
@@ -552,6 +577,7 @@ fn rewrite_attachment_paths_in_db(
         })
         .map_err(AppError::from)?;
 
+    let mut updates = Vec::new();
     for row in rows {
         let (id, content_raw, html_raw) = row.map_err(AppError::from)?;
         let mut content_new: Option<String> = None;
@@ -563,7 +589,9 @@ fn rewrite_attachment_paths_in_db(
             &new_prefix,
             &old_prefix_slash,
             &new_prefix_slash,
-        ) {
+        )
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        {
             content_new = Some(updated);
         }
 
@@ -574,26 +602,65 @@ fn rewrite_attachment_paths_in_db(
                 &new_prefix,
                 &old_prefix_slash,
                 &new_prefix_slash,
-            ) {
+            )
+            .map_err(|error| AppError::Internal(error.to_string()))?
+            {
                 html_new = Some(updated);
             }
         }
 
-        if content_new.is_some() || html_new.is_some() {
+        {
             let content_final = content_new.as_ref().unwrap_or(&content_raw);
             let html_final = match html_new.as_ref() {
                 Some(v) => Some(v.as_str()),
                 None => html_raw.as_deref(),
             };
-            conn.execute(
-                "UPDATE clipboard_history SET content = ?1, html_content = ?2 WHERE id = ?3",
-                params![content_final, html_final, id],
-            )
-            .map_err(AppError::from)?;
+            let content = content_final.to_owned();
+            let html = html_final.map(str::to_owned);
+            updates.push(AttachmentPathRewrite {
+                id,
+                original_content: content_raw,
+                original_html: html_raw,
+                content,
+                html,
+            });
         }
     }
 
-    Ok(())
+    Ok(updates)
+}
+
+fn apply_attachment_path_rewrites(
+    db_path: &std::path::Path,
+    updates: &[AttachmentPathRewrite],
+) -> AppResult<()> {
+    let mut conn = Connection::open(db_path).map_err(AppError::from)?;
+    let transaction = conn.transaction().map_err(AppError::from)?;
+    let candidates: i64 = transaction.query_row(
+        "SELECT COUNT(*) FROM clipboard_history WHERE is_external = 1 OR html_content IS NOT NULL", [],
+        |row| row.get(0),
+    ).map_err(AppError::from)?;
+    if candidates
+        != i64::try_from(updates.len()).map_err(|_| {
+            AppError::Internal(EncryptionError::SensitivePersistenceRejected.to_string())
+        })?
+    {
+        return Err(AppError::Internal(
+            EncryptionError::SensitivePersistenceRejected.to_string(),
+        ));
+    }
+    for update in updates {
+        let changed = transaction.execute(
+            "UPDATE clipboard_history SET content = ?1, html_content = ?2 WHERE id = ?3 AND content IS ?4 AND html_content IS ?5",
+            params![update.content, update.html, update.id, update.original_content, update.original_html],
+        ).map_err(AppError::from)?;
+        if changed != 1 {
+            return Err(AppError::Internal(
+                EncryptionError::SensitivePersistenceRejected.to_string(),
+            ));
+        }
+    }
+    transaction.commit().map_err(AppError::from)
 }
 
 fn rewrite_emoji_favorites_in_db(
@@ -663,36 +730,16 @@ fn rewrite_content_path(
     new_prefix: &str,
     old_prefix_slash: &str,
     new_prefix_slash: &str,
-) -> Option<String> {
-    let replace_prefix = |v: &str| -> Option<String> {
-        if v.starts_with(old_prefix) {
-            return Some(format!("{}{}", new_prefix, &v[old_prefix.len()..]));
+) -> Result<Option<String>, EncryptionError> {
+    rewrite_stored_text(value, |plain| {
+        if let Some(suffix) = plain.strip_prefix(old_prefix) {
+            Some(format!("{new_prefix}{suffix}"))
+        } else {
+            plain
+                .strip_prefix(old_prefix_slash)
+                .map(|suffix| format!("{new_prefix_slash}{suffix}"))
         }
-        if v.starts_with(old_prefix_slash) {
-            return Some(format!(
-                "{}{}",
-                new_prefix_slash,
-                &v[old_prefix_slash.len()..]
-            ));
-        }
-        None
-    };
-
-    if value.starts_with(ENCRYPT_PREFIX) {
-        #[cfg(not(feature = "portable"))]
-        {
-            let plain = crate::database::encryption::decrypt_value(value)
-                .unwrap_or_else(|| value.to_string());
-            if let Some(updated_plain) = replace_prefix(&plain) {
-                let encrypted = crate::database::encryption::encrypt_value(&updated_plain)
-                    .unwrap_or(updated_plain);
-                return Some(encrypted);
-            }
-        }
-        return None;
-    }
-
-    replace_prefix(value)
+    })
 }
 
 fn rewrite_html_paths(
@@ -701,32 +748,13 @@ fn rewrite_html_paths(
     new_prefix: &str,
     old_prefix_slash: &str,
     new_prefix_slash: &str,
-) -> Option<String> {
-    let replace_any = |v: &str| -> Option<String> {
-        let mut updated = v.replace(old_prefix, new_prefix);
-        updated = updated.replace(old_prefix_slash, new_prefix_slash);
-        if updated == v {
-            None
-        } else {
-            Some(updated)
-        }
-    };
-
-    if value.starts_with(ENCRYPT_PREFIX) {
-        #[cfg(not(feature = "portable"))]
-        {
-            let plain = crate::database::encryption::decrypt_value(value)
-                .unwrap_or_else(|| value.to_string());
-            if let Some(updated_plain) = replace_any(&plain) {
-                let encrypted = crate::database::encryption::encrypt_value(&updated_plain)
-                    .unwrap_or(updated_plain);
-                return Some(encrypted);
-            }
-        }
-        return None;
-    }
-
-    replace_any(value)
+) -> Result<Option<String>, EncryptionError> {
+    rewrite_stored_text(value, |plain| {
+        let updated = plain
+            .replace(old_prefix, new_prefix)
+            .replace(old_prefix_slash, new_prefix_slash);
+        (updated != plain).then_some(updated)
+    })
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -745,4 +773,195 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod path_rewrite_tests {
+    use super::*;
+    use base64::Engine;
+
+    fn database() -> (std::path::PathBuf, std::path::PathBuf) {
+        let directory =
+            std::env::temp_dir().join(format!("dezirclip-path-rewrite-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("clipboard.db");
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE clipboard_history(id INTEGER PRIMARY KEY, content TEXT NOT NULL, html_content TEXT, is_external INTEGER NOT NULL);").unwrap();
+        (directory, path)
+    }
+
+    #[test]
+    fn path_rewrite_preflight_rejects_unavailable_ciphertext_without_changing_source() {
+        let (directory, path) = database();
+        let cipher = format!(
+            "linux:{}",
+            base64::engine::general_purpose::STANDARD.encode([0u8; 28])
+        );
+        let conn = Connection::open(&path).unwrap();
+        conn.execute(
+            "INSERT INTO clipboard_history VALUES(1,?1,NULL,1)",
+            [&cipher],
+        )
+        .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let error = prepare_attachment_path_rewrites(&path, &directory, &directory.join("new"))
+            .unwrap_err();
+        assert!(error.to_string().contains("ProtectedRecordUnavailable"));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn path_rewrite_sql_failure_rolls_back_every_updated_row() {
+        let (directory, path) = database();
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("INSERT INTO clipboard_history VALUES(1,'original one',NULL,1),(2,'original two',NULL,1);
+            CREATE TRIGGER reject_second BEFORE UPDATE ON clipboard_history WHEN new.id=2 BEGIN SELECT RAISE(ABORT,'rejected'); END;").unwrap();
+        let updates: Vec<_> = [
+            (1, "original one", "new one"),
+            (2, "original two", "new two"),
+        ]
+        .into_iter()
+        .map(|(id, original, updated)| AttachmentPathRewrite {
+            id,
+            original_content: original.to_string(),
+            original_html: None,
+            content: updated.to_string(),
+            html: None,
+        })
+        .collect();
+        assert!(apply_attachment_path_rewrites(&path, &updates).is_err());
+        let values: Vec<String> = conn
+            .prepare("SELECT content FROM clipboard_history ORDER BY id")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(values, vec!["original one", "original two"]);
+        drop(conn);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn path_rewrite_concurrent_edit_preserves_new_values_and_rolls_back_earlier_rows() {
+        let (directory, path) = database();
+        let first = directory
+            .join("attachments")
+            .join("one.png")
+            .to_string_lossy()
+            .to_string();
+        let second = directory
+            .join("attachments")
+            .join("two.png")
+            .to_string_lossy()
+            .to_string();
+        let reader = Connection::open(&path).unwrap();
+        reader
+            .execute(
+                "INSERT INTO clipboard_history VALUES(1,?1,NULL,1),(2,?2,NULL,1)",
+                params![first, second],
+            )
+            .unwrap();
+        let updates =
+            prepare_attachment_path_rewrites(&path, &directory, &directory.join("new")).unwrap();
+        let writer = Connection::open(&path).unwrap();
+        writer.execute("UPDATE clipboard_history SET content='concurrent edit', html_content='<p>new HTML</p>' WHERE id=2", []).unwrap();
+        assert!(apply_attachment_path_rewrites(&path, &updates).is_err());
+        let unchanged: String = reader
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let edited: (String, String) = reader
+            .query_row(
+                "SELECT content,html_content FROM clipboard_history WHERE id=2",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(unchanged, first);
+        assert_eq!(
+            edited,
+            ("concurrent edit".to_string(), "<p>new HTML</p>".to_string())
+        );
+        drop(writer);
+        drop(reader);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn path_rewrite_concurrent_new_attachment_row_rejects_the_prepared_plan() {
+        let (directory, path) = database();
+        let original = directory
+            .join("attachments")
+            .join("one.png")
+            .to_string_lossy()
+            .to_string();
+        let reader = Connection::open(&path).unwrap();
+        reader
+            .execute(
+                "INSERT INTO clipboard_history VALUES(1,?1,NULL,1)",
+                [&original],
+            )
+            .unwrap();
+        let updates =
+            prepare_attachment_path_rewrites(&path, &directory, &directory.join("new")).unwrap();
+        let writer = Connection::open(&path).unwrap();
+        writer
+            .execute(
+                "INSERT INTO clipboard_history VALUES(2,'concurrent attachment',NULL,1)",
+                [],
+            )
+            .unwrap();
+        assert!(apply_attachment_path_rewrites(&path, &updates).is_err());
+        let unchanged: String = reader
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unchanged, original);
+        let inserted: String = reader
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id=2",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(inserted, "concurrent attachment");
+        drop(writer);
+        drop(reader);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(all(windows, not(feature = "portable")))]
+    #[test]
+    fn path_rewrite_retains_encryption_for_content_and_html() {
+        let content = crate::infrastructure::encryption::encrypt_sensitive("old/image.png")
+            .unwrap()
+            .into_string();
+        let html =
+            crate::infrastructure::encryption::encrypt_sensitive("<img src='old/image.png'>")
+                .unwrap()
+                .into_string();
+        let updated = rewrite_content_path(&content, "old/", "new/", "old/", "new/")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            crate::infrastructure::encryption::decode_for_mutation(&updated).unwrap(),
+            "new/image.png"
+        );
+        let updated = rewrite_html_paths(&html, "old/", "new/", "old/", "new/")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            crate::infrastructure::encryption::decode_for_mutation(&updated).unwrap(),
+            "<img src='new/image.png'>"
+        );
+    }
 }

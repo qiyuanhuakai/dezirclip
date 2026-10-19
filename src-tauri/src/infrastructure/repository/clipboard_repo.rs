@@ -3,10 +3,10 @@ use crate::database::{
     thumbnail_hash, ENCRYPT_PREFIX,
 };
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::encryption;
+use crate::infrastructure::encryption::{self, EncryptedPayload, EncryptionError};
 use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
 use rusqlite::params;
-use rusqlite::{Connection, ToSql};
+use rusqlite::{Connection, OptionalExtension, ToSql};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -208,6 +208,7 @@ pub struct SqliteClipboardRepository {
     search_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     content_cache: Arc<Mutex<SimpleLruCache<(String, String, Option<String>)>>>,
     cache_revision: Mutex<Option<(i64, i64)>>,
+    encrypt_text: fn(&str) -> Result<EncryptedPayload, EncryptionError>,
 }
 
 impl SqliteClipboardRepository {
@@ -215,6 +216,7 @@ impl SqliteClipboardRepository {
         Self {
             conn,
             cache_revision: Mutex::new(None),
+            encrypt_text: encryption::encrypt_sensitive,
             history_cache: Arc::new(Mutex::new(SimpleLruCache::new(
                 64,
                 HISTORY_CACHE_MAX_BYTES,
@@ -272,23 +274,17 @@ impl SqliteClipboardRepository {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2).ok(), row.get(3)?, row.get(4)?)),
             ).map_err(|e| e.to_string())?;
 
-        let already_encrypted = encryption::is_encrypted_value(&content_raw)
-            && encryption::is_encrypted_value(&preview_raw)
-            && html_raw
-                .as_ref()
-                .map(|h| encryption::is_encrypted_value(h))
-                .unwrap_or(true);
-        if already_encrypted {
-            return Ok(());
-        }
-
-        let content_plain = self.maybe_decrypt_text(&content_raw);
-        let preview_plain = self.maybe_decrypt_text(&preview_raw);
-        let html_plain = html_raw.map(|h| self.maybe_decrypt_text(&h));
-
-        let content_enc = self.maybe_encrypt_text(&content_plain);
-        let preview_enc = self.maybe_encrypt_text(&preview_plain);
-        let html_enc = html_plain.as_ref().map(|h| self.maybe_encrypt_text(h));
+        let content_plain =
+            encryption::decode_for_mutation(&content_raw).map_err(|e| e.to_string())?;
+        let preview_plain =
+            encryption::decode_for_mutation(&preview_raw).map_err(|e| e.to_string())?;
+        let html_plain = html_raw
+            .as_deref()
+            .map(encryption::decode_for_mutation)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let (content_enc, preview_enc, html_enc) =
+            self.prepare_sensitive_fields(&content_plain, &preview_plain, html_plain.as_deref())?;
         let new_hash = if is_text_type(&content_type) {
             calc_text_hash(&content_plain) as i64
         } else {
@@ -299,6 +295,7 @@ impl SqliteClipboardRepository {
             "UPDATE clipboard_history SET content = ?, preview = ?, html_content = ?, content_hash = ? WHERE id = ?",
             params![content_enc, preview_enc, html_enc, new_hash, id],
         ).map_err(|e| e.to_string())?;
+        self.invalidate_caches();
         Ok(())
     }
 
@@ -310,19 +307,15 @@ impl SqliteClipboardRepository {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2).ok(), row.get(3)?, row.get(4)?)),
             ).map_err(|e| e.to_string())?;
 
-        let any_encrypted = encryption::is_encrypted_value(&content_raw)
-            || encryption::is_encrypted_value(&preview_raw)
-            || html_raw
-                .as_ref()
-                .map(|h| encryption::is_encrypted_value(h))
-                .unwrap_or(false);
-        if !any_encrypted {
-            return Ok(());
-        }
-
-        let content_plain = self.maybe_decrypt_text(&content_raw);
-        let preview_plain = self.maybe_decrypt_text(&preview_raw);
-        let html_plain = html_raw.map(|h| self.maybe_decrypt_text(&h));
+        let content_plain =
+            encryption::decode_for_mutation(&content_raw).map_err(|e| e.to_string())?;
+        let preview_plain =
+            encryption::decode_for_mutation(&preview_raw).map_err(|e| e.to_string())?;
+        let html_plain = html_raw
+            .as_deref()
+            .map(encryption::decode_for_mutation)
+            .transpose()
+            .map_err(|e| e.to_string())?;
         let new_hash = if is_text_type(&content_type) {
             calc_text_hash(&content_plain) as i64
         } else {
@@ -333,6 +326,7 @@ impl SqliteClipboardRepository {
             "UPDATE clipboard_history SET content = ?, preview = ?, html_content = ?, content_hash = ? WHERE id = ?",
             params![content_plain, preview_plain, html_plain, new_hash, id],
         ).map_err(|e| e.to_string())?;
+        self.invalidate_caches();
         Ok(())
     }
 
@@ -361,18 +355,22 @@ impl SqliteClipboardRepository {
         Ok(())
     }
 
-    fn maybe_encrypt_text(&self, value: &str) -> String {
-        #[cfg(not(feature = "portable"))]
-        {
-            if encryption::is_encrypted_value(value) {
-                return value.to_string();
-            }
-            encryption::encrypt_value(value).unwrap_or_else(|| value.to_string())
-        }
-        #[cfg(feature = "portable")]
-        {
-            value.to_string()
-        }
+    fn prepare_sensitive_fields(
+        &self,
+        content: &str,
+        preview: &str,
+        html: Option<&str>,
+    ) -> Result<(String, String, Option<String>), String> {
+        let encrypt = |value: &str| {
+            (self.encrypt_text)(value)
+                .map(EncryptedPayload::into_string)
+                .map_err(|error| error.to_string())
+        };
+        Ok((
+            encrypt(content)?,
+            encrypt(preview)?,
+            html.map(encrypt).transpose()?,
+        ))
     }
 
     pub(super) fn maybe_decrypt_text(&self, value: &str) -> String {
@@ -485,6 +483,55 @@ impl SqliteClipboardRepository {
     ) -> Result<i64, String> {
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&entry.tags);
+        if should_encrypt
+            && (entry.is_external
+                || entry
+                    .ocr_text
+                    .as_deref()
+                    .is_some_and(|text| !text.is_empty()))
+        {
+            return Err(EncryptionError::SensitivePersistenceRejected.to_string());
+        }
+        if entry.id > 0 {
+            let current: Option<(String, String, Option<String>, String)> = conn.query_row(
+                "SELECT content, preview, html_content, tags FROM clipboard_history WHERE id = ?1", [entry.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            ).optional().map_err(|error| error.to_string())?;
+            if let Some((content, preview, html, tags)) = current {
+                let mut protected = false;
+                for value in [
+                    Some(content.as_str()),
+                    Some(preview.as_str()),
+                    html.as_deref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    match encryption::decode_stored_text(value) {
+                        encryption::StoredText::Failed => {
+                            return Err(EncryptionError::ProtectedRecordUnavailable.to_string())
+                        }
+                        encryption::StoredText::Decrypted(_) => protected = true,
+                        encryption::StoredText::Plain(_) => {}
+                    }
+                }
+                let old_tags: Vec<String> = serde_json::from_str(&tags)
+                    .map_err(|_| EncryptionError::SensitivePersistenceRejected.to_string())?;
+                if !should_encrypt && (protected || has_sensitive_tag(&old_tags)) {
+                    return Err(EncryptionError::SensitivePersistenceRejected.to_string());
+                }
+            }
+        }
+        // Prepare all protected values before a file or database write can occur.
+        let protected = if should_encrypt {
+            Some(self.prepare_sensitive_fields(
+                &entry.content,
+                &entry.preview,
+                entry.html_content.as_deref(),
+            )?)
+        } else {
+            None
+        };
 
         // Borrowed until something actually replaces it. This used to clone the
         // content up front, which for an image is the whole `data:` URL: a 4K
@@ -496,7 +543,10 @@ impl SqliteClipboardRepository {
         let mut final_is_external = entry.is_external;
 
         // Externalize image if possible
-        if entry.content_type == "image" && entry.content.starts_with("data:image/") {
+        if !should_encrypt
+            && entry.content_type == "image"
+            && entry.content.starts_with("data:image/")
+        {
             if let Some(dir) = data_dir {
                 if let Some(path) = save_image_to_file(&entry.content, dir) {
                     final_content = Cow::Owned(path);
@@ -523,30 +573,20 @@ impl SqliteClipboardRepository {
             calc_text_hash(&final_content) as i64
         };
 
-        let (content, preview, content_hash, html_content) = if should_encrypt {
-            let encrypted_content = self.maybe_encrypt_text(&final_content);
-            let encrypted_preview = self.maybe_encrypt_text(&entry.preview);
-            let encrypted_html = entry
-                .html_content
-                .as_ref()
-                .map(|html| self.maybe_encrypt_text(html));
-            (
-                encrypted_content,
-                encrypted_preview,
-                calculated_hash,
-                encrypted_html,
-            )
-        } else {
-            (
-                // `into_owned` moves when the content was already replaced by the
-                // file path, and copies when it is still the caller's own string --
-                // which is the case the old unconditional clone was paying for.
-                final_content.into_owned(),
-                entry.preview.clone(),
-                calculated_hash,
-                entry.html_content.clone(),
-            )
-        };
+        let (content, preview, content_hash, html_content) =
+            if let Some((content, preview, html)) = protected {
+                (content, preview, calculated_hash, html)
+            } else {
+                (
+                    // `into_owned` moves when the content was already replaced by the
+                    // file path, and copies when it is still the caller's own string --
+                    // which is the case the old unconditional clone was paying for.
+                    final_content.into_owned(),
+                    entry.preview.clone(),
+                    calculated_hash,
+                    entry.html_content.clone(),
+                )
+            };
 
         let mut seen: HashSet<String> = HashSet::new();
         let mut cleaned_tags: Vec<String> = Vec::new();
@@ -925,27 +965,38 @@ impl SqliteClipboardRepository {
         content: &str,
         preview: &str,
     ) -> Result<(), String> {
-        let (old_content_raw, content_type, tags_json) = conn
+        let (old_content_raw, content_type, tags_json, old_preview_raw, old_html_raw) = conn
             .query_row(
-                "SELECT content, content_type, tags FROM clipboard_history WHERE id = ?",
+                "SELECT content, content_type, tags, preview, html_content FROM clipboard_history WHERE id = ?",
                 params![id],
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
                     ))
                 },
             )
             .map_err(|e| e.to_string())?;
 
-        let old_content = self.maybe_decrypt_text(&old_content_raw);
+        let old_content =
+            encryption::decode_for_mutation(&old_content_raw).map_err(|error| error.to_string())?;
+        encryption::decode_for_mutation(&old_preview_raw).map_err(|error| error.to_string())?;
+        if let Some(html) = old_html_raw.as_deref() {
+            encryption::decode_for_mutation(html).map_err(|error| error.to_string())?;
+        }
         if old_content == content {
             return Ok(());
         }
 
         let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
-        let should_encrypt = has_sensitive_tag(&tags);
+        let should_encrypt = has_sensitive_tag(&tags)
+            || matches!(
+                encryption::decode_stored_text(&old_content_raw),
+                encryption::StoredText::Decrypted(_)
+            );
 
         if is_text_type(&content_type) {
             let hash = calc_text_hash(content) as i64;
@@ -955,8 +1006,8 @@ impl SqliteClipboardRepository {
                 &content_type
             };
             if should_encrypt {
-                let encrypted_content = self.maybe_encrypt_text(content);
-                let encrypted_preview = self.maybe_encrypt_text(preview);
+                let (encrypted_content, encrypted_preview, _) =
+                    self.prepare_sensitive_fields(content, preview, None)?;
                 conn.execute(
                     "UPDATE clipboard_history SET content = ?, preview = ?, content_hash = ?, html_content = NULL, content_type = ? WHERE id = ?",
                     params![encrypted_content, encrypted_preview, hash, new_type, id],
@@ -971,8 +1022,8 @@ impl SqliteClipboardRepository {
             return Ok(());
         }
         if should_encrypt {
-            let encrypted_content = self.maybe_encrypt_text(content);
-            let encrypted_preview = self.maybe_encrypt_text(preview);
+            let (encrypted_content, encrypted_preview, _) =
+                self.prepare_sensitive_fields(content, preview, None)?;
             conn.execute(
                 "UPDATE clipboard_history SET content = ?, preview = ?, html_content = NULL WHERE id = ?",
                 params![encrypted_content, encrypted_preview, id],
@@ -1049,6 +1100,26 @@ impl SqliteClipboardRepository {
         ocr_text: &str,
         ocr_status: &str,
     ) -> Result<usize, String> {
+        let protected: Option<(String, String)> = conn
+            .query_row(
+                "SELECT tags, content FROM clipboard_history WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        if let Some((tags, content)) = protected {
+            let tags: Vec<String> = serde_json::from_str(&tags)
+                .map_err(|_| EncryptionError::SensitivePersistenceRejected.to_string())?;
+            if has_sensitive_tag(&tags)
+                || !matches!(
+                    encryption::decode_stored_text(&content),
+                    encryption::StoredText::Plain(_)
+                )
+            {
+                return Err(EncryptionError::SensitivePersistenceRejected.to_string());
+            }
+        }
         let rows = conn
             .execute(
                 "UPDATE clipboard_history
@@ -2398,6 +2469,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[cfg(not(feature = "portable"))]
     #[test]
     fn sensitive_text_goes_through_the_encrypt_branch_and_round_trips() {
         let arc = setup_fts_db();
@@ -2426,9 +2498,7 @@ mod tests {
             entry.content,
             "the encrypt branch must hand back exactly what it was given"
         );
-        // DPAPI on Windows and a generated master key elsewhere both encrypt; if
-        // neither is available the branch is a passthrough and there is nothing
-        // left to assert beyond the round trip above.
+        // Successful sensitive persistence must store protected values.
         if crate::infrastructure::encryption::encrypt_value(&entry.content).is_some() {
             assert!(
                 crate::infrastructure::encryption::is_encrypted_value(&stored),
@@ -2440,6 +2510,9 @@ mod tests {
     #[test]
     fn text_dedup_compares_raw_payloads_for_every_hash_candidate() {
         for sensitive in [false, true] {
+            if sensitive && cfg!(feature = "portable") {
+                continue;
+            }
             let arc = setup_fts_db();
             let repo = SqliteClipboardRepository::new(arc);
             let conn = repo.conn.lock().expect("lock");
@@ -2603,6 +2676,7 @@ mod tests {
         assert_eq!(stored_html.as_deref(), Some("<p>revised</p>"));
     }
 
+    #[cfg(not(feature = "portable"))]
     #[test]
     fn sensitive_rich_text_round_trips_all_three_fields() {
         let arc = setup_fts_db();
@@ -2650,6 +2724,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(feature = "portable"))]
     #[test]
     fn sensitive_entry_without_html_keeps_the_null() {
         let arc = setup_fts_db();
@@ -2860,5 +2935,268 @@ mod tests {
         let recomputed: usize = cached.map.values().map(|v| entry_page_weight(v)).sum();
         assert_eq!(cached.weight, recomputed);
         assert!(cached.weight <= HISTORY_CACHE_MAX_BYTES);
+    }
+}
+
+#[cfg(test)]
+mod sensitive_persistence_tests {
+    use super::super::migrations::run_migrations;
+    use super::*;
+    use base64::Engine;
+
+    fn reject_key(_: &str) -> Result<EncryptedPayload, EncryptionError> {
+        Err(EncryptionError::KeyUnavailable)
+    }
+
+    fn fail_blocked(value: &str) -> Result<EncryptedPayload, EncryptionError> {
+        if value == "blocked private field" {
+            Err(EncryptionError::EncryptionFailed)
+        } else {
+            Ok(EncryptedPayload::for_test(format!("sealed:{value}")))
+        }
+    }
+
+    fn repository(
+        encrypt: fn(&str) -> Result<EncryptedPayload, EncryptionError>,
+    ) -> SqliteClipboardRepository {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).unwrap();
+        let mut repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+        repo.encrypt_text = encrypt;
+        repo
+    }
+
+    fn entry() -> ClipboardEntry {
+        ClipboardEntry {
+            id: 0,
+            content_type: "rich_text".to_string(),
+            content: "private body".to_string(),
+            html_content: Some("<p>private body</p>".to_string()),
+            source_app: "test".to_string(),
+            source_app_path: None,
+            timestamp: 1,
+            preview: "private preview".to_string(),
+            is_pinned: false,
+            tags: vec!["sensitive".to_string()],
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+            content_kinds: Vec::new(),
+            ocr_text: None,
+            ocr_status: None,
+        }
+    }
+
+    fn seed(conn: &Connection) {
+        conn.execute(r#"INSERT INTO clipboard_history(id,content_type,content,preview,html_content,source_app,timestamp,tags,ocr_text,ocr_status) VALUES(1,'rich_text','original body','original preview','<p>original</p>','test',1,'["sensitive"]',NULL,'pending')"#, []).unwrap();
+    }
+
+    fn fields(conn: &Connection) -> (String, String, Option<String>) {
+        conn.query_row(
+            "SELECT content,preview,html_content FROM clipboard_history WHERE id=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn each_field_failure_rejects_new_row_tags_and_index() {
+        for field in 0..3 {
+            let repo = repository(fail_blocked);
+            let conn = repo.conn.lock().unwrap();
+            let mut entry = entry();
+            match field {
+                0 => entry.content = "blocked private field".to_string(),
+                1 => entry.preview = "blocked private field".to_string(),
+                _ => entry.html_content = Some("blocked private field".to_string()),
+            }
+            let error = repo.save_with_conn(&conn, &entry, None).unwrap_err();
+            assert_eq!(error, "EncryptionFailed");
+            assert!(!error.contains("private"));
+            for table in ["clipboard_history", "entry_tags", "clipboard_fts"] {
+                let count: i64 = conn
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap();
+                assert_eq!(count, 0, "rejected row in {table}");
+            }
+        }
+    }
+
+    #[test]
+    fn failed_save_and_edit_preserve_existing_fields() {
+        let repo = repository(reject_key);
+        let conn = repo.conn.lock().unwrap();
+        seed(&conn);
+        let original = fields(&conn);
+        let mut changed = entry();
+        changed.id = 1;
+        assert_eq!(
+            repo.save_with_conn(&conn, &changed, None).unwrap_err(),
+            "KeyUnavailable"
+        );
+        assert_eq!(fields(&conn), original);
+        assert_eq!(
+            repo.update_entry_content_with_conn(
+                &conn,
+                1,
+                "new private body",
+                "new private preview"
+            )
+            .unwrap_err(),
+            "KeyUnavailable"
+        );
+        assert_eq!(fields(&conn), original);
+        assert_eq!(
+            repo.encrypt_entry_with_conn(&conn, 1).unwrap_err(),
+            "KeyUnavailable"
+        );
+        assert_eq!(fields(&conn), original);
+    }
+
+    #[test]
+    fn existing_encryption_prepares_html_before_updating_any_field() {
+        let repo = repository(fail_blocked);
+        let conn = repo.conn.lock().unwrap();
+        seed(&conn);
+        conn.execute(
+            "UPDATE clipboard_history SET html_content='blocked private field' WHERE id=1",
+            [],
+        )
+        .unwrap();
+        let original = fields(&conn);
+        assert_eq!(
+            repo.encrypt_entry_with_conn(&conn, 1).unwrap_err(),
+            "EncryptionFailed"
+        );
+        assert_eq!(fields(&conn), original);
+    }
+
+    #[test]
+    fn failed_sensitive_image_save_creates_no_attachment() {
+        let repo = repository(reject_key);
+        let conn = repo.conn.lock().unwrap();
+        let directory = std::env::temp_dir().join(format!(
+            "dezirclip-sensitive-reject-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let mut image = entry();
+        image.content_type = "image".to_string();
+        image.content = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aGv0AAAAASUVORK5CYII=".to_string();
+        assert_eq!(
+            repo.save_with_conn(&conn, &image, Some(&directory))
+                .unwrap_err(),
+            "KeyUnavailable"
+        );
+        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn protected_ocr_is_rejected_and_ordinary_capture_still_saves() {
+        let repo = repository(reject_key);
+        let conn = repo.conn.lock().unwrap();
+        seed(&conn);
+        assert_eq!(
+            repo.update_ocr_text_with_conn(&conn, 1, "private OCR", "done")
+                .unwrap_err(),
+            "SensitivePersistenceRejected"
+        );
+        assert_eq!(
+            repo.get_ocr_status_with_conn(&conn, 1).unwrap(),
+            Some(("pending".to_string(), None))
+        );
+        let mut ordinary = entry();
+        ordinary.tags.clear();
+        let id = repo.save_with_conn(&conn, &ordinary, None).unwrap();
+        assert!(id > 1);
+        assert_eq!(
+            repo.update_ocr_text_with_conn(&conn, id, "ordinary OCR", "done")
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn unavailable_existing_ciphertext_is_not_overwritten() {
+        for column in ["content", "preview", "html_content"] {
+            let repo = repository(fail_blocked);
+            let conn = repo.conn.lock().unwrap();
+            seed(&conn);
+            let cipher = format!(
+                "linux:{}",
+                base64::engine::general_purpose::STANDARD.encode([0u8; 28])
+            );
+            conn.execute(
+                &format!("UPDATE clipboard_history SET {column}=?1 WHERE id=1"),
+                [&cipher],
+            )
+            .unwrap();
+            let original = fields(&conn);
+            assert_eq!(
+                repo.encrypt_entry_with_conn(&conn, 1).unwrap_err(),
+                "ProtectedRecordUnavailable"
+            );
+            assert_eq!(
+                repo.decrypt_entry_with_conn(&conn, 1).unwrap_err(),
+                "ProtectedRecordUnavailable"
+            );
+            assert_eq!(
+                repo.update_entry_content_with_conn(&conn, 1, "replacement", "summary")
+                    .unwrap_err(),
+                "ProtectedRecordUnavailable"
+            );
+            let mut changed = entry();
+            changed.id = 1;
+            assert_eq!(
+                repo.save_with_conn(&conn, &changed, None).unwrap_err(),
+                "ProtectedRecordUnavailable"
+            );
+            assert_eq!(
+                fields(&conn),
+                original,
+                "unavailable {column} must remain intact"
+            );
+        }
+    }
+
+    #[cfg(feature = "portable")]
+    #[test]
+    fn portable_sensitive_save_rejects_before_creating_a_row() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).unwrap();
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+        let conn = repo.conn.lock().unwrap();
+        assert_eq!(
+            repo.save_with_conn(&conn, &entry(), None).unwrap_err(),
+            "SensitivePersistenceRejected"
+        );
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn sensitive_prefix_text_is_encrypted_instead_of_trusted() {
+        let repo = repository(fail_blocked);
+        let conn = repo.conn.lock().unwrap();
+        let mut source = entry();
+        source.content = "dpapi:ordinary private text".to_string();
+        let id = repo.save_with_conn(&conn, &source, None).unwrap();
+        let stored: String = conn
+            .query_row(
+                "SELECT content FROM clipboard_history WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "sealed:dpapi:ordinary private text");
     }
 }

@@ -56,6 +56,88 @@ pub fn is_encrypted_value(value: &str) -> bool {
     value.starts_with(ENCRYPT_PREFIX) || value.starts_with(LINUX_ENCRYPT_PREFIX)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncryptionError {
+    KeyUnavailable,
+    EncryptionFailed,
+    SensitivePersistenceRejected,
+    ProtectedRecordUnavailable,
+}
+
+impl std::fmt::Display for EncryptionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::KeyUnavailable => "KeyUnavailable",
+            Self::EncryptionFailed => "EncryptionFailed",
+            Self::SensitivePersistenceRejected => "SensitivePersistenceRejected",
+            Self::ProtectedRecordUnavailable => "ProtectedRecordUnavailable",
+        })
+    }
+}
+
+impl std::error::Error for EncryptionError {}
+
+#[derive(Debug)]
+pub struct EncryptedPayload(String);
+
+impl EncryptedPayload {
+    pub fn into_string(self) -> String {
+        self.0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(value: String) -> Self {
+        Self(value)
+    }
+}
+
+/// The input is plaintext, even when it resembles a stored ciphertext prefix.
+pub fn encrypt_sensitive(plain: &str) -> Result<EncryptedPayload, EncryptionError> {
+    encrypt_sensitive_with(plain, cfg!(feature = "portable"), encrypt_platform)
+}
+
+fn encrypt_sensitive_with(
+    plain: &str,
+    portable: bool,
+    encrypt: impl FnOnce(&str) -> Result<String, EncryptionError>,
+) -> Result<EncryptedPayload, EncryptionError> {
+    if portable {
+        return Err(EncryptionError::SensitivePersistenceRejected);
+    }
+    encrypt(plain).map(EncryptedPayload)
+}
+
+/// Mutations must distinguish an unavailable protected record from ordinary text.
+pub fn decode_for_mutation(value: &str) -> Result<String, EncryptionError> {
+    match decode_stored_text(value) {
+        StoredText::Plain(plain) => Ok(plain.to_owned()),
+        StoredText::Decrypted(plain) => Ok(plain),
+        StoredText::Failed => Err(EncryptionError::ProtectedRecordUnavailable),
+    }
+}
+
+/// Rewrite stored fields without ever substituting rewritten plaintext for ciphertext.
+pub fn rewrite_stored_text(
+    value: &str,
+    rewrite: impl FnOnce(&str) -> Option<String>,
+) -> Result<Option<String>, EncryptionError> {
+    rewrite_decoded_text(decode_stored_text(value), rewrite, encrypt_sensitive)
+}
+
+fn rewrite_decoded_text(
+    decoded: StoredText<'_>,
+    rewrite: impl FnOnce(&str) -> Option<String>,
+    encrypt: impl FnOnce(&str) -> Result<EncryptedPayload, EncryptionError>,
+) -> Result<Option<String>, EncryptionError> {
+    match decoded {
+        StoredText::Plain(value) => Ok(rewrite(value)),
+        StoredText::Decrypted(value) => rewrite(&value)
+            .map(|updated| encrypt(&updated).map(EncryptedPayload::into_string))
+            .transpose(),
+        StoredText::Failed => Err(EncryptionError::ProtectedRecordUnavailable),
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum StoredText<'a> {
     Plain(&'a str),
@@ -301,11 +383,15 @@ mod stored_text_tests {
     }
 }
 
-#[cfg(windows)]
 pub fn encrypt_value(plain: &str) -> Option<String> {
+    encrypt_platform(plain).ok()
+}
+
+#[cfg(windows)]
+fn encrypt_platform(plain: &str) -> Result<String, EncryptionError> {
     let bytes = plain.as_bytes();
     let mut in_blob = DATA_BLOB {
-        cbData: bytes.len() as u32,
+        cbData: u32::try_from(bytes.len()).map_err(|_| EncryptionError::EncryptionFailed)?,
         pbData: bytes.as_ptr() as *mut u8,
     };
     let mut out_blob = DATA_BLOB {
@@ -329,9 +415,9 @@ pub fn encrypt_value(plain: &str) -> Option<String> {
         unsafe {
             let _ = LocalFree(out_blob.pbData as _);
         }
-        Some(format!("{}{}", ENCRYPT_PREFIX, encoded))
+        Ok(format!("{}{}", ENCRYPT_PREFIX, encoded))
     } else {
-        None
+        Err(EncryptionError::EncryptionFailed)
     }
 }
 
@@ -464,7 +550,9 @@ fn plan_master_key(read: MasterKeyRead) -> MasterKeyPlan {
 /// Decode a stored key. A value that is not exactly 32 base64-encoded bytes is
 /// not a key, and is treated as an unreadable store rather than as absence.
 fn decode_master_key(stored: &str) -> Option<[u8; 32]> {
-    let decoded = base64::engine::general_purpose::STANDARD.decode(stored).ok()?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(stored)
+        .ok()?;
     if decoded.len() != 32 {
         return None;
     }
@@ -581,11 +669,7 @@ fn open_stores() -> (
 fn resolve_master_key(
     persistent: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
     legacy: &Option<Box<dyn keyring::credential::CredentialApi + Send + Sync>>,
-) -> (
-    MasterKeyRead,
-    Option<ResolvedMasterKey>,
-    Option<KeyOrigin>,
-) {
+) -> (MasterKeyRead, Option<ResolvedMasterKey>, Option<KeyOrigin>) {
     match probe_store(persistent.as_deref(), "the secret service") {
         StoreProbe::Found(key) => (
             MasterKeyRead::Present,
@@ -611,10 +695,8 @@ fn resolve_master_key(
                             crate::warn!(
                                 "[encryption] recovered the master key from the kernel keyring \
                                  but could not copy it to the secret service: {err}. Existing \
-                                 records stay readable this session; anything captured until a \
-                                 store is available will be stored unencrypted, because the \
-                                 repository keeps a value it cannot encrypt rather than \
-                                 dropping it."
+                                 records stay readable this session; new sensitive persistence \
+                                 is rejected until a durable store is available."
                             );
                             false
                         }
@@ -689,8 +771,7 @@ static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 ///
 /// The write is checked because a store that refuses it means there is nowhere
 /// durable to keep the key. Handing one back anyway would encrypt with a key the
-/// next login cannot read, which loses the data instead of leaving it
-/// unencrypted.
+/// next login cannot read. Rejecting the new write keeps that data loss visible.
 ///
 /// Both stores get it, not just the persistent one. Writing only the secret
 /// service would leave the kernel keyring empty, which is fine today and means
@@ -698,9 +779,9 @@ static MASTER_KEY_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// two-store design the feature selects was supposed to do in the first place.
 /// A failure of the second store is not fatal once the first has taken the key.
 #[cfg(not(windows))]
-fn persist_master_key(recovered: Option<[u8; 32]>) -> Option<[u8; 32]> {
+fn persist_master_key(recovered: Option<[u8; 32]>) -> Result<[u8; 32], EncryptionError> {
     let (persistent, legacy) = open_stores();
-    let persistent = persistent?;
+    let persistent = persistent.ok_or(EncryptionError::KeyUnavailable)?;
     // A key this process already recovered is persisted as itself. Minting a
     // replacement here would be how rows already written under it become
     // unreadable, and the caller only offers it once it is sure nothing durable
@@ -709,18 +790,17 @@ fn persist_master_key(recovered: Option<[u8; 32]>) -> Option<[u8; 32]> {
         Some(key) => key,
         None => {
             let mut fresh = [0u8; 32];
-            rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut fresh);
+            rand::RngCore::try_fill_bytes(&mut rand::rngs::OsRng, &mut fresh)
+                .map_err(|_| EncryptionError::EncryptionFailed)?;
             fresh
         }
     };
     let encoded = base64::engine::general_purpose::STANDARD.encode(&key);
     if let Err(err) = persistent.set_password(&encoded) {
         crate::warn!(
-            "[encryption] could not store the master key: {err}. Nothing is encrypted until a \
-             store is available, and in the meantime captures are kept as plain text rather than \
-             dropped."
+            "[encryption] could not store the master key: {err}; sensitive persistence is unavailable"
         );
-        return None;
+        return Err(EncryptionError::KeyUnavailable);
     }
     if let Some(legacy) = legacy.as_deref() {
         if let Err(err) = legacy.set_password(&encoded) {
@@ -729,7 +809,7 @@ fn persist_master_key(recovered: Option<[u8; 32]>) -> Option<[u8; 32]> {
             );
         }
     }
-    Some(key)
+    Ok(key)
 }
 
 /// Reads, decides, creates if allowed, publishes, and returns the cache.
@@ -827,9 +907,10 @@ fn initialise_master_key(
 }
 
 /// The key used for writing. Returns `None` when the store cannot be read and
-/// must not be written, which the callers turn into "leave the value as it is".
+/// must not be written. Sensitive persistence rejects an unavailable key.
 #[cfg(not(windows))]
-fn master_key() -> Option<[u8; 32]> {
+fn master_key() -> Result<[u8; 32], EncryptionError> {
+    let failure = std::cell::Cell::new(EncryptionError::KeyUnavailable);
     initialise_master_key(
         &MASTER_KEY,
         &RECOVERED_KEY,
@@ -837,8 +918,15 @@ fn master_key() -> Option<[u8; 32]> {
         true,
         true,
         read_master_key,
-        persist_master_key,
+        |recovered| match persist_master_key(recovered) {
+            Ok(key) => Some(key),
+            Err(error) => {
+                failure.set(error);
+                None
+            }
+        },
     )
+    .ok_or(failure.get())
 }
 
 /// The key used for reading. It never creates one: decryption has to be able to
@@ -857,23 +945,35 @@ fn existing_master_key() -> Option<[u8; 32]> {
     )
 }
 
-#[cfg(not(windows))]
-pub fn encrypt_value(plain: &str) -> Option<String> {
-    let key = master_key()?;
-    let cipher = Aes256Gcm::new_from_slice(&key).ok()?;
-
+#[cfg(any(not(windows), test))]
+fn encrypt_with_key(
+    plain: &str,
+    key: impl FnOnce() -> Result<[u8; 32], EncryptionError>,
+    fill_nonce: impl FnOnce(&mut [u8]) -> Result<(), EncryptionError>,
+) -> Result<String, EncryptionError> {
+    use aes_gcm::{
+        aead::{Aead, KeyInit},
+        Aes256Gcm, Nonce,
+    };
+    let key = key()?;
+    let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| EncryptionError::EncryptionFailed)?;
     let mut nonce_bytes = [0u8; 12];
-    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    fill_nonce(&mut nonce_bytes)?;
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce_bytes), plain.as_bytes())
+        .map_err(|_| EncryptionError::EncryptionFailed)?;
+    let mut sealed = nonce_bytes.to_vec();
+    sealed.extend_from_slice(&ciphertext);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&sealed);
+    Ok(format!("{}{}", LINUX_ENCRYPT_PREFIX, encoded))
+}
 
-    let ciphertext = cipher.encrypt(nonce, plain.as_bytes()).ok()?;
-
-    let mut result = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
-    result.extend_from_slice(&nonce_bytes);
-    result.extend_from_slice(&ciphertext);
-
-    let encoded = base64::engine::general_purpose::STANDARD.encode(&result);
-    Some(format!("{}{}", LINUX_ENCRYPT_PREFIX, encoded))
+#[cfg(not(windows))]
+fn encrypt_platform(plain: &str) -> Result<String, EncryptionError> {
+    encrypt_with_key(plain, master_key, |nonce| {
+        rand::RngCore::try_fill_bytes(&mut rand::rngs::OsRng, nonce)
+            .map_err(|_| EncryptionError::EncryptionFailed)
+    })
 }
 
 #[cfg(not(windows))]
@@ -910,7 +1010,10 @@ mod tests {
     #[test]
     fn only_an_absent_entry_authorises_creating_a_key() {
         assert_eq!(plan_master_key(MasterKeyRead::Present), MasterKeyPlan::Use);
-        assert_eq!(plan_master_key(MasterKeyRead::Missing), MasterKeyPlan::Create);
+        assert_eq!(
+            plan_master_key(MasterKeyRead::Missing),
+            MasterKeyPlan::Create
+        );
         assert_eq!(
             plan_master_key(MasterKeyRead::Unavailable),
             MasterKeyPlan::Unavailable
@@ -934,8 +1037,7 @@ mod tests {
         let short = base64::engine::general_purpose::STANDARD.encode([1u8; 16]);
         assert!(decode_master_key(&short).is_none());
         // Right length, not base64.
-        assert!(decode_master_key("not base64 at all, but long enough!!!!")
-            .is_none());
+        assert!(decode_master_key("not base64 at all, but long enough!!!!").is_none());
         // Empty.
         assert!(decode_master_key("").is_none());
     }
@@ -959,9 +1061,9 @@ mod tests {
     #[cfg(not(windows))]
     mod linux_key_init {
         use super::*;
+        use std::cell::Cell;
         use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
         use std::sync::{Arc, Barrier, Mutex, OnceLock};
-        use std::cell::Cell;
 
         // A `Credential` whose state can be read back after it has been boxed
         // and handed over, which is what checking the migration needs. A plain
@@ -1088,11 +1190,7 @@ mod tests {
         fn resolve_with(
             persistent: KeyringStore,
             legacy: KeyringStore,
-        ) -> (
-            MasterKeyRead,
-            Option<ResolvedMasterKey>,
-            Option<KeyOrigin>,
-        ) {
+        ) -> (MasterKeyRead, Option<ResolvedMasterKey>, Option<KeyOrigin>) {
             let boxed = |store: &KeyringStore| {
                 Some(Box::new(store.clone())
                     as Box<dyn keyring::credential::CredentialApi + Send + Sync>)
@@ -1100,20 +1198,21 @@ mod tests {
             resolve_master_key(&boxed(&persistent), &boxed(&legacy))
         }
 
-                /// A store that already holds its key durably, for the tests that drive
+        /// A store that already holds its key durably, for the tests that drive
         /// initialise_master_key directly.
         fn persisted(key: [u8; 32]) -> ResolvedMasterKey {
-            ResolvedMasterKey { key, persisted: true }
+            ResolvedMasterKey {
+                key,
+                persisted: true,
+            }
         }
 
-                /// Reads through the real resolver, so the tests below drive the same
+        /// Reads through the real resolver, so the tests below drive the same
         /// path production takes rather than a stand-in for it.
         /// keyring::Error is not Clone, so a sticky failure is reported
         /// afresh each time by rebuilding the same kind of error.
         fn errring(err: &keyring::Error) -> keyring::Error {
-            keyring::Error::PlatformFailure(Box::new(std::io::Error::other(
-                err.to_string(),
-            )))
+            keyring::Error::PlatformFailure(Box::new(std::io::Error::other(err.to_string())))
         }
 
         fn boxed_stores(
@@ -1188,15 +1287,24 @@ mod tests {
             assert_eq!(read, MasterKeyRead::Present);
             assert_eq!(key.map(|resolved| resolved.key), Some([1u8; 32]));
             assert_eq!(origin, Some(KeyOrigin::Persistent));
-            assert_eq!(persistent.writes(), 0, "an existing key must not be rewritten");
-            assert_eq!(legacy.writes(), 0, "the legacy store is not consulted as a rival");
+            assert_eq!(
+                persistent.writes(),
+                0,
+                "an existing key must not be rewritten"
+            );
+            assert_eq!(
+                legacy.writes(),
+                0,
+                "the legacy store is not consulted as a rival"
+            );
         }
 
         // Both empty: nothing stored anywhere, which is the only state that
         // authorises creating a key.
         #[test]
         fn two_empty_stores_mean_no_key_yet() {
-            let (read, key, origin) = resolve_with(KeyringStore::default(), KeyringStore::default());
+            let (read, key, origin) =
+                resolve_with(KeyringStore::default(), KeyringStore::default());
 
             assert_eq!(read, MasterKeyRead::Missing);
             assert_eq!(key.map(|resolved| resolved.key), None);
@@ -1216,7 +1324,11 @@ mod tests {
             let (read, key, origin) = resolve_with(persistent, legacy.clone());
 
             assert_eq!(read, MasterKeyRead::Unavailable);
-            assert_eq!(key.map(|r| r.key), None, "the legacy key must not be used in its place");
+            assert_eq!(
+                key.map(|r| r.key),
+                None,
+                "the legacy key must not be used in its place"
+            );
             assert_eq!(origin, None);
             assert_eq!(legacy.writes(), 0, "and it must certainly not be written");
         }
@@ -1226,7 +1338,8 @@ mod tests {
         // nothing there".
         #[test]
         fn an_unreadable_legacy_store_is_never_treated_as_empty() {
-            let (read, key, _) = resolve_with(KeyringStore::default(), KeyringStore::failing(unreadable()));
+            let (read, key, _) =
+                resolve_with(KeyringStore::default(), KeyringStore::failing(unreadable()));
 
             assert_eq!(read, MasterKeyRead::Unavailable);
             assert_eq!(key, None);
@@ -1251,7 +1364,8 @@ mod tests {
         fn a_store_that_could_not_be_opened_is_never_treated_as_empty() {
             let (persistent, legacy) = (
                 None,
-                Some(Box::new(KeyringStore::default()) as Box<dyn keyring::credential::CredentialApi + Send + Sync>),
+                Some(Box::new(KeyringStore::default())
+                    as Box<dyn keyring::credential::CredentialApi + Send + Sync>),
             );
 
             let (read, key, _) = resolve_master_key(&persistent, &legacy);
@@ -1672,7 +1786,11 @@ mod tests {
             );
 
             assert_eq!(key, None);
-            assert_eq!(store.writes(), 0, "an unavailable store must not be written");
+            assert_eq!(
+                store.writes(),
+                0,
+                "an unavailable store must not be written"
+            );
             assert!(cache.get().is_none());
         }
 
@@ -1714,9 +1832,9 @@ mod tests {
 /// overclaim: this is `encrypt_value`/`decrypt_value` alone. A real
 /// `encrypt_entry_with_conn` also runs a SELECT and an UPDATE under the
 /// connection lock and a text hash, and it encrypts 2 values (content, preview)
-/// or 3 when `html_content` is present -- not always 3. Under `--features
-/// portable` `maybe_encrypt_text` returns the value untouched, so the DPAPI cost
-/// of a job there is zero. The sleep fraction is therefore a property of one
+/// or 3 when `html_content` is present -- not always 3. Portable builds reject
+/// sensitive persistence before DPAPI, so this benchmark does not describe a
+/// portable encryption-queue job. The sleep fraction is a property of one
 /// machine, one build and one payload mix, not a portable ratio.
 #[cfg(all(test, target_os = "windows"))]
 #[test]
@@ -1769,4 +1887,125 @@ fn dpapi_per_value_cost() {
     }
     println!("\nthe sleep that followed every job: 30.0 ms");
     println!("sleep share of a DPAPI-only job is an upper bound: the real job also\ndoes a SELECT, an UPDATE and a text hash under the connection lock.");
+}
+
+#[cfg(test)]
+mod sensitive_failure_tests {
+    use super::*;
+
+    #[test]
+    fn encryption_failures_have_stable_content_free_codes() {
+        for error in [
+            EncryptionError::KeyUnavailable,
+            EncryptionError::EncryptionFailed,
+            EncryptionError::SensitivePersistenceRejected,
+            EncryptionError::ProtectedRecordUnavailable,
+        ] {
+            let result = encrypt_sensitive_with("private probe", false, |_| Err(error));
+            assert_eq!(result.unwrap_err(), error);
+            assert!(!error.to_string().contains("private probe"));
+        }
+        let result = encrypt_sensitive_with("private probe", true, |_| {
+            panic!("portable must reject before encryption")
+        });
+        assert_eq!(
+            result.unwrap_err(),
+            EncryptionError::SensitivePersistenceRejected
+        );
+    }
+
+    #[test]
+    fn protected_path_rewrite_never_returns_plaintext_on_failure() {
+        for error in [
+            EncryptionError::KeyUnavailable,
+            EncryptionError::EncryptionFailed,
+        ] {
+            let result = rewrite_decoded_text(
+                StoredText::Decrypted("old/private/path".to_string()),
+                |plain| Some(plain.replace("old/", "new/")),
+                |_| Err(error),
+            );
+            assert_eq!(result, Err(error));
+        }
+        assert_eq!(
+            rewrite_decoded_text(
+                StoredText::Failed,
+                |_| panic!("unavailable ciphertext must not be rewritten"),
+                |_| panic!("unavailable ciphertext must not be encrypted")
+            ),
+            Err(EncryptionError::ProtectedRecordUnavailable)
+        );
+        assert_eq!(
+            rewrite_decoded_text(
+                StoredText::Decrypted("unrelated".to_string()),
+                |_| None,
+                |_| panic!("unchanged ciphertext needs no write")
+            ),
+            Ok(None)
+        );
+        assert_eq!(
+            rewrite_stored_text("linux:ordinary old/path", |plain| Some(
+                plain.replace("old/", "new/")
+            ))
+            .unwrap(),
+            Some("linux:ordinary new/path".to_string())
+        );
+    }
+
+    #[test]
+    fn prefixes_never_exempt_new_plaintext_from_encryption() {
+        for value in ["linux:ordinary text", "dpapi:ordinary text"] {
+            let result = encrypt_sensitive_with(value, false, |plain| {
+                assert_eq!(plain, value);
+                Ok("sealed value".to_string())
+            })
+            .unwrap();
+            assert_eq!(result.into_string(), "sealed value");
+        }
+    }
+
+    #[test]
+    fn key_and_nonce_failures_propagate_without_producing_ciphertext() {
+        let result = encrypt_with_key(
+            "private probe",
+            || Err(EncryptionError::KeyUnavailable),
+            |_| panic!("no key"),
+        );
+        assert_eq!(result.unwrap_err(), EncryptionError::KeyUnavailable);
+        let result = encrypt_with_key(
+            "private probe",
+            || Ok([7; 32]),
+            |_| Err(EncryptionError::EncryptionFailed),
+        );
+        assert_eq!(result.unwrap_err(), EncryptionError::EncryptionFailed);
+    }
+
+    #[test]
+    fn unreadable_protected_text_cannot_be_mutated_as_plaintext() {
+        let sealed = format!(
+            "linux:{}",
+            base64::engine::general_purpose::STANDARD.encode([0u8; 28])
+        );
+        assert_eq!(
+            decode_for_mutation(&sealed),
+            Err(EncryptionError::ProtectedRecordUnavailable)
+        );
+        assert_eq!(
+            decode_for_mutation("dpapi:ordinary text"),
+            Ok("dpapi:ordinary text".to_string())
+        );
+        assert_eq!(
+            decode_for_mutation("linux:ordinary text"),
+            Ok("linux:ordinary text".to_string())
+        );
+    }
+
+    #[cfg(all(windows, not(feature = "portable")))]
+    #[test]
+    fn dpapi_sensitive_payload_round_trips_prefix_text() {
+        let plain = "dpapi:ordinary private text";
+        let sealed = encrypt_sensitive(plain).unwrap().into_string();
+        assert_ne!(sealed, plain);
+        assert_eq!(decode_for_mutation(&sealed).unwrap(), plain);
+    }
 }

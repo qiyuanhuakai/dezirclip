@@ -1015,6 +1015,7 @@ mod data_integrity_tests {
     }
 
     #[cfg(windows)]
+    #[cfg(not(feature = "portable"))]
     #[test]
     fn successfully_decrypted_sensitive_marker_fields_remain_plain_export_content() {
         let (repo, connection) = repository();
@@ -1022,6 +1023,7 @@ mod data_integrity_tests {
         source.preview = "dpapi: ordinary preview".to_string();
         source.html_content = Some("linux:<p>HTML</p>".to_string());
         source.tags = vec!["sensitive".to_string()];
+        source.ocr_text = None;
         repo.import_cli_entries(&[source.clone()], true).unwrap();
         let encrypted: Vec<_> = [
             source.content.as_str(),
@@ -1068,12 +1070,41 @@ mod data_integrity_tests {
     }
 
     #[test]
+    fn sensitive_restore_with_ocr_rejects_without_replacing_history() {
+        let (repo, _) = repository();
+        let original = entry(1, "text", "ordinary original".to_string());
+        apply_entries(
+            &repo,
+            &[prepare_export_entry(&original).unwrap()],
+            ImportMode::Replace,
+        )
+        .unwrap();
+        let before = rows(&repo);
+        let mut source = entry(9, "rich_text", "private body".to_string());
+        source.tags = vec!["sensitive".to_string()];
+        source.ocr_text = Some("private OCR".to_string());
+        assert_eq!(
+            apply_entries(
+                &repo,
+                &[prepare_export_entry(&source).unwrap()],
+                ImportMode::Replace
+            )
+            .unwrap_err(),
+            "SensitivePersistenceRejected"
+        );
+        assert_eq!(rows(&repo)[0].content, before[0].content);
+        assert_eq!(rows(&repo).len(), before.len());
+    }
+
+    #[cfg(not(feature = "portable"))]
+    #[test]
     fn restored_sensitive_rich_text_uses_the_repository_encryption_path() {
         let (repo, connection) = repository();
         let mut source = entry(9, "rich_text", "  私人文本\r\n".to_string());
         source.preview = "私人摘要".to_string();
         source.html_content = Some("<p>私人文本</p>".to_string());
         source.tags = vec!["sensitive".to_string()];
+        source.ocr_text = None;
         apply_entries(
             &repo,
             &[prepare_export_entry(&source).unwrap()],
