@@ -201,6 +201,15 @@ jobs:
         with:
           node-version: 22
 
+      - name: Test sidecar packaging contracts
+        run: node --test scripts/tests/packaging-sidecars.node.mjs
+
+      - name: Test packaging proof and process identity decisions
+        shell: pwsh
+        run: |
+          ./scripts/tests/native-packaging-proof.ps1
+          ./scripts/tests/native-process-identity.ps1
+
       - name: Install Rust stable
         if: matrix.scenario != 'LegacyUninstall'
         uses: dtolnay/rust-toolchain@stable
