@@ -10,7 +10,7 @@ Rust 文件是测量调用端：旧版本仅通过临时 `git archive` 导出，
 python scripts/performance/prepare_capture.py --repository REPOSITORY --candidate CANDIDATE_CHECKOUT --candidate-revision FROZEN_SHA --output REPOSITORY/.harness/capture-evidence --mode verify --profile debug --target-dir REUSABLE_TARGET --jobs 2
 ```
 
-正式候选要求干净 checkout 且 HEAD 匹配传入 SHA。准备阶段可用 `--allow-dirty-candidate` 检查未提交的 API，但生成物明确标记 `eligible_for_timing=false`，采样器会拒绝使用。工具在构建前后核对候选源码指纹，变化即失败。
+正式候选要求干净 checkout 且 HEAD 匹配传入 SHA。准备阶段可用 `--allow-dirty-candidate` 检查未提交的 API；只要使用此选项，生成物就标记 `functional_only=true`、`eligible_for_timing=false`，即使期间候选已提交，采样器也会拒绝使用。工具在构建前后核对候选源码指纹，变化即失败。
 
 `preparation.json` 包含实际引用候选源码每个 Git 文件的 SHA256、集合哈希、HEAD 和脏状态；旧源 archive 哈希及唯一临时 manifest workspace 隔离改动前后哈希；Rust/Cargo 版本、profile、target、相关构建环境、机器标识哈希；Python 工具和 Rust 模板哈希；各适配器 manifest/lock/命令、只读二进制哈希及功能报告哈希。适配器 lock 从对应源码 lock 复制，构建后拒绝出现源 lock 以外的外部包版本。release profile 保持 LTO、单 codegen unit、`opt-level=s`、strip、abort。
 
@@ -22,7 +22,7 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 
 候选 Core 若提供非默认 `legacy-bridge`，适配器会显式启用它，以 `legacy` 下的隐藏兼容出口测量仓库边界，同时从公开 `capture` 使用实际引擎。这只影响测量程序，不要求稳定 facade 公开数据库连接。
 
-`capture/measured_engine.rs` 的包装仅委托真实 `CaptureStore` 的 `prepare/find_duplicate/contains/commit`，各方法前后读取 Instant 并累计时长；EventSink 只计数，不复制正文。没有插入额外事务、查询、SQL 模型或加密实现。`engine_total_ms` 包含这些少量计时记账及事件计数开销，`engine_non_store_ms` 也包含包装开销，不把它全部归因于业务引擎。
+`capture/measured_engine.rs` 经共享既有仓库与缓存的 `history_service()` 兼容桥取得 `HistoryService`，再调用公开的 `HistoryService::capture_store` 工厂。包装按泛型 `CaptureStore` 委托 `prepare/find_duplicate/contains/contains_image_hash/commit`，不引用私有 store 类型；各方法前后读取 Instant 并累计时长。EventSink 只计数，不复制正文。没有插入额外事务、查询、SQL 模型或加密实现。`engine_total_ms` 包含这些少量计时记账及事件计数开销，`engine_non_store_ms` 也包含包装开销，不把它全部归因于业务引擎。六个固定文本/HTML 场景不构成图片查重性能证据。
 
 六个场景为普通新捕获、普通重复、富文本新捕获、敏感新捕获、继承手工保护的敏感重复、实际 `encrypt_entry_with_conn` 转换。每次使用新复制的数据库。功能断言包括正文与 HTML 原样解密、预览、敏感字段密文、逻辑 FTS 可见性、重复 ID、记录数，以及实际 Engine 只发一次 Stored 元数据事件。转换场景直接比较同一生产方法的入口至提交，不把旧版异步队列或 tag 提前返回当作加密完成。
 

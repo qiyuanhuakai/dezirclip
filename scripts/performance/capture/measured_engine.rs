@@ -35,6 +35,11 @@ impl<T: CaptureStore> CaptureStore for TimedStore<T> {
     fn contains(&self, content: &str) -> Result<bool, CaptureFailure> {
         self.timed("contains_ms", || self.actual.contains(content))
     }
+    fn contains_image_hash(&self, image_hash: i64) -> Result<bool, CaptureFailure> {
+        self.timed("contains_image_hash_ms", || {
+            self.actual.contains_image_hash(image_hash)
+        })
+    }
     fn commit(&self, capture: &PreparedCapture) -> Result<CaptureCommit, CaptureFailure> {
         self.timed("commit_ms", || self.actual.commit(capture))
     }
@@ -93,8 +98,14 @@ pub fn capture(
         },
         metadata: CaptureReadMetadata::default(),
     };
+    #[cfg(feature = "legacy-layout")]
+    let history = db.history_service();
+    #[cfg(feature = "legacy-layout")]
+    let actual = history.capture_store(directory);
+    #[cfg(not(feature = "legacy-layout"))]
+    let actual = db.capture_store(directory);
     let store = TimedStore {
-        actual: db.capture_store(directory),
+        actual,
         times: RefCell::new(BTreeMap::new()),
     };
     let mut events = Events::default();

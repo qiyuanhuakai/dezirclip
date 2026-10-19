@@ -155,7 +155,9 @@ def prepare(args):
                        "scope": parsed.get("scope", parsed.get("limits")),
                        "binary_sha256": parsed.get("binary_sha256")})
     proof = {"schema_version": 1, "prepared_at": datetime.now(timezone.utc).isoformat(),
-             "timing_samples_collected": False, "eligible_for_timing": not candidate_state["dirty"],
+             "timing_samples_collected": False,
+             "functional_only": args.allow_dirty_candidate,
+             "eligible_for_timing": not candidate_state["dirty"] and not args.allow_dirty_candidate,
              "candidate": candidate_state, "baseline": baseline_proof, "profile": args.profile,
              "target": command(["rustc", "--print", "host-tuple"]), "rustc": command(["rustc", "-Vv"]),
              "machine_id": hashlib.sha256(f"{platform.node()}|{platform.machine()}".encode()).hexdigest(),
