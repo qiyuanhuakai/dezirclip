@@ -181,3 +181,65 @@ build, updater download/signature, AppImage, ARM64, or cross-session acceptance.
 The actual CI terminal result is required before claiming these package cases
 passed; local syntax checks and the local-execution guard are not installation
 results.
+
+The package harness is `scripts/build-native-windows-fixture.ps1`,
+`scripts/test-native-windows-upgrade.ps1` and
+`scripts/tests/native-windows-ownership.mjs`. The workflow calls the builder
+with `-Version 0.2.0-alpha.0` for the owned-upgrade source and
+`-Version 0.2.0-alpha.1` for the current candidate. Both installers and their
+adjacent `.manifest.json` files remain beneath `RUNNER_TEMP`. A manifest binds
+the installer, GUI and the actual staged standalone CLI by SHA256, with version,
+target, profile, source commit and lock/configuration/hook hashes. The CLI hash
+comes from the sidecar consumed by the bundler, rather than a target binary a
+later GUI build might replace. Updater artifact signing remains disabled in
+these debug fixtures.
+
+The acceptance script rejects an existing registered installation, a running
+GUI/CLI, ownership receipts or pre-existing application data directories. It
+creates two new `datapath.txt` files beneath the real RoamingAppData identifiers,
+encoded without a BOM, pointing to one synthetic `RUNNER_TEMP` profile. It does
+not pretend that changing `APPDATA` changes Tauri's known-folder API. The CLI
+override points at that profile's `clipboard.db`; the actual installed GUI must
+report the same directory through `get_data_path`. Installed GUI and CLI hashes,
+the CLI's built-in version and the GUI's actual `plugin:app|version` result must
+match the candidate manifest. This app/version permission is already present
+in the main window's capability. Old history must both round-trip through the
+GUI command and render in the actual WebView.
+
+For the three current-candidate scenarios, a runner-only CDP connection observes
+the real listener while a PowerShell STA subprocess executes `Set-Clipboard`
+with synthetic A, B and A again. Text travels as environment data, never shell
+source. Each capture must produce an ID-only `clipboard-captured` payload;
+recaptured A must retain its single stored ID, and the legacy full-entry event
+must not be used for those captures. The installed CLI then queries the same
+stored IDs. This bridge neither mocks invoke nor emits simulated capture events.
+The real uninstaller must remove both the GUI executable and the bundled CLI.
+
+Explorer is compared as a complete, sorted PID/start-time set, including an
+empty set. Current-candidate cases forbid both disappearance and new instances.
+Hosted runners may have no Explorer: such evidence reports
+`existingExplorerRestartVerified=false` and `noExplorerSpawned=true`; it does
+not prove behavior with an active Explorer desktop. The legacy negative control
+records its process changes without claiming safe restoration.
+
+All three scripts reject local or self-hosted execution before installer,
+clipboard or registry operations. Candidate/input/output paths reject escapes
+from `RUNNER_TEMP` and reparse points. The actual package script additionally
+refuses existing GUI data instead of overwriting it. Started fixture processes
+are stopped by their process handles and their process trees; the next GUI run
+also requires the CDP port to be released. Cleanup removes only a redirect still
+containing the harness's own profile path, and removes its directory only if
+empty. Changed redirects and other files remain untouched. No recursive data
+cleanup is performed. Test registry values and clipboard contents belong to the
+disposable hosted VM and are left to runner disposal rather than an unrelated
+cleanup routine that could hide uninstall failures.
+
+`dezirclip-upgrade-*/acceptance.json` records success/failure and installer
+process results, including failures before a GUI result is available. The
+workflow's existing `always()` artifact step retains that directory, copied
+candidate/previous manifests, typed registry snapshots, process sets, synthetic
+history, GUI/CLI results, stdout/stderr and WebView screenshots when available.
+The original installer binaries are not automatically uploaded by that step.
+Local parser checks, guard rejection and pure path/manifest contract checks are
+the only permitted local validation; all actual package/capture claims await
+the integrated GitHub-hosted jobs at their final source revision.
