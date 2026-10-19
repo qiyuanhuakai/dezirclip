@@ -548,7 +548,7 @@ fn migrate_data_directory(
 }
 
 fn copy_file_new(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
-    let mut input = std::fs::File::open(source)?;
+    let mut input = crate::infrastructure::local_file::open_regular_nofollow(source)?;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(target_os = "linux")]
@@ -796,8 +796,10 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
         }
         if ty.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
+        } else if ty.is_file() {
             copy_file_new(&src_path, &dst_path)?;
+        } else {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Data migration only copies regular files"));
         }
     }
     Ok(())
@@ -916,6 +918,33 @@ mod path_rewrite_tests {
         transaction.rollback().unwrap();
         drop(writer);
         drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn directory_migration_fifo_rejection_returns_promptly_and_releases_source_write_lock() {
+        let (root, old, new, mut conn) = migration_fixture();
+        assert!(std::process::Command::new("mkfifo").arg(old.join("attachments/blocked.png")).status().unwrap().success());
+        let redirect = root.join("datapath.txt");
+        std::fs::write(&redirect, old.to_string_lossy().as_bytes()).unwrap();
+        let writer = Connection::open(old.join("clipboard.db")).unwrap();
+        writer.busy_timeout(std::time::Duration::ZERO).unwrap();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let old_thread = old.clone();
+        let redirect_thread = redirect.clone();
+        let worker = std::thread::spawn(move || {
+            assert!(migrate_with_connection(&mut conn, &old_thread, &new, &redirect_thread).is_err());
+            assert!(conn.is_autocommit());
+            assert!(!conn.pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0)).unwrap());
+            sender.send(()).unwrap();
+        });
+        receiver.recv_timeout(std::time::Duration::from_secs(5)).expect("FIFO input must be rejected without waiting for a writer");
+        worker.join().unwrap();
+        writer.execute("INSERT INTO clipboard_history VALUES(2,'source remains writable',NULL,0)", []).unwrap();
+        assert_eq!(std::fs::read_to_string(&redirect).unwrap(), old.to_string_lossy());
+        assert_eq!(std::fs::read(old.join("attachments/image.png")).unwrap(), b"fixture image");
+        drop(writer);
         std::fs::remove_dir_all(root).unwrap();
     }
 
