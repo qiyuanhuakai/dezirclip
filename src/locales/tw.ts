@@ -14,6 +14,7 @@ export const tw = {
         tag_content_search: "搜尋此標籤內容",
         tag_manage: "管理",
         tag_manage_done: "完成",
+        tag_selection_changed: "內容已更新，請重新選取。",
         tag_select_entry: "選擇項目",
         tag_select_all: "全選",
         tag_select_all_matches: "全選符合項目",

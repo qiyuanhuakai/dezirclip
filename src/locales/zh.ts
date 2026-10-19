@@ -14,6 +14,7 @@ export const zh = {
         tag_content_search: "搜索此标签内容",
         tag_manage: "管理",
         tag_manage_done: "完成",
+        tag_selection_changed: "内容已更新，请重新选择。",
         tag_select_entry: "选择条目",
         tag_select_all: "全选",
         tag_select_all_matches: "全选匹配项",

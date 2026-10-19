@@ -14,6 +14,7 @@ export const en = {
         tag_content_search: "Search this tag's contents",
         tag_manage: "Manage",
         tag_manage_done: "Done",
+        tag_selection_changed: "Items changed. Select them again.",
         tag_select_entry: "Select entry",
         tag_select_all: "Select all",
         tag_select_all_matches: "Select matches",
