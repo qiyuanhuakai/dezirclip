@@ -18,6 +18,16 @@ pub struct DbState {
     pub tag_repo: SqliteTagRepository,
 }
 
+pub fn ensure_writable(conn: &Connection) -> std::result::Result<(), String> {
+    let query_only = conn.pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0))
+        .map_err(|error| error.to_string())?;
+    if query_only || conn.is_readonly(rusqlite::DatabaseName::Main).map_err(|error| error.to_string())? {
+        Err("DatabaseIsReadOnly".into())
+    } else {
+        Ok(())
+    }
+}
+
 const SENSITIVE_KEYS: &[&str] = &[];
 
 pub const SENSITIVE_TAGS: &[&str] = &["sensitive", "密码"];
