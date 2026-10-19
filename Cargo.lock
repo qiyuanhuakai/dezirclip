@@ -1532,7 +1532,7 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "chrono",
- "cssparser 0.37.0",
+ "cssparser",
  "dirs 5.0.1",
  "image",
  "libc",
@@ -1562,7 +1562,7 @@ dependencies = [
  "serde_json",
  "urlencoding",
  "uuid",
- "windows 0.61.3",
+ "windows 0.62.2",
  "x11-clipboard",
  "x11rb",
 ]
