@@ -338,6 +338,51 @@ pub fn delete_tag_from_all(
     delete_sensitive_tag_contents(&app, &state, &session, &app_data, &tag_name)
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagEntriesDeleted {
+    deleted_count: usize,
+}
+
+#[tauri::command]
+pub async fn delete_tag_entries(
+    app: tauri::AppHandle,
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
+    app_data: State<'_, AppDataDir>,
+    tag_name: String,
+    selection: crate::infrastructure::repository::tag_batch::TagEntrySelection,
+) -> AppResult<TagEntriesDeleted> {
+    let data_dir = app_data
+        .0
+        .lock()
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .clone();
+    let repository =
+        crate::infrastructure::repository::tag_repo::SqliteTagRepository::new(state.conn.clone());
+    let report = tauri::async_runtime::spawn_blocking(move || {
+        repository.delete_entries_for_tag(&tag_name, selection, Some(&data_dir))
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?
+    .map_err(AppError::from)?;
+    if let Ok(mut history) = session.0.lock() {
+        history.retain(|item| !report.deleted_ids.contains(&item.id));
+    }
+    state.repo.invalidate_caches();
+    use tauri::Emitter;
+    let _ = app.emit("clipboard-changed", ());
+    if !report.cleanup_errors.is_empty() {
+        return Err(AppError::IO(format!(
+            "history entries were deleted, but attachment cleanup failed: {}",
+            report.cleanup_errors.join("; ")
+        )));
+    }
+    Ok(TagEntriesDeleted {
+        deleted_count: report.deleted_ids.len(),
+    })
+}
+
 #[tauri::command]
 pub fn create_new_tag(state: State<'_, DbState>, tag_name: String) -> AppResult<()> {
     let tag_name = tag_name.trim();

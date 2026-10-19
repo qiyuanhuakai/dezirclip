@@ -2,7 +2,7 @@ use super::settings_repo::SqliteSettingsRepository;
 use super::tag_repo::SqliteTagRepository;
 use crate::database::SENSITIVE_TAGS;
 use crate::infrastructure::{attachments, encryption};
-use rusqlite::{params, Connection, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
@@ -184,6 +184,100 @@ impl AttachmentOwner {
     }
 }
 
+pub(super) struct AttachmentCleanup {
+    owner: Option<AttachmentOwner>,
+    candidates: HashSet<PathBuf>,
+}
+
+impl AttachmentCleanup {
+    pub(super) fn for_entries(
+        conn: &Connection,
+        data_dir: Option<&Path>,
+        ids: &HashSet<i64>,
+    ) -> Result<Self, String> {
+        let owner = data_dir.map(AttachmentOwner::new).transpose()?.flatten();
+        let mut candidates = HashSet::new();
+        if let Some(owner) = &owner {
+            let mut statement = conn
+                .prepare(
+                    "SELECT content,html_content,is_external FROM clipboard_history WHERE id=?1",
+                )
+                .map_err(|error| error.to_string())?;
+            for id in ids {
+                let entry = statement
+                    .query_row([id], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, bool>(2)?,
+                        ))
+                    })
+                    .optional()
+                    .map_err(|error| error.to_string())?;
+                if let Some((content, html, external)) = entry {
+                    candidates.extend(owner.references(&content, html.as_deref(), external)?.paths);
+                }
+            }
+        }
+        Ok(Self { owner, candidates })
+    }
+
+    pub(super) fn protect_surviving_references(&mut self, conn: &Connection) -> Result<(), String> {
+        if let Some(owner) = &self.owner {
+            if !self.candidates.is_empty() {
+                let mut statement = conn.prepare("SELECT content,html_content,is_external FROM clipboard_history WHERE is_external=1 OR html_content IS NOT NULL")
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, bool>(2)?,
+                        ))
+                    })
+                    .map_err(|error| error.to_string())?;
+                for row in rows {
+                    let (content, html, external) = row.map_err(|error| error.to_string())?;
+                    let references = owner.references(&content, html.as_deref(), external)?;
+                    if !references.complete {
+                        self.candidates.clear();
+                        break;
+                    }
+                    for shared in references.paths {
+                        self.candidates.remove(&shared);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Run only after the deleting database transaction commits, while its
+    /// in-process connection guard is still held. Never remove shared resources.
+    pub(super) fn finish(self) -> Vec<String> {
+        let mut errors = Vec::new();
+        if let Some(owner) = &self.owner {
+            for path in self.candidates {
+                match owner.owned_file(&path) {
+                    Ok(Some(verified)) if verified == path => {
+                        if let Err(error) = std::fs::remove_file(&verified) {
+                            if error.kind() != std::io::ErrorKind::NotFound {
+                                errors.push(format!("remove attachment: {error}"));
+                            }
+                        }
+                    }
+                    Ok(None) if !path.exists() => {}
+                    Ok(_) => {
+                        errors.push("attachment path changed during cleanup; file retained".into())
+                    }
+                    Err(error) => errors.push(error),
+                }
+            }
+        }
+        errors
+    }
+}
+
 fn decrypt_reference(value: &str) -> Result<String, String> {
     match encryption::decode_stored_text(value) {
         encryption::StoredText::Plain(value) => Ok(value.to_owned()),
@@ -236,30 +330,8 @@ impl SqliteTagRepository {
             .map_err(|error| error.to_string())?;
         drop(stmt);
 
-        let mut candidates = HashSet::new();
-        let owner = data_dir.map(AttachmentOwner::new).transpose()?.flatten();
-        if let Some(owner) = &owner {
-            let mut stmt = transaction
-                .prepare(
-                    "SELECT ch.content, ch.html_content, ch.is_external FROM clipboard_history ch
-                 INNER JOIN entry_tags et ON ch.id = et.entry_id WHERE et.tag = ?1",
-                )
-                .map_err(|error| error.to_string())?;
-            let rows = stmt
-                .query_map([name], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                        row.get::<_, bool>(2)?,
-                    ))
-                })
-                .map_err(|error| error.to_string())?;
-            for row in rows {
-                let (content, html, external) = row.map_err(|error| error.to_string())?;
-                let references = owner.references(&content, html.as_deref(), external)?;
-                candidates.extend(references.paths);
-            }
-        }
+        let mut cleanup =
+            AttachmentCleanup::for_entries(&transaction, data_dir, &report.deleted_ids)?;
 
         transaction.execute("DELETE FROM entry_tags WHERE entry_id IN (SELECT entry_id FROM entry_tags WHERE tag = ?1)", [name])
             .map_err(|error| error.to_string())?;
@@ -274,55 +346,11 @@ impl SqliteTagRepository {
             .execute("DELETE FROM saved_tags WHERE name = ?1", [name])
             .map_err(|error| error.to_string())?;
 
-        if let Some(owner) = &owner {
-            if !candidates.is_empty() {
-                let mut stmt = transaction.prepare("SELECT content, html_content, is_external FROM clipboard_history WHERE is_external = 1 OR html_content IS NOT NULL")
-                    .map_err(|error| error.to_string())?;
-                let rows = stmt
-                    .query_map([], |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, Option<String>>(1)?,
-                            row.get::<_, bool>(2)?,
-                        ))
-                    })
-                    .map_err(|error| error.to_string())?;
-                for row in rows {
-                    let (content, html, external) = row.map_err(|error| error.to_string())?;
-                    let references = owner.references(&content, html.as_deref(), external)?;
-                    if !references.complete {
-                        candidates.clear();
-                        break;
-                    }
-                    for shared in references.paths {
-                        candidates.remove(&shared);
-                    }
-                }
-            }
-        }
+        cleanup.protect_surviving_references(&transaction)?;
         transaction.commit().map_err(|error| error.to_string())?;
         // Keep the connection locked through cleanup so in-process captures
         // cannot add a reference between the shared-file check and removal.
-        if let Some(owner) = &owner {
-            for path in candidates {
-                match owner.owned_file(&path) {
-                    Ok(Some(verified)) if verified == path => {
-                        if let Err(error) = std::fs::remove_file(&verified) {
-                            if error.kind() != std::io::ErrorKind::NotFound {
-                                report
-                                    .cleanup_errors
-                                    .push(format!("remove attachment: {error}"));
-                            }
-                        }
-                    }
-                    Ok(None) if !path.exists() => {}
-                    Ok(_) => report
-                        .cleanup_errors
-                        .push("attachment path changed during cleanup; file retained".into()),
-                    Err(error) => report.cleanup_errors.push(error),
-                }
-            }
-        }
+        report.cleanup_errors = cleanup.finish();
         Ok(report)
     }
 }

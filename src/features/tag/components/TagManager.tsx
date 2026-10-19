@@ -2,13 +2,14 @@ import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useStat
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDownWideNarrow, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
 import { useTagLibrary } from '../hooks/useTagLibrary';
 import { TagDialog } from './TagDialog';
 import { TagHistoryRow } from './TagHistoryRow';
 import { useSettingsLayout } from '../../settings/hooks/useSettingsLayout';
+import { emptyTagSelection, MAX_TAG_BATCH_IDS, selectAllTagEntries, tagEntrySelected, tagSelectionCount, toggleTagEntry, type TagBatchSelection } from '../utils/tagBatchSelection';
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -28,6 +29,7 @@ type Dialog = { kind: 'createTag' }
     | { kind: 'removeTag'; tag: string }
     | { kind: 'createItem'; tag: string }
     | { kind: 'editItem'; id: number }
+    | { kind: 'deleteSelection'; tag: string; selection: TagBatchSelection; count: number }
     | { kind: 'deleteItem'; item: ClipboardEntry };
 
 function protectedTag(name: string): boolean { return name.toLowerCase() === 'sensitive' || name === '密码'; }
@@ -40,6 +42,13 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const { split } = useSettingsLayout();
     const [collapsed, setCollapsed] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [pickerActiveTag, setPickerActiveTag] = useState<string | null>(null);
+    const [managementMode, setManagementMode] = useState(false);
+    const selectionScope = JSON.stringify([selectedTag, library.query]);
+    const [entrySelection, setEntrySelection] = useState(() => ({ scope: selectionScope, selection: emptyTagSelection() as TagBatchSelection }));
+    const selection = entrySelection.scope === selectionScope ? entrySelection.selection : emptyTagSelection();
+    const selectedCount = tagSelectionCount(selection, library.total);
+    const [batchFeedback, setBatchFeedback] = useState<{ message: string; error: boolean } | null>(null);
     const [menuOpen, setMenuOpen] = useState(false);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [detailRevision, setDetailRevision] = useState(0);
@@ -52,6 +61,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const root = useRef<HTMLDivElement>(null);
     const menu = useRef<HTMLDivElement>(null);
     const menuButton = useRef<HTMLButtonElement>(null);
+    const manageButton = useRef<HTMLButtonElement>(null);
     const picker = useRef<HTMLDivElement>(null);
     const pickerButton = useRef<HTMLButtonElement>(null);
     const pickerId = useId();
@@ -76,6 +86,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         return () => { mounted.current = false; detailSequence.current += 1; focusSequence.current += 1; };
     }, []);
     useEffect(() => { detailSequence.current += 1; setActionError(false); setSelectedId(null); setMenuOpen(false); }, [selectedTag, library.query, library.sortBy]);
+    useEffect(() => { setEntrySelection({ scope: selectionScope, selection: emptyTagSelection() }); setBatchFeedback(null); }, [selectionScope]);
     useEffect(() => {
         if (!actionError) return;
         const timer = setTimeout(() => setActionError(false), 4000);
@@ -100,6 +111,26 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         tagSearchInput.current?.focus();
         return () => { document.removeEventListener('pointerdown', dismiss); focusSequence.current += 1; };
     }, [pickerOpen]);
+
+    const clearSelection = () => setEntrySelection({ scope: selectionScope, selection: emptyTagSelection() });
+    const selectAll = () => {
+        if (!selectedTag || library.loading || library.error || library.total === 0) return;
+        setEntrySelection({ scope: selectionScope, selection: selection.mode === 'all' && selection.excludedIds.length === 0
+            ? emptyTagSelection() : selectAllTagEntries(library.query) });
+        setBatchFeedback(null);
+    };
+    const toggleEntry = (id: number) => {
+        try {
+            setEntrySelection({ scope: selectionScope, selection: toggleTagEntry(selection, id) });
+            setBatchFeedback(null);
+        } catch {
+            setBatchFeedback({ message: t('tag_selection_limit').replace('{limit}', String(MAX_TAG_BATCH_IDS)), error: true });
+        }
+    };
+    const toggleManagement = () => {
+        detailSequence.current += 1;
+        setManagementMode(current => !current); clearSelection(); setBatchFeedback(null); setMenuOpen(false); setPickerOpen(false);
+    };
 
     const openDialog = useCallback((next: Dialog) => {
         detailSequence.current += 1;
@@ -144,6 +175,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         if (current.kind === 'removeTag' && protectedTag(current.tag) && privacyProtection) { setDialogError(t('tag_sensitive_delete_locked')); return; }
         setBusy(true); setDialogError(null);
         try {
+            let deletedCount: number | null = null;
             if (current.kind === 'createTag') {
                 const existing = library.tags.find(tag => tag.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase());
                 if (!existing) await invoke('create_new_tag', { tagName: trimmed });
@@ -159,19 +191,31 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 await invoke('add_manual_item', { content: value, contentType: 'text', tags: [current.tag] });
             } else if (current.kind === 'editItem') {
                 await invoke('update_item_content', { id: current.id, newContent: value });
+            } else if (current.kind === 'deleteSelection') {
+                const result = await invoke<{ deletedCount: number }>('delete_tag_entries', { tagName: current.tag, selection: current.selection });
+                deletedCount = result.deletedCount;
             } else await invoke('delete_clipboard_entry', { id: current.item.id });
             if (!mounted.current) return;
             setDialog(null); changed();
+            if (deletedCount !== null) {
+                clearSelection(); setBatchFeedback({ message: t('tag_batch_deleted').replace('{count}', String(deletedCount)), error: false });
+            }
             if (current.kind === 'createTag' && !split) requestAnimationFrame(() => pickerButton.current?.focus());
             void emit('clipboard-changed').catch(console.error);
         } catch (reason) {
-            if (mounted.current) setDialogError(current.kind === 'removeTag' && protectedTag(current.tag)
-                ? errorMessage(reason) || t('tag_action_failed') : t('tag_action_failed'));
+            if (mounted.current) {
+                if (current.kind === 'deleteSelection') {
+                    setDialog(null); clearSelection(); changed();
+                    setBatchFeedback({ message: errorMessage(reason) || t('tag_action_failed'), error: true });
+                } else setDialogError(current.kind === 'removeTag' && protectedTag(current.tag)
+                    ? errorMessage(reason) || t('tag_action_failed') : t('tag_action_failed'));
+            }
         }
         finally { if (mounted.current) setBusy(false); }
     };
 
     const handleKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
         const target = event.target as HTMLElement;
         if (target.closest('dialog')) return;
         if (pickerOpen && event.key === 'Escape') {
@@ -186,8 +230,16 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
             event.preventDefault(); searchInput.current?.focus(); return;
         }
+        const editable = target.closest('textarea, input:not([type="checkbox"])');
+        if (managementMode && !editable) {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAll(); return; }
+            if (event.key === 'Escape') { event.preventDefault(); toggleManagement(); manageButton.current?.focus(); return; }
+            if (event.key === 'Delete' && selectedTag && selectedCount > 0 && !busy) {
+                event.preventDefault(); openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount }); return;
+            }
+        }
         if (target.closest('input, textarea, [role="menu"]')) return;
-        if (event.key === 'F2' && selectedTag && !protectedTag(selectedTag)) {
+        if (event.key === 'F2' && !managementMode && selectedTag && !protectedTag(selectedTag)) {
             event.preventDefault(); openDialog({ kind: 'renameTag', tag: selectedTag }); return;
         }
         const tagIndex = target.dataset.tagIndex;
@@ -208,7 +260,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const isTextDialog = dialog?.kind === 'createItem' || dialog?.kind === 'editItem';
     const isNameDialog = dialog?.kind === 'createTag' || dialog?.kind === 'renameTag';
     const destructiveTag = dialog?.kind === 'removeTag' && protectedTag(dialog.tag);
-    const dialogTitle = dialog?.kind === 'createTag' ? t('tag_create') : dialog?.kind === 'renameTag' ? t('tag_rename')
+    const dialogTitle = dialog?.kind === 'deleteSelection' ? t('tag_batch_delete_title') : dialog?.kind === 'createTag' ? t('tag_create') : dialog?.kind === 'renameTag' ? t('tag_rename')
         : dialog?.kind === 'removeTag' ? destructiveTag ? t('tag_sensitive_delete_title') : t('tag_remove_title').replace('{tag}', dialog.tag)
             : dialog?.kind === 'createItem' ? t('add_item') : dialog?.kind === 'editItem' ? t('edit_item') : t('confirm_delete');
     const menuItem = (icon: ReactNode, label: string, action: () => void, disabled = false) => <button type="button"
@@ -217,15 +269,16 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const renderTagList = (dropdown: boolean) => <Virtuoso ref={tagList} id={tagListId} data={filteredTags} fixedItemHeight={38}
         role={dropdown ? 'listbox' : undefined} aria-label={t('tags')} computeItemKey={(_, tag) => tag.name}
         itemContent={(index, tag) => <div className="tag-manager-tag-cell"><button type="button" data-tag-index={index}
-            className={dropdown ? `dc-tag-filter-option tag-manager-tag${selectedTag === tag.name ? ' dc-tag-filter-active' : ''}`
+            className={dropdown ? `item-context-menu__item tag-manager-tag${pickerActiveTag === tag.name ? ' item-context-menu__item--active' : ''}`
                 : `settings-rail-item tag-manager-tag${selectedTag === tag.name ? ' is-active' : ''}`}
             role={dropdown ? 'option' : undefined} aria-selected={dropdown ? selectedTag === tag.name : undefined}
+            onMouseEnter={dropdown ? () => setPickerActiveTag(tag.name) : undefined} onFocus={dropdown ? () => setPickerActiveTag(tag.name) : undefined}
             onClick={() => {
                 selectTag(tag.name);
                 if (dropdown) { setPickerOpen(false); pickerButton.current?.focus(); }
             }} aria-label={`${tag.name} · ${tag.count}`} aria-current={!dropdown && selectedTag === tag.name ? 'page' : undefined} title={`${tag.name} · ${tag.count}`}>
             {collapsed && !dropdown ? <span className="tag-manager-tag-initial" aria-hidden="true">{Array.from(tag.name)[0]}</span>
-                : <><span className="tag-manager-tag-name">{tag.name}</span><small>{tag.count}</small></>}
+                : <><span className={`tag-manager-tag-name${dropdown ? ' item-context-menu__item-label' : ''}`}>{tag.name}</span><small>{tag.count}</small></>}
         </button></div>} />;
 
     return <div ref={root} className={`tag-manager${split && collapsed ? ' tag-manager--collapsed' : ''}`} onKeyDown={handleKeyboard}
@@ -253,12 +306,13 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     : <button ref={pickerButton} type="button" className={`btn-icon tag-manager-current tag-manager-picker-trigger${pickerOpen ? ' active' : ''}`}
                         aria-label={`${t('tags')}: ${selectedTag ?? t('tags')}`} title={selectedTag ?? t('tags')}
                         aria-haspopup="dialog" aria-expanded={pickerOpen} aria-controls={pickerOpen ? pickerId : undefined}
-                        onClick={() => { setMenuOpen(false); setPickerOpen(current => !current); }}
+                        onClick={() => { setMenuOpen(false); setPickerActiveTag(selectedTag); setPickerOpen(current => !current); }}
                         onKeyDown={event => {
-                            if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); setMenuOpen(false); setPickerOpen(true); }
+                            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                            if (['ArrowDown', 'ArrowUp'].includes(event.key)) { event.preventDefault(); setMenuOpen(false); setPickerActiveTag(selectedTag); setPickerOpen(true); }
                         }}><Tag size={14} /><span>{selectedTag ?? t('tags')}</span><ChevronDown size={13} /></button>}
                 {!split && pickerOpen && <div ref={picker} id={pickerId} role="dialog" aria-label={t('tag_search_label')}
-                    className="dc-tag-filter-picker tag-manager-picker" onBlur={event => {
+                    className="item-context-menu tag-manager-picker" onBlur={event => {
                         if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget) && event.relatedTarget !== pickerButton.current) setPickerOpen(false);
                     }}>
                     <div className="tag-manager-picker-tools">
@@ -276,10 +330,15 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     aria-label={t(compactMode ? 'tag_mode_detailed' : 'tag_mode_simple')} aria-pressed={compactMode}>
                     {compactMode ? <List size={16} /> : <ListCollapse size={16} />}
                 </button>
-                <button type="button" className="btn-icon" disabled={!selectedTag} title={t('add_item')} aria-label={t('add_item')}
+                <button ref={manageButton} type="button" className={`btn-icon${managementMode ? ' active' : ''}`}
+                    disabled={busy || (!managementMode && !selectedTag)} aria-pressed={managementMode} onClick={toggleManagement}
+                    title={t(managementMode ? 'tag_manage_done' : 'tag_manage')} aria-label={t(managementMode ? 'tag_manage_done' : 'tag_manage')}>
+                    {managementMode ? <Check size={16} /> : <ListChecks size={16} />}
+                </button>
+                <button type="button" className="btn-icon" disabled={!selectedTag || managementMode || busy} title={t('add_item')} aria-label={t('add_item')}
                     onClick={() => { if (selectedTag) openDialog({ kind: 'createItem', tag: selectedTag }); }}><Plus size={16} /></button>
                 <button ref={menuButton} type="button" className={`btn-icon${menuOpen ? ' active' : ''}`} title={t('tag_actions')} aria-label={t('tag_actions')}
-                    disabled={!selectedTag} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(current => !current)}><MoreHorizontal size={17} /></button>
+                    disabled={!selectedTag || managementMode || busy} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(current => !current)}><MoreHorizontal size={17} /></button>
                 {menuOpen && selectedTag && <div ref={menu} className="item-context-menu tag-manager-menu" role="menu" onKeyDown={event => {
                     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setMenuOpen(false); menuButton.current?.focus(); }
                     if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
@@ -299,21 +358,35 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             <div className="search-container tag-manager-search"><Search className="search-icon" size={14} />
                 <input ref={searchInput} className="search-input" value={library.query} maxLength={256} disabled={!selectedTag}
                     onChange={event => library.setQuery(event.target.value)} placeholder={t('tag_content_search')} aria-label={t('tag_content_search')}
-                    onKeyDown={event => { if (event.key === 'Escape' && library.query) { event.stopPropagation(); library.setQuery(''); } }} />
+                    onKeyDown={event => {
+                        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                        if (event.key === 'Escape' && library.query) { event.stopPropagation(); library.setQuery(''); }
+                    }} />
                 {library.query && <button type="button" className="btn-icon tag-manager-clear" onClick={() => library.setQuery('')} aria-label={t('tag_clear_search')}><X size={13} /></button>}
             </div>
+            {managementMode && <div className="tag-manager-batch-toolbar">
+                <button type="button" className="btn-icon tag-manager-text-button" disabled={busy || library.loading || library.error || library.total === 0} onClick={selectAll}
+                    aria-pressed={selection.mode === 'all' && selection.excludedIds.length === 0}>
+                    {t(selection.mode === 'all' && selection.excludedIds.length === 0 ? 'tag_clear_selection' : library.query ? 'tag_select_all_matches' : 'tag_select_all')}
+                </button>
+                <span role="status" aria-live="polite">{t('tag_selected_count').replace('{count}', String(selectedCount))}</span>
+                <button type="button" className="btn-icon tag-manager-text-button tag-manager-batch-delete" disabled={busy || selectedCount === 0 || !selectedTag}
+                    onClick={() => { if (selectedTag) openDialog({ kind: 'deleteSelection', tag: selectedTag, selection, count: selectedCount }); }}>{t('common_delete')}</button>
+            </div>}
             <div className="history-list-container tag-manager-results" aria-busy={library.loading}>
                 {library.loading || (library.metadataLoading && library.tags.length === 0) ? <div className="tag-manager-empty" role="status"><LoaderCircle className="tag-manager-spinner" size={22} /></div>
                     : library.items.length ? <div className="virtual-list-wrapper"><Virtuoso ref={list} key={`${selectedTag}:${library.query}:${library.sortBy}`} data={library.items}
                         computeItemKey={(_, item) => item.id} endReached={library.loadMore} increaseViewportBy={100}
                         itemContent={(index, item) => <TagHistoryRow key={`${item.id}:${library.contentRevision}:${detailRevision}`} item={item} index={index} selected={selectedId === item.id}
                             compactMode={compactMode} isWindowPinned={isWindowPinned}
+                            managementMode={managementMode} selectedForDeletion={managementMode && Number.isSafeInteger(item.id) && item.id > 0 && tagEntrySelected(selection, item.id)} onToggleSelection={toggleEntry}
                             richTextSnapshotPreview={richTextSnapshotPreview} theme={theme} language={language} t={t} tagColors={colors}
                             onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} />}
                         components={{ Footer: () => library.loadingMore ? <div className="tag-manager-loading"><LoaderCircle size={15} className="tag-manager-spinner" /></div> : null }} /></div>
                         : <div className="tag-manager-empty">{t(library.error || library.metadataError ? 'tag_load_failed' : !selectedTag ? 'tag_library_empty' : library.query ? 'tag_no_matching_entries' : 'tag_no_entries')}</div>}
             </div>
-            {actionError && <div className="tag-manager-notice" role="alert">{t('tag_action_failed')}<button type="button" className="btn-icon" aria-label={t('common_close')} onClick={() => setActionError(false)}><X size={13} /></button></div>}
+            {(batchFeedback || actionError) && <div className="tag-manager-notice" role={batchFeedback && !batchFeedback.error ? 'status' : 'alert'}>{batchFeedback?.message ?? t('tag_action_failed')}
+                <button type="button" className="btn-icon" aria-label={t('common_close')} onClick={() => { setActionError(false); setBatchFeedback(null); }}><X size={13} /></button></div>}
         </section>
         {dialog && <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog} wide={isTextDialog}>
             <form onSubmit={event => { event.preventDefault(); void saveDialog(); }}>
@@ -321,11 +394,13 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 {isTextDialog && <label className="tag-manager-field"><span>{t('input_content_placeholder')}</span><textarea className="modal-textarea" autoFocus value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
                 {dialog.kind === 'removeTag' && <p className="confirm-dialog-message">{t(destructiveTag ? 'tag_sensitive_delete_hint' : 'tag_remove_hint')}</p>}
                 {dialog.kind === 'deleteItem' && <p className="confirm-dialog-message">{t('confirm_delete_desc')}</p>}
+                {dialog.kind === 'deleteSelection' && <p className="confirm-dialog-message">{t(dialog.selection.mode === 'all' ? 'tag_batch_delete_all_confirm' : 'tag_batch_delete_confirm')
+                    .replace('{count}', String(dialog.count)).replace('{tag}', dialog.tag)}</p>}
                 {dialogError && <p className="tag-manager-dialog-error" role="alert">{dialogError}</p>}
                 <div className="confirm-dialog-buttons">
                     <button type="button" className="confirm-dialog-button" disabled={busy} onClick={closeDialog}>{t('cancel')}</button>
                     <button type="submit" className="confirm-dialog-button primary" disabled={busy || ((isNameDialog || isTextDialog) && !value.trim())}>
-                        {t(dialog.kind === 'deleteItem' || destructiveTag ? 'common_delete' : dialog.kind === 'removeTag' ? 'tag_remove' : dialog.kind === 'createTag' ? 'tag_create' : 'common_save')}
+                        {t(dialog.kind === 'deleteItem' || dialog.kind === 'deleteSelection' || destructiveTag ? 'common_delete' : dialog.kind === 'removeTag' ? 'tag_remove' : dialog.kind === 'createTag' ? 'tag_create' : 'common_save')}
                     </button>
                 </div>
             </form>

@@ -20,16 +20,22 @@ interface TagHistoryRowProps {
     onQRCode: (item: ClipboardEntry) => void;
     onError: () => void;
     onChanged: () => void;
+    managementMode?: boolean;
+    selectedForDeletion?: boolean;
+    onToggleSelection?: (id: number) => void;
 }
 
 export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinned,
-    richTextSnapshotPreview, theme, language, t, tagColors, onSelect, onEdit, onDelete, onQRCode, onError, onChanged }: TagHistoryRowProps) {
+    richTextSnapshotPreview, theme, language, t, tagColors, onSelect, onEdit, onDelete, onQRCode, onError, onChanged,
+    managementMode = false, selectedForDeletion = false, onToggleSelection }: TagHistoryRowProps) {
     const [detail, setDetail] = useState<ClipboardEntry | null>(null);
     const [editingTags, setEditingTags] = useState(false);
     const [tagInput, setTagInput] = useState('');
     const [tagBusy, setTagBusy] = useState(false);
     const fullItem = useRef<Promise<ClipboardEntry> | null>(null);
     const mounted = useRef(false);
+    const managing = useRef(managementMode);
+    managing.current = managementMode;
 
     const loadFullItem = useCallback(() => {
         if (!fullItem.current) {
@@ -48,6 +54,10 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     }, []);
 
     useEffect(() => {
+        if (managementMode) { setEditingTags(false); setTagInput(''); }
+    }, [managementMode]);
+
+    useEffect(() => {
         let disposed = false;
         fullItem.current = null;
         setDetail(null);
@@ -59,12 +69,13 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     }, [item, compactMode, loadFullItem, onError]);
 
     const copy = (pasteWithFormat = false, pasteImageAsBase64 = false) => {
+        if (managing.current) return;
         void invoke('copy_to_clipboard', { id: item.id, content: '', contentType: item.content_type,
             paste: true, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64 })
             .then(onChanged).catch(onError);
     };
     const changeTags = async (tags: string[]) => {
-        if (tagBusy) return;
+        if (tagBusy || managing.current) return;
         setTagBusy(true);
         try {
             await invoke('update_tags', { id: item.id, tags });
@@ -74,31 +85,45 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     };
     const rendered = detail ? { ...detail, tags: item.tags, is_pinned: item.is_pinned } : item;
 
-    return <div className="tag-history-row" data-entry-index={index} data-entry-id={item.id} tabIndex={0}
+    return <div className={`tag-history-row${managementMode ? ' tag-history-row--managing' : ''}`} data-entry-index={index} data-entry-id={item.id} tabIndex={0}
         aria-label={item.preview.slice(0, 100)}
+        onClick={managementMode ? () => onToggleSelection?.(item.id) : undefined}
+        onContextMenu={managementMode ? event => { event.preventDefault(); event.stopPropagation(); } : undefined}
         onKeyDown={event => {
             if (event.target !== event.currentTarget) return;
+            if (managementMode) {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggleSelection?.(item.id); }
+                return;
+            }
             if (event.key === 'Enter') { event.preventDefault(); copy(); }
             if (event.key === 'Delete') { event.preventDefault(); onDelete(item); }
         }}>
-        <ClipboardItem item={rendered} isSelected={selected} windowPinned={isWindowPinned}
+        {managementMode && <input type="checkbox" className="tag-history-selection" checked={selectedForDeletion}
+            aria-label={`${t('tag_select_entry')}: ${item.preview.slice(0, 80)}`} onClick={event => event.stopPropagation()}
+            onChange={() => onToggleSelection?.(item.id)}
+            onKeyDown={event => {
+                if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); onToggleSelection?.(item.id); }
+            }} />}
+        <div className="tag-history-row-content" inert={managementMode}>
+        <ClipboardItem key={managementMode ? 'selection' : 'content'} item={rendered} isSelected={managementMode ? selectedForDeletion : selected} windowPinned={isWindowPinned}
             isSensitiveHidden={false} isRevealed={true} showSensitiveVisibilityControl={false} isEditingTags={editingTags}
             tagInput={tagInput} theme={theme} language={language} t={t} tagColors={tagColors}
             compactMode={compactMode} richTextSnapshotPreview={richTextSnapshotPreview} disableLayout
-            onSelect={() => onSelect(item.id)} onCopy={copy}
+            onSelect={() => { if (!managing.current) onSelect(item.id); }} onCopy={copy}
             onToggleReveal={event => { event.stopPropagation(); }}
-            onOpen={event => { event.stopPropagation(); void invoke('open_content', { id: item.id, content: '', contentType: item.content_type }).catch(onError); }}
-            onTogglePin={event => { event.stopPropagation(); void invoke('toggle_clipboard_pin', { id: item.id, isPinned: !item.is_pinned }).then(onChanged).catch(onError); }}
-            onDelete={event => { event.stopPropagation(); onDelete(item); }}
-            onToggleTagEditor={event => { event.stopPropagation(); if (!tagBusy) setEditingTags(current => !current); }}
+            onOpen={event => { event.stopPropagation(); if (!managing.current) void invoke('open_content', { id: item.id, content: '', contentType: item.content_type }).catch(onError); }}
+            onTogglePin={event => { event.stopPropagation(); if (!managing.current) void invoke('toggle_clipboard_pin', { id: item.id, isPinned: !item.is_pinned }).then(onChanged).catch(onError); }}
+            onDelete={event => { event.stopPropagation(); if (!managing.current) onDelete(item); }}
+            onToggleTagEditor={event => { event.stopPropagation(); if (!tagBusy && !managing.current) setEditingTags(current => !current); }}
             onTagInput={setTagInput}
             onTagAdd={() => {
                 const next = tagInput.trim();
                 if (next && !item.tags.includes(next)) void changeTags([...item.tags, next]);
             }}
             onTagDelete={tag => { void changeTags(item.tags.filter(current => current !== tag)); }}
-            loadFullItem={loadFullItem} onEdit={() => onEdit(item)}
-            onQRCode={() => { void loadFullItem().then(next => { if (mounted.current) onQRCode(next); }).catch(onError); }}
+            loadFullItem={loadFullItem} onEdit={() => { if (!managing.current) onEdit(item); }}
+            onQRCode={() => { if (!managing.current) void loadFullItem().then(next => { if (mounted.current && !managing.current) onQRCode(next); }).catch(onError); }}
             onTransformItemError={onError} />
+        </div>
     </div>;
 }

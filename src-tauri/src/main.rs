@@ -188,6 +188,7 @@ fn main() {
             app::commands::rename_tag_globally,
             app::commands::delete_tag_from_all,
             app::commands::delete_sensitive_tag_with_contents,
+            app::commands::delete_tag_entries,
             app::commands::create_new_tag,
             app::commands::update_pinned_order,
             app::commands::get_db_count,

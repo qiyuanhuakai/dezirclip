@@ -12,6 +12,23 @@ pub struct TagItemsPage {
     pub next_offset: Option<usize>,
 }
 
+pub(super) const TAG_MATCH_FILTER: &str = "FROM entry_tags et JOIN clipboard_history ch ON ch.id=et.entry_id WHERE et.tag=?1 AND (?2='' OR dc_tag_matches(ch.content,ch.preview,ch.source_app,COALESCE(ch.ocr_text,''),?2))";
+
+pub(super) fn register_tag_matcher(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.create_scalar_function("dc_tag_matches", 5, FunctionFlags::SQLITE_UTF8, |context| {
+        let needle = context.get::<String>(4)?.to_lowercase();
+        for index in 0..4 {
+            let raw = context.get::<String>(index)?;
+            let value = encryption::decrypt_value(&raw).unwrap_or(raw);
+            if value.to_lowercase().contains(&needle) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    })
+    .map_err(|error| error.to_string())
+}
+
 impl SqliteTagRepository {
     /// Select only a bounded preview page. Full payloads are read by ID on demand.
     pub fn get_page(
@@ -36,20 +53,9 @@ impl SqliteTagRepository {
             _ => return Err("unknown tag sort order".into()),
         };
         let mut conn = self.conn.lock().map_err(|error| error.to_string())?;
-        conn.create_scalar_function("dc_tag_matches", 5, FunctionFlags::SQLITE_UTF8, |context| {
-            let needle = context.get::<String>(4)?.to_lowercase();
-            for index in 0..4 {
-                let raw = context.get::<String>(index)?;
-                let value = encryption::decrypt_value(&raw).unwrap_or(raw);
-                if value.to_lowercase().contains(&needle) {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        })
-        .map_err(|error| error.to_string())?;
+        register_tag_matcher(&conn)?;
         let transaction = conn.transaction().map_err(|error| error.to_string())?;
-        let filter="FROM entry_tags et JOIN clipboard_history ch ON ch.id=et.entry_id WHERE et.tag=?1 AND (?2='' OR dc_tag_matches(ch.content,ch.preview,ch.source_app,COALESCE(ch.ocr_text,''),?2))";
+        let filter = TAG_MATCH_FILTER;
         let total: usize = transaction
             .query_row(
                 &format!("SELECT COUNT(*) {filter}"),
