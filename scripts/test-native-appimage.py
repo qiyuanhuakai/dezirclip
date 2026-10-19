@@ -1,5 +1,6 @@
 import base64
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -9,6 +10,7 @@ import platform
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -25,6 +27,21 @@ NAMESPACES = ('user', 'pid', 'net')
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def configure_headless_fixture(database):
+    if not database.is_file():
+        raise RuntimeError('The old CLI must create the synthetic database first.')
+    requested = {'app.silent_start': 'false', 'app.disable_webview_gpu': 'true'}
+    with closing(sqlite3.connect(database)) as connection, connection:
+        before = {}
+        for key in requested:
+            row = connection.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+            before[key] = row[0] if row else None
+        connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', requested.items())
+        after = dict(connection.execute('SELECT key,value FROM settings WHERE key IN (?,?)', tuple(requested)))
+    return {'before': before, 'after': after,
+            'scope': 'Existing user settings selected only in a synthetic headless Xvfb profile; product defaults are unchanged.'}
 
 
 def digest(path):
@@ -141,6 +158,8 @@ def inside(mode):
         version = subprocess.check_output([cli, '--version'], text=True)
         require('0.1.20' in version, f'Unexpected old CLI version: {version}')
         run([cli, 'add', 'nativeappimagefixturemarker'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        settings = configure_headless_fixture(Path(os.environ['DEZIRCLIP_DB_PATH']))
+        (SCENARIO / 'headless-settings.json').write_text(json.dumps(settings, indent=2))
         print(json.dumps({'old_version': version.strip(), 'history_seeded': True}))
         return
     cli = extract(mode)
@@ -149,6 +168,12 @@ def inside(mode):
     history = subprocess.check_output([cli, 'search', 'nativeappimagefixturemarker', '--metadata', '--json'], text=True)
     require('nativeappimagefixturemarker' in history, 'Candidate CLI did not preserve synthetic old history.')
     (SCENARIO / 'new-history.json').write_text(history)
+    with closing(sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH'])) as connection:
+        settings = dict(connection.execute('SELECT key,value FROM settings WHERE key IN (?,?)',
+                                          ('app.silent_start', 'app.disable_webview_gpu')))
+    (SCENARIO / (mode + '-headless-settings.json')).write_text(json.dumps(settings, indent=2))
+    require(settings == {'app.silent_start': 'false', 'app.disable_webview_gpu': 'true'},
+            'Candidate did not preserve the explicit synthetic headless settings.')
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -176,7 +201,18 @@ def inside(mode):
                 if ready:
                     break
                 time.sleep(.1)
-            require(ready, 'Actual AppImage WebView did not initialize.')
+            diagnostic = request(port, route + '/execute/sync', {'script': 'return {url:location.href,title:document.title,ready:document.readyState,visibility:document.visibilityState,hidden:document.hidden,width:innerWidth,height:innerHeight,textContent:document.body?.textContent,bridge:typeof window.__TAURI_INTERNALS__?.invoke,bodyText:document.body?.innerText,html:document.documentElement?.outerHTML}', 'args': []})
+            (SCENARIO / (mode + '-webview-diagnostic.json')).write_text(json.dumps(diagnostic, indent=2))
+            if diagnostic['bridge'] == 'function':
+                visible = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("plugin:window|is_visible",{label:"main"}).then(x=>done({visible:x})).catch(e=>done({error:String(e)}))', 'args': []})
+                (SCENARIO / (mode + '-native-window.json')).write_text(json.dumps(visible, indent=2))
+            if not ready:
+                try:
+                    picture = request(port, route + '/screenshot')
+                    (SCENARIO / (mode + '-diagnostic.png')).write_bytes(base64.b64decode(picture))
+                except (OSError, RuntimeError) as error:
+                    (SCENARIO / (mode + '-screenshot-error.txt')).write_text(str(error))
+            require(ready, 'Actual AppImage WebView did not become visible and ready.')
             support = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1]; window.__TAURI_INTERNALS__.invoke("get_update_support").then(done).catch(e=>done({error:String(e)}));', 'args': []})
             expected = 'app_image_read_only' if mode == 'new-read-only' else 'app_image'
             require(support['installation'] == expected and support['canInstall'] is (mode != 'new-read-only'),
