@@ -152,18 +152,20 @@ pub async fn update_item_content(
 ) -> AppResult<()> {
     let preview = truncate_chars_with_suffix(&new_content, 500, "...");
 
-    {
-        let mut session_items = session.inner().0.lock().unwrap();
-        if let Some(item) = session_items.iter_mut().find(|i| i.id == id) {
-            item.content = new_content.clone();
-            item.preview = preview.clone();
-        }
+    if id >= 0 {
+        state
+            .repo
+            .update_entry_content(id, &new_content, &preview)
+            .map_err(AppError::from)?;
     }
-
-    state
-        .repo
-        .update_entry_content(id, &new_content, &preview)
-        .map_err(AppError::from)?;
+    let mut session_items = session.inner().0.lock().unwrap();
+    if let Some(item) = session_items.iter_mut().find(|i| i.id == id) {
+        item.content = new_content;
+        item.preview = preview;
+    } else if id < 0 {
+        return Err(AppError::Validation("Item not found".into()));
+    }
+    drop(session_items);
     let _ = app_handle.emit("clipboard-changed", ());
     Ok(())
 }
