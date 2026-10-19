@@ -1100,41 +1100,94 @@ mod data_integrity_tests {
     #[test]
     fn restored_sensitive_rich_text_uses_the_repository_encryption_path() {
         let (repo, connection) = repository();
+        let original = entry(1, "text", "ordinary original".to_string());
+        apply_entries(
+            &repo,
+            &[prepare_export_entry(&original).unwrap()],
+            ImportMode::Replace,
+        )
+        .unwrap();
+        let before = serde_json::to_value(rows(&repo)).unwrap();
+        let original_tag_count: i64 = connection
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM entry_tags", [], |row| row.get(0))
+            .unwrap();
         let mut source = entry(9, "rich_text", "  私人文本\r\n".to_string());
         source.preview = "私人摘要".to_string();
         source.html_content = Some("<p>私人文本</p>".to_string());
         source.tags = vec!["sensitive".to_string()];
         source.ocr_text = None;
-        apply_entries(
+        let result = apply_entries(
             &repo,
             &[prepare_export_entry(&source).unwrap()],
             ImportMode::Replace,
-        )
-        .unwrap();
-        let restored = rows(&repo);
-        assert_eq!(restored[0].content, source.content);
-        assert_eq!(restored[0].html_content, source.html_content);
-        if crate::infrastructure::encryption::encrypt_value(&source.content).is_some() {
-            let stored: (String, String, String) = connection
-                .lock()
-                .unwrap()
-                .query_row(
-                    "SELECT content,preview,html_content FROM clipboard_history WHERE id=9",
+        );
+        match result {
+            Ok(_) => {
+                let restored = rows(&repo);
+                assert_eq!(restored.len(), 1);
+                assert_eq!(restored[0].id, source.id);
+                assert_eq!(restored[0].content, source.content);
+                assert_eq!(restored[0].preview, source.preview);
+                assert_eq!(restored[0].html_content, source.html_content);
+                let stored: (String, String, String) = connection
+                    .lock()
+                    .unwrap()
+                    .query_row(
+                        "SELECT content,preview,html_content FROM clipboard_history WHERE id=9",
+                        [],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .unwrap();
+                assert!([&stored.0, &stored.1, &stored.2]
+                    .iter()
+                    .all(|value| crate::infrastructure::encryption::is_encrypted_value(value)));
+                assert!(repo
+                    .query_cli(&CliQuery {
+                        limit: 100,
+                        exclude_sensitive: true,
+                        ..Default::default()
+                    })
+                    .unwrap()
+                    .is_empty());
+            }
+            Err(error) => {
+                assert_eq!(error, "KeyUnavailable");
+                assert_eq!(
+                    serde_json::to_value(rows(&repo)).unwrap(),
+                    before,
+                    "an unavailable key must leave Replace's original history intact"
+                );
+                let conn = connection.lock().unwrap();
+                for (table, id_column) in [
+                    ("clipboard_history", "id"),
+                    ("entry_tags", "entry_id"),
+                    ("clipboard_fts", "rowid"),
+                ] {
+                    let rejected_count: i64 = conn
+                        .query_row(
+                            &format!("SELECT COUNT(*) FROM {table} WHERE {id_column}=9"),
+                            [],
+                            |row| row.get(0),
+                        )
+                        .unwrap();
+                    assert_eq!(
+                        rejected_count, 0,
+                        "rejected restore must not add to {table}"
+                    );
+                }
+                let tag_count: i64 = conn
+                    .query_row("SELECT COUNT(*) FROM entry_tags", [], |row| row.get(0))
+                    .unwrap();
+                assert_eq!(tag_count, original_tag_count);
+                conn.execute(
+                    "INSERT INTO clipboard_fts(clipboard_fts, rank) VALUES ('integrity-check', 1)",
                     [],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
-                .unwrap();
-            assert!([&stored.0, &stored.1, &stored.2]
-                .iter()
-                .all(|value| crate::infrastructure::encryption::is_encrypted_value(value)));
+                .expect("rejected Replace must preserve the existing FTS index");
+                eprintln!("native key unavailable: sensitive Replace rejected with original history and index intact");
+            }
         }
-        assert!(repo
-            .query_cli(&CliQuery {
-                limit: 100,
-                exclude_sensitive: true,
-                ..Default::default()
-            })
-            .unwrap()
-            .is_empty());
     }
 }

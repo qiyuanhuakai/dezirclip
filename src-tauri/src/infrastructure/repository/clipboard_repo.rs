@@ -2470,6 +2470,23 @@ mod tests {
     }
 
     #[cfg(not(feature = "portable"))]
+    fn assert_key_unavailable_rejects_without_rows(conn: &Connection, error: &str) {
+        assert_eq!(error, "KeyUnavailable");
+        for table in ["clipboard_history", "entry_tags", "clipboard_fts"] {
+            let count: i64 = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+                .expect("rejected sensitive save count");
+            assert_eq!(count, 0, "an unavailable key must leave {table} empty");
+        }
+        conn.execute(
+            "INSERT INTO clipboard_fts(clipboard_fts, rank) VALUES ('integrity-check', 1)",
+            [],
+        )
+        .expect("rejected sensitive save must leave the FTS index consistent");
+        eprintln!("native key unavailable: sensitive save rejected without row, tag, or FTS writes");
+    }
+
+    #[cfg(not(feature = "portable"))]
     #[test]
     fn sensitive_text_goes_through_the_encrypt_branch_and_round_trips() {
         let arc = setup_fts_db();
@@ -2481,29 +2498,26 @@ mod tests {
         entry.tags = vec!["sensitive".to_string()];
 
         let conn = repo.conn.lock().expect("lock");
-        let id = repo
-            .save_with_conn_and_image_hash(&conn, &entry, None, None)
-            .expect("save sensitive entry");
-
-        let stored: String = conn
-            .query_row(
-                "SELECT content FROM clipboard_history WHERE id = ?1",
-                [id],
-                |r| r.get(0),
-            )
-            .expect("row should exist");
-
-        assert_eq!(
-            repo.maybe_decrypt_text(&stored),
-            entry.content,
-            "the encrypt branch must hand back exactly what it was given"
-        );
-        // Successful sensitive persistence must store protected values.
-        if crate::infrastructure::encryption::encrypt_value(&entry.content).is_some() {
-            assert!(
-                crate::infrastructure::encryption::is_encrypted_value(&stored),
-                "a sensitive entry must not be readable in the database"
-            );
+        match repo.save_with_conn_and_image_hash(&conn, &entry, None, None) {
+            Ok(id) => {
+                let stored: String = conn
+                    .query_row(
+                        "SELECT content FROM clipboard_history WHERE id = ?1",
+                        [id],
+                        |r| r.get(0),
+                    )
+                    .expect("row should exist");
+                assert_eq!(
+                    repo.maybe_decrypt_text(&stored),
+                    entry.content,
+                    "the encrypt branch must hand back exactly what it was given"
+                );
+                assert!(
+                    crate::infrastructure::encryption::is_encrypted_value(&stored),
+                    "a sensitive entry must not be readable in the database"
+                );
+            }
+            Err(error) => assert_key_unavailable_rejects_without_rows(&conn, &error),
         }
     }
 
@@ -2525,8 +2539,32 @@ mod tests {
                 if sensitive {
                     entry.tags = vec!["sensitive".to_string()];
                 }
-                let id = repo.save_with_conn(&conn, &entry, None).expect("save");
-                saved.push((id, raw));
+                match repo.save_with_conn(&conn, &entry, None) {
+                    Ok(id) => {
+                        if sensitive {
+                            let stored: String = conn
+                                .query_row(
+                                    "SELECT content FROM clipboard_history WHERE id=?1",
+                                    [id],
+                                    |row| row.get(0),
+                                )
+                                .expect("stored sensitive candidate");
+                            assert!(crate::infrastructure::encryption::is_encrypted_value(&stored));
+                        }
+                        saved.push((id, raw));
+                    }
+                    Err(error) => {
+                        assert!(sensitive, "ordinary content must save: {error}");
+                        #[cfg(not(feature = "portable"))]
+                        assert_key_unavailable_rejects_without_rows(&conn, &error);
+                        assert_eq!(
+                            repo.find_by_content_with_conn(&conn, raw, Some("text"))
+                                .expect("rejected lookup"),
+                            None,
+                            "a rejected sensitive payload must not be a dedup candidate"
+                        );
+                    }
+                }
             }
             for (id, raw) in saved {
                 assert_eq!(
@@ -2685,42 +2723,31 @@ mod tests {
         let entry = rich_text_entry(Some(html), vec!["密码".to_string()]);
 
         let conn = repo.conn.lock().expect("lock");
-        let id = repo
-            .save_with_conn_and_image_hash(&conn, &entry, None, None)
-            .expect("save sensitive rich text");
-
-        let (content, preview, stored_html) = stored_triple(&conn, id, &repo);
-        assert_eq!(content, entry.content, "encrypted content must round-trip");
-        assert_eq!(preview, entry.preview, "encrypted preview must round-trip");
-        assert_eq!(
-            stored_html.as_deref(),
-            Some(html),
-            "encrypted HTML must round-trip"
-        );
-
-        // The encrypt branch owns all three, so on a platform that can encrypt
-        // none of them may be readable in the database.
-        if crate::infrastructure::encryption::encrypt_value(&entry.content).is_some() {
-            let raw: (String, String, Option<String>) = conn
-                .query_row(
-                    "SELECT content, preview, html_content FROM clipboard_history WHERE id = ?1",
-                    [id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                )
-                .expect("row should exist");
-            assert!(crate::infrastructure::encryption::is_encrypted_value(
-                &raw.0
-            ));
-            assert!(crate::infrastructure::encryption::is_encrypted_value(
-                &raw.1
-            ));
-            assert!(
-                raw.2
+        match repo.save_with_conn_and_image_hash(&conn, &entry, None, None) {
+            Ok(id) => {
+                let (content, preview, stored_html) = stored_triple(&conn, id, &repo);
+                assert_eq!(content, entry.content, "encrypted content must round-trip");
+                assert_eq!(preview, entry.preview, "encrypted preview must round-trip");
+                assert_eq!(
+                    stored_html.as_deref(),
+                    Some(html),
+                    "encrypted HTML must round-trip"
+                );
+                let raw: (String, String, Option<String>) = conn
+                    .query_row(
+                        "SELECT content, preview, html_content FROM clipboard_history WHERE id = ?1",
+                        [id],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .expect("row should exist");
+                assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.0));
+                assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.1));
+                assert!(raw
+                    .2
                     .as_deref()
-                    .is_some_and(crate::infrastructure::encryption::is_encrypted_value),
-                "sensitive HTML must not be readable either, got {:?}",
-                raw.2
-            );
+                    .is_some_and(crate::infrastructure::encryption::is_encrypted_value));
+            }
+            Err(error) => assert_key_unavailable_rejects_without_rows(&conn, &error),
         }
     }
 
@@ -2734,15 +2761,25 @@ mod tests {
         entry.preview = "secret".to_string();
 
         let conn = repo.conn.lock().expect("lock");
-        let id = repo
-            .save_with_conn_and_image_hash(&conn, &entry, None, None)
-            .expect("save sensitive plain text");
-
-        let (_, _, stored_html) = stored_triple(&conn, id, &repo);
-        assert_eq!(
-            stored_html, None,
-            "the encrypt branch must not invent an HTML value for a None"
-        );
+        match repo.save_with_conn_and_image_hash(&conn, &entry, None, None) {
+            Ok(id) => {
+                let (content, preview, stored_html) = stored_triple(&conn, id, &repo);
+                assert_eq!(content, entry.content);
+                assert_eq!(preview, entry.preview);
+                assert_eq!(stored_html, None, "the encrypt branch must not invent HTML");
+                let raw: (String, String, Option<String>) = conn
+                    .query_row(
+                        "SELECT content, preview, html_content FROM clipboard_history WHERE id=?1",
+                        [id],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .expect("stored sensitive plain text");
+                assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.0));
+                assert!(crate::infrastructure::encryption::is_encrypted_value(&raw.1));
+                assert_eq!(raw.2, None);
+            }
+            Err(error) => assert_key_unavailable_rejects_without_rows(&conn, &error),
+        }
     }
 
     // The repository caches hold pages of entries whose payload size is decided

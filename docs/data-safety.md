@@ -71,3 +71,12 @@ cargo test --manifest-path src-tauri/Cargo.toml --all-targets
 ```
 
 测试使用临时数据库，不操作用户历史。事务和回归测试提高可预测性，但不能恢复已经损坏或丢失且没有备份的数据。
+
+无可用系统密钥库的 Linux 环境也会执行敏感保存和恢复回归：收到 `KeyUnavailable` 后，检查没有新增历史、标签关联或全文索引，Replace 恢复保留原有历史及索引。有可用系统密钥的平台仍验证实际密文和正文、摘要、HTML 往返；无密钥环境通过不代表已经验证该平台的密钥库成功路径。可独立运行 Core 与 CLI 全量测试：
+
+```bash
+cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib
+cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc
+```
+
+2026-10-19 本轮实测：WSL Ubuntu 的上述全量 lib 测试为 290 通过、1 项既有文件计时测试忽略，dzc 为 4 通过；系统密钥库处于锁定状态，定向运行确认实际执行了 `KeyUnavailable` 拒绝分支。Windows 的 `sensitive_` 定向测试 45 通过、`text_dedup` 2 通过，覆盖真实 DPAPI 保存及往返。没有为测试启用全局替代密钥；这组结果不代表已经验收 Linux 密钥库解锁后的成功路径或完成完整 Phase 0。
