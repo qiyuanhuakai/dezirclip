@@ -33,6 +33,10 @@ enum Setting {
 }
 
 impl Setting {
+    fn index(self) -> usize {
+        match self { Self::History => 0, Self::Cloud => 1, Self::WinV => 2 }
+    }
+
     fn key(self) -> &'static str {
         match self {
             Self::History | Self::Cloud => CLIPBOARD_KEY,
@@ -267,9 +271,16 @@ struct SettingState {
 }
 
 #[derive(Clone)]
+struct SettingWrites {
+    before: SettingState,
+    expected: SettingState,
+    value_written: bool,
+    receipt_written: bool,
+}
+
+#[derive(Clone, Default)]
 struct SettingsChange {
-    before: [SettingState; 3],
-    after: [SettingState; 3],
+    writes: [Option<SettingWrites>; 3],
 }
 
 const SETTINGS: [Setting; 3] = [Setting::History, Setting::Cloud, Setting::WinV];
@@ -281,6 +292,7 @@ fn read_state(store: &impl SettingsStore, setting: Setting) -> io::Result<Settin
     })
 }
 
+#[cfg(test)]
 fn snapshot(store: &impl SettingsStore) -> io::Result<[SettingState; 3]> {
     Ok([
         read_state(store, Setting::History)?,
@@ -289,28 +301,75 @@ fn snapshot(store: &impl SettingsStore) -> io::Result<[SettingState; 3]> {
     ])
 }
 
+struct RecordingStore<'a, S> {
+    store: &'a mut S,
+    change: SettingsChange,
+}
+
+impl<S: SettingsStore> RecordingStore<'_, S> {
+    fn writes(&mut self, setting: Setting, observed: &SettingState) -> &mut SettingWrites {
+        self.change.writes[setting.index()].get_or_insert_with(|| SettingWrites {
+            before: observed.clone(), expected: observed.clone(),
+            value_written: false, receipt_written: false,
+        })
+    }
+}
+
+impl<S: SettingsStore> SettingsStore for RecordingStore<'_, S> {
+    fn current(&self, setting: Setting) -> io::Result<Option<RawValue>> {
+        self.store.current(setting)
+    }
+
+    fn receipt(&self, setting: Setting) -> io::Result<Option<Receipt>> {
+        self.store.receipt(setting)
+    }
+
+    fn write_current(&mut self, setting: Setting, value: Option<&RawValue>) -> io::Result<()> {
+        let observed = read_state(self.store, setting)?;
+        self.store.write_current(setting, value)?;
+        // Only a successful write claims this field, and its expected state is
+        // the requested bytes, never a later read that could belong to another writer.
+        let writes = self.writes(setting, &observed);
+        if !writes.value_written { writes.before.value = observed.value; }
+        writes.value_written = true;
+        writes.expected.value = value.cloned();
+        Ok(())
+    }
+
+    fn write_receipt(&mut self, setting: Setting, receipt: Option<&Receipt>) -> io::Result<()> {
+        let observed = read_state(self.store, setting)?;
+        self.store.write_receipt(setting, receipt)?;
+        let writes = self.writes(setting, &observed);
+        if !writes.receipt_written { writes.before.receipt = observed.receipt; }
+        writes.receipt_written = true;
+        writes.expected.receipt = receipt.cloned();
+        Ok(())
+    }
+}
+
 fn rollback_change(store: &mut impl SettingsStore, change: &mut SettingsChange) -> io::Result<bool> {
     let mut changed = false;
-    for (index, setting) in SETTINGS.into_iter().enumerate() {
-        let before = change.before[index].clone();
-        let after = change.after[index].clone();
-        if before == after || read_state(store, setting)? != after {
+    for setting in SETTINGS {
+        let Some(writes) = change.writes[setting.index()].as_mut() else { continue; };
+        let before = writes.before.clone();
+        let expected = writes.expected.clone();
+        if before == expected || read_state(store, setting)? != expected {
             continue;
         }
         // Restoring an old receipt precedes its value; releasing a new receipt
         // follows its value. Interrupted rollback therefore retains recovery evidence.
-        if before.receipt.is_some() && before.receipt != after.receipt {
+        if writes.receipt_written && before.receipt.is_some() && before.receipt != expected.receipt {
             store.write_receipt(setting, before.receipt.as_ref())?;
-            change.after[index].receipt = before.receipt.clone();
+            writes.expected.receipt = before.receipt.clone();
         }
-        if before.value != after.value {
+        if writes.value_written && before.value != expected.value {
             store.write_current(setting, before.value.as_ref())?;
-            change.after[index].value = before.value.clone();
+            writes.expected.value = before.value.clone();
             changed = true;
         }
-        if before.receipt.is_none() && before.receipt != after.receipt {
+        if writes.receipt_written && before.receipt.is_none() && before.receipt != expected.receipt {
             store.write_receipt(setting, None)?;
-            change.after[index].receipt = None;
+            writes.expected.receipt = None;
         }
     }
     Ok(changed)
@@ -320,15 +379,14 @@ fn stage_change(
     store: &mut impl SettingsStore,
     enabled: bool,
 ) -> io::Result<(bool, SettingsChange)> {
-    let before = snapshot(store)?;
-    let result = if enabled {
-        optimize_win_v(store)
-    } else {
-        release_win_v(store)
-    };
-    let mut change = SettingsChange {
-        before,
-        after: snapshot(store)?,
+    let (result, mut change) = {
+        let mut recording = RecordingStore { store, change: SettingsChange::default() };
+        let result = if enabled {
+            optimize_win_v(&mut recording)
+        } else {
+            release_win_v(&mut recording)
+        };
+        (result, recording.change)
     };
     match result {
         Ok(changed) => Ok((changed, change)),
@@ -585,7 +643,7 @@ pub fn set_win_v_optimization(enabled: bool) -> io::Result<bool> {
     })
 }
 
-/// GUI changes retain a private, bounded rollback snapshot until confirmation.
+/// GUI changes retain a private, bounded successful-write journal until confirmation.
 pub fn begin_win_v_change(enabled: bool) -> io::Result<(bool, String)> {
     with_registry(|store| {
         let mut pending = pending_changes()
@@ -878,6 +936,121 @@ mod tests {
         assert!(store.receipts.is_empty());
         rollback_change(&mut store, &mut change).unwrap();
         assert!(snapshot(&store).unwrap() == before);
+    }
+
+    struct DuringBeginStore {
+        inner: MemoryStore,
+        inject_on: Setting,
+        inject: Option<fn(&mut MemoryStore)>,
+        fail_cloud: bool,
+        value_writes: Vec<&'static str>,
+    }
+
+    impl DuringBeginStore {
+        fn new(inject_on: Setting, inject: fn(&mut MemoryStore)) -> Self {
+            let mut inner = MemoryStore::default();
+            inner.values.insert(Setting::WinV.name(), RawValue::string("V"));
+            inner.values.insert(Setting::History.name(), RawValue::dword(1));
+            inner.values.insert(Setting::Cloud.name(), RawValue::dword(1));
+            Self { inner, inject_on, inject: Some(inject), fail_cloud: false, value_writes: Vec::new() }
+        }
+    }
+
+    impl SettingsStore for DuringBeginStore {
+        fn current(&self, setting: Setting) -> io::Result<Option<RawValue>> {
+            self.inner.current(setting)
+        }
+        fn receipt(&self, setting: Setting) -> io::Result<Option<Receipt>> {
+            self.inner.receipt(setting)
+        }
+        fn write_current(&mut self, setting: Setting, value: Option<&RawValue>) -> io::Result<()> {
+            if matches!(setting, Setting::Cloud) && self.fail_cloud {
+                self.fail_cloud = false;
+                return Err(io::Error::other("injected begin cloud failure"));
+            }
+            self.inner.write_current(setting, value)?;
+            self.value_writes.push(setting.name());
+            if setting.index() == self.inject_on.index() {
+                if let Some(inject) = self.inject.take() { inject(&mut self.inner); }
+            }
+            Ok(())
+        }
+        fn write_receipt(&mut self, setting: Setting, receipt: Option<&Receipt>) -> io::Result<()> {
+            self.inner.write_receipt(setting, receipt)
+        }
+    }
+
+    #[test]
+    fn cancel_preserves_an_unwritten_hotkey_changed_inside_begin() {
+        let mut store = DuringBeginStore::new(Setting::History, |inner| {
+            inner.values.insert(Setting::WinV.name(), RawValue::string("XV"));
+        });
+        let (_, mut change) = stage_change(&mut store, true).unwrap();
+        assert!(change.writes[Setting::WinV.index()].is_none());
+        assert!(!store.value_writes.contains(&Setting::WinV.name()));
+        rollback_change(&mut store, &mut change).unwrap();
+        assert_eq!(store.current(Setting::WinV).unwrap(), Some(RawValue::string("XV")));
+        assert!(!store.value_writes.contains(&Setting::WinV.name()));
+        assert_eq!(store.current(Setting::History).unwrap(), Some(RawValue::dword(1)));
+        assert_eq!(store.current(Setting::Cloud).unwrap(), Some(RawValue::dword(1)));
+        assert!(store.inner.receipts.is_empty());
+    }
+
+    #[test]
+    fn cancel_does_not_claim_a_receipt_written_externally_inside_begin() {
+        let mut store = DuringBeginStore::new(Setting::History, |inner| {
+            inner.values.insert(Setting::WinV.name(), RawValue::string("XV"));
+            inner.receipts.insert(Setting::WinV.name(), Receipt { version: 1,
+                original: Some(RawValue::string("V")), expected: RawValue::string("XV") });
+        });
+        let (_, mut change) = stage_change(&mut store, true).unwrap();
+        let external = read_state(&store, Setting::WinV).unwrap();
+        assert!(change.writes[Setting::WinV.index()].is_none());
+        rollback_change(&mut store, &mut change).unwrap();
+        assert!(read_state(&store, Setting::WinV).unwrap() == external);
+    }
+
+    #[test]
+    fn journal_expects_its_own_write_not_an_external_value_observed_at_end_of_begin() {
+        let mut store = DuringBeginStore::new(Setting::Cloud, |inner| {
+            inner.values.insert(Setting::History.name(), RawValue::dword(9));
+        });
+        let (_, mut change) = stage_change(&mut store, true).unwrap();
+        assert_eq!(change.writes[Setting::History.index()].as_ref().unwrap().expected.value,
+            Some(RawValue::dword(0)));
+        rollback_change(&mut store, &mut change).unwrap();
+        assert_eq!(store.current(Setting::History).unwrap(), Some(RawValue::dword(9)));
+        assert_eq!(store.current(Setting::Cloud).unwrap(), Some(RawValue::dword(1)));
+        assert_eq!(store.value_writes.iter().filter(|name| **name == Setting::History.name()).count(), 1);
+    }
+
+    #[test]
+    fn partial_begin_failure_does_not_roll_back_an_external_hotkey_write() {
+        let mut store = DuringBeginStore::new(Setting::History, |inner| {
+            inner.values.insert(Setting::WinV.name(), RawValue::string("XV"));
+        });
+        store.fail_cloud = true;
+        assert!(stage_change(&mut store, true).is_err());
+        assert_eq!(store.current(Setting::WinV).unwrap(), Some(RawValue::string("XV")));
+        assert!(!store.value_writes.contains(&Setting::WinV.name()));
+        assert_eq!(store.current(Setting::History).unwrap(), Some(RawValue::dword(1)));
+        assert_eq!(store.current(Setting::Cloud).unwrap(), Some(RawValue::dword(1)));
+        assert!(store.inner.receipts.is_empty());
+    }
+
+    #[test]
+    fn a_receipt_only_journal_never_rewrites_an_unmodified_target_value() {
+        let mut store = DuringBeginStore::new(Setting::Cloud, |_| {});
+        let mut change = {
+            let mut recording = RecordingStore { store: &mut store, change: SettingsChange::default() };
+            recording.write_receipt(Setting::History, Some(&Receipt { version: 1,
+                original: Some(RawValue::dword(1)), expected: RawValue::dword(0) })).unwrap();
+            recording.change
+        };
+        assert!(!change.writes[Setting::History.index()].as_ref().unwrap().value_written);
+        assert!(!rollback_change(&mut store, &mut change).unwrap());
+        assert!(store.value_writes.is_empty());
+        assert!(store.inner.receipts.is_empty());
     }
 
     #[test]

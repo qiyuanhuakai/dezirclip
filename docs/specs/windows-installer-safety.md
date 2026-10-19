@@ -44,15 +44,25 @@ policy remains authoritative.
 ## Interactive confirmation and rollback
 
 The GUI uses `begin_registry_win_v_change(enable)`, which returns
-`[changed, opaque_token]`. The token refers to a backend-only snapshot of the
-three fixed values and their receipts before and after this particular request.
-No raw registry snapshot is accepted from the frontend. Pending snapshots are
+`[changed, opaque_token]`. The token refers to a backend-only journal of this
+request's successful writes to the three fixed values and their receipts.
+Each field is claimed only after its write succeeds. Its original bytes are
+read immediately before the write, and its expected bytes are the requested
+write value, never a full after-operation snapshot. No raw registry journal is
+accepted from the frontend. Pending journals are
 limited to 16, and tokens are single use until application exit.
 
 Confirming finishes the token with `finish_registry_win_v_change(token, false)`.
 Canceling or failing after begin uses the same command with `rollback: true`.
 Rollback restores only values and receipts actually changed by that request,
-and only if they still match the recorded after-state. Existing ownership and
+and only if they still match the recorded expected state. A field that was not
+written by this request is never restored, even if an external writer changed
+it while begin was still running. For example, an already-unowned V is left
+alone when another writer changes DisabledHotkeys to XV during the clipboard
+history write; canceling restores this request's clipboard overrides without
+removing the external X. An externally changed value on a field written earlier
+in begin also remains external because the journal retains the application's
+requested value as its expected state. Existing ownership and
 newer user changes are preserved. Canceling a disable operation restores the
 old active receipts rather than constructing fresh ownership from guessed values.
 The toggle is disabled while its confirmation is pending.
@@ -65,7 +75,9 @@ this request's clipboard overrides; disabling with an unowned V makes no writes
 and does not accidentally disable Windows history in the error handler.
 If recovery itself fails, write-ahead receipts remain available for retry; the
 implementation does not claim filesystem-style atomicity for registry batches.
-Each successful rollback write also advances the token's expected after-state.
+An old receipt is restored before its target value, whereas a newly created
+receipt is removed only after restoring its target value. Each successful
+rollback write also advances the token's expected state.
 A retry can therefore finish an interrupted value/receipt pair without treating
 its own partial progress as an external change; genuinely newer values still remain untouched.
 
@@ -127,7 +139,8 @@ behavior of a previously shipped binary.
 ## Verification
 
 Inline Rust regressions cover missing originals, exact types/bytes and hotkey
-case, no-op ownership, legacy override errors, control-domain isolation, later user changes, actual isolated HKCU writes,
+case, no-op ownership, legacy override errors, control-domain isolation, later user changes,
+external writes inside begin (including partial begin failure and receipt-only writes), actual isolated HKCU writes,
 interrupted-write recovery, unowned policy preservation, and malformed receipts. Registry tests
 write only beneath unique `Software\DezirClipInstallerTests` subkeys and clean
 them up; they never alter the user's real clipboard or Explorer settings.
