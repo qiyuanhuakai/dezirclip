@@ -161,3 +161,23 @@ Controlled execution of the existing GUI handler is recorded during review,
 with IPC and dialogs replaced by contract fixtures, without adding a frontend
 test framework. Full installed-app upgrades, sidecar replacement, and Windows
 ARM64 runtime behavior require acceptance on the corresponding systems.
+
+### Disposable installed-package acceptance
+
+The existing CI workflow also builds unpublished debug NSIS fixtures and runs
+four separate, fresh GitHub-hosted Windows jobs. They exercise the digest-pinned
+published 0.1.20 uninstaller, old-to-new `/UPDATE`, new-to-new `/UPDATE` with
+real ownership receipts, and uninstall after a newer external edit. The owned
+scenarios call the actual installed application's begin/finish commands through
+a runner-only WebView debugging endpoint, then run its real uninstaller. Typed
+Windows values, retained unknown policies, CLI versions, and old history are
+checked, with isolated evidence uploaded by the workflow.
+
+These scripts refuse local execution before reading the test registry or
+launching an installer. Fixture versions 0.2.0-alpha.0/alpha.1 are never published;
+updater artifact signing is disabled only for these debug package-behavior
+fixtures, so no production signing secret is used. They do not establish release
+build, updater download/signature, AppImage, ARM64, or cross-session acceptance.
+The actual CI terminal result is required before claiming these package cases
+passed; local syntax checks and the local-execution guard are not installation
+results.

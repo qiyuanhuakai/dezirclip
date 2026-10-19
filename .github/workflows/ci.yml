@@ -175,6 +175,73 @@ jobs:
     name: Compatible standalone CLI
     uses: ./.github/workflows/standalone-cli.yml
 
+  native-windows-upgrade:
+    name: Native NSIS (${{ matrix.scenario }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [LegacyUninstall, OldToNew, OwnedUpgrade, OwnedExternalEdit]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Rust stable
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: native-debug-installers
+
+      - name: Install frontend dependencies
+        if: matrix.scenario != 'LegacyUninstall'
+        run: pnpm install --frozen-lockfile
+
+      - name: Download pinned published legacy installer
+        if: matrix.scenario == 'LegacyUninstall' || matrix.scenario == 'OldToNew'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.1.20/DezirClip_0.1.20_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe"
+
+      - name: Build previous unpublished fixture package
+        if: matrix.scenario == 'OwnedUpgrade'
+        shell: pwsh
+        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.0 -Destination "$env:RUNNER_TEMP/previous-setup.exe"
+
+      - name: Build current unpublished fixture package
+        if: matrix.scenario != 'LegacyUninstall'
+        shell: pwsh
+        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.1 -Destination "$env:RUNNER_TEMP/candidate-setup.exe"
+
+      - name: Exercise actual installer and application
+        shell: pwsh
+        run: |
+          ./scripts/test-native-windows-upgrade.ps1 -Scenario '${{ matrix.scenario }}' -OldInstaller "$env:RUNNER_TEMP/legacy-setup.exe" -NewInstaller "$env:RUNNER_TEMP/candidate-setup.exe" -PreviousCandidate "$env:RUNNER_TEMP/previous-setup.exe"
+
+      - name: Preserve isolated acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-nsis-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/dezirclip-upgrade-*/
+          if-no-files-found: ignore
+
   flatpak:
     name: Verified Flatpak
     uses: ./.github/workflows/flatpak.yml
