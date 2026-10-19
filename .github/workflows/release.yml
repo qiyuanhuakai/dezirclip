@@ -52,6 +52,14 @@ jobs:
             release_args+=(--prerelease --latest=false)
           fi
           echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          source_notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [[ -f "$source_notes" ]]; then
+            release_notes="$RUNNER_TEMP/dezirclip-release-notes.md"
+            node -e 'const fs=require("node:fs"); const base=`https://github.com/${process.env.GITHUB_REPOSITORY}/blob/${process.env.GITHUB_REF_NAME}`; fs.writeFileSync(process.argv[2], fs.readFileSync(process.argv[1], "utf8").replaceAll("](../specs/", `](${base}/docs/specs/`));' "$source_notes" "$release_notes"
+            notes_args=(--notes-file "$release_notes")
+          else
+            notes_args=(--notes "Native dzc includes pick, TUI, Shell initialization and read-only MCP. Download the matching DezirClip installer or standalone dzc archive for your platform; SHA-256 checksums accompany standalone archives.")
+          fi
           if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release create "${GITHUB_REF_NAME}" \
               --draft \
@@ -59,7 +67,7 @@ jobs:
               --title "DezirClip ${GITHUB_REF_NAME}" \
               --generate-notes \
               "${release_args[@]}" \
-              --notes "Native dzc includes pick, TUI, Shell initialization and read-only MCP. Download the matching DezirClip installer or standalone dzc archive for your platform; SHA-256 checksums accompany standalone archives."
+              "${notes_args[@]}"
           fi
           test "$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft')" = true
           release_id="$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq '.databaseId')"
