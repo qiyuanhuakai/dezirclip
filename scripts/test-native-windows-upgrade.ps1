@@ -83,11 +83,10 @@ $beforeJson = $before | ConvertTo-Json -Depth 6
 $beforeJson | Set-Content (Join-Path $fixtureRoot 'settings-before.json')
 $explorerBefore = @(Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id,StartTime)
 if ($owned) {
-    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $port = 9222
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
     $listener.Start()
-    $port = $listener.LocalEndpoint.Port
     $listener.Stop()
-    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$port"
     $application = Start-Process -FilePath (Join-Path $installDirectory 'dezirclip.exe') -WorkingDirectory $installDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $fixtureRoot 'application-stdout.txt') -RedirectStandardError (Join-Path $fixtureRoot 'application-stderr.txt')
     try {
         & node (Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs') $port (Join-Path $fixtureRoot 'cdp-observations.json')
@@ -101,7 +100,6 @@ if ($owned) {
         Get-Content (Join-Path $fixtureRoot 'application-process.json') | Write-Output
         Get-Content (Join-Path $fixtureRoot 'cdp-observations.json') -Tail 40 -ErrorAction SilentlyContinue | Write-Output
         if (-not $application.HasExited) { Stop-Process -Id $application.Id -Force }
-        Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
     }
     $acquired = @(Snapshot-Settings)
     if ($acquired[0].Value -ne 0 -or $acquired[1].Value -ne 0 -or $acquired[2].Value -ne 'XV') { throw 'Application did not persist expected owned values.' }
