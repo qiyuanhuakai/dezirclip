@@ -81,7 +81,7 @@ pnpm run tauri:dev:safe
 pnpm run tauri:build
 ```
 
-产物位于 `src-tauri/target/release/bundle/`，包含 deb、AppImage、rpm。不要分发缺少 `dist/web` 的手工桌面构建。只需 CLI 时可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，输出 `src-tauri/target/release/dzc`，无需 GTK/WebKit/PipeWire 开发依赖。跨发行版分发使用 `scripts/build-standalone-dzc.py` 的 Ubuntu 22.04 Docker 构建路径，详见 [独立 CLI 说明](./dzc-standalone.md)。
+产物位于 `target/release/bundle/`，包含 deb、AppImage、rpm。不要分发缺少 `dist/web` 的手工桌面构建。只需 CLI 时可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，输出 `target/release/dzc`，无需 GTK/WebKit/PipeWire 开发依赖。跨发行版分发使用 `scripts/build-standalone-dzc.py` 的 Ubuntu 22.04 Docker 构建路径，详见 [独立 CLI 说明](./dzc-standalone.md)。
 
 ## 安装发布包
 
@@ -132,7 +132,7 @@ X11 优先订阅 XFixes 的剪贴板所有者变化，纯图片复制同样会�
 检查运行时依赖和图形会话：
 
 ```bash
-ldd src-tauri/target/release/dezirclip | grep 'not found'
+ldd target/release/dezirclip | grep 'not found'
 printf '%s\n' "$XDG_SESSION_TYPE" "$DISPLAY"
 pkg-config --modversion webkit2gtk-4.1
 ```

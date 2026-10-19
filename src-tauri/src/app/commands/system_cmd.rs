@@ -942,6 +942,7 @@ mod path_rewrite_tests {
     #[cfg(all(windows, not(feature = "portable")))]
     #[test]
     fn path_rewrite_retains_encryption_for_content_and_html() {
+        dzc_platform::install_default_key_provider();
         let content = crate::infrastructure::encryption::encrypt_sensitive("old/image.png")
             .unwrap()
             .into_string();

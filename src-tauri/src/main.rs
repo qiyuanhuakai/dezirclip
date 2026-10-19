@@ -124,6 +124,8 @@ fn apply_webview2_gpu_switch() {
 }
 
 fn main() {
+    dzc_platform::set_diagnostic_sink(crate::logger::log_diagnostic);
+    dzc_platform::install_default_key_provider();
     let _ = dotenvy::dotenv();
     apply_webview2_gpu_switch();
 

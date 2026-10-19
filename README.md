@@ -182,7 +182,7 @@ python3 -m unittest discover -s scripts/tests -v
 pnpm run tauri:build
 ```
 
-桌面构建产物在 `src-tauri/target/release/bundle/`。只构建 CLI 可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，无需编译桌面依赖。分发兼容包使用 Python 3.11+ 的 `scripts/build-standalone-dzc.py --platform windows-x86_64` 等参数构建，再把返回的二进制路径传给 `scripts/package-dzc.py --platform windows-x86_64 --binary 路径`；Linux 构建脚本需要 Docker，在 Ubuntu 22.04 容器中编译、链接。`scripts/verify-dzc-package.py 压缩包路径` 会解压后检查动态依赖、版本和独立进程间的数据持久化。发布流程与安装命令以仓库脚本及对应版本说明为准；旧 roadmap 仅作为历史规划，不是当前功能清单。
+桌面构建产物在 `target/release/bundle/`。只构建 CLI 可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，无需编译桌面依赖。分发兼容包使用 Python 3.11+ 的 `scripts/build-standalone-dzc.py --platform windows-x86_64` 等参数构建，再把返回的二进制路径传给 `scripts/package-dzc.py --platform windows-x86_64 --binary 路径`；Linux 构建脚本需要 Docker，在 Ubuntu 22.04 容器中编译、链接。`scripts/verify-dzc-package.py 压缩包路径` 会解压后检查动态依赖、版本和独立进程间的数据持久化。发布流程与安装命令以仓库脚本及对应版本说明为准；旧 roadmap 仅作为历史规划，不是当前功能清单。
 
 ## 许可证与来源
 

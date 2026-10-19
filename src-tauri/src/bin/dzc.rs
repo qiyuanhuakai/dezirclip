@@ -596,6 +596,8 @@ fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
 }
 
 fn main() {
+    dzc_platform::set_diagnostic_sink(dezirclip::logger::log_diagnostic);
+    dzc_platform::install_default_key_provider();
     let cli_args = Cli::parse();
     if let Err(e) = run(cli_args) {
         eprintln!("error: {e}");

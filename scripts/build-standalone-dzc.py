@@ -41,6 +41,7 @@ def build(platform, directory):
         run([command[0], "check", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
         if platform == "windows-x86_64":
             run([command[0], "test", *command[1:], "--lib", "--bin", "dzc", *common], env=environment)
+            run(["cargo", "test", "-p", "dzc-core", "-p", "dzc-platform", "--lib", *common], env=environment)
         if hashlib.sha256(binary.read_bytes()).hexdigest() != before:
             raise ValueError("cargo check replaced the standalone CLI artifact")
     else:
@@ -56,8 +57,8 @@ if [ -d /registry-seed ] && [ ! -d /cargo/registry/index ]; then
     mkdir -p /cargo/registry
     cp -a /registry-seed/. /cargo/registry/
 fi
-tar -C /source --exclude=src-tauri/target --exclude=src-tauri/binaries --exclude=src-tauri/gen \
-    --exclude=src-tauri/.env --exclude='src-tauri/.env.*' -cf - src-tauri skills/dzc-cli skills/dezirclip-theme \
+tar -C /source --exclude=target --exclude='crates/*/target' --exclude=src-tauri/target --exclude=src-tauri/binaries --exclude=src-tauri/gen \
+    --exclude=src-tauri/.env --exclude='src-tauri/.env.*' -cf - Cargo.toml Cargo.lock crates src-tauri skills/dzc-cli skills/dezirclip-theme \
     | tar -C /work/project -xf -
 cd /work/project
 cargo build --manifest-path src-tauri/Cargo.toml --release --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
@@ -65,6 +66,7 @@ binary="/target/$DZC_BUILD_TARGET/release/dzc"
 before="$(sha256sum "$binary")"
 cargo check --manifest-path src-tauri/Cargo.toml --release --lib --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
 cargo test --manifest-path src-tauri/Cargo.toml --release --lib --bin dzc --locked --no-default-features --target "$DZC_BUILD_TARGET"
+cargo test -p dzc-core -p dzc-platform --release --lib --locked --no-default-features --target "$DZC_BUILD_TARGET"
 test "$before" = "$(sha256sum "$binary")"
 '''
         seed = Path(os.environ.get("CARGO_HOME", Path(cargo_bin).parent)) / "registry"

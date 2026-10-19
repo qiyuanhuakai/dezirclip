@@ -235,7 +235,8 @@ impl SqliteClipboardRepository {
         }
     }
 
-    pub(crate) fn invalidate_caches(&self) {
+    /// Notify the shared repository after a legacy adapter performs a direct database write.
+    pub fn invalidate_caches(&self) {
         if let Ok(mut history) = self.history_cache.lock() {
             history.clear();
         }
