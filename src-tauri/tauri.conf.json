@@ -6,7 +6,8 @@
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm run build && pnpm run tauri:prepare-sidecars",
+    "beforeBuildCommand": "pnpm run build && pnpm run tauri:prepare-sidecars --phase build",
+    "beforeBundleCommand": "pnpm run tauri:prepare-sidecars --phase bundle",
     "frontendDist": "../dist/web"
   },
   "app": {

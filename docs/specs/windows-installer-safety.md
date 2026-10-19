@@ -187,12 +187,58 @@ The package harness is `scripts/build-native-windows-fixture.ps1`,
 `scripts/tests/native-windows-ownership.mjs`. The workflow calls the builder
 with `-Version 0.2.0-alpha.0` for the owned-upgrade source and
 `-Version 0.2.0-alpha.1` for the current candidate. Both installers and their
-adjacent `.manifest.json` files remain beneath `RUNNER_TEMP`. A manifest binds
-the installer, GUI and the actual staged standalone CLI by SHA256, with version,
-target, profile, source commit and lock/configuration/hook hashes. The CLI hash
-comes from the sidecar consumed by the bundler, rather than a target binary a
-later GUI build might replace. Updater artifact signing remains disabled in
-these debug fixtures.
+adjacent `.manifest.json` and generated `.nsi` files remain beneath `RUNNER_TEMP`.
+The schema 2 manifest binds the installer, packaged GUI and standalone CLI by
+SHA256, with version, target, profile, source commit and lock/configuration/hook
+hashes. Updater artifact signing remains disabled in these debug fixtures.
+
+Tauri CLI 2.12.3 changes the GUI's single `__TAURI_BUNDLE_TYPE_VAR_UNK` token to
+`__TAURI_BUNDLE_TYPE_VAR_NSS` while building NSIS, then restores the compiled
+output. The builder records the original SHA256, token offset and exact expected
+packaged SHA256. Acceptance first requires the installed whole-file SHA256 to
+match the packaged value, then reverses only that documented token in memory
+and requires the original whole-file SHA256. It never rewrites an installed
+executable or ignores unrelated byte changes. A missing or duplicate original
+token, unexpected offset or either hash mismatch fails acceptance. This behavior
+is pinned to the [official bundler implementation](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle.rs).
+
+The same CLI builds all Cargo binaries and NSIS enumerates both the configured
+`externalBin` and the non-main Cargo `dzc` binary. Those two sources install to
+the same `dzc.exe` destination. Production retains preparation before the GUI
+build so configured sidecar inputs exist on a fresh checkout, and repeats it in
+the shared `beforeBundleCommand` after the desktop build. The existing build.rs
+separately disables tauri-build's sidecar copy to avoid replacing Cargo output
+during compilation; that does not change the bundler's two inputs. The shared helper builds `dzc`
+with `--locked --no-default-features` and an explicit target triple. It atomically
+replaces and verifies the staged external binary and actual Cargo binary inputs
+with identical standalone bytes, without writing through Cargo cache hardlinks.
+The host build covers both implicit and explicit-host target directories; a
+cross build updates its own target directory and leaves host artifacts alone.
+Debug/release selection follows `TAURI_ENV_DEBUG`. The portable no-bundle command
+explicitly prepares a release CLI with the same `portable` feature as its GUI
+before creating the ZIP; it cannot depend on a bundle hook that is not run.
+Custom Cargo profiles and manually replacing these hooks are outside these
+documented packaging commands.
+
+Native acceptance invokes the real `tauri build --debug --bundles nsis` with
+these production hooks intact. It requires a fresh bundle-phase proof binding
+the helper, lockfile, exact Cargo arguments and every input path/hash. It also
+parses and retains the generated NSIS compiler script, requiring both `dzc.exe`
+sources to match that standalone hash and the main executable to match the
+proven GUI path. This tests the actual packaging entry point instead of a
+fixture-only restaging sequence. The hook order and binary enumeration are
+defined by the official [CLI hook](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-cli/src/bundle.rs)
+and [NSIS implementation](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle/windows/nsis/mod.rs).
+
+`node --test scripts/tests/packaging-sidecars.node.mjs` uses temporary files and
+a fake Cargo runner to cover host/cross/profile/portable paths and cache
+hardlinks. `pwsh -NoProfile -File scripts/tests/native-packaging-proof.ps1`
+imports only pure byte/path proof functions, without evaluating installer script
+bodies, and checks exact token transformations and corrupted inputs. Its optional
+`-EvidenceZip` argument can additionally verify the retained original failed CI
+GUI bytes; it only reads them and writes `.bin` evidence. Neither local check is
+a native installation result. The original failed run remains failed; the fixed
+package requires a new successful disposable-runner acceptance run.
 
 The acceptance script rejects an existing registered installation, a running
 GUI/CLI, ownership receipts or pre-existing application data directories. It

@@ -21,7 +21,7 @@
     "tauri:dev": "tauri dev",
     "tauri:dev:safe": "DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey tauri dev",
     "tauri:build": "tauri build",
-    "build:portable": "tauri build --no-bundle --features portable && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
+    "build:portable": "tauri build --no-bundle --features portable && pnpm run tauri:prepare-sidecars --portable --release --phase portable && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

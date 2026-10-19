@@ -49,13 +49,22 @@ function Read-CandidateManifest([string]$Installer) {
     $Installer = Resolve-RunnerFixturePath $Installer -RequireFile
     $manifestPath = Resolve-RunnerFixturePath ($Installer + '.manifest.json') -RequireFile
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 1 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
+    if ($manifest.schemaVersion -ne 2 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
     if ($manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -ne 'debug' -or $manifest.updaterArtifacts -ne $false -or $manifest.sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Candidate build provenance is invalid.' }
     if ($manifest.sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($manifest.version) + '(?:\s|$)')) { throw 'Candidate manifest CLI version is invalid.' }
-    foreach ($digest in @($manifest.installerSha256, $manifest.applicationSha256, $manifest.sidecarSha256, $manifest.cargoLockSha256, $manifest.configurationSha256, $manifest.installerHookSha256)) {
+    if ($manifest.applicationPatch -ne 'tauri-nsis-bundle-token-v1' -or $manifest.applicationPatchOffset -lt 64 -or $manifest.sidecarSource -ne 'standalone-no-default-features' -or $manifest.packaging -ne 'shared-before-build-and-before-bundle') { throw 'Candidate packaging provenance is invalid.' }
+    if ($manifest.sidecarPreparation.phase -ne 'bundle' -or $manifest.sidecarPreparation.sha256 -ne $manifest.sidecarSha256 -or $manifest.sidecarPreparation.portable -ne $false -or $manifest.sidecarPreparation.profile -ne 'debug') { throw 'Candidate lacks shared beforeBundle sidecar evidence.' }
+    if ($manifest.applicationPatchOffset -isnot [int] -and $manifest.applicationPatchOffset -isnot [long]) { throw 'Candidate patch offset must be an integer.' }
+    foreach ($digest in @($manifest.installerSha256, $manifest.applicationSha256, $manifest.applicationRawSha256, $manifest.sidecarSha256, $manifest.cargoLockSha256, $manifest.configurationSha256, $manifest.installerHookSha256, $manifest.nsisScriptSha256, $manifest.overrideConfigurationSha256)) {
         if ($digest -notmatch '^[A-Fa-f0-9]{64}$') { throw 'Candidate manifest digest is invalid.' }
     }
     if ((Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash -ne $manifest.installerSha256) { throw 'Candidate installer differs from its build manifest.' }
+    $nsisScript = Resolve-RunnerFixturePath ($Installer + '.nsi') -RequireFile
+    if ((Get-FileHash -LiteralPath $nsisScript -Algorithm SHA256).Hash -ne $manifest.nsisScriptSha256) { throw 'Candidate NSIS compiler script differs from its build manifest.' }
+    if (@($manifest.nsisInputs).Count -ne 2) { throw 'Candidate must retain both sidecar compiler inputs.' }
+    foreach ($compilerInput in $manifest.nsisInputs) {
+        if ($compilerInput.destination -ne 'dzc.exe' -or $compilerInput.sha256 -ne $manifest.sidecarSha256) { throw 'Candidate sidecar compiler inputs differ from the proven standalone CLI.' }
+    }
     return $manifest
 }
 $candidate = if ($Scenario -ne 'LegacyUninstall') { Read-CandidateManifest $NewInstaller } else { $null }
@@ -72,6 +81,8 @@ $previousDbOverride = $env:DEZIRCLIP_DB_PATH
 $marker = 'nativeupgradefixturemarker' + [guid]::NewGuid().ToString('N')
 if ($candidate) { Copy-Item -LiteralPath ($NewInstaller + '.manifest.json') -Destination (Join-Path $fixtureRoot 'candidate-build.json') }
 if ($previous) { Copy-Item -LiteralPath ($PreviousCandidate + '.manifest.json') -Destination (Join-Path $fixtureRoot 'previous-build.json') }
+if ($candidate) { Copy-Item -LiteralPath ($NewInstaller + '.nsi') -Destination (Join-Path $fixtureRoot 'candidate-installer.nsi') }
+if ($previous) { Copy-Item -LiteralPath ($PreviousCandidate + '.nsi') -Destination (Join-Path $fixtureRoot 'previous-installer.nsi') }
 $runEvidence = [ordered]@{ schemaVersion = 1; scenario = $Scenario; status = 'running'; startedAt = [DateTime]::UtcNow.ToString('o'); fixtureRoot = $fixtureRoot; installers = @(); cleanup = @() }
 function Save-RunEvidence { $runEvidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $fixtureRoot 'acceptance.json') -Encoding utf8 }
 Save-RunEvidence
@@ -155,6 +166,17 @@ function Run-Installer([string]$Path, [string[]]$Arguments, [string]$ExpectedSha
         Save-RunEvidence
     }
 }
+function Get-InstalledApplicationProof([string]$Path, $Manifest) {
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    if ([Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes)) -ne $Manifest.applicationSha256) { throw 'Installed GUI differs from the exact expected packaged bytes.' }
+    $offset = [long]$Manifest.applicationPatchOffset
+    $nsis = '__TAURI_BUNDLE_TYPE_VAR_NSS'
+    if ($offset -lt 64 -or $offset -gt $bytes.Length - $nsis.Length -or [System.Text.Encoding]::ASCII.GetString($bytes, [int]$offset, $nsis.Length) -ne $nsis) { throw 'Installed GUI lacks the exact expected NSIS package marker.' }
+    [Array]::Copy([System.Text.Encoding]::ASCII.GetBytes('__TAURI_BUNDLE_TYPE_VAR_UNK'), 0, $bytes, $offset, $nsis.Length)
+    $rawSha256 = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes))
+    if ($rawSha256 -ne $Manifest.applicationRawSha256) { throw 'Installed GUI does not match its original compiled build after the single documented NSIS token patch.' }
+    return [pscustomobject]@{ rawSha256 = $rawSha256; patchOffset = $offset }
+}
 function Assert-InstalledCandidate($Manifest, [string]$Label) {
     $application = Join-Path $installDirectory 'dezirclip.exe'
     $sidecar = Join-Path $installDirectory 'dzc.exe'
@@ -165,6 +187,10 @@ function Assert-InstalledCandidate($Manifest, [string]$Label) {
     }
     $actual | ConvertTo-Json | Set-Content (Join-Path $fixtureRoot ($Label + '-installed.json'))
     if ($actual.applicationSha256 -ne $Manifest.applicationSha256 -or $actual.sidecarSha256 -ne $Manifest.sidecarSha256) { throw 'Installed GUI or CLI differs from the candidate build.' }
+    $proof = Get-InstalledApplicationProof $application $Manifest
+    $actual.applicationRawSha256 = $proof.rawSha256
+    $actual.applicationPatchOffset = $proof.patchOffset
+    $actual | ConvertTo-Json | Set-Content (Join-Path $fixtureRoot ($Label + '-installed.json'))
     $version = & $sidecar --version
     if ($LASTEXITCODE -ne 0 -or $version -notmatch ('(?:^|\s)' + [regex]::Escape($Manifest.version) + '(?:\s|$)')) { throw 'Installed CLI has the wrong built-in version.' }
     $version | Set-Content (Join-Path $fixtureRoot ($Label + '-cli-version.txt'))
