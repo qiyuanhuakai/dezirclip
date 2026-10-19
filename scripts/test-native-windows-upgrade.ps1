@@ -68,7 +68,7 @@ Run-Installer $initial @('/S', "/D=$installDirectory")
 if (-not (Test-Path -LiteralPath (Join-Path $installDirectory 'dezirclip.exe'))) { throw 'Old desktop was not installed.' }
 if (-not (Test-Path -LiteralPath (Join-Path $installDirectory 'dzc.exe'))) { throw 'Old CLI sidecar was not installed.' }
 $env:DEZIRCLIP_DB_PATH = Join-Path $fixtureRoot 'history.db'
-& (Join-Path $installDirectory 'dzc.exe') add 'nativeupgradefixturemarker' --json | Set-Content (Join-Path $fixtureRoot 'old-add.json')
+& (Join-Path $installDirectory 'dzc.exe') add 'nativeupgradefixturemarker' | Set-Content (Join-Path $fixtureRoot 'old-add.txt')
 if ($LASTEXITCODE -ne 0) { throw 'Old CLI fixture initialization failed.' }
 for ($index = 0; $index -lt $targets.Count; $index++) {
     $target = $targets[$index]
