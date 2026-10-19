@@ -4,6 +4,8 @@
 
 当前支持 Linux X11 桌面，发布构建包含 x86_64 与 aarch64；下载与机器架构匹配的安装包。系统需具备可用的 X11 会话和 WebKitGTK 4.1。完整 Wayland 支持暂缓，XWayland 下可能运行的部分功能不代表后台监听、全局快捷键、焦点恢复和自动粘贴都已适配。
 
+自 `v0.1.21-beta.1` 起，独立 `dzc` 使用 AlmaLinux 8 原生构建，基线为 glibc 2.28+，并在 AlmaLinux 8、Ubuntu 22.04、Debian 12 验证实际包；仍需 D-Bus/GCC 运行库，不是 musl 或 Alpine 原生包。此变化只降低独立 CLI 的门槛，桌面安装包仍基于 Ubuntu 24.04 构建，保留上述图形与运行库要求。旧 `v0.1.20` / `v0.1.20-alpha.3` Linux 独立包要求 glibc 2.35+，alpha.1/alpha.2 要求 glibc 2.39+，已发布附件不变。
+
 历史管理、原生剪贴板读写与终端集成是不同能力：无图形会话时 `dzc list/search/get` 仍可访问数据库，`dzc clipboard read/write` 则需要可访问的 X11 服务。通过 SSH 使用时，它操作的是能访问的远程图形会话。
 
 ## 安装依赖
@@ -81,7 +83,7 @@ pnpm run tauri:dev:safe
 pnpm run tauri:build
 ```
 
-产物位于 `src-tauri/target/release/bundle/`，包含 deb、AppImage、rpm。不要分发缺少 `dist/web` 的手工桌面构建。只需 CLI 时可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，输出 `src-tauri/target/release/dzc`，无需 GTK/WebKit/PipeWire 开发依赖。跨发行版分发使用 `scripts/build-standalone-dzc.py` 的 Ubuntu 22.04 Docker 构建路径，详见 [独立 CLI 说明](./dzc-standalone.md)。
+产物位于 `src-tauri/target/release/bundle/`，包含 deb、AppImage、rpm。不要分发缺少 `dist/web` 的手工桌面构建。只需 CLI 时可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，输出 `src-tauri/target/release/dzc`，无需 GTK/WebKit/PipeWire 开发依赖。本机构建仍使用本机链接环境；跨发行版分发使用 `scripts/build-standalone-dzc.py` 的 AlmaLinux 8 Docker 构建路径，以获得 glibc 2.28 基线，详见 [独立 CLI 说明](./dzc-standalone.md)。
 
 ## 安装发布包
 

@@ -12,7 +12,7 @@ TUI、fzf/dmenu/rofi 选择器、Shell 输入行插入和只读 MCP 内置于同
 
 Windows 裸 CLI 不依赖 WebView2。带 `COMPATIBILITY.json` 的新 CI 制品及后续独立发布包静态链接 MSVC 运行库，无需另装 Visual C++ 运行库。已发布的 alpha.1/alpha.2 旧压缩包保持原样，缺少 `VCRUNTIME140.dll` 时仍需安装匹配架构的 [Microsoft Visual C++ v14 Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)。该变化不修改桌面安装包的运行要求。
 
-同一兼容性改造后的 Linux 独立包在 Ubuntu 22.04 中构建，面向 glibc 2.35+，并在 Ubuntu 22.04、Debian 12 的干净环境验证；仍需要 D-Bus/GCC 运行库。旧 alpha.1/alpha.2 Linux 附件仍按原发布说明要求 glibc 2.39+。详见 [独立 CLI 说明](./dzc-standalone.md)。
+自 `v0.1.21-beta.1` 起，Linux 独立包在对应 x86_64 / aarch64 架构的 AlmaLinux 8 中编译、链接，面向 glibc 2.28+，并在 AlmaLinux 8、Ubuntu 22.04、Debian 12 的干净环境验证实际包；仍需要 D-Bus/GCC 运行库。这是 GNU/glibc 包，不提供 musl 或 Alpine 原生兼容。此门槛仅适用于独立 CLI：Linux 桌面包仍在 Ubuntu 24.04 构建，保留 X11 / WebKitGTK 4.1 等要求。旧 `v0.1.20` / `v0.1.20-alpha.3` Linux 独立附件仍要求 glibc 2.35+，alpha.1/alpha.2 仍要求 glibc 2.39+；旧资产不会被替换。详见 [独立 CLI 说明](./dzc-standalone.md)。
 
 AppImage 运行时的临时挂载目录会随退出而失效，不要把其中的 `dzc` 永久软链接到 `PATH`。终端、Shell 插件或 MCP 需要稳定路径时，使用独立 CLI 压缩包并解压到固定目录。
 
