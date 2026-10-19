@@ -24,7 +24,7 @@ aes-gcm.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring.workspace = true
-x11rb.workspace = true
+x11rb = { workspace = true, features = ["xkb"] }
 libc.workspace = true
 x11-clipboard.workspace = true
 
