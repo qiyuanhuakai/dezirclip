@@ -42,6 +42,12 @@ pub trait CaptureStore {
         image_hash: Option<i64>,
     ) -> Result<Option<CaptureDuplicate>, CaptureFailure>;
     fn contains(&self, content: &str) -> Result<bool, CaptureFailure>;
+    fn contains_image_hash(&self, _image_hash: i64) -> Result<bool, CaptureFailure> {
+        Err(CaptureFailure {
+            stage: CaptureStage::Deduplicate,
+            code: "CaptureImageLookupUnsupported".into(),
+        })
+    }
     fn commit(&self, capture: &PreparedCapture) -> Result<CaptureCommit, CaptureFailure>;
 }
 
@@ -146,6 +152,16 @@ impl CaptureStore for SqliteCaptureStore<'_> {
             .repo
             .find_by_content_with_conn(&connection, content, None)
             .map(|entry| entry.is_some())
+            .map_err(|error| failure(CaptureStage::Deduplicate, error))
+    }
+
+    fn contains_image_hash(&self, image_hash: i64) -> Result<bool, CaptureFailure> {
+        let connection = self
+            .state
+            .conn
+            .lock()
+            .map_err(|error| failure(CaptureStage::Deduplicate, error))?;
+        connection.query_row("SELECT EXISTS(SELECT 1 FROM clipboard_history WHERE content_type='image' AND content_hash=?1)", [image_hash], |row| row.get(0))
             .map_err(|error| failure(CaptureStage::Deduplicate, error))
     }
 

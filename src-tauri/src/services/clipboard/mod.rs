@@ -4,7 +4,7 @@ use crate::app_state::{AppDataDir, PasteQueue, SessionHistory, SettingsState};
 pub use crate::database::DbState;
 use dzc_core::services::capture::{
     CaptureContext, CaptureEngine, CaptureEvent, CaptureFrame, CaptureNotificationState,
-    CaptureOutcome, CaptureReadMetadata, CaptureSettings, CaptureSource, CaptureStore, EventSink,
+    CaptureOutcome, CaptureReadMetadata, CaptureSettings, CaptureSource, EventSink,
     OwnClipboardCopy, StoredCapture,
 };
 use dzc_platform::capture::{self as native, NativeCaptureReader};
@@ -268,24 +268,21 @@ pub fn start_clipboard_monitor(app: AppHandle) {
             return;
         };
         let repeated_file_exists = if notifications.repeats_file(frame.metadata) {
-            if let ClipboardData::Files(files) = &frame.data {
-                let data = app
-                    .state::<AppDataDir>()
-                    .0
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone();
-                let database = app.state::<DbState>();
-                let store = database.capture_store(&data);
-                match store.contains(&files.join("\n")) {
-                    Ok(exists) => exists,
-                    Err(error) => {
-                        events.emit(CaptureEvent::Failed(error));
-                        return;
-                    }
+            let data = app
+                .state::<AppDataDir>()
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            let database = app.state::<DbState>();
+            let store = database.capture_store(&data);
+            let exists = CaptureEngine::file_history_exists(&frame, &store);
+            match exists {
+                Ok(exists) => exists,
+                Err(error) => {
+                    events.emit(CaptureEvent::Failed(error));
+                    return;
                 }
-            } else {
-                false
             }
         } else {
             false
