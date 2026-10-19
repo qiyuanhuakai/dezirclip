@@ -38,7 +38,7 @@ pub fn is_sensitive_key(key: &str) -> bool {
 
 pub fn has_sensitive_tag(tags: &[String]) -> bool {
     tags.iter()
-        .any(|t| SENSITIVE_TAGS.iter().any(|s| s.eq_ignore_ascii_case(t)))
+        .any(|t| SENSITIVE_TAGS.iter().any(|s| s.eq_ignore_ascii_case(t.trim())))
 }
 
 pub fn is_text_type(content_type: &str) -> bool {
