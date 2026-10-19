@@ -1,11 +1,22 @@
 //! Changes to Windows settings carry an exact-value, write-ahead restoration receipt.
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io;
-use windows::core::PCWSTR;
+use std::sync::{Mutex, OnceLock};
+use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, HANDLE, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    CloseHandle, LocalFree, HANDLE, HLOCAL, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
-use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
+use windows::Win32::Security::Authorization::{
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+};
+use windows::Win32::Security::{
+    GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+    TOKEN_USER,
+};
+use windows::Win32::System::Threading::{
+    CreateMutexW, GetCurrentProcess, OpenProcessToken, ReleaseMutex, WaitForSingleObject,
+};
 use winreg::enums::*;
 use winreg::{RegKey, RegValue};
 
@@ -120,7 +131,7 @@ impl RawValue {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Receipt {
     version: u32,
@@ -249,6 +260,90 @@ fn optimize_win_v(store: &mut impl SettingsStore) -> io::Result<bool> {
     Ok(changed)
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct SettingState {
+    value: Option<RawValue>,
+    receipt: Option<Receipt>,
+}
+
+#[derive(Clone)]
+struct SettingsChange {
+    before: [SettingState; 3],
+    after: [SettingState; 3],
+}
+
+const SETTINGS: [Setting; 3] = [Setting::History, Setting::Cloud, Setting::WinV];
+
+fn read_state(store: &impl SettingsStore, setting: Setting) -> io::Result<SettingState> {
+    Ok(SettingState {
+        value: store.current(setting)?,
+        receipt: store.receipt(setting)?,
+    })
+}
+
+fn snapshot(store: &impl SettingsStore) -> io::Result<[SettingState; 3]> {
+    Ok([
+        read_state(store, Setting::History)?,
+        read_state(store, Setting::Cloud)?,
+        read_state(store, Setting::WinV)?,
+    ])
+}
+
+fn rollback_change(store: &mut impl SettingsStore, change: &mut SettingsChange) -> io::Result<bool> {
+    let mut changed = false;
+    for (index, setting) in SETTINGS.into_iter().enumerate() {
+        let before = change.before[index].clone();
+        let after = change.after[index].clone();
+        if before == after || read_state(store, setting)? != after {
+            continue;
+        }
+        // Restoring an old receipt precedes its value; releasing a new receipt
+        // follows its value. Interrupted rollback therefore retains recovery evidence.
+        if before.receipt.is_some() && before.receipt != after.receipt {
+            store.write_receipt(setting, before.receipt.as_ref())?;
+            change.after[index].receipt = before.receipt.clone();
+        }
+        if before.value != after.value {
+            store.write_current(setting, before.value.as_ref())?;
+            change.after[index].value = before.value.clone();
+            changed = true;
+        }
+        if before.receipt.is_none() && before.receipt != after.receipt {
+            store.write_receipt(setting, None)?;
+            change.after[index].receipt = None;
+        }
+    }
+    Ok(changed)
+}
+
+fn stage_change(
+    store: &mut impl SettingsStore,
+    enabled: bool,
+) -> io::Result<(bool, SettingsChange)> {
+    let before = snapshot(store)?;
+    let result = if enabled {
+        optimize_win_v(store)
+    } else {
+        release_win_v(store)
+    };
+    let mut change = SettingsChange {
+        before,
+        after: snapshot(store)?,
+    };
+    match result {
+        Ok(changed) => Ok((changed, change)),
+        Err(error) => {
+            rollback_change(store, &mut change)?;
+            Err(error)
+        }
+    }
+}
+
+fn pending_changes() -> &'static Mutex<HashMap<String, SettingsChange>> {
+    static PENDING: OnceLock<Mutex<HashMap<String, SettingsChange>>> = OnceLock::new();
+    PENDING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 struct RegistryStore<'a> {
     root: &'a RegKey,
     prefix: &'a str,
@@ -347,16 +442,87 @@ impl SettingsStore for RegistryStore<'_> {
     }
 }
 
+struct LocalAllocation(HLOCAL);
+
+impl Drop for LocalAllocation {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = LocalFree(Some(self.0));
+        }
+    }
+}
+
+fn current_user_sid() -> io::Result<String> {
+    let mut token = HANDLE::default();
+    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }
+        .map_err(io::Error::other)?;
+    let result = (|| {
+        let mut required = 0;
+        unsafe {
+            let _ = GetTokenInformation(token, TokenUser, None, 0, &mut required);
+        }
+        if required == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // Pointer-width allocation keeps TOKEN_USER aligned for the native API.
+        let mut buffer = vec![0usize; (required as usize).div_ceil(std::mem::size_of::<usize>())];
+        unsafe {
+            GetTokenInformation(
+                token,
+                TokenUser,
+                Some(buffer.as_mut_ptr().cast()),
+                required,
+                &mut required,
+            )
+        }
+        .map_err(io::Error::other)?;
+        let user = unsafe { &*buffer.as_ptr().cast::<TOKEN_USER>() };
+        let mut text = PWSTR::null();
+        unsafe { ConvertSidToStringSidW(user.User.Sid, &mut text) }.map_err(io::Error::other)?;
+        let _allocation = LocalAllocation(HLOCAL(text.0.cast()));
+        unsafe { text.to_string() }.map_err(io::Error::other)
+    })();
+    unsafe {
+        let _ = CloseHandle(token);
+    }
+    result
+}
+
+fn settings_lock_name(sid: &str) -> String {
+    format!("Global\\DezirClip.SystemSettingsOwnership.v1.{sid}")
+}
+
 struct SettingsLock(HANDLE);
 
 impl SettingsLock {
     fn acquire() -> io::Result<Self> {
-        let name: Vec<u16> = "Local\\DezirClip.SystemSettingsOwnership.v1"
+        let sid = current_user_sid()?;
+        let name: Vec<u16> = settings_lock_name(&sid)
             .encode_utf16()
             .chain(Some(0))
             .collect();
-        // The handle remains owned by this guard and is released on every exit.
-        let handle = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }
+        let security: Vec<u16> = format!("D:P(A;;GA;;;SY)(A;;GA;;;{sid})")
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        let mut descriptor = PSECURITY_DESCRIPTOR::default();
+        unsafe {
+            ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                PCWSTR(security.as_ptr()),
+                SDDL_REVISION_1,
+                &mut descriptor,
+                None,
+            )
+        }
+        .map_err(io::Error::other)?;
+        let _allocation = LocalAllocation(HLOCAL(descriptor.0));
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: descriptor.0,
+            bInheritHandle: false.into(),
+        };
+        // One same-user lock covers HKCU across sessions; the DACL excludes other users.
+        let handle = unsafe { CreateMutexW(Some(&attributes), false, PCWSTR(name.as_ptr())) }
             .map_err(io::Error::other)?;
         let result = unsafe { WaitForSingleObject(handle, 5_000) };
         if result == WAIT_OBJECT_0 || result == WAIT_ABANDONED {
@@ -416,6 +582,42 @@ pub fn set_win_v_optimization(enabled: bool) -> io::Result<bool> {
         } else {
             release_win_v(store)
         }
+    })
+}
+
+/// GUI changes retain a private, bounded rollback snapshot until confirmation.
+pub fn begin_win_v_change(enabled: bool) -> io::Result<(bool, String)> {
+    with_registry(|store| {
+        let mut pending = pending_changes()
+            .lock()
+            .map_err(|_| io::Error::other("Windows settings change state is unavailable"))?;
+        if pending.len() >= 16 {
+            return Err(io::Error::other(
+                "Too many pending Windows settings changes; finish the open setting dialogs first",
+            ));
+        }
+        let (changed, change) = stage_change(store, enabled)?;
+        let token = uuid::Uuid::new_v4().to_string();
+        pending.insert(token.clone(), change);
+        Ok((changed, token))
+    })
+}
+
+pub fn finish_win_v_change(token: &str, rollback: bool) -> io::Result<bool> {
+    with_registry(|store| {
+        let mut pending = pending_changes()
+            .lock()
+            .map_err(|_| io::Error::other("Windows settings change state is unavailable"))?;
+        let change = pending.get_mut(token).ok_or_else(|| {
+            io::Error::other("Windows settings change token is missing or already finished")
+        })?;
+        let changed = if rollback {
+            rollback_change(store, change)?
+        } else {
+            false
+        };
+        pending.remove(token);
+        Ok(changed)
     })
 }
 
@@ -605,6 +807,257 @@ mod tests {
         assert_eq!(store.values[Setting::WinV.name()], RawValue::string("XV"));
         restore_all(&mut store).unwrap();
         assert_eq!(store.values[Setting::WinV.name()], RawValue::string("XV"));
+    }
+
+    #[test]
+    fn canceling_enable_restores_only_that_change_and_preserves_unowned_v() {
+        let mut store = MemoryStore::default();
+        store
+            .values
+            .insert(Setting::WinV.name(), RawValue::string("V"));
+        store
+            .values
+            .insert(Setting::History.name(), RawValue::dword(1));
+        store
+            .values
+            .insert(Setting::Cloud.name(), RawValue::dword(1));
+        let before = snapshot(&store).unwrap();
+        let (changed, mut change) = stage_change(&mut store, true).unwrap();
+        assert!(changed);
+        assert_eq!(store.values[Setting::History.name()], RawValue::dword(0));
+        rollback_change(&mut store, &mut change).unwrap();
+        assert!(snapshot(&store).unwrap() == before);
+        assert!(store.receipts.is_empty());
+    }
+
+    #[test]
+    fn rejected_disable_makes_no_changes_and_needs_no_inverse_optimization() {
+        let mut store = MemoryStore::default();
+        store
+            .values
+            .insert(Setting::WinV.name(), RawValue::string("V"));
+        store
+            .values
+            .insert(Setting::History.name(), RawValue::dword(1));
+        store
+            .values
+            .insert(Setting::Cloud.name(), RawValue::dword(1));
+        let before = snapshot(&store).unwrap();
+        assert!(stage_change(&mut store, false).is_err());
+        assert!(snapshot(&store).unwrap() == before);
+        assert!(store.receipts.is_empty());
+    }
+
+    #[test]
+    fn rollback_preserves_preexisting_ownership_and_newer_external_changes() {
+        let mut store = MemoryStore::default();
+        store
+            .values
+            .insert(Setting::History.name(), RawValue::dword(1));
+        apply_value(&mut store, Setting::History, RawValue::dword(0)).unwrap();
+        let owned_history = read_state(&store, Setting::History).unwrap();
+        store
+            .values
+            .insert(Setting::Cloud.name(), RawValue::dword(1));
+        let (_, mut change) = stage_change(&mut store, true).unwrap();
+        store
+            .values
+            .insert(Setting::Cloud.name(), RawValue::dword(2));
+        rollback_change(&mut store, &mut change).unwrap();
+        assert!(read_state(&store, Setting::History).unwrap() == owned_history);
+        assert_eq!(store.values[Setting::Cloud.name()], RawValue::dword(2));
+        assert!(!store.values.contains_key(Setting::WinV.name()));
+    }
+
+    #[test]
+    fn canceling_disable_restores_the_original_active_receipts() {
+        let mut store = MemoryStore::default();
+        optimize_win_v(&mut store).unwrap();
+        let before = snapshot(&store).unwrap();
+        let (_, mut change) = stage_change(&mut store, false).unwrap();
+        assert!(store.receipts.is_empty());
+        rollback_change(&mut store, &mut change).unwrap();
+        assert!(snapshot(&store).unwrap() == before);
+    }
+
+    #[test]
+    fn partial_enable_failure_rolls_back_only_the_partial_request() {
+        struct FailingStore {
+            inner: MemoryStore,
+            fail_cloud_once: bool,
+        }
+        impl SettingsStore for FailingStore {
+            fn current(&self, setting: Setting) -> io::Result<Option<RawValue>> {
+                self.inner.current(setting)
+            }
+            fn receipt(&self, setting: Setting) -> io::Result<Option<Receipt>> {
+                self.inner.receipt(setting)
+            }
+            fn write_receipt(
+                &mut self,
+                setting: Setting,
+                receipt: Option<&Receipt>,
+            ) -> io::Result<()> {
+                self.inner.write_receipt(setting, receipt)
+            }
+            fn write_current(
+                &mut self,
+                setting: Setting,
+                value: Option<&RawValue>,
+            ) -> io::Result<()> {
+                if matches!(setting, Setting::Cloud) && self.fail_cloud_once {
+                    self.fail_cloud_once = false;
+                    return Err(io::Error::other("injected cloud override failure"));
+                }
+                self.inner.write_current(setting, value)
+            }
+        }
+        let mut store = FailingStore {
+            inner: MemoryStore::default(),
+            fail_cloud_once: true,
+        };
+        store
+            .inner
+            .values
+            .insert(Setting::History.name(), RawValue::dword(1));
+        store
+            .inner
+            .values
+            .insert(Setting::Cloud.name(), RawValue::dword(1));
+        let before = snapshot(&store).unwrap();
+        assert!(stage_change(&mut store, true).is_err());
+        assert!(snapshot(&store).unwrap() == before);
+    }
+
+    #[derive(Default)]
+    struct InterruptedRollbackStore {
+        inner: MemoryStore,
+        fail_value: bool,
+        fail_receipt: bool,
+    }
+
+    impl SettingsStore for InterruptedRollbackStore {
+        fn current(&self, setting: Setting) -> io::Result<Option<RawValue>> {
+            self.inner.current(setting)
+        }
+        fn receipt(&self, setting: Setting) -> io::Result<Option<Receipt>> {
+            self.inner.receipt(setting)
+        }
+        fn write_current(&mut self, setting: Setting, value: Option<&RawValue>) -> io::Result<()> {
+            if matches!(setting, Setting::History) && self.fail_value {
+                self.fail_value = false;
+                return Err(io::Error::other("injected rollback value failure"));
+            }
+            self.inner.write_current(setting, value)
+        }
+        fn write_receipt(&mut self, setting: Setting, receipt: Option<&Receipt>) -> io::Result<()> {
+            if matches!(setting, Setting::History) && self.fail_receipt {
+                self.fail_receipt = false;
+                return Err(io::Error::other("injected rollback receipt failure"));
+            }
+            self.inner.write_receipt(setting, receipt)
+        }
+    }
+
+    #[test]
+    fn interrupted_rollback_retries_both_owned_intermediate_states() {
+        for restoring_previous_override in [false, true] {
+            let mut store = InterruptedRollbackStore::default();
+            store.inner.values.insert(Setting::History.name(), RawValue::dword(1));
+            if restoring_previous_override {
+                optimize_win_v(&mut store).unwrap();
+            }
+            let before = snapshot(&store).unwrap();
+            let (_, mut change) = stage_change(&mut store, !restoring_previous_override).unwrap();
+            store.fail_value = restoring_previous_override;
+            store.fail_receipt = !restoring_previous_override;
+            assert!(rollback_change(&mut store, &mut change).is_err());
+            assert!(snapshot(&store).unwrap() != before);
+            rollback_change(&mut store, &mut change).unwrap();
+            assert!(snapshot(&store).unwrap() == before);
+            assert!(!rollback_change(&mut store, &mut change).unwrap());
+        }
+    }
+
+    #[test]
+    fn retry_after_interruption_still_preserves_an_external_value() {
+        let mut store = InterruptedRollbackStore::default();
+        optimize_win_v(&mut store).unwrap();
+        let (_, mut change) = stage_change(&mut store, false).unwrap();
+        store.fail_value = true;
+        assert!(rollback_change(&mut store, &mut change).is_err());
+        store.inner.values.insert(Setting::History.name(), RawValue::dword(9));
+        rollback_change(&mut store, &mut change).unwrap();
+        assert_eq!(store.current(Setting::History).unwrap(), Some(RawValue::dword(9)));
+    }
+
+    #[test]
+    fn lock_name_is_global_and_scoped_to_the_current_user_sid() {
+        let sid = current_user_sid().unwrap();
+        assert!(sid.starts_with("S-1-"));
+        assert_eq!(
+            settings_lock_name(&sid),
+            format!("Global\\DezirClip.SystemSettingsOwnership.v1.{sid}")
+        );
+        assert_ne!(
+            settings_lock_name("S-1-5-21-101"),
+            settings_lock_name("S-1-5-21-102")
+        );
+    }
+
+    #[test]
+    fn mutex_subprocess_probe() {
+        let Some(directory) = std::env::var_os("DZC_SETTINGS_LOCK_TEST_DIR") else {
+            return;
+        };
+        let directory = std::path::PathBuf::from(directory);
+        std::fs::write(directory.join("waiting"), "waiting").unwrap();
+        let _guard = SettingsLock::acquire().unwrap();
+        std::fs::write(directory.join("acquired"), "acquired").unwrap();
+    }
+
+    #[test]
+    fn same_user_processes_wait_for_the_shared_mutex() {
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+        let directory =
+            std::env::temp_dir().join(format!("dzc-settings-lock-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let guard = SettingsLock::acquire().unwrap();
+        let test_path = module_path!()
+            .split("::")
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join("::");
+        let child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!("{test_path}::mutex_subprocess_probe"),
+                "--nocapture",
+            ])
+            .env("DZC_SETTINGS_LOCK_TEST_DIR", &directory)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !directory.join("waiting").exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(directory.join("waiting").exists());
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!directory.join("acquired").exists());
+        drop(guard);
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(directory.join("acquired").exists());
+        std::fs::remove_file(directory.join("waiting")).unwrap();
+        std::fs::remove_file(directory.join("acquired")).unwrap();
+        std::fs::remove_dir(directory).unwrap();
     }
 
     struct Sandbox {

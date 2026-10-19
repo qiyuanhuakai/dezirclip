@@ -13,8 +13,15 @@ Only these three fixed destinations can be changed; receipt contents cannot
 redirect the restoration to another registry key. Clipboard contents are never
 part of this ledger.
 
-Each receipt is persisted before its target value changes; a named Windows
-mutex serializes DezirClip processes. A failure leaves receipts available for
+Each receipt is persisted before its target value changes. A mutex named
+`Global\DezirClip.SystemSettingsOwnership.v1.<current-user-SID>` serializes all
+DezirClip processes sharing the user's HKCU, including other Windows sessions.
+The SID comes from the current process token; the protected DACL grants access
+only to that SID and SYSTEM. Different users receive different names. The
+implementation follows Microsoft's
+[kernel object namespaces](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces)
+and [CreateMutexW security contract](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createmutexw).
+A failure leaves receipts available for
 restoration and returns an error. Interrupted batches may retain some overrides
 until restoration is retried. The implementation does not depend on Windows
 registry transactions, which can be disabled or unavailable. Turning optimization off and uninstalling use the
@@ -33,6 +40,34 @@ changing unrelated hotkeys. No action deletes the unowned policy values
 `DisallowClipboardHistory`, `AllowClipboardHistory`, or
 `AllowCrossDeviceClipboard`. If those policies prevent Windows history, the
 policy remains authoritative.
+
+## Interactive confirmation and rollback
+
+The GUI uses `begin_registry_win_v_change(enable)`, which returns
+`[changed, opaque_token]`. The token refers to a backend-only snapshot of the
+three fixed values and their receipts before and after this particular request.
+No raw registry snapshot is accepted from the frontend. Pending snapshots are
+limited to 16, and tokens are single use until application exit.
+
+Confirming finishes the token with `finish_registry_win_v_change(token, false)`.
+Canceling or failing after begin uses the same command with `rollback: true`.
+Rollback restores only values and receipts actually changed by that request,
+and only if they still match the recorded after-state. Existing ownership and
+newer user changes are preserved. Canceling a disable operation restores the
+old active receipts rather than constructing fresh ownership from guessed values.
+The toggle is disabled while its confirmation is pending.
+
+A rejected begin does not provide a token; the GUI restores its hotkey and
+saved preference without calling the inverse optimization operation. A partial
+begin failure attempts its own scoped rollback before returning an error. This
+covers both old-value cases: enabling with an unowned V then canceling restores
+this request's clipboard overrides; disabling with an unowned V makes no writes
+and does not accidentally disable Windows history in the error handler.
+If recovery itself fails, write-ahead receipts remain available for retry; the
+implementation does not claim filesystem-style atomicity for registry batches.
+Each successful rollback write also advances the token's expected after-state.
+A retry can therefore finish an interrupted value/receipt pair without treating
+its own partial progress as an external change; genuinely newer values still remain untouched.
 
 ## Installer contract
 
@@ -103,5 +138,13 @@ The fixtures replace Tauri's running-app prompt with a recorder and exercise
 both legacy basename and Restart Manager path contracts. They verify genuine
 uninstall, `/UPDATE` skipping restoration, helper failure, and missing-helper
 abort. They never invoke the real maintenance operation or touch system settings.
-Full installed-app upgrades, sidecar replacement, and Windows ARM64 runtime
-behavior require package-level acceptance on the corresponding systems.
+Rust tests additionally execute a child process and verify that it waits for
+the same user's global mutex until the parent releases it. SID-derived global
+names and separation of different SIDs are covered. No actual second Windows
+session or different user's access token has been exercised; cross-session
+execution and DACL acceptance remain package-level checks.
+
+Controlled execution of the existing GUI handler is recorded during review,
+with IPC and dialogs replaced by contract fixtures, without adding a frontend
+test framework. Full installed-app upgrades, sidecar replacement, and Windows
+ARM64 runtime behavior require acceptance on the corresponding systems.

@@ -121,6 +121,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
         props.setPasteMethod(val);
         invoke("save_setting", { key: 'app.paste_method', value: val }).catch(console.error);
     };
+    const [registryWinVChanging, setRegistryWinVChanging] = useState(false);
     const [persistentLimitDraft, setPersistentLimitDraft] = useState(
         props.persistentLimit.toString()
     );
@@ -838,7 +839,11 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 className="cb"
                                 type="checkbox"
                                 checked={props.registryWinVEnabled}
+                                disabled={registryWinVChanging}
                                 onChange={async (e) => {
+                                    if (registryWinVChanging) return;
+                                    setRegistryWinVChanging(true);
+                                    let rollbackToken: string | undefined;
                                     const enabled = e.target.checked;
                                     const previousEnabled = props.registryWinVEnabled;
                                     const matchedWinV = props.mainHotkeys.find((item) => isWinVHotkey(item));
@@ -849,6 +854,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             const added = await props.addMainHotkey("Win+V", { skipAvailabilityCheck: true });
                                             if (!added) {
                                                 props.setRegistryWinVEnabled(previousEnabled);
+                                                setRegistryWinVChanging(false);
                                                 return;
                                             }
                                         }
@@ -856,12 +862,14 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             const removed = await props.removeMainHotkey(matchedWinV);
                                             if (!removed) {
                                                 props.setRegistryWinVEnabled(previousEnabled);
+                                                setRegistryWinVChanging(false);
                                                 return;
                                             }
                                         }
 
                                         await invoke("save_setting", { key: 'app.use_win_v_shortcut', value: String(enabled) });
-                                        const changed = await invoke("trigger_registry_win_v_optimization", { enable: enabled });
+                                        const [changed, token] = await invoke<[boolean, string]>("begin_registry_win_v_change", { enable: enabled });
+                                        rollbackToken = token;
 
                                         if (changed) {
                                             const confirmed = await ask(
@@ -895,30 +903,44 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                                     await props.addMainHotkey(matchedWinV, { skipAvailabilityCheck: true });
                                                 }
                                                 await invoke("save_setting", { key: 'app.use_win_v_shortcut', value: String(previousEnabled) });
-                                                await invoke("trigger_registry_win_v_optimization", { enable: previousEnabled });
+                                                await invoke("finish_registry_win_v_change", { token: rollbackToken, rollback: true });
+                                                rollbackToken = undefined;
                                                 props.setRegistryWinVEnabled(previousEnabled);
                                             }
                                         }
-                                    } catch (err) {
-                                        if (enabled && !hasWinV) {
-                                            await props.removeMainHotkey("Win+V");
+                                        if (rollbackToken !== undefined) {
+                                            await invoke("finish_registry_win_v_change", { token: rollbackToken, rollback: false });
+                                            rollbackToken = undefined;
                                         }
-                                        if (!enabled && matchedWinV) {
-                                            await props.addMainHotkey(matchedWinV, { skipAvailabilityCheck: true });
+                                    } catch (err) {
+                                        try {
+                                            if (rollbackToken !== undefined) {
+                                                await invoke("finish_registry_win_v_change", { token: rollbackToken, rollback: true });
+                                                rollbackToken = undefined;
+                                            }
+                                        } catch (registryErr) {
+                                            console.error("Rollback registry optimization failed:", registryErr);
+                                        }
+                                        try {
+                                            if (enabled && !hasWinV) {
+                                                await props.removeMainHotkey("Win+V");
+                                            }
+                                            if (!enabled && matchedWinV) {
+                                                await props.addMainHotkey(matchedWinV, { skipAvailabilityCheck: true });
+                                            }
+                                        } catch (hotkeyErr) {
+                                            console.error("Rollback Win+V hotkey failed:", hotkeyErr);
                                         }
                                         try {
                                             await invoke("save_setting", { key: 'app.use_win_v_shortcut', value: String(previousEnabled) });
                                         } catch (saveErr) {
                                             console.error("Rollback save_setting failed:", saveErr);
                                         }
-                                        try {
-                                            await invoke("trigger_registry_win_v_optimization", { enable: previousEnabled });
-                                        } catch (registryErr) {
-                                            console.error("Rollback registry optimization failed:", registryErr);
-                                        }
                                         props.setRegistryWinVEnabled(previousEnabled);
                                         console.error(err);
                                         message(props.t('error') + `: ${err}`, { kind: 'error' });
+                                    } finally {
+                                        setRegistryWinVChanging(false);
                                     }
                                 }}
                             />

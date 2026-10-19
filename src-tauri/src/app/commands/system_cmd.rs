@@ -154,6 +154,34 @@ pub fn trigger_registry_win_v_optimization(enable: bool) -> AppResult<bool> {
 }
 
 #[tauri::command]
+pub fn begin_registry_win_v_change(enable: bool) -> AppResult<(bool, String)> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::infrastructure::windows_api::system_settings::begin_win_v_change(enable)
+            .map_err(|error| AppError::Internal(format!("Could not change Windows shortcut settings: {}", error)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = enable;
+        Ok((false, String::new()))
+    }
+}
+
+#[tauri::command]
+pub fn finish_registry_win_v_change(token: String, rollback: bool) -> AppResult<bool> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::infrastructure::windows_api::system_settings::finish_win_v_change(&token, rollback)
+            .map_err(|error| AppError::Internal(format!("Could not finish Windows shortcut settings change: {}", error)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (token, rollback);
+        Ok(false)
+    }
+}
+
+#[tauri::command]
 pub fn is_registry_win_v_optimized() -> AppResult<bool> {
     #[cfg(target_os = "windows")]
     {
