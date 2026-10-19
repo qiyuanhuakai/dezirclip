@@ -18,7 +18,7 @@ class InteractionSummaryTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="webview-summary-tests-")
         self.addCleanup(temporary.cleanup)
-        self.directory = Path(temporary.name)
+        self.directory = Path(temporary.name).resolve()
         self.profile = self.directory / "profile.json"
 
     def write_profile(self, **changes):
