@@ -8,7 +8,7 @@ import re
 import struct
 import sys
 
-GLIBC_BASELINE = (2, 35)
+GLIBC_BASELINE = (2, 28)
 LINUX_LIBRARIES = {
     "libc.so.6", "libm.so.6", "libgcc_s.so.1", "libdbus-1.so.3",
     "libpthread.so.0", "libdl.so.2", "librt.so.1",
@@ -174,7 +174,8 @@ def enforce(info):
         for version in info["glibc_versions"]:
             match = re.fullmatch(r"GLIBC_(\d+(?:\.\d+)*)", version)
             if not match or tuple(map(int, match[1].split("."))) > GLIBC_BASELINE:
-                raise ValueError(f"standalone dzc requires {version}; maximum is GLIBC_2.35 (including weak imports)")
+                maximum = ".".join(map(str, GLIBC_BASELINE))
+                raise ValueError(f"standalone dzc requires {version}; maximum is GLIBC_{maximum} (including weak imports)")
     return info
 
 

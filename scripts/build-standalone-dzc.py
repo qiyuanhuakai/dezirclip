@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build isolated standalone artifacts: Ubuntu 22.04 sysroot or static MSVC CRT."""
+"""Build isolated standalone artifacts: AlmaLinux 8 sysroot or static MSVC CRT."""
 
 import argparse
 import hashlib
@@ -47,8 +47,8 @@ def build(platform, directory):
         active = subprocess.check_output(["rustup", "show", "active-toolchain"], text=True).split()[0]
         rustup = subprocess.check_output(["rustup", "show", "home"], text=True).strip()
         cargo_bin = str(Path(shutil.which("cargo")).parent)
-        image = "dezirclip-cli-builder:ubuntu22.04"
-        run(["docker", "build", "-t", image, "-f", "scripts/compat/ubuntu22.Dockerfile", "scripts/compat"])
+        image = "dezirclip-cli-builder:almalinux8"
+        run(["docker", "build", "-t", image, "-f", "scripts/compat/almalinux8.Dockerfile", "scripts/compat"])
         script = r'''
 set -eu
 mkdir -p /work/project /work/home
@@ -72,7 +72,7 @@ test "$before" = "$(sha256sum "$binary")"
         run(["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
              "-v", f"{ROOT}:/source:ro", "-v", f"{directory}:/target",
              "-v", f"{rustup}:/rustup:ro", "-v", f"{cargo_bin}:/rust-tools:ro",
-             "-v", "dzc-cli-cargo-ubuntu22:/cargo",
+             "-v", "dzc-cli-cargo-almalinux8:/cargo",
              *seed_mount,
              "-e", "RUSTUP_HOME=/rustup", "-e", f"RUSTUP_TOOLCHAIN={active}",
              "-e", "CARGO_HOME=/cargo", "-e", "CARGO_TARGET_DIR=/target",

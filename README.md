@@ -19,9 +19,9 @@ Windows 和 Linux X11 上的本地剪贴板工作台：保存、搜索、恢复�
 
 `VERSION` 对应发布版本号。每个独立压缩包包含真正的 `dzc` 二进制、许可证、说明、完整的集成运行文件目录 `integrations/`、CLI Skill `skills/dzc-cli/` 和主题构建 Skill `skills/dezirclip-theme/`，不含开发测试文件；对应 `.sha256` 文件用于校验下载。
 
-本轮兼容性改造后的 CI 制品和后续独立发布包附带 `COMPATIBILITY.json`，记录真实二进制的校验值和动态依赖。Linux CLI 在 Ubuntu 22.04 中构建，基线为 glibc 2.35+，并在 Ubuntu 22.04、Debian 12 中验证实际压缩包；仍需要系统的 `libdbus-1-3`、`libgcc-s1`。Windows 独立 CLI 静态链接 MSVC 运行库，无需另装 Visual C++ 运行库或 WebView2。桌面安装包保持自己的图形及运行库要求，详见 [CLI 安装说明](./docs/dzc-standalone.md)和 [Linux 指南](./docs/LINUX_INSTALL.md)。
+自 `v0.1.21` 起，Linux 独立 CLI 的 x86_64 / aarch64 包在对应架构的 AlmaLinux 8 环境中编译、链接，基线降至 glibc 2.28+，并在 AlmaLinux 8、Ubuntu 22.04、Debian 12 中验证实际压缩包；仍动态依赖系统的 D-Bus 和 GCC 运行库（Ubuntu / Debian 包名为 `libdbus-1-3`、`libgcc-s1`）。压缩包附带 `COMPATIBILITY.json`，记录真实二进制的校验值和动态依赖。这是 GNU/glibc 构建，不是 musl 或 Alpine 原生包。Windows 独立 CLI 静态链接 MSVC 运行库，无需另装 Visual C++ 运行库或 WebView2。此基线仅适用于独立 CLI；Linux 桌面包仍在 Ubuntu 24.04 构建，保留 X11、WebKitGTK 4.1 及各自运行库要求，详见 [CLI 安装说明](./docs/dzc-standalone.md)和 [Linux 指南](./docs/LINUX_INSTALL.md)。
 
-已发布的 `v0.1.20-alpha.1` / `alpha.2` 附件保持原样：旧 Linux 包仍按发布说明要求 glibc 2.39+，旧 Windows 包缺少 `VCRUNTIME140.dll` 时需安装匹配架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。
+已发布附件保持原样：`v0.1.20` / `v0.1.20-alpha.3` 的 Linux 独立包仍要求 glibc 2.35+；`v0.1.20-alpha.1` / `alpha.2` 仍要求 glibc 2.39+。alpha.1 / alpha.2 旧 Windows 包缺少 `VCRUNTIME140.dll` 时需安装匹配架构的 [Microsoft Visual C++ v14 运行库](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)：[x64](https://aka.ms/vc14/vc_redist.x64.exe) / [ARM64](https://aka.ms/vc14/vc_redist.arm64.exe)。
 
 `dzc pick/tui/mcp` 与 Shell 初始化入口自 `v0.1.20-alpha.2` 起提供。较旧发布包请使用各自随包说明；运行 `dzc --help` 可确认当前二进制支持的命令。
 
@@ -182,7 +182,7 @@ python3 -m unittest discover -s scripts/tests -v
 pnpm run tauri:build
 ```
 
-桌面构建产物在 `src-tauri/target/release/bundle/`。只构建 CLI 可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，无需编译桌面依赖。分发兼容包使用 Python 3.11+ 的 `scripts/build-standalone-dzc.py --platform windows-x86_64` 等参数构建，再把返回的二进制路径传给 `scripts/package-dzc.py --platform windows-x86_64 --binary 路径`；Linux 构建脚本需要 Docker，在 Ubuntu 22.04 容器中编译、链接。`scripts/verify-dzc-package.py 压缩包路径` 会解压后检查动态依赖、版本和独立进程间的数据持久化。发布流程与安装命令以仓库脚本及对应版本说明为准；旧 roadmap 仅作为历史规划，不是当前功能清单。
+桌面构建产物在 `src-tauri/target/release/bundle/`。只构建 CLI 可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，无需编译桌面依赖。分发兼容包使用 Python 3.11+ 的 `scripts/build-standalone-dzc.py --platform windows-x86_64` 等参数构建，再把返回的二进制路径传给 `scripts/package-dzc.py --platform windows-x86_64 --binary 路径`；Linux 构建脚本需要 Docker，在对应架构的 AlmaLinux 8 容器中编译、链接。本机直接 Cargo 构建不会自动获得 glibc 2.28 基线。`scripts/verify-dzc-package.py 压缩包路径` 会解压后检查动态依赖、版本和独立进程间的数据持久化；`scripts/verify-dzc-linux-runtime.py 压缩包路径` 在 AlmaLinux 8、Ubuntu 22.04、Debian 12 中验证实际包。发布流程与安装命令以仓库脚本及对应版本说明为准；旧 roadmap 仅作为历史规划，不是当前功能清单。
 
 ## 许可证与来源
 
@@ -196,7 +196,9 @@ Desktop and standalone packages include `skills/dzc-cli/` and `skills/dezirclip-
 
 DezirClip is a local clipboard workspace for Windows and Linux X11, forked from [jimuzhe/tiez-clipboard](https://github.com/jimuzhe/tiez-clipboard). This fork removes macOS and cloud/network features, adds X11 support, custom CSS themes and WebView memory controls, and provides a shared Rust storage core for the GUI and `dzc` CLI. Full Wayland desktop support remains deferred.
 
-Download desktop installers or standalone CLI archives from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux; each includes the real CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256`. New CI artifacts and future releases include `COMPATIBILITY.json`: Linux CLI builds target glibc 2.35+ using Ubuntu 22.04 and are verified in Ubuntu 22.04 and Debian 12, with system D-Bus/GCC runtime libraries. Published alpha.1/alpha.2 assets remain unchanged with their original requirements, including glibc 2.39+. Keep CLI and adapters on matching versions.
+Download desktop installers or standalone CLI archives from [Releases](https://github.com/qiyuanhuakai/dezirclip/releases). Standalone archives are named `dzc-VERSION-{windows,linux}-{x86_64,aarch64}` with `.zip` on Windows or `.tar.gz` on Linux; each includes the real CLI, license, matching `integrations/`, and Agent Skill. Check the accompanying `.sha256` and binary-bound `COMPATIBILITY.json`. Since `v0.1.21`, x86_64 and aarch64 Linux standalone builds compile and link natively in AlmaLinux 8 for glibc 2.28+, with actual archives verified in AlmaLinux 8, Ubuntu 22.04 and Debian 12. System D-Bus/GCC runtime libraries are still required. These are GNU/glibc builds, not musl or native Alpine packages. Published `v0.1.20` / `v0.1.20-alpha.3` Linux CLI assets retain their glibc 2.35+ requirement; alpha.1/alpha.2 retain glibc 2.39+. Keep CLI and adapters on matching versions.
+
+The glibc 2.28 baseline applies only to the standalone CLI. Linux desktop packages remain built on Ubuntu 24.04 and require X11, WebKitGTK 4.1 and their desktop runtime libraries. A direct local Cargo build does not automatically inherit the standalone release baseline.
 
 Add the extracted binary directory to `PATH`, or set `DZC_BIN` to its absolute path. History commands work without the GUI; native clipboard access needs an accessible desktop session. Ordinary host installations share the current user's history; Flatpak defaults are sandboxed, and AppImage mount paths are temporary. See the [CLI reference](./docs/cli.md) for stable installation paths, sandbox access and portable data locations. Archives contain all integration runtime files, excluding development tests.
 
