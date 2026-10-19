@@ -130,6 +130,8 @@ fn main() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(app::updater::UpdaterState::default())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -272,6 +274,9 @@ fn main() {
             app::commands::search_regex,
             app::commands::get_search_history,
             app::commands::get_cli_info,
+            app::updater::get_update_support,
+            app::updater::check_for_update,
+            app::updater::install_update,
             app::commands::add_cli_to_path,
             app::commands::open_install_folder,
             app::commands::open_agent_skill_folder,

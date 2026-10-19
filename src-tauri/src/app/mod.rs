@@ -8,3 +8,4 @@ pub mod setup;
 pub mod system;
 pub mod webview_memory;
 pub mod window_manager;
+pub mod updater;
