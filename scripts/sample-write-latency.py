@@ -16,7 +16,7 @@ from pathlib import Path
 import platform
 import re
 import shutil
-import sqlite3
+from sqlite_history_fixture import connect_fixture_database
 import statistics
 import subprocess
 import tempfile
@@ -42,7 +42,7 @@ def fixture(binary, directory, rows):
     subprocess.run([str(binary), "add", "synthetic history seed"], env=environment,
                    check=True, capture_output=True)
     digest = hashlib.sha256()
-    with closing(sqlite3.connect(database)) as connection, connection:
+    with closing(connect_fixture_database(database)) as connection, connection:
         cursor = connection.execute("SELECT * FROM clipboard_history LIMIT 1")
         seed = dict(zip([column[0] for column in cursor.description], cursor.fetchone()))
         seed.pop("id")
@@ -55,14 +55,14 @@ def fixture(binary, directory, rows):
             item["timestamp"] = index + 1
             connection.execute(statement, [item[column] for column in columns])
             digest.update(item["content"].encode())
-    with closing(sqlite3.connect(database)) as connection:
+    with closing(connect_fixture_database(database)) as connection:
         connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         assert connection.execute("SELECT COUNT(*) FROM clipboard_history").fetchone()[0] == rows
     return database, digest.hexdigest()
 
 
 def verify(database, operation, rows, payload):
-    with closing(sqlite3.connect(database)) as connection:
+    with closing(connect_fixture_database(database)) as connection:
         if operation.startswith("add_"):
             stored = connection.execute("SELECT content FROM clipboard_history ORDER BY id DESC LIMIT 1").fetchone()[0]
             assert stored.encode() == payload, "add must preserve the complete UTF-8/CRLF payload"

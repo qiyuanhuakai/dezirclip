@@ -3,15 +3,16 @@
 from contextlib import closing
 import os
 from pathlib import Path
-import sqlite3
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from dzc_integrations.client import DzcClient
+from sqlite_history_fixture import connect_fixture_database
 
 
 class SearchKindBoundaryTests(unittest.TestCase):
@@ -38,7 +39,7 @@ class RealSearchKindTests(unittest.TestCase):
                     result = client.run(["add", "-", "--type", kind],
                                         payload=f"needle record {number}".encode("utf-8"))
                     ids.append(int(result.decode("utf-8").strip().rsplit("=", 1)[1]))
-                with closing(sqlite3.connect(database)) as connection:
+                with closing(connect_fixture_database(database)) as connection:
                     connection.execute("UPDATE clipboard_history SET timestamp=id")
                     connection.commit()
                 self.assertEqual([row["id"] for row in client.entries(query="needle", limit=1)],

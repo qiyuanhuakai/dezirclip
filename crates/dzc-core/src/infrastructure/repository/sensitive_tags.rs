@@ -8,6 +8,11 @@ use std::path::{Component, Path, PathBuf};
 
 mod html_refs;
 
+pub fn has_unsupported_sensitive_resources(html: &str) -> bool {
+    let references = html_refs::references(html);
+    !references.complete || !references.values.is_empty()
+}
+
 pub const PRIVACY_SETTING: &str = "app.privacy_protection";
 
 /// Call within the setting transaction so an enabled setting cannot be saved

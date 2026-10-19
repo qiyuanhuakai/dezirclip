@@ -1,0 +1,119 @@
+"""SQLite connections for disposable tests and synthetic render benchmarks only.
+
+Schema 19's search view/triggers need a pure visibility UDF on every writer.
+This mirrors that schema contract without decrypting data or opening a keyring.
+Runtime integrations must continue using dzc/Core rather than this fixture helper.
+Python's standard sqlite3 API exposes DETERMINISTIC but not INNOCUOUS; these
+trusted, disposable fixture connections retain SQLite's default trusted_schema.
+The production Rust connection separately registers its INNOCUOUS function.
+"""
+
+import base64
+import binascii
+import json
+import sqlite3
+import struct
+
+
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+# Rust str::trim follows Unicode White_Space; Python's default strip also
+# removes U+001C..U+001F, so pass the exact property characters explicitly.
+_RUST_WHITE_SPACE = "\t\n\v\f\r \x85\xa0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+_DPAPI_PROVIDER = bytes.fromhex("d08c9ddf0115d1118c7a00c04fc297eb")
+LINUX_ENVELOPE_FIXTURE = "linux:" + base64.b64encode(bytes(range(28))).decode("ascii")
+
+
+def _valid_dpapi_envelope(data):
+    position = 0
+
+    def take(count):
+        nonlocal position
+        if count > len(data) - position:
+            raise ValueError("truncated envelope")
+        value = data[position:position + count]
+        position += count
+        return value
+
+    def word():
+        return struct.unpack("<I", take(4))[0]
+
+    def blob():
+        return take(word())
+
+    try:
+        if word() != 1 or take(16) != _DPAPI_PROVIDER or word() != 1:
+            return False
+        take(16)
+        word()
+        if len(blob()) % 2:
+            return False
+        cipher_algorithm, cipher_bits = word(), word()
+        if cipher_algorithm & 0xE000 != 0x6000 or not 0 < cipher_bits <= 4096 or cipher_bits % 8:
+            return False
+        if not blob():
+            return False
+        blob()
+        hash_algorithm, hash_bits = word(), word()
+        if hash_algorithm & 0xE000 != 0x8000 or not 0 < hash_bits <= 4096 or hash_bits % 8:
+            return False
+        blob()
+        return bool(blob()) and bool(blob()) and position == len(data)
+    except (ValueError, struct.error):
+        return False
+
+
+def has_ciphertext_envelope(value):
+    if value.startswith("linux:"):
+        linux, payload = True, value[6:]
+    elif value.startswith("dpapi:"):
+        linux, payload = False, value[6:]
+    else:
+        return False
+    try:
+        data = base64.b64decode(payload, validate=True)
+        if base64.b64encode(data).decode("ascii") != payload:
+            return False
+    except (ValueError, binascii.Error):
+        return False
+    return len(data) >= 28 if linux else _valid_dpapi_envelope(data)
+
+
+def search_visible(tags, content, preview, html_content, ocr_text):
+    if tags is None:
+        tags = "[]"
+    if not isinstance(tags, str):
+        return False
+    try:
+        parsed = json.loads(tags)
+        if not isinstance(parsed, list) or not all(isinstance(tag, str) for tag in parsed):
+            return False
+        for tag in parsed:
+            tag.encode("utf-8")
+            if tag.strip(_RUST_WHITE_SPACE).translate(_ASCII_LOWER) in ("sensitive", "密码"):
+                return False
+    except (ValueError, UnicodeError, RecursionError):
+        return False
+    for value in (content, preview, html_content, ocr_text):
+        if value is not None:
+            if not isinstance(value, str) or has_ciphertext_envelope(value):
+                return False
+    return True
+
+
+def connect_fixture_database(*args, **kwargs):
+    connection = sqlite3.connect(*args, **kwargs)
+    try:
+        connection.create_function("dc_search_visible", 5, search_visible, deterministic=True)
+    except Exception:
+        connection.close()
+        raise
+    return connection
+
+
+def mark_legacy_plaintext_sensitive_fixture(connection, entry_id, tag="sensitive"):
+    """Model a pre-protection database row solely to test pre-decryption filtering."""
+    if tag.strip(_RUST_WHITE_SPACE).translate(_ASCII_LOWER) not in ("sensitive", "密码"):
+        raise ValueError("Expected a sensitive fixture tag")
+    connection.execute("UPDATE clipboard_history SET tags=? WHERE id=?",
+                       (json.dumps([tag], ensure_ascii=False), entry_id))
+    connection.execute("INSERT OR IGNORE INTO entry_tags(entry_id,tag) VALUES(?,?)", (entry_id, tag))

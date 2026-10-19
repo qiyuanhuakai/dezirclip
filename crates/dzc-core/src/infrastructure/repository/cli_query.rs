@@ -74,14 +74,12 @@ impl SqliteClipboardRepository {
             transaction
                 .execute(
                     "UPDATE clipboard_history SET is_pinned=?1,pinned_order=?2,use_count=?3,
-                content_kinds=?4,ocr_text=?5,ocr_status=?6 WHERE id=?7",
+                content_kinds=?4 WHERE id=?5",
                     rusqlite::params![
                         entry.is_pinned,
                         entry.pinned_order,
                         entry.use_count,
                         serde_json::to_string(&entry.content_kinds).map_err(|e| e.to_string())?,
-                        entry.ocr_text,
-                        entry.ocr_status.as_deref().unwrap_or("pending"),
                         entry.id
                     ],
                 )
@@ -135,7 +133,7 @@ impl SqliteClipboardRepository {
                 content,
                 ctx.get::<String>(1)?,
                 ctx.get::<String>(2)?,
-                ctx.get::<String>(3)?,
+                { let raw = ctx.get::<String>(3)?; crate::infrastructure::encryption::decrypt_value(&raw).unwrap_or(raw) },
             ] {
                 if value.to_lowercase().contains(&needle) {
                     return Ok(true);
@@ -171,7 +169,8 @@ impl SqliteClipboardRepository {
             AND (?5=0 OR (NOT EXISTS(SELECT 1 FROM json_each(tags) WHERE lower(value) IN ('sensitive','密码'))
                 AND content NOT LIKE 'dpapi:%' AND content NOT LIKE 'linux:%'
                 AND preview NOT LIKE 'dpapi:%' AND preview NOT LIKE 'linux:%'
-                AND COALESCE(html_content,'') NOT LIKE 'dpapi:%' AND COALESCE(html_content,'') NOT LIKE 'linux:%'))
+                AND COALESCE(html_content,'') NOT LIKE 'dpapi:%' AND COALESCE(html_content,'') NOT LIKE 'linux:%'
+                AND COALESCE(ocr_text,'') NOT LIKE 'dpapi:%' AND COALESCE(ocr_text,'') NOT LIKE 'linux:%'))
             AND {matching} ORDER BY {order} LIMIT ?6 OFFSET ?7");
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         // Numbered bindings leave room for the optional FTS expression.
@@ -238,7 +237,7 @@ impl SqliteClipboardRepository {
                         .unwrap_or_else(|_| "[]".to_string()),
                 )
                 .map_err(|e| e.to_string())?,
-                ocr_text: row.get(13).unwrap_or(None),
+                ocr_text: row.get::<_, Option<String>>(13).map_err(|error| error.to_string())?.map(decode_value).transpose()?,
                 ocr_status: row.get(14).unwrap_or(None),
             });
         }

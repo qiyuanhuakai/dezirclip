@@ -12,11 +12,13 @@ Example: python scripts/seed-performance-history.py .harness/perf/cases/fork
 """
 
 import argparse
+from contextlib import closing
 import hashlib
 import json
 from pathlib import Path
 import random
 import sqlite3
+from sqlite_history_fixture import connect_fixture_database
 
 try:
     import psutil
@@ -108,7 +110,7 @@ def content_hash(content):
 
 def seed(directory, text_count, image_count, width, height):
     directory, database, fixtures = case_database(directory)
-    with sqlite3.connect(database, timeout=1) as db:
+    with closing(connect_fixture_database(database, timeout=1)) as db:
         columns = {row[1] for row in db.execute("PRAGMA table_info(clipboard_history)")}
         required = {"id", "content_type", "content", "source_app", "timestamp", "preview"}
         if not required <= columns:

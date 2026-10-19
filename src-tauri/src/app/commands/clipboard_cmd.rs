@@ -1,10 +1,8 @@
-use crate::app_state::{AppDataDir, EncryptionQueueState, SessionHistory};
-use crate::database::{self, has_sensitive_tag, DbState};
+use crate::app_state::{AppDataDir, SessionHistory};
+use crate::database::{self, DbState};
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::tag_repo::TagRepository;
-use crate::services::encryption_queue::{EncryptionAction, EncryptionJob};
-use serde_json;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 fn truncate_chars_with_suffix(text: &str, max_chars: usize, suffix: &str) -> String {
@@ -37,9 +35,12 @@ pub fn toggle_clipboard_pin(
     {
         let mut session_items = session.inner().0.lock().unwrap();
         if let Some(item) = session_items.iter_mut().find(|i| i.id == id) {
-            item.is_pinned = is_pinned;
             if id < 0 && is_pinned {
-                entry_to_save = Some(item.clone());
+                let mut pending = item.clone();
+                pending.is_pinned = true;
+                entry_to_save = Some(pending);
+            } else {
+                item.is_pinned = is_pinned;
             }
         }
     }
@@ -48,7 +49,8 @@ pub fn toggle_clipboard_pin(
 
     if let Some(entry) = entry_to_save {
         let data_dir = app_data_dir.0.lock().unwrap().clone();
-        if let Ok(new_id) = state.repo.save_with_conn(&conn, &entry, Some(&data_dir)) {
+        let new_id = state.repo.save_with_conn(&conn, &entry, Some(&data_dir)).map_err(AppError::from)?;
+        {
             real_id = new_id;
             if let Ok(deleted_ids) = state.repo.enforce_limit_with_conn(&conn, Some(&data_dir)) {
                 for deleted_id in deleted_ids {
@@ -59,6 +61,7 @@ pub fn toggle_clipboard_pin(
                 let mut session_items = session.inner().0.lock().unwrap();
                 if let Some(item) = session_items.iter_mut().find(|i| i.id == id) {
                     item.id = new_id;
+                    item.is_pinned = is_pinned;
                 }
             }
         }
@@ -75,7 +78,6 @@ pub fn toggle_clipboard_pin(
 
 #[tauri::command]
 pub fn update_tags(
-    app_handle: AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     app_data_dir: State<'_, AppDataDir>,
@@ -98,36 +100,8 @@ pub fn update_tags(
         return Err(AppError::Validation("Item not found".to_string()));
     }
 
-    let old_sensitive = {
-        let conn = state.conn.lock().unwrap();
-        let tags_json: Option<String> = conn
-            .query_row(
-                "SELECT tags FROM clipboard_history WHERE id = ?",
-                [id],
-                |row| row.get(0),
-            )
-            .ok();
-        let prev_tags: Vec<String> = tags_json
-            .as_deref()
-            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
-            .unwrap_or_default();
-        has_sensitive_tag(&prev_tags)
-    };
-
-    let new_sensitive = has_sensitive_tag(&tags);
-    state
-        .tag_repo
-        .update_entry_tags(id, tags)
-        .map_err(AppError::from)?;
-    if old_sensitive != new_sensitive {
-        let queue = app_handle.state::<EncryptionQueueState>();
-        let action = if new_sensitive {
-            EncryptionAction::Encrypt
-        } else {
-            EncryptionAction::Decrypt
-        };
-        queue.0.enqueue(EncryptionJob { id, action });
-    }
+    state.tag_repo.update_entry_tags(id, tags).map_err(AppError::from)?;
+    state.repo.invalidate_caches();
     Ok(id)
 }
 
@@ -178,18 +152,20 @@ pub async fn update_item_content(
 ) -> AppResult<()> {
     let preview = truncate_chars_with_suffix(&new_content, 500, "...");
 
-    {
-        let mut session_items = session.inner().0.lock().unwrap();
-        if let Some(item) = session_items.iter_mut().find(|i| i.id == id) {
-            item.content = new_content.clone();
-            item.preview = preview.clone();
-        }
+    if id >= 0 {
+        state
+            .repo
+            .update_entry_content(id, &new_content, &preview)
+            .map_err(AppError::from)?;
     }
-
-    state
-        .repo
-        .update_entry_content(id, &new_content, &preview)
-        .map_err(AppError::from)?;
+    let mut session_items = session.inner().0.lock().unwrap();
+    if let Some(item) = session_items.iter_mut().find(|i| i.id == id) {
+        item.content = new_content;
+        item.preview = preview;
+    } else if id < 0 {
+        return Err(AppError::Validation("Item not found".into()));
+    }
+    drop(session_items);
     let _ = app_handle.emit("clipboard-changed", ());
     Ok(())
 }

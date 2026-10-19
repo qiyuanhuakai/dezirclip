@@ -2,7 +2,10 @@
 import copy
 import importlib.util
 from pathlib import Path
+import sys
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 SPEC = importlib.util.spec_from_file_location("history_latency", Path(__file__).resolve().parents[1] / "sample-history-latency.py")
 SAMPLER = importlib.util.module_from_spec(SPEC)

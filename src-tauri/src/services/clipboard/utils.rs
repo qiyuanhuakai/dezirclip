@@ -1,9 +1,7 @@
-use crate::database::save_image_to_file;
 use crate::domain::models::ClipboardEntry;
 use base64::{engine::general_purpose, Engine as _};
 use regex::Regex;
 use std::borrow::Cow;
-use std::path::Path;
 use std::sync::OnceLock;
 use urlencoding::decode;
 
@@ -43,43 +41,6 @@ pub fn attach_rich_image_fallback(html: &str, payload: &str) -> String {
     out.push_str(payload);
     out.push_str(RICH_IMAGE_FALLBACK_SUFFIX);
     out
-}
-
-pub fn split_rich_html_and_image_fallback(html: &str) -> (String, Option<String>) {
-    if let Some(start) = html.rfind(RICH_IMAGE_FALLBACK_PREFIX) {
-        let marker_start = start + RICH_IMAGE_FALLBACK_PREFIX.len();
-        if let Some(end_rel) = html[marker_start..].find(RICH_IMAGE_FALLBACK_SUFFIX) {
-            let marker_end = marker_start + end_rel;
-            let mut cleaned = String::with_capacity(html.len());
-            cleaned.push_str(&html[..start]);
-            cleaned.push_str(&html[marker_end + RICH_IMAGE_FALLBACK_SUFFIX.len()..]);
-            let payload = html[marker_start..marker_end].trim().to_string();
-            return (cleaned.trim().to_string(), Some(payload));
-        }
-    }
-    (html.to_string(), None)
-}
-
-pub fn externalize_rich_image_fallback(html: &str, data_dir: &Path) -> String {
-    let (clean_html, payload_opt) = split_rich_html_and_image_fallback(html);
-    let Some(payload) = payload_opt else {
-        return html.to_string();
-    };
-
-    if !payload.starts_with("data:image/") {
-        return html.to_string();
-    }
-
-    if let Some(saved_path) = save_image_to_file(&payload, data_dir) {
-        let base_html = if clean_html.trim().is_empty() {
-            html
-        } else {
-            clean_html.as_str()
-        };
-        return attach_rich_image_fallback(base_html, &saved_path);
-    }
-
-    html.to_string()
 }
 
 /// Caps an entry's text and HTML so a huge clipboard payload does not cross
@@ -400,90 +361,6 @@ pub fn embed_local_images(html: &str) -> String {
                         format!("data:{};base64,{}", mime, b64),
                         suffix
                     );
-                }
-            }
-        }
-
-        format!("{}{}{}", prefix, src, suffix)
-    })
-    .to_string()
-}
-
-pub fn process_local_images_in_html(html: &str, data_dir: &std::path::Path) -> String {
-    let attachments_dir = data_dir.join("attachments");
-    if !attachments_dir.exists() {
-        let _ = std::fs::create_dir_all(&attachments_dir);
-    }
-
-    let re = match Regex::new(r#"(<img\s+[^>]*src=["'])([^"']+)(["'][^>]*>)"#) {
-        Ok(r) => r,
-        Err(_) => return html.to_string(),
-    };
-
-    re.replace_all(html, |caps: &regex::Captures| {
-        let prefix = &caps[1];
-        let src = &caps[2];
-        let suffix = &caps[3];
-
-        let is_local = src.starts_with("file://")
-            || (src.len() > 2
-                && src.chars().nth(1) == Some(':')
-                && (src.chars().nth(2) == Some('\\') || src.chars().nth(2) == Some('/')));
-
-        if is_local {
-            let path_str = if src.starts_with("file://") {
-                let raw_path = src.trim_start_matches("file://");
-                if raw_path.starts_with('/') && raw_path.chars().nth(2) == Some(':') {
-                    &raw_path[1..]
-                } else {
-                    raw_path
-                }
-            } else {
-                src
-            };
-
-            let decoded_path = decode(path_str)
-                .map(|p| p.into_owned())
-                .unwrap_or(path_str.to_string());
-            let clean_path = decoded_path
-                .split('?')
-                .next()
-                .unwrap_or(&decoded_path)
-                .split('#')
-                .next()
-                .unwrap_or(&decoded_path);
-            let path = std::path::Path::new(clean_path);
-
-            if path.starts_with(&attachments_dir) {
-                return format!("{}{}{}", prefix, src, suffix);
-            }
-
-            if path.exists() {
-                if let Ok(data) = std::fs::read(path) {
-                    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                    use std::hash::{Hash, Hasher};
-                    data.hash(&mut hasher);
-                    let hash = hasher.finish();
-
-                    let ext = path
-                        .extension()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("png")
-                        .to_lowercase();
-                    let new_filename = format!("img_{:x}.{}", hash, ext);
-                    let new_path = attachments_dir.join(&new_filename);
-
-                    if !new_path.exists() {
-                        let _ = std::fs::write(&new_path, &data);
-                    }
-
-                    let new_src = new_path.to_string_lossy().replace('\\', "/");
-                    let final_src = if new_src.starts_with('/') {
-                        format!("file://{}", new_src)
-                    } else {
-                        format!("file:///{}", new_src)
-                    };
-                    return format!("{}{}{}", prefix, final_src, suffix);
                 }
             }
         }

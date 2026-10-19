@@ -13,7 +13,7 @@ import math
 import os
 from pathlib import Path
 import platform
-import sqlite3
+from sqlite_history_fixture import connect_fixture_database
 import statistics
 import subprocess
 import tempfile
@@ -57,7 +57,7 @@ def sample(binary, output, rows, iterations, source_revision=None, build_profile
         environment = {**os.environ, "DEZIRCLIP_DB_PATH": str(database)}
         subprocess.run([str(binary), "add", "synthetic baseline needle 中文🙂\r\n"],
                        env=environment, check=True, capture_output=True)
-        with closing(sqlite3.connect(database)) as connection, connection:
+        with closing(connect_fixture_database(database)) as connection, connection:
             cursor = connection.execute("SELECT * FROM clipboard_history LIMIT 1")
             first = dict(zip([column[0] for column in cursor.description], cursor.fetchone()))
             first.pop("id")

@@ -1,5 +1,5 @@
 use crate::app_state::{AppDataDir, PasteQueue, SessionHistory, SettingsState};
-use crate::database::is_text_type;
+use crate::database::{is_text_type, has_sensitive_tag};
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::global_state::IS_DESTROYED;
@@ -46,6 +46,7 @@ pub struct PipelineContext {
     /// to the database, so it is handed over instead of decoded a second time.
     /// `None` until the dedup stage runs, and for a non-deduped run.
     pub image_hash: Option<i64>,
+    html_attachments: Option<crate::infrastructure::attachments::HtmlAttachmentPlan>,
 }
 
 impl PipelineContext {
@@ -71,6 +72,7 @@ impl PipelineContext {
             pending_removals: Vec::new(),
             reuse_session_id: None,
             image_hash: None,
+            html_attachments: None,
         }
     }
 }
@@ -232,17 +234,25 @@ impl PipelineStage for TransformationStage {
             }
         }
 
+        if settings.persistent.load(Ordering::Relaxed) && has_sensitive_tag(&entry.tags) {
+            if crate::infrastructure::repository::protection::validate_sensitive_record(
+                &entry.content_type, entry.is_external, entry.html_content.as_deref(),
+            ).is_err() {
+                ctx.should_stop = true;
+                return;
+            }
+        }
+
         // Rich Text Image Processing
         if let Some(html) = &entry.html_content {
             let app_data_dir = ctx.app_handle.state::<AppDataDir>();
             let data_dir = app_data_dir.0.lock().unwrap().clone();
 
             entry.html_content = if settings.persistent.load(Ordering::Relaxed) {
-                let html_with_local_assets = process_local_images_in_html(html, &data_dir);
-                Some(externalize_rich_image_fallback(
-                    &html_with_local_assets,
-                    &data_dir,
-                ))
+                let plan = crate::infrastructure::attachments::plan_html_attachments(html, &data_dir);
+                let html = plan.html().to_owned();
+                ctx.html_attachments = Some(plan);
+                Some(html)
             } else {
                 Some(embed_local_images(html))
             };
@@ -472,11 +482,12 @@ impl PipelineStage for PersistenceStage {
 
                 let is_new_image = entry.id == 0 && entry.content_type == "image";
                 let saved_id =
-                    match db_state.repo.save_with_conn_and_image_hash(
+                    match db_state.repo.save_capture_with_conn(
                         &conn,
                         entry,
                         Some(&data_dir),
                         ctx.image_hash,
+                        ctx.html_attachments.as_ref(),
                     ) {
                         Ok(id) => {
                             entry.id = id;
