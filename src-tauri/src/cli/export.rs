@@ -20,7 +20,7 @@
 //! ## Flow
 //!
 //! 1. Validate args (passphrase length, encrypted+no-passphrase).
-//! 2. Fetch all entries via `repo.query_cli_for_export(&CliQuery {limit:i32::MAX,..Default::default()})`.
+//! 2. Fetch all entries via `repo.query_for_export(&HistoryQuery {limit:i32::MAX,..Default::default()})`.
 //! 3. Map `ClipboardEntry` → `services::backup::ExportEntry`.
 //! 4. Serialize via `export_to_json` or `export_to_encrypted`.
 //! 5. Write to `path` (creates parent dirs if missing).
@@ -38,11 +38,13 @@ use std::path::Path;
 #[cfg(test)]
 use base64::{engine::general_purpose::STANDARD, Engine};
 
+#[cfg(test)]
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::{
-    cli_query::CliQuery, clipboard_repo::SqliteClipboardRepository,
-};
-use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
+use crate::api::{BackupService, HistoryService};
+#[cfg(test)]
+use crate::api::HistoryQuery;
+#[cfg(test)]
+use crate::services::backup::{export_to_json, ExportEntry};
 
 /// Minimum acceptable passphrase length. Matches the
 /// `BackupDialog` validation in the frontend and the G32 hard
@@ -78,7 +80,7 @@ enum ExportFormat {
 ///
 /// Returns `Ok(())` on success. Errors are returned as `Err(String)`
 /// for the binary to surface via `eprintln!` + exit code 1.
-pub fn run(args: &ExportArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
+pub fn run(args: &ExportArgs, repo: &HistoryService) -> Result<(), String> {
     // 1. Determine format from args + path extension.
     let format = resolve_format(&args.path, args.encrypted)?;
 
@@ -95,38 +97,9 @@ pub fn run(args: &ExportArgs, repo: &SqliteClipboardRepository) -> Result<(), St
         }
     }
 
-    // Read complete payloads rather than the desktop history preview projection.
-    let raw_entries = repo
-        .query_cli_for_export(&CliQuery {
-            limit: i32::MAX,
-            ..Default::default()
-        })
-        .map_err(|e| format!("export: history lookup failed: {e}"))?;
-
-    // Resolve image attachments before opening the destination, so a missing
-    // source cannot overwrite a usable backup with dangling image paths.
-    let export_entries: Vec<ExportEntry> = raw_entries
-        .iter()
-        .map(to_export_entry)
-        .collect::<Result<_, _>>()?;
-    let count = export_entries.len();
-
-    // 5. Serialize.
-    let (bytes, format_label): (Vec<u8>, &'static str) = match format {
-        ExportFormat::Json => {
-            let json = export_to_json(export_entries)
-                .map_err(|e| format!("export: json serialize failed: {e}"))?;
-            (json.into_bytes(), "json")
-        }
-        ExportFormat::Encrypted => {
-            let blob = export_to_encrypted(export_entries, args.passphrase.as_deref().unwrap())
-                .map_err(|e| format!("export: encrypt failed: {e}"))?;
-            (blob, "encrypted")
-        }
-    };
-
-    repo.ensure_export_destination(Path::new(&args.path))?;
-    crate::infrastructure::attachments::write_backup(Path::new(&args.path), &bytes)
+    let format_label = if format == ExportFormat::Encrypted { "encrypted" } else { "json" };
+    let passphrase = (format == ExportFormat::Encrypted).then(|| args.passphrase.as_deref().unwrap());
+    let count = BackupService::new(repo.clone()).export_file(Path::new(&args.path), passphrase)
         .map_err(|error| format!("export: {error}"))?;
 
     // 7. Summary. Skipped under --quiet so the user can pipe a fresh
@@ -159,6 +132,7 @@ fn resolve_format(path: &str, encrypted: bool) -> Result<ExportFormat, String> {
 
 /// Image records carry their original encoded bytes across machines; file
 /// lists and resources linked from HTML remain references to their sources.
+#[cfg(test)]
 fn to_export_entry(entry: &ClipboardEntry) -> Result<ExportEntry, String> {
     crate::services::backup::prepare_export_entry(entry)
 }
@@ -298,14 +272,14 @@ mod tests {
 
     #[test]
     fn missing_image_attachment_does_not_overwrite_existing_backup() {
-        use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+        use crate::api::HistoryService;
         use std::sync::{Arc, Mutex};
 
         let path = temporary_path("missing.png");
         let output = temporary_path("backup.json");
         let mut connection = rusqlite::Connection::open_in_memory().unwrap();
         crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
-        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
+        let repo = HistoryService::from_legacy_connection(Arc::new(Mutex::new(connection)));
         let mut entry = image_entry(path.to_string_lossy().into_owned());
         entry.id = 0;
         let id = repo.save(&entry, None).unwrap();
@@ -327,14 +301,14 @@ mod tests {
         assert_eq!(existing, b"existing backup");
     }
     fn backup_repository() -> (
-        SqliteClipboardRepository,
+        HistoryService,
         std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
     ) {
         let mut connection = rusqlite::Connection::open_in_memory().unwrap();
         crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
         let connection = std::sync::Arc::new(std::sync::Mutex::new(connection));
         (
-            SqliteClipboardRepository::new(connection.clone()),
+            HistoryService::from_legacy_connection(connection.clone()),
             connection,
         )
     }
@@ -353,7 +327,7 @@ mod tests {
             let mut source = backup_entry(7, "rich_text", format!("{prefix} kernel notes\r\n"));
             source.preview = format!("{prefix} ordinary preview");
             source.html_content = Some(format!("{prefix}<p>ordinary HTML</p>"));
-            repo.import_cli_entries(&[source.clone()], true).unwrap();
+            repo.restore(&[source.clone()], crate::api::ImportMode::Replace).unwrap();
             let path = directory.join("history.json");
             crate::cli::export::run(
                 &crate::cli::export::ExportArgs {
@@ -421,12 +395,12 @@ mod tests {
         for cipher in unavailable_ciphertexts() {
             assert!(crate::infrastructure::encryption::decrypt_value(&cipher).is_none());
             for field in ["content", "preview", "html_content"] {
-                repo.import_cli_entries(
+                repo.restore(
                     &[
                         backup_entry(7, "rich_text", "safe text".to_string()),
                         backup_entry(8, "text", "visible entry".to_string()),
                     ],
-                    true,
+                    crate::api::ImportMode::Replace,
                 )
                 .unwrap();
                 connection.lock().unwrap().execute(&format!("UPDATE clipboard_history SET {field}=?1,tags='[\"sensitive\"]' WHERE id=7"),[&cipher]).unwrap();
@@ -448,7 +422,7 @@ mod tests {
                     assert_eq!(std::fs::read(path).unwrap(), b"previous usable backup");
                 }
                 let filtered = repo
-                    .query_cli_for_export(&CliQuery {
+                    .query_for_export(&HistoryQuery {
                         limit: i32::MAX,
                         exclude_sensitive: true,
                         ..Default::default()

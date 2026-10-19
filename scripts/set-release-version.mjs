@@ -46,7 +46,7 @@ for (const path of tomlTargets) {
   replaceTomlPackageVersion(path);
 }
 const lock = readFileSync(lockTarget, "utf8").replace(
-  /(^\[\[package\]\]\r?\nname = "(?:dezirclip|dzc-core|dzc-platform)"\r?\nversion = )"[^"]+"/gm,
+  /(^\[\[package\]\]\r?\nname = "(?:dezirclip|dzc-core|dzc-platform|dzc-protocol)"\r?\nversion = )"[^"]+"/gm,
   `$1"${version}"`,
 );
 writeFileSync(lockTarget, lock);

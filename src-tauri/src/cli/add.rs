@@ -24,7 +24,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 /// Args for the `add` subcommand. The bin resolves the positional
 /// `content` token into one of `text` / `stdin` / `file`; this struct
@@ -49,7 +49,7 @@ pub struct AddArgs {
 pub const PREVIEW_CHARS: usize = 500;
 
 /// Run the `add` subcommand. Returns the newly-inserted entry id.
-pub fn run(args: &AddArgs, repo: &dyn ClipboardRepository) -> Result<i64, String> {
+pub fn run(args: &AddArgs, repo: &HistoryService) -> Result<i64, String> {
     let content = read_content(args)?;
     if content.is_empty() {
         return Err("add: empty content (refusing to insert)".to_string());

@@ -1,7 +1,11 @@
 use crate::database::DbState;
+#[cfg(test)]
 use crate::domain::models::ClipboardEntry;
+#[cfg(test)]
 use crate::infrastructure::repository::cli_query::CliQuery;
+#[cfg(test)]
 use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
+use dzc_core::api::BackupService;
 use tauri::{AppHandle, State};
 
 #[derive(Debug, serde::Serialize)]
@@ -20,48 +24,32 @@ pub fn export_to_file(
     format: String,
     passphrase: Option<String>,
 ) -> Result<ExportSummary, String> {
-    state
-        .repo
-        .ensure_export_destination(std::path::Path::new(&path))?;
-    match format.as_str() {
-        "json" => export_json(state, path, format),
-        "encrypted" => export_encrypted(state, path, format, passphrase),
-        _ => Err("format must be 'json' or 'encrypted'".to_string()),
-    }
-}
-
-fn export_json(
-    state: State<'_, DbState>,
-    path: String,
-    format: String,
-) -> Result<ExportSummary, String> {
-    let entries = state
-        .repo
-        .query_cli_for_export(&CliQuery {
-            limit: i32::MAX,
-            ..Default::default()
-        })
-        .map_err(|e| e.to_string())?;
-    export_entries(entries, path, format, None)
-}
-
-fn export_encrypted(
-    state: State<'_, DbState>,
-    path: String,
-    format: String,
-    passphrase: Option<String>,
-) -> Result<ExportSummary, String> {
-    let entries = state
-        .repo
-        .query_cli_for_export(&CliQuery {
-            limit: i32::MAX,
-            ..Default::default()
-        })
-        .map_err(|e| e.to_string())?;
-    export_entries(entries, path, format, passphrase)
+    let encrypted = match format.as_str() {
+        "json" => false,
+        "encrypted" => true,
+        _ => return Err("format must be 'json' or 'encrypted'".to_string()),
+    };
+    let password = if encrypted {
+        Some(
+            passphrase
+                .as_deref()
+                .ok_or("passphrase is required for encrypted format")?,
+        )
+    } else {
+        None
+    };
+    let count = BackupService::new(state.history_service())
+        .export_file(std::path::Path::new(&path), password)?;
+    Ok(ExportSummary {
+        count,
+        format,
+        encrypted,
+        path,
+    })
 }
 
 /// Pure helper: serialize `entries` and write to `path`.
+#[cfg(test)]
 pub(crate) fn export_entries(
     entries: Vec<ClipboardEntry>,
     path: String,

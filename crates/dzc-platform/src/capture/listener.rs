@@ -42,7 +42,11 @@ pub fn listen_clipboard(callback: Callback) {
     let _ = std::thread::Builder::new()
         .name("clipboard-native-listener".into())
         .spawn(move || {
-            if let Err(error) = run_clipboard_monitor(callback) {
+            use dzc_core::ports::ClipboardMonitor;
+            let monitor = crate::runtime::NativeClipboardMonitor::default();
+            if let Err(error) = monitor.run(Box::new(move |change| {
+                callback(ClipboardChange { sequence: change.sequence as u32 })
+            })) {
                 eprintln!("[clipboard-listener] {error}");
             }
         });
@@ -144,7 +148,7 @@ mod tests {
     fn invalid_display_is_rejected_before_native_connections() {
         const CHILD: &str = "DEZIRCLIP_INVALID_DISPLAY_TEST_CHILD";
         if std::env::var_os(CHILD).is_some() {
-            use dzc_core::services::capture::{CaptureReadRequest, CaptureReader};
+            use dzc_core::capture::{CaptureReadRequest, CaptureReader};
             assert_eq!(
                 super::probe_clipboard_monitor().unwrap_err(),
                 "X11DisplayInvalid"
@@ -160,6 +164,14 @@ mod tests {
                 })
                 .unwrap_err();
             assert_eq!(error.code, "X11DisplayInvalid");
+            use dzc_core::ports::ClipboardMonitor;
+            let monitor = crate::runtime::NativeClipboardMonitor::default();
+            let error = monitor.run(Box::new(|_| {})).unwrap_err();
+            assert_eq!(
+                error.reason,
+                Some(dzc_protocol::UnsupportedReason::ConnectionUnavailable)
+            );
+            assert!(!monitor.capability().active);
             return;
         }
         let output = std::process::Command::new(std::env::current_exe().unwrap())

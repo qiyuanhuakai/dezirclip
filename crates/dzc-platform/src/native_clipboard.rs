@@ -13,7 +13,7 @@ pub enum Payload {
 
 fn open() -> Result<arboard::Clipboard,String> {
     #[cfg(target_os = "linux")]
-    if std::env::var_os("DISPLAY").is_none() {return Err("X11 clipboard unavailable: DISPLAY is not set; native Wayland support is deferred".to_string());}
+    crate::runtime_display::validate_x11_display().map_err(|error| error.to_string())?;
     arboard::Clipboard::new().map_err(|e|format!("clipboard: {e}"))
 }
 

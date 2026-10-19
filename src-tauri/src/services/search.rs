@@ -1,1 +1,1 @@
-pub use dzc_core::services::search::*;
+pub use dzc_core::legacy::services::search::*;

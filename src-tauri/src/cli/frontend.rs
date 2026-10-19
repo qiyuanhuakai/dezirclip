@@ -1,10 +1,8 @@
 //! Common history queries and output actions for the native terminal frontends.
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::native_clipboard::{self, Payload};
+use crate::ports::ClipboardPayload as Payload;
 use crate::infrastructure::osc52::{self, Passthrough};
-use crate::infrastructure::repository::{
-    cli_query::CliQuery, clipboard_repo::SqliteClipboardRepository,
-};
+use crate::api::{HistoryQuery, HistoryService};
 use std::io::Write;
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -29,19 +27,19 @@ pub struct BrowseOptions {
 
 pub fn query_rows(
     options: &BrowseOptions,
-    repo: &SqliteClipboardRepository,
+    repo: &HistoryService,
 ) -> Result<Vec<ClipboardEntry>, String> {
     if !(1..=200).contains(&options.limit) || options.offset < 0 {
         return Err("limit must be between 1 and 200; offset must be nonnegative".to_string());
     }
-    repo.query_cli(&CliQuery {
+    repo.query(&HistoryQuery {
         limit: options.limit,
         offset: options.offset,
         kind: options.kind.as_deref(),
         metadata: true,
-        search: (!options.query.trim().is_empty()).then_some((options.query.as_str(), "contains")),
+        search: (!options.query.trim().is_empty()).then_some((options.query.as_str(), crate::api::HistorySearchMode::Contains)),
         ..Default::default()
-    })
+    }).map_err(Into::into)
 }
 
 pub fn display_text(value: &str, max_chars: usize) -> String {
@@ -55,7 +53,7 @@ pub fn display_text(value: &str, max_chars: usize) -> String {
 
 fn entry_payload(entry: ClipboardEntry) -> Result<Payload, String> {
     Ok(match entry.content_type.as_str() {
-        "image" => Payload::Image(super::payload::image_bytes(&entry.content)?),
+        "image" => Payload::Image { bytes: super::payload::image_bytes(&entry.content)?, mime: "image/png".to_owned() },
         "file" | "files" | "video" => Payload::Files(super::payload::files(&entry.content)?),
         "html" => Payload::Html {
             html: entry.html_content.unwrap_or_else(|| entry.content.clone()),
@@ -74,18 +72,18 @@ fn entry_payload(entry: ClipboardEntry) -> Result<Payload, String> {
     })
 }
 
-pub fn copy_entry(id: i64, repo: &SqliteClipboardRepository) -> Result<(), String> {
-    native_clipboard::write(entry_payload(super::get::resolve(
+pub fn copy_entry(id: i64, repo: &HistoryService) -> Result<(), String> {
+    dzc_platform::runtime::standalone_clipboard_service().write(entry_payload(super::get::resolve(
         &id.to_string(),
         false,
         repo,
-    )?)?)
+    )?)?).map_err(Into::into)
 }
 
 pub fn apply_action(
     id: i64,
     options: &BrowseOptions,
-    repo: &SqliteClipboardRepository,
+    repo: &HistoryService,
 ) -> Result<(), String> {
     if options.action == Action::Copy {
         return copy_entry(id, repo);

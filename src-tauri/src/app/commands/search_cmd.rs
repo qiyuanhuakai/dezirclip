@@ -1,12 +1,14 @@
-use regex::Regex;
+#[cfg(test)]
 use rusqlite::Connection;
 use tauri::State;
 
 use crate::app_state::SearchHistory;
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
+#[cfg(test)]
 use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-use crate::services::search::{build_search_query, register_regexp, SearchMode, SearchPlan};
+#[cfg(test)]
+use crate::services::search::SearchMode;
 
 fn normalize_limit(limit: u32) -> u32 {
     if limit == 0 {
@@ -16,63 +18,6 @@ fn normalize_limit(limit: u32) -> u32 {
     } else {
         limit
     }
-}
-
-fn run_plan_against_db(conn: &Connection, plan: SearchPlan) -> Result<Vec<i64>, String> {
-    match plan {
-        SearchPlan::Empty => Ok(Vec::new()),
-        SearchPlan::Sql { sql, params } => {
-            let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-            let rows = stmt
-                .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-                    row.get::<_, i64>(0)
-                })
-                .map_err(|e| e.to_string())?;
-            let mut ids = Vec::new();
-            for row in rows {
-                ids.push(row.map_err(|e| e.to_string())?);
-            }
-            Ok(ids)
-        }
-    }
-}
-
-fn patch_fuzzy_sql_placeholders(plan: SearchPlan) -> SearchPlan {
-    match plan {
-        SearchPlan::Empty => SearchPlan::Empty,
-        SearchPlan::Sql {
-            mut sql,
-            mut params,
-        } => {
-            if sql.contains("?1*") {
-                sql = sql.replacen("?1*", "?1", 1);
-                if let Some(first) = params.first_mut() {
-                    if !first.ends_with('*') {
-                        *first = format!("{}*", first);
-                    }
-                }
-            }
-            SearchPlan::Sql { sql, params }
-        }
-    }
-}
-
-fn entries_from_ids(
-    repo: &SqliteClipboardRepository,
-    conn: &Connection,
-    ids: Vec<i64>,
-) -> Result<Vec<ClipboardEntry>, String> {
-    let mut entries: Vec<ClipboardEntry> = Vec::with_capacity(ids.len());
-    for id in ids {
-        if let Some(entry) = repo.get_entry_by_id_with_conn(conn, id)? {
-            entries.push(entry);
-        }
-    }
-    Ok(entries)
-}
-
-fn ensure_regex_registered(conn: &Connection) -> Result<(), String> {
-    register_regexp(conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -88,7 +33,10 @@ pub async fn search_fts(
     if trimmed.is_empty() {
         return Ok(Vec::new());
     }
-    state.repo.search_fts(trimmed, limit).map_err(|e| e)
+    state
+        .history_service()
+        .search_fts(trimmed, limit)
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -104,16 +52,10 @@ pub async fn search_fuzzy(
         return Ok(Vec::new());
     }
     let limit = normalize_limit(limit);
-    let plan = patch_fuzzy_sql_placeholders(build_search_query(
-        &SearchMode::Fuzzy {
-            pattern: query.clone(),
-            threshold,
-        },
-        limit,
-    ));
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
-    let ids = run_plan_against_db(&conn, plan)?;
-    entries_from_ids(&state.repo, &conn, ids)
+    state
+        .history_service()
+        .search_fuzzy(&query, threshold, limit)
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -126,21 +68,13 @@ pub async fn search_regex(
     if pattern.is_empty() {
         return Ok(Vec::new());
     }
-    if Regex::new(&pattern).is_err() {
-        return Err(format!("Invalid regex: {}", pattern));
+    let result = state
+        .history_service()
+        .search_regex(&pattern, normalize_limit(limit));
+    if !matches!(&result, Err(error) if error.code==dzc_core::api::CoreErrorCode::Validation) {
+        history.push(pattern);
     }
-    history.push(pattern.clone());
-    let limit = normalize_limit(limit);
-    let plan = build_search_query(
-        &SearchMode::Regex {
-            pattern: pattern.clone(),
-        },
-        limit,
-    );
-    let conn = state.conn.lock().map_err(|e| e.to_string())?;
-    ensure_regex_registered(&conn)?;
-    let ids = run_plan_against_db(&conn, plan)?;
-    entries_from_ids(&state.repo, &conn, ids)
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -175,9 +109,16 @@ mod tests {
     }
 
     fn execute_plan(arc: &Arc<Mutex<Connection>>, mode: SearchMode, limit: u32) -> Vec<i64> {
-        let plan = patch_fuzzy_sql_placeholders(build_search_query(&mode, limit));
-        let conn = arc.lock().expect("lock");
-        run_plan_against_db(&conn, plan).expect("run_plan_against_db failed")
+        let history = dzc_core::api::HistoryService::from_legacy_connection(arc.clone());
+        let entries = match mode {
+            SearchMode::Fuzzy { pattern, threshold } => {
+                history.search_fuzzy(&pattern, threshold, limit)
+            }
+            SearchMode::Regex { pattern } => history.search_regex(&pattern, limit),
+            SearchMode::Fts5 { query } => history.search_fts(&query, limit),
+        }
+        .unwrap();
+        entries.into_iter().map(|entry| entry.id).collect()
     }
 
     #[test]
@@ -239,10 +180,6 @@ mod tests {
                 1_700_000_000,
             );
             insert_entry(&conn, "no email here at all", "App2", 1_700_000_001);
-        }
-        {
-            let conn = arc.lock().expect("lock");
-            ensure_regex_registered(&conn).expect("register_regexp must succeed");
         }
         let ids = execute_plan(
             &arc,

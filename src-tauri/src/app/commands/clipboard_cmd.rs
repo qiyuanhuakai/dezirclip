@@ -1,8 +1,6 @@
 use crate::app_state::{AppDataDir, SessionHistory};
 use crate::database::{self, DbState};
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-use crate::infrastructure::repository::tag_repo::TagRepository;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 fn truncate_chars_with_suffix(text: &str, max_chars: usize, suffix: &str) -> String {
@@ -91,7 +89,7 @@ pub fn update_tags(
             item.tags = tags.clone();
 
             let data_dir = app_data_dir.0.lock().unwrap().clone();
-            let new_id = state.repo.save(&item, Some(&data_dir))?;
+            let new_id = state.history_service().save(&item, Some(&data_dir))?;
 
             session_items[index].id = new_id;
             session_items[index].tags = tags;
@@ -100,8 +98,7 @@ pub fn update_tags(
         return Err(AppError::Validation("Item not found".to_string()));
     }
 
-    state.tag_repo.update_entry_tags(id, tags).map_err(AppError::from)?;
-    state.repo.invalidate_caches();
+    state.history_service().update_entry_tags(id, tags).map_err(AppError::from)?;
     Ok(id)
 }
 
@@ -137,7 +134,7 @@ pub async fn add_manual_item(
 
     let app_data_dir = app_handle.state::<AppDataDir>();
     let data_dir = app_data_dir.0.lock().unwrap().clone();
-    let new_id = state.repo.save(&entry, Some(&data_dir))?;
+    let new_id = state.history_service().save(&entry, Some(&data_dir))?;
     let _ = app_handle.emit("clipboard-changed", ());
     Ok(new_id)
 }
@@ -154,7 +151,7 @@ pub async fn update_item_content(
 
     if id >= 0 {
         state
-            .repo
+            .history_service()
             .update_entry_content(id, &new_content, &preview)
             .map_err(AppError::from)?;
     }

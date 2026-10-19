@@ -12,7 +12,7 @@
 //! Output: silent on success. Errors propagate with the operation name
 //! prefix (`delete: ...`) so they show up in the user's terminal.
 
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 /// Args for the `delete` subcommand.
 pub struct DeleteArgs {
@@ -37,7 +37,7 @@ fn parse_id(args: &DeleteArgs) -> Result<i64, String> {
 }
 
 /// Run the `delete` subcommand. Returns `Ok(())` on successful delete.
-pub fn run(args: &DeleteArgs, repo: &dyn ClipboardRepository) -> Result<(), String> {
+pub fn run(args: &DeleteArgs, repo: &HistoryService) -> Result<(), String> {
     let id = parse_id(args)?;
     repo.delete(id, None)
         .map_err(|e| format!("delete: repo failed: {e}"))

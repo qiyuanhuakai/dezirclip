@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use dzc_core::services::capture::{
+use dzc_core::capture::{
     CaptureData, CaptureFailure, CaptureReadMetadata, CaptureReadRequest, CaptureReader,
     CaptureSkip, CaptureStage,
 };
@@ -234,7 +234,7 @@ impl CaptureReader for NativeCaptureReader {
                 {
                     if let Ok(image) = image::open(&files[0]) {
                         let image = image::DynamicImage::ImageRgba8(image.into_rgba8());
-                        let content_hash = dzc_core::services::capture::thumbnail_hash(&image);
+                        let content_hash = dzc_core::capture::thumbnail_hash(&image);
                         let image = image.into_rgba8();
                         let (width, height) = image.dimensions();
                         let data = self.image(Pixels {
@@ -396,17 +396,11 @@ mod tests {
             return;
         }
         use super::{CaptureData, CaptureReadRequest, CaptureReader, NativeCaptureReader};
-        use dzc_core::{
-            database::DbState,
-            infrastructure::repository::{
-                clipboard_repo::SqliteClipboardRepository, settings_repo::SqliteSettingsRepository,
-                tag_repo::SqliteTagRepository,
-            },
-            services::capture::*,
-        };
+        use dzc_core::{api::{HistoryService, HistoryQuery}, capture::*};
+        use base64::{engine::general_purpose::STANDARD, Engine};
         use std::{
             collections::VecDeque,
-            sync::{Arc, Mutex},
+            sync::Mutex,
         };
         let directory = std::env::temp_dir().join(format!(
             "dezirclip-native-file-recapture-{}",
@@ -414,15 +408,7 @@ mod tests {
         ));
         std::fs::create_dir(&directory).unwrap();
         let database_path = directory.join("clipboard.db");
-        let connection = Arc::new(Mutex::new(
-            dzc_core::database::init_db(database_path.to_str().unwrap()).unwrap(),
-        ));
-        let state = DbState {
-            repo: SqliteClipboardRepository::new(connection.clone()),
-            settings_repo: SqliteSettingsRepository::new(connection.clone()),
-            tag_repo: SqliteTagRepository::new(connection.clone()),
-            conn: connection,
-        };
+        let history = HistoryService::open(&database_path).unwrap();
         let first_file = directory.join("a.png");
         let second_file = directory.join("b.png");
         image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255]))
@@ -431,7 +417,7 @@ mod tests {
         image::RgbaImage::from_pixel(2, 2, image::Rgba([7, 8, 9, 255]))
             .save(&second_file)
             .unwrap();
-        let store = state.capture_store(&directory);
+        let store = history.capture_store(&directory);
         let session = Mutex::new(VecDeque::new());
         let mut notifications = CaptureNotificationState::default();
         let process_mode = |notifications: &mut CaptureNotificationState, timestamp, persistent| {
@@ -479,7 +465,9 @@ mod tests {
                 (&outcome, metadata.image_content_hash)
             {
                 assert_eq!(
-                    dzc_core::database::calc_image_hash(&capture.entry.content),
+                    Some(thumbnail_hash(&image::load_from_memory(
+                        &STANDARD.decode(capture.entry.content.split_once(',').unwrap().1).unwrap()
+                    ).unwrap())),
                     Some(hash)
                 );
                 assert!(store.contains_image_hash(hash).unwrap());
@@ -504,13 +492,8 @@ mod tests {
             process(&mut notifications, 1600),
             CaptureOutcome::Skipped(CaptureSkip::DuplicateNotification)
         ));
-        let external = dzc_core::database::init_db(database_path.to_str().unwrap()).unwrap();
-        external
-            .execute(
-                "DELETE FROM clipboard_history WHERE id=?1",
-                [first.entry.id],
-            )
-            .unwrap();
+        let external = HistoryService::open(&database_path).unwrap();
+        external.delete(first.entry.id, None).unwrap();
         copy_file(&first_file);
         let CaptureOutcome::Stored(restored_inside_window) = process(&mut notifications, 1650)
         else {
@@ -521,12 +504,7 @@ mod tests {
             process(&mut notifications, 2300),
             CaptureOutcome::Skipped(CaptureSkip::DuplicateNotification)
         ));
-        external
-            .execute(
-                "DELETE FROM clipboard_history WHERE id=?1",
-                [restored_inside_window.entry.id],
-            )
-            .unwrap();
+        external.delete(restored_inside_window.entry.id, None).unwrap();
         copy_file(&first_file);
         let CaptureOutcome::Stored(restored) = process(&mut notifications, 2900) else {
             panic!("deleted native file image should recapture after debounce window");
@@ -601,21 +579,12 @@ mod tests {
         assert_eq!(back_to_persistent.entry.id, second.entry.id);
         assert_eq!(back_to_persistent.entry.timestamp, 4000);
         assert_eq!(
-            state
-                .conn
-                .lock()
-                .unwrap()
-                .query_row(
-                    "SELECT count(*) FROM clipboard_history WHERE content_type='image'",
-                    [],
-                    |row| row.get::<_, i64>(0)
-                )
-                .unwrap(),
+            history.query(&HistoryQuery {kind:Some("image"), limit:100, ..HistoryQuery::default()}).unwrap().len(),
             3
         );
         drop(external);
         drop(store);
-        drop(state);
+        drop(history);
         std::fs::remove_dir_all(directory).unwrap();
     }
 

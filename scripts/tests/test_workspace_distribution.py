@@ -20,12 +20,20 @@ class WorkspaceDistributionTests(unittest.TestCase):
         self.assertTrue(workspace["profile"]["release"]["lto"])
         self.assertEqual(workspace["profile"]["release"]["panic"], "abort")
 
+    def test_protocol_is_values_only_and_legacy_bridge_is_opt_in(self):
+        protocol = tomllib.loads((ROOT / "crates/dzc-protocol/Cargo.toml").read_text(encoding="utf-8"))
+        self.assertEqual(set(protocol["dependencies"]), {"serde", "serde_json"})
+        core = tomllib.loads((ROOT / "crates/dzc-core/Cargo.toml").read_text(encoding="utf-8"))
+        self.assertNotIn("legacy-bridge", core.get("features", {}).get("default", []))
+        platform = tomllib.loads((ROOT / "crates/dzc-platform/Cargo.toml").read_text(encoding="utf-8"))
+        self.assertEqual(platform["dependencies"]["dzc-core"], {"workspace": True})
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for version tooling")
     def test_version_tool_updates_all_members_and_locked_local_packages(self):
         with tempfile.TemporaryDirectory(prefix="dzc-workspace-version-") as temporary:
             directory = Path(temporary)
             for name in ["Cargo.toml", "Cargo.lock", "package.json", "src-tauri/tauri.conf.json",
-                         "src-tauri/Cargo.toml", "crates/dzc-core/Cargo.toml", "crates/dzc-platform/Cargo.toml",
+                         "src-tauri/Cargo.toml", "crates/dzc-core/Cargo.toml", "crates/dzc-platform/Cargo.toml", "crates/dzc-protocol/Cargo.toml",
                          "scripts/set-release-version.mjs"]:
                 target = directory / name
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -40,8 +48,8 @@ class WorkspaceDistributionTests(unittest.TestCase):
                 self.assertEqual(package["version"], {"workspace": True})
             locked = tomllib.loads((directory / "Cargo.lock").read_text(encoding="utf-8"))["package"]
             local = {package["name"]: package["version"] for package in locked
-                     if package["name"] in {"dezirclip", "dzc-core", "dzc-platform"}}
-            self.assertEqual(local, {name: version for name in ["dezirclip", "dzc-core", "dzc-platform"]})
+                     if package["name"] in {"dezirclip", "dzc-core", "dzc-platform", "dzc-protocol"}}
+            self.assertEqual(local, {name: version for name in ["dezirclip", "dzc-core", "dzc-platform", "dzc-protocol"]})
             self.assertEqual(json.loads((directory / "src-tauri/tauri.conf.json").read_text())["version"], version)
             self.assertEqual(json.loads((directory / "package.json").read_text())["version"], version)
 

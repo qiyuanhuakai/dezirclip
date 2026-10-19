@@ -1,8 +1,8 @@
 //! Search full payloads with mode-specific matching before pagination.
 //! JSON, metadata, ID and TSV output share the list command contract.
 
-use crate::infrastructure::repository::cli_query::CliQuery;
-use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+use crate::api::HistoryQuery;
+use crate::api::HistoryService;
 
 /// Search mode selected by `--mode`. Mirrors the standalone clap
 /// `ValueEnum`. `Contains` is the default and matches what the existing
@@ -42,18 +42,18 @@ impl SearchArgs {
 
 /// Public entry point. Mirrors `list::run`'s shape so callers can swap
 /// subcommands without changing dispatch logic.
-pub fn run(args: &SearchArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
+pub fn run(args: &SearchArgs, repo: &HistoryService) -> Result<(), String> {
     let limit = super::list::checked_limit(args.limit)?;
     let mode = match args.mode {
-        SearchMode::Contains => "contains",
-        SearchMode::Fuzzy => "fuzzy",
-        SearchMode::Regex => "regex",
-        SearchMode::Fts5 => "fts5",
+        SearchMode::Contains => crate::api::HistorySearchMode::Contains,
+        SearchMode::Fuzzy => crate::api::HistorySearchMode::Fuzzy,
+        SearchMode::Regex => crate::api::HistorySearchMode::Regex,
+        SearchMode::Fts5 => crate::api::HistorySearchMode::Fts5,
     };
     let entries = if args.query.trim().is_empty() {
         Vec::new()
     } else {
-        repo.query_cli(&CliQuery {
+        repo.query(&HistoryQuery {
             limit,
             offset: args.offset,
             kind: args.kind.as_deref(),

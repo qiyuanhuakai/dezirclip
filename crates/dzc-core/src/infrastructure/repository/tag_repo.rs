@@ -19,6 +19,7 @@ pub trait TagRepository {
     fn update_entry_tags(&self, id: i64, tags: Vec<String>) -> Result<(), String>;
 }
 
+#[derive(Clone)]
 pub struct SqliteTagRepository {
     pub(super) conn: Arc<Mutex<Connection>>,
     encrypt_text: fn(&str) -> Result<encryption::EncryptedPayload, encryption::EncryptionError>,

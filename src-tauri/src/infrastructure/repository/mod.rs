@@ -1,1 +1,1 @@
-pub use dzc_core::infrastructure::repository::*;
+pub use dzc_core::legacy::infrastructure::repository::*;

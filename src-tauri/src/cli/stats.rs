@@ -37,7 +37,7 @@
 use std::collections::BTreeMap;
 
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 /// Default `top` count when `--top` is omitted.
 pub const DEFAULT_TOP: i32 = 5;
@@ -56,7 +56,7 @@ pub struct StatsArgs {
 /// Returns `Ok(())` on success. The output is written to stdout.
 /// Errors from the repo (e.g. DB failure) are propagated as
 /// `Err(String)`.
-pub fn run(args: &StatsArgs, repo: &dyn ClipboardRepository) -> Result<(), String> {
+pub fn run(args: &StatsArgs, repo: &HistoryService) -> Result<(), String> {
     // 1. Fetch every entry. `get_history(i32::MAX, 0, None)` is the
     //    repo's "all rows" form. Stats are a single full scan; we
     //    don't try to be clever with SQL aggregates here because the

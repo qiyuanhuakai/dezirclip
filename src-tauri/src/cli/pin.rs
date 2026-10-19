@@ -14,7 +14,7 @@
 //!
 //! Output: `pin: id=<n>` / `unpin: id=<n>` unless `--quiet`.
 
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 /// Args shared by `pin` and `unpin`; `pinned` is what selects between them.
 pub struct PinArgs {
@@ -36,7 +36,7 @@ fn parse_id(raw: &str, pinned: bool) -> Result<i64, String> {
 }
 
 /// Resolve the id and confirm the row exists.
-fn resolve_id(args: &PinArgs, repo: &dyn ClipboardRepository) -> Result<i64, String> {
+fn resolve_id(args: &PinArgs, repo: &HistoryService) -> Result<i64, String> {
     let op = op_name(args.pinned);
     let id = parse_id(&args.id, args.pinned)?;
     let exists = repo
@@ -50,7 +50,7 @@ fn resolve_id(args: &PinArgs, repo: &dyn ClipboardRepository) -> Result<i64, Str
 }
 
 /// Run the `pin` / `unpin` subcommand. Returns the id that was written.
-pub fn run(args: &PinArgs, repo: &dyn ClipboardRepository) -> Result<i64, String> {
+pub fn run(args: &PinArgs, repo: &HistoryService) -> Result<i64, String> {
     let id = resolve_id(args, repo)?;
     let op = op_name(args.pinned);
     repo.toggle_pin(id, args.pinned)
