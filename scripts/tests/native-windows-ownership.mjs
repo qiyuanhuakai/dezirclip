@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+
 // Runs only against the application in a disposable hosted Windows job.
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted" || process.platform !== "win32") {
   throw new Error("Native ownership acceptance requires a disposable GitHub-hosted Windows runner");
@@ -5,15 +7,21 @@ if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== 
 const port = Number(process.argv[2]);
 if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid fixture CDP port");
 const delay = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
+const observations = [];
 let page;
 for (let attempt = 0; attempt < 180; attempt++) {
   try {
-    const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then(result => result.json());
+    const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1500) });
+    const targets = await response.json();
+    observations.push({ attempt, status: response.status, targets });
     page = targets.find(target => target.type === "page" && target.webSocketDebuggerUrl && /tauri\.localhost|^tauri:/.test(target.url));
     if (page) break;
-  } catch { /* The fixture WebView may still be starting. */ }
+  } catch (error) {
+    observations.push({ attempt, error: String(error), cause: String(error.cause ?? "") });
+  }
   await delay(250);
 }
+await writeFile(process.argv[3], JSON.stringify(observations, null, 2));
 if (!page) throw new Error("Fixture application did not expose its WebView");
 const socket = new WebSocket(page.webSocketDebuggerUrl);
 const pending = new Map();

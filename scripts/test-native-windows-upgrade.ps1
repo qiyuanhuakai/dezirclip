@@ -88,11 +88,18 @@ if ($owned) {
     $port = $listener.LocalEndpoint.Port
     $listener.Stop()
     $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$port"
-    $application = Start-Process -FilePath (Join-Path $installDirectory 'dezirclip.exe') -WindowStyle Hidden -PassThru
+    $application = Start-Process -FilePath (Join-Path $installDirectory 'dezirclip.exe') -WorkingDirectory $installDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $fixtureRoot 'application-stdout.txt') -RedirectStandardError (Join-Path $fixtureRoot 'application-stderr.txt')
     try {
-        & node (Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs') $port
+        & node (Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs') $port (Join-Path $fixtureRoot 'cdp-observations.json')
         if ($LASTEXITCODE -ne 0) { throw 'Actual application ownership commands failed.' }
     } finally {
+        $application.Refresh()
+        @{Id=$application.Id; HasExited=$application.HasExited; ExitCode=$(if ($application.HasExited) { $application.ExitCode } else { $null }); Port=$port} |
+            ConvertTo-Json | Set-Content (Join-Path $fixtureRoot 'application-process.json')
+        Get-Content (Join-Path $fixtureRoot 'application-stderr.txt') -ErrorAction SilentlyContinue | Write-Output
+        Get-Content (Join-Path $fixtureRoot 'application-stdout.txt') -Tail 60 -ErrorAction SilentlyContinue | Write-Output
+        Get-Content (Join-Path $fixtureRoot 'application-process.json') | Write-Output
+        Get-Content (Join-Path $fixtureRoot 'cdp-observations.json') -Tail 40 -ErrorAction SilentlyContinue | Write-Output
         if (-not $application.HasExited) { Stop-Process -Id $application.Id -Force }
         Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
     }
