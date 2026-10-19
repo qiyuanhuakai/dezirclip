@@ -77,7 +77,7 @@ jobs:
             .harness/cli-target
             ~/.cargo/registry
             ~/.cargo/git
-          key: standalone-glibc228-static-crt-v1-${{ matrix.name }}-${{ hashFiles('src-tauri/Cargo.lock', 'scripts/compat/almalinux8.Dockerfile') }}
+          key: standalone-glibc228-static-crt-v1-${{ matrix.name }}-${{ hashFiles('Cargo.lock', 'scripts/compat/almalinux8.Dockerfile') }}
           restore-keys: standalone-glibc228-static-crt-v1-${{ matrix.name }}-
 
       - name: Test executable inspection and packaging

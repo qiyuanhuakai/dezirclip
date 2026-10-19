@@ -396,6 +396,7 @@ mod tests {
         let values = vec![format!("linux:{}", STANDARD.encode(bytes))];
         #[cfg(windows)]
         let values = {
+            dzc_platform::install_default_key_provider();
             let mut values = values;
             let native =
                 crate::infrastructure::encryption::encrypt_value("native private payload").unwrap();

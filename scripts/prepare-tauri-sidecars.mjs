@@ -12,10 +12,14 @@ const hostTriple = execFileSync("rustc", ["--print", "host-tuple"], {
 const targetTriple = process.env.TAURI_ENV_TARGET_TRIPLE || hostTriple;
 const isWindowsTarget = targetTriple.includes("windows");
 const extension = isWindowsTarget ? ".exe" : "";
-const cargoArgs = ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--release"];
+const cargoArgs = ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--release", "--locked", "--no-default-features"];
+const metadata = JSON.parse(execFileSync("cargo", ["metadata", "--format-version", "1", "--no-deps"], {
+  cwd: repoRoot,
+  encoding: "utf8",
+}));
 const releaseDir = targetTriple === hostTriple
-  ? join(repoRoot, "src-tauri", "target", "release")
-  : join(repoRoot, "src-tauri", "target", targetTriple, "release");
+  ? join(metadata.target_directory, "release")
+  : join(metadata.target_directory, targetTriple, "release");
 
 if (targetTriple !== hostTriple) {
   cargoArgs.push("--target", targetTriple);

@@ -138,7 +138,7 @@ jobs:
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: . -> target
 
       - name: Test Tauri crate
         if: matrix.can_test
@@ -147,7 +147,7 @@ jobs:
         # examples, it does not run their tests, and backup-inspect moved out of
         # src/bin (to keep it out of the installers) into examples/ — without
         # this flag its 15 tests silently stop running.
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets
 
       - name: Build Tauri crate
         working-directory: src-tauri
@@ -161,7 +161,7 @@ jobs:
           from pathlib import Path
           import shlex
           import subprocess
-          binary = Path(os.environ["GITHUB_WORKSPACE"]) / "src-tauri" / "target"
+          binary = Path(os.environ["GITHUB_WORKSPACE"]) / "target"
           target = "${{ matrix.rust_target }}"
           if target:
               binary /= target
@@ -209,7 +209,7 @@ jobs:
         if: matrix.scenario != 'LegacyUninstall'
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: . -> target
           key: native-debug-installers
 
       - name: Install frontend dependencies

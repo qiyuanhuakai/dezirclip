@@ -1,12 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const appId = "io.github.qiyuanhuakai.dezirclip";
 const root = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(root, "..");
-const debDir = join(repoRoot, "src-tauri", "target", "release", "bundle", "deb");
+const debDir = join(resolve(repoRoot, process.env.CARGO_TARGET_DIR || "target"), "release", "bundle", "deb");
 const flatpakDir = join(repoRoot, "flatpak");
 const buildRoot = join(flatpakDir, "build-root");
 const resources = JSON.parse(readFileSync(join(repoRoot, "src-tauri", "tauri.conf.json"), "utf8")).bundle.resources;

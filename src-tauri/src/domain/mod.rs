@@ -1,3 +1,2 @@
-pub mod models;
-pub mod theme;
+pub use dzc_core::domain::*;
 pub mod update;

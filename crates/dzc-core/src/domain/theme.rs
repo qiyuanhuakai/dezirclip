@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn published_skill_starter_uses_the_native_import_contract() {
         let theme = ThemePackage::parse(include_bytes!(
-            "../../../skills/dezirclip-theme/assets/forest.theme.json"
+            "../../../../skills/dezirclip-theme/assets/forest.theme.json"
         ))
         .unwrap();
         assert_eq!(theme.id, "forest");

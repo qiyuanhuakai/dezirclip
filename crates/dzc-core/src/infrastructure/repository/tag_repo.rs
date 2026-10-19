@@ -21,11 +21,12 @@ pub trait TagRepository {
 
 pub struct SqliteTagRepository {
     pub(super) conn: Arc<Mutex<Connection>>,
+    encrypt_text: fn(&str) -> Result<encryption::EncryptedPayload, encryption::EncryptionError>,
 }
 
 impl SqliteTagRepository {
     pub fn new(conn: Arc<Mutex<Connection>>) -> Self {
-        Self { conn }
+        Self { conn, encrypt_text: encryption::encrypt_sensitive }
     }
 
     pub(super) fn maybe_decrypt_text(&self, value: &str) -> String {
@@ -189,7 +190,7 @@ impl TagRepository for SqliteTagRepository {
             );
         }
         let mut guard = self.conn.lock().map_err(|e| e.to_string())?;
-        let conn = guard.transaction().map_err(|error| error.to_string())?;
+        let conn = guard.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
 
         // Update saved_tags table: merge color info if exists
         let old_color: Option<String> = conn
@@ -286,7 +287,7 @@ impl TagRepository for SqliteTagRepository {
                             .unwrap_or_else(|_| "[]".to_string()),
                     )
                     .unwrap_or_default(),
-                    ocr_text: row.get(14).ok(),
+                    ocr_text: row.get::<_, Option<String>>(14)?.map(|value| self.maybe_decrypt_text(&value)),
                     ocr_status: row.get(15).ok(),
                 })
             })
@@ -305,7 +306,7 @@ impl TagRepository for SqliteTagRepository {
 
     fn update_entry_tags(&self, id: i64, tags: Vec<String>) -> Result<(), String> {
         let mut guard = self.conn.lock().map_err(|e| e.to_string())?;
-        let conn = guard.transaction().map_err(|error| error.to_string())?;
+        let conn = guard.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|error| error.to_string())?;
         let mut seen: HashSet<String> = HashSet::new();
         let mut cleaned: Vec<String> = Vec::new();
         for tag in tags {
@@ -319,6 +320,16 @@ impl TagRepository for SqliteTagRepository {
             }
         }
 
+        let old_tags: String = conn.query_row("SELECT tags FROM clipboard_history WHERE id=?1", [id], |row| row.get(0))
+            .map_err(|error| error.to_string())?;
+        let old_tags: Vec<String> = serde_json::from_str(&old_tags).map_err(|_| encryption::EncryptionError::SensitivePersistenceRejected.to_string())?;
+        let mut protector = super::clipboard_repo::SqliteClipboardRepository::new(self.conn.clone());
+        protector.encrypt_text = self.encrypt_text;
+        if crate::database::has_sensitive_tag(&cleaned) {
+            protector.encrypt_entry_with_conn(&conn, id)?;
+        } else if crate::database::has_sensitive_tag(&old_tags) {
+            protector.decrypt_entry_with_conn(&conn, id)?;
+        }
         conn.execute("DELETE FROM entry_tags WHERE entry_id = ?", params![id])
             .map_err(|e| e.to_string())?;
         for tag in &cleaned {
@@ -369,5 +380,118 @@ mod tests {
         assert_eq!(entries[0].content_kinds, vec!["image".to_string()]);
         assert_eq!(entries[0].ocr_text.as_deref(), Some("receipt total"));
         assert_eq!(entries[0].ocr_status.as_deref(), Some("done"));
+    }
+}
+
+#[cfg(test)]
+mod protection_transaction_tests {
+    use super::*;
+    use super::super::clipboard_repo::SqliteClipboardRepository;
+    #[cfg(all(target_os = "windows", not(feature = "portable")))]
+    use super::super::clipboard_repo::ClipboardRepository;
+    #[cfg(all(target_os = "windows", not(feature = "portable")))]
+    use super::super::cli_query::CliQuery;
+    use base64::Engine;
+
+    fn repository() -> (SqliteTagRepository, SqliteClipboardRepository, Arc<Mutex<Connection>>) {
+        let mut connection = Connection::open_in_memory().unwrap();
+        super::super::migrations::run_migrations(&mut connection).unwrap();
+        connection.execute_batch(r#"INSERT INTO clipboard_history(id,content_type,content,preview,html_content,source_app,timestamp,tags,ocr_text,ocr_status)
+            VALUES(1,'rich_text','privateprobe','summary','<p>private text</p>','test',1,'["work"]','privateocr','done');
+            INSERT INTO entry_tags VALUES(1,'work');"#).unwrap();
+        let connection = Arc::new(Mutex::new(connection));
+        (SqliteTagRepository::new(connection.clone()), SqliteClipboardRepository::new(connection.clone()), connection)
+    }
+
+    fn snapshot(conn: &Connection) -> (String, String, Option<String>, String, Option<String>) {
+        conn.query_row("SELECT content,preview,html_content,tags,ocr_text FROM clipboard_history WHERE id=1", [],
+            |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).unwrap()
+    }
+
+    fn fail_key(_: &str) -> Result<encryption::EncryptedPayload, encryption::EncryptionError> {
+        Err(encryption::EncryptionError::KeyUnavailable)
+    }
+
+    fn seal(value: &str) -> Result<encryption::EncryptedPayload, encryption::EncryptionError> {
+        Ok(encryption::EncryptedPayload::for_test(format!("sealed:{value}")))
+    }
+
+    #[test]
+    fn sensitive_tag_encryption_failure_preserves_both_tag_indexes_and_fields() {
+        let (mut tags, _, shared) = repository();
+        tags.encrypt_text = fail_key;
+        let before = snapshot(&shared.lock().unwrap());
+        assert_eq!(tags.update_entry_tags(1, vec!["sensitive".to_string()]).unwrap_err(), "KeyUnavailable");
+        let conn = shared.lock().unwrap();
+        assert_eq!(snapshot(&conn), before);
+        let tag: String = conn.query_row("SELECT tag FROM entry_tags WHERE entry_id=1", [], |row| row.get(0)).unwrap();
+        assert_eq!(tag, "work");
+    }
+
+    #[test]
+    fn final_tag_sql_failure_rolls_back_field_protection_and_fts_changes() {
+        let (mut tags, _, shared) = repository();
+        tags.encrypt_text = seal;
+        shared.lock().unwrap().execute_batch("CREATE TRIGGER reject_tag BEFORE UPDATE OF tags ON clipboard_history WHEN instr(new.tags,'sensitive')>0 BEGIN SELECT RAISE(ABORT,'injected failure'); END;").unwrap();
+        let before = snapshot(&shared.lock().unwrap());
+        assert!(tags.update_entry_tags(1, vec!["sensitive".to_string()]).is_err());
+        let conn = shared.lock().unwrap();
+        assert_eq!(snapshot(&conn), before);
+        let matches: i64 = conn.query_row("SELECT COUNT(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'privateprobe'", [], |row| row.get(0)).unwrap();
+        assert_eq!(matches, 1);
+        let tag: String = conn.query_row("SELECT tag FROM entry_tags WHERE entry_id=1", [], |row| row.get(0)).unwrap();
+        assert_eq!(tag, "work");
+    }
+
+    #[test]
+    fn removing_sensitive_tag_cannot_overwrite_unavailable_protected_ocr() {
+        let (tags, _, shared) = repository();
+        let cipher = format!("linux:{}", base64::engine::general_purpose::STANDARD.encode([0u8;28]));
+        { let conn=shared.lock().unwrap(); conn.execute(r#"UPDATE clipboard_history SET tags='["sensitive"]',ocr_text=?1 WHERE id=1"#, [&cipher]).unwrap(); }
+        let before = snapshot(&shared.lock().unwrap());
+        assert_eq!(tags.update_entry_tags(1, vec!["work".to_string()]).unwrap_err(), "ProtectedRecordUnavailable");
+        assert_eq!(snapshot(&shared.lock().unwrap()), before);
+    }
+
+    #[test]
+    fn sensitive_attachment_conversion_preserves_the_original_source() {
+        let (mut tags, _, shared) = repository();
+        tags.encrypt_text = seal;
+        let source = std::env::temp_dir().join(format!("dezirclip-protected-source-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&source, b"original attachment").unwrap();
+        shared.lock().unwrap().execute("UPDATE clipboard_history SET content_type='image',content=?1,is_external=1 WHERE id=1", [source.to_string_lossy().as_ref()]).unwrap();
+        let before = snapshot(&shared.lock().unwrap());
+        assert_eq!(tags.update_entry_tags(1, vec!["sensitive".to_string()]).unwrap_err(), "SensitivePersistenceRejected");
+        assert_eq!(snapshot(&shared.lock().unwrap()), before);
+        assert_eq!(std::fs::read(&source).unwrap(), b"original attachment");
+        std::fs::remove_file(source).unwrap();
+    }
+
+    #[cfg(all(windows, not(feature = "portable")))]
+    #[test]
+    fn sensitive_transition_protects_ocr_and_invalidates_cached_history_without_indexing_payload() {
+        let (tags, repo, shared) = repository();
+        let cached = repo.get_history(10,0,None).unwrap();
+        assert_eq!(cached[0].tags, vec!["work"]);
+        tags.update_entry_tags(1, vec!["sensitive".to_string()]).unwrap();
+        let cached = repo.get_history(10,0,None).unwrap();
+        assert_eq!(cached[0].tags, vec!["sensitive"]);
+        { let conn=shared.lock().unwrap();
+          let stored = snapshot(&conn);
+          assert!([Some(stored.0),Some(stored.1),stored.2,stored.4].into_iter().flatten().all(|value| encryption::is_encrypted_value(&value)));
+          let matches: i64 = conn.query_row("SELECT COUNT(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'privateprobe'", [], |row| row.get(0)).unwrap();
+          assert_eq!(matches,0);
+          conn.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)", []).unwrap();
+          let secure: i64=conn.query_row("PRAGMA secure_delete",[],|row|row.get(0)).unwrap(); assert_eq!(secure,1);
+        }
+        let query=CliQuery {limit:20,..Default::default()};
+        assert_eq!(repo.query_cli_for_export(&query).unwrap()[0].ocr_text.as_deref(),Some("privateocr"));
+        assert_eq!(tags.get_entries_by_tag("sensitive").unwrap()[0].ocr_text.as_deref(),Some("privateocr"));
+        assert_eq!(repo.search("privateocr",10).unwrap().len(),1);
+        assert!(repo.query_cli(&CliQuery {limit:20,exclude_sensitive:true,..Default::default()}).unwrap().is_empty());
+        tags.update_entry_tags(1, vec!["work".to_string()]).unwrap();
+        let conn=shared.lock().unwrap();
+        let restored=snapshot(&conn); assert_eq!(restored.0,"privateprobe"); assert_eq!(restored.4.as_deref(),Some("privateocr"));
+        let matches:i64=conn.query_row("SELECT COUNT(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'privateprobe'",[],|row|row.get(0)).unwrap(); assert_eq!(matches,1);
     }
 }

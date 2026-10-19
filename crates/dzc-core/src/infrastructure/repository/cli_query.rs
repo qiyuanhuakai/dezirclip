@@ -70,18 +70,16 @@ impl SqliteClipboardRepository {
             // Materialize the requested primary key before using the shared update path.
             transaction.execute("INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,is_pinned,tags)
                 VALUES(?1,'text','','',0,'',0,'[]') ON CONFLICT(id) DO NOTHING",[entry.id]).map_err(|e|e.to_string())?;
-            self.save_with_conn(&transaction, entry, None)?;
+            self.save_restored_with_conn(&transaction, entry)?;
             transaction
                 .execute(
                     "UPDATE clipboard_history SET is_pinned=?1,pinned_order=?2,use_count=?3,
-                content_kinds=?4,ocr_text=?5,ocr_status=?6 WHERE id=?7",
+                content_kinds=?4 WHERE id=?5",
                     rusqlite::params![
                         entry.is_pinned,
                         entry.pinned_order,
                         entry.use_count,
                         serde_json::to_string(&entry.content_kinds).map_err(|e| e.to_string())?,
-                        entry.ocr_text,
-                        entry.ocr_status.as_deref().unwrap_or("pending"),
                         entry.id
                     ],
                 )
@@ -135,7 +133,7 @@ impl SqliteClipboardRepository {
                 content,
                 ctx.get::<String>(1)?,
                 ctx.get::<String>(2)?,
-                ctx.get::<String>(3)?,
+                { let raw = ctx.get::<String>(3)?; crate::infrastructure::encryption::decrypt_value(&raw).unwrap_or(raw) },
             ] {
                 if value.to_lowercase().contains(&needle) {
                     return Ok(true);
@@ -168,11 +166,8 @@ impl SqliteClipboardRepository {
         let sql = format!("SELECT {fields} FROM clipboard_history WHERE
             (?1 IS NULL OR content_type=?1) AND (?2 IS NULL OR EXISTS(SELECT 1 FROM json_each(tags) WHERE value=?2))
             AND (?3=0 OR is_pinned=1) AND (?4 IS NULL OR id=?4)
-            AND (?5=0 OR (NOT EXISTS(SELECT 1 FROM json_each(tags) WHERE lower(value) IN ('sensitive','密码'))
-                AND content NOT LIKE 'dpapi:%' AND content NOT LIKE 'linux:%'
-                AND preview NOT LIKE 'dpapi:%' AND preview NOT LIKE 'linux:%'
-                AND COALESCE(html_content,'') NOT LIKE 'dpapi:%' AND COALESCE(html_content,'') NOT LIKE 'linux:%'))
-            AND {matching} ORDER BY {order} LIMIT ?6 OFFSET ?7");
+            AND CASE WHEN ?5<>0 AND NOT dc_search_visible(tags,content,preview,html_content,ocr_text)
+                THEN 0 ELSE {matching} END ORDER BY {order} LIMIT ?6 OFFSET ?7");
         let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         // Numbered bindings leave room for the optional FTS expression.
         stmt.raw_bind_parameter(1, query.kind)
@@ -238,7 +233,7 @@ impl SqliteClipboardRepository {
                         .unwrap_or_else(|_| "[]".to_string()),
                 )
                 .map_err(|e| e.to_string())?,
-                ocr_text: row.get(13).unwrap_or(None),
+                ocr_text: row.get::<_, Option<String>>(13).map_err(|error| error.to_string())?.map(decode_value).transpose()?,
                 ocr_status: row.get(14).unwrap_or(None),
             });
         }
@@ -265,6 +260,47 @@ mod tests {
     use super::*;
     use rusqlite::params;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn merge_restore_explicit_null_ocr_replaces_old_text_status_and_search_terms() {
+        let conn = crate::database::init_db(":memory:").unwrap();
+        conn.execute("INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text,ocr_status) VALUES(1,'text','old note','old note','test',1,'[]','privateocr','done')", []).unwrap();
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+        let mut restored = repo.query_cli(&CliQuery { limit: 1, ..Default::default() }).unwrap().remove(0);
+        restored.content = "restored note".into();
+        restored.preview = "restored note".into();
+        restored.ocr_text = None;
+        for status in [Some("pending".to_string()), None] {
+            restored.ocr_status = status.clone();
+            repo.import_cli_entries(std::slice::from_ref(&restored), false).unwrap();
+            let result = repo.query_cli(&CliQuery { limit: 1, ..Default::default() }).unwrap().remove(0);
+            assert_eq!(result.content, "restored note");
+            assert_eq!(result.ocr_text, None);
+            assert_eq!(result.ocr_status, status.or_else(|| Some("pending".into())));
+            for mode in ["contains", "fts5"] {
+                assert!(repo.query_cli(&CliQuery { limit: 10, search: Some(("privateocr", mode)), ..Default::default() }).unwrap().is_empty());
+            }
+        }
+        let connection = repo.conn.lock().unwrap();
+        connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)", []).unwrap();
+    }
+
+    #[test]
+    fn sensitive_exclusion_uses_structured_ocr_envelopes_and_keeps_literal_prefixes() {
+        use base64::Engine;
+        let conn = crate::database::init_db(":memory:").unwrap();
+        let protected = format!("linux:{}", base64::engine::general_purpose::STANDARD.encode([0u8; 28]));
+        for (id, text) in [(1, "linux: kernel notes"), (2, "dpapi: literal configuration"), (3, protected.as_str())] {
+            conn.execute("INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text) VALUES(?1,'text','ordinary','ordinary','test',?1,'[]',?2)", params![id,text]).unwrap();
+        }
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+        for metadata in [false, true] {
+            let result = repo.query_cli(&CliQuery { limit: 10, exclude_sensitive: true, metadata, ..Default::default() }).unwrap();
+            assert_eq!(result.iter().map(|entry| entry.id).collect::<Vec<_>>(), vec![2,1]);
+        }
+        let result = repo.query_cli_for_export(&CliQuery { limit: 10, exclude_sensitive: true, ..Default::default() }).unwrap();
+        assert_eq!(result.len(), 2, "unavailable protected OCR is excluded before strict decode");
+    }
 
     #[test]
     fn active_database_and_journal_paths_cannot_be_backup_destinations() {

@@ -1,5 +1,5 @@
 param(
-    [string]$TargetDirectory = (Join-Path $PSScriptRoot '../src-tauri/target/release'),
+    [string]$TargetDirectory = $(if ($env:CARGO_TARGET_DIR) { Join-Path $env:CARGO_TARGET_DIR 'release' } else { Join-Path $PSScriptRoot '../target/release' }),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot '../artifacts/portable')
 )
 

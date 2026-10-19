@@ -1,5 +1,5 @@
 use crate::app_state::{AppDataDir, PasteQueue, SessionHistory, SettingsState};
-use crate::database::is_text_type;
+use crate::database::{is_text_type, has_sensitive_tag};
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::global_state::IS_DESTROYED;
@@ -46,6 +46,7 @@ pub struct PipelineContext {
     /// to the database, so it is handed over instead of decoded a second time.
     /// `None` until the dedup stage runs, and for a non-deduped run.
     pub image_hash: Option<i64>,
+    html_attachments: Option<crate::infrastructure::attachments::HtmlAttachmentPlan>,
 }
 
 impl PipelineContext {
@@ -71,6 +72,7 @@ impl PipelineContext {
             pending_removals: Vec::new(),
             reuse_session_id: None,
             image_hash: None,
+            html_attachments: None,
         }
     }
 }
@@ -232,17 +234,28 @@ impl PipelineStage for TransformationStage {
             }
         }
 
+        if settings.persistent.load(Ordering::Relaxed) && has_sensitive_tag(&entry.tags) {
+            if crate::infrastructure::repository::protection::validate_sensitive_record(
+                &entry.content_type, entry.is_external, entry.html_content.as_deref(),
+            ).is_err() {
+                ctx.should_stop = true;
+                return;
+            }
+        }
+
         // Rich Text Image Processing
         if let Some(html) = &entry.html_content {
             let app_data_dir = ctx.app_handle.state::<AppDataDir>();
             let data_dir = app_data_dir.0.lock().unwrap().clone();
 
             entry.html_content = if settings.persistent.load(Ordering::Relaxed) {
-                let html_with_local_assets = process_local_images_in_html(html, &data_dir);
-                Some(externalize_rich_image_fallback(
-                    &html_with_local_assets,
-                    &data_dir,
-                ))
+                let plan = match crate::infrastructure::attachments::plan_html_attachments(html, &data_dir) {
+                    Ok(plan) => plan,
+                    Err(_) => { ctx.should_stop = true; return; }
+                };
+                let html = plan.html().to_owned();
+                ctx.html_attachments = Some(plan);
+                Some(html)
             } else {
                 Some(embed_local_images(html))
             };
@@ -251,6 +264,12 @@ impl PipelineStage for TransformationStage {
 }
 
 // Stage 3: Validation (Deduplication & Sequential Echo)
+fn preserve_deduplicated_tags(current: &mut Vec<String>, previous: Vec<String>) {
+    for tag in previous {
+        if !current.contains(&tag) { current.push(tag); }
+    }
+}
+
 pub struct ValidationStage;
 impl ValidationStage {
     fn should_stop_for_sequential_echo(&self, ctx: &PipelineContext) -> bool {
@@ -289,7 +308,7 @@ impl ValidationStage {
         // `entry_mut.id = id` further down — which copies the whole payload, and
         // for a rich-text capture that payload includes the HTML with its embedded
         // images.
-        let image_hash = {
+        let (image_hash, stored_tags) = {
             let entry = ctx.entry.as_ref().expect("discovery produced an entry");
             let content = entry.content.as_str();
             let content_type = entry.content_type.as_str();
@@ -335,7 +354,18 @@ impl ValidationStage {
                     break;
                 }
             }
-            image_hash
+            let stored_tags = if persistent_enabled {
+                if let Some(id) = existing_id {
+                    match conn.query_row("SELECT tags FROM clipboard_history WHERE id = ?1", [id],
+                        |row| row.get::<_, String>(0)).ok()
+                        .and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+                    {
+                        Some(tags) => Some(tags),
+                        None => { ctx.should_stop = true; return; }
+                    }
+                } else { None }
+            } else { None };
+            (image_hash, stored_tags)
         };
         ctx.image_hash = image_hash;
 
@@ -343,6 +373,7 @@ impl ValidationStage {
             if let Some(id) = existing_id {
                 let entry_mut = ctx.entry.as_mut().unwrap();
                 entry_mut.id = id;
+                if let Some(tags) = stored_tags { preserve_deduplicated_tags(&mut entry_mut.tags, tags); }
             }
         }
 
@@ -454,11 +485,12 @@ impl PipelineStage for PersistenceStage {
 
                 let is_new_image = entry.id == 0 && entry.content_type == "image";
                 let saved_id =
-                    match db_state.repo.save_with_conn_and_image_hash(
+                    match db_state.repo.save_capture_with_conn(
                         &conn,
                         entry,
                         Some(&data_dir),
                         ctx.image_hash,
+                        ctx.html_attachments.as_ref(),
                     ) {
                         Ok(id) => {
                             entry.id = id;
@@ -472,7 +504,11 @@ impl PipelineStage for PersistenceStage {
                             }
                             Some(id)
                         }
-                        Err(_) => None,
+                        Err(error) => {
+                            ctx.should_stop = true;
+                            crate::warn!("[capture] persistence rejected: {}", error);
+                            None
+                        },
                     };
                 (is_new_image, saved_id)
             };
@@ -646,6 +682,40 @@ impl PipelineStage for DistributionStage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recapture_preserves_manual_sensitive_and_custom_tags() {
+        let mut current = vec!["detected".to_string()];
+        preserve_deduplicated_tags(&mut current, vec!["sensitive".to_string(), "work".to_string()]);
+        preserve_deduplicated_tags(&mut current, vec!["sensitive".to_string(), "work".to_string()]);
+        assert_eq!(current, vec!["detected", "sensitive", "work"]);
+    }
+
+    #[cfg(all(windows, not(feature = "portable")))]
+    #[test]
+    fn recapture_of_manually_protected_text_updates_the_same_encrypted_row() {
+        dzc_platform::install_default_key_provider();
+        use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+        use crate::infrastructure::repository::tag_repo::{SqliteTagRepository, TagRepository};
+        let conn = std::sync::Arc::new(std::sync::Mutex::new(crate::database::init_db(":memory:").unwrap()));
+        let repo = SqliteClipboardRepository::new(conn.clone());
+        let tags = SqliteTagRepository::new(conn.clone());
+        let entry = entry_from_capture(ClipboardData::Text("ordinary manually protected text".into()), "Editor".into(), None, 1);
+        let id = repo.save_with_conn(&conn.lock().unwrap(), &entry, None).unwrap();
+        tags.update_entry_tags(id, vec!["sensitive".into(), "work".into()]).unwrap();
+        // No new automatic detection label: inherit the manual protection at dedup.
+        let mut capture = entry_from_capture(ClipboardData::Text(entry.content.clone()), "Editor".into(), None, 2);
+        let connection = conn.lock().unwrap();
+        capture.id = repo.find_by_content_with_conn(&connection, &capture.content, Some("text")).unwrap().unwrap();
+        let stored: String = connection.query_row("SELECT tags FROM clipboard_history WHERE id=?1", [id], |row| row.get(0)).unwrap();
+        preserve_deduplicated_tags(&mut capture.tags, serde_json::from_str(&stored).unwrap());
+        assert_eq!(repo.save_with_conn(&connection, &capture, None).unwrap(), id);
+        let (ciphertext, timestamp): (String, i64) = connection.query_row("SELECT content,timestamp FROM clipboard_history WHERE id=?1", [id], |row| Ok((row.get(0)?,row.get(1)?))).unwrap();
+        assert!(crate::infrastructure::encryption::is_encrypted_value(&ciphertext));
+        assert_eq!(crate::infrastructure::encryption::decode_for_mutation(&ciphertext).unwrap(), entry.content);
+        assert_eq!(timestamp, 2);
+        assert_eq!(capture.tags, vec!["sensitive", "work"]);
+    }
+
 
     #[test]
     fn captures_preserve_raw_whitespace_and_line_endings() {

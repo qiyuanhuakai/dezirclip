@@ -1237,6 +1237,8 @@ dependencies = [
  "ctrlc",
  "dirs 5.0.1",
  "dotenvy",
+ "dzc-core",
+ "dzc-platform",
  "font-kit",
  "hex",
  "image",
@@ -1521,6 +1523,47 @@ name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
+
+[[package]]
+name = "dzc-core"
+version = "0.1.21-beta.1"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "base64 0.22.1",
+ "chrono",
+ "cssparser 0.37.0",
+ "dirs 5.0.1",
+ "image",
+ "libc",
+ "rand 0.8.6",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "urlencoding",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "dzc-platform"
+version = "0.1.21-beta.1"
+dependencies = [
+ "aes-gcm",
+ "arboard",
+ "base64 0.22.1",
+ "dzc-core",
+ "image",
+ "keyring",
+ "libc",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "urlencoding",
+ "uuid",
+ "x11rb",
+]
 
 [[package]]
 name = "either"
