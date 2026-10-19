@@ -24,7 +24,7 @@
     "build:portable": "tauri build --no-bundle --features portable && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
     "css-tree": "^3.2.1",

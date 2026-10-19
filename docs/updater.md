@@ -68,13 +68,13 @@ GitHub Release 资产重命名不提供事务：替换活动索引时可能短�
 ## 验证命令与边界
 
 ```powershell
-node --test scripts/tests/updater-release.test.mjs
+node --test scripts/tests/updater-release.node.mjs
 cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib domain::update --locked
 cargo check --manifest-path src-tauri/Cargo.toml --bin dezirclip --locked
 ```
 
 签名回归使用 Tauri 官方公开测试向量，覆盖正文篡改、trusted comment 篡改、版本重放及缺版本。纯逻辑回归覆盖 SemVer 数字预发布序号、正式版提升、build metadata、禁止回退、缺制品及文件名绑定。没有新增前端测试框架或 Cargo dev-dependencies。
 
-依赖升级使 Tauri 使用 Windows 0.62 / WebView2 0.39，直接依赖同步对齐；Windows OCR 的阻塞等待改用 windows-future 0.3 的 `join()`。既有 Win32、内存管理和 OCR 行为仍需要正式包回归。
+依赖升级使 Tauri 使用 Windows 0.62 / WebView2 0.39，直接依赖同步对齐；前端 `@tauri-apps/api` 同步到 2.12，与 Rust 的同一 major/minor 匹配。Windows OCR 的阻塞等待改用 windows-future 0.3 的 `join()`。既有 Win32、内存管理和 OCR 行为仍需要正式包回归。
 
 参考：[Tauri Updater](https://v2.tauri.app/plugin/updater/)、[Updater 2.14 API](https://docs.rs/tauri-plugin-updater/2.14.0/tauri_plugin_updater/)、[Tauri CLI 2.12.3](https://github.com/tauri-apps/tauri/releases/tag/tauri-cli-v2.12.3)、[Minisign 格式](https://jedisct1.github.io/minisign/)、[windows-future 0.3.2](https://docs.rs/windows-future/0.3.2/windows_future/struct.IAsyncOperation.html)。

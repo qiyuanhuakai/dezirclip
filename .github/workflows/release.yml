@@ -37,7 +37,7 @@ jobs:
         run: node scripts/updater-release.mjs preflight "$GITHUB_REF_NAME"
 
       - name: Verify updater release logic
-        run: node --test scripts/tests/updater-release.test.mjs
+        run: node --test scripts/tests/updater-release.node.mjs
 
       - name: Create or reuse release
         id: release
