@@ -44,7 +44,7 @@ impl Default for SummaryQuery {
 }
 
 impl SummaryQuery {
-    fn validate(&self) -> CoreResult<()> {
+    pub(super) fn validate(&self) -> CoreResult<()> {
         if !(1..=MAX_LIMIT).contains(&self.limit) || self.offset > i32::MAX as u32 {
             return Err(CoreError::validation("summary query requires a bounded page"));
         }
@@ -101,7 +101,7 @@ pub struct EntrySummary {
     pub source_app: String,
 }
 
-fn summarize(entry: ClipboardEntry) -> EntrySummary {
+pub(super) fn summarize(entry: ClipboardEntry) -> EntrySummary {
     let preview_prefix = entry.preview.trim_start().to_ascii_lowercase();
     let preview = if matches!(entry.content_type.as_str(), "text" | "code")
         && !entry.is_external && entry.html_content.is_none()

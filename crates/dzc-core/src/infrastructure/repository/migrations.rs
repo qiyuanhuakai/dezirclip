@@ -65,7 +65,7 @@ pub fn register_privacy_functions(conn: &Connection) -> Result<()> {
 }
 
 /// Shared with mutation planning so index cleanup uses exactly the view's raw-field policy.
-pub(super) fn search_visible(tags: Option<&str>, fields: [Option<&str>; 4]) -> bool {
+pub(crate) fn search_visible(tags: Option<&str>, fields: [Option<&str>; 4]) -> bool {
     let Ok(tags) = serde_json::from_str::<Vec<String>>(tags.unwrap_or("[]")) else {
         return false;
     };

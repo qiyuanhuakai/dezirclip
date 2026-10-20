@@ -746,4 +746,30 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
+    #[test]
+    fn malformed_pem_prefixes_cannot_hide_a_later_valid_key_from_persistence_protection() {
+        use base64::Engine;
+        let mut der = vec![0x30, 46, 2, 1, 0, 0x30, 5, 6, 3, 0x2b, 0x65, 0x70, 4, 34, 4, 32];
+        der.extend([7; 32]);
+        let valid = format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----", base64::engine::general_purpose::STANDARD.encode(der));
+        for prefix in ["-----BEGIN PRIVATE KEY-----\nY29udGVudA==\n-----END PRIVATE KEY-----\n", "-----BEGIN PRIVATE KEY-----\nmissing terminator\n", "-----BEGIN PRIVATE KEY-----\n%%%invalid%%%\n-----END PRIVATE KEY-----\n"] {
+            let (directory, state) = database();
+            let store = state.capture_store(&directory);
+            let session = Mutex::new(VecDeque::new());
+            let mut context = context(&session);
+            context.settings.privacy_protection = true;
+            let text = format!("{prefix}{valid}");
+            let frame = CaptureFrame { data: CaptureData::Text(text.clone()), metadata: Default::default() };
+            let CaptureOutcome::Stored(capture) = authorized_frame(&context, frame, &store, &mut ()) else { panic!("structured key must persist under protection"); };
+            assert_eq!(capture.privacy.action, crate::privacy::PrivacyAction::Encrypt);
+            let conn = state.conn.lock().unwrap();
+            let stored: String = conn.query_row("SELECT content FROM clipboard_history WHERE id=?1", [capture.entry.id], |row| row.get(0)).unwrap();
+            assert!(crate::infrastructure::encryption::has_ciphertext_envelope(&stored));
+            assert_eq!(crate::infrastructure::encryption::decode_for_mutation(&stored).unwrap(), text);
+            assert_eq!(conn.query_row("SELECT count(*) FROM clipboard_fts_docsize", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+            drop(conn); drop(store); drop(state);
+            std::fs::remove_dir_all(directory).unwrap();
+        }
+    }
+
 }

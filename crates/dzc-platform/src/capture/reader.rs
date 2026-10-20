@@ -7,6 +7,8 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Default)]
 pub struct NativeCaptureReader {
+    #[cfg(target_os = "linux")]
+    x11_privacy: Option<super::x11_privacy::SelectionSnapshot>,
     metadata: CaptureReadMetadata,
     empty: Option<CaptureSkip>,
 }
@@ -206,6 +208,16 @@ impl NativeCaptureReader {
 }
 
 impl CaptureReader for NativeCaptureReader {
+    #[cfg(target_os = "linux")]
+    fn preflight_privacy(&mut self) -> Result<dzc_core::capture::PrivacyPreflight, CaptureFailure> {
+        self.x11_privacy = None;
+        let snapshot = super::x11_privacy::SelectionSnapshot::preflight()?;
+        let report = snapshot.report();
+        self.x11_privacy = Some(snapshot);
+        Ok(report)
+    }
+    #[cfg(target_os = "linux")]
+    fn selection_id(&self) -> Option<u64> { self.x11_privacy.as_ref().and_then(|snapshot| snapshot.selection_id()) }
     #[cfg(target_os = "windows")]
     fn preflight_privacy(&mut self) -> Result<dzc_core::capture::PrivacyPreflight, CaptureFailure> {
         super::windows_privacy::preflight()
@@ -406,7 +418,7 @@ mod tests {
         if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
             return;
         }
-        use super::{CaptureData, CaptureReadRequest, CaptureReader, NativeCaptureReader};
+        use super::{CaptureData, NativeCaptureReader};
         use dzc_core::{api::{HistoryService, HistoryQuery}, capture::*};
         use base64::{engine::general_purpose::STANDARD, Engine};
         use std::{
