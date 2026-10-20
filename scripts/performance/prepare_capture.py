@@ -67,12 +67,31 @@ def archive_baseline(repository, revision, output):
     manifest = source / "src-tauri/Cargo.toml"
     before = sha256(manifest)
     parsed = tomllib.loads(manifest.read_text(encoding="utf-8"))
-    if "workspace" not in parsed:
+    root_manifest = source / "Cargo.toml"
+    root_workspace = root_manifest.is_file() and "workspace" in tomllib.loads(
+        root_manifest.read_text(encoding="utf-8"))
+    isolated = "workspace" not in parsed and not root_workspace
+    if isolated:
         with manifest.open("a", encoding="utf-8", newline="\n") as stream:
             stream.write('\n[workspace]\nresolver = "2"\n')
     return source, {"revision": revision, "archive_sha256": sha256(archive),
                     "manifest_original_sha256": before, "manifest_build_sha256": sha256(manifest),
-                    "adjustment": "Only empty workspace isolation in the archived package; no business source edit"}
+                    "adjustment": ("Only empty workspace isolation in the archived package; no business source edit"
+                                   if isolated else "Archived workspace preserved; no source or manifest edit")}
+
+
+def baseline_layout(source):
+    """Keep the baseline's real package, workspace lock and native key provider."""
+    core = source / "crates/dzc-core"
+    if (core / "Cargo.toml").is_file():
+        workspace = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))
+        if "workspace" not in workspace:
+            raise ValueError("Core baseline requires its archived root workspace")
+        native = source / "crates/dzc-platform"
+        if not (native / "Cargo.toml").is_file() or not (source / "Cargo.lock").is_file():
+            raise ValueError("Core baseline requires its platform package and root lock")
+        return "dzc-core", core, native, source / "Cargo.lock", ["native-provider"]
+    return "dezirclip", source / "src-tauri", None, source / "src-tauri/Cargo.lock", []
 
 
 def external_packages(lock):
@@ -279,14 +298,16 @@ def prepare(args):
              "template_sha256": {name: sha256(source / name) for name in ["main.rs", "measured_engine.rs"]},
              "evidence": copies, "adapters": {}}
     target = args.target_dir.resolve() if args.target_dir else output / "target"
-    variants = [("legacy", "dezirclip", baseline / "src-tauri", None, baseline / "src-tauri/Cargo.lock", []),
+    variants = [("legacy", *baseline_layout(baseline)),
                 ("core", "dzc-core", candidate / "crates/dzc-core", candidate / "crates/dzc-platform", candidate / "Cargo.lock", ["native-provider"]),
                 ("engine", "dzc-core", candidate / "crates/dzc-core", candidate / "crates/dzc-platform", candidate / "Cargo.lock", ["engine"])]
     for variant, package, package_source, native, lock, features in variants:
         manifest, bridge = write_adapter(output, variant, package, package_source, native, lock)
         if bridge:
             features = [*features, "legacy-layout"]
-        record = {"manifest": str(manifest), "manifest_sha256": sha256(manifest), "features": features}
+        record = {"manifest": str(manifest), "manifest_sha256": sha256(manifest), "features": features,
+                  "source_package": package, "source_manifest": str(package_source / "Cargo.toml"),
+                  "role": "baseline" if variant == "legacy" else "candidate"}
         if args.mode != "prepare":
             name = f"capture-perf-{variant}"
             common = ["--offline", "--manifest-path", str(manifest), "--bin", name,

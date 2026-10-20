@@ -34,7 +34,7 @@ def messages(*items):
 
 
 class PreparationTests(unittest.TestCase):
-    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False):
+    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False):
         temporary = tempfile.TemporaryDirectory(prefix="dzc-prepare-artifact-test-")
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()
@@ -65,6 +65,16 @@ class PreparationTests(unittest.TestCase):
 
         def baseline(repository, revision, directory):
             source = directory / "baseline-source"
+            if workspace_baseline:
+                package = source / "crates/dzc-core"
+                package.mkdir(parents=True)
+                (package / "Cargo.toml").write_bytes((core / "Cargo.toml").read_bytes())
+                (source / "Cargo.toml").write_bytes((root / "Cargo.toml").read_bytes())
+                (source / "Cargo.lock").write_text(lock)
+                native = source / "crates/dzc-platform"
+                native.mkdir()
+                (native / "Cargo.toml").write_text('[package]\nname="dzc-platform"\nversion="0.0.0"\n')
+                return source, {"revision": revision, "archive_sha256": "fixture"}
             package = source / "src-tauri"
             package.mkdir(parents=True)
             (package / "Cargo.toml").write_text('[package]\nname="dezirclip"\nversion="0.0.0"\n[dependencies]\nrusqlite={version="0.31",features=["bundled","functions"]}\n')
@@ -114,10 +124,17 @@ class PreparationTests(unittest.TestCase):
         self.assertEqual(len(seen_builds), 3)
         for variant, record in proof["adapters"].items():
             dependency = tomllib.loads(Path(record["manifest"]).read_text())["dependencies"]["rusqlite"]
-            if variant == "legacy":
+            if variant == "legacy" and not workspace_baseline:
                 self.assertEqual(dependency, {"version": "0.31", "features": ["bundled", "functions"]})
             else:
                 self.assertEqual(dependency, {"git": SQLITE_GIT, "rev": SQLITE_REV, "features": ["bundled", "functions"]})
+            self.assertEqual(record["role"], "baseline" if variant == "legacy" else "candidate")
+            if variant == "legacy" and workspace_baseline:
+                declared = tomllib.loads(Path(record["manifest"]).read_text())["dependencies"]
+                self.assertEqual(record["source_package"], "dzc-core")
+                self.assertEqual(declared["app_backend"]["path"], (output / "baseline-source/crates/dzc-core").as_posix())
+                self.assertEqual(declared["dzc-platform"]["path"], (output / "baseline-source/crates/dzc-platform").as_posix())
+                self.assertEqual(record["features"], ["native-provider", "legacy-layout"])
             expected = target / HOST / "debug" / ("capture-perf-" + variant + EXTENSION)
             self.assertEqual(Path(record["cargo_executable"]), expected)
             self.assertEqual(Path(record["binary"]).read_bytes(), ("current-cargo-output:capture-perf-" + variant).encode())
@@ -139,6 +156,64 @@ class PreparationTests(unittest.TestCase):
 
     def test_missing_cargo_artifact_rejects_even_when_root_binary_exists(self):
         self.prepare(stale=True, bad_artifact=True)
+
+    def test_workspace_baseline_keeps_its_core_lock_and_native_provider(self):
+        self.prepare(workspace_baseline=True)
+
+
+@unittest.skipUnless(shutil.which("git"), "Archived baseline checks require Git")
+class BaselineArchiveTests(unittest.TestCase):
+    def archive(self, workspace):
+        temporary = tempfile.TemporaryDirectory(prefix="dzc-baseline-archive-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        repository = root / "repository"
+        repository.mkdir()
+        package = repository / "src-tauri"
+        package.mkdir()
+        manifest = package / "Cargo.toml"
+        if workspace:
+            manifest.write_text('[package]\nname="dezirclip"\nversion.workspace=true\n')
+            (repository / "Cargo.toml").write_text('[workspace]\nmembers=["src-tauri","crates/dzc-core","crates/dzc-platform"]\n[workspace.package]\nversion="0.2.0-alpha.1"\n[workspace.dependencies]\nrusqlite="0.31"\n')
+            (repository / "Cargo.lock").write_text('version=4\n')
+            for name in ["dzc-core", "dzc-platform"]:
+                member = repository / "crates" / name
+                member.mkdir(parents=True)
+                (member / "Cargo.toml").write_text('[package]\nname="' + name + '"\nversion.workspace=true\n[dependencies]\nrusqlite.workspace=true\n')
+        else:
+            manifest.write_text('[package]\nname="dezirclip"\nversion="0.1.0"\n')
+            (package / "Cargo.lock").write_text('version=4\n')
+        original = manifest.read_bytes()
+        for args in [["init", "--quiet"], ["add", "."],
+                     ["-c", "user.name=Controlled fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture"]]:
+            subprocess.run(["git", *args], cwd=repository, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        revision = PREPARE.command(["git", "rev-parse", "HEAD"], repository)
+        output = root / "output"
+        output.mkdir()
+        source, proof = PREPARE.archive_baseline(repository, revision, output)
+        self.assertEqual(manifest.read_bytes(), original)
+        self.assertEqual(proof["revision"], revision)
+        self.assertEqual(proof["archive_sha256"], PREPARE.sha256(output / "baseline-source.zip"))
+        return source, proof, original
+
+    def test_workspace_inheritance_survives_real_git_archive_without_manifest_edits(self):
+        source, proof, original = self.archive(workspace=True)
+        self.assertEqual((source / "src-tauri/Cargo.toml").read_bytes(), original)
+        self.assertEqual(proof["manifest_original_sha256"], proof["manifest_build_sha256"])
+        package, core, native, lock, features = PREPARE.baseline_layout(source)
+        self.assertEqual((package, core, native, lock, features),
+                         ("dzc-core", source / "crates/dzc-core", source / "crates/dzc-platform", source / "Cargo.lock", ["native-provider"]))
+        self.assertEqual(PREPARE.dependency_spec(core, "rusqlite"), {"version": "0.31"})
+        (source / "Cargo.lock").unlink()
+        with self.assertRaisesRegex(ValueError, "platform package and root lock"):
+            PREPARE.baseline_layout(source)
+
+    def test_early_single_package_archive_gets_only_empty_workspace_isolation(self):
+        source, proof, original = self.archive(workspace=False)
+        self.assertEqual((source / "src-tauri/Cargo.toml").read_bytes(), original + b'\n[workspace]\nresolver = "2"\n')
+        self.assertNotEqual(proof["manifest_original_sha256"], proof["manifest_build_sha256"])
+        self.assertEqual(PREPARE.baseline_layout(source),
+                         ("dezirclip", source / "src-tauri", None, source / "src-tauri/Cargo.lock", []))
 
 
 class DependencyInheritanceTests(unittest.TestCase):

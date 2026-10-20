@@ -12,7 +12,9 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 
 正式候选要求干净 checkout 且 HEAD 匹配传入 SHA。准备阶段可用 `--allow-dirty-candidate` 检查未提交的 API；只要使用此选项，生成物就标记 `functional_only=true`、`eligible_for_timing=false`，即使期间候选已提交，采样器也会拒绝使用。工具在构建前后核对候选源码指纹，变化即失败。
 
-`preparation.json` 包含实际引用候选源码每个 Git 文件的 SHA256、集合哈希、HEAD 和脏状态；旧源 archive 哈希及唯一临时 manifest workspace 隔离改动前后哈希；Rust/Cargo 版本、profile、target、相关构建环境、机器标识哈希；Python 工具和 Rust 模板哈希；各适配器 manifest/lock/命令、只读二进制哈希及功能报告哈希。适配器 lock 从对应源码 lock 复制，构建后拒绝出现源 lock 以外的外部包版本。release profile 保持 LTO、单 codegen unit、`opt-level=s`、strip、abort。
+`preparation.json` 包含实际引用候选源码每个 Git 文件的 SHA256、集合哈希、HEAD 和脏状态；旧源 archive 哈希及临时 manifest 的 workspace 处理前后哈希；Rust/Cargo 版本、profile、target、相关构建环境、机器标识哈希；Python 工具和 Rust 模板哈希；各适配器的实际源码包、角色、manifest/lock/命令、只读二进制哈希及功能报告哈希。适配器 lock 从对应源码 lock 复制，构建后拒绝出现源 lock 以外的外部包版本。release profile 保持 LTO、单 codegen unit、`opt-level=s`、strip、abort。
+
+`--baseline-revision` 可指定已冻结的 alpha.1 完整 SHA `90ba9960744b6cd57caaaf597f68533a7e41be45`。归档存在根 workspace 时保持原样，使用其 `dzc-core`、根 lock 和真实 Platform 密钥提供器；早期单包基线继续使用 `src-tauri` 及其 lock，仅在没有根 workspace 时补空 workspace 隔离。为兼容已有采样命令，基线适配器名称仍为 `legacy`；它表示比较中的基线角色，实际引用的包由凭据记录，不表示 alpha.1 尚未拆分 Core。此适配支持不构成新的采样或性能通过结论。
 
 适配器显式使用 `rustc --print host-tuple` 的本机目标；继承的 `CARGO_BUILD_TARGET` 仍记录在凭据中，但不能改变正式测量的目标。构建保留完整 Cargo JSON 与 stderr 及哈希，只接受本次成功构建报告的唯一 `compiler-artifact.executable`，并核对 manifest、bin、目标和 profile 目录。冻结副本前后再次核对源文件与副本哈希，绝不回退到缓存根目录中的同名文件。回归覆盖同宿主显式 target、空缓存、旧根目录负控、错误或缺失 artifact；`DZC_TEST_REAL_CARGO=1` 可额外运行 std-only 的真实 Cargo JSON 冒烟。
 
