@@ -193,7 +193,7 @@ fn distribute(app: &AppHandle, capture: StoredCapture) {
     }
 }
 
-fn process(task: CaptureTask) {
+fn process(task: CaptureTask) -> Result<bool, String> {
     let session = task.app.state::<SessionHistory>();
     let context = context(&task.app, task.source, task.timestamp, &session);
     let data = task
@@ -207,10 +207,20 @@ fn process(task: CaptureTask) {
     let history = database.history_service();
     let store = history.capture_store(&data);
     let mut events = DesktopEvents { app: &task.app };
-    if let CaptureOutcome::Stored(capture) =
-        CaptureEngine::capture_frame(&context, task.frame, &store, &mut events)
-    {
+    let outcome = CaptureEngine::capture_frame(&context, task.frame, &store, &mut events);
+    if let Some(capture) = persistence_result(outcome)? {
         distribute(&task.app, capture);
+        Ok(true)
+    } else { Ok(false) }
+}
+
+fn persistence_result(outcome: CaptureOutcome) -> Result<Option<StoredCapture>, String> {
+    match outcome {
+        CaptureOutcome::Stored(capture) => Ok(Some(capture)),
+        CaptureOutcome::Skipped(dzc_core::capture::CaptureSkip::PrivacyEpochChanged) => Err("PrivacyEpochChanged".into()),
+        CaptureOutcome::Skipped(_) => Ok(None),
+        CaptureOutcome::Rejected(reason) => Err(format!("{reason:?}")),
+        CaptureOutcome::Failed(error) => Err(error.code),
     }
 }
 
@@ -222,7 +232,7 @@ fn sender() -> &'static Sender<CaptureTask> {
             .name("clipboard-process-worker".into())
             .spawn(move || {
                 while let Ok(task) = rx.recv() {
-                    process(task);
+                    if let Err(code) = process(task) { crate::warn!("[capture] {}", code); }
                 }
             });
         tx
@@ -305,9 +315,22 @@ pub fn start_clipboard_monitor(app: AppHandle) {
             timestamp,
         };
         if let Err(error) = sender().send(task) {
-            process(error.0);
+            if let Err(code) = process(error.0) { crate::warn!("[capture] {}", code); }
         }
     }));
+}
+
+/// The action starts a lease before producing image/text data. Active privacy skips only persistence.
+pub fn generated_capture_ticket(app: &AppHandle) -> Result<Option<dzc_core::api::CaptureTicket>, String> {
+    match app.state::<DbState>().history_service().privacy().capture_ticket(timestamp()) {
+        Ok(ticket) => Ok(Some(ticket)),
+        Err(dzc_core::api::PrivacyError::PrivacySessionActive) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn generated_frame(data: ClipboardData, ticket: Option<dzc_core::api::CaptureTicket>) -> Option<CaptureFrame> {
+    ticket.map(|ticket| CaptureFrame { data, metadata: CaptureReadMetadata { privacy_ticket: Some(ticket), ..Default::default() } })
 }
 
 pub fn process_new_entry(
@@ -315,16 +338,15 @@ pub fn process_new_entry(
     data: ClipboardData,
     source_override: Option<String>,
     source_snapshot: Option<ActiveAppInfo>,
-) {
+    ticket: Option<dzc_core::api::CaptureTicket>,
+) -> Result<bool, String> {
+    let Some(frame) = generated_frame(data, ticket) else { return Ok(false); };
     process(CaptureTask {
         app: app.clone(),
-        frame: CaptureFrame {
-            data,
-            metadata: CaptureReadMetadata::default(),
-        },
+        frame,
         source: source(source_snapshot, source_override),
         timestamp: timestamp(),
-    });
+    })
 }
 
 #[cfg(all(test, target_os = "windows", not(feature = "portable")))]
@@ -435,4 +457,36 @@ mod tests {
         drop(state);
         std::fs::remove_dir_all(directory).unwrap();
     }
+    #[test]
+    fn generated_screenshot_and_text_paths_keep_the_start_epoch_and_report_rejection() {
+        use dzc_core::api::{HistoryService, PrivacySessionCommand};
+        let directory = std::env::temp_dir().join(format!("dzc-generated-ticket-{}", uuid::Uuid::new_v4()));
+        let history = HistoryService::open(&directory.join("synthetic.db")).unwrap();
+        let store = history.capture_store(&directory);
+        let session = Mutex::new(VecDeque::new());
+        let context = CaptureContext { source: CaptureSource { app_name: "generated fixture".into(), process_path: None }, timestamp: 1,
+            settings: CaptureSettings { persistent: true, ..Default::default() }, session: &session, paused: false, sequential_echo: None };
+        let now = chrono::Utc::now().timestamp_millis();
+        let data = || [ClipboardData::RgbaImage { width: 1, height: 1, bytes: vec![1, 2, 3, 255] },
+            ClipboardData::Text("image converted to base64 synthetic body".into()), ClipboardData::Text("OCR derived synthetic text".into())];
+        for value in data() {
+            let ticket = history.privacy().capture_ticket(now).unwrap();
+            let frame = generated_frame(value, Some(ticket)).unwrap();
+            assert!(persistence_result(CaptureEngine::capture_frame(&context, frame, &store, &mut ())).unwrap().is_some());
+        }
+        let before = history.get_count().unwrap();
+        let ticket = history.privacy().capture_ticket(now).unwrap();
+        history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, now).unwrap();
+        assert!(generated_frame(ClipboardData::Text("not recorded".into()), None).is_none());
+        history.privacy().set_session(PrivacySessionCommand::Off, now).unwrap();
+        for value in data() {
+            let frame = generated_frame(value, Some(ticket)).unwrap();
+            assert_eq!(persistence_result(CaptureEngine::capture_frame(&context, frame, &store, &mut ())).err().unwrap(), "PrivacyEpochChanged");
+        }
+        assert_eq!(history.get_count().unwrap(), before);
+        assert_eq!(persistence_result(CaptureOutcome::Rejected(dzc_core::capture::CaptureRejection::SensitivePersistenceRejected)).err().unwrap(), "SensitivePersistenceRejected");
+        drop(store); drop(history);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
 }

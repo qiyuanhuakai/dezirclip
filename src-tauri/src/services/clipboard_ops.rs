@@ -136,6 +136,9 @@ pub async fn copy_to_clipboard(
     move_to_top: Option<bool>,
     paste_image_as_base64: Option<bool>,
 ) -> AppResult<()> {
+    let generated_ticket = if paste_image_as_base64.unwrap_or(false) {
+        crate::services::clipboard::generated_capture_ticket(&app_handle)?
+    } else { None };
     println!(
         "[DEBUG] copy_to_clipboard called: id={}, paste={}, content_type={}, content_len={}",
         id,
@@ -204,7 +207,8 @@ pub async fn copy_to_clipboard(
             crate::services::clipboard::ClipboardData::Text(content.clone()),
             Some(label.clone()),
             None,
-        );
+            generated_ticket,
+        )?;
     }
 
     // 3. Copy to system clipboard. For self-insert paths we force mark_as_self_copy=true

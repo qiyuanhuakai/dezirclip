@@ -140,7 +140,7 @@ fn der_private_key(bytes: &[u8], label: &str) -> bool {
     }
 }
 
-fn validated_private_key(content: &str) -> bool {
+fn validated_private_key(content: &str, expired: impl Fn() -> bool) -> (bool, bool) {
     for label in [
         "PRIVATE KEY",
         "RSA PRIVATE KEY",
@@ -149,27 +149,33 @@ fn validated_private_key(content: &str) -> bool {
     ] {
         let begin = format!("-----BEGIN {label}-----");
         let end = format!("-----END {label}-----");
-        let Some(start) = content.find(&begin) else {
-            continue;
-        };
-        let body = &content[start + begin.len()..];
-        let Some(stop) = body.find(&end) else {
-            continue;
-        };
-        let encoded: String = body[..stop]
-            .chars()
-            .filter(|c| !c.is_ascii_whitespace())
-            .collect();
-        if encoded.len() > 48 * 1024 {
-            continue;
-        }
-        if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(encoded) {
-            if der_private_key(&decoded, label) {
-                return true;
+        for (start, _) in content.match_indices(&begin) {
+            if expired() {
+                return (false, false);
+            }
+            let body = &content[start + begin.len()..];
+            let Some(stop) = body.find(&end) else {
+                continue;
+            };
+            // A malformed outer block cannot consume a later complete block of the same label.
+            if body[..stop].contains(&begin) {
+                continue;
+            }
+            let encoded: String = body[..stop]
+                .chars()
+                .filter(|c| !c.is_ascii_whitespace())
+                .collect();
+            if encoded.len() > 48 * 1024 {
+                continue;
+            }
+            if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(encoded) {
+                if der_private_key(&decoded, label) {
+                    return (true, true);
+                }
             }
         }
     }
-    false
+    (false, true)
 }
 
 pub fn scan_content(
@@ -222,7 +228,9 @@ pub fn scan_content(
                 Err(_) => result.completed = false,
             }
         }
-        if validated_private_key(scanned) {
+        let (private_key, pem_complete) = validated_private_key(scanned, expired);
+        result.completed &= pem_complete;
+        if private_key {
             result.evidence.push(evidence(
                 EvidenceSource::CredentialStructure,
                 EvidenceLevel::Verified,
