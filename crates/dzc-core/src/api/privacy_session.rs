@@ -250,6 +250,21 @@ impl PrivacySessionService {
         Ok(result)
     }
 
+    pub fn toggle(&self, now_ms: i64) -> PrivacyResult<RuntimeSnapshot> {
+        let mut conn = self.connection.lock().map_err(unavailable)?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(unavailable)?;
+        let state = read_state(&tx, now_ms)?;
+        tx.execute("UPDATE privacy_runtime_state SET session_enabled=?1,session_expires_at_ms=NULL,privacy_epoch=privacy_epoch+1 WHERE singleton=1",
+            [!state.snapshot.session.active]).map_err(unavailable)?;
+        let result = read_state(&tx, now_ms)?.snapshot;
+        tx.commit().map_err(unavailable)?;
+        drop(conn);
+        (self.invalidate_epoch)(result.privacy_epoch);
+        Ok(result)
+    }
+
     pub fn capture_ticket(&self, now_ms: i64) -> PrivacyResult<CaptureTicket> {
         self.status(now_ms)?;
         let conn = self.connection.lock().map_err(unavailable)?;
@@ -876,5 +891,25 @@ mod tests {
         assert!(history
             .summaries_authorized(&SummaryQuery::default(), &permit, 1)
             .is_ok());
+    }
+    #[test]
+    fn concurrent_toggle_requests_are_serialized_in_the_shared_database() {
+        let directory = std::env::temp_dir().join(format!("dzc-toggle-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("synthetic.db");
+        let first = HistoryService::open(&path).unwrap();
+        let other = HistoryService::open(&path).unwrap();
+        let first_service = first.privacy();
+        let other_service = other.privacy();
+        std::thread::scope(|scope| {
+            let a = scope.spawn(|| first_service.toggle(1).unwrap());
+            let b = scope.spawn(|| other_service.toggle(1).unwrap());
+            a.join().unwrap();
+            b.join().unwrap();
+        });
+        let snapshot = first.runtime_snapshot(1).unwrap();
+        assert!(!snapshot.session.active);
+        assert_eq!(snapshot.privacy_epoch, 2);
+        drop((first_service, other_service, first, other));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }
