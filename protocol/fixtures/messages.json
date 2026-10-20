@@ -310,5 +310,130 @@
       }
     },
     "valid": false
+  },
+  {
+    "name": "case-alias-cannot-enable-privacy",
+    "schema": "PrivacySetParams",
+    "value": {
+      "active": false,
+      "Active": true
+    },
+    "expected": {
+      "active": false
+    },
+    "valid": true
+  },
+  {
+    "name": "nested-case-alias-cannot-change-role-or-version",
+    "schema": "HelloParams",
+    "value": {
+      "protocol_version": {
+        "major": 1,
+        "minor": 0,
+        "Major": 2
+      },
+      "client_version": "fixture",
+      "client_role": "surface",
+      "capabilities": [],
+      "required_capabilities": [],
+      "Client_role": "desktop"
+    },
+    "expected": {
+      "protocol_version": {
+        "major": 1,
+        "minor": 0
+      },
+      "client_version": "fixture",
+      "client_role": "surface",
+      "capabilities": [],
+      "required_capabilities": []
+    },
+    "valid": true
+  },
+  {
+    "name": "error-alias-does-not-override-code",
+    "schema": "WireError",
+    "value": {
+      "code": "permission_denied",
+      "Code": "internal",
+      "message": "public",
+      "Message": "override"
+    },
+    "expected": {
+      "code": "permission_denied",
+      "message": "public"
+    },
+    "valid": true
+  },
+  {
+    "name": "array-case-alias-does-not-change-summary",
+    "schema": "HistoryResult",
+    "value": {
+      "entries": [
+        {
+          "id": 1,
+          "kind": "text",
+          "preview": "safe",
+          "tags": [],
+          "pinned": false,
+          "timestamp": 1,
+          "source_app": "synthetic",
+          "privacy_visibility": "ordinary",
+          "Preview": "override",
+          "Id": 99
+        }
+      ]
+    },
+    "expected": {
+      "entries": [
+        {
+          "id": 1,
+          "kind": "text",
+          "preview": "safe",
+          "tags": [],
+          "pinned": false,
+          "timestamp": 1,
+          "source_app": "synthetic",
+          "privacy_visibility": "ordinary"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "lone-high-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\ud800\"}",
+    "valid": false
+  },
+  {
+    "name": "lone-low-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\udfff\"}",
+    "valid": false
+  },
+  {
+    "name": "high-without-low-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\ud800\\u0061\"}",
+    "valid": false
+  },
+  {
+    "name": "valid-surrogate-pair",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\ud83d\\ude00\"}",
+    "valid": true
+  },
+  {
+    "name": "literal-backslash-u-is-not-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\\\ud800\"}",
+    "valid": true
+  },
+  {
+    "name": "raw-invalid-utf8",
+    "schema": "EmptyParams",
+    "raw_hex": "7b2276616c7565223a22ff227d",
+    "valid": false
   }
 ]
