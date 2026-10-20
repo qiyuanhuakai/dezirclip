@@ -81,6 +81,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
         conn.execute("INSERT INTO settings(key,value) VALUES('db.sensitive_alignment_done','true') ON CONFLICT(key) DO UPDATE SET value='true'", []).unwrap();
+        super::super::migrations::remove_runtime_state_fixture(&conn);
         conn.execute("DELETE FROM schema_migrations WHERE version>=19", [])
             .unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
@@ -171,6 +172,7 @@ mod tests {
     fn version_nineteen_rebuild_omits_legacy_sensitive_terms_and_preserves_plain_prefix_text() {
         let mut conn = Connection::open_in_memory().unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
+        super::super::migrations::remove_runtime_state_fixture(&conn);
         conn.execute_batch(r#"INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text)
             VALUES(1,'text','privateprobe','summary','test',1,'["sensitive"]','privateocr'),
                   (2,'text','linux: ordinaryprefix','dpapi: plainpreview','test',2,'[]',NULL);
