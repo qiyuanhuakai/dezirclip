@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { resolveBuiltinTheme } from "../lib/themeRuntime";
 import { subscribeCustomThemes } from "../lib/themeCatalog";
 
@@ -17,17 +17,23 @@ export const useCustomBackground = ({
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
+    let generation = 0;
+    let disposed = false;
     const apply = () => {
+      const current = ++generation;
       root.style.setProperty("--custom-bg-opacity", (customBackgroundOpacity / 100).toString());
+      root.style.removeProperty("--custom-bg-image");
+      body.classList.remove("has-custom-bg");
       if (customBackground && ["mica", "acrylic", "liquid-glass"].includes(resolveBuiltinTheme(theme))) {
-        root.style.setProperty("--custom-bg-image", `url("${convertFileSrc(customBackground)}")`);
-        body.classList.add("has-custom-bg");
-      } else {
-        root.style.removeProperty("--custom-bg-image");
-        body.classList.remove("has-custom-bg");
+        void invoke<string>("get_custom_background_resource", { expectedPath: customBackground }).then(src => {
+          if (disposed || current !== generation || !/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src)) return;
+          root.style.setProperty("--custom-bg-image", `url("${src}")`);
+          body.classList.add("has-custom-bg");
+        }).catch(() => undefined);
       }
     };
     apply();
-    return subscribeCustomThemes(apply);
+    const stop = subscribeCustomThemes(apply);
+    return () => { disposed = true; generation += 1; stop(); };
   }, [customBackground, theme, customBackgroundOpacity]);
 };

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "lucide-react";
@@ -16,6 +16,19 @@ interface EmojiPanelProps {
 
 type EmojiGroup = { name: string; emojis: string[] };
 type EmojiData = { groups?: EmojiGroup[] };
+
+function FavoriteImage({ path, name }: { path: string; name: string }) {
+  const [result, setResult] = useState<{ path: string; src: string } | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    setResult(null);
+    void invoke<string>("get_emoji_favorite_resource", { path }).then(src => {
+      if (!disposed && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src)) setResult({ path, src });
+    }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, [path]);
+  return <img src={result?.path === path ? result.src : undefined} alt={name} />;
+}
 
 const FALLBACK_GROUPS: EmojiGroup[] = [
   {
@@ -608,14 +621,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
                     title={name}
                     onClick={() => handleSend(path, "image")}
                   >
-                    <img
-                      src={convertFileSrc(path)}
-                      alt={name}
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        removeFavoritePath(path);
-                      }}
-                    />
+                    <FavoriteImage path={path} name={name} />
                   </button>
                 </div>
               );

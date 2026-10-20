@@ -208,6 +208,8 @@ fn main() {
             app::commands::get_db_count,
             app::commands::get_clipboard_content,
             app::commands::get_image_preview,
+            app::commands::get_custom_background_resource,
+            app::commands::get_emoji_favorite_resource,
             app::commands::set_sequential_mode,
             app::commands::set_sequential_hotkey,
             app::commands::set_rich_paste_hotkey,
