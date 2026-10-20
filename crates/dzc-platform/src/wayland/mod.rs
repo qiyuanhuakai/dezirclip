@@ -3,8 +3,8 @@ pub(crate) mod io;
 mod owner;
 mod payload;
 pub(crate) use owner::replace_owner;
-pub use owner::{write_in_process, WaylandOwner};
-pub use payload::representations;
+pub use owner::{write_in_process, write_in_process_with_intent, WaylandOwner};
+pub use payload::{representations, representations_with_intent};
 
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};

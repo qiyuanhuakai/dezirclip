@@ -32,7 +32,7 @@ Wayland 剪贴板后端与窗口 Surface 是独立能力。后端使用原生 Un
 
 CLI、直接链接的 Core 客户端和 GUI 根据运行时会话选择同一原生后端。`capabilities --json` 与 GUI `get_platform_capabilities` 查询实际 registry/seat/data device；即使存在 DISPLAY，Wayland 会话也不会改用 X11 的剪贴板、来源身份或按键注入。只有一次性继承的 WAYLAND_SOCKET 且没有可重连 WAYLAND_DISPLAY 时，返回 `WaylandInheritedSocketUnavailable`，不会在探测时消耗该 fd 后宣称可用。
 
-`runtime::EmbeddedClipboardWriter` 持有进程内 selection owner，供已有 Host/Service 注入 Core ClipboardService；`stop()` 成功确认其 owner 退出，后续 write 被拒绝。它不运行 current_exe 的隐藏子命令。独立 dzc 命令仍通过其明确的 clipboard-owner 子进程保留 selection；正文只经 stdin 传输，不进入 argv。GUI 手动复制使用进程内 owner，私有进程 MIME 标记只用于避免再次捕获自己的复制，不能当隐私许可。新 owner 协商失败保留原 owner；显式停止不以 Drop 代替确认。
+`runtime::EmbeddedClipboardWriter` 持有进程内 selection owner，供已有 Host/Service 注入 Core ClipboardService；`stop()` 成功确认其 owner 退出，后续 write 被拒绝。它不运行 current_exe 的隐藏子命令。独立 dzc 命令仍通过其明确的 clipboard-owner 子进程保留 selection；正文只经 stdin 传输，不进入 argv。默认 `write()` 保留监听入库；已有历史记录的复制显式使用 `write_suppressing_recapture()`，GUI 则传播既有 `mark_as_self_copy` 意图。只有该意图才加私有进程 MIME，避免普通历史复制重复；生成文本/OCR 不会被无条件过滤，仍经过 Core 隐私 ticket 和 epoch 检查。标记不能当隐私许可。新 owner 协商失败保留原 owner；显式停止不以 Drop 代替确认。
 
 捕获读取器在正文前读取同一 offer 的 KDE hint，交给 Core 隐私预检；明确 secret 直接跳过。Windows/X11 使用各自受限预检，X11 缺少足够 selection 跟踪证据时不会把空结果当作完整检查。GUI 历史项在 Wayland 中执行手动复制，保留当前搜索和记录，不自动粘贴或按“粘贴后删除”修改历史。
 

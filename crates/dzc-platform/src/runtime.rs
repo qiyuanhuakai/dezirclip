@@ -39,6 +39,25 @@ impl ClipboardReader for NativeClipboard {
         crate::native_clipboard::formats().map_err(|_| clipboard_failure(Capability::Read))
     }
     fn read_representation(&self, mime: &str) -> PlatformResult<Vec<u8>> {
+        if !matches!(
+            mime,
+            "text/plain"
+                | "text/plain;charset=utf-8"
+                | "text/plain;charset=UTF-8"
+                | "UTF8_STRING"
+                | "text/html"
+                | "text/uri-list"
+                | "image/png"
+                | "image/jpeg"
+                | "image/gif"
+                | "image/webp"
+                | "image/bmp"
+        ) {
+            return Err(PlatformError::unsupported(
+                Capability::Read,
+                UnsupportedReason::UnsupportedRepresentation,
+            ));
+        }
         #[cfg(target_os = "linux")]
         if crate::wayland::requested() {
             return crate::native_clipboard::read(mime)
@@ -95,6 +114,14 @@ pub struct EmbeddedClipboardWriter {
     owner: std::sync::Arc<std::sync::Mutex<crate::native_clipboard::EmbeddedOwner>>,
 }
 impl EmbeddedClipboardWriter {
+    /// Explicit copy of an already recorded item. Generated text uses write().
+    pub fn write_suppressing_recapture(&self, payload: ClipboardPayload) -> PlatformResult<()> {
+        self.owner
+            .lock()
+            .map_err(|_| PlatformError::failed(Capability::Write))?
+            .write_with_intent(native_payload(payload)?, true)
+            .map_err(|_| clipboard_failure(Capability::Write))
+    }
     pub fn stop(&self) -> PlatformResult<()> {
         self.owner
             .lock()
@@ -267,7 +294,7 @@ mod tests {
         assert!(NativeSourceResolver.resolve_source().is_err());
         let writer = EmbeddedClipboardWriter::default();
         writer
-            .write(ClipboardPayload::Text("synthetic owned text".into()))
+            .write_suppressing_recapture(ClipboardPayload::Text("synthetic owned text".into()))
             .unwrap();
         assert_eq!(
             NativeClipboard.read_representation("text/plain").unwrap(),
@@ -395,5 +422,121 @@ mod tests {
         );
         owner.stop().unwrap();
         assert!(owner.is_stopped());
+        let writer = EmbeddedClipboardWriter::default();
+        struct Events(Vec<CaptureEvent>);
+        impl EventSink for Events {
+            fn emit(&mut self, event: CaptureEvent) {
+                self.0.push(event);
+            }
+        }
+        for text in ["synthetic generated conversion", "synthetic generated OCR"] {
+            writer.write(ClipboardPayload::Text(text.into())).unwrap();
+            let mut reader = crate::capture::NativeCaptureReader::default();
+            let mut events = Events(Vec::new());
+            assert!(matches!(
+                CaptureEngine::capture(&context, &mut reader, &store, &mut events),
+                CaptureOutcome::Stored(_)
+            ));
+            assert_eq!(
+                events
+                    .0
+                    .iter()
+                    .filter(|event| matches!(event, CaptureEvent::Stored { .. }))
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(
+            history
+                .query(&HistoryQuery {
+                    limit: 10,
+                    ..Default::default()
+                })
+                .unwrap()
+                .len(),
+            3
+        );
+        writer
+            .write_suppressing_recapture(ClipboardPayload::Text("synthetic generated OCR".into()))
+            .unwrap();
+        assert!(matches!(
+            CaptureEngine::capture(
+                &context,
+                &mut crate::capture::NativeCaptureReader::default(),
+                &store,
+                &mut ()
+            ),
+            CaptureOutcome::Skipped(CaptureSkip::OwnClipboard)
+        ));
+        assert_eq!(
+            history
+                .query(&HistoryQuery {
+                    limit: 10,
+                    ..Default::default()
+                })
+                .unwrap()
+                .len(),
+            3
+        );
+        let now = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64
+        };
+        use dzc_core::api::PrivacySessionCommand;
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, now())
+            .unwrap();
+        writer
+            .write(ClipboardPayload::Text(
+                "synthetic private generation".into(),
+            ))
+            .unwrap();
+        let mut denied = TracedReader {
+            native: Default::default(),
+            body_reads: 0,
+        };
+        assert!(
+            matches!(CaptureEngine::capture(&context, &mut denied, &store, &mut ()), CaptureOutcome::Skipped(CaptureSkip::PrivacySession))
+        );
+        assert_eq!(denied.body_reads, 0);
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::Off, now())
+            .unwrap();
+        writer
+            .write(ClipboardPayload::Text("synthetic stale generation".into()))
+            .unwrap();
+        let frame = CaptureEngine::read_authorized(
+            &context,
+            &mut crate::capture::NativeCaptureReader::default(),
+            &store,
+            &mut (),
+        )
+        .unwrap();
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, now())
+            .unwrap();
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::Off, now())
+            .unwrap();
+        assert!(
+            matches!(CaptureEngine::capture_frame(&context, frame, &store, &mut ()), CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged))
+        );
+        assert_eq!(
+            history
+                .query(&HistoryQuery {
+                    limit: 10,
+                    ..Default::default()
+                })
+                .unwrap()
+                .len(),
+            3
+        );
+        writer.stop().unwrap();
     }
 }

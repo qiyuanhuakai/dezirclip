@@ -14,6 +14,12 @@ pub(crate) fn own_marker() -> &'static str {
 pub fn representations(
     payload: crate::native_clipboard::Payload,
 ) -> Result<Vec<MimeData>, WaylandError> {
+    representations_with_intent(payload, false)
+}
+pub fn representations_with_intent(
+    payload: crate::native_clipboard::Payload,
+    suppress_recapture: bool,
+) -> Result<Vec<MimeData>, WaylandError> {
     use crate::native_clipboard::Payload;
     let mut result = Vec::new();
     let text = |value: String, result: &mut Vec<MimeData>| {
@@ -70,10 +76,12 @@ pub fn representations(
             });
         }
     }
-    result.push(MimeData {
-        mime: own_marker().into(),
-        bytes: Arc::from([]),
-    });
+    if suppress_recapture {
+        result.push(MimeData {
+            mime: own_marker().into(),
+            bytes: Arc::from([]),
+        });
+    }
     super::validate_payloads(&result)?;
     Ok(result)
 }
@@ -93,6 +101,12 @@ mod tests {
             &*values.iter().find(|x| x.mime == "text/html").unwrap().bytes,
             b"<b>plain</b>"
         );
-        assert_eq!(values.last().unwrap().mime, own_marker());
+        assert!(values.iter().all(|value| value.mime != own_marker()));
+        let copied = representations_with_intent(
+            crate::native_clipboard::Payload::Text("existing history copy".into()),
+            true,
+        )
+        .unwrap();
+        assert_eq!(copied.last().unwrap().mime, own_marker());
     }
 }

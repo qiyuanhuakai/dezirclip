@@ -21,12 +21,21 @@ pub struct EmbeddedOwner {
 }
 impl EmbeddedOwner {
     pub fn write(&mut self, payload: Payload) -> Result<(), String> {
+        self.write_with_intent(payload, false)
+    }
+    pub fn write_with_intent(
+        &mut self,
+        payload: Payload,
+        suppress_recapture: bool,
+    ) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        let _ = suppress_recapture;
         if self.stopped {
             return Err("ClipboardOwnerStopped".into());
         }
         #[cfg(target_os = "linux")]
         if crate::wayland::requested() {
-            return crate::wayland::replace_owner(&mut self.wayland, payload)
+            return crate::wayland::replace_owner(&mut self.wayland, payload, suppress_recapture)
                 .map_err(|e| e.to_string());
         }
         if self.clipboard.is_none() {
@@ -263,6 +272,14 @@ pub fn write(payload: Payload) -> Result<(), String> {
 
 /// Long-lived hosts retain their selection owner in this process.
 pub fn write_embedded(payload: Payload) -> Result<(), String> {
+    write_embedded_with_intent(payload, false)
+}
+pub fn write_embedded_with_intent(
+    payload: Payload,
+    suppress_recapture: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let _ = suppress_recapture;
     #[cfg(target_os = "windows")]
     {
         write(payload)
@@ -270,7 +287,8 @@ pub fn write_embedded(payload: Payload) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if crate::wayland::requested() {
-            return crate::wayland::write_in_process(payload).map_err(|error| error.to_string());
+            return crate::wayland::write_in_process_with_intent(payload, suppress_recapture)
+                .map_err(|error| error.to_string());
         }
         use crate::capture::x11_clipboard as x11;
         match payload {

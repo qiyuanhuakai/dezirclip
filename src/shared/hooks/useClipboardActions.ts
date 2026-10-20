@@ -33,7 +33,8 @@ export const useClipboardActions = ({
       content: string,
       contentType: string,
       pasteWithFormat = false,
-      pasteImageAsBase64 = false
+      pasteImageAsBase64 = false,
+      expectedPrivacyEpoch?: number
     ) => {
       try {
         if (pending || failed) { pushToast(t("platform_capabilities_unavailable"), 3000); return; }
@@ -50,6 +51,7 @@ export const useClipboardActions = ({
           deleteAfterUse: !manualCopy && deleteAfterPaste,
           pasteWithFormat,
           pasteImageAsBase64,
+          expectedPrivacyEpoch,
           moveToTop: !manualCopy && moveToTopAfterPaste
         });
 
