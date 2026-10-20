@@ -4,6 +4,8 @@ mod listener;
 mod reader;
 #[cfg(target_os = "windows")]
 pub mod windows_clipboard;
+#[cfg(target_os = "windows")]
+pub mod windows_privacy;
 #[cfg(target_os = "linux")]
 pub mod x11_clipboard;
 #[cfg(target_os = "linux")]

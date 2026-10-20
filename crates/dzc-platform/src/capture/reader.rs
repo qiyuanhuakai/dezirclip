@@ -195,6 +195,7 @@ impl NativeCaptureReader {
             image: true,
             files: false,
             image_content_hash: None,
+            ..CaptureReadMetadata::default()
         };
         CaptureData::RgbaImage {
             width: image.width,
@@ -205,6 +206,12 @@ impl NativeCaptureReader {
 }
 
 impl CaptureReader for NativeCaptureReader {
+    #[cfg(target_os = "windows")]
+    fn preflight_privacy(&mut self) -> Result<dzc_core::capture::PrivacyPreflight, CaptureFailure> {
+        super::windows_privacy::preflight()
+    }
+    #[cfg(target_os = "windows")]
+    fn selection_id(&self) -> Option<u64> { super::windows_privacy::selection_id() }
     fn read(&mut self, request: CaptureReadRequest) -> Result<Option<CaptureData>, CaptureFailure> {
         self.metadata = CaptureReadMetadata::default();
         self.empty = None;
@@ -265,6 +272,7 @@ impl CaptureReader for NativeCaptureReader {
                 image: false,
                 files: true,
                 image_content_hash: None,
+                ..CaptureReadMetadata::default()
             };
             return Ok(Some(CaptureData::Files(files)));
         }
@@ -287,6 +295,7 @@ impl CaptureReader for NativeCaptureReader {
                         image: false,
                         files: false,
                         image_content_hash: None,
+                        ..CaptureReadMetadata::default()
                     };
                     return Ok(Some(CaptureData::RichText { text, html }));
                 }
@@ -301,6 +310,7 @@ impl CaptureReader for NativeCaptureReader {
                 image: true,
                 files: false,
                 image_content_hash: None,
+                ..CaptureReadMetadata::default()
             };
             return Ok(Some(CaptureData::EncodedImage {
                 bytes,
@@ -325,6 +335,7 @@ impl CaptureReader for NativeCaptureReader {
                 image: false,
                 files: false,
                 image_content_hash: None,
+                ..CaptureReadMetadata::default()
             };
             return Ok(Some(CaptureData::Text(text)));
         }

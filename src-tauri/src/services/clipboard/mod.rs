@@ -264,21 +264,17 @@ pub fn start_clipboard_monitor(app: AppHandle) {
         let context = context(&app, source.clone(), timestamp, &session);
         notifications.set_persistence_mode(context.settings.persistent);
         let mut events = DesktopEvents { app: &app };
+        let data = app.state::<AppDataDir>().0.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        let database = app.state::<DbState>();
+        let history = database.history_service();
+        let store = history.capture_store(&data);
         let Ok(frame) =
-            CaptureEngine::read(&context, &mut NativeCaptureReader::default(), &mut events)
+            CaptureEngine::read_authorized(&context, &mut NativeCaptureReader::default(), &store, &mut events)
         else {
             return;
         };
         let repeated_file_exists = if notifications.repeats_file(frame.metadata) {
-            let data = app
-                .state::<AppDataDir>()
-                .0
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-            let database = app.state::<DbState>();
-            let history = database.history_service();
-            let store = history.capture_store(&data);
             match CaptureEngine::file_history_exists(&context, &frame, &store) {
                 Ok(exists) => exists,
                 Err(error) => {
