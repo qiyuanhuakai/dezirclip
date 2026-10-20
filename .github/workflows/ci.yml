@@ -100,6 +100,9 @@ jobs:
       - name: Test standalone packaging
         run: python -m unittest discover -s scripts/tests -v
 
+      - name: Test performance build provenance
+        run: python -m unittest discover -s scripts/performance/tests -v
+
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |

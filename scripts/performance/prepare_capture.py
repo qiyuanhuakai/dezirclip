@@ -80,6 +80,60 @@ def external_packages(lock):
             for item in tomllib.loads(lock.read_text(encoding="utf-8"))["package"] if item.get("source")}
 
 
+def select_cargo_executable(messages, manifest, name, target, triple, profile):
+    """Bind the copied bytes to this build's one native binary artifact."""
+    expected = (target / triple / profile / (name + (".exe" if os.name == "nt" else ""))).resolve()
+    artifacts = []
+    finished = []
+    for line in messages.splitlines():
+        if not line.lstrip().startswith("{"):
+            continue
+        message = json.loads(line)
+        if not isinstance(message, dict):
+            raise ValueError("Invalid Cargo JSON message")
+        if message.get("reason") == "build-finished":
+            finished.append(message.get("success"))
+        if message.get("reason") != "compiler-artifact":
+            continue
+        emitted_target = message.get("target", {})
+        if emitted_target.get("name") != name or emitted_target.get("kind") != ["bin"]:
+            continue
+        emitted_manifest = message.get("manifest_path")
+        if not isinstance(emitted_manifest, str) or Path(emitted_manifest).resolve() != manifest.resolve():
+            raise ValueError("Cargo binary artifact belongs to another manifest")
+        executable = message.get("executable")
+        if not isinstance(executable, str) or not Path(executable).is_absolute():
+            raise ValueError("Cargo did not report an absolute executable path")
+        executable = Path(executable).resolve(strict=True)
+        if executable != expected or not executable.is_file():
+            raise ValueError("Cargo executable is outside the explicit native target/profile namespace")
+        if message.get("profile", {}).get("test") is not False:
+            raise ValueError("Cargo reported a test executable instead of the adapter binary")
+        if str(executable) not in [str(Path(path).resolve()) for path in message.get("filenames", [])]:
+            raise ValueError("Cargo executable is absent from its artifact files")
+        artifacts.append((executable, message))
+    if finished != [True] or len(artifacts) != 1:
+        raise ValueError("Expected one binary artifact and one successful Cargo build-finished message")
+    return artifacts[0]
+
+
+def build_cargo_executable(arguments, manifest, name, target, triple, profile, repository):
+    completed = subprocess.run(arguments, cwd=repository, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               text=True, encoding="utf-8", errors="replace")
+    messages = manifest.parent / "cargo-build.jsonl"
+    stderr = manifest.parent / "cargo-build.stderr.log"
+    messages.write_text(completed.stdout, encoding="utf-8")
+    stderr.write_text(completed.stderr, encoding="utf-8")
+    if completed.stderr:
+        sys.stderr.write(completed.stderr)
+    if completed.returncode:
+        raise subprocess.CalledProcessError(completed.returncode, arguments, completed.stdout, completed.stderr)
+    executable, artifact = select_cargo_executable(completed.stdout, manifest, name, target, triple, profile)
+    return executable, {"compiler_artifact": artifact,
+                        "build_messages": str(messages), "build_messages_sha256": sha256(messages),
+                        "build_stderr": str(stderr), "build_stderr_sha256": sha256(stderr)}
+
+
 def write_adapter(output, variant, package, source, native, lock):
     directory = output / "adapters" / variant
     directory.mkdir(parents=True)
@@ -160,6 +214,7 @@ def prepare(args):
              "eligible_for_timing": not candidate_state["dirty"] and not args.allow_dirty_candidate,
              "candidate": candidate_state, "baseline": baseline_proof, "profile": args.profile,
              "target": command(["rustc", "--print", "host-tuple"]), "rustc": command(["rustc", "-Vv"]),
+             "target_selection": "explicit native host target; Cargo artifact JSON is authoritative",
              "machine_id": hashlib.sha256(f"{platform.node()}|{platform.machine()}".encode()).hexdigest(),
              "tool_sha256": {path.name: sha256(path) for path in sorted(TOOL_ROOT.glob("*.py"))},
              "cargo": command(["cargo", "-Vv"]),
@@ -178,22 +233,30 @@ def prepare(args):
             features = [*features, "legacy-layout"]
         record = {"manifest": str(manifest), "manifest_sha256": sha256(manifest), "features": features}
         if args.mode != "prepare":
-            common = ["--offline", "--manifest-path", str(manifest), "--target-dir", str(target), "--jobs", str(args.jobs)]
+            name = f"capture-perf-{variant}"
+            common = ["--offline", "--manifest-path", str(manifest), "--bin", name,
+                      "--target", proof["target"], "--target-dir", str(target), "--jobs", str(args.jobs)]
             if features:
                 common += ["--features", ",".join(features)]
             if args.profile == "release":
                 common += ["--release"]
-            subprocess.run(["cargo", "check", *common], check=True)
+            subprocess.run(["cargo", "check", *common], cwd=repository, check=True)
             if not external_packages(manifest.parent / "Cargo.lock") <= external_packages(lock):
                 raise ValueError("Harness selected external package versions outside the source lock")
-            subprocess.run(["cargo", "build", "--locked", *common], check=True)
+            build_command = ["cargo", "build", "--locked", "--message-format=json", *common]
+            executable, artifact_proof = build_cargo_executable(build_command, manifest, name, target, proof["target"], args.profile, repository)
+            source_digest = sha256(executable)
             extension = ".exe" if os.name == "nt" else ""
             binary = output / "binaries" / variant / f"capture-perf-{variant}{extension}"
             binary.parent.mkdir(parents=True)
-            shutil.copyfile(target / args.profile / binary.name, binary)
+            shutil.copyfile(executable, binary)
+            if sha256(binary) != source_digest or sha256(executable) != source_digest:
+                raise ValueError("Cargo executable changed while freezing the adapter")
             binary.chmod(stat.S_IREAD)
-            record.update({"binary": str(binary), "binary_sha256": sha256(binary),
-                           "lock_sha256": sha256(manifest.parent / "Cargo.lock"), "command": ["cargo", "build", "--locked", *common]})
+            record.update({"binary": str(binary), "binary_sha256": source_digest,
+                           "cargo_executable": str(executable), "cargo_executable_sha256": source_digest,
+                           "lock_sha256": sha256(manifest.parent / "Cargo.lock"), "command": build_command,
+                           **artifact_proof})
             if args.mode == "verify":
                 checked = output / f"functional-{variant}.json"
                 subprocess.run([str(binary), str(output / "cases" / variant), "1000", "1", str(checked), "--verify-only"], check=True)
