@@ -122,24 +122,9 @@ impl SqliteClipboardRepository {
             };
             let raw: String = ctx.get(0)?;
             let content = crate::infrastructure::encryption::decrypt_value(&raw).unwrap_or(raw);
-            if let Some(re) = &regex {
-                return Ok(re.is_match(&content));
-            }
-            if mode == "fuzzy" {
-                return Ok(fuzzy_match(needle, &content));
-            }
-            let needle = needle.to_lowercase();
-            for value in [
-                content,
-                ctx.get::<String>(1)?,
-                ctx.get::<String>(2)?,
-                { let raw = ctx.get::<String>(3)?; crate::infrastructure::encryption::decrypt_value(&raw).unwrap_or(raw) },
-            ] {
-                if value.to_lowercase().contains(&needle) {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
+            let ocr_raw: String = ctx.get(3)?;
+            let ocr = crate::infrastructure::encryption::decrypt_value(&ocr_raw).unwrap_or(ocr_raw);
+            Ok(matches_fields(needle, mode, regex.as_ref(), &content, &ctx.get::<String>(1)?, &ctx.get::<String>(2)?, &ocr))
         })
         .map_err(|e| e.to_string())?;
         let fields = if query.metadata {
@@ -239,6 +224,13 @@ impl SqliteClipboardRepository {
         }
         Ok(result)
     }
+}
+
+pub(crate) fn matches_fields(needle: &str, mode: &str, regex: Option<&regex::Regex>, content: &str, source: &str, tags: &str, ocr: &str) -> bool {
+    if let Some(regex) = regex { return regex.is_match(content); }
+    if mode == "fuzzy" { return fuzzy_match(needle, content); }
+    let needle = needle.to_lowercase();
+    [content, source, tags, ocr].iter().any(|value| value.to_lowercase().contains(&needle))
 }
 
 fn fuzzy_match(pattern: &str, content: &str) -> bool {

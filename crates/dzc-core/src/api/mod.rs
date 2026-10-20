@@ -1,6 +1,7 @@
 //! Business entry points shared by desktop, terminal and automation clients.
 mod backup;
 mod clipboard;
+mod clipboard_payload;
 mod error;
 mod history;
 mod summary;

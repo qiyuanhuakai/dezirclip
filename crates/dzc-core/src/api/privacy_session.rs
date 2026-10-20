@@ -104,6 +104,12 @@ impl PrivacyReadPermit {
     pub fn includes_sensitive(&self) -> bool {
         self.sensitive
     }
+    pub(super) fn require_copy(&self) -> PrivacyResult<()> {
+        if self.intent != PrivacyAccessIntent::SelectedCopy {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
+        Ok(())
+    }
     fn allows_body(&self) -> bool {
         self.intent != PrivacyAccessIntent::RestrictedSummary
     }
@@ -485,6 +491,72 @@ impl HistoryService {
         };
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
+    }
+
+    /// Uses the same matcher and SQLite trigram tokenizer as persistent history, only in RAM.
+    pub fn search_summaries_for_session_authorized(
+        &self,
+        entries: &[ClipboardEntry],
+        request: &SearchRequest,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<SearchResult> {
+        request.validate().map_err(unavailable)?;
+        self.privacy().check_read(permit, now_ms)?;
+        let eligible: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.id < 0 && session_entry_visible(entry))
+            .collect();
+        let mut matches = std::collections::HashSet::new();
+        if request.mode == super::SummarySearchMode::Fts5 {
+            let conn = rusqlite::Connection::open_in_memory().map_err(unavailable)?;
+            conn.execute_batch("CREATE VIRTUAL TABLE session_fts USING fts5(content,preview,source_app,content_kinds,ocr_text,tokenize='trigram')").map_err(unavailable)?;
+            for entry in &eligible {
+                conn.execute("INSERT INTO session_fts(rowid,content,preview,source_app,content_kinds,ocr_text) VALUES(?1,?2,?3,?4,?5,?6)", rusqlite::params![entry.id,entry.content,entry.preview,entry.source_app,serde_json::to_string(&entry.content_kinds).map_err(unavailable)?,entry.ocr_text]).map_err(unavailable)?;
+            }
+            let mut statement = conn
+                .prepare("SELECT rowid FROM session_fts WHERE session_fts MATCH ?1")
+                .map_err(unavailable)?;
+            let rows = statement
+                .query_map(
+                    [crate::services::search::escape_fts5_term(&request.query)],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(unavailable)?;
+            for id in rows {
+                matches.insert(id.map_err(unavailable)?);
+            }
+        } else {
+            let regex = if request.mode == super::SummarySearchMode::Regex {
+                Some(regex::Regex::new(&request.query).map_err(unavailable)?)
+            } else {
+                None
+            };
+            let mode = if request.mode == super::SummarySearchMode::Fuzzy {
+                "fuzzy"
+            } else {
+                "contains"
+            };
+            for entry in &eligible {
+                if crate::infrastructure::repository::cli_query::matches_fields(
+                    &request.query,
+                    mode,
+                    regex.as_ref(),
+                    &entry.content,
+                    &entry.source_app,
+                    &serde_json::to_string(&entry.tags).map_err(unavailable)?,
+                    entry.ocr_text.as_deref().unwrap_or(""),
+                ) {
+                    matches.insert(entry.id);
+                }
+            }
+        }
+        let selected: Vec<_> = eligible
+            .into_iter()
+            .filter(|entry| matches.contains(&entry.id))
+            .cloned()
+            .collect();
+        self.summaries_for_session_authorized(&selected, &request.page, permit, now_ms)
     }
 
     /// Host callers obtain a fresh permission for each request, never from a client role string.

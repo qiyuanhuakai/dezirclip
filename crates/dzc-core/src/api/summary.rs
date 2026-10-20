@@ -76,7 +76,7 @@ pub struct SearchRequest {
 }
 
 impl SearchRequest {
-    fn validate(&self) -> CoreResult<()> {
+    pub(super) fn validate(&self) -> CoreResult<()> {
         self.page.validate()?;
         if self.query.len() > MAX_QUERY_BYTES {
             return Err(CoreError::validation("summary search query exceeds its byte budget"));
