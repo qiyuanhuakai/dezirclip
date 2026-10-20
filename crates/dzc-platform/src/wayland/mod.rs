@@ -1,5 +1,10 @@
 //! Native CLIPBOARD data-control. No surfaces, XWayland fallback or external tools.
 pub(crate) mod io;
+mod owner;
+mod payload;
+pub(crate) use owner::replace_owner;
+pub use owner::{write_in_process, WaylandOwner};
+pub use payload::representations;
 
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
@@ -32,6 +37,7 @@ pub const PASSWORD_HINT_MIME: &str = "x-kde-passwordManagerHint";
 #[serde(rename_all = "snake_case")]
 pub enum WaylandError {
     ConnectionUnavailable,
+    InheritedSocketUnavailable,
     DataControlUnavailable,
     SeatUnavailable,
     SeatNotFound,
@@ -100,6 +106,37 @@ fn transfer_deadline() -> Instant {
     Instant::now() + TRANSFER_TIMEOUT
 }
 
+fn connect() -> Result<Connection, WaylandError> {
+    if std::env::var_os("WAYLAND_SOCKET").is_some() && std::env::var_os("WAYLAND_DISPLAY").is_none()
+    {
+        // Do not consume a one-shot descriptor during a capability probe and
+        // then falsely promise that independent later adapters can reconnect.
+        return Err(WaylandError::InheritedSocketUnavailable);
+    }
+    let display = std::env::var_os("WAYLAND_DISPLAY").unwrap_or_else(|| "wayland-0".into());
+    let display = std::path::PathBuf::from(display);
+    let path = if display.is_absolute() {
+        display
+    } else {
+        let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .ok_or(WaylandError::ConnectionUnavailable)?;
+        runtime.join(display)
+    };
+    let socket = socket2::Socket::new(socket2::Domain::UNIX, socket2::Type::STREAM, None)
+        .map_err(|_| WaylandError::ConnectionUnavailable)?;
+    let address = socket2::SockAddr::unix(path).map_err(|_| WaylandError::ConnectionUnavailable)?;
+    socket
+        .connect_timeout(&address, SETUP_TIMEOUT)
+        .map_err(|_| WaylandError::ConnectionUnavailable)?;
+    socket
+        .set_nonblocking(false)
+        .map_err(|_| WaylandError::ConnectionUnavailable)?;
+    let fd: std::os::fd::OwnedFd = socket.into();
+    Connection::from_socket(UnixStream::from(fd)).map_err(|_| WaylandError::ConnectionUnavailable)
+}
+
 enum RawOffer {
     Ext(ext_offer::ExtDataControlOfferV1),
     Wlr(wlr_offer::ZwlrDataControlOfferV1),
@@ -134,6 +171,11 @@ impl SelectionSnapshot {
     }
     pub fn mime_types(&self) -> &[String] {
         &self.mime_types
+    }
+    pub fn is_owned_copy(&self) -> bool {
+        self.mime_types
+            .iter()
+            .any(|mime| mime == payload::own_marker())
     }
     /// Capture callers reject a frame if the monitored selection changed after
     /// preflight. Each snapshot always reads its original offer, never a new one.
@@ -256,6 +298,9 @@ impl State {
         self.changed = true;
     }
     fn send(&mut self, mime: String, fd: std::os::fd::OwnedFd) {
+        if self.owner_cancelled {
+            return;
+        }
         if let Some(data) = self.payloads.iter().find(|data| data.mime == mime) {
             // A cancelled receiver may close its pipe. It does not revoke other offered formats.
             if io::send(fd, &data.bytes, Some(&self.cancel), transfer_deadline())
@@ -270,6 +315,7 @@ static NEXT_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 static CURRENT: OnceLock<Mutex<Option<SelectionSnapshot>>> = OnceLock::new();
 static CURRENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MONITOR_ACTIVE: AtomicBool = AtomicBool::new(false);
+static MONITOR_READY: AtomicBool = AtomicBool::new(false);
 
 impl Dispatch<wl_registry::WlRegistry, ()> for State {
     fn event(
@@ -429,8 +475,10 @@ struct Client {
 }
 impl Client {
     fn new(cancel: Arc<UnixStream>) -> Result<Self, WaylandError> {
-        let connection =
-            Connection::connect_to_env().map_err(|_| WaylandError::ConnectionUnavailable)?;
+        if service_disabled("wayland_clipboard") {
+            return Err(WaylandError::DisabledByConfiguration);
+        }
+        let connection = connect()?;
         let queue = connection.new_event_queue();
         let mut client = Self {
             connection,
@@ -515,6 +563,7 @@ impl Client {
         done: impl Fn(&State) -> bool,
     ) -> Result<(), WaylandError> {
         loop {
+            io::check_cancel(Some(&self.state.cancel))?;
             self.queue
                 .dispatch_pending(&mut self.state)
                 .map_err(|_| WaylandError::Disconnected)?;
@@ -543,6 +592,7 @@ impl Client {
     }
     fn publish(&mut self, payloads: Vec<MimeData>) -> Result<Source, WaylandError> {
         validate_payloads(&payloads)?;
+        io::check_cancel(Some(&self.state.cancel))?;
         self.state.payloads = payloads;
         let qh = self.queue.handle();
         let source = match self.manager.as_ref().expect("manager was bound") {
@@ -590,6 +640,7 @@ fn validate_payloads(payloads: &[MimeData]) -> Result<(), WaylandError> {
     }
     let mut total = 0usize;
     let mut unique = std::collections::HashSet::new();
+    let mut buffers = std::collections::HashSet::new();
     for data in payloads {
         if data.mime.is_empty()
             || data.mime.len() > 256
@@ -598,9 +649,11 @@ fn validate_payloads(payloads: &[MimeData]) -> Result<(), WaylandError> {
         {
             return Err(WaylandError::UnsupportedMime);
         }
-        total = total
-            .checked_add(data.bytes.len())
-            .ok_or(WaylandError::TransferBudgetExceeded)?;
+        if buffers.insert((data.bytes.as_ptr() as usize, data.bytes.len())) {
+            total = total
+                .checked_add(data.bytes.len())
+                .ok_or(WaylandError::TransferBudgetExceeded)?;
+        }
         if total > MAX_TRANSFER_BYTES {
             return Err(WaylandError::TransferBudgetExceeded);
         }
@@ -618,6 +671,9 @@ fn cancel_pair() -> Result<(Arc<UnixStream>, UnixStream), WaylandError> {
 
 pub struct WaylandClipboardBackend;
 impl WaylandClipboardBackend {
+    pub fn monitor_active() -> bool {
+        MONITOR_READY.load(Ordering::Acquire)
+    }
     pub fn probe() -> Result<WaylandStatus, WaylandError> {
         let (cancel, _trigger) = cancel_pair()?;
         Client::new(cancel)?
@@ -691,11 +747,13 @@ impl WaylandClipboardBackend {
                     *value = None;
                 }
                 CURRENT_SEQUENCE.store(0, Ordering::Release);
+                MONITOR_READY.store(false, Ordering::Release);
                 MONITOR_ACTIVE.store(false, Ordering::Release);
             }
         }
         let _clear = Clear;
         let mut client = Client::new(cancel)?;
+        MONITOR_READY.store(true, Ordering::Release);
         ready();
         loop {
             if client.state.changed {
@@ -764,29 +822,59 @@ mod tests {
     }
     #[test]
     fn isolated_uri_offer_falls_back_to_text_unless_local_files_exist() {
-        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") { return; }
+        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {
+            return;
+        }
         let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
-        assert!(runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file());
+        assert!(
+            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
+        );
         assert!(std::env::var_os("DISPLAY").is_none());
         use dzc_core::capture::{CaptureData, CaptureReadRequest, CaptureReader, CaptureSkip};
         use std::io::Write;
-        for uri in ["https://example.invalid/synthetic\r\n", "file:///tmp/synthetic-file.txt\r\n"] {
+        for uri in [
+            "https://example.invalid/synthetic\r\n",
+            "file:///tmp/synthetic-file.txt\r\n",
+        ] {
             for files in [true, false] {
                 let (cancel, mut trigger) = cancel_pair().unwrap();
                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                 let payloads = vec![
-                    MimeData { mime: "text/uri-list".into(), bytes: Arc::from(uri.as_bytes()) },
-                    MimeData { mime: "text/plain".into(), bytes: Arc::from(&b"synthetic URI fallback"[..]) },
+                    MimeData {
+                        mime: "text/uri-list".into(),
+                        bytes: Arc::from(uri.as_bytes()),
+                    },
+                    MimeData {
+                        mime: "text/plain".into(),
+                        bytes: Arc::from(&b"synthetic URI fallback"[..]),
+                    },
                 ];
-                let worker = std::thread::spawn(move || WaylandClipboardBackend::serve(payloads, || { tx.send(()).unwrap(); }, cancel));
+                let worker = std::thread::spawn(move || {
+                    WaylandClipboardBackend::serve(
+                        payloads,
+                        || {
+                            tx.send(()).unwrap();
+                        },
+                        cancel,
+                    )
+                });
                 rx.recv_timeout(Duration::from_secs(5)).unwrap();
                 let mut reader = crate::capture::NativeCaptureReader::default();
-                let data = reader.read(CaptureReadRequest { files, rich_text: true }).unwrap();
+                let data = reader
+                    .read(CaptureReadRequest {
+                        files,
+                        rich_text: true,
+                    })
+                    .unwrap();
                 if uri.starts_with("https:") {
-                    assert!(matches!(data, Some(CaptureData::Text(value)) if value == "synthetic URI fallback"));
+                    assert!(
+                        matches!(data, Some(CaptureData::Text(value)) if value == "synthetic URI fallback")
+                    );
                     assert!(!reader.metadata().files);
                 } else if files {
-                    assert!(matches!(data, Some(CaptureData::Files(paths)) if paths == vec!["/tmp/synthetic-file.txt"]));
+                    assert!(
+                        matches!(data, Some(CaptureData::Files(paths)) if paths == vec!["/tmp/synthetic-file.txt"])
+                    );
                     assert!(reader.metadata().files);
                 } else {
                     assert!(data.is_none());

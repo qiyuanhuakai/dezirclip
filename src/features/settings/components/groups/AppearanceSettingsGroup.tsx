@@ -1,3 +1,4 @@
+import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import type { ComponentType, ReactNode, CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, message } from "@tauri-apps/plugin-dialog";
@@ -406,6 +407,7 @@ const AppearanceSettingsGroup = ({
                             )}
                         </div>
 
+                        <NativeFeatureBoundary t={t}>
                         <div className="setting-item column">
                             <div className="item-label-group" style={{ marginBottom: '4px', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <span className="item-label">{t('surface_opacity') || '界面底板透明度'}</span>
@@ -425,6 +427,7 @@ const AppearanceSettingsGroup = ({
                             />
 
                         </div>
+                        </NativeFeatureBoundary>
                     </>
                 )}
             </div>

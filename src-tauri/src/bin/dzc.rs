@@ -598,13 +598,16 @@ fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
 }
 
 fn run_capabilities(json: bool) -> Result<(), String> {
-    let report=dzc_platform::runtime::standalone_capabilities();
+    let report=dzc_platform::runtime::session_capabilities();
     if json { println!("{}",serde_json::to_string_pretty(&report).map_err(|error|error.to_string())?); }
     else {
+        let wayland = report.native_wayland;
+        let report = report.platform;
         println!("Core {} · protocol {}.{} · {}",report.core_version,report.protocol.major,report.protocol.minor,report.scope);
         for (name,state) in [("read",report.read),("write",report.write),("monitor",report.monitor),("auto_paste",report.auto_paste),("global_shortcut",report.global_shortcut),("resolve_source",report.resolve_source),("read_privacy_hints",report.read_privacy_hints)] {
             println!("{name}: {:?} (backend={}, probe={}, active={})",state.availability,state.backend,state.probe,state.active);
         }
+        if wayland { println!("Wayland Clipboard Experimental; native shortcuts/paste/window interaction are unavailable without attached authorized adapters. Use --json for actual protocol, seat and portal probes."); }
     }
     Ok(())
 }

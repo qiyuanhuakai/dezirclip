@@ -136,9 +136,13 @@ pub async fn copy_to_clipboard(
     move_to_top: Option<bool>,
     paste_image_as_base64: Option<bool>,
 ) -> AppResult<()> {
+    if paste && dzc_platform::runtime::is_native_wayland() {
+        return Err(AppError::Validation("wayland_interaction_unavailable".into()));
+    }
     let generated_ticket = if paste_image_as_base64.unwrap_or(false) {
         crate::services::clipboard::generated_capture_ticket(&app_handle)?
     } else { None };
+
     println!(
         "[DEBUG] copy_to_clipboard called: id={}, paste={}, content_type={}, content_len={}",
         id,
@@ -427,10 +431,7 @@ fn copy_file_like_content(
         return copy_inline_image_content(content, current_time);
     }
 
-    let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
-    clipboard
-        .set_text(content.to_string())
-        .map_err(AppError::from)?;
+    copy_text_with_retry(content)?;
     Ok((content_hash.max(1), 0))
 }
 
@@ -496,6 +497,14 @@ fn copy_rich_text_content(
         let (content_hash, _) = calculate_content_hash(content);
         return Ok((content_hash.max(1), 0));
     };
+
+    #[cfg(target_os = "linux")]
+    if dzc_platform::runtime::is_native_wayland() && paste_with_format {
+        let (html, _) = split_rich_html_and_image_fallback(html);
+        crate::infrastructure::linux_api::clipboard::set_clipboard_text_and_html(content.to_string(), Some(html))?;
+        let (content_hash, _) = calculate_content_hash(content);
+        return Ok((content_hash.max(1), 0));
+    }
 
     if !paste_with_format {
         copy_text_with_retry(content)?;

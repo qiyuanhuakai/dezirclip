@@ -30,6 +30,8 @@ x11-clipboard.workspace = true
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+socket2 = "0.6"
+dbus = "0.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true
