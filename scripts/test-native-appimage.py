@@ -44,6 +44,37 @@ def configure_headless_fixture(database):
             'scope': 'Existing user settings selected only in a synthetic headless Xvfb profile; product defaults are unchanged.'}
 
 
+def verify_build_set(cli_info, desktop_info, expected_revision):
+    version = '0.2.0-alpha.1'
+    linked = [{'component': name, 'version': version}
+              for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]
+    for role, info in [('cli', cli_info), ('desktop', desktop_info)]:
+        require(isinstance(info, dict), 'Component build metadata must be an object.')
+        require(info.get('component') == role and info.get('component_version') == version,
+                'Component role or version differs from the candidate package.')
+        revision = info.get('source_revision')
+        require(isinstance(revision, str) and re.fullmatch('[0-9a-f]{40}', revision)
+                and info.get('build_id') == version + '@' + revision,
+                'Component build identity is missing or inconsistent.')
+        require(info.get('source_state') == 'verified_checkout',
+                'Native package acceptance requires a verified, clean source checkout.')
+        require(not expected_revision or revision == expected_revision.lower(),
+                'Component source differs from the frozen acceptance revision.')
+        require(type(info.get('metadata_version')) is int and info['metadata_version'] == 1
+                and type(info.get('database_schema_version')) is int and info['database_schema_version'] == 19,
+                'Component metadata or database schema version differs.')
+        protocol = info.get('protocol_version')
+        require(isinstance(protocol, dict) and protocol == {'major': 1, 'minor': 0}
+                and all(type(protocol.get(key)) is int for key in ('major', 'minor')),
+                'Component protocol version differs.')
+        require(info.get('target') == 'x86_64-unknown-linux-gnu' and info.get('linked_components') == linked,
+                'Component target or linked version set differs.')
+    require(cli_info['build_id'] == desktop_info['build_id'],
+            'Actual GUI and bundled CLI belong to different build sets.')
+    return {'build_id': cli_info['build_id'], 'source_revision': cli_info['source_revision'],
+            'components': ['desktop', 'cli'], 'verified': True}
+
+
 def digest(path):
     result = hashlib.sha256()
     with path.open('rb') as source:
@@ -116,6 +147,7 @@ def sandbox(command, readonly=False, readonly_image=False):
         '--ro-bind' if readonly else '--bind', str(SCENARIO), str(SCENARIO),
         '--setenv', 'HOME', '/home/fixture', '--setenv', 'XDG_CONFIG_HOME', str(SCENARIO / 'profile/config'),
         '--setenv', 'DEZIRCLIP_ACCEPTANCE_INSIDE', '1', '--setenv', 'DEZIRCLIP_ACCEPTANCE_ROOT', str(ROOT),
+        '--setenv', 'DEZIRCLIP_ACCEPTANCE_SOURCE_REVISION', options.source_revision or '',
         '--setenv', 'DEZIRCLIP_ACCEPTANCE_HOST_NAMESPACES', json.dumps(HOST_NAMESPACES),
         '--setenv', 'XDG_DATA_HOME', str(SCENARIO / 'profile/data'), '--setenv', 'XDG_CACHE_HOME', '/home/fixture/.cache',
         '--setenv', 'XDG_RUNTIME_DIR', '/run/fixture', '--setenv', 'PATH', '/usr/bin:/bin:/fixture-bin',
@@ -168,6 +200,8 @@ def inside(mode):
     history = subprocess.check_output([cli, 'search', 'nativeappimagefixturemarker', '--metadata', '--json'], text=True)
     require('nativeappimagefixturemarker' in history, 'Candidate CLI did not preserve synthetic old history.')
     (SCENARIO / 'new-history.json').write_text(history)
+    cli_info = json.loads(subprocess.check_output([cli, 'build-info', '--json'], text=True))
+    (SCENARIO / (mode + '-cli-build-info.json')).write_text(json.dumps(cli_info, indent=2))
     with closing(sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH'])) as connection:
         settings = dict(connection.execute('SELECT key,value FROM settings WHERE key IN (?,?)',
                                           ('app.silent_start', 'app.disable_webview_gpu')))
@@ -213,6 +247,11 @@ def inside(mode):
                 except (OSError, RuntimeError) as error:
                     (SCENARIO / (mode + '-screenshot-error.txt')).write_text(str(error))
             require(ready, 'Actual AppImage WebView did not become visible and ready.')
+            desktop_info = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("get_build_info").then(done).catch(e=>done({error:String(e)}));', 'args': []})
+            (SCENARIO / (mode + '-desktop-build-info.json')).write_text(json.dumps(desktop_info, indent=2))
+            build_set = verify_build_set(cli_info, desktop_info,
+                                         os.environ.get('DEZIRCLIP_ACCEPTANCE_SOURCE_REVISION', ''))
+            (SCENARIO / (mode + '-build-set.json')).write_text(json.dumps(build_set, indent=2))
             support = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1]; window.__TAURI_INTERNALS__.invoke("get_update_support").then(done).catch(e=>done({error:String(e)}));', 'args': []})
             expected = 'app_image_read_only' if mode == 'new-read-only' else 'app_image'
             require(support['installation'] == expected and support['canInstall'] is (mode != 'new-read-only'),
@@ -228,7 +267,7 @@ def inside(mode):
             screenshot = request(port, route + '/screenshot')
             (SCENARIO / (mode + '-appimage.png')).write_bytes(base64.b64decode(screenshot))
             require(rendered, 'Actual WebView did not render the preserved synthetic entry.')
-            print(json.dumps({'new_version': version.strip(), 'history_preserved': True, 'gui_history_preserved': True, 'history_rendered': rendered, 'actual_webview_ready': True, 'support': support}))
+            print(json.dumps({'new_version': version.strip(), 'build_set': build_set, 'history_preserved': True, 'gui_history_preserved': True, 'history_rendered': rendered, 'actual_webview_ready': True, 'support': support}))
         finally:
             if route is not None:
                 try:

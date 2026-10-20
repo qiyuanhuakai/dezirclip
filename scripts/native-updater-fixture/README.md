@@ -34,6 +34,8 @@ python3 scripts/test-native-appimage.py \
 
 `old` 写入历史后，仅在合成 profile 显式设置 `app.silent_start=false` 和 `app.disable_webview_gpu=true`，让实际 release GUI 在无 GPU 的 Xvfb 中可见。记录设置的旧值与新值，升级后的两个 GUI 场景必须保留这些值；产品默认值和真实用户配置均不改变。这项验收覆盖现有无 GPU 模式，不代表硬件加速路径已在真实桌面验证。
 
+升级后的两个 GUI 场景另通过包内实际 `dzc build-info --json` 和 WebView 的 `get_build_info` 核对同一构建集：版本、规范 build_id、已确认的干净源码、目标、协议、schema 与三个链接组件必须一致；传入 `--source-revision` 时同时绑定冻结提交。完整两端元数据保留为 JSON。来源未知、修改中、版本集或字段矛盾都拒绝验收；这些静态构建信息不代替后续 IPC 身份认证。
+
 WebView 另行保留实际 URL、DOM、页面与原生窗口可见性、Tauri bridge 和布局状态。就绪失败时尝试截图并记录截图错误，原始失败不会被重标为通过。
 
 每个场景都有独立的 user、PID、network、IPC、UTS namespace；user/PID/network 标识还会与宿主核对。bubblewrap 清空继承的环境，使用私有 HOME、XDG profile、Xvfb 和 D-Bus，不挂载真实 HOME 或宿主桌面 socket。只有合成 scenario 可写；helper、driver、脚本和系统运行库只读挂载。只读场景进一步收紧 scenario 或 AppImage 的挂载权限。helper 拒绝非临时 fixture、错误 marker、符号链接文件和缺少隔离凭据的调用。

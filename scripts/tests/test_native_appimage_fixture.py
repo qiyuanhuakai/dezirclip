@@ -1,19 +1,20 @@
 import ast
 from contextlib import closing
 from pathlib import Path
+import re
 import sqlite3
 import tempfile
 import unittest
 
 
-def load_fixture_function():
+def load_fixture_function(name='configure_headless_fixture'):
     source = Path(__file__).resolve().parents[1] / 'test-native-appimage.py'
     tree = ast.parse(source.read_text(encoding='utf-8'))
-    function = next(node for node in tree.body
-                    if isinstance(node, ast.FunctionDef) and node.name == 'configure_headless_fixture')
-    namespace = {'sqlite3': sqlite3, 'closing': closing}
-    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), 'exec'), namespace)
-    return namespace['configure_headless_fixture']
+    functions = [node for node in tree.body
+                 if isinstance(node, ast.FunctionDef) and node.name in (name, 'require')]
+    namespace = {'sqlite3': sqlite3, 'closing': closing, 're': re}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
+    return namespace[name]
 
 
 class HeadlessFixtureTests(unittest.TestCase):
@@ -57,6 +58,50 @@ class HeadlessFixtureTests(unittest.TestCase):
         with closing(sqlite3.connect(self.database)) as connection:
             self.assertEqual(dict(connection.execute('SELECT key,value FROM settings')),
                              {'app.silent_start': 'true', 'app.disable_webview_gpu': 'false'})
+
+
+class BuildSetTests(unittest.TestCase):
+    def setUp(self):
+        self.verify = load_fixture_function('verify_build_set')
+        self.revision = 'a' * 40
+
+    def component(self, role):
+        version = '0.2.0-alpha.1'
+        return {'component': role, 'component_version': version,
+                'source_revision': self.revision, 'build_id': version + '@' + self.revision,
+                'source_state': 'verified_checkout', 'metadata_version': 1,
+                'database_schema_version': 19, 'protocol_version': {'major': 1, 'minor': 0},
+                'target': 'x86_64-unknown-linux-gnu',
+                'linked_components': [{'component': name, 'version': version}
+                                      for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]}
+
+    def test_actual_components_must_match_the_frozen_version_set(self):
+        result = self.verify(self.component('cli'), self.component('desktop'), self.revision)
+        self.assertTrue(result['verified'])
+        self.assertEqual(result['source_revision'], self.revision)
+        with self.assertRaisesRegex(RuntimeError, 'frozen'):
+            self.verify(self.component('cli'), self.component('desktop'), 'b' * 40)
+
+    def test_unknown_inconsistent_or_different_component_metadata_is_rejected(self):
+        changes = [('component', 'surface'), ('component_version', '0.2.0-alpha.0'),
+                   ('build_id', None), ('build_id', 'unrelated-build'),
+                   ('source_state', 'modified_checkout'), ('source_state', 'unknown'),
+                   ('metadata_version', True), ('metadata_version', 2),
+                   ('database_schema_version', 20), ('protocol_version', {'major': True, 'minor': 0}),
+                   ('protocol_version', {'major': 1, 'minor': 1}),
+                   ('target', 'aarch64-unknown-linux-gnu'), ('linked_components', [])]
+        for role in ('cli', 'desktop'):
+            for field, value in changes:
+                with self.subTest(role=role, field=field, value=value):
+                    cli, desktop = self.component('cli'), self.component('desktop')
+                    (cli if role == 'cli' else desktop)[field] = value
+                    with self.assertRaises(RuntimeError):
+                        self.verify(cli, desktop, self.revision)
+        cli, desktop = self.component('cli'), self.component('desktop')
+        desktop['source_revision'] = 'b' * 40
+        desktop['build_id'] = desktop['component_version'] + '@' + desktop['source_revision']
+        with self.assertRaisesRegex(RuntimeError, 'different build sets'):
+            self.verify(cli, desktop, '')
 
 
 if __name__ == '__main__':

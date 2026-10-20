@@ -213,6 +213,7 @@ jobs:
         run: |
           ./scripts/tests/native-packaging-proof.ps1
           ./scripts/tests/native-process-identity.ps1
+          ./scripts/tests/native-build-info.ps1
 
       - name: Install Rust stable
         if: matrix.scenario != 'LegacyUninstall'
