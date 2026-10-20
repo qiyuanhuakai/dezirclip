@@ -214,6 +214,10 @@ pub struct SqliteClipboardRepository {
 }
 
 impl SqliteClipboardRepository {
+    pub(crate) fn privacy_service(&self) -> crate::api::PrivacySessionService {
+        crate::api::PrivacySessionService::new(self.conn.clone())
+    }
+
     pub(crate) fn capture_store<'a>(&'a self,directory:&'a std::path::Path)->impl crate::capture::CaptureStore+'a {
         crate::services::capture::sqlite_capture_store(self,self.conn.clone(),directory)
     }
@@ -2415,6 +2419,7 @@ mod tests {
         // Roll the whole tail back rather than naming the versions that existed
         // when this test was written: the migration gate is `MAX(version)`, so
         // a leftover later marker would skip the block this test re-runs.
+        super::super::migrations::remove_runtime_state_fixture(&conn);
         conn.execute("DELETE FROM schema_migrations WHERE version >= 13", [])
             .expect("version reset failed");
         conn.execute(

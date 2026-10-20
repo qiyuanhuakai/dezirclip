@@ -4,7 +4,20 @@ use rusqlite::{params, Connection, Result};
 /// The value `PRAGMA auto_vacuum` reports for the mode `init_db` asks for.
 const AUTO_VACUUM_FULL: i32 = 1;
 
-pub const SUPPORTED_SCHEMA_VERSION: i32 = 21;
+pub const SUPPORTED_SCHEMA_VERSION: i32 = 22;
+
+#[cfg(test)]
+pub(crate) fn remove_runtime_state_fixture(conn: &Connection) {
+    for table in ["clipboard_history", "entry_tags", "saved_tags"] {
+        for operation in ["INSERT", "UPDATE", "DELETE"] {
+            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS revision_{table}_{operation};")).unwrap();
+        }
+    }
+    for operation in ["INSERT", "UPDATE", "DELETE"] {
+        conn.execute_batch(&format!("DROP TRIGGER IF EXISTS privacy_settings_{operation};")).unwrap();
+    }
+    conn.execute_batch("DROP TABLE privacy_runtime_state;").unwrap();
+}
 
 /// Initialize an additional write connection to an already migrated history.
 /// Read-only readers may register only the pure visibility function instead.
@@ -101,6 +114,7 @@ mod schema_compatibility_tests {
     fn legacy_tombstone() -> Connection {
         let mut connection = Connection::open_in_memory().unwrap();
         run_migrations(&mut connection).unwrap();
+        remove_runtime_state_fixture(&connection);
         connection.execute_batch("DELETE FROM schema_migrations WHERE version>=20;
             INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0);
             INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text)
@@ -320,6 +334,7 @@ mod merge_scheduling_tests {
     fn historical(version: i32) -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
         run_migrations(&mut conn).unwrap();
+        remove_runtime_state_fixture(&conn);
         conn.execute("DELETE FROM schema_migrations WHERE version>?1", [version]).unwrap();
         conn.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('automerge',4)", []).unwrap();
         if version < 20 {
@@ -386,7 +401,7 @@ mod merge_scheduling_tests {
         for version in 18..=20 {
             let mut conn = historical(version);
             run_migrations(&mut conn).unwrap();
-            assert_eq!(conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), 21);
+            assert_eq!(conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), SUPPORTED_SCHEMA_VERSION);
             assert_eq!(option(&conn, "automerge", 4), 8);
             assert_eq!(option(&conn, "secure-delete", 0), 1);
             assert_eq!(option(&conn, "crisismerge", 16), 16);
@@ -467,9 +482,9 @@ mod merge_scheduling_tests {
     fn schema_after_twenty_one_is_rejected_without_changing_history_or_fts() {
         let mut conn = historical(20);
         run_migrations(&mut conn).unwrap();
-        conn.execute("INSERT INTO schema_migrations(version) VALUES(22)", []).unwrap();
+        conn.execute("INSERT INTO schema_migrations(version) VALUES(23)", []).unwrap();
         let before = snapshot(&conn, false, true);
-        assert!(run_migrations(&mut conn).unwrap_err().to_string().contains("newer than supported 21"));
+        assert!(run_migrations(&mut conn).unwrap_err().to_string().contains("newer than supported 22"));
         assert!(configure_privacy_writer(&conn).is_err());
         assert_eq!(snapshot(&conn, false, true), before);
     }
@@ -1072,7 +1087,81 @@ fn apply_schema_migrations(conn: &Connection) -> Result<()> {
         conn.execute_batch("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('automerge',8);
             INSERT INTO schema_migrations(version) VALUES(21);")?;
     }
+    if current_version < 22 {
+        conn.execute_batch("CREATE TABLE privacy_runtime_state (
+            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+            state_id TEXT NOT NULL UNIQUE,
+            history_revision INTEGER NOT NULL DEFAULT 0 CHECK(typeof(history_revision)='integer' AND history_revision>=0),
+            privacy_epoch INTEGER NOT NULL DEFAULT 0 CHECK(typeof(privacy_epoch)='integer' AND privacy_epoch>=0),
+            session_enabled INTEGER NOT NULL DEFAULT 0 CHECK(session_enabled IN (0,1)),
+            session_expires_at_ms INTEGER CHECK(session_expires_at_ms IS NULL OR session_expires_at_ms>=0)
+        );")?;
+        conn.execute("INSERT INTO privacy_runtime_state(singleton,state_id) VALUES(1,?1)",
+            [uuid::Uuid::new_v4().to_string()])?;
+        for table in ["clipboard_history", "entry_tags", "saved_tags"] {
+            for operation in ["INSERT", "UPDATE", "DELETE"] {
+                conn.execute_batch(&format!("CREATE TRIGGER revision_{table}_{operation}
+                    AFTER {operation} ON {table} BEGIN
+                    UPDATE privacy_runtime_state SET history_revision=history_revision+1 WHERE singleton=1;
+                    END;"))?;
+            }
+        }
+        for operation in ["INSERT", "UPDATE", "DELETE"] {
+            let keys = "('app.privacy_protection','app.privacy_protection_kinds',
+                'app.privacy_protection_custom_rules','app.excluded_source_apps')";
+            let condition = match operation {
+                "DELETE" => format!("old.key IN {keys}"),
+                "UPDATE" => format!("old.key IN {keys} OR new.key IN {keys}"),
+                _ => format!("new.key IN {keys}"),
+            };
+            conn.execute_batch(&format!("CREATE TRIGGER privacy_settings_{operation}
+                AFTER {operation} ON settings
+                WHEN {condition}
+                BEGIN UPDATE privacy_runtime_state SET privacy_epoch=privacy_epoch+1 WHERE singleton=1; END;"))?;
+        }
+        conn.execute("INSERT INTO schema_migrations(version) VALUES(22)", [])?;
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod runtime_state_tests {
+    use super::*;
+
+    fn schema_twenty_one() -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).unwrap();
+        remove_runtime_state_fixture(&conn);
+        conn.execute("DELETE FROM schema_migrations WHERE version=22", []).unwrap();
+        conn
+    }
+
+    #[test]
+    fn version_twenty_two_state_and_marker_rollback_together_then_retry() {
+        let mut conn = schema_twenty_one();
+        conn.execute_batch("CREATE TRIGGER reject_runtime_marker BEFORE INSERT ON schema_migrations
+            WHEN NEW.version=22 BEGIN SELECT RAISE(ABORT,'synthetic state migration failure'); END;").unwrap();
+        assert!(run_migrations(&mut conn).is_err());
+        let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='privacy_runtime_state')",
+            [], |row| row.get(0)).unwrap();
+        assert!(!exists);
+        assert_eq!(conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), 21);
+        conn.execute_batch("DROP TRIGGER reject_runtime_marker;").unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(conn.query_row("SELECT privacy_epoch FROM privacy_runtime_state WHERE singleton=1", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        let changes = conn.total_changes();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(conn.total_changes(), changes);
+    }
+
+    #[test]
+    fn state_migration_cannot_bypass_disabled_sensitive_index_protection() {
+        let mut conn = schema_twenty_one();
+        conn.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0)", []).unwrap();
+        assert!(run_migrations(&mut conn).is_err());
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='privacy_runtime_state'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), 21);
+    }
 }
 
 fn maybe_decrypt_metadata(value: &str) -> Option<String> {
@@ -1345,6 +1434,7 @@ mod tests {
         // Roll the whole tail back, not just the versions that existed when this
         // test was written: the gate is `MAX(version)`, so leaving any later
         // marker behind would skip the blocks this test is trying to re-run.
+        super::remove_runtime_state_fixture(&conn);
         conn.execute("DELETE FROM schema_migrations WHERE version >= 14", [])
             .expect("delete v14 row");
 
@@ -1396,6 +1486,7 @@ mod tests {
     #[test]
     fn test_v15_rebuilds_existing_v14_fts_without_ocr_text() {
         let mut conn = fresh_db();
+        super::remove_runtime_state_fixture(&conn);
         conn.execute("DELETE FROM schema_migrations WHERE version >= 15", [])
             .expect("remove v15 marker");
         conn.execute_batch(
