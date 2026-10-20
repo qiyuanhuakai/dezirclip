@@ -15,9 +15,10 @@ if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
 // Resolve every target up front: a release tag must not half-rewrite the tree,
 // and a target that no longer exists is a hard error rather than a raw ENOENT.
 const jsonTargets = ["package.json", "src-tauri/tauri.conf.json"];
-const tomlTargets = ["src-tauri/Cargo.toml"];
+const tomlTargets = ["Cargo.toml"];
+const lockTarget = "Cargo.lock";
 
-const missing = [...jsonTargets, ...tomlTargets].filter(
+const missing = [...jsonTargets, ...tomlTargets, lockTarget].filter(
   (path) => !existsSync(path),
 );
 if (missing.length > 0) {
@@ -32,7 +33,7 @@ const replaceJsonVersion = (path) => {
 
 const replaceTomlPackageVersion = (path) => {
   const content = readFileSync(path, "utf8").replace(
-    /(^\[package\][\s\S]*?^version\s*=\s*)"[^"]+"/m,
+    /(^\[workspace\.package\][\s\S]*?^version\s*=\s*)"[^"]+"/m,
     `$1"${version}"`,
   );
   writeFileSync(path, content);
@@ -44,3 +45,8 @@ for (const path of jsonTargets) {
 for (const path of tomlTargets) {
   replaceTomlPackageVersion(path);
 }
+const lock = readFileSync(lockTarget, "utf8").replace(
+  /(^\[\[package\]\]\r?\nname = "(?:dezirclip|dzc-core|dzc-platform|dzc-protocol)"\r?\nversion = )"[^"]+"/gm,
+  `$1"${version}"`,
+);
+writeFileSync(lockTarget, lock);

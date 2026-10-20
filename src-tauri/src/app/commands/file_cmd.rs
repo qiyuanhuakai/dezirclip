@@ -1,4 +1,5 @@
 use crate::app_state::AppDataDir;
+use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use base64::Engine;
 use image::ImageFormat;
@@ -112,8 +113,11 @@ pub(crate) fn list_emoji_favorite_paths_in_dir(data_dir: &Path) -> AppResult<Vec
 #[tauri::command]
 pub async fn save_emoji_favorite(
     app_data: State<'_, AppDataDir>,
+    db: State<'_, DbState>,
     source_path: String,
 ) -> AppResult<String> {
+    let conn = db.conn.lock().map_err(|error| AppError::Internal(error.to_string()))?;
+    crate::database::ensure_writable(&conn).map_err(AppError::Internal)?;
     let source_path = source_path.trim();
     if source_path.is_empty() {
         return Err(AppError::Validation("source_path is empty".to_string()));
@@ -126,14 +130,16 @@ pub async fn save_emoji_favorite(
         }
     };
 
-    let bytes = std::fs::read(source_path).map_err(AppError::from)?;
+    let bytes = crate::infrastructure::local_file::read_regular_nofollow(Path::new(source_path)).map_err(AppError::from)?;
 
     let data_dir = app_data.0.lock().unwrap().clone();
     save_emoji_favorite_bytes_to_dir(&data_dir, &bytes, ext)
 }
 
 #[tauri::command]
-pub async fn remove_emoji_favorite(app_data: State<'_, AppDataDir>, path: String) -> AppResult<()> {
+pub async fn remove_emoji_favorite(app_data: State<'_, AppDataDir>, db: State<'_, DbState>, path: String) -> AppResult<()> {
+    let conn = db.conn.lock().map_err(|error| AppError::Internal(error.to_string()))?;
+    crate::database::ensure_writable(&conn).map_err(AppError::Internal)?;
     if path.trim().is_empty() {
         return Ok(());
     }
@@ -163,9 +169,12 @@ pub fn list_emoji_favorites(app_data: State<'_, AppDataDir>) -> AppResult<Vec<St
 #[tauri::command]
 pub async fn save_emoji_favorite_data_url(
     app_data: State<'_, AppDataDir>,
+    db: State<'_, DbState>,
     data_url: String,
     file_name: Option<String>,
 ) -> AppResult<String> {
+    let conn = db.conn.lock().map_err(|error| AppError::Internal(error.to_string()))?;
+    crate::database::ensure_writable(&conn).map_err(AppError::Internal)?;
     let (mime, payload) = if data_url.starts_with("data:") {
         let mut parts = data_url.splitn(2, ',');
         let header = parts.next().unwrap_or("");

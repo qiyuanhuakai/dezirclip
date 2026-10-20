@@ -124,12 +124,21 @@ fn apply_webview2_gpu_switch() {
 }
 
 fn main() {
+    #[cfg(target_os = "windows")]
+    if let Some(exit_code) = infrastructure::windows_api::system_settings::run_maintenance_command() {
+        std::process::exit(exit_code);
+    }
+
+    dzc_platform::set_diagnostic_sink(crate::logger::log_diagnostic);
+    dzc_platform::install_default_key_provider();
     let _ = dotenvy::dotenv();
     apply_webview2_gpu_switch();
 
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(app::updater::UpdaterState::default())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -173,6 +182,7 @@ fn main() {
             services::clipboard_ops::copy_to_clipboard,
             services::clipboard_ops::paste_latest_rich,
             app::commands::get_clipboard_history,
+            app::commands::get_captured_entry_summary,
             app::commands::search_clipboard_history,
             app::commands::delete_clipboard_entry,
             app::commands::clear_clipboard_history,
@@ -226,6 +236,8 @@ fn main() {
             app::commands::is_autostart_enabled,
             app::commands::set_windows_clipboard_history,
             app::commands::trigger_registry_win_v_optimization,
+            app::commands::begin_registry_win_v_change,
+            app::commands::finish_registry_win_v_change,
             app::commands::is_registry_win_v_optimized,
             app::commands::restart_explorer,
             app::commands::restart_as_admin,
@@ -272,6 +284,10 @@ fn main() {
             app::commands::search_regex,
             app::commands::get_search_history,
             app::commands::get_cli_info,
+            app::updater::get_update_support,
+            app::build_info::get_build_info,
+            app::updater::check_for_update,
+            app::updater::install_update,
             app::commands::add_cli_to_path,
             app::commands::open_install_folder,
             app::commands::open_agent_skill_folder,

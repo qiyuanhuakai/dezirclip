@@ -1,8 +1,6 @@
 //! Fetch complete stored content; raw and MIME output never append a newline.
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::{
-    cli_query::CliQuery, clipboard_repo::SqliteClipboardRepository,
-};
+use crate::api::{HistoryQuery, HistoryService};
 use std::io::Write;
 
 pub const LATEST_TOKEN: &str = "latest";
@@ -19,7 +17,7 @@ pub struct GetArgs {
 pub fn resolve(
     id: &str,
     exclude_sensitive: bool,
-    repo: &SqliteClipboardRepository,
+    repo: &HistoryService,
 ) -> Result<ClipboardEntry, String> {
     let latest = id == LATEST_TOKEN;
     let numeric = if latest {
@@ -30,7 +28,7 @@ pub fn resolve(
                 .map_err(|e| format!("get: invalid id '{id}': {e}"))?,
         )
     };
-    repo.query_cli(&CliQuery {
+    repo.query(&HistoryQuery {
         limit: 1,
         id: numeric,
         latest,
@@ -41,7 +39,7 @@ pub fn resolve(
     .ok_or_else(|| format!("get: no entry for id '{id}'"))
 }
 
-pub fn run(args: &GetArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
+pub fn run(args: &GetArgs, repo: &HistoryService) -> Result<(), String> {
     let entry = resolve(&args.id, args.exclude_sensitive, repo)?;
     if args.quiet {
         return Ok(());

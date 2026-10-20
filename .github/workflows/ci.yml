@@ -15,6 +15,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  DZC_BUILD_REVISION: ${{ github.sha }}
   DEZIRCLIP_DISABLE_LINUX_SERVICES: window_tracker,edge_docking,mouse_hotkey
 
 jobs:
@@ -41,6 +42,9 @@ jobs:
 
       - name: Check i18n keys
         run: pnpm run i18n:check
+
+      - name: Test updater release gates
+        run: node --test scripts/tests/updater-release.node.mjs
 
       - name: Check theme CSS contracts
         run: node scripts/audit-theme-css.mjs --check
@@ -90,12 +94,32 @@ jobs:
         run: node scripts/check-tauri-bin-dir.mjs
 
       - name: Setup Python for archive validation
+        if: runner.os == 'Windows'
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.13'
+
+      - name: Setup standalone Python for Linux SQLite fixtures
+        if: runner.os == 'Linux'
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        env:
+          UV_MANAGED_PYTHON: '1'
+        with:
+          version: '0.13.3'
+          python-version: '3.13.15'
+          activate-environment: true
+          venv-path: ${{ runner.temp }}/dezirclip-fixture-python
+          enable-cache: false
+
+      - name: Require compatible SQLite for synthetic FTS5 fixtures
+        run: >-
+          python -c "import sqlite3; print('Fixture SQLite', sqlite3.sqlite_version); assert sqlite3.sqlite_version_info >= (3, 50, 4), 'Synthetic schema20 fixtures require SQLite >=3.50.4'; connection=sqlite3.connect(':memory:'); connection.execute('CREATE VIRTUAL TABLE fixture_fts USING fts5(content)'); connection.close()"
 
       - name: Test standalone packaging
         run: python -m unittest discover -s scripts/tests -v
+
+      - name: Test performance build provenance
+        run: python -m unittest discover -s scripts/performance/tests -v
 
       - name: Install Linux system dependencies
         if: runner.os == 'Linux'
@@ -135,7 +159,7 @@ jobs:
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: . -> target
 
       - name: Test Tauri crate
         if: matrix.can_test
@@ -144,7 +168,7 @@ jobs:
         # examples, it does not run their tests, and backup-inspect moved out of
         # src/bin (to keep it out of the installers) into examples/ — without
         # this flag its 15 tests silently stop running.
-        run: cargo test --all-targets
+        run: cargo test --workspace --all-targets
 
       - name: Build Tauri crate
         working-directory: src-tauri
@@ -158,7 +182,7 @@ jobs:
           from pathlib import Path
           import shlex
           import subprocess
-          binary = Path(os.environ["GITHUB_WORKSPACE"]) / "src-tauri" / "target"
+          binary = Path(os.environ["GITHUB_WORKSPACE"]) / "target"
           target = "${{ matrix.rust_target }}"
           if target:
               binary /= target
@@ -174,6 +198,83 @@ jobs:
   standalone-cli:
     name: Compatible standalone CLI
     uses: ./.github/workflows/standalone-cli.yml
+
+  native-windows-upgrade:
+    name: Native NSIS (${{ matrix.scenario }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [LegacyUninstall, OldToNew, OwnedUpgrade, OwnedExternalEdit]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test sidecar packaging contracts
+        run: node --test scripts/tests/packaging-sidecars.node.mjs
+
+      - name: Test packaging proof and process identity decisions
+        shell: pwsh
+        run: |
+          ./scripts/tests/native-packaging-proof.ps1
+          ./scripts/tests/native-process-identity.ps1
+          ./scripts/tests/native-build-info.ps1
+
+      - name: Install Rust stable
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: native-debug-installers
+
+      - name: Install frontend dependencies
+        if: matrix.scenario != 'LegacyUninstall'
+        run: pnpm install --frozen-lockfile
+
+      - name: Download pinned published legacy installer
+        if: matrix.scenario == 'LegacyUninstall' || matrix.scenario == 'OldToNew'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.1.20/DezirClip_0.1.20_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe"
+
+      - name: Build previous unpublished fixture package
+        if: matrix.scenario == 'OwnedUpgrade'
+        shell: pwsh
+        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.0 -Destination "$env:RUNNER_TEMP/previous-setup.exe"
+
+      - name: Build current unpublished fixture package
+        if: matrix.scenario != 'LegacyUninstall'
+        shell: pwsh
+        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.1 -Destination "$env:RUNNER_TEMP/candidate-setup.exe"
+
+      - name: Exercise actual installer and application
+        shell: pwsh
+        run: |
+          ./scripts/test-native-windows-upgrade.ps1 -Scenario '${{ matrix.scenario }}' -OldInstaller "$env:RUNNER_TEMP/legacy-setup.exe" -NewInstaller "$env:RUNNER_TEMP/candidate-setup.exe" -PreviousCandidate "$env:RUNNER_TEMP/previous-setup.exe"
+
+      - name: Preserve isolated acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-nsis-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/dezirclip-upgrade-*/
+          if-no-files-found: ignore
 
   flatpak:
     name: Verified Flatpak

@@ -55,7 +55,7 @@ impl OcrService {
             .RecognizeAsync(&bitmap)
             .map_err(|e| OcrError::OcrFailed(format!("RecognizeAsync failed: {e}")))?;
         let result = async_op
-            .get()
+            .join()
             .map_err(|e| OcrError::OcrFailed(format!("OCR operation failed: {e}")))?;
         let text = result
             .Text()

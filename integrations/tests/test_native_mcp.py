@@ -3,10 +3,14 @@ from contextlib import closing
 import json
 import os
 from pathlib import Path
-import sqlite3
 import subprocess
+import sys
 import tempfile
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from sqlite_history_fixture import (LINUX_ENVELOPE_FIXTURE, connect_fixture_database,
+                                    mark_legacy_plaintext_sensitive_fixture)
 
 
 @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN to test native commands")
@@ -56,11 +60,11 @@ class NativeMcpTests(unittest.TestCase):
         payload = "public\r\n你好🙂\n\n"
         public_id = int(self.cli("add", "-", payload=payload.encode()).decode().strip().rsplit("=", 1)[1])
         secret_id = int(self.cli("add", "private-never-expose").decode().strip().rsplit("=", 1)[1])
-        self.cli("tag", "add", str(secret_id), "sensitive")
         encrypted_id = int(self.cli("add", "encrypted").decode().strip().rsplit("=", 1)[1])
-        with closing(sqlite3.connect(self.database)) as database:
+        with closing(connect_fixture_database(self.database)) as database:
+            mark_legacy_plaintext_sensitive_fixture(database, secret_id)
             database.execute("UPDATE clipboard_history SET content=?,preview=? WHERE id=?",
-                             ("dpapi:opaque", "dpapi:opaque", encrypted_id))
+                             (LINUX_ENVELOPE_FIXTURE, LINUX_ENVELOPE_FIXTURE, encrypted_id))
             database.commit()
         requests = [*self.initialize(),
                     self.request("tools/call", {"name": "clipboard_list", "arguments": {"limit": 1}}, 2),

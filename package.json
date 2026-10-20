@@ -1,7 +1,7 @@
 {
   "name": "dezirclip",
   "private": true,
-  "version": "0.1.21-beta.1",
+  "version": "0.2.0-alpha.1",
   "packageManager": "pnpm@11.0.9",
   "type": "module",
   "scripts": {
@@ -21,10 +21,10 @@
     "tauri:dev": "tauri dev",
     "tauri:dev:safe": "DEZIRCLIP_DISABLE_LINUX_SERVICES=window_tracker,edge_docking,mouse_hotkey tauri dev",
     "tauri:build": "tauri build",
-    "build:portable": "tauri build --no-bundle --features portable && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
+    "build:portable": "tauri build --no-bundle --features portable && pnpm run tauri:prepare-sidecars --portable --release --phase portable && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/api": "^2.12.4",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",
     "css-tree": "^3.2.1",
@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",
-    "@tauri-apps/cli": "2.10.1",
+    "@tauri-apps/cli": "2.12.3",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/css-tree": "^3.2.0",

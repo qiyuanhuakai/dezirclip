@@ -5,6 +5,7 @@ import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance
 import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
 import { applyHistoryUpdate } from "../../../shared/lib/historyInsert";
 import { createSnapshotRefresh } from "../../../shared/lib/snapshotRefresh";
+import { createCapturedEntryReader } from "../../../shared/lib/capturedEntryReader";
 import {
   resolveActiveIndex,
   selectionAfterUpdate,
@@ -84,43 +85,64 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   // Entry updates are incremental; bulk changes need an authoritative snapshot.
   useEffect(() => {
     let disposed = false;
-    const unlistenUpdated = listen<ClipboardEntry>("clipboard-updated", (event) => {
+    const applyUpdated = (incoming: ClipboardEntry) => {
       if (disposed) return;
       refreshReader.invalidate();
-      const incoming = event.payload;
       const { entries: merged, wasPresent } = applyHistoryUpdate(
         entriesRef.current,
         incoming
       );
       replaceEntries(merged.slice(0, MAX_ENTRIES));
       setActiveId((current) => selectionAfterUpdate(current, wasPresent, incoming));
+    };
+    const captured = createCapturedEntryReader(
+      (id) => invoke<ClipboardEntry>("get_captured_entry_summary", { id }),
+      applyUpdated,
+      fetchRecent,
+    );
+    const unlistenCaptured = listen<{ id: number }>("clipboard-captured", (event) => {
+      if (disposed) return;
+      refreshReader.invalidate();
+      captured.capture(event.payload.id);
+    });
+    const unlistenUpdated = listen<ClipboardEntry>("clipboard-updated", (event) => {
+      if (disposed) return;
+      const interrupted = captured.invalidate();
+      applyUpdated(event.payload);
+      if (interrupted) fetchRecent();
     });
     const unlistenRemoved = listen<number>("clipboard-removed", (event) => {
       if (disposed) return;
+      const interrupted = captured.invalidate();
       refreshReader.invalidate();
       replaceEntries(
         entriesRef.current.filter((entry) => entry.id !== event.payload)
       );
+      if (interrupted) fetchRecent();
     });
     const unlistenChanged = listen("clipboard-changed", () => {
-      if (!disposed) fetchRecent();
+      if (disposed) return;
+      captured.invalidate();
+      fetchRecent();
     });
     const unlistenShown = listen("quick-paste-shown", () => {
-      if (!disposed) fetchRecent();
+      if (disposed) return;
+      captured.invalidate();
+      fetchRecent();
     });
     fetchRecent();
-    void Promise.all([unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown])
+    void Promise.all([unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown])
       .then(() => {
         if (!disposed) setListenersReady(true);
       })
       .catch((error) => console.error("Failed to register quick-paste listeners", error));
     return () => {
       disposed = true;
+      captured.dispose();
       refreshReader.cancel();
-      unlistenUpdated.then((f) => f());
-      unlistenRemoved.then((f) => f());
-      unlistenChanged.then((f) => f());
-      unlistenShown.then((f) => f());
+      for (const unlisten of [unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown]) {
+        void unlisten.then((f) => f(), () => undefined);
+      }
     };
   }, [fetchRecent, refreshReader, replaceEntries]);
 

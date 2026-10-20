@@ -13,8 +13,11 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 from dzc_integrations.client import AdapterError, DzcClient
+from sqlite_history_fixture import (LINUX_ENVELOPE_FIXTURE, connect_fixture_database,
+                                    mark_legacy_plaintext_sensitive_fixture)
 
 
 @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN to run checks against a built dzc")
@@ -35,6 +38,49 @@ class RealCliTests(unittest.TestCase):
     def add(self, content, kind="text"):
         result = self.client.run(["add", "-", "--type", kind], payload=content.encode("utf-8"))
         return int(result.decode("utf-8").strip().rsplit("=", 1)[1])
+
+    def test_capabilities_are_lazy_local_and_do_not_start_native_workers(self):
+        report = self.client.json(["capabilities", "--json"])
+        self.assertEqual(report["scope"], "embedded_client")
+        self.assertEqual(report["protocol"], {"major": 1, "minor": 0})
+        for name in ("read", "write", "monitor", "auto_paste", "global_shortcut", "resolve_source", "read_privacy_hints"):
+            self.assertFalse(report[name]["active"])
+            self.assertIsInstance(report[name]["backend"], str)
+            self.assertIsInstance(report[name]["probe"], str)
+        self.assertEqual(report["global_shortcut"]["availability"]["reason"], "adapter_unavailable")
+        self.assertEqual(report["read_privacy_hints"]["availability"]["reason"], "adapter_unavailable")
+        self.assertFalse(self.database.exists())
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "X11 runtime boundary")
+    def test_capabilities_verify_connection_and_do_not_guess_wayland_support(self):
+        environment = {key: value for key, value in os.environ.items() if key not in ("DISPLAY", "WAYLAND_DISPLAY")}
+        for extra, reason in (({}, "no_graphical_session"), ({"WAYLAND_DISPLAY": "synthetic-wayland"}, "native_wayland_unavailable"), ({"DISPLAY": ":65530"}, "connection_unavailable")):
+            result = subprocess.run([os.environ["DZC_TEST_BIN"], "capabilities", "--json"], env={**environment, **extra}, capture_output=True, check=True, timeout=10)
+            report = json.loads(result.stdout)
+            for name in ("read", "write", "resolve_source", "auto_paste"):
+                self.assertEqual(report[name]["availability"], {"status": "unsupported", "reason": reason})
+            self.assertFalse(self.database.exists())
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "X11 native boundary")
+    def test_invalid_x11_display_rejects_native_access_without_panicking(self):
+        result = subprocess.run([os.environ["DZC_TEST_BIN"], "clipboard", "formats", "--json"], env={**os.environ, "DISPLAY": ":65530"}, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn(b"panicked", result.stderr)
+        self.assertFalse(self.database.exists())
+
+    @unittest.skipUnless(sys.platform.startswith("linux") and os.environ.get("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS") == "1", "Run inside a private X11 test server")
+    def test_native_clipboard_ports_preserve_text_and_html_without_history_writes(self):
+        text = "  typed clipboard 中文🙂\r\nsecond\r\n"
+        self.client.run(["clipboard", "write", "-"], payload=text.encode("utf-8"))
+        self.assertEqual(self.client.run(["clipboard", "read"]), text.encode("utf-8"))
+        html = "<pre>  typed 中文\r\nsecond</pre>"
+        self.client.run(["clipboard", "write", "-", "--mime", "text/html"], payload=html.encode("utf-8"))
+        self.assertEqual(self.client.run(["clipboard", "read", "--mime", "text/html"]), html.encode("utf-8"))
+        report = self.client.json(["capabilities", "--json"])
+        for capability in ("read", "write", "monitor"):
+            self.assertEqual(report[capability]["availability"]["status"], "available")
+            self.assertFalse(report[capability]["active"])
+        self.assertFalse(self.database.exists())
 
     def test_raw_mime_and_json_preserve_unicode_crlf_and_trailing_newlines(self):
         content = "中文🙂\r\nsecond line\r\n\n\n"
@@ -152,11 +198,11 @@ class RealCliTests(unittest.TestCase):
     def test_sensitive_tags_and_untagged_encrypted_fields_are_not_exposed(self):
         public_id = self.add("public marker")
         secret_id = self.add("secret marker")
-        self.client.run(["tag", "add", str(secret_id), "密码"])
         encrypted_id = self.add("encrypted marker")
-        with closing(sqlite3.connect(self.database)) as database:
+        with closing(connect_fixture_database(self.database)) as database:
+            mark_legacy_plaintext_sensitive_fixture(database, secret_id, "密码")
             database.execute("UPDATE clipboard_history SET content = ?, preview = ? WHERE id = ?",
-                             ("dpapi:opaque", "dpapi:opaque", encrypted_id))
+                             (LINUX_ENVELOPE_FIXTURE, LINUX_ENVELOPE_FIXTURE, encrypted_id))
             database.commit()
         rows = self.client.entries(exclude_sensitive=True)
         self.assertEqual([row["id"] for row in rows], [public_id])
@@ -169,7 +215,9 @@ class RealCliTests(unittest.TestCase):
     def test_actual_stdio_mcp_is_readonly_bounded_and_excludes_sensitive_data(self):
         public_id = self.add("public\r\n多行\n\n")
         secret_id = self.add("private-do-not-return")
-        self.client.run(["tag", "add", str(secret_id), "sensitive"])
+        with closing(connect_fixture_database(self.database)) as database:
+            mark_legacy_plaintext_sensitive_fixture(database, secret_id)
+            database.commit()
         messages = [
             {"id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25",
                                                            "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},

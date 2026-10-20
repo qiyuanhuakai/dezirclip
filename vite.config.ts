@@ -39,6 +39,7 @@ export default defineConfig(async ({ mode }) => {
           manualChunks(id: string) {
             if (id.includes("commonjsHelpers.js")) return "vendor-commonjs";
             if (id.includes("/src/features/settings/hooks/useSettingsPanelProps")) return;
+            if (id.includes("/src/features/settings/utils/updaterClient") || id.includes("/src/features/settings/utils/updatePolicy")) return "updater";
             if (id.includes("/src/features/settings/")) return "settings";
             if (id.includes("/src/features/tag/")) return "tag";
             if (id.includes("/src/features/emoji/")) return "emoji";

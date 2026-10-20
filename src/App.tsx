@@ -397,6 +397,15 @@ const App = () => {
   });
 
   useEffect(() => {
+    if (!settingsLoaded) return;
+    let active = true;
+    void import("./features/settings/utils/updaterClient").then(client => {
+      if (active) void client.initializeUpdates(appSettings);
+    });
+    return () => { active = false; };
+  }, [settingsLoaded, appSettings]);
+
+  useEffect(() => {
     const unlisten = listen("focus-search-input", () => {
       setShowSettings(false);
       setShowTagManager(false);

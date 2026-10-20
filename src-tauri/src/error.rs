@@ -74,3 +74,9 @@ impl From<image::ImageError> for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+impl From<dzc_core::api::CoreError> for AppError {
+    fn from(error: dzc_core::api::CoreError) -> Self {
+        AppError::Internal(error.to_string())
+    }
+}

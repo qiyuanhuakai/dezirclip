@@ -36,7 +36,7 @@ def requested_version(requested, actual):
 
 def default_binary(platform, target=None):
     configured = os.environ.get("CARGO_TARGET_DIR")
-    directory = Path(configured).expanduser().resolve() if configured else ROOT / "src-tauri" / "target"
+    directory = Path(configured).expanduser().resolve() if configured else ROOT / "target"
     if target:
         directory /= target
     return directory / "release" / ("dzc.exe" if platform.startswith("windows-") else "dzc")
@@ -163,7 +163,7 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts" / "dzc")
     args = parser.parse_args(argv)
     try:
-        actual = tomllib.loads((ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+        actual = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
         version = requested_version(args.version, actual)
         binary = args.binary or default_binary(args.platform, args.target)
         print(package(args.platform, binary, version, args.output_dir))

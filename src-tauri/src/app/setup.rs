@@ -4,7 +4,7 @@ use crate::app::hooks::{keyboard_proc, mouse_proc};
 use crate::app::system::tray_subclass_proc;
 use crate::app::window_manager::{release_win_keys, restore_last_focus, toggle_window};
 use crate::app_state::{
-    AppDataDir, EncryptionQueueState, PasteQueue, SearchHistory, SessionHistory, SettingsState,
+    AppDataDir, PasteQueue, SearchHistory, SessionHistory, SettingsState,
 };
 use crate::database::{self, DbState};
 use crate::global_state::*;
@@ -16,7 +16,6 @@ use crate::infrastructure::repository::settings_repo::{
 use crate::infrastructure::repository::tag_repo::SqliteTagRepository;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
-use crate::services::encryption_queue::init_encryption_queue;
 use crate::services::sensitive_align::spawn_sensitive_alignment;
 #[cfg(target_os = "windows")]
 use std::ptr::null_mut;
@@ -105,9 +104,6 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
     // 5. App State Management
     setup_state(app, conn_arc.clone(), &settings, app_dir.clone());
-    app.manage(EncryptionQueueState(init_encryption_queue(
-        app_handle.clone(),
-    )));
     spawn_sensitive_alignment(app_handle.clone());
 
     // 6. Window Initialization (Pinned/Focus)

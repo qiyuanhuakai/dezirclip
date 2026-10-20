@@ -18,15 +18,13 @@
 //! `--help` and parse-error paths don't touch the filesystem.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use dezirclip::cli;
 use dezirclip::cli::search::SearchMode;
-use dezirclip::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-use dezirclip::infrastructure::repository::migrations;
-use dezirclip::infrastructure::repository::tag_repo::SqliteTagRepository;
+use dezirclip::api::HistoryService;
 
 const APP_IDENTIFIER: &str = "io.github.qiyuanhuakai.dezirclip";
 const LEGACY_APP_IDENTIFIER: &str = "com.tiez.clipboard";
@@ -40,6 +38,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Report this executable's build identity without opening history or native adapters.
+    BuildInfo { #[arg(long)] json: bool },
+    /// Report this embedded client's probed native capabilities.
+    Capabilities { #[arg(long)] json: bool },
     /// List clipboard history.
     List(ListArgs),
     /// Search history by query.
@@ -501,10 +503,10 @@ enum ClipboardCommand {
 fn native_payload(
     content: Vec<u8>,
     mime: &str,
-) -> Result<dezirclip::infrastructure::native_clipboard::Payload, String> {
-    use dezirclip::infrastructure::native_clipboard::Payload;
+) -> Result<dezirclip::ports::ClipboardPayload, String> {
+    use dezirclip::ports::ClipboardPayload as Payload;
     if mime == "image/png" {
-        return Ok(Payload::Image(content));
+        return Ok(Payload::Image { bytes: content, mime: "image/png".to_owned() });
     }
     let text =
         String::from_utf8(content).map_err(|e| format!("clipboard input is not UTF-8: {e}"))?;
@@ -520,15 +522,15 @@ fn native_payload(
 }
 
 fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
-    use dezirclip::infrastructure::native_clipboard;
+    let clipboard = dzc_platform::runtime::standalone_clipboard_service();
     use std::io::{Read, Write};
     match args.command {
         ClipboardCommand::Read { mime } => std::io::stdout()
             .lock()
-            .write_all(&native_clipboard::read(&mime)?)
+            .write_all(&clipboard.read(&mime)?)
             .map_err(|e| e.to_string()),
         ClipboardCommand::Formats { json } => {
-            let formats = native_clipboard::formats()?;
+            let formats = clipboard.formats()?;
             if json {
                 println!(
                     "{}",
@@ -590,12 +592,26 @@ fn run_clipboard(args: ClipboardArgs) -> Result<(), String> {
                     .map_err(|e| format!("OSC 52 input is not UTF-8: {e}"))?;
                 return dezirclip::infrastructure::osc52::write_text(&text, passthrough);
             }
-            native_clipboard::write(native_payload(bytes, &mime)?)
+            clipboard.write(native_payload(bytes, &mime)?).map_err(Into::into)
         }
     }
 }
 
+fn run_capabilities(json: bool) -> Result<(), String> {
+    let report=dzc_platform::runtime::standalone_capabilities();
+    if json { println!("{}",serde_json::to_string_pretty(&report).map_err(|error|error.to_string())?); }
+    else {
+        println!("Core {} · protocol {}.{} · {}",report.core_version,report.protocol.major,report.protocol.minor,report.scope);
+        for (name,state) in [("read",report.read),("write",report.write),("monitor",report.monitor),("auto_paste",report.auto_paste),("global_shortcut",report.global_shortcut),("resolve_source",report.resolve_source),("read_privacy_hints",report.read_privacy_hints)] {
+            println!("{name}: {:?} (backend={}, probe={}, active={})",state.availability,state.backend,state.probe,state.active);
+        }
+    }
+    Ok(())
+}
+
 fn main() {
+    dzc_platform::set_diagnostic_sink(dezirclip::logger::log_diagnostic);
+    dzc_platform::install_default_key_provider();
     let cli_args = Cli::parse();
     if let Err(e) = run(cli_args) {
         eprintln!("error: {e}");
@@ -605,6 +621,16 @@ fn main() {
 
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
+        Commands::BuildInfo { json } => {
+            let info = dezirclip::protocol::build_info::BuildInfo::current(
+                dezirclip::protocol::build_info::Component::Cli, dezirclip::api::DATABASE_SCHEMA_VERSION);
+            if json { println!("{}", serde_json::to_string_pretty(&info).map_err(|error| error.to_string())?); }
+            else { println!("dzc {} · build {} · {} · protocol {}.{} · schema {}", info.component_version,
+                info.build_id.as_deref().unwrap_or("unknown"), info.source_state,
+                info.protocol_version.major, info.protocol_version.minor, info.database_schema_version); }
+            return Ok(());
+        }
+        Commands::Capabilities { json } => return run_capabilities(json),
         Commands::Mcp => return cli::mcp::serve(|| open_repos().map(|(repo, _)| repo)),
         Commands::Theme(args) => return run_theme(args),
         Commands::Bash => return cli::shell::run(cli::shell::Shell::Bash, None),
@@ -642,7 +668,9 @@ fn run(args: Cli) -> Result<(), String> {
             let selected = cli::tui::run(&options, clip_repo.as_ref(), tag_repo.as_ref())?;
             finish_selection(selected, &options, clip_repo.as_ref())
         }
-        Commands::Mcp
+        Commands::BuildInfo { .. }
+        | Commands::Capabilities { .. }
+        | Commands::Mcp
         | Commands::Theme(_)
         | Commands::Bash
         | Commands::Zsh
@@ -696,7 +724,7 @@ fn run(args: Cli) -> Result<(), String> {
             clip_repo.as_ref(),
         ),
         Commands::Copy(a) => {
-            use dezirclip::infrastructure::native_clipboard::{self, Payload};
+            use dezirclip::ports::ClipboardPayload as Payload;
             let passthrough = osc52_passthrough(a.target, a.osc52_passthrough)?;
             let entry = cli::get::resolve(&a.id, false, clip_repo.as_ref())?;
             if a.target == ClipboardTarget::Osc52 {
@@ -712,7 +740,7 @@ fn run(args: Cli) -> Result<(), String> {
                 return dezirclip::infrastructure::osc52::write_text(&entry.content, passthrough);
             }
             let payload = match entry.content_type.as_str() {
-                "image" => Payload::Image(cli::payload::image_bytes(&entry.content)?),
+                "image" => Payload::Image { bytes: cli::payload::image_bytes(&entry.content)?, mime: "image/png".to_owned() },
                 "file" | "files" | "video" => Payload::Files(cli::payload::files(&entry.content)?),
                 "html" => Payload::Html {
                     html: entry.html_content.unwrap_or_else(|| entry.content.clone()),
@@ -729,7 +757,7 @@ fn run(args: Cli) -> Result<(), String> {
                     }
                 }
             };
-            native_clipboard::write(payload)?;
+            dzc_platform::runtime::standalone_clipboard_service().write(payload)?;
             if !a.quiet {
                 println!("Copied: id={}", entry.id);
             }
@@ -841,7 +869,7 @@ fn run(args: Cli) -> Result<(), String> {
 fn finish_selection(
     selected: Option<i64>,
     options: &cli::frontend::BrowseOptions,
-    repo: &SqliteClipboardRepository,
+    repo: &HistoryService,
 ) -> Result<(), String> {
     if let Some(id) = selected {
         cli::frontend::apply_action(id, options, repo)
@@ -887,7 +915,7 @@ fn parse_add_source(content: &str, kind: Option<&str>) -> cli::add::AddArgs {
 fn report_pin(
     args: &PinCliArgs,
     pinned: bool,
-    repo: &dyn dezirclip::infrastructure::repository::clipboard_repo::ClipboardRepository,
+    repo: &HistoryService,
 ) -> Result<(), String> {
     let id = cli::pin::run(
         &cli::pin::PinArgs {
@@ -906,30 +934,9 @@ fn report_pin(
 /// SQLite connection (so writes through one are visible to reads on
 /// the other without an extra round-trip). Mirrors `setup.rs:371`
 /// where the live app builds them as siblings from the same `DbState`.
-fn open_repos() -> Result<(Arc<SqliteClipboardRepository>, Arc<SqliteTagRepository>), String> {
-    let path = database_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {parent:?}: {e}"))?;
-    }
-    let conn = rusqlite::Connection::open(&path).map_err(|e| format!("open {path:?}: {e}"))?;
-    // The app is usually running and holds its own connection to this file.
-    // Without a busy timeout SQLite fails the first statement that collides
-    // with a write in progress ("database is locked") instead of waiting, which
-    // turned any concurrent `dzc add` into a spurious failure. Neither side
-    // sets a timeout, so the CLI is the only place it can be fixed.
-    conn.busy_timeout(std::time::Duration::from_secs(5))
-        .map_err(|e| format!("busy_timeout: {e}"))?;
-    let conn = Arc::new(Mutex::new(conn));
-    {
-        let mut guard = conn
-            .lock()
-            .map_err(|e| format!("migrations: lock poisoned: {e}"))?;
-        migrations::ensure_supported_schema(&guard).map_err(|e| format!("migrations: {e}"))?;
-        migrations::run_migrations(&mut guard).map_err(|e| format!("migrations: {e}"))?;
-    }
-    let clip_repo = SqliteClipboardRepository::new(conn.clone());
-    let tag_repo = SqliteTagRepository::new(conn);
-    Ok((Arc::new(clip_repo), Arc::new(tag_repo)))
+fn open_repos() -> Result<(Arc<HistoryService>, Arc<HistoryService>), String> {
+    let history = Arc::new(HistoryService::open(&database_path()?)?);
+    Ok((history.clone(), history))
 }
 
 fn database_path() -> Result<PathBuf, String> {

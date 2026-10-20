@@ -1,9 +1,7 @@
-//! Bounded, read-only MCP over stdio, using the shared repository directly.
+//! Bounded, read-only MCP over stdio through the shared AutomationHistory service.
 
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::{
-    cli_query::CliQuery, clipboard_repo::SqliteClipboardRepository,
-};
+use crate::api::{AutomationHistory, HistoryQuery, HistoryService};
 use serde_json::{json, Map, Value};
 use std::io::{BufRead, Read, Write};
 use std::sync::Arc;
@@ -15,7 +13,7 @@ const MAX_CONTENT_CHARS: i64 = 16_384;
 
 pub fn serve<F>(open_repo: F) -> Result<(), String>
 where
-    F: FnMut() -> Result<Arc<SqliteClipboardRepository>, String>,
+    F: FnMut() -> Result<Arc<HistoryService>, String>,
 {
     serve_with_io(std::io::stdin().lock(), std::io::stdout().lock(), open_repo)
 }
@@ -26,7 +24,7 @@ pub fn serve_with_io<R, W, F>(mut source: R, mut destination: W, open_repo: F) -
 where
     R: BufRead,
     W: Write,
-    F: FnMut() -> Result<Arc<SqliteClipboardRepository>, String>,
+    F: FnMut() -> Result<Arc<HistoryService>, String>,
 {
     let mut server = Server::new(open_repo);
     loop {
@@ -72,14 +70,14 @@ struct RpcError(i64, &'static str);
 
 struct Server<F> {
     open_repo: F,
-    repo: Option<Arc<SqliteClipboardRepository>>,
+    repo: Option<Arc<AutomationHistory>>,
     initialized: bool,
     ready: bool,
 }
 
 impl<F> Server<F>
 where
-    F: FnMut() -> Result<Arc<SqliteClipboardRepository>, String>,
+    F: FnMut() -> Result<Arc<HistoryService>, String>,
 {
     fn new(open_repo: F) -> Self {
         Self {
@@ -218,11 +216,11 @@ where
         }
     }
 
-    fn repository(&mut self) -> Result<&SqliteClipboardRepository, String> {
+    fn repository(&mut self) -> Result<&AutomationHistory, String> {
         if self.repo.is_none() {
-            self.repo = Some((self.open_repo)().map_err(|_| {
+            self.repo = Some(Arc::new((self.open_repo)().map_err(|_| {
                 "Could not open clipboard history; check database access".to_string()
-            })?);
+            })?.automation()));
         }
         self.repo
             .as_deref()
@@ -248,8 +246,9 @@ where
                 1,
                 MAX_CONTENT_CHARS,
             )? as usize;
-            let entry = super::get::resolve(&id.to_string(), true, self.repository()?)
-                .map_err(|_| "This entry is unavailable to the MCP adapter".to_string())?;
+            let entry = self.repository()?.query(&HistoryQuery {limit:1,id:Some(id),..Default::default()})
+                .map_err(|_| "This entry is unavailable to the MCP adapter".to_string())?
+                .pop().ok_or_else(|| "This entry is unavailable to the MCP adapter".to_string())?;
             let mut data = metadata(&entry)?;
             data["content"] = json!(entry.content.chars().take(maximum).collect::<String>());
             data["truncated"] = json!(entry.content.chars().count() > maximum);
@@ -268,13 +267,13 @@ where
                 .and_then(Value::as_str)
                 .filter(|query| !query.trim().is_empty() && query.chars().count() <= 1024)
                 .ok_or_else(|| "query must contain 1 to 1024 characters".to_string())?;
-            Some((value, "contains"))
+            Some((value, crate::api::HistorySearchMode::Contains))
         } else {
             None
         };
         let entries = self
             .repository()?
-            .query_cli(&CliQuery {
+            .query(&HistoryQuery {
                 limit: limit as i32,
                 offset: offset as i32,
                 metadata: true,
@@ -322,11 +321,11 @@ fn metadata(entry: &ClipboardEntry) -> Result<Value, String> {
     if crate::database::has_sensitive_tag(&entry.tags)
         || [&entry.content, &entry.preview]
             .iter()
-            .any(|value| crate::infrastructure::encryption::is_encrypted_value(value))
+            .any(|value| crate::infrastructure::encryption::has_ciphertext_envelope(value))
         || entry
             .html_content
             .as_deref()
-            .is_some_and(crate::infrastructure::encryption::is_encrypted_value)
+            .is_some_and(crate::infrastructure::encryption::has_ciphertext_envelope)
     {
         return Err("This entry is unavailable to the MCP adapter".to_string());
     }
@@ -382,7 +381,7 @@ mod tests {
 
     fn ready<F>(server: &mut Server<F>)
     where
-        F: FnMut() -> Result<Arc<SqliteClipboardRepository>, String>,
+        F: FnMut() -> Result<Arc<HistoryService>, String>,
     {
         assert!(server
             .handle(&initialize())
@@ -396,7 +395,7 @@ mod tests {
 
     fn call<F>(server: &mut Server<F>, name: &str, arguments: Value) -> Value
     where
-        F: FnMut() -> Result<Arc<SqliteClipboardRepository>, String>,
+        F: FnMut() -> Result<Arc<HistoryService>, String>,
     {
         server.handle(&json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":name,"arguments":arguments}})).unwrap()
     }
@@ -450,6 +449,12 @@ mod tests {
             connection.execute("INSERT INTO clipboard_history(id,content_type,content,preview,source_app,source_app_path,timestamp,tags,html_content)
                 VALUES(?1,'rich_text',?2,?3,'source','/private/source/path',?1,?4,?5)",rusqlite::params![id,content,preview,tags,html]).unwrap();
         }
+        // These fixtures represent unavailable ciphertext, not ordinary prefix text.
+        use base64::Engine;
+        let cipher = format!("linux:{}", base64::engine::general_purpose::STANDARD.encode([0u8;28]));
+        connection.execute("UPDATE clipboard_history SET content=?1 WHERE id=3", [&cipher]).unwrap();
+        connection.execute("UPDATE clipboard_history SET html_content=?1 WHERE id=5", [&cipher]).unwrap();
+        connection.execute("UPDATE clipboard_history SET preview=?1 WHERE id=6", [&cipher]).unwrap();
         Arc::new(Mutex::new(connection))
     }
 
@@ -524,7 +529,7 @@ mod tests {
         let cloned = connection.clone();
         let mut server = Server::new(move || {
             count.set(count.get() + 1);
-            Ok(Arc::new(SqliteClipboardRepository::new(cloned.clone())))
+            Ok(Arc::new(HistoryService::from_legacy_connection(cloned.clone())))
         });
         ready(&mut server);
         let page = data(&call(
@@ -579,7 +584,7 @@ mod tests {
             connection.lock().unwrap().execute("INSERT INTO clipboard_history(id,content_type,content,source_app,timestamp,preview,tags) VALUES(?1,'text','private-tagged-payload','source',?1,'private-tagged-preview',?2)",rusqlite::params![id,tags]).unwrap();
         }
         let mut server =
-            Server::new(move || Ok(Arc::new(SqliteClipboardRepository::new(connection.clone()))));
+            Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
         ready(&mut server);
         for query in [
             "private",
@@ -609,10 +614,23 @@ mod tests {
         let connection = database();
         connection.lock().unwrap().execute("UPDATE clipboard_history SET content='personal-untagged-note',preview='personal note' WHERE id=1",[]).unwrap();
         let mut server =
-            Server::new(move || Ok(Arc::new(SqliteClipboardRepository::new(connection.clone()))));
+            Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
         ready(&mut server);
         let result = data(&call(&mut server, "clipboard_get", json!({"id":1})));
         assert_eq!(result["content"], "personal-untagged-note");
+    }
+
+    #[test]
+    fn literal_prefix_body_preview_and_ocr_remain_available_before_pagination() {
+        let connection = database();
+        connection.lock().unwrap().execute("UPDATE clipboard_history SET content='linux: ordinary body',preview='dpapi: ordinary preview',ocr_text='linux: kernel notes' WHERE id=1", []).unwrap();
+        let mut server = Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
+        ready(&mut server);
+        let item = data(&call(&mut server, "clipboard_get", json!({"id":1})));
+        assert_eq!(item["content"], "linux: ordinary body");
+        assert_eq!(item["preview"], "dpapi: ordinary preview");
+        let page = data(&call(&mut server, "clipboard_search", json!({"query":"kernel notes","limit":1})));
+        assert_eq!(page["entries"][0]["id"], 1);
     }
 
     #[test]
@@ -630,7 +648,7 @@ mod tests {
             )
             .unwrap();
         let mut server =
-            Server::new(move || Ok(Arc::new(SqliteClipboardRepository::new(connection.clone()))));
+            Server::new(move || Ok(Arc::new(HistoryService::from_legacy_connection(connection.clone()))));
         ready(&mut server);
         let result = data(&call(
             &mut server,

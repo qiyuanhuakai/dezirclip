@@ -45,7 +45,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 use super::list::CliEntry;
 
@@ -94,7 +94,7 @@ static RUNNING: AtomicBool = AtomicBool::new(true);
 ///
 /// Returns `Ok(())` when SIGINT (or any other path to `RUNNING=false`)
 /// is observed. Errors from the repo are propagated.
-pub fn run(args: &WatchArgs, repo: &dyn ClipboardRepository) -> Result<(), String> {
+pub fn run(args: &WatchArgs, repo: &HistoryService) -> Result<(), String> {
     // Reset the global flag in case a previous run already flipped
     // it. Without this, a second `watch` invocation in the same
     // process would exit immediately.
@@ -120,7 +120,7 @@ pub fn run(args: &WatchArgs, repo: &dyn ClipboardRepository) -> Result<(), Strin
 /// loop exit.
 pub fn run_watch_with_running(
     args: &WatchArgs,
-    repo: &dyn ClipboardRepository,
+    repo: &HistoryService,
     last_seen: &mut i64,
     running: &AtomicBool,
 ) -> Result<(), String> {
@@ -311,7 +311,7 @@ fn install_sigint_handler() {
 /// history. Returns `None` if the repo is empty or the query fails
 /// (the caller falls back to `0` in either case — the first tick
 /// will print everything, which is fine for an empty repo).
-fn current_max_timestamp(repo: &dyn ClipboardRepository) -> Option<i64> {
+fn current_max_timestamp(repo: &HistoryService) -> Option<i64> {
     let all = repo.get_history(i32::MAX, 0, None).ok()?;
     all.iter().map(|e| e.timestamp).max()
 }

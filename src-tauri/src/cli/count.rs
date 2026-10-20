@@ -6,11 +6,11 @@
 //! Output: just the integer, so `if [ "$(dzc count)" -gt 500 ]; then ...` works
 //! without parsing. `--json` emits `{"count": <n>}` instead.
 
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 /// Run the `count` subcommand. Returns the entry total; rendering is the
 /// binary's job, since only it knows the `--json` flag.
-pub fn run(repo: &dyn ClipboardRepository) -> Result<i64, String> {
+pub fn run(repo: &HistoryService) -> Result<i64, String> {
     repo.get_count()
         .map_err(|e| format!("count: repo failed: {e}"))
 }

@@ -40,8 +40,7 @@
 
 use std::path::Path;
 
-use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-use crate::services::backup::{decrypt_to_json, entries_from_json, import_from_json, ImportMode};
+use crate::api::{BackupService, HistoryService, ImportMode};
 
 /// Args for the `import` subcommand.
 pub struct ImportArgs {
@@ -60,7 +59,7 @@ pub struct ImportArgs {
 ///
 /// Returns `Ok(())` on success. Errors are returned as `Err(String)`
 /// for the binary to surface via `eprintln!` + exit code 1.
-pub fn run(args: &ImportArgs, repo: &SqliteClipboardRepository) -> Result<(), String> {
+pub fn run(args: &ImportArgs, repo: &HistoryService) -> Result<(), String> {
     // 1. Mode spelling.
     let mode = parse_mode(&args.mode)?;
 
@@ -89,29 +88,10 @@ pub fn run(args: &ImportArgs, repo: &SqliteClipboardRepository) -> Result<(), St
     //    thing we can show the user here.
     let bytes = std::fs::read(path).map_err(|e| format!("import: read {path:?}: {e}"))?;
 
-    // 5. Decode → JSON string.
-    let json = if is_encrypted {
-        let pw = args.passphrase.as_deref().unwrap();
-        decrypt_to_json(&bytes, pw).map_err(|e| format!("import: decrypt failed: {e}"))?
-    } else {
-        // Plain JSON: convert bytes to string (lossy is fine — the
-        // backup module's serde_json will reject anything that isn't
-        // strict UTF-8 anyway).
-        String::from_utf8(bytes).map_err(|e| format!("import: file is not valid UTF-8: {e}"))?
-    };
-
-    // 6. Parse → Vec<ExportEntry>. The backup module's
-    //    `entries_from_json` does NOT validate the version field —
-    //    it's a structural parse only. We re-parse via
-    //    `import_from_json` below to surface version errors.
-    import_from_json(&json, mode).map_err(|e| format!("import: invalid backup: {e}"))?;
-    let export_entries =
-        entries_from_json(&json).map_err(|e| format!("import: parse json: {e}"))?;
-    let total = export_entries.len();
-
-    // 7. Apply. Replace mode clears first; merge is upsert-on-id.
-    crate::services::backup::apply_entries(repo, &export_entries, mode)?;
-    let imported = export_entries.len();
+    let passphrase = if is_encrypted { args.passphrase.as_deref() } else { None };
+    let imported = BackupService::new(repo.clone()).import_bytes(&bytes, passphrase, mode)
+        .map_err(|error| format!("import: {error}"))?;
+    let total = imported;
 
     if !args.quiet {
         let label = if is_encrypted { "encrypted" } else { "json" };

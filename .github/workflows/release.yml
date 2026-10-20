@@ -10,6 +10,11 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  DZC_BUILD_REVISION: ${{ github.sha }}
+
+concurrency:
+  group: release-updater-channels
+  cancel-in-progress: false
 
 jobs:
   create-release:
@@ -19,6 +24,22 @@ jobs:
       release_id: ${{ steps.release.outputs.release_id }}
       prerelease: ${{ steps.release.outputs.prerelease }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Require signed updater configuration
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: node scripts/updater-release.mjs preflight "$GITHUB_REF_NAME"
+
+      - name: Verify updater release logic
+        run: node --test scripts/tests/updater-release.node.mjs
+
       - name: Create or reuse release
         id: release
         env:
@@ -32,14 +53,24 @@ jobs:
             release_args+=(--prerelease --latest=false)
           fi
           echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          source_notes="docs/releases/${GITHUB_REF_NAME}.md"
+          if [[ -f "$source_notes" ]]; then
+            release_notes="$RUNNER_TEMP/dezirclip-release-notes.md"
+            node -e 'const fs=require("node:fs"); const base=`https://github.com/${process.env.GITHUB_REPOSITORY}/blob/${process.env.GITHUB_REF_NAME}`; fs.writeFileSync(process.argv[2], fs.readFileSync(process.argv[1], "utf8").replaceAll("](../specs/", `](${base}/docs/specs/`));' "$source_notes" "$release_notes"
+            notes_args=(--notes-file "$release_notes")
+          else
+            notes_args=(--notes "Native dzc includes pick, TUI, Shell initialization and read-only MCP. Download the matching DezirClip installer or standalone dzc archive for your platform; SHA-256 checksums accompany standalone archives.")
+          fi
           if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             gh release create "${GITHUB_REF_NAME}" \
+              --draft \
               --verify-tag \
               --title "DezirClip ${GITHUB_REF_NAME}" \
               --generate-notes \
               "${release_args[@]}" \
-              --notes "Native dzc includes pick, TUI, Shell initialization and read-only MCP. Download the matching DezirClip installer or standalone dzc archive for your platform; SHA-256 checksums accompany standalone archives."
+              "${notes_args[@]}"
           fi
+          test "$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft')" = true
           release_id="$(gh release view "${GITHUB_REF_NAME}" --json databaseId --jq '.databaseId')"
           echo "release_id=${release_id}" >> "$GITHUB_OUTPUT"
 
@@ -174,7 +205,7 @@ jobs:
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: . -> target
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -186,12 +217,15 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
           releaseName: DezirClip ${{ github.ref_name }}
           releaseBody: Native dzc includes pick, TUI, Shell initialization and read-only MCP. Download the matching DezirClip installer or standalone dzc archive for your platform; SHA-256 checksums accompany standalone archives.
-          releaseDraft: false
+          releaseDraft: true
+          includeUpdaterJson: false
           prerelease: ${{ needs.create-release.outputs.prerelease == 'true' }}
           args: ${{ matrix.args }}
 
@@ -202,3 +236,22 @@ jobs:
     with:
       version: ${{ github.ref_name }}
     secrets: inherit
+
+  verify-publish-and-promote:
+    name: Verify signed artifacts, publish and advance one channel
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify all four signed updater artifacts before publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: node scripts/updater-release.mjs publish "$GITHUB_REF_NAME"

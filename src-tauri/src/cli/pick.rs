@@ -2,7 +2,7 @@
 
 use super::frontend::{self, BrowseOptions};
 use crate::domain::models::ClipboardEntry;
-use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+use crate::api::HistoryService;
 use clap::ValueEnum;
 use std::io::{Read, Write};
 use std::process::{Command, Stdio};
@@ -20,7 +20,7 @@ pub struct PickArgs {
     pub backend: Backend,
 }
 
-pub fn run(args: &PickArgs, repo: &SqliteClipboardRepository) -> Result<Option<i64>, String> {
+pub fn run(args: &PickArgs, repo: &HistoryService) -> Result<Option<i64>, String> {
     let entries = frontend::query_rows(&args.options, repo)?;
     if entries.is_empty() {
         return Ok(None);

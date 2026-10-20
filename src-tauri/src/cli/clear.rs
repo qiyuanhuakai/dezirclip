@@ -14,7 +14,7 @@
 //! Output: `Cleared <n> entries` unless `--quiet`, where n is the number
 //! actually removed — the total before minus the total after.
 
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 pub struct ClearArgs {
     /// When `false` (default), refuse to clear.
@@ -34,7 +34,7 @@ fn confirm(args: &ClearArgs) -> Result<(), String> {
 }
 
 /// Run the `clear` subcommand. Returns how many entries were removed.
-pub fn run(args: &ClearArgs, repo: &dyn ClipboardRepository) -> Result<i64, String> {
+pub fn run(args: &ClearArgs, repo: &HistoryService) -> Result<i64, String> {
     confirm(args)?;
 
     let before = repo

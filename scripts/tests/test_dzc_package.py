@@ -217,7 +217,7 @@ class PackageTests(unittest.TestCase):
         desktop = deb_root / "usr" / "share" / "applications" / "DezirClip.desktop"
         desktop.parent.mkdir(parents=True)
         desktop.write_text("[Desktop Entry]\nExec=old\nIcon=old\n", encoding="utf-8")
-        deb_directory = self.repo / "src-tauri" / "target" / "release" / "bundle" / "deb"
+        deb_directory = self.repo / "target" / "release" / "bundle" / "deb"
         deb_directory.mkdir(parents=True)
         subprocess.run(["dpkg-deb", "--build", str(deb_root), str(deb_directory / "fixture.deb")], check=True, capture_output=True, timeout=30)
         subprocess.run(["node", str(script)], check=True, capture_output=True, timeout=30)

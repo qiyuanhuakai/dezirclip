@@ -7,12 +7,14 @@ import os
 from pathlib import Path
 import shutil
 import socket
-import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+from sqlite_history_fixture import connect_fixture_database
 
 BIN = os.environ.get("DZC_TEST_BIN")
 NU = os.environ.get("DZC_TEST_NU") or shutil.which("nu")
@@ -121,7 +123,7 @@ class NativePickShellTests(unittest.TestCase):
         for content, kind in (("needle older", "code"), ("needle middle", "code"), ("needle newer", "text")):
             result = self.dzc("add", content, "--type", kind)
             ids.append(int(result.stdout.decode().strip().rsplit("=", 1)[1]))
-        with closing(sqlite3.connect(self.root / "history.db")) as database:
+        with closing(connect_fixture_database(self.root / "history.db")) as database:
             database.execute("UPDATE clipboard_history SET timestamp=id")
             database.commit()
         result = self.dzc("pick", "--backend", "fzf", "--query", "needle", "--kind", "code",

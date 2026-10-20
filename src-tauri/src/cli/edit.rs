@@ -18,7 +18,7 @@
 //! Output: `Edited: id=<n>` unless `--quiet`.
 
 use crate::cli::add::{preview_of, read_content, AddArgs};
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::api::HistoryService;
 
 pub struct EditArgs {
     pub id: String,
@@ -35,7 +35,7 @@ fn parse_id(raw: &str) -> Result<i64, String> {
 }
 
 /// Run the `edit` subcommand. Returns the id that was rewritten.
-pub fn run(args: &EditArgs, repo: &dyn ClipboardRepository) -> Result<i64, String> {
+pub fn run(args: &EditArgs, repo: &HistoryService) -> Result<i64, String> {
     let id = parse_id(&args.id)?;
     let exists = repo
         .get_entry_by_id(id)
