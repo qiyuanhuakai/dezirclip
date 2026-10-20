@@ -94,6 +94,8 @@ foreach ($compilerInput in $sidecarProof.binaryPaths) {
 }
 $sidecarVersion = (& $sidecar --version | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($Version) + '(?:\s|$)')) { throw 'Packaged standalone CLI has the wrong version.' }
+$buildInfo = $sidecarProof.buildInfo
+if ($sidecarProof.buildInfoVerification -ne 'executed_native_cli' -or $buildInfo.component -ne 'cli' -or $buildInfo.component_version -ne $Version -or $buildInfo.source_revision -notmatch '^[a-fA-F0-9]{40}$' -or $buildInfo.build_id -ne ($Version + '@' + $buildInfo.source_revision)) { throw 'Fixture CLI lacks matching runtime build identity.' }
 $candidate = Join-Path $metadata.target_directory "debug/bundle/nsis/DezirClip_${Version}_x64-setup.exe"
 if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { throw 'Fixture installer was not generated.' }
 Copy-Item -LiteralPath $candidate -Destination $destinationPath -Force
@@ -114,6 +116,7 @@ if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw
     sidecarSha256 = (Get-FileHash -LiteralPath $sidecar -Algorithm SHA256).Hash
     sidecarVersion = $sidecarVersion; sidecarSource = 'standalone-no-default-features'; nsisInputs = $compilerInputs
     sidecarPreparation = $sidecarProof
+    buildInfo = $buildInfo
     nsisScriptSha256 = (Get-FileHash -LiteralPath ($destinationPath + '.nsi') -Algorithm SHA256).Hash
     overrideConfigurationSha256 = (Get-FileHash -LiteralPath $override -Algorithm SHA256).Hash
     sourceCommit = $sourceCommit; packaging = 'shared-before-build-and-before-bundle'

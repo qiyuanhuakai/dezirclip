@@ -9,3 +9,4 @@ pub mod system;
 pub mod webview_memory;
 pub mod window_manager;
 pub mod updater;
+pub mod build_info;

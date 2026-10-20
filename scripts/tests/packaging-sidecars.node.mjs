@@ -25,6 +25,7 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
   writeFileSync(cache, "desktop-feature-cached-artifact");
   linkSync(cache, hostDefault);
   writeFileSync(join(directory, "Cargo.lock"), "locked fixture dependencies\n");
+  writeFileSync(join(directory, "package.json"), JSON.stringify({ version: "0.2.0-alpha.1" }));
   const payload = Buffer.from(`standalone:${target}:${profile}:portable=${portable}`);
   const calls = [];
   const run = (command, args, options) => {
@@ -34,6 +35,12 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
       assert.deepEqual(args, ["--print", "host-tuple"]);
       return host + "\n";
     }
+    if (command === source) {
+      assert.deepEqual(args, ["build-info", "--json"]);
+      return JSON.stringify({ component: "cli", component_version: "0.2.0-alpha.1", target,
+        source_revision: "a".repeat(40), build_id: "0.2.0-alpha.1@" + "a".repeat(40), source_state: "verified_checkout" });
+    }
+    if (command === "git") return "a".repeat(40);
     assert.equal(command, "cargo");
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
     assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--locked", "--no-default-features", "--target", target,
@@ -66,7 +73,9 @@ for (const parameters of [
     const staged = proof.binaryPaths.find((item) => item.role === "external-bin").path;
     assert.deepEqual(JSON.parse(readFileSync(staged + ".proof.json", "utf8")), proof);
     assert.equal(proof.cargoLockSha256, hash(readFileSync(join(f.directory, "Cargo.lock"))));
-    assert.equal(f.calls.length, 3, "importing the helper must not spawn an extra build");
+    assert.equal(f.calls.length, 4, "one native metadata query follows the build");
+    assert.equal(proof.buildInfoVerification, "executed_native_cli");
+    assert.equal(proof.buildInfo.component, "cli");
   });
 }
 
@@ -75,8 +84,25 @@ test("cross target updates only target and external inputs, preserving host arti
   const proof = prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: { TAURI_ENV_TARGET_TRIPLE: f.target } });
   assert.equal(proof.binaryPaths.length, 2);
   assert.equal(proof.target, f.target);
+  assert.equal(proof.buildInfo, null);
+  assert.equal(proof.buildInfoVerification, "cross_target_not_executed");
   assert.equal(readFileSync(f.hostDefault, "utf8"), "desktop-feature-cached-artifact");
   assert.deepEqual(readFileSync(proof.source), f.payload);
+});
+
+test("native component version and unknown or mismatched identities fail closed", (t) => {
+  for (const changed of [
+    { component_version: "0.1.20" }, { component: "desktop" }, { build_id: "different-build" },
+    { source_revision: null, source_state: "unknown", build_id: "claimed-unknown-build" },
+  ]) {
+    const f = fixture(t);
+    const run = (command, args, options) => {
+      const result = f.run(command, args, options);
+      return command === f.source ? JSON.stringify({ ...JSON.parse(result), ...changed }) : result;
+    };
+    assert.throws(() => prepareSidecars({ repoRoot: f.directory, run, args: [], env: {} }), /build identity/);
+    assert.equal(readFileSync(f.hostDefault, "utf8"), "desktop-feature-cached-artifact");
+  }
 });
 
 test("portable no-bundle preparation explicitly matches release and portable features", (t) => {

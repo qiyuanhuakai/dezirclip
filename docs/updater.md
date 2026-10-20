@@ -2,6 +2,20 @@
 
 桌面更新使用官方 Tauri 2 Updater。v0.2 的首批原位更新制品仅包含 Windows NSIS 和 Linux AppImage，支持 x86_64 与 aarch64。`dzc-core`、独立 CLI、MCP 和捕获服务不因此联网，也不增加后台进程。P1-A 提供后端与发布门槛，P1-C 在“常规设置 → 软件更新”接入自动检查偏好、通道、手动检查及确认安装界面。
 
+## 组件构建身份与 Host 生命周期
+
+`dzc build-info --json` 与桌面 `get_build_info` 返回版本化的构建元数据：当前组件角色、组件版本、`build_id`、源码修订、来源状态、目标架构、协议版本和权威数据库 schema 版本。`dzc --version` 仍保持原来的 `dzc <version>` 输出；原有 JSON 命令不增加字段。构建信息命令不打开历史数据库或启动监听器。`linked_components` 只描述实际链接的 Core/Platform/Protocol Rust 组件，不宣称独立 CLI 归档安装了 Desktop、service 或 Surface。
+
+已知源码的 ID 为 `<version>@<40位revision>`，因此同一 Git 修订生成的 alpha.0 与 alpha.1 调试安装 fixture 也有不同 ID。各架构属于同一发布构建集，但架构本身仍单独报告。`source_state=verified_checkout` 表示已确认修订且已跟踪源码干净；修改中的源码为 `modified_checkout`，ID 仅用于辨认，不能据此确认兼容。无法确认 Git 来源的本地归档为 `unknown`，修订和 ID 均为 null。`same_verified_build_set` 只确认双方已验证的相同版本/修订、协议与 schema；它不是未来 IPC 所需的身份认证、角色和能力握手。
+
+生产 Actions 对 Desktop、sidecar、独立 CLI 和 Flatpak 使用同一个显式 `DZC_BUILD_REVISION=github.sha`；构建脚本验证完整格式、实际 checkout HEAD 与 Actions SHA 一致。脚本观察当前 HEAD、index、packed refs、当前分支引用与已跟踪输入变化，不扫描 `.harness` 或签名目录。AlmaLinux CLI 容器保留只读 `/source` 原 checkout，并逐个核对复制后的实际 Rust/Cargo 构建输入和编译嵌入资源；无关 QA 脚本无需进入容器。来源不符会阻止构建。
+
+原生可执行 sidecar 的准备 proof 记录真实 `build-info` 查询结果；交叉编译 ARM64 只记录声明的构建集和 `cross_target_not_executed`，不声称运行验证。Windows 原生安装验收继续要求 GUI/CLI 完整哈希和 NSIS 单标记证明，并额外通过实际 GUI 查询及安装后 CLI 查询确认同版本、同 build_id、同协议和 schema。尚未运行的新包须等待隔离 CI 验收，不能把这些接口的编译结果当作安装通过。
+
+安装流程在官方下载验签成功、再次确认安装支持之后，通过 Desktop 的 `UpdateHost` 正常通知并确认由 Host 拥有的辅助客户端退出，然后才进入官方安装器。`prepare_install` 失败返回 `update_participants_not_ready`，不运行安装器；准备失败或安装失败均通知幂等的 `install_aborted`，供 Host 恢复其期望运行的客户端。成功安装由更新后的主程序按需要恢复，当前没有新增服务、持久重启队列或外部 CLI 强停逻辑。没有辅助参与者时使用低成本默认 Host。
+
+本阶段只有实际接线的 Host 边界与顺序/拒绝测试，没有 Surface 二进制或 IPC。未来 Host 必须实现有界正常退出确认、持有句柄检查和按需重启；不得按进程名搜索或强制 kill。正常错误路径会通知恢复，Host/安装器 panic 或进程直接退出不保证回调运行；Host 实现应避免 panic，后续真实辅助进程验收仍是独立门槛。
+
 ## 设置界面与自动检查
 
 新增 `app.update_auto_check`（字符串布尔值，默认 `"false"`）和 `app.update_channel`（`"stable"` / `"preview"`，默认 `"stable"`），保留全部既有设置键。偏好经后端确认保存后才更新控件；保存失败显示本地化错误并保持原值。

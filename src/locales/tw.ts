@@ -40,6 +40,7 @@ export const tw = {
         updater_error_verification: "更新來源或簽章資訊未通過檢查，已拒絕安裝。",
         updater_error_download_verify: "下載或簽章驗證失敗，未安裝更新。請重新檢查後重試。",
         updater_error_install: "更新安裝失敗。請重新檢查；必要時從發佈頁手動更新。",
+        updater_error_participants: "輔助視窗未確認退出，尚未安裝更新。請關閉相關視窗後重試。",
         updater_error_busy: "另一個更新操作仍在進行，請稍後手動重試。",
         updater_error_signing: "此建置尚未設定更新簽章，無法自動更新。",
         updater_error_recheck: "更新資訊已失效，請重新檢查後安裝。",

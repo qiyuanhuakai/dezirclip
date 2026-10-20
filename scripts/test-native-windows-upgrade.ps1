@@ -52,6 +52,8 @@ function Read-CandidateManifest([string]$Installer) {
     if ($manifest.schemaVersion -ne 2 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
     if ($manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -ne 'debug' -or $manifest.updaterArtifacts -ne $false -or $manifest.sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Candidate build provenance is invalid.' }
     if ($manifest.sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($manifest.version) + '(?:\s|$)')) { throw 'Candidate manifest CLI version is invalid.' }
+    if ($manifest.buildInfo.component_version -ne $manifest.version -or $manifest.buildInfo.source_revision -ne $manifest.sourceCommit -or $manifest.buildInfo.build_id -ne ($manifest.version + '@' + $manifest.sourceCommit)) { throw 'Candidate build identity differs from its source/version set.' }
+    if ($manifest.buildInfo.metadata_version -ne 1 -or $manifest.buildInfo.component -ne 'cli' -or $manifest.buildInfo.target -ne $manifest.target -or @($manifest.buildInfo.linked_components).Count -ne 3) { throw 'Candidate component metadata is incomplete.' }
     if ($manifest.applicationPatch -ne 'tauri-nsis-bundle-token-v1' -or $manifest.applicationPatchOffset -lt 64 -or $manifest.sidecarSource -ne 'standalone-no-default-features' -or $manifest.packaging -ne 'shared-before-build-and-before-bundle') { throw 'Candidate packaging provenance is invalid.' }
     if ($manifest.sidecarPreparation.phase -ne 'bundle' -or $manifest.sidecarPreparation.sha256 -ne $manifest.sidecarSha256 -or $manifest.sidecarPreparation.portable -ne $false -or $manifest.sidecarPreparation.profile -ne 'debug') { throw 'Candidate lacks shared beforeBundle sidecar evidence.' }
     if ($manifest.applicationPatchOffset -isnot [int] -and $manifest.applicationPatchOffset -isnot [long]) { throw 'Candidate patch offset must be an integer.' }
@@ -194,6 +196,9 @@ function Assert-InstalledCandidate($Manifest, [string]$Label) {
     $version = & $sidecar --version
     if ($LASTEXITCODE -ne 0 -or $version -notmatch ('(?:^|\s)' + [regex]::Escape($Manifest.version) + '(?:\s|$)')) { throw 'Installed CLI has the wrong built-in version.' }
     $version | Set-Content (Join-Path $fixtureRoot ($Label + '-cli-version.txt'))
+    $buildInfo = & $sidecar build-info --json | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $buildInfo.component -ne 'cli' -or $buildInfo.build_id -ne $Manifest.buildInfo.build_id -or $buildInfo.component_version -ne $Manifest.version -or $buildInfo.source_revision -ne $Manifest.buildInfo.source_revision -or $buildInfo.source_state -ne $Manifest.buildInfo.source_state -or $buildInfo.metadata_version -ne $Manifest.buildInfo.metadata_version -or $buildInfo.database_schema_version -ne $Manifest.buildInfo.database_schema_version -or $buildInfo.protocol_version.major -ne $Manifest.buildInfo.protocol_version.major -or $buildInfo.protocol_version.minor -ne $Manifest.buildInfo.protocol_version.minor -or $buildInfo.target -ne $Manifest.buildInfo.target -or (ConvertTo-Json -InputObject @($buildInfo.linked_components) -Depth 5 -Compress) -ne (ConvertTo-Json -InputObject @($Manifest.buildInfo.linked_components) -Depth 5 -Compress)) { throw 'Installed CLI has a different component build identity.' }
+    $buildInfo | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $fixtureRoot ($Label + '-cli-build-info.json'))
 }
 function Assert-CliHistory([string]$Text, [Nullable[long]]$ExpectedId, [string]$Label) {
     $output = & (Join-Path $installDirectory 'dzc.exe') search $Text --json
@@ -264,14 +269,17 @@ function Wait-ActualProcessImage {
     $result.elapsedMilliseconds = $timer.ElapsedMilliseconds
     return [pscustomobject]$result
 }
+function Convert-GuiConfigurationJson($Manifest, [string]$ProfileDirectory, [string]$Marker, [bool]$AcquireOwnership, [bool]$VerifyCapture) {
+    return (@{ expectedVersion = $Manifest.version; expectedBuildInfo = $Manifest.buildInfo; profileDirectory = $ProfileDirectory; marker = $Marker; acquireOwnership = $AcquireOwnership; verifyCapture = $VerifyCapture } | ConvertTo-Json -Depth 10)
+}
 function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCapture, [string]$Label) {
     Assert-InstalledCandidate $Manifest $Label
     $port = 9222
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
     $listener.Start(); $listener.Stop()
     $configuration = Join-Path $fixtureRoot ($Label + '-gui-input.json')
-    @{ expectedVersion = $Manifest.version; profileDirectory = $profileDirectory; marker = $marker; acquireOwnership = $AcquireOwnership; verifyCapture = $VerifyCapture } |
-        ConvertTo-Json | Set-Content -LiteralPath $configuration -Encoding utf8
+    Convert-GuiConfigurationJson $Manifest $profileDirectory $marker $AcquireOwnership $VerifyCapture |
+        Set-Content -LiteralPath $configuration -Encoding utf8
     $evidence = Join-Path $fixtureRoot ($Label + '-gui-evidence.json')
     $stdout = Join-Path $fixtureRoot ($Label + '-stdout.txt')
     $stderr = Join-Path $fixtureRoot ($Label + '-stderr.txt')

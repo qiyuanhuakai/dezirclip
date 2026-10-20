@@ -40,6 +40,7 @@ export const en = {
         updater_error_verification: "The update source or signature information failed validation. Installation was refused.",
         updater_error_download_verify: "Download or signature verification failed. Nothing was installed. Check again before retrying.",
         updater_error_install: "Update installation failed. Check again, or update manually from the release page.",
+        updater_error_participants: "An auxiliary window has not confirmed exit. The update was not installed. Close it and try again.",
         updater_error_busy: "Another update operation is still running. Retry manually in a moment.",
         updater_error_signing: "This build has no update signing configuration and cannot update automatically.",
         updater_error_recheck: "The update information expired. Check again before installing.",

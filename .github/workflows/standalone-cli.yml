@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  DZC_BUILD_REVISION: ${{ github.sha }}
+
 jobs:
   standalone:
     name: Standalone (${{ matrix.name }})

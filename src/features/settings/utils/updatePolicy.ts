@@ -29,6 +29,7 @@ export const updateErrorKey = (error: unknown): string => {
         case "update_signature_version_mismatch": return "updater_error_verification";
         case "update_download_or_signature_failed": return "updater_error_download_verify";
         case "update_install_failed": return "updater_error_install";
+        case "update_participants_not_ready": return "updater_error_participants";
         case "update_busy": return "updater_error_busy";
         case "update_signing_not_configured": return "updater_error_signing";
         case "update_check_required": return "updater_error_recheck";

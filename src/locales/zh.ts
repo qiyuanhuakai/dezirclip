@@ -40,6 +40,7 @@ export const zh = {
         updater_error_verification: "更新来源或签名信息未通过检查，已拒绝安装。",
         updater_error_download_verify: "下载或签名验证失败，未安装更新。请重新检查后重试。",
         updater_error_install: "更新安装失败。请重新检查；必要时从发布页手动更新。",
+        updater_error_participants: "辅助窗口未确认退出，尚未安装更新。请关闭相关窗口后重试。",
         updater_error_busy: "另一个更新操作仍在进行，请稍后手动重试。",
         updater_error_signing: "此构建尚未配置更新签名，不能自动更新。",
         updater_error_recheck: "更新信息已失效，请重新检查后安装。",

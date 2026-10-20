@@ -26,6 +26,22 @@ impl CoreError {
             message: message.into(),
         }
     }
+
+    /// A public value never includes storage paths, SQL or user-supplied diagnostics.
+    pub fn to_protocol(&self) -> dzc_protocol::history::DzcError {
+        use dzc_protocol::history::DzcErrorCode as Wire;
+        let code = match self.code {
+            CoreErrorCode::Validation => Wire::InvalidRequest,
+            CoreErrorCode::Storage => Wire::StorageFailed,
+            CoreErrorCode::KeyUnavailable => Wire::KeyUnavailable,
+            CoreErrorCode::EncryptionFailed => Wire::EncryptionFailed,
+            CoreErrorCode::SensitivePersistenceRejected => Wire::SensitivePersistenceRejected,
+            CoreErrorCode::ProtectedRecordUnavailable => Wire::ProtectedRecordUnavailable,
+            CoreErrorCode::ClipboardRecordUnavailable => Wire::EntryUnavailable,
+            CoreErrorCode::PlatformUnavailable => Wire::PlatformUnavailable,
+        };
+        dzc_protocol::history::DzcError { code }
+    }
 }
 impl From<String> for CoreError {
     fn from(message: String) -> Self {

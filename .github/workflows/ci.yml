@@ -15,6 +15,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  DZC_BUILD_REVISION: ${{ github.sha }}
   DEZIRCLIP_DISABLE_LINUX_SERVICES: window_tracker,edge_docking,mouse_hotkey
 
 jobs:

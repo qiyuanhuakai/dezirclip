@@ -38,6 +38,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Report this executable's build identity without opening history or native adapters.
+    BuildInfo { #[arg(long)] json: bool },
     /// Report this embedded client's probed native capabilities.
     Capabilities { #[arg(long)] json: bool },
     /// List clipboard history.
@@ -619,6 +621,15 @@ fn main() {
 
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
+        Commands::BuildInfo { json } => {
+            let info = dezirclip::protocol::build_info::BuildInfo::current(
+                dezirclip::protocol::build_info::Component::Cli, dezirclip::api::DATABASE_SCHEMA_VERSION);
+            if json { println!("{}", serde_json::to_string_pretty(&info).map_err(|error| error.to_string())?); }
+            else { println!("dzc {} · build {} · {} · protocol {}.{} · schema {}", info.component_version,
+                info.build_id.as_deref().unwrap_or("unknown"), info.source_state,
+                info.protocol_version.major, info.protocol_version.minor, info.database_schema_version); }
+            return Ok(());
+        }
         Commands::Capabilities { json } => return run_capabilities(json),
         Commands::Mcp => return cli::mcp::serve(|| open_repos().map(|(repo, _)| repo)),
         Commands::Theme(args) => return run_theme(args),
@@ -657,7 +668,8 @@ fn run(args: Cli) -> Result<(), String> {
             let selected = cli::tui::run(&options, clip_repo.as_ref(), tag_repo.as_ref())?;
             finish_selection(selected, &options, clip_repo.as_ref())
         }
-        Commands::Capabilities { .. }
+        Commands::BuildInfo { .. }
+        | Commands::Capabilities { .. }
         | Commands::Mcp
         | Commands::Theme(_)
         | Commands::Bash

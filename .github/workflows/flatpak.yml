@@ -9,6 +9,9 @@ on:
         type: string
         default: ''
 
+env:
+  DZC_BUILD_REVISION: ${{ github.sha }}
+
 jobs:
   flatpak:
     name: Flatpak (${{ matrix.name }})

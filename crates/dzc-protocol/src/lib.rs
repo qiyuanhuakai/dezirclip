@@ -1,4 +1,6 @@
 //! Stable value types only. This crate provides no transport, process or IPC runtime.
+pub mod build_info;
+pub mod history;
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };

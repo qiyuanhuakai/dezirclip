@@ -10,6 +10,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  DZC_BUILD_REVISION: ${{ github.sha }}
 
 concurrency:
   group: release-updater-channels

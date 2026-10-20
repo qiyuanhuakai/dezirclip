@@ -7,9 +7,19 @@ use std::time::Duration;
 use tauri::{ipc::Channel, AppHandle, State};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use tokio::sync::Mutex;
+use std::sync::Arc;
+use crate::domain::update_host::{UpdateHost, NoAuxiliaryClients, install_after_host_ready};
 
-#[derive(Default)]
-pub struct UpdaterState(Mutex<Option<PendingUpdate>>);
+pub struct UpdaterState(Mutex<Option<PendingUpdate>>, Arc<dyn UpdateHost>);
+
+impl Default for UpdaterState {
+    fn default() -> Self { Self::with_host(Arc::new(NoAuxiliaryClients)) }
+}
+
+impl UpdaterState {
+    /// Future Host adapters supply normal-exit coordination for owned clients.
+    pub fn with_host(host: Arc<dyn UpdateHost>) -> Self { Self(Mutex::new(None), host) }
+}
 
 struct PendingUpdate {
     id: String,
@@ -206,10 +216,13 @@ pub async fn install_update(
         return Err("update_installation_unsupported".into());
     }
     let update = selected.update.clone();
-    let _ = on_progress.send(UpdateProgress::Installing);
-    tauri::async_runtime::spawn_blocking(move || update.install(bytes))
+    let host = state.1.clone();
+    tauri::async_runtime::spawn_blocking(move || install_after_host_ready(host.as_ref(), || {
+        let _ = on_progress.send(UpdateProgress::Installing);
+        update.install(bytes).map_err(|_| "update_install_failed".to_string())
+    }))
         .await.map_err(|_| "update_install_failed")?
-        .map_err(|_| "update_install_failed")?;
+        ?;
     *pending = None;
     crate::app::app_exit::request_app_exit();
     app.restart();

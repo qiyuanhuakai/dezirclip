@@ -71,6 +71,15 @@ test "$before" = "$(sha256sum "$binary")"
 '''
         seed = Path(os.environ.get("CARGO_HOME", Path(cargo_bin).parent)) / "registry"
         seed_mount = ["-v", f"{seed}:/registry-seed:ro"] if seed.is_dir() else []
+        provenance = []
+        if os.environ.get("DZC_BUILD_REVISION"):
+            revision = os.environ["DZC_BUILD_REVISION"]
+            head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+            if len(revision) != 40 or any(value not in "0123456789abcdefABCDEF" for value in revision) or revision.lower() != head.lower():
+                raise ValueError("Explicit build revision does not match this checkout")
+            if os.environ.get("GITHUB_ACTIONS") != "true" or os.environ.get("GITHUB_SHA", "").lower() != revision.lower():
+                raise ValueError("Container source provenance requires the matching Actions checkout SHA")
+            provenance = ["-e", f"DZC_BUILD_REVISION={revision}", "-e", f"GITHUB_SHA={revision}", "-e", "GITHUB_ACTIONS=true", "-e", "DZC_BUILD_SOURCE_ROOT=/source"]
         run(["docker", "run", "--rm", "--user", f"{os.getuid()}:{os.getgid()}",
              "-v", f"{ROOT}:/source:ro", "-v", f"{directory}:/target",
              "-v", f"{rustup}:/rustup:ro", "-v", f"{cargo_bin}:/rust-tools:ro",
@@ -80,7 +89,7 @@ test "$before" = "$(sha256sum "$binary")"
              "-e", "CARGO_HOME=/cargo", "-e", "CARGO_TARGET_DIR=/target",
              "-e", "CARGO_BUILD_JOBS=4",
              "-e", "HOME=/work/home", "-e", "PATH=/rust-tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-             "-e", f"DZC_BUILD_TARGET={target}", image, "bash", "-c", script])
+             "-e", f"DZC_BUILD_TARGET={target}", *provenance, image, "bash", "-c", script])
     enforce(inspect_binary(binary, platform))
     return binary
 

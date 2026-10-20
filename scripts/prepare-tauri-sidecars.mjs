@@ -46,6 +46,27 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
   run("cargo", cargoArgs, { cwd: repoRoot, stdio: "inherit" });
   const source = join(targetDirectory, targetTriple, options.profile, `dzc${extension}`);
   const sha256 = digest(source);
+  const version = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
+  let buildInfo = null;
+  let declaredRevision = env.DZC_BUILD_REVISION || null;
+  if (declaredRevision && !/^[a-fA-F0-9]{40}$/.test(declaredRevision)) throw new Error("Invalid declared build revision");
+  if (declaredRevision) declaredRevision = declaredRevision.toLowerCase();
+  if (targetTriple === hostTriple) {
+    buildInfo = JSON.parse(run(source, ["build-info", "--json"], { cwd: repoRoot, encoding: "utf8" }));
+    const revisionValid = buildInfo.source_revision === null
+      ? buildInfo.build_id === null && buildInfo.source_state === "unknown"
+      : typeof buildInfo.source_revision === "string" && /^[a-f0-9]{40}$/.test(buildInfo.source_revision)
+        && ["verified_checkout", "modified_checkout"].includes(buildInfo.source_state);
+    if (buildInfo.component !== "cli" || buildInfo.component_version !== version || buildInfo.target !== targetTriple
+        || !revisionValid
+        || (buildInfo.source_revision && buildInfo.build_id !== `${version}@${buildInfo.source_revision}`)
+        || (declaredRevision && buildInfo.source_revision !== declaredRevision.toLowerCase())) throw new Error("Standalone CLI build identity differs from its package build");
+    declaredRevision = buildInfo.source_revision;
+  } else if (!declaredRevision) {
+    try { declaredRevision = run("git", ["rev-parse", "HEAD"], { cwd: repoRoot, encoding: "utf8" }).trim(); }
+    catch { declaredRevision = null; }
+    if (declaredRevision && !/^[a-fA-F0-9]{40}$/.test(declaredRevision)) declaredRevision = null;
+  }
   const staged = join(repoRoot, "src-tauri", "binaries", `dzc-${targetTriple}${extension}`);
   const paths = [{ role: "cargo-target", path: source }, { role: "external-bin", path: staged }];
   if (targetTriple === hostTriple) paths.push({ role: "cargo-host-default", path: join(targetDirectory, options.profile, `dzc${extension}`) });
@@ -69,6 +90,8 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
   const proof = {
     schemaVersion: 1, kind: "dezirclip-standalone-sidecar", createdAt: new Date().toISOString(),
     ...options, target: targetTriple, host: hostTriple, command: ["cargo", ...cargoArgs], source, sha256, binaryPaths: paths,
+    buildInfo, buildInfoVerification: buildInfo ? "executed_native_cli" : "cross_target_not_executed",
+    declaredBuildSet: { version, sourceRevision: declaredRevision, buildId: declaredRevision ? `${version}@${declaredRevision}` : null },
     helperSha256: digest(script), cargoLockSha256: digest(join(repoRoot, "Cargo.lock")),
   };
   writeFileSync(staged + ".proof.json", JSON.stringify(proof, null, 2) + "\n");

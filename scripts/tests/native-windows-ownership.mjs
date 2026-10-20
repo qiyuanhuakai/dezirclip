@@ -132,13 +132,24 @@ try {
   await poll("Actual invoke bridge", () => evaluate("typeof window.__TAURI_INTERNALS__?.invoke === 'function'"));
   const version = await invoke("plugin:app|version");
   assert.equal(version, configuration.expectedVersion, "Installed GUI reported the wrong built-in app version");
+  const buildInfo = await invoke("get_build_info");
+  assert.equal(buildInfo.component, "desktop");
+  assert.equal(buildInfo.component_version, version);
+  assert.equal(buildInfo.build_id, configuration.expectedBuildInfo.build_id, "GUI and packaged CLI belong to different build sets");
+  assert.equal(buildInfo.source_revision, configuration.expectedBuildInfo.source_revision);
+  assert.equal(buildInfo.source_state, configuration.expectedBuildInfo.source_state);
+  assert.equal(buildInfo.metadata_version, configuration.expectedBuildInfo.metadata_version);
+  assert.equal(buildInfo.target, configuration.expectedBuildInfo.target);
+  assert.deepEqual(buildInfo.linked_components, configuration.expectedBuildInfo.linked_components);
+  assert.deepEqual(buildInfo.protocol_version, configuration.expectedBuildInfo.protocol_version);
+  assert.equal(buildInfo.database_schema_version, configuration.expectedBuildInfo.database_schema_version);
   const dataPath = await invoke("get_data_path");
   assert.equal(comparablePath(dataPath), comparablePath(configuration.profileDirectory), "GUI did not open the shared synthetic profile");
   const oldMarker = (await history()).filter(entry => entry.content === configuration.marker);
   assert.equal(oldMarker.length, 1, "Actual GUI did not preserve exactly one old marker");
   await invoke("focus_clipboard_window");
   await poll("Rendered old history", () => evaluate(`document.body?.innerText.includes(${JSON.stringify(configuration.marker)})`));
-  evidence.gui = { version, dataPath, oldMarkerId: oldMarker[0].id, oldHistoryRendered: true };
+  evidence.gui = { version, buildInfo, dataPath, oldMarkerId: oldMarker[0].id, oldHistoryRendered: true };
   if (configuration.acquireOwnership) {
     const result = await evaluate(`(async () => {
       const [changed, token] = await window.__TAURI_INTERNALS__.invoke("begin_registry_win_v_change", { enable: true });
