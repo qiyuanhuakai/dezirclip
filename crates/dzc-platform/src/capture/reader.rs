@@ -9,6 +9,8 @@ use std::hash::{Hash, Hasher};
 pub struct NativeCaptureReader {
     metadata: CaptureReadMetadata,
     empty: Option<CaptureSkip>,
+    #[cfg(target_os = "linux")]
+    wayland_selection: Option<crate::wayland::SelectionSnapshot>,
 }
 
 fn fingerprint(value: impl Hash) -> u64 {
@@ -187,6 +189,156 @@ fn image_fallback() -> Option<String> {
 }
 
 impl NativeCaptureReader {
+    #[cfg(target_os = "linux")]
+    fn read_wayland(
+        &mut self,
+        request: CaptureReadRequest,
+    ) -> Result<Option<CaptureData>, CaptureFailure> {
+        use crate::wayland::{WaylandClipboardBackend, WaylandError, MAX_TRANSFER_BYTES};
+        let failure = |error: WaylandError| CaptureFailure {
+            stage: CaptureStage::Read,
+            code: error.to_string(),
+        };
+        let selection = match self
+            .wayland_selection
+            .take()
+            .map(Ok)
+            .unwrap_or_else(WaylandClipboardBackend::snapshot)
+        {
+            Ok(value) => value,
+            Err(WaylandError::EmptySelection) => return Ok(None),
+            Err(error) => return Err(failure(error)),
+        };
+        if !selection.is_current() {
+            return Err(failure(WaylandError::SelectionChanged));
+        }
+        // Explicit source exclusions protect capture even before the optional
+        // Core preflight adapter is attached. No body is requested on this path.
+        if selection.password_hint().map_err(failure)? == Some(true) {
+            return Err(CaptureFailure {
+                stage: CaptureStage::Read,
+                code: "WaylandExplicitPrivacyExclusion".into(),
+            });
+        }
+        let has = |mime: &str| selection.mime_types().iter().any(|value| value == mime);
+        let remaining = std::cell::Cell::new(MAX_TRANSFER_BYTES);
+        let receive = |mime: &str, budget: usize| {
+            let bytes = selection
+                .receive(mime, budget.min(remaining.get()))
+                .map_err(failure)?;
+            remaining.set(remaining.get() - bytes.len());
+            Ok::<_, CaptureFailure>(bytes)
+        };
+        let data = if has("text/uri-list") {
+            if !request.files {
+                self.empty = Some(CaptureSkip::FilesDisabled);
+                return Ok(None);
+            }
+            let bytes = receive("text/uri-list", 1024 * 1024)?;
+            let files = super::x11_clipboard::parse_uri_list_payload(&bytes)
+                .ok_or_else(|| failure(WaylandError::UnsupportedMime))?;
+            let hash = fingerprint(files.join("\n"));
+            self.metadata = CaptureReadMetadata {
+                fingerprint: Some(hash),
+                echo_hash: Some(hash),
+                files: true,
+                ..Default::default()
+            };
+            CaptureData::Files(files)
+        } else {
+            let text_mime = [
+                "text/plain;charset=utf-8",
+                "text/plain;charset=UTF-8",
+                "UTF8_STRING",
+                "text/plain",
+            ]
+            .into_iter()
+            .find(|mime| has(mime));
+            let image_mime = [
+                "image/png",
+                "image/jpeg",
+                "image/gif",
+                "image/webp",
+                "image/bmp",
+            ]
+            .into_iter()
+            .find(|mime| has(mime));
+            let read_text = |mime: &str, budget| {
+                receive(mime, budget).and_then(|bytes| {
+                    String::from_utf8(bytes).map_err(|_| CaptureFailure {
+                        stage: CaptureStage::Read,
+                        code: "WaylandClipboardInvalidUtf8".into(),
+                    })
+                })
+            };
+            let mut text = None;
+            let html = if request.rich_text && has("text/html") {
+                if let Some(mime) = text_mime {
+                    text = Some(read_text(mime, MAX_TRANSFER_BYTES)?);
+                    if text.as_ref().is_some_and(|value| !value.is_empty()) {
+                        Some(read_text("text/html", 16 * 1024 * 1024)?)
+                            .filter(|value| !value.trim().is_empty())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            if let Some(mut html) = html {
+                if let Some(mime) = image_mime {
+                    let image = receive(mime, 16 * 1024 * 1024)?;
+                    html.push_str(&format!(
+                        "\n<!--TIEZ_RICH_IMAGE:data:{mime};base64,{}-->",
+                        STANDARD.encode(image)
+                    ));
+                }
+                let text = text.expect("rich HTML requires nonempty raw text");
+                self.metadata = CaptureReadMetadata {
+                    fingerprint: Some(fingerprint((&text, &html))),
+                    echo_hash: Some(fingerprint(&text)),
+                    ..Default::default()
+                };
+                CaptureData::RichText { text, html }
+            } else if let Some(mime) = image_mime {
+                let bytes = receive(mime, MAX_TRANSFER_BYTES)?;
+                let hash = fingerprint(&bytes);
+                self.metadata = CaptureReadMetadata {
+                    fingerprint: Some(hash),
+                    echo_hash: Some(hash),
+                    image: true,
+                    ..Default::default()
+                };
+                CaptureData::EncodedImage {
+                    bytes,
+                    mime: mime.to_owned(),
+                }
+            } else if let Some(mime) = text_mime {
+                let text = match text {
+                    Some(value) => value,
+                    None => read_text(mime, MAX_TRANSFER_BYTES)?,
+                };
+                if text.is_empty() {
+                    return Ok(None);
+                }
+                let hash = fingerprint(&text);
+                self.metadata = CaptureReadMetadata {
+                    fingerprint: Some(hash),
+                    echo_hash: Some(hash),
+                    ..Default::default()
+                };
+                CaptureData::Text(text)
+            } else {
+                return Ok(None);
+            }
+        };
+        if !selection.is_current() {
+            return Err(failure(WaylandError::SelectionChanged));
+        }
+        Ok(Some(data))
+    }
     fn image(&mut self, image: Pixels) -> CaptureData {
         let hash = fingerprint(image.bytes.as_slice());
         self.metadata = CaptureReadMetadata {
@@ -208,6 +360,10 @@ impl CaptureReader for NativeCaptureReader {
     fn read(&mut self, request: CaptureReadRequest) -> Result<Option<CaptureData>, CaptureFailure> {
         self.metadata = CaptureReadMetadata::default();
         self.empty = None;
+        #[cfg(target_os = "linux")]
+        if crate::wayland::requested() {
+            return self.read_wayland(request);
+        }
         #[cfg(target_os = "linux")]
         crate::runtime_display::validate_x11_display().map_err(|error| CaptureFailure {
             stage: CaptureStage::Read,
@@ -396,12 +552,12 @@ mod tests {
             return;
         }
         use super::{CaptureData, CaptureReadRequest, CaptureReader, NativeCaptureReader};
-        use dzc_core::{api::{HistoryService, HistoryQuery}, capture::*};
         use base64::{engine::general_purpose::STANDARD, Engine};
-        use std::{
-            collections::VecDeque,
-            sync::Mutex,
+        use dzc_core::{
+            api::{HistoryQuery, HistoryService},
+            capture::*,
         };
+        use std::{collections::VecDeque, sync::Mutex};
         let directory = std::env::temp_dir().join(format!(
             "dezirclip-native-file-recapture-{}",
             uuid::Uuid::new_v4()
@@ -465,9 +621,14 @@ mod tests {
                 (&outcome, metadata.image_content_hash)
             {
                 assert_eq!(
-                    Some(thumbnail_hash(&image::load_from_memory(
-                        &STANDARD.decode(capture.entry.content.split_once(',').unwrap().1).unwrap()
-                    ).unwrap())),
+                    Some(thumbnail_hash(
+                        &image::load_from_memory(
+                            &STANDARD
+                                .decode(capture.entry.content.split_once(',').unwrap().1)
+                                .unwrap()
+                        )
+                        .unwrap()
+                    )),
                     Some(hash)
                 );
                 assert!(store.contains_image_hash(hash).unwrap());
@@ -504,7 +665,9 @@ mod tests {
             process(&mut notifications, 2300),
             CaptureOutcome::Skipped(CaptureSkip::DuplicateNotification)
         ));
-        external.delete(restored_inside_window.entry.id, None).unwrap();
+        external
+            .delete(restored_inside_window.entry.id, None)
+            .unwrap();
         copy_file(&first_file);
         let CaptureOutcome::Stored(restored) = process(&mut notifications, 2900) else {
             panic!("deleted native file image should recapture after debounce window");
@@ -552,24 +715,28 @@ mod tests {
         assert_eq!(changed_to_existing.entry.id, second.entry.id);
         assert_eq!(changed_to_existing.entry.timestamp, 3250);
         copy_file(&first_file);
-        let CaptureOutcome::Stored(session_capture) =
-            process_mode(&mut notifications, 3300, false) else {
-                panic!("switching from persistent image to session must capture");
-            };
+        let CaptureOutcome::Stored(session_capture) = process_mode(&mut notifications, 3300, false)
+        else {
+            panic!("switching from persistent image to session must capture");
+        };
         assert!(session_capture.entry.id < 0 && !session_capture.persistent);
         assert_eq!(session.lock().unwrap().len(), 1);
         copy_file(&first_file);
-        let CaptureOutcome::Stored(session_repeat) =
-            process_mode(&mut notifications, 3900, false) else {
-                panic!("session repeats must use the session deduplicator");
-            };
+        let CaptureOutcome::Stored(session_repeat) = process_mode(&mut notifications, 3900, false)
+        else {
+            panic!("session repeats must use the session deduplicator");
+        };
         assert_eq!(session_repeat.entry.id, session_capture.entry.id);
-        session.lock().unwrap().retain(|entry| entry.id != session_capture.entry.id);
+        session
+            .lock()
+            .unwrap()
+            .retain(|entry| entry.id != session_capture.entry.id);
         copy_file(&first_file);
         let CaptureOutcome::Stored(after_session_delete) =
-            process_mode(&mut notifications, 3950, false) else {
-                panic!("deleting a session image must allow recapture despite an old durable row");
-            };
+            process_mode(&mut notifications, 3950, false)
+        else {
+            panic!("deleting a session image must allow recapture despite an old durable row");
+        };
         assert!(after_session_delete.entry.id < 0 && !after_session_delete.persistent);
         assert_eq!(session.lock().unwrap().len(), 1);
         copy_file(&first_file);
@@ -579,7 +746,14 @@ mod tests {
         assert_eq!(back_to_persistent.entry.id, second.entry.id);
         assert_eq!(back_to_persistent.entry.timestamp, 4000);
         assert_eq!(
-            history.query(&HistoryQuery {kind:Some("image"), limit:100, ..HistoryQuery::default()}).unwrap().len(),
+            history
+                .query(&HistoryQuery {
+                    kind: Some("image"),
+                    limit: 100,
+                    ..HistoryQuery::default()
+                })
+                .unwrap()
+                .len(),
             3
         );
         drop(external);
