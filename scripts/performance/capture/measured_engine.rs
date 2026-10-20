@@ -19,6 +19,18 @@ impl<T: CaptureStore> TimedStore<T> {
     }
 }
 impl<T: CaptureStore> CaptureStore for TimedStore<T> {
+    #[cfg(feature = "privacy-runtime")]
+    fn capture_ticket(&self, now_ms: i64) -> Result<Option<app_backend::api::CaptureTicket>, CaptureFailure> {
+        self.timed("privacy_ticket_ms", || self.actual.capture_ticket(now_ms))
+    }
+    #[cfg(feature = "privacy-runtime")]
+    fn check_capture(&self, ticket: Option<&app_backend::api::CaptureTicket>, now_ms: i64) -> Result<(), CaptureFailure> {
+        self.timed("privacy_check_ms", || self.actual.check_capture(ticket, now_ms))
+    }
+    #[cfg(feature = "privacy-runtime")]
+    fn with_capture_guard(&self, ticket: Option<&app_backend::api::CaptureTicket>, now_ms: i64, publish: &mut dyn FnMut()) -> Result<(), CaptureFailure> {
+        self.timed("privacy_guard_ms", || self.actual.with_capture_guard(ticket, now_ms, publish))
+    }
     fn prepare(&self, entry: ClipboardEntry) -> Result<PreparedCapture, CaptureFailure> {
         self.timed("prepare_ms", || self.actual.prepare(entry))
     }
@@ -88,16 +100,6 @@ pub fn capture(
         paused: false,
         sequential_echo: None,
     };
-    let frame = CaptureFrame {
-        data: match &input.html_content {
-            Some(html) => CaptureData::RichText {
-                text: input.content.clone(),
-                html: html.clone(),
-            },
-            None => CaptureData::Text(input.content.clone()),
-        },
-        metadata: CaptureReadMetadata::default(),
-    };
     #[cfg(feature = "legacy-layout")]
     let history = db.history_service();
     #[cfg(feature = "legacy-layout")]
@@ -108,8 +110,27 @@ pub fn capture(
         actual,
         times: RefCell::new(BTreeMap::new()),
     };
-    let mut events = Events::default();
     let start = Instant::now();
+    #[cfg(feature = "privacy-runtime")]
+    let privacy_ticket = store.capture_ticket(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis().try_into().unwrap())
+        .expect("actual Core must authorize the capture before payload construction")
+        .expect("the production SQLite store must issue a real capture ticket");
+    let frame = CaptureFrame {
+        data: match &input.html_content {
+            Some(html) => CaptureData::RichText {
+                text: input.content.clone(),
+                html: html.clone(),
+            },
+            None => CaptureData::Text(input.content.clone()),
+        },
+        metadata: CaptureReadMetadata {
+            #[cfg(feature = "privacy-runtime")]
+            privacy_ticket: Some(privacy_ticket),
+            ..CaptureReadMetadata::default()
+        },
+    };
+    let mut events = Events::default();
     let result = CaptureEngine::capture_frame(&context, frame, &store, &mut events);
     let elapsed = milliseconds(start);
     let CaptureOutcome::Stored(stored) = result else {

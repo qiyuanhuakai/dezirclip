@@ -34,7 +34,7 @@ def messages(*items):
 
 
 class PreparationTests(unittest.TestCase):
-    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False):
+    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False, privacy_contract=False):
         temporary = tempfile.TemporaryDirectory(prefix="dzc-prepare-artifact-test-")
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()
@@ -42,6 +42,9 @@ class PreparationTests(unittest.TestCase):
         core = root / "crates/dzc-core"
         core.mkdir(parents=True)
         (core / "Cargo.toml").write_text('[package]\nname="dzc-core"\nversion="0.0.0"\n[features]\nlegacy-bridge=[]\n[dependencies]\nrusqlite.workspace=true\n')
+        if privacy_contract:
+            with (core / "Cargo.toml").open("a") as stream:
+                stream.write('\n[package.metadata.dzc]\ncapture-contract=2\n')
         (root / "Cargo.toml").write_text('[workspace]\nmembers=["crates/dzc-core"]\n[workspace.dependencies]\nrusqlite={git="' + SQLITE_GIT + '",rev="' + SQLITE_REV + '",features=["bundled","functions"]}\n')
         (root / "Cargo.lock").write_text(lock)
         # This conflicting config and environment must not redirect a native
@@ -129,6 +132,11 @@ class PreparationTests(unittest.TestCase):
             else:
                 self.assertEqual(dependency, {"git": SQLITE_GIT, "rev": SQLITE_REV, "features": ["bundled", "functions"]})
             self.assertEqual(record["role"], "baseline" if variant == "legacy" else "candidate")
+            self.assertEqual(record["capture_contract"], 2 if privacy_contract and variant != "legacy" else 1)
+            if privacy_contract and variant == "engine":
+                self.assertEqual(record["features"], ["engine", "privacy-runtime", "legacy-layout"])
+            elif variant != "engine":
+                self.assertNotIn("privacy-runtime", record["features"])
             if variant == "legacy" and workspace_baseline:
                 declared = tomllib.loads(Path(record["manifest"]).read_text())["dependencies"]
                 self.assertEqual(record["source_package"], "dzc-core")
@@ -159,6 +167,27 @@ class PreparationTests(unittest.TestCase):
 
     def test_workspace_baseline_keeps_its_core_lock_and_native_provider(self):
         self.prepare(workspace_baseline=True)
+
+    def test_new_engine_contract_selects_and_records_real_privacy_delegation(self):
+        self.prepare(privacy_contract=True)
+
+
+class CaptureContractTests(unittest.TestCase):
+    def test_only_explicit_supported_integer_contracts_select_the_adapter(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-capture-contract-") as directory:
+            source = Path(directory)
+            manifest = source / "Cargo.toml"
+            manifest.write_text('[package]\nname="dzc-core"\n')
+            self.assertEqual(PREPARE.capture_contract("dzc-core", source), 1)
+            for value, expected in [("1", 1), ("2", 2), ("3", None), ("0", None), ("true", None), ('"2"', None)]:
+                with self.subTest(value=value):
+                    manifest.write_text('[package.metadata.dzc]\ncapture-contract=' + value + '\n')
+                    if expected is None:
+                        with self.assertRaisesRegex(ValueError, "Unsupported Core capture contract"):
+                            PREPARE.capture_contract("dzc-core", source)
+                    else:
+                        self.assertEqual(PREPARE.capture_contract("dzc-core", source), expected)
+            self.assertEqual(PREPARE.capture_contract("dezirclip", source), 1)
 
 
 @unittest.skipUnless(shutil.which("git"), "Archived baseline checks require Git")

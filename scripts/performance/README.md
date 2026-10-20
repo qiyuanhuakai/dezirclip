@@ -28,6 +28,8 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 
 `capture/measured_engine.rs` 经共享既有仓库与缓存的 `history_service()` 兼容桥取得 `HistoryService`，再调用公开的 `HistoryService::capture_store` 工厂。包装按泛型 `CaptureStore` 委托 `prepare/find_duplicate/contains/contains_image_hash/commit`，不引用私有 store 类型；各方法前后读取 Instant 并累计时长。EventSink 只计数，不复制正文。没有插入额外事务、查询、SQL 模型或加密实现。`engine_total_ms` 包含这些少量计时记账及事件计数开销，`engine_non_store_ms` 也包含包装开销，不把它全部归因于业务引擎。六个固定文本/HTML 场景不构成图片查重性能证据。
 
+Core 的 `[package.metadata.dzc] capture-contract=2` 声明读前隐私 ticket 契约。测量器仅为该实际源码启用临时 `privacy-runtime` 分支，完整委托 `capture_ticket/check_capture/with_capture_guard`，并在 payload frame 构造前取得真实 SQLite store ticket。计时从取票之前开始；新旧 Engine 模板均包含 payload clone，授权方法另列时长且计入总开销。早期契约缺省为 1，未知契约明确拒绝，不能用 fake store 默认方法或计时后补票绕过生产权限。共同 deduplicate+commit 及转换门槛保持原定义，构建凭据记录两端实际契约和 features。
+
 六个场景为普通新捕获、普通重复、富文本新捕获、敏感新捕获、继承手工保护的敏感重复、实际 `encrypt_entry_with_conn` 转换。每次使用新复制的数据库。功能断言包括正文与 HTML 原样解密、预览、敏感字段密文、逻辑 FTS 可见性、重复 ID、记录数，以及实际 Engine 只发一次 Stored 元数据事件。转换场景直接比较同一生产方法的入口至提交，不把旧版异步队列或 tag 提前返回当作加密完成。
 
 `verify` 每个场景只执行一次，输出 `verification_only=true`、0 次采样、空 metrics；它不是性能证据。真正采样每场景预热 5 次后保留所有原始时长。

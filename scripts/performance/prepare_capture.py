@@ -227,6 +227,7 @@ resolver="2"
 native-provider=[]
 engine=["native-provider"]
 legacy-layout=[]
+privacy-runtime=[]
 
 [[bin]]
 name="capture-perf-{variant}"
@@ -250,6 +251,16 @@ panic="abort"
     path.write_text(manifest, encoding="utf-8")
     shutil.copyfile(lock, directory / "Cargo.lock")
     return path, bridge
+
+
+def capture_contract(package, source):
+    if package != "dzc-core":
+        return 1
+    manifest = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))
+    version = manifest.get("package", {}).get("metadata", {}).get("dzc", {}).get("capture-contract", 1)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("Unsupported Core capture contract")
+    return version
 
 
 def prepare(args):
@@ -302,12 +313,15 @@ def prepare(args):
                 ("core", "dzc-core", candidate / "crates/dzc-core", candidate / "crates/dzc-platform", candidate / "Cargo.lock", ["native-provider"]),
                 ("engine", "dzc-core", candidate / "crates/dzc-core", candidate / "crates/dzc-platform", candidate / "Cargo.lock", ["engine"])]
     for variant, package, package_source, native, lock, features in variants:
+        contract = capture_contract(package, package_source)
+        if variant == "engine" and contract == 2:
+            features = [*features, "privacy-runtime"]
         manifest, bridge = write_adapter(output, variant, package, package_source, native, lock)
         if bridge:
             features = [*features, "legacy-layout"]
         record = {"manifest": str(manifest), "manifest_sha256": sha256(manifest), "features": features,
                   "source_package": package, "source_manifest": str(package_source / "Cargo.toml"),
-                  "role": "baseline" if variant == "legacy" else "candidate"}
+                  "role": "baseline" if variant == "legacy" else "candidate", "capture_contract": contract}
         if args.mode != "prepare":
             name = f"capture-perf-{variant}"
             common = ["--offline", "--manifest-path", str(manifest), "--bin", name,
