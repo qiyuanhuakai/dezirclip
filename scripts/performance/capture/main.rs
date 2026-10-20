@@ -187,11 +187,11 @@ fn verify(db: &DbState, id: i64, input: &ClipboardEntry, rows: usize, protected:
     }
     assert_eq!(
         conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row
-            .get::<_, usize>(0))
+            .get::<_, i64>(0).map(|count| usize::try_from(count).expect("COUNT must fit usize")))
             .unwrap(),
         rows + 1
     );
-    let visible: bool = conn.query_row("SELECT COUNT(*) FROM clipboard_fts WHERE rowid=?1 AND clipboard_fts MATCH 'benchmarker'", [id], |row| Ok(row.get::<_,usize>(0)? > 0)).unwrap();
+    let visible: bool = conn.query_row("SELECT COUNT(*) FROM clipboard_fts WHERE rowid=?1 AND clipboard_fts MATCH 'benchmarker'", [id], |row| Ok(row.get::<_,i64>(0)? > 0)).unwrap();
     assert_eq!(visible, !protected);
     json!({"body_roundtrip":true,"html_roundtrip":true,"row_count":rows+1,"id":id,"protected":protected,"fts_visible":visible})
 }
