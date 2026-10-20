@@ -6,11 +6,13 @@
 
 ## 隔离与输入
 
-需要 Linux、Python 3（仅标准库）、bubblewrap、Xvfb、DBus 及匹配 WebKitGTK 的 WebKitWebDriver。测试使用裸 Desktop release 二进制，不传 AppImage。工具不执行构建、不访问更新网络或签名密钥。
+需要 Linux、Python 3.13 或更新版本（仅标准库）、兼容 SQLite 3.50.4 或更新版本、bubblewrap、Xvfb、DBus 及匹配 WebKitGTK 的 WebKitWebDriver。Python 版本不代表 SQLite 版本，必须核对实际链接引擎；旧 3.45 的合成混写已出现完整性失败。生产 Core 自带固定的 SQLite 3.54.0。测试使用裸 Desktop release 二进制，不传 AppImage；工具不执行构建、不访问更新网络或签名密钥。
+
+默认使用隔离环境中的 `/usr/bin/python3`。系统解释器不满足要求时，提供 `--python-runtime /readonly/python`，指向独立、完整且可重定位的运行时前缀（含真实 `bin/python3.13` 和标准库）。工具只将该前缀按原路径只读挂载，不挂载宿主用户目录；显式设置 Python home、禁用用户 site 和字节码写入。宿主预检、隔离环境和结束核对使用实际解释器、SQLite 版本/source ID 及关键文件哈希；内置 sqlite 模块由承载它的解释器/libpython 文件核验。可信合成工具的兼容检查不代替生产引擎的敏感词项清除验证。
 
 每个块创建新的 user/PID/network/IPC/UTS/mount namespace、Xvfb、DBus、HOME 和 XDG profile。`--clearenv` 后只建立显式环境；宿主 display、session bus、用户目录、数据库和剪贴板不可见。剪贴板 owner 进程与 GUI 均在私有 PID namespace 内。除只读系统运行库、明确提供的二进制/工具/载荷外，只挂载本块的临时目录。临时根只能由外层工具创建为 `/tmp/dezirclip-native-capture-*`，内层核对普通 marker 文件及 namespace。证据不会自动删除。
 
-GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`，启动后通过真实 `get_data_path` 核对。每端先使用其对应版本 CLI 初始化 schema，再通过既有 `sqlite_history_fixture` 测试连接插入相同中性历史。旧 schema 无需引入 schema 19。persistent 与 deduplicate 开启；persistent limit、idle destroy、privacy detection、OCR、sequential 和 sound 关闭；rich text、files 开启。实际设置、schema 及环境随报告保存。只关闭 window tracker、edge docking、mouse hotkey 服务，剪贴板监听保持启用。
+GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`，启动后通过真实 `get_data_path` 核对。每端先使用其对应版本 CLI 初始化 schema，再通过 `sqlite_history_fixture` 测试连接插入相同中性历史。旧版保持原 schema，候选使用 schema 20，不让旧程序写新库。persistent 与 deduplicate 开启；persistent limit、idle destroy、privacy detection、OCR、sequential 和 sound 关闭；rich text、files 开启。实际设置、schema 及环境随报告保存。只关闭 window tracker、edge docking、mouse hotkey 服务，剪贴板监听保持启用。
 
 两份 `build.json` 至少包含如下信息，完整原文件会复制保留：
 
@@ -34,13 +36,13 @@ GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`�
 仅验证 namespace、环境与私有 Xvfb/DBus，不启动 GUI 或写剪贴板：
 
 ```sh
-python3 scripts/performance/native_capture.py --mode isolation
+python3 scripts/performance/native_capture.py --mode isolation --python-runtime /readonly/python
 ```
 
 低次数功能检查（两端各 1 个测量样本、1 个预热，1k/10k 历史、全部四场景）：
 
 ```sh
-python3 scripts/performance/native_capture.py --mode functional \
+python3 scripts/performance/native_capture.py --mode functional --python-runtime /readonly/python \
   --old-gui /readonly/old/bin/dezirclip --old-cli /readonly/old/bin/dzc \
   --old-proof /readonly/old/build.json \
   --candidate-gui /readonly/candidate/bin/dezirclip \
@@ -55,7 +57,7 @@ python3 scripts/performance/native_capture.py --mode functional \
 仅在源码、构建产物冻结及本任务静默窗口确认后运行。将冻结提交、产物哈希、本任务已停止的构建/其他采样、同机其余负载的控制范围和时段记录为普通文件，传入 `--quiet-window-note`。无法控制其他会话时应如实注明，不声称全宿主静默。该记录由操作者确认，工具不能自行证明机器没有其他负载；负载记录与完整 ABBA 轮次均需一起评估。
 
 ```sh
-python3 scripts/performance/native_capture.py --mode formal \
+python3 scripts/performance/native_capture.py --mode formal --python-runtime /readonly/python \
   --old-gui /readonly/old/bin/dezirclip --old-cli /readonly/old/bin/dzc \
   --old-proof /readonly/old/build.json \
   --candidate-gui /readonly/candidate/bin/dezirclip \

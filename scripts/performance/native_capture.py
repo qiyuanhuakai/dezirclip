@@ -36,6 +36,8 @@ NAMESPACES = ('user', 'pid', 'net', 'ipc', 'uts', 'mnt')
 CASES = ('text-200b', 'text-1mib', 'html-3kib', 'rgba-4k')
 IDENTIFIER = 'io.github.qiyuanhuakai.dezirclip'
 INTERVAL_SECONDS = .7
+MINIMUM_SQLITE = (3, 50, 4)
+SYSTEM_PYTHON = Path('/usr/bin/python3')
 
 
 def require(condition, message):
@@ -68,6 +70,80 @@ def namespaces():
 def regular(path):
     require(not path.is_symlink() and stat.S_ISREG(path.stat().st_mode), f'Regular input required: {path}')
     return path.resolve(strict=True)
+
+
+def python_environment(prefix):
+    environment = {'PYTHONNOUSERSITE': '1', 'PYTHONDONTWRITEBYTECODE': '1', 'PYTHONSAFEPATH': '1'}
+    if prefix:
+        environment['PYTHONHOME'] = str(prefix)
+    return environment
+
+
+def module_location(module):
+    path = getattr(module, '__file__', None)
+    if path:
+        return str(regular(Path(path)))
+    origin = getattr(getattr(module, '__spec__', None), 'origin', None)
+    require(origin in ('built-in', 'frozen'), 'Runtime module has no verifiable file or built-in origin')
+    return origin
+
+
+def runtime_details():
+    import _sqlite3
+    import encodings
+    import sqlite3
+    modules = {name: module_location(module) for name, module in (('_sqlite3', _sqlite3), ('sqlite3', sqlite3), ('encodings', encodings))}
+    paths = {Path(sys.executable).resolve(strict=True), *(Path(path) for path in modules.values() if path not in ('built-in', 'frozen'))}
+    for line in Path('/proc/self/maps').read_text().splitlines():
+        fields = line.split(maxsplit=5)
+        if len(fields) == 6 and fields[5].startswith('/'):
+            mapped = Path(fields[5])
+            if mapped.name.startswith(('libpython', 'libsqlite3')):
+                paths.add(regular(mapped))
+    with closing(sqlite3.connect(':memory:')) as connection:
+        source_id = connection.execute('SELECT sqlite_source_id()').fetchone()[0]
+    return {'python': sys.version, 'python_version_info': list(sys.version_info[:3]),
+            'sqlite': sqlite3.sqlite_version, 'sqlite_source_id': source_id,
+            'executable': str(Path(sys.executable).resolve(strict=True)),
+            'prefix': str(Path(sys.prefix).resolve(strict=True)), 'base_prefix': str(Path(sys.base_prefix).resolve(strict=True)),
+            'module_origins': modules,
+            'key_files': {str(path): {'sha256': digest(path), 'bytes': path.stat().st_size} for path in sorted(paths)}}
+
+
+def validate_runtime(details, expected=None):
+    require(tuple(details['python_version_info'][:2]) >= (3, 13), 'Native capture requires Python 3.13 or newer')
+    require(re.fullmatch(r'\d+\.\d+\.\d+', details['sqlite']), 'Unrecognized runtime SQLite version')
+    require(tuple(int(part) for part in details['sqlite'].split('.')) >= MINIMUM_SQLITE,
+            'Native capture requires SQLite >= 3.50.4; older external-content FTS writers are unsupported')
+    require(details.get('sqlite_source_id') and details.get('key_files'), 'Runtime provenance is incomplete')
+    if expected is not None:
+        require(details == expected, 'Python/SQLite runtime differs from the host preflight proof')
+
+
+def inspect_python_runtime(prefix, script, evidence_directory=None):
+    if prefix:
+        prefix = Path(prefix).resolve(strict=True)
+        require(prefix.is_dir() and prefix not in (Path.home().resolve(), *Path.home().resolve().parents)
+                and str(prefix) not in ('/usr', '/usr/local', '/etc', '/lib', '/lib64', '/tmp', '/run'),
+                'Python runtime must be a standalone prefix, not a host directory')
+        executable = regular(prefix / 'bin/python3.13')
+        require(executable.is_relative_to(prefix) and (prefix / 'lib/python3.13').is_dir(), 'Expected a standalone Python 3.13 layout')
+    else:
+        executable = regular(SYSTEM_PYTHON.resolve(strict=True))
+    environment = {'HOME': '/nonexistent', 'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', **python_environment(prefix)}
+    probe = subprocess.run([str(executable), '-s', str(script), '--runtime-probe'], cwd='/', env=environment,
+                           capture_output=True, text=True, timeout=30)
+    if evidence_directory:
+        evidence_directory.mkdir()
+        (evidence_directory / 'stdout.log').write_text(probe.stdout)
+        (evidence_directory / 'stderr.log').write_text(probe.stderr)
+    require(probe.returncode == 0, f'Python runtime probe failed ({probe.returncode}): {probe.stderr.strip()}')
+    details = json.loads(probe.stdout)
+    require(details['executable'] == str(executable), 'Runtime probe executed a different interpreter')
+    if prefix:
+        require(details['prefix'] == str(prefix) and details['base_prefix'] == str(prefix), 'Runtime prefix escaped its standalone installation')
+        require(all(Path(path).resolve(strict=True).is_relative_to(prefix) for path in details['key_files']), 'Standalone runtime loads Python or SQLite outside its prefix')
+    return {'prefix': str(prefix) if prefix else None, 'executable': str(executable), 'details': details}
 
 
 def validate_root(root):
@@ -309,12 +385,13 @@ def inside(root, plan, block):
                 'environment': {name: os.environ.get(name) for name in ('HOME', 'DISPLAY', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'TAURI_WEBVIEW_AUTOMATION', 'WEBKIT_DISABLE_DMABUF_RENDERER', 'WEBKIT_DISABLE_COMPOSITING_MODE', 'DEZIRCLIP_DISABLE_LINUX_SERVICES', 'TIEZ_DISABLE_LINUX_SERVICES')}, 'samples': []}
     destination = directory / 'block.json'
     save(destination, evidence)
-    if plan['mode'] == 'isolation':
-        evidence.update(status='passed', timing_eligible=False, desktop_capture_verified=False)
-        save(destination, evidence)
-        return
     driver = None
     try:
+        evidence['python_runtime'] = runtime_details()
+        validate_runtime(evidence['python_runtime'], plan['python_runtime']['details'])
+        if plan['mode'] == 'isolation':
+            evidence.update(status='passed', timing_eligible=False, desktop_capture_verified=False)
+            return
         database = seed_database(directory, block['rows'], block['variant'])
         evidence['database'] = str(database)
         gui = '/fixture-bin/old-gui' if block['variant'] == 'old' else '/fixture-bin/candidate-gui'
@@ -413,13 +490,17 @@ def sandbox(root, plan, block, inputs, driver):
         arguments += ['--ro-bind', str(root / 'payloads'), str(root / 'payloads'), '--ro-bind', str(driver), '/fixture-bin/WebKitWebDriver']
         for name, value in inputs.items():
             arguments += ['--ro-bind', str(value), f'/fixture-bin/{name}']
+    runtime = plan['python_runtime']
+    if runtime['prefix']:
+        arguments += ['--ro-bind', runtime['prefix'], runtime['prefix']]
     environment = {'HOME': '/home/fixture', 'XDG_DATA_HOME': str(directory / 'profile/data'), 'XDG_CONFIG_HOME': str(directory / 'profile/config'), 'XDG_CACHE_HOME': str(directory / 'profile/cache'),
                    'XDG_RUNTIME_DIR': '/run/fixture', 'PATH': '/usr/bin:/bin:/fixture-bin', 'LANG': 'C.UTF-8', 'TZ': 'UTC', 'TAURI_WEBVIEW_AUTOMATION': 'true',
                    'WEBKIT_DISABLE_DMABUF_RENDERER': '1', 'WEBKIT_DISABLE_COMPOSITING_MODE': '1', 'DEZIRCLIP_NATIVE_CAPTURE_INSIDE': '1',
                    'DEZIRCLIP_DISABLE_LINUX_SERVICES': 'window_tracker,edge_docking,mouse_hotkey', 'TIEZ_DISABLE_LINUX_SERVICES': 'window_tracker,edge_docking,mouse_hotkey'}
+    environment.update(python_environment(runtime['prefix']))
     for key, value in environment.items():
         arguments += ['--setenv', key, value]
-    arguments += ['--chdir', str(directory), '/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24 -noreset', '/usr/bin/dbus-run-session', '--', '/usr/bin/python3', '/fixture-bin/native_capture.py', '--inside', str(root), block['name']]
+    arguments += ['--chdir', str(directory), '/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24 -noreset', '/usr/bin/dbus-run-session', '--', runtime['executable'], '-s', '/fixture-bin/native_capture.py', '--inside', str(root), block['name']]
     return arguments
 
 
@@ -443,6 +524,12 @@ def outside(options):
     try:
         for source in (SCRIPT, FIXTURE_HELPER):
             require(digest(root / 'tool-sources' / source.name) == report['tool_sources'][source.name], 'Measurement tool changed while its snapshot was copied')
+        runtime = inspect_python_runtime(options.python_runtime, root / 'tool-sources' / SCRIPT.name, root / 'runtime-host-before')
+        report['python_runtime'] = runtime
+        save(destination, report)
+        validate_runtime(runtime['details'])
+        save(root / 'python-runtime.json', runtime)
+        report['python_runtime_proof_sha256'] = digest(root / 'python-runtime.json')
         if options.mode != 'isolation':
             require(not options.baseline_only or options.mode == 'functional', 'Baseline-only is a functional tool check, never a formal comparison')
             required = ('old_gui', 'old_cli', 'writer', 'old_proof', 'webkit_driver')
@@ -485,7 +572,7 @@ def outside(options):
         blocks = [{'name': f'{name}-{rows}', 'variant': variant, 'rows': rows, 'directory': f'rows-{rows}/{name}'} for rows in options.rows for name, variant in order]
         if options.mode == 'isolation':
             blocks = [{'name': 'isolation', 'variant': None, 'rows': 0, 'directory': 'isolation'}]
-        plan = {'mode': options.mode, 'samples': options.samples, 'warmup': options.warmup, 'cases': options.cases, 'host_namespaces': namespaces(), 'blocks': blocks,
+        plan = {'mode': options.mode, 'samples': options.samples, 'warmup': options.warmup, 'cases': options.cases, 'host_namespaces': namespaces(), 'blocks': blocks, 'python_runtime': runtime,
                 'payloads': prepare_payloads(root, options.cases, options.samples + options.warmup) if options.mode != 'isolation' else {}}
         save(root / 'plan.json', plan)
         report['plan_sha256'] = digest(root / 'plan.json')
@@ -519,6 +606,11 @@ def outside(options):
         require(all(block['status'] == 'passed' for block in report['blocks']), 'At least one native block failed; all planned rounds were retained')
         for name, binary in {**inputs, **({'webkit-driver': driver} if driver else {})}.items():
             require(digest(binary) == report['inputs'][name]['sha256'], 'Input binary changed during capture')
+        runtime_after = inspect_python_runtime(runtime['prefix'], root / 'tool-sources' / SCRIPT.name, root / 'runtime-host-after')
+        validate_runtime(runtime_after['details'], runtime['details'])
+        require(runtime_after == runtime, 'Runtime selection changed during capture')
+        require(digest(root / 'python-runtime.json') == report['python_runtime_proof_sha256'], 'Runtime proof changed during capture')
+        report['python_runtime_verified_after'] = runtime_after
         require(digest(root / 'plan.json') == report['plan_sha256'], 'Capture plan changed during capture')
         for values in plan['payloads'].values():
             for payload in values:
@@ -558,6 +650,9 @@ def outside(options):
 
 
 def main():
+    if len(sys.argv) == 2 and sys.argv[1] == '--runtime-probe':
+        print(json.dumps(runtime_details()))
+        return
     if os.environ.get('DEZIRCLIP_NATIVE_CAPTURE_INSIDE') == '1':
         require(len(sys.argv) == 4 and sys.argv[1] == '--inside', 'Use only the outer isolated runner')
         root = Path(sys.argv[2]).resolve(strict=True)
@@ -570,6 +665,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode', choices=('isolation', 'functional', 'formal'), default='functional')
     parser.add_argument('--baseline-only', action='store_true', help='Functional-only old GUI smoke check using its proven old CLI writer')
+    parser.add_argument('--python-runtime', type=Path, help='Standalone Python 3.13 prefix, mounted read-only at its real path; actual SQLite must be >= 3.50.4')
     for name in ('old-gui', 'old-cli', 'candidate-gui', 'writer', 'old-proof', 'candidate-proof', 'webkit-driver', 'quiet-window-note'):
         parser.add_argument('--' + name)
     parser.add_argument('--samples', type=int)

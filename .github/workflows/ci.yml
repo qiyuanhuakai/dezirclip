@@ -94,9 +94,22 @@ jobs:
         run: node scripts/check-tauri-bin-dir.mjs
 
       - name: Setup Python for archive validation
+        if: runner.os == 'Windows'
         uses: actions/setup-python@v6
         with:
           python-version: '3.13'
+
+      - name: Setup standalone Python for Linux SQLite fixtures
+        if: runner.os == 'Linux'
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        env:
+          UV_MANAGED_PYTHON: '1'
+        with:
+          version: '0.13.3'
+          python-version: '3.13.15'
+          activate-environment: true
+          venv-path: ${{ runner.temp }}/dezirclip-fixture-python
+          enable-cache: false
 
       - name: Require compatible SQLite for synthetic FTS5 fixtures
         run: >-
