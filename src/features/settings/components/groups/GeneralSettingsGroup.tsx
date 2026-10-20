@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import UpdateSettingsSection from "./UpdateSettingsSection";
 
 interface LabelWithHintProps {
     label: string;
@@ -116,7 +115,6 @@ const GeneralSettingsGroup = ({
         </div>
         {!collapsed && (
             <div className="group-content">
-                <UpdateSettingsSection t={t} />
                 <div className="setting-item">
                     <div className="item-label-group">
                         <span className="item-label">{t('autostart')}</span>
