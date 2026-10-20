@@ -14,6 +14,7 @@ pub(crate) fn parse_hotkey_list(raw: &str) -> Vec<String> {
 }
 
 fn register_shortcut_if_valid(app: &AppHandle, raw_hotkey: &str) {
+    if dzc_platform::runtime::is_native_wayland() { return; }
     if raw_hotkey.is_empty()
         || raw_hotkey.eq_ignore_ascii_case("MouseMiddle")
         || raw_hotkey.eq_ignore_ascii_case("MButton")
@@ -35,6 +36,7 @@ fn register_shortcut_if_valid(app: &AppHandle, raw_hotkey: &str) {
 }
 
 pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
+    if dzc_platform::runtime::is_native_wayland() { return Ok(()); }
     let settings = app
         .try_state::<SettingsState>()
         .ok_or_else(|| AppError::Internal("SettingsState 不可用".to_string()))?;
@@ -79,6 +81,7 @@ pub fn sync_hotkeys_from_settings(app: &AppHandle) -> AppResult<()> {
 
 #[tauri::command]
 pub fn register_hotkey(app_handle: AppHandle, hotkey: String) -> AppResult<()> {
+    super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?;
     if let Some(settings) = app_handle.try_state::<SettingsState>() {
         let mut guard = settings.main_hotkey.lock().unwrap();
         *guard = hotkey.clone();
@@ -89,6 +92,7 @@ pub fn register_hotkey(app_handle: AppHandle, hotkey: String) -> AppResult<()> {
 
 #[tauri::command]
 pub fn test_hotkey_available(app_handle: AppHandle, hotkey: String) -> AppResult<bool> {
+    super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?;
     if hotkey.is_empty()
         || hotkey.eq_ignore_ascii_case("MouseMiddle")
         || hotkey.eq_ignore_ascii_case("MButton")

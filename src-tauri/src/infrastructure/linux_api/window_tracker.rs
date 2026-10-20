@@ -23,6 +23,7 @@ fn unknown_app_info() -> ActiveAppInfo {
 }
 
 pub fn init_window_tracking(_app_handle: AppHandle) -> AppResult<()> {
+    if dzc_platform::runtime::is_native_wayland() { return Ok(()); }
     std::thread::spawn(move || {
         if let Err(e) = run_window_tracking_loop() {
             eprintln!("[window_tracker] Tracking loop error: {}", e);
@@ -140,6 +141,7 @@ fn get_window_pid(
 }
 
 pub fn get_foreground_window_info() -> AppResult<ActiveAppInfo> {
+    if dzc_platform::runtime::is_native_wayland() { return Ok(unknown_app_info()); }
     let (conn, screen_num) = x11rb::connect(None).map_err(|e| AppError::Internal(e.to_string()))?;
     let screen = &conn.setup().roots[screen_num];
     let root = screen.root;
@@ -222,6 +224,7 @@ fn send_net_active_window(
 }
 
 pub fn activate_window_focus(window_handle: usize) -> AppResult<()> {
+    if dzc_platform::runtime::is_native_wayland() { return Err(AppError::Internal("wayland_interaction_unavailable".into())); }
     let window_id = window_handle as u32;
 
     if window_id == 0 {
@@ -354,6 +357,7 @@ fn find_window_by_pid(conn: &impl Connection, screen_num: usize, target_pid: u32
 }
 
 pub fn raise_own_window() -> AppResult<()> {
+    if dzc_platform::runtime::is_native_wayland() { return Err(AppError::Internal("wayland_interaction_unavailable".into())); }
     let (conn, screen_num) = x11rb::connect(None).map_err(|e| AppError::Internal(e.to_string()))?;
     let screen = &conn.setup().roots[screen_num];
     let root = screen.root;
@@ -387,6 +391,7 @@ pub fn raise_own_window() -> AppResult<()> {
 }
 
 pub fn restore_last_focus() -> AppResult<()> {
+    if dzc_platform::runtime::is_native_wayland() { return Err(AppError::Internal("wayland_interaction_unavailable".into())); }
     let window_id = {
         let hwnd = LAST_ACTIVE_HWND
             .lock()
@@ -402,6 +407,7 @@ pub fn restore_last_focus() -> AppResult<()> {
 }
 
 pub fn get_clipboard_source_app_info() -> AppResult<ActiveAppInfo> {
+    if dzc_platform::runtime::is_native_wayland() { return Ok(unknown_app_info()); }
     let (conn, screen_num) = x11rb::connect(None).map_err(|e| AppError::Internal(e.to_string()))?;
     let _screen = &conn.setup().roots[screen_num];
 

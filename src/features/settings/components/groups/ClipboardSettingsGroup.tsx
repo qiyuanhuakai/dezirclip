@@ -1,3 +1,4 @@
+import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useEffect, useState } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -372,6 +373,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     )}
 
 
+                    <NativeFeatureBoundary t={props.t}>
                     <div className="setting-item">
                         <div className="item-label-group">
                             <span className="item-label">{props.t('rich_paste_hotkey_label')}</span>
@@ -639,6 +641,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         </div>
                     )}
 
+                    </NativeFeatureBoundary>
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('privacy_protection')}
@@ -752,6 +755,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         )}
                     </div>
 
+                    <NativeFeatureBoundary t={props.t}>
                     <div className="setting-item no-border column">
                         <div className="item-label-group">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -947,6 +951,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
                     </div>
+                    </NativeFeatureBoundary>
                 </div>
             )}
         </div>

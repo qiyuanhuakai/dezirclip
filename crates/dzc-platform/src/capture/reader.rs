@@ -13,6 +13,8 @@ pub struct NativeCaptureReader {
     empty: Option<CaptureSkip>,
     #[cfg(target_os = "linux")]
     wayland_selection: Option<crate::wayland::SelectionSnapshot>,
+    #[cfg(target_os = "linux")]
+    wayland_preflight_empty: bool,
 }
 
 fn fingerprint(value: impl Hash) -> u64 {
@@ -201,9 +203,13 @@ impl NativeCaptureReader {
             stage: CaptureStage::Read,
             code: error.to_string(),
         };
+        if self.wayland_preflight_empty {
+            self.wayland_preflight_empty = false;
+            return Ok(None);
+        }
         let selection = match self
             .wayland_selection
-            .take()
+            .clone()
             .map(Ok)
             .unwrap_or_else(WaylandClipboardBackend::snapshot)
         {
@@ -213,6 +219,10 @@ impl NativeCaptureReader {
         };
         if !selection.is_current() {
             return Err(failure(WaylandError::SelectionChanged));
+        }
+        if selection.is_owned_copy() {
+            self.empty = Some(CaptureSkip::OwnClipboard);
+            return Ok(None);
         }
         // Explicit source exclusions protect capture even before the optional
         // Core preflight adapter is attached. No body is requested on this path.
@@ -234,7 +244,9 @@ impl NativeCaptureReader {
         let local_files = if has("text/uri-list") {
             let bytes = receive("text/uri-list", 1024 * 1024)?;
             super::x11_clipboard::parse_uri_list_payload(&bytes)
-        } else { None };
+        } else {
+            None
+        };
         let data = if let Some(files) = local_files {
             if !request.files {
                 self.empty = Some(CaptureSkip::FilesDisabled);
@@ -363,20 +375,76 @@ impl NativeCaptureReader {
 impl CaptureReader for NativeCaptureReader {
     #[cfg(target_os = "linux")]
     fn preflight_privacy(&mut self) -> Result<dzc_core::capture::PrivacyPreflight, CaptureFailure> {
-        self.x11_privacy = None;
-        let snapshot = super::x11_privacy::SelectionSnapshot::preflight()?;
-        let report = snapshot.report();
-        self.x11_privacy = Some(snapshot);
-        Ok(report)
+        use dzc_core::capture::{PrivacyHintAvailability, PrivacyPreflight};
+        if !crate::wayland::requested() {
+            self.x11_privacy = None;
+            let snapshot = super::x11_privacy::SelectionSnapshot::preflight()?;
+            let report = snapshot.report();
+            self.x11_privacy = Some(snapshot);
+            return Ok(report);
+        }
+        self.wayland_selection = None;
+        self.wayland_preflight_empty = false;
+        let snapshot = match crate::wayland::WaylandClipboardBackend::snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(crate::wayland::WaylandError::EmptySelection) => {
+                self.wayland_preflight_empty = true;
+                return Ok(PrivacyPreflight {
+                    availability: PrivacyHintAvailability::Checked,
+                    ..Default::default()
+                });
+            }
+            Err(error) => {
+                return Err(CaptureFailure {
+                    stage: CaptureStage::Read,
+                    code: error.to_string(),
+                })
+            }
+        };
+        let secret = snapshot.password_hint().map_err(|error| CaptureFailure {
+            stage: CaptureStage::Read,
+            code: error.to_string(),
+        })?;
+        if !snapshot.is_current() {
+            return Err(CaptureFailure {
+                stage: CaptureStage::Read,
+                code: "ClipboardSelectionChanged".into(),
+            });
+        }
+        let preflight = PrivacyPreflight {
+            hints: if secret == Some(true) {
+                vec![dzc_core::ports::PrivacyHint::Sensitive]
+            } else {
+                Vec::new()
+            },
+            availability: PrivacyHintAvailability::Checked,
+            selection_id: Some(snapshot.sequence()),
+        };
+        self.wayland_selection = Some(snapshot);
+        Ok(preflight)
     }
     #[cfg(target_os = "linux")]
-    fn selection_id(&self) -> Option<u64> { self.x11_privacy.as_ref().and_then(|snapshot| snapshot.selection_id()) }
+    fn selection_id(&self) -> Option<u64> {
+        if crate::wayland::requested() {
+            self.wayland_selection
+                .as_ref()
+                .filter(|s| s.is_current())
+                .map(|s| s.sequence())
+        } else {
+            self.x11_privacy
+                .as_ref()
+                .and_then(|snapshot| snapshot.selection_id())
+        }
+    }
+
     #[cfg(target_os = "windows")]
     fn preflight_privacy(&mut self) -> Result<dzc_core::capture::PrivacyPreflight, CaptureFailure> {
         super::windows_privacy::preflight()
     }
     #[cfg(target_os = "windows")]
-    fn selection_id(&self) -> Option<u64> { super::windows_privacy::selection_id() }
+    fn selection_id(&self) -> Option<u64> {
+        super::windows_privacy::selection_id()
+    }
     fn read(&mut self, request: CaptureReadRequest) -> Result<Option<CaptureData>, CaptureFailure> {
         self.metadata = CaptureReadMetadata::default();
         self.empty = None;
@@ -617,7 +685,8 @@ mod tests {
                 sequential_echo: None,
             };
             let mut reader = NativeCaptureReader::default();
-            let frame = CaptureEngine::read_authorized(&context, &mut reader, &store, &mut ()).unwrap();
+            let frame =
+                CaptureEngine::read_authorized(&context, &mut reader, &store, &mut ()).unwrap();
             let metadata = frame.metadata;
             if matches!(&frame.data, CaptureData::RgbaImage { .. }) {
                 assert!(metadata.image && metadata.files && metadata.image_content_hash.is_some());

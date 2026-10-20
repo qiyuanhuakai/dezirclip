@@ -164,6 +164,7 @@ fn record_dispatch(id: i64) {
 /// surfacing an error to the user.
 #[tauri::command]
 pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
+    super::capability_cmd::require_desktop_interaction()?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, _created| {
             show_quick_paste_window(&app, window)
@@ -176,6 +177,7 @@ pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
 /// Evaluate toggles inside the same operation as a possible cold build, so two
 /// hotkey presses during creation still open and then close the overlay.
 pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
+    super::capability_cmd::require_desktop_interaction()?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, created| {
             if !created && window.is_visible().unwrap_or(false) {
@@ -284,6 +286,7 @@ pub async fn paste_quick_paste_selection(
     session: tauri::State<'_, SessionHistory>,
     entry_id: i64,
 ) -> Result<(), String> {
+    super::capability_cmd::require_desktop_interaction()?;
     if entry_id <= 0 {
         return Err(format!("Invalid entry id: {entry_id}"));
     }

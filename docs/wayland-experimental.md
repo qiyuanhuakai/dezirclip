@@ -28,6 +28,18 @@ Wayland 剪贴板后端与窗口 Surface 是独立能力。后端使用原生 Un
 
 `DEZIRCLIP_DISABLE_LINUX_SERVICES`（兼容 `TIEZ_DISABLE_LINUX_SERVICES`）的 `clipboard_listener` 或 `all` 可关闭监听；Wayland 后端另支持 `wayland_clipboard`。未启用捕获时不增加常驻 worker。
 
+## 客户端与桌面降级
+
+CLI、直接链接的 Core 客户端和 GUI 根据运行时会话选择同一原生后端。`capabilities --json` 与 GUI `get_platform_capabilities` 查询实际 registry/seat/data device；即使存在 DISPLAY，Wayland 会话也不会改用 X11 的剪贴板、来源身份或按键注入。只有一次性继承的 WAYLAND_SOCKET 且没有可重连 WAYLAND_DISPLAY 时，返回 `WaylandInheritedSocketUnavailable`，不会在探测时消耗该 fd 后宣称可用。
+
+`runtime::EmbeddedClipboardWriter` 持有进程内 selection owner，供已有 Host/Service 注入 Core ClipboardService；`stop()` 成功确认其 owner 退出，后续 write 被拒绝。它不运行 current_exe 的隐藏子命令。独立 dzc 命令仍通过其明确的 clipboard-owner 子进程保留 selection；正文只经 stdin 传输，不进入 argv。GUI 手动复制使用进程内 owner，私有进程 MIME 标记只用于避免再次捕获自己的复制，不能当隐私许可。新 owner 协商失败保留原 owner；显式停止不以 Drop 代替确认。
+
+捕获读取器在正文前读取同一 offer 的 KDE hint，交给 Core 隐私预检；明确 secret 直接跳过。Windows/X11 使用各自受限预检，X11 缺少足够 selection 跟踪证据时不会把空结果当作完整检查。GUI 历史项在 Wayland 中执行手动复制，保留当前搜索和记录，不自动粘贴或按“粘贴后删除”修改历史。
+
+全局快捷键、自动粘贴、快速粘贴浮层、跨应用焦点恢复、全局定位/贴边、置顶、透明调整与截图目前没有获授权的原生适配器；GUI 禁用对应设置并说明原因，后端也在任何 X11/xdotool 操作之前拒绝。现有设置值不改写，重新在 Windows/X11 打开时仍可使用。Portal 探测只查询已运行服务的接口版本，不激活服务、不创建授权会话；接口存在不等于用户已授权，也不使上述能力变为 available。
+
+能力查询不读取正文；GUI 每个 WebView 只发起一次查询，探测失败时交互保持禁用并提示重新打开窗口。`is_finished()` 只表示监听 worker 已结束；释放捕获所有权仍必须等 `stop()` join 确认。
+
 ## 当前验证与边界
 
 P5-A 的后端测试在 Ubuntu24.04 WSL、Sway1.9 / wlroots0.17.1 的 headless pixman 合成器完成；使用清空环境的 bubblewrap、私有 user/PID/network/IPC namespace、HOME、runtime 和 display，禁用 XWayland，不接触宿主剪贴板。实际验证了 wlr 的文本/HTML、KDE secret marker、替换 owner、取消监听与 owner、selection 清空，以及统一订阅 ready/stop/join。Xvfb 私有 display 另验证 XFixes 和原轮询降级的订阅停止。

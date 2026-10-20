@@ -99,6 +99,12 @@ impl ClipboardSubscription {
     pub fn is_stopped(&self) -> bool {
         self.worker.is_none()
     }
+    /// Observes liveness only. Ownership may be released only after stop joins.
+    pub fn is_finished(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_none_or(std::thread::JoinHandle::is_finished)
+    }
 }
 impl Drop for ClipboardSubscription {
     fn drop(&mut self) {

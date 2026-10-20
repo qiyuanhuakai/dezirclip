@@ -4,6 +4,25 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::time::Instant;
 
+pub(super) fn check_cancel(cancel: Option<&UnixStream>) -> Result<(), WaylandError> {
+    if let Some(cancel) = cancel {
+        let mut fd = libc::pollfd {
+            fd: cancel.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // A zero-time check is only made while processing an active operation.
+        let ready = unsafe { libc::poll(&mut fd, 1, 0) };
+        if ready < 0 && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted {
+            return Err(WaylandError::Disconnected);
+        }
+        if ready > 0 && fd.revents != 0 {
+            return Err(WaylandError::Cancelled);
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn wait(
     fd: i32,
     events: i16,
@@ -69,6 +88,7 @@ pub(super) fn receive(
     let mut result = Vec::new();
     let mut buffer = [0u8; 16 * 1024];
     loop {
+        check_cancel(cancel)?;
         match input.read(&mut buffer) {
             Ok(0) => return Ok(result),
             Ok(count) => {
@@ -105,6 +125,7 @@ pub(super) fn send(
     let mut output = std::fs::File::from(fd);
     let mut offset = 0;
     while offset < bytes.len() {
+        check_cancel(cancel)?;
         match output.write(&bytes[offset..]) {
             Ok(0) => return Err(WaylandError::TransferFailed),
             Ok(count) => offset += count,
