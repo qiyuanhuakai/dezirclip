@@ -14,6 +14,8 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 
 `preparation.json` 包含实际引用候选源码每个 Git 文件的 SHA256、集合哈希、HEAD 和脏状态；旧源 archive 哈希及唯一临时 manifest workspace 隔离改动前后哈希；Rust/Cargo 版本、profile、target、相关构建环境、机器标识哈希；Python 工具和 Rust 模板哈希；各适配器 manifest/lock/命令、只读二进制哈希及功能报告哈希。适配器 lock 从对应源码 lock 复制，构建后拒绝出现源 lock 以外的外部包版本。release profile 保持 LTO、单 codegen unit、`opt-level=s`、strip、abort。
 
+适配器显式使用 `rustc --print host-tuple` 的本机目标；继承的 `CARGO_BUILD_TARGET` 仍记录在凭据中，但不能改变正式测量的目标。构建保留完整 Cargo JSON 与 stderr 及哈希，只接受本次成功构建报告的唯一 `compiler-artifact.executable`，并核对 manifest、bin、目标和 profile 目录。冻结副本前后再次核对源文件与副本哈希，绝不回退到缓存根目录中的同名文件。回归覆盖同宿主显式 target、空缓存、旧根目录负控、错误或缺失 artifact；`DZC_TEST_REAL_CARGO=1` 可额外运行 std-only 的真实 Cargo JSON 冒烟。
+
 可重复 `--evidence REPORT.json`，把已有 **完整原始 CLI 样本**、CLI build.json 或功能检查 JSON 原样复制到证据目录并记录哈希；不会只保留 p95 摘要。正式结果应包含旧新两端所有轮次、失败轮次和构建凭据。
 
 ## 最小测量包装与功能后置条件

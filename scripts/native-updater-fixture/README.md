@@ -32,6 +32,10 @@ python3 scripts/test-native-appimage.py \
 4. `new`：从替换后的包启动实际 GUI。CLI 与 GUI 回读必须保留旧历史，WebView 必须实际渲染该条目，`get_update_support` 必须返回 `app_image` / `canInstall=true`。
 5. `new-read-only`：仅当前 AppImage 只读挂载，profile 仍可写。GUI 必须继续显示历史，安装能力必须返回 `app_image_read_only` / `canInstall=false`。
 
+`old` 写入历史后，仅在合成 profile 显式设置 `app.silent_start=false` 和 `app.disable_webview_gpu=true`，让实际 release GUI 在无 GPU 的 Xvfb 中可见。记录设置的旧值与新值，升级后的两个 GUI 场景必须保留这些值；产品默认值和真实用户配置均不改变。这项验收覆盖现有无 GPU 模式，不代表硬件加速路径已在真实桌面验证。
+
+WebView 另行保留实际 URL、DOM、页面与原生窗口可见性、Tauri bridge 和布局状态。就绪失败时尝试截图并记录截图错误，原始失败不会被重标为通过。
+
 每个场景都有独立的 user、PID、network、IPC、UTS namespace；user/PID/network 标识还会与宿主核对。bubblewrap 清空继承的环境，使用私有 HOME、XDG profile、Xvfb 和 D-Bus，不挂载真实 HOME 或宿主桌面 socket。只有合成 scenario 可写；helper、driver、脚本和系统运行库只读挂载。只读场景进一步收紧 scenario 或 AppImage 的挂载权限。helper 拒绝非临时 fixture、错误 marker、符号链接文件和缺少隔离凭据的调用。
 
 ## 证据和边界

@@ -1,0 +1,187 @@
+"""Controlled Cargo fixtures; no report produced here is performance evidence."""
+from contextlib import redirect_stdout, redirect_stderr
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+SPEC = importlib.util.spec_from_file_location("prepare_capture", Path(__file__).resolve().parents[1] / "prepare_capture.py")
+PREPARE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(PREPARE)
+HOST = "x86_64-pc-windows-msvc" if os.name == "nt" else "x86_64-unknown-linux-gnu"
+EXTENSION = ".exe" if os.name == "nt" else ""
+
+
+def artifact(manifest, executable, name, fresh=False):
+    return {"reason": "compiler-artifact", "package_id": "path+file:///synthetic#" + name + "@0.0.0",
+            "manifest_path": str(manifest), "target": {"name": name, "kind": ["bin"]},
+            "profile": {"test": False, "opt_level": "0"}, "features": [],
+            "filenames": [str(executable)], "executable": str(executable), "fresh": fresh}
+
+
+def messages(*items):
+    return "\n".join(json.dumps(item) for item in [*items, {"reason": "build-finished", "success": True}]) + "\n"
+
+
+class PreparationTests(unittest.TestCase):
+    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False):
+        temporary = tempfile.TemporaryDirectory(prefix="dzc-prepare-artifact-test-")
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        lock = 'version = 4\n[[package]]\nname = "fixture"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + "0" * 64 + '"\n'
+        core = root / "crates/dzc-core"
+        core.mkdir(parents=True)
+        (core / "Cargo.toml").write_text('[package]\nname="dzc-core"\nversion="0.0.0"\n[features]\nlegacy-bridge=[]\n')
+        (root / "Cargo.lock").write_text(lock)
+        # This conflicting config and environment must not redirect a native
+        # benchmark or make its proof advertise the wrong architecture.
+        (root / ".cargo").mkdir()
+        (root / ".cargo/config.toml").write_text('[build]\ntarget="aarch64-unknown-linux-gnu"\n')
+        target = root / "reused target"
+        if stale:
+            (target / "debug").mkdir(parents=True)
+            for variant in ("legacy", "core", "engine"):
+                (target / "debug" / ("capture-perf-" + variant + EXTENSION)).write_bytes(b"stale-root-artifact")
+        output = root / ".harness/new-preparation"
+        state = {"revision": "frozen-candidate", "dirty": False, "status": "", "files_sha256": "synthetic", "files": {}}
+
+        def command(args, cwd=None):
+            if args == ["git", "rev-parse", "frozen-candidate"]: return "frozen-candidate"
+            if args[:2] == ["git", "rev-parse"]: return "baseline-revision"
+            if args == ["rustc", "--print", "host-tuple"]: return HOST
+            if args[0] in ("rustc", "cargo"): return args[0] + " fixture version"
+            raise AssertionError(args)
+
+        def baseline(repository, revision, directory):
+            source = directory / "baseline-source"
+            package = source / "src-tauri"
+            package.mkdir(parents=True)
+            (package / "Cargo.toml").write_text('[package]\nname="dezirclip"\nversion="0.0.0"\n')
+            (package / "Cargo.lock").write_text(lock)
+            return source, {"revision": revision, "archive_sha256": "fixture"}
+
+        seen_builds = []
+        def cargo(args, **kwargs):
+            self.assertEqual(args[0], "cargo")
+            self.assertIn("--offline", args)
+            self.assertEqual(args[args.index("--target") + 1], HOST)
+            self.assertEqual(args[args.index("--jobs") + 1], "2")
+            self.assertEqual(kwargs["cwd"], root)
+            if args[1] == "check": return subprocess.CompletedProcess(args, 0)
+            self.assertEqual(args[1], "build")
+            self.assertIn("--locked", args)
+            self.assertIn("--message-format=json", args)
+            name = args[args.index("--bin") + 1]
+            manifest = Path(args[args.index("--manifest-path") + 1])
+            executable = target / HOST / "debug" / (name + EXTENSION)
+            executable.parent.mkdir(parents=True, exist_ok=True)
+            executable.write_bytes(("current-cargo-output:" + name).encode())
+            seen_builds.append(executable)
+            stdout = messages() if bad_artifact else messages(artifact(manifest, executable, name))
+            return subprocess.CompletedProcess(args, 0, stdout, "synthetic cargo stderr\n")
+
+        args = SimpleNamespace(repository=root, candidate=root, output=output, candidate_revision="frozen-candidate",
+                               allow_dirty_candidate=False, baseline_revision="baseline", evidence=[], profile="debug",
+                               target_dir=target, jobs=2, mode="build")
+        with patch.object(PREPARE, "command", side_effect=command), patch.object(PREPARE, "source_fingerprint", return_value=state), \
+             patch.object(PREPARE, "archive_baseline", side_effect=baseline), patch.object(PREPARE.subprocess, "run", side_effect=cargo), \
+             patch.object(PREPARE.platform, "node", return_value="synthetic-host"), \
+             patch.object(PREPARE.platform, "machine", return_value="synthetic-native"), \
+             patch.dict(os.environ, {"CARGO_BUILD_TARGET": cargo_target}), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            if bad_artifact:
+                with self.assertRaisesRegex(ValueError, "Expected one binary artifact"):
+                    PREPARE.prepare(args)
+                self.assertFalse((output / "preparation.json").exists())
+                self.assertEqual((target / "debug" / ("capture-perf-legacy" + EXTENSION)).read_bytes(), b"stale-root-artifact")
+                self.assertTrue((output / "adapters/legacy/cargo-build.jsonl").is_file())
+                return
+            PREPARE.prepare(args)
+        proof = json.loads((output / "preparation.json").read_text())
+        self.assertEqual(proof["target"], HOST)
+        self.assertEqual(proof["build_environment"]["CARGO_BUILD_TARGET"], cargo_target)
+        self.assertTrue(proof["eligible_for_timing"])
+        self.assertEqual(len(seen_builds), 3)
+        for variant, record in proof["adapters"].items():
+            expected = target / HOST / "debug" / ("capture-perf-" + variant + EXTENSION)
+            self.assertEqual(Path(record["cargo_executable"]), expected)
+            self.assertEqual(Path(record["binary"]).read_bytes(), ("current-cargo-output:capture-perf-" + variant).encode())
+            self.assertEqual(record["binary_sha256"], PREPARE.sha256(expected))
+            self.assertEqual(record["cargo_executable_sha256"], record["binary_sha256"])
+            self.assertEqual(record["compiler_artifact"]["executable"], str(expected))
+            self.assertEqual(record["build_messages_sha256"], PREPARE.sha256(Path(record["build_messages"])))
+            if stale:
+                self.assertEqual((target / "debug" / expected.name).read_bytes(), b"stale-root-artifact")
+
+    def test_explicit_host_target_in_clean_cache_freezes_actual_reported_binary(self):
+        self.prepare()
+
+    def test_old_root_artifact_is_never_bound_to_the_new_source_proof(self):
+        self.prepare(stale=True)
+
+    def test_explicit_native_target_overrides_config_and_environment(self):
+        self.prepare(stale=True, cargo_target="aarch64-unknown-linux-gnu")
+
+    def test_missing_cargo_artifact_rejects_even_when_root_binary_exists(self):
+        self.prepare(stale=True, bad_artifact=True)
+
+
+class ArtifactValidationTests(unittest.TestCase):
+    def test_wrong_manifest_duplicate_missing_or_test_artifact_cannot_select_a_binary(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-artifact-parser-") as directory:
+            root = Path(directory).resolve()
+            manifest = root / "Cargo.toml"
+            manifest.write_text("synthetic")
+            name = "capture-perf-engine"
+            executable = root / "target" / HOST / "debug" / (name + EXTENSION)
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"current")
+            value = artifact(manifest, executable, name, fresh=True)
+            self.assertEqual(PREPARE.select_cargo_executable(messages(value), manifest, name, root / "target", HOST, "debug")[0], executable)
+            invalid = [messages(), messages(value, value)]
+            for field, replacement in [("manifest_path", str(root / "other/Cargo.toml")), ("executable", None),
+                                       ("profile", {"test": True}), ("filenames", [])]:
+                invalid.append(messages(dict(value, **{field: replacement})))
+            invalid.append(json.dumps(value) + '\n{"reason":"build-finished","success":false}\n')
+            stale = root / "target/debug" / executable.name
+            stale.parent.mkdir()
+            stale.write_bytes(b"stale")
+            invalid.append(messages(artifact(manifest, stale, name)))
+            for stream in invalid:
+                with self.subTest(stream=stream), self.assertRaises(ValueError):
+                    PREPARE.select_cargo_executable(stream, manifest, name, root / "target", HOST, "debug")
+
+    @unittest.skipUnless(os.environ.get("DZC_TEST_REAL_CARGO") == "1" and shutil.which("cargo"), "Opt in to the small native Cargo artifact smoke test")
+    def test_real_cargo_explicit_host_json_ignores_old_root_and_reports_fresh_cache(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-real-cargo-artifact-") as directory:
+            root = Path(directory).resolve()
+            name = "capture-perf-fixture"
+            manifest = root / "Cargo.toml"
+            manifest.write_text('[package]\nname="' + name + '"\nversion="0.0.0"\nedition="2021"\n[workspace]\n')
+            (root / "Cargo.lock").write_text('version=4\n[[package]]\nname="' + name + '"\nversion="0.0.0"\n')
+            (root / "src").mkdir()
+            (root / "src/main.rs").write_text('fn main() {}\n')
+            target = root / "target"
+            (target / "debug").mkdir(parents=True)
+            stale = target / "debug" / (name + EXTENSION)
+            stale.write_bytes(b"stale root cache")
+            host = subprocess.check_output(["rustc", "--print", "host-tuple"], text=True).strip()
+            arguments = ["cargo", "build", "--offline", "--locked", "--message-format=json", "--manifest-path", str(manifest), "--bin", name, "--target", host, "--target-dir", str(target), "--jobs", "2"]
+            with patch.dict(os.environ, {"CARGO_BUILD_TARGET": host}):
+                binary, proof = PREPARE.build_cargo_executable(arguments, manifest, name, target, host, "debug", root)
+                self.assertEqual(binary, target / host / "debug" / (name + EXTENSION))
+                self.assertNotEqual(binary.read_bytes(), stale.read_bytes())
+                _, cached = PREPARE.build_cargo_executable(arguments, manifest, name, target, host, "debug", root)
+            self.assertTrue(cached["compiler_artifact"]["fresh"])
+            self.assertEqual(stale.read_bytes(), b"stale root cache")
+            self.assertEqual(proof["compiler_artifact"]["manifest_path"], str(manifest))
+
+
+if __name__ == "__main__":
+    unittest.main()
