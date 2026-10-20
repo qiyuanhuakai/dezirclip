@@ -40,8 +40,20 @@ CLI、直接链接的 Core 客户端和 GUI 根据运行时会话选择同一原
 
 能力查询不读取正文；GUI 每个 WebView 只发起一次查询，探测失败时交互保持禁用并提示重新打开窗口。`is_finished()` 只表示监听 worker 已结束；释放捕获所有权仍必须等 `stop()` join 确认。
 
-## 当前验证与边界
+## 原生协议验收
 
-P5-A 的后端测试在 Ubuntu24.04 WSL、Sway1.9 / wlroots0.17.1 的 headless pixman 合成器完成；使用清空环境的 bubblewrap、私有 user/PID/network/IPC namespace、HOME、runtime 和 display，禁用 XWayland，不接触宿主剪贴板。实际验证了 wlr 的文本/HTML、KDE secret marker、替换 owner、取消监听与 owner、selection 清空，以及统一订阅 ready/stop/join。Xvfb 私有 display 另验证 XFixes 和原轮询降级的订阅停止。
+P5-C 在 Ubuntu24.04.4 WSL 中分别使用 Sway1.9 / wlroots0.17.1（实际 wlr v2）和私有 Sway1.11 / wlroots0.19.0（实际 ext v1）的 headless pixman 合成器验收。两者均在清空环境的 bubblewrap 私有 user/PID/network/IPC/UTS namespace、HOME、runtime 和 display 中运行，禁用 XWayland，不接触宿主剪贴板或数据库。探测声明的版本必须与实际协商版本相符。
 
-ext 分支已有类型/版本优先级回归，但 P5-A 尚未在提供 ext 的真实合成器执行；后续 P5-C 补充协议矩阵与断线负控。P5-A 已将 NativeCaptureReader 绑定同代 Wayland offer，并在 Core preflight 完整接线前防御拒绝明确的 secret 来源；P5-B 补齐 CLI/GUI 写入、完整能力报告与桌面交互降级。上述分阶段范围不表示已完成全局快捷键、自动粘贴、Surface 焦点恢复、置顶、透明或截图；PRIMARY 也未作支持承诺。
+两套矩阵均通过以下检查：
+
+- 独立 CLI 写入文本、HTML、PNG、文件 URI，写进程退出后由其明确的 owner 子进程继续提供完全相同的 MIME 字节。
+- 同 offer 的富文本、KDE secret 预检、owner 替换、selection 清空，以及监听和 owner 的显式取消、join。
+- 生成文本与 OCR 经真实 Core/SQLite 捕获各一条；已有历史项复制不重复；隐私会话或 epoch 改变不读取/保存被拒绝的正文。
+- HTTPS URI 加纯文本在文件功能开/关时均回退同 offer 文本；只有实际本地 file URI 才受文件开关约束。
+- 缺连接、指定 seat 不存在、服务关闭、只有继承 fd 时明确拒绝；即使给出无效 DISPLAY 也不尝试 X11 回退。终止私有合成器后，监听 worker 结束并由 stop 确认 join，能力不再报告 active。
+
+缺 data-control、缺 seat 和设备立即 finished 的负控由官方 XML 生成的独立协议服务验证，证明客户端错误分类和清理路径；它们不是合成器权限对话框或桌面授权策略的实测。协议服务不拥有剪贴板、不提供正文。可复现命令见 [原生协议测试工具](../scripts/native-wayland-fixture/README.md)。测试默认只准备，明确 --execute 才创建新的临时隔离环境；每次保留命令、原始日志、合成载荷、实际能力和输入前后 SHA256，失败也保留。
+
+Windows 平台测试31通过、1个既有忽略；Linux 平台69通过，两端 workspace all-targets locked check 通过。私有 Xvfb 另验证 XFixes 与原轮询降级的订阅停止。前端生产构建和三语言键检查通过，真实 React 加受控 Tauri bridge 的四场景检查覆盖 Wayland 禁用理由、普通历史/隐私控制仍可用、手动复制不删除/移位/清搜索、X11 原行为和探测失败时拒绝交互；这不代替原生 GUI 桌面验收。
+
+以上仅为 Experimental 剪贴板协议与降级验收，不表示已完成全局快捷键、自动粘贴、Surface 焦点恢复、置顶、透明、截图、PRIMARY、Portal 授权、物理 ARM 或各桌面发行版的完整原生支持。本次不是正式性能采样；私有合成器的就绪时序和测试工具早期失败均保留，未作为成功结果。
