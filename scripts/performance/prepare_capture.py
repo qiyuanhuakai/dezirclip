@@ -134,6 +134,61 @@ def build_cargo_executable(arguments, manifest, name, target, triple, profile, r
                         "build_stderr": str(stderr), "build_stderr_sha256": sha256(stderr)}
 
 
+def dependency_spec(source, name):
+    """Resolve the package's dependency without selecting a different SQLite build."""
+    manifest = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))
+    declared = manifest.get("dependencies", {}).get(name)
+    if declared is None:
+        raise ValueError(f"Source package does not declare {name}")
+    specification = {"version": declared} if isinstance(declared, str) else dict(declared)
+    base = source
+    if specification.pop("workspace", False):
+        explicit = manifest.get("package", {}).get("workspace")
+        candidates = [(source / explicit).resolve()] if explicit is not None else [source, *source.parents]
+        for directory in candidates:
+            path = directory / "Cargo.toml"
+            if path.is_file():
+                workspace = tomllib.loads(path.read_text(encoding="utf-8")).get("workspace")
+                if workspace is not None:
+                    base = directory
+                    break
+        else:
+            raise ValueError(f"Cannot locate workspace dependency {name}")
+        inherited = workspace.get("dependencies", {}).get(name)
+        if inherited is None:
+            raise ValueError(f"Workspace does not declare {name}")
+        resolved = {"version": inherited} if isinstance(inherited, str) else dict(inherited)
+        for key, value in specification.items():
+            if key == "features":
+                resolved[key] = list(dict.fromkeys([*resolved.get(key, []), *value]))
+            elif key == "default-features":
+                if value is False and resolved.get(key, True):
+                    raise ValueError(f"Source has an ignored workspace default-features override for {name}")
+                resolved[key] = value
+            elif key == "optional":
+                resolved[key] = value
+            else:
+                raise ValueError(f"Unsupported inherited dependency field {name}.{key}")
+        specification = resolved
+    if specification.get("optional", False):
+        raise ValueError(f"Adapter requires non-optional source dependency {name}")
+    if "path" in specification:
+        specification["path"] = (base / specification["path"]).resolve(strict=True).as_posix()
+    return specification
+
+
+def toml_value(value):
+    if isinstance(value, str):
+        return json.dumps(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return "[" + ",".join(toml_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(json.dumps(key) + "=" + toml_value(item) for key, item in value.items()) + "}"
+    raise ValueError(f"Unsupported dependency TOML value: {type(value).__name__}")
+
+
 def write_adapter(output, variant, package, source, native, lock):
     directory = output / "adapters" / variant
     directory.mkdir(parents=True)
@@ -161,7 +216,7 @@ path="../../source/main.rs"
 [dependencies]
 {dependency}
 serde_json="1"
-rusqlite={{version="0.31",features=["bundled","functions"]}}
+rusqlite={toml_value(dependency_spec(source, "rusqlite"))}
 
 [profile.release]
 lto=true

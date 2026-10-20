@@ -56,13 +56,14 @@ impl SqliteTagRepository {
         register_tag_matcher(&conn)?;
         let transaction = conn.transaction().map_err(|error| error.to_string())?;
         let filter = TAG_MATCH_FILTER;
-        let total: usize = transaction
+        let total: i64 = transaction
             .query_row(
                 &format!("SELECT COUNT(*) {filter}"),
                 params![tag, query],
                 |row| row.get(0),
             )
             .map_err(|error| error.to_string())?;
+        let total = usize::try_from(total).map_err(|error| error.to_string())?;
         let sql=format!("SELECT ch.id,ch.content_type,
             CASE WHEN ch.content_type='image' AND length(ch.content)<=8192 THEN ch.content ELSE '' END,
             ch.source_app,ch.timestamp,

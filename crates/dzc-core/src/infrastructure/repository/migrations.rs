@@ -4,7 +4,16 @@ use rusqlite::{params, Connection, Result};
 /// The value `PRAGMA auto_vacuum` reports for the mode `init_db` asks for.
 const AUTO_VACUUM_FULL: i32 = 1;
 
-pub const SUPPORTED_SCHEMA_VERSION: i32 = 19;
+pub const SUPPORTED_SCHEMA_VERSION: i32 = 20;
+
+/// Initialize an additional write connection to an already migrated history.
+/// Read-only readers may register only the pure visibility function instead.
+pub fn configure_privacy_writer(conn: &Connection) -> Result<()> {
+    register_privacy_functions(conn)?;
+    ensure_supported_schema(conn)?;
+    super::protection::require_secure_search(conn)
+        .map_err(rusqlite::Error::InvalidParameterName)
+}
 
 pub fn register_privacy_functions(conn: &Connection) -> Result<()> {
     use rusqlite::functions::FunctionFlags;
@@ -78,6 +87,61 @@ pub fn ensure_supported_schema(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod schema_compatibility_tests {
     use super::*;
+
+    #[test]
+    fn bundled_sqlite_has_the_patched_secure_delete_source() {
+        let connection = Connection::open_in_memory().unwrap();
+        let (version, source): (String, String) = connection.query_row(
+            "SELECT sqlite_version(),sqlite_source_id()", [], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(version, "3.54.0");
+        assert_eq!(source, "2026-10-09 15:46:58 be8d059e9a49089ab2dce5ed26dd87aaf598fdc5fbe0b107c0dd758464bcd5e3");
+    }
+
+    fn legacy_tombstone() -> Connection {
+        let mut connection = Connection::open_in_memory().unwrap();
+        run_migrations(&mut connection).unwrap();
+        connection.execute_batch("DELETE FROM schema_migrations WHERE version=20;
+            INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0);
+            INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text)
+            VALUES(1,'text','ordinary','summary','fixture',1,'[]','qvx');
+            INSERT INTO clipboard_fts(clipboard_fts) VALUES('optimize');
+            UPDATE clipboard_history SET tags='[\"sensitive\"]' WHERE id=1;").unwrap();
+        assert!(has_stale_secret(&connection));
+        connection
+    }
+
+    fn has_stale_secret(connection: &Connection) -> bool {
+        connection.prepare("SELECT block FROM clipboard_fts_data").unwrap()
+            .query_map([], |row| row.get::<_, Vec<u8>>(0)).unwrap()
+            .any(|row| row.unwrap().windows(3).any(|part| part == b"qvx"))
+    }
+
+    #[test]
+    fn schema_twenty_purges_old_tombstones_once_and_reopen_never_rebuilds() {
+        let mut connection = legacy_tombstone();
+        run_migrations(&mut connection).unwrap();
+        assert!(!has_stale_secret(&connection));
+        assert_eq!(connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), 20);
+        assert_eq!(connection.query_row("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'", [], |row| row.get::<_, i32>(0)).unwrap(), 1);
+        let changes = connection.total_changes();
+        run_migrations(&mut connection).unwrap();
+        assert_eq!(connection.total_changes(), changes);
+        connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0)", []).unwrap();
+        assert!(run_migrations(&mut connection).is_err());
+        assert!(configure_privacy_writer(&connection).is_err());
+    }
+
+    #[test]
+    fn schema_twenty_marker_failure_rolls_back_option_and_stale_postings() {
+        let mut connection = legacy_tombstone();
+        connection.execute_batch("CREATE TRIGGER reject_twenty BEFORE INSERT ON schema_migrations
+            WHEN NEW.version=20 BEGIN SELECT RAISE(ABORT,'blocked migration'); END;").unwrap();
+        assert!(run_migrations(&mut connection).is_err());
+        assert!(has_stale_secret(&connection));
+        assert_eq!(connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), 19);
+        assert_eq!(connection.query_row("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'", [], |row| row.get::<_, i32>(0)).unwrap(), 0);
+    }
 
     #[test]
     fn newer_history_is_rejected_without_rewriting_any_rows() {
@@ -288,6 +352,8 @@ pub fn run_migrations(conn: &mut Connection) -> Result<()> {
     ensure_supported_schema(conn)?;
     let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     apply_schema_migrations(&transaction)?;
+    super::protection::require_secure_search(&transaction)
+        .map_err(rusqlite::Error::InvalidParameterName)?;
     transaction.commit()?;
     if let Err(err) = reclaim_stranded_pages(conn, RECLAIM_MIN_BYTES) {
         eprintln!("[clipboard] history database could not be compacted: {err}; compaction will retry on a later launch.");
@@ -826,6 +892,14 @@ fn apply_schema_migrations(conn: &Connection) -> Result<()> {
             DELETE FROM settings WHERE key='db.sensitive_alignment_done';"#)?;
         conn.execute("INSERT INTO schema_migrations(version) VALUES(19)", [])?;
     }
+    if current_version < 20 {
+        conn.execute_batch("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',1);
+            INSERT INTO clipboard_fts(clipboard_fts) VALUES('rebuild');
+            DROP INDEX IF EXISTS idx_clipboard_history_evictable;
+            CREATE INDEX idx_clipboard_history_evictable ON clipboard_history(timestamp)
+                WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]';
+            INSERT INTO schema_migrations(version) VALUES(20);")?;
+    }
     Ok(())
 }
 
@@ -1274,7 +1348,7 @@ mod tests {
         let count_plan = query_plan(
             &conn,
             "SELECT COUNT(*) FROM clipboard_history INDEXED BY idx_clipboard_history_evictable \
-             WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+             WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]'",
         );
         assert!(
             count_plan.contains("INDEX idx_clipboard_history_evictable"),
@@ -1288,7 +1362,7 @@ mod tests {
         let order_plan = query_plan(
             &conn,
             "SELECT id FROM clipboard_history INDEXED BY idx_clipboard_history_evictable \
-             WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL) \
+             WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]' \
              ORDER BY timestamp ASC LIMIT 10",
         );
         assert!(
@@ -1318,7 +1392,7 @@ mod tests {
         let via_index: i32 = conn
             .query_row(
                 "SELECT COUNT(*) FROM clipboard_history INDEXED BY idx_clipboard_history_evictable \
-                 WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+                 WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]'",
                 [],
                 |row| row.get(0),
             )
@@ -1331,7 +1405,7 @@ mod tests {
         let via_table: i32 = conn
             .query_row(
                 "SELECT COUNT(*) FROM clipboard_history \
-                 WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL)",
+                 WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]'",
                 [],
                 |row| row.get(0),
             )
@@ -1357,7 +1431,7 @@ mod tests {
             let mut stmt = conn
                 .prepare(
                     "SELECT id FROM clipboard_history \
-                     WHERE is_pinned = 0 AND (tags = '[]' OR tags IS NULL) \
+                     WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]' \
                      ORDER BY timestamp ASC LIMIT 3",
                 )
                 .expect("prepare");

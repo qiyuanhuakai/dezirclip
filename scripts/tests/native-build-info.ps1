@@ -9,7 +9,7 @@ if ($functions.Count -ne 1) { throw 'Missing GUI configuration serializer.' }
 . ([scriptblock]::Create($functions[0].Extent.Text))
 $manifest = [pscustomobject]@{ version = '0.2.0-alpha.1'; buildInfo = [pscustomobject]@{
     component = 'cli'; metadata_version = 1; component_version = '0.2.0-alpha.1'
-    protocol_version = [pscustomobject]@{ major = 1; minor = 0 }; database_schema_version = 19
+    protocol_version = [pscustomobject]@{ major = 1; minor = 0 }; database_schema_version = 20
     linked_components = @([pscustomobject]@{ component = 'dzc-core'; version = '0.2.0-alpha.1' }, [pscustomobject]@{ component = 'dzc-platform'; version = '0.2.0-alpha.1' }, [pscustomobject]@{ component = 'dzc-protocol'; version = '0.2.0-alpha.1' })
 } }
 $configuration = Convert-GuiConfigurationJson $manifest 'C:\synthetic\profile' 'synthetic-marker' $false $true | ConvertFrom-Json

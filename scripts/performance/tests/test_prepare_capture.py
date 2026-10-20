@@ -8,6 +8,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -17,6 +18,8 @@ PREPARE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PREPARE)
 HOST = "x86_64-pc-windows-msvc" if os.name == "nt" else "x86_64-unknown-linux-gnu"
 EXTENSION = ".exe" if os.name == "nt" else ""
+SQLITE_GIT = "https://github.com/rusqlite/rusqlite"
+SQLITE_REV = "661107f6eb5d7477c61be1221744de3ad96c53e7"
 
 
 def artifact(manifest, executable, name, fresh=False):
@@ -38,7 +41,8 @@ class PreparationTests(unittest.TestCase):
         lock = 'version = 4\n[[package]]\nname = "fixture"\nversion = "1.0.0"\nsource = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + "0" * 64 + '"\n'
         core = root / "crates/dzc-core"
         core.mkdir(parents=True)
-        (core / "Cargo.toml").write_text('[package]\nname="dzc-core"\nversion="0.0.0"\n[features]\nlegacy-bridge=[]\n')
+        (core / "Cargo.toml").write_text('[package]\nname="dzc-core"\nversion="0.0.0"\n[features]\nlegacy-bridge=[]\n[dependencies]\nrusqlite.workspace=true\n')
+        (root / "Cargo.toml").write_text('[workspace]\nmembers=["crates/dzc-core"]\n[workspace.dependencies]\nrusqlite={git="' + SQLITE_GIT + '",rev="' + SQLITE_REV + '",features=["bundled","functions"]}\n')
         (root / "Cargo.lock").write_text(lock)
         # This conflicting config and environment must not redirect a native
         # benchmark or make its proof advertise the wrong architecture.
@@ -63,7 +67,7 @@ class PreparationTests(unittest.TestCase):
             source = directory / "baseline-source"
             package = source / "src-tauri"
             package.mkdir(parents=True)
-            (package / "Cargo.toml").write_text('[package]\nname="dezirclip"\nversion="0.0.0"\n')
+            (package / "Cargo.toml").write_text('[package]\nname="dezirclip"\nversion="0.0.0"\n[dependencies]\nrusqlite={version="0.31",features=["bundled","functions"]}\n')
             (package / "Cargo.lock").write_text(lock)
             return source, {"revision": revision, "archive_sha256": "fixture"}
 
@@ -109,6 +113,11 @@ class PreparationTests(unittest.TestCase):
         self.assertTrue(proof["eligible_for_timing"])
         self.assertEqual(len(seen_builds), 3)
         for variant, record in proof["adapters"].items():
+            dependency = tomllib.loads(Path(record["manifest"]).read_text())["dependencies"]["rusqlite"]
+            if variant == "legacy":
+                self.assertEqual(dependency, {"version": "0.31", "features": ["bundled", "functions"]})
+            else:
+                self.assertEqual(dependency, {"git": SQLITE_GIT, "rev": SQLITE_REV, "features": ["bundled", "functions"]})
             expected = target / HOST / "debug" / ("capture-perf-" + variant + EXTENSION)
             self.assertEqual(Path(record["cargo_executable"]), expected)
             self.assertEqual(Path(record["binary"]).read_bytes(), ("current-cargo-output:capture-perf-" + variant).encode())
@@ -130,6 +139,64 @@ class PreparationTests(unittest.TestCase):
 
     def test_missing_cargo_artifact_rejects_even_when_root_binary_exists(self):
         self.prepare(stale=True, bad_artifact=True)
+
+
+class DependencyInheritanceTests(unittest.TestCase):
+    def test_registry_shorthand_keeps_the_source_version(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-adapter-dependency-") as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text('[dependencies]\nrusqlite="0.31"\n')
+            self.assertEqual(PREPARE.dependency_spec(root, "rusqlite"), {"version": "0.31"})
+
+    def test_workspace_git_pin_version_defaults_and_additive_features_are_preserved(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-adapter-dependency-") as directory:
+            root = Path(directory)
+            source = root / "crates/core"
+            source.mkdir(parents=True)
+            (root / "Cargo.toml").write_text('[workspace]\n[workspace.dependencies]\nrusqlite={git="' + SQLITE_GIT + '",rev="' + SQLITE_REV + '",version="0.40.1",default-features=false,features=["bundled"]}\n')
+            (source / "Cargo.toml").write_text('[dependencies]\nrusqlite={workspace=true,features=["functions","bundled"]}\n')
+            expected = {"git": SQLITE_GIT, "rev": SQLITE_REV, "version": "0.40.1", "default-features": False, "features": ["bundled", "functions"]}
+            resolved = PREPARE.dependency_spec(source, "rusqlite")
+            self.assertEqual(resolved, expected)
+            self.assertEqual(tomllib.loads("rusqlite=" + PREPARE.toml_value(resolved))["rusqlite"], expected)
+
+    def test_relative_path_uses_the_declaring_workspace_and_explicit_workspace_location(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-adapter-dependency-") as directory:
+            root = Path(directory)
+            workspace = root / "workspace"
+            source = root / "detached/core"
+            dependency = workspace / "dependencies/sqlite"
+            source.mkdir(parents=True)
+            dependency.mkdir(parents=True)
+            (workspace / "Cargo.toml").write_text('[workspace]\n[workspace.dependencies]\nrusqlite={path="dependencies/sqlite",features=["bundled","functions"]}\n')
+            (source / "Cargo.toml").write_text('[package]\nworkspace="../../workspace"\n[dependencies]\nrusqlite.workspace=true\n')
+            resolved = PREPARE.dependency_spec(source, "rusqlite")
+            self.assertEqual(resolved["path"], dependency.resolve().as_posix())
+
+    def test_local_path_uses_package_directory(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-adapter-dependency-") as directory:
+            root = Path(directory)
+            (root / "sqlite").mkdir()
+            (root / "Cargo.toml").write_text('[dependencies]\nrusqlite={path="sqlite",features=["bundled","functions"]}\n')
+            self.assertEqual(PREPARE.dependency_spec(root, "rusqlite")["path"], (root / "sqlite").resolve().as_posix())
+
+    def test_missing_inherited_or_optional_source_is_rejected_without_fallback(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-adapter-dependency-") as directory:
+            root = Path(directory)
+            for content, error in [('[dependencies]\n', "does not declare"),
+                                   ('[workspace]\n[dependencies]\nrusqlite.workspace=true\n', "Workspace does not declare"),
+                                   ('[dependencies]\nrusqlite={version="0.31",optional=true}\n', "non-optional")]:
+                with self.subTest(content=content):
+                    (root / "Cargo.toml").write_text(content)
+                    with self.assertRaisesRegex(ValueError, error):
+                        PREPARE.dependency_spec(root, "rusqlite")
+
+    def test_ignored_default_features_override_is_not_reinterpreted_as_effective(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-adapter-dependency-") as directory:
+            root = Path(directory)
+            (root / "Cargo.toml").write_text('[workspace]\n[workspace.dependencies]\nrusqlite="0.31"\n[dependencies]\nrusqlite={workspace=true,default-features=false}\n')
+            with self.assertRaisesRegex(ValueError, "ignored workspace default-features"):
+                PREPARE.dependency_spec(root, "rusqlite")
 
 
 class ArtifactValidationTests(unittest.TestCase):

@@ -96,7 +96,11 @@ jobs:
       - name: Setup Python for archive validation
         uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.13'
+
+      - name: Require compatible SQLite for synthetic FTS5 fixtures
+        run: >-
+          python -c "import sqlite3; print('Fixture SQLite', sqlite3.sqlite_version); assert sqlite3.sqlite_version_info >= (3, 50, 4), 'Synthetic schema20 fixtures require SQLite >=3.50.4'; connection=sqlite3.connect(':memory:'); connection.execute('CREATE VIRTUAL TABLE fixture_fts USING fts5(content)'); connection.close()"
 
       - name: Test standalone packaging
         run: python -m unittest discover -s scripts/tests -v

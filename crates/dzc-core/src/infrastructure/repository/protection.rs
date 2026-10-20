@@ -45,7 +45,7 @@ pub(super) fn atomic<T>(
     }
 }
 
-/// Rebuild discards obsolete FTS segments without changing the FTS file format.
+/// One-time alignment discards obsolete FTS segments from legacy history.
 pub(super) fn rebuild_search(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("PRAGMA secure_delete = ON;")
         .map_err(|error| error.to_string())?;
@@ -57,16 +57,18 @@ pub(super) fn rebuild_search(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-/// Finish a visible-to-protected transition before commit. Merging removes old delete-keys
-/// and their postings without retokenizing every surviving history row or changing format 4.
-pub(super) fn compact_search(conn: &Connection) -> Result<(), String> {
+/// Check before a visible record is changed. FTS5 removes postings incrementally;
+/// SQLite core secure_delete also erases bytes freed by those index page writes.
+pub(super) fn require_secure_search(conn: &Connection) -> Result<(), String> {
     conn.execute_batch("PRAGMA secure_delete = ON;")
         .map_err(|error| error.to_string())?;
-    conn.execute(
-        "INSERT INTO clipboard_fts(clipboard_fts) VALUES('optimize')",
-        [],
-    )
-        .map_err(|error| error.to_string())?;
+    let enabled: bool = conn.query_row(
+        "SELECT COALESCE((SELECT v=1 FROM clipboard_fts_config WHERE k='secure-delete'),0)",
+        [], |row| row.get(0),
+    ).map_err(|error| error.to_string())?;
+    if !enabled {
+        return Err("SensitiveIndexProtectionUnavailable".into());
+    }
     Ok(())
 }
 
@@ -79,7 +81,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
         conn.execute("INSERT INTO settings(key,value) VALUES('db.sensitive_alignment_done','true') ON CONFLICT(key) DO UPDATE SET value='true'", []).unwrap();
-        conn.execute("DELETE FROM schema_migrations WHERE version=19", [])
+        conn.execute("DELETE FROM schema_migrations WHERE version>=19", [])
             .unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
         assert_eq!(
@@ -174,7 +176,7 @@ mod tests {
                   (2,'text','linux: ordinaryprefix','dpapi: plainpreview','test',2,'[]',NULL);
             INSERT INTO clipboard_fts(rowid,content,preview,source_app,content_kinds,ocr_text)
                 VALUES(1,'privateprobe','summary','test','[]','privateocr');
-            DELETE FROM schema_migrations WHERE version=19;"#).unwrap();
+            DELETE FROM schema_migrations WHERE version>=19;"#).unwrap();
         let before: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'privateprobe'",
@@ -305,7 +307,7 @@ mod batch_tests {
     }
 
     #[test]
-    fn startup_batch_rebuilds_once_and_single_record_compacts() {
+    fn startup_batch_rebuilds_once_and_single_record_requires_protected_index() {
         let (repo, shared) = fixture();
         let conn = shared.lock().unwrap();
         let ids: Vec<i64> = (1..=20).collect();
@@ -350,7 +352,7 @@ mod batch_tests {
         }
         eprintln!("per-record comparison: 1020 rows, 20 protected records, {} actual FTS rebuilds, elapsed {:?}", baseline_rebuilds.get(), baseline_start.elapsed());
         assert_eq!(baseline_rebuilds.get(), 20);
-        // Disable update triggers so this failure can only come from the single-record cleanup call.
+        // Disable update triggers so failure comes from the pre-write index check.
         conn.execute_batch("DROP TRIGGER clipboard_history_ai; DROP TRIGGER clipboard_history_ad; DROP TRIGGER clipboard_history_au;
             DROP TABLE clipboard_fts; CREATE TABLE clipboard_fts(clipboard_fts TEXT CHECK(clipboard_fts!='optimize'));").unwrap();
         assert!(repo.encrypt_entry_with_conn(&conn, 21).is_err());
@@ -449,8 +451,8 @@ mod transition_tests {
     fn reject_maintenance(_: &Connection) -> Result<(), String> {
         Err("UnexpectedIndexMaintenance".into())
     }
-    fn compact_then_fail(conn: &Connection) -> Result<(), String> {
-        compact_search(conn)?;
+    fn prepare_then_fail(conn: &Connection) -> Result<(), String> {
+        require_secure_search(conn)?;
         conn.execute("INSERT INTO missing_cleanup_table VALUES(1)", [])
             .map_err(|e| e.to_string())?;
         Ok(())
@@ -566,7 +568,7 @@ mod transition_tests {
         assert!(!typed);
     }
     #[test]
-    fn compaction_removes_shadow_secret_without_removing_shared_public_terms_or_format_four() {
+    fn incremental_delete_removes_shadow_secret_and_preserves_shared_terms_with_format_five() {
         let repo = repository();
         seed(&repo, "[]");
         let conn = repo.conn.lock().unwrap();
@@ -589,9 +591,9 @@ mod transition_tests {
                 [cipher],
             )
             .map_err(|e| e.to_string())?;
-            assert!(has_secret(c), "delete-keys alone leave old shadow bytes");
-            compact_search(c)?;
-            assert!(!has_secret(c));
+            c.execute_batch("SAVEPOINT verify_postings_flush; RELEASE verify_postings_flush;")
+                .map_err(|e| e.to_string())?;
+            assert!(!has_secret(c), "secure-delete must remove old postings before commit");
             Ok(())
         })
         .unwrap();
@@ -623,7 +625,7 @@ mod transition_tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         conn.execute(
             "CREATE VIRTUAL TABLE terms USING fts5vocab(clipboard_fts,'instance')",
             [],
@@ -649,7 +651,7 @@ mod transition_tests {
         );
     }
     #[test]
-    fn cleanup_sql_failure_rolls_back_fields_shadow_and_cached_results() {
+    fn configuration_failure_rejects_before_mutation_and_preserves_cached_results() {
         let mut repo = repository();
         seed(&repo, "[]");
         let cached = repo.get_history(10, 0, None).unwrap();
@@ -657,7 +659,7 @@ mod transition_tests {
             let c = repo.conn.lock().unwrap();
             (fields(&c), shadow(&c))
         };
-        repo.maintain_search = compact_then_fail;
+        repo.prepare_search = prepare_then_fail;
         {
             let c = repo.conn.lock().unwrap();
             assert!(repo.encrypt_entry_with_conn(&c, 1).is_err());
@@ -669,10 +671,52 @@ mod transition_tests {
             cached[0].content
         );
     }
+
+    fn storage_snapshot(conn: &Connection) -> Vec<(String, String)> {
+        let mut result = Vec::new();
+        for (table, expression) in [
+            ("clipboard_fts_data", "id||':'||quote(block)"),
+            ("clipboard_fts_idx", "segid||':'||quote(term)||':'||pgno"),
+            ("clipboard_fts_docsize", "id||':'||quote(sz)"),
+            ("clipboard_fts_config", "k||':'||quote(v)"),
+        ] {
+            let mut statement = conn.prepare(&format!("SELECT {expression} FROM {table} ORDER BY 1")).unwrap();
+            result.extend(statement.query_map([], |row| Ok((table.to_owned(), row.get::<_, String>(0)?)))
+                .unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap());
+        }
+        result
+    }
+
+    #[test]
+    fn flushed_incremental_delete_rolls_back_fields_all_shadow_tables_and_cached_history() {
+        let repo = repository();
+        seed(&repo, "[]");
+        let cached = repo.get_history(10, 0, None).unwrap();
+        let conn = repo.conn.lock().unwrap();
+        let before = fields(&conn);
+        let index = storage_snapshot(&conn);
+        assert!(has_secret(&conn));
+        let result: Result<(), String> = atomic(&conn, |connection| {
+            repo.encrypt_entry_with_conn(connection, 1)?;
+            connection.execute_batch("SAVEPOINT flush_then_fail; RELEASE flush_then_fail;")
+                .map_err(|error| error.to_string())?;
+            assert!(!has_secret(connection));
+            assert_ne!(storage_snapshot(connection), index);
+            connection.execute("INSERT INTO missing_after_flush VALUES(1)", [])
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        });
+        assert!(result.is_err());
+        assert_eq!(fields(&conn), before);
+        assert_eq!(storage_snapshot(&conn), index);
+        assert!(has_secret(&conn));
+        drop(conn);
+        assert_eq!(repo.get_history(10, 0, None).unwrap()[0].content, cached[0].content);
+    }
     #[test]
     fn protected_new_and_legacy_protected_repeat_do_not_run_global_maintenance() {
         let mut repo = repository();
-        repo.maintain_search = reject_maintenance;
+        repo.prepare_search = reject_maintenance;
         let id = repo.save(&entry(), None).unwrap();
         assert!(id > 0);
         let mut repeat = entry();
@@ -685,7 +729,7 @@ mod transition_tests {
         let mut repeated = entry();
         repeated.id = 1;
         let mut legacy = legacy;
-        legacy.maintain_search = reject_maintenance;
+        legacy.prepare_search = reject_maintenance;
         assert_eq!(legacy.save(&repeated, None).unwrap(), 1);
         let c = legacy.conn.lock().unwrap();
         assert!(encryption::has_ciphertext_envelope(&fields(&c).0));
@@ -700,7 +744,7 @@ mod transition_tests {
         use crate::capture::*;
         use std::collections::VecDeque;
         let mut repo = repository();
-        repo.maintain_search = reject_maintenance;
+        repo.prepare_search = reject_maintenance;
         let id = repo.save(&entry(), None).unwrap();
         assert_eq!(id, 1);
         let directory = std::env::temp_dir();
@@ -740,7 +784,7 @@ mod transition_tests {
     fn save_transition_cleanup_failure_rolls_back_new_tags_fields_and_shadow() {
         let mut repo = repository();
         seed(&repo, "[]");
-        repo.maintain_search = reject_maintenance;
+        repo.prepare_search = reject_maintenance;
         let (before, index) = {
             let c = repo.conn.lock().unwrap();
             (fields(&c), shadow(&c))
@@ -759,7 +803,7 @@ mod transition_tests {
     fn readable_envelope_with_ordinary_tags_preserves_protection_without_maintenance() {
         let mut repo = repository();
         seed(&repo, "[]");
-        repo.maintain_search = reject_maintenance;
+        repo.prepare_search = reject_maintenance;
         {
             let c = repo.conn.lock().unwrap();
             c.execute(
@@ -767,7 +811,7 @@ mod transition_tests {
                 [seal("manualprotected").unwrap().into_string()],
             )
             .unwrap();
-            compact_search(&c).unwrap();
+            require_secure_search(&c).unwrap();
         }
         let mut value = entry();
         value.id = 1;
@@ -793,7 +837,7 @@ mod transition_tests {
     fn encrypted_body_with_ordinary_tags_stays_unindexed_and_unavailable_mutation_fails_closed() {
         let mut repo = repository();
         seed(&repo, "[]");
-        repo.maintain_search = reject_maintenance;
+        repo.prepare_search = reject_maintenance;
         {
             let c = repo.conn.lock().unwrap();
             let cipher = format!(
@@ -805,7 +849,7 @@ mod transition_tests {
                 [cipher],
             )
             .unwrap();
-            compact_search(&c).unwrap();
+            require_secure_search(&c).unwrap();
         }
         let mut value = entry();
         value.id = 1;

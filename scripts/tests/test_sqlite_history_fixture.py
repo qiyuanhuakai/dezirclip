@@ -1,4 +1,4 @@
-"""Disposable fixture writers must preserve schema 19's search privacy contract."""
+"""Disposable fixture writers must preserve schema 20's search privacy contract."""
 
 import base64
 from contextlib import closing, redirect_stdout
@@ -13,11 +13,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SCRIPT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPT_ROOT))
 from sqlite_history_fixture import (LINUX_ENVELOPE_FIXTURE, connect_fixture_database,
-                                    has_ciphertext_envelope, search_visible)
+                                    has_ciphertext_envelope, search_visible, require_secure_delete_runtime)
 
 
 def dpapi_blob():
@@ -97,10 +98,89 @@ class FixtureVisibilityTests(unittest.TestCase):
             self.assertTrue(function[5] & 0x800)
 
 
-@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema 19 cross-connection checks")
-class SchemaNineteenWriterTests(unittest.TestCase):
+class SchemaTwentyFixtureTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory(prefix="dzc-schema20-contract-")
+        self.path = Path(self.directory.name) / "history.db"
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.executescript("""
+                CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY);
+                INSERT INTO schema_migrations VALUES(20);
+                CREATE VIRTUAL TABLE clipboard_fts USING fts5(content);
+                INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',1);
+                CREATE TABLE reject_failure(value INTEGER CHECK(value>0));
+            """)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def test_real_format5_writer_reopens_and_preserves_search_and_rollback(self):
+        require_secure_delete_runtime()
+        with closing(connect_fixture_database(self.path)) as connection, connection:
+            self.assertEqual(connection.execute("PRAGMA secure_delete").fetchone(), (1,))
+            connection.executemany("INSERT INTO clipboard_fts(rowid,content) VALUES(?,?)",
+                                   [(1, "uniqueprivatemarker sharedmarker"), (2, "publicmarker sharedmarker")]
+                                   + [(index, f"fixturefillermarker{index:05d}") for index in range(3, 1003)])
+        with closing(connect_fixture_database(self.path)) as connection, connection:
+            connection.execute("UPDATE clipboard_fts SET content='replacementmarker' WHERE rowid=1")
+            self.assertEqual(connection.execute("SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'uniqueprivatemarker'").fetchone(), (0,))
+            self.assertEqual(connection.execute("SELECT rowid FROM clipboard_fts WHERE clipboard_fts MATCH 'sharedmarker'").fetchall(), [(2,)])
+            connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)")
+        with closing(connect_fixture_database(self.path)) as connection:
+            self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='version'").fetchone(), (5,))
+            with self.assertRaises(sqlite3.IntegrityError), connection:
+                connection.execute("UPDATE clipboard_fts SET content='failedmarker' WHERE rowid=2")
+                connection.execute("INSERT INTO reject_failure VALUES(-1)")
+            self.assertEqual(connection.execute("SELECT content FROM clipboard_fts WHERE rowid=2").fetchone(), ("publicmarker sharedmarker",))
+            self.assertEqual(connection.execute("SELECT rowid FROM clipboard_fts WHERE clipboard_fts MATCH 'sharedmarker'").fetchall(), [(2,)])
+            connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)")
+
+    def test_schema20_readonly_reader_enforces_connection_protection(self):
+        with closing(connect_fixture_database(self.path)) as connection, connection:
+            connection.execute("INSERT INTO clipboard_fts(content) VALUES('beforereadonly')")
+        with closing(connect_fixture_database(self.path)) as connection, connection:
+            connection.execute("UPDATE clipboard_fts SET content='readonlymarker' WHERE rowid=1")
+        with closing(connect_fixture_database(self.path.as_uri() + "?mode=ro", uri=True)) as connection:
+            self.assertEqual(connection.execute("PRAGMA secure_delete").fetchone(), (1,))
+            self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='version'").fetchone(), (5,))
+            self.assertEqual(connection.execute("SELECT rowid FROM clipboard_fts WHERE clipboard_fts MATCH 'readonlymarker'").fetchall(), [(1,)])
+            with self.assertRaisesRegex(sqlite3.OperationalError, "readonly"):
+                connection.execute("INSERT INTO clipboard_fts(content) VALUES('refused')")
+
+    def test_legacy_writer_keeps_runtime_default_secure_delete(self):
+        with closing(sqlite3.connect(":memory:")) as raw:
+            default = raw.execute("PRAGMA secure_delete").fetchone()
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute("UPDATE schema_migrations SET version=19")
+        with closing(connect_fixture_database(self.path)) as connection:
+            self.assertEqual(connection.execute("PRAGMA secure_delete").fetchone(), default)
+
+    # Standalone FTS above forces actual format5; product external-content
+    # protection/purge is verified by the patched Core tests and real CLI below.
+
+    def test_schema20_rejects_disabled_index_protection_without_repairing_it(self):
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0)")
+        with self.assertRaisesRegex(RuntimeError, "persistent FTS5 secure-delete=1"):
+            connect_fixture_database(self.path)
+        with closing(sqlite3.connect(self.path)) as connection:
+            self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'").fetchone(), (0,))
+            self.assertEqual(connection.execute("SELECT count(*) FROM clipboard_fts").fetchone(), (0,))
+
+    def test_schema20_rejects_older_runtime_and_future_schema(self):
+        with patch.object(sqlite3, "sqlite_version_info", (3, 50, 3)):
+            with self.assertRaisesRegex(RuntimeError, "SQLite >= 3.50.4"):
+                connect_fixture_database(self.path)
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute("INSERT INTO schema_migrations VALUES(21)")
+        with self.assertRaisesRegex(RuntimeError, "newer than supported"):
+            connect_fixture_database(self.path)
+
+
+@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema 20 cross-connection checks")
+class SchemaTwentyWriterTests(unittest.TestCase):
     def test_cli_and_external_writer_keep_search_view_and_fts_consistent(self):
-        with tempfile.TemporaryDirectory(prefix="dzc-schema19-writer-") as directory:
+        with tempfile.TemporaryDirectory(prefix="dzc-schema20-writer-") as directory:
             path = Path(directory) / "history.db"
             environment = {**os.environ, "DEZIRCLIP_DB_PATH": str(path)}
             binary = str(Path(os.environ["DZC_TEST_BIN"]).resolve())
@@ -111,7 +191,7 @@ class SchemaNineteenWriterTests(unittest.TestCase):
 
             cli("add", "nativekeepmarker")
             with closing(sqlite3.connect(path)) as raw:
-                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (19,))
+                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (20,))
                 with self.assertRaisesRegex(sqlite3.OperationalError, "no such function: dc_search_visible"):
                     raw.execute("UPDATE clipboard_history SET timestamp=id")
             with closing(connect_fixture_database(path)) as database:
@@ -139,7 +219,7 @@ class SchemaNineteenWriterTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec("PIL") and importlib.util.find_spec("psutil"),
                      "Synthetic image fixture checks need Pillow and psutil")
 class SyntheticSeederTests(unittest.TestCase):
-    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema19_cases(self):
+    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema20_cases(self):
         spec = importlib.util.spec_from_file_location("seed_performance_fixture", SCRIPT_ROOT / "seed-performance-history.py")
         seed = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(seed)

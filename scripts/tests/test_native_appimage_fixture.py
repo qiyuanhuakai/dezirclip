@@ -70,7 +70,7 @@ class BuildSetTests(unittest.TestCase):
         return {'component': role, 'component_version': version,
                 'source_revision': self.revision, 'build_id': version + '@' + self.revision,
                 'source_state': 'verified_checkout', 'metadata_version': 1,
-                'database_schema_version': 19, 'protocol_version': {'major': 1, 'minor': 0},
+                'database_schema_version': 20, 'protocol_version': {'major': 1, 'minor': 0},
                 'target': 'x86_64-unknown-linux-gnu',
                 'linked_components': [{'component': name, 'version': version}
                                       for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]}
@@ -87,7 +87,7 @@ class BuildSetTests(unittest.TestCase):
                    ('build_id', None), ('build_id', 'unrelated-build'),
                    ('source_state', 'modified_checkout'), ('source_state', 'unknown'),
                    ('metadata_version', True), ('metadata_version', 2),
-                   ('database_schema_version', 20), ('protocol_version', {'major': True, 'minor': 0}),
+                   ('database_schema_version', 19), ('protocol_version', {'major': True, 'minor': 0}),
                    ('protocol_version', {'major': 1, 'minor': 1}),
                    ('target', 'aarch64-unknown-linux-gnu'), ('linked_components', [])]
         for role in ('cli', 'desktop'):

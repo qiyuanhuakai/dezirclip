@@ -24,7 +24,7 @@ pub fn ensure_writable(conn: &Connection) -> std::result::Result<(), String> {
         .map_err(|error| error.to_string())?;
     if query_only
         || conn
-            .is_readonly(rusqlite::DatabaseName::Main)
+            .is_readonly("main")
             .map_err(|error| error.to_string())?
     {
         Err("DatabaseIsReadOnly".into())

@@ -550,7 +550,7 @@ fn apply_attachment_path_rewrites(
     updates: &[AttachmentPathRewrite],
 ) -> AppResult<()> {
     let mut conn = Connection::open(db_path).map_err(AppError::from)?;
-    crate::infrastructure::repository::migrations::register_privacy_functions(&conn).map_err(AppError::from)?;
+    crate::infrastructure::repository::migrations::configure_privacy_writer(&conn).map_err(AppError::from)?;
     let transaction = conn.transaction().map_err(AppError::from)?;
     let candidates: i64 = transaction.query_row(
         "SELECT COUNT(*) FROM clipboard_history WHERE is_external = 1 OR html_content IS NOT NULL", [],
