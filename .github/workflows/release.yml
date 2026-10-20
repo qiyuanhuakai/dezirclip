@@ -229,6 +229,19 @@ jobs:
           prerelease: ${{ needs.create-release.outputs.prerelease == 'true' }}
           args: ${{ matrix.args }}
 
+      - name: Bundle and upload RPM with pre-release package ordering
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          node scripts/bundle-rpm.mjs --receipt "$RUNNER_TEMP/rpm-bundle.json"
+          rpm_path="$(node -e 'const fs=require("node:fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).artifact);' "$RUNNER_TEMP/rpm-bundle.json")"
+          test -s "$rpm_path"
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${{ needs.create-release.outputs.release_id }}" --jq '.draft')" = true
+          gh release upload "$GITHUB_REF_NAME" "$rpm_path" --clobber
+
   publish-flatpak:
     name: Verified Flatpak release
     needs: create-release

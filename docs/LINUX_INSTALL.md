@@ -81,9 +81,10 @@ pnpm run tauri:dev:safe
 
 ```bash
 pnpm run tauri:build
+pnpm run tauri:bundle:rpm
 ```
 
-产物位于 `target/release/bundle/`，包含 deb、AppImage、rpm。不要分发缺少 `dist/web` 的手工桌面构建。只需 CLI 时可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，输出 `target/release/dzc`，无需 GTK/WebKit/PipeWire 开发依赖。本机构建仍使用本机链接环境；跨发行版分发使用 `scripts/build-standalone-dzc.py` 的 AlmaLinux 8 Docker 构建路径，以获得 glibc 2.28 基线，详见 [独立 CLI 说明](./dzc-standalone.md)。
+产物位于 `target/release/bundle/`。首条命令生成 deb、AppImage，第二条仅在 Linux 原生 release 构建后补充 RPM，不接收 debug 或交叉目标参数。应用/CLI 保持完整 SemVer；例如 `0.2.0-alpha.1` 的 RPM 使用 Version `0.2.0`、Release `0.alpha.1`，正式版使用 Release `1`，保证预览版排在正式版之前。不要分发缺少 `dist/web` 的手工桌面构建。只需 CLI 时可运行 `cargo build --manifest-path src-tauri/Cargo.toml --no-default-features --bin dzc --release`，输出 `target/release/dzc`，无需 GTK/WebKit/PipeWire 开发依赖。本机构建仍使用本机链接环境；跨发行版分发使用 `scripts/build-standalone-dzc.py` 的 AlmaLinux 8 Docker 构建路径，以获得 glibc 2.28 基线，详见 [独立 CLI 说明](./dzc-standalone.md)。
 
 ## 安装发布包
 

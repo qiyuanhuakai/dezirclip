@@ -45,11 +45,20 @@ if (-not $owned) { $OldInstaller = Resolve-RunnerFixturePath $OldInstaller -Requ
 if (-not $owned -and (Get-FileHash -LiteralPath $OldInstaller -Algorithm SHA256).Hash -ne 'D20033124C74BEA451301716AFB46623607602BAE37647748AE7D25AB7DD4B8E') {
     throw 'The old installer is not the verified published v0.1.20 x64 artifact.'
 }
+function Assert-NsisCompilerInputManifest($Manifest) {
+    if ($Manifest.schemaVersion -ne 3 -or $Manifest.nsisInputLayout -ne 'single-cargo-binary-v1') { throw 'Candidate NSIS input layout is invalid.' }
+    $inputs = @($Manifest.nsisInputs)
+    if ($inputs.Count -ne 1) { throw 'Candidate must retain exactly one Cargo CLI compiler input.' }
+    $cargo = @($Manifest.sidecarPreparation.binaryPaths | Where-Object { $_.role -eq 'cargo-host-default' })
+    if ($cargo.Count -ne 1 -or $cargo[0].sha256 -ne $Manifest.sidecarSha256 -or $Manifest.sidecarSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Candidate lacks a unique proven Cargo host CLI.' }
+    $input = $inputs[0]
+    if ($input.role -ne 'cargo-binary' -or $input.destination -ne 'dzc.exe' -or $input.sha256 -ne $Manifest.sidecarSha256 -or [System.IO.Path]::GetFullPath($input.source) -ine [System.IO.Path]::GetFullPath($cargo[0].path)) { throw 'Candidate compiler input differs from the exact proven Cargo CLI.' }
+}
 function Read-CandidateManifest([string]$Installer) {
     $Installer = Resolve-RunnerFixturePath $Installer -RequireFile
     $manifestPath = Resolve-RunnerFixturePath ($Installer + '.manifest.json') -RequireFile
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 2 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
+    if ($manifest.schemaVersion -ne 3 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
     if ($manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -ne 'debug' -or $manifest.updaterArtifacts -ne $false -or $manifest.sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Candidate build provenance is invalid.' }
     if ($manifest.sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($manifest.version) + '(?:\s|$)')) { throw 'Candidate manifest CLI version is invalid.' }
     if ($manifest.buildInfo.component_version -ne $manifest.version -or $manifest.buildInfo.source_revision -ne $manifest.sourceCommit -or $manifest.buildInfo.build_id -ne ($manifest.version + '@' + $manifest.sourceCommit)) { throw 'Candidate build identity differs from its source/version set.' }
@@ -63,10 +72,7 @@ function Read-CandidateManifest([string]$Installer) {
     if ((Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash -ne $manifest.installerSha256) { throw 'Candidate installer differs from its build manifest.' }
     $nsisScript = Resolve-RunnerFixturePath ($Installer + '.nsi') -RequireFile
     if ((Get-FileHash -LiteralPath $nsisScript -Algorithm SHA256).Hash -ne $manifest.nsisScriptSha256) { throw 'Candidate NSIS compiler script differs from its build manifest.' }
-    if (@($manifest.nsisInputs).Count -ne 2) { throw 'Candidate must retain both sidecar compiler inputs.' }
-    foreach ($compilerInput in $manifest.nsisInputs) {
-        if ($compilerInput.destination -ne 'dzc.exe' -or $compilerInput.sha256 -ne $manifest.sidecarSha256) { throw 'Candidate sidecar compiler inputs differ from the proven standalone CLI.' }
-    }
+    Assert-NsisCompilerInputManifest $manifest
     return $manifest
 }
 $candidate = if ($Scenario -ne 'LegacyUninstall') { Read-CandidateManifest $NewInstaller } else { $null }
