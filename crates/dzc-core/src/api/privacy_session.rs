@@ -93,6 +93,7 @@ pub enum SensitiveAccess {
 
 #[derive(Debug, Clone)]
 pub struct PrivacyReadPermit {
+    intent: PrivacyAccessIntent,
     ticket: CaptureTicket,
     sensitive: bool,
 }
@@ -102,6 +103,9 @@ impl PrivacyReadPermit {
     }
     pub fn includes_sensitive(&self) -> bool {
         self.sensitive
+    }
+    fn allows_body(&self) -> bool {
+        self.intent != PrivacyAccessIntent::RestrictedSummary
     }
 }
 
@@ -289,6 +293,7 @@ impl PrivacySessionService {
             (_, SensitiveAccess::Denied) => false,
         };
         Ok(PrivacyReadPermit {
+            intent,
             ticket: CaptureTicket {
                 state_id: state.state_id,
                 epoch: state.snapshot.privacy_epoch,
@@ -384,6 +389,9 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<Vec<ClipboardEntry>> {
+        if !permit.allows_body() {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
         if !(1..=1000).contains(&query.limit) || query.offset < 0 {
             return Err(PrivacyError::SensitiveAccessDenied);
         }
@@ -401,6 +409,9 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<ClipboardEntry> {
+        if !permit.allows_body() {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
         self.privacy().check_read(permit, now_ms)?;
         if entry.id >= 0 || (!permit.includes_sensitive() && !session_entry_visible(entry)) {
             return Err(PrivacyError::SensitiveAccessDenied);
@@ -468,6 +479,9 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<Option<ClipboardEntry>> {
+        if !permit.allows_body() {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
         let privacy = self.privacy();
         privacy.check_read(permit, now_ms)?;
         let entries = self
@@ -784,7 +798,7 @@ mod tests {
         let permit = history
             .privacy()
             .authorize_read(
-                PrivacyAccessIntent::RestrictedSummary,
+                PrivacyAccessIntent::AutomationRead,
                 SensitiveAccess::Denied,
                 None,
                 1,
@@ -829,5 +843,38 @@ mod tests {
                 .unwrap_err(),
             PrivacyError::PrivacyEpochChanged
         );
+    }
+    #[test]
+    fn restricted_summary_permit_cannot_be_reused_to_read_complete_bodies() {
+        let history = memory();
+        let permit = history
+            .privacy()
+            .authorize_read(
+                PrivacyAccessIntent::RestrictedSummary,
+                SensitiveAccess::Denied,
+                None,
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            history.get_entry_authorized(1, &permit, 1).unwrap_err(),
+            PrivacyError::SensitiveAccessDenied
+        );
+        assert_eq!(
+            history
+                .query_authorized(
+                    &HistoryQuery {
+                        limit: 1,
+                        ..Default::default()
+                    },
+                    &permit,
+                    1
+                )
+                .unwrap_err(),
+            PrivacyError::SensitiveAccessDenied
+        );
+        assert!(history
+            .summaries_authorized(&SummaryQuery::default(), &permit, 1)
+            .is_ok());
     }
 }
