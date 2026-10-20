@@ -84,7 +84,25 @@ mod tests {
         let fixtures: Value = serde_json::from_str(include_str!("../../../../protocol/fixtures/messages.json")).unwrap();
         for fixture in fixtures.as_array().unwrap() {
             let name = fixture["schema"].as_str().unwrap();
+            if fixture.get("raw").is_some() || fixture.get("raw_hex").is_some() {
+                let raw = if let Some(raw) = fixture["raw"].as_str() { raw.as_bytes().to_vec() } else {
+                    fixture["raw_hex"].as_str().unwrap().as_bytes().chunks_exact(2).map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect()
+                };
+                assert_eq!(decode::<Value>(name, &raw).is_ok(), fixture["valid"].as_bool().unwrap(), "{}", fixture["name"]);
+                continue;
+            }
             assert_eq!(validate(name, &fixture["value"]).is_ok(), fixture["valid"].as_bool().unwrap(), "{}", fixture["name"]);
+            if let Some(expected) = fixture.get("expected") {
+                let bytes = serde_json::to_vec(&fixture["value"]).unwrap();
+                let actual = match name {
+                    "PrivacySetParams" => serde_json::to_value(decode::<PrivacySetParams>(name, &bytes).unwrap()).unwrap(),
+                    "HelloParams" => serde_json::to_value(decode::<HelloParams>(name, &bytes).unwrap()).unwrap(),
+                    "WireError" => serde_json::to_value(decode::<WireError>(name, &bytes).unwrap()).unwrap(),
+                    "HistoryResult" => serde_json::to_value(decode::<HistoryResult>(name, &bytes).unwrap()).unwrap(),
+                    _ => panic!("unsupported typed fixture"),
+                };
+                assert_eq!(&actual, expected, "{}", fixture["name"]);
+            }
             if fixture["valid"] == true && name == "Request" {
                 let bytes = serde_json::to_vec(&fixture["value"]).unwrap();
                 let request: Request = decode(name, &bytes).unwrap();
