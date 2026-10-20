@@ -3,11 +3,10 @@ fn main() {}
 
 #[cfg(feature = "desktop")]
 fn main() {
-    // Tauri copies externalBin into target/<profile>, where Cargo also writes
-    // our real dzc binary. A check or GUI build can otherwise replace it with
-    // an old sidecar while Cargo still considers the CLI artifact fresh.
-    // This override is local to the build-script process. The Tauri bundler
-    // still reads the original configuration and packages the prepared sidecar.
+    // dzc is registered as a regular Cargo bundle binary. An explicit legacy
+    // externalBin override can still copy a staged CLI over target/<profile>
+    // while Cargo considers its artifact fresh. This build-script-only guard
+    // prevents that copy; the bundle hook prepares the regular CLI input.
     let mut config: serde_json::Value = std::env::var("TAURI_CONFIG")
         .map(|value| serde_json::from_str(&value).expect("TAURI_CONFIG must be valid JSON"))
         .unwrap_or_else(|_| serde_json::json!({}));

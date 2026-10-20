@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { prepareSidecars, sidecarOptions } from "../prepare-tauri-sidecars.mjs";
+import { bundleRpm, rpmBundleConfig } from "../bundle-rpm.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -142,7 +143,140 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(native, /pnpm exec tauri build --debug --bundles nsis --no-sign/);
   assert.doesNotMatch(native, /beforeBuildCommand\s*=|beforeBundleCommand\s*=/, "the native fixture must not replace the production hooks");
   assert.match(native, /sidecarProof\.phase -ne 'bundle'/);
+  assert.equal(pkg.scripts["tauri:build"], "tauri build", "forwarded build arguments must retain their original Tauri command");
+  assert.equal(pkg.scripts["tauri:bundle:rpm"], "node scripts/bundle-rpm.mjs");
+  assert.deepEqual(config.bundle.targets, ["nsis", "deb", "appimage"]);
+  const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8");
+  const rpmStep = workflow.split("- name: Bundle and upload RPM with pre-release package ordering")[1]?.split("\n  publish-flatpak:")[0];
+  assert(rpmStep);
+  assert.match(rpmStep, /if: runner\.os == 'Linux'/);
+  assert.match(rpmStep, /node scripts\/bundle-rpm\.mjs --receipt/);
+  assert.match(rpmStep, /needs\.create-release\.outputs\.release_id/);
+  assert.match(rpmStep, /--jq '\.draft'\)" = true/);
+  assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
+  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
 });
+
+test("RPM metadata derives supported preview and stable versions without build metadata precedence", () => {
+  for (const [app, version, release] of [
+    ["0.2.0-alpha.0", "0.2.0", "0.alpha.0"], ["0.2.0-alpha.10+ci.22", "0.2.0", "0.alpha.10"],
+    ["0.2.0-beta.2", "0.2.0", "0.beta.2"], ["0.2.0-rc.1", "0.2.0", "0.rc.1"],
+    ["0.2.0", "0.2.0", "1"], ["1.12.300+linux-x64.001", "1.12.300", "1"],
+  ]) {
+    const override = rpmBundleConfig(app);
+    assert.equal(override.version, version);
+    assert.equal(override.bundle.linux.rpm.release, release);
+    assert.equal(override.bundle.createUpdaterArtifacts, false, "RPM remains a package-manager update path");
+  }
+  for (const version of ["0.2.0-alpha.01", "0.2.0-preview.1", "0.2.0-alpha-beta.1", "0.2.0-1", "0.2.0-alpha", "01.2.0", "v0.2.0", "0.2.0+", "0.2.0-alpha.1+bad..metadata", "0.2.0-alpha.1\n"]) {
+    assert.throws(() => rpmBundleConfig(version), /Unsupported RPM/);
+  }
+});
+
+test("RPM wrapper invokes only the bundle process and keeps source versions and prepared CLI bytes", (t) => {
+  const f = fixture(t, { host: "x86_64-unknown-linux-gnu" });
+  prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: {} });
+  mkdirSync(join(f.directory, "src-tauri"), { recursive: true });
+  const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  writeFileSync(join(f.directory, "src-tauri/tauri.conf.json"), JSON.stringify(config));
+  const protectedPaths = [join(f.directory, "package.json"), join(f.directory, "src-tauri/tauri.conf.json"), join(f.directory, "Cargo.lock"), f.hostDefault];
+  const before = protectedPaths.map((path) => hash(readFileSync(path)));
+  const env = { CARGO_TARGET_DIR: f.targetDirectory };
+  let calls = 0;
+  const rpm = Buffer.from("isolated fake RPM output for wrapper invocation contract");
+  const result = bundleRpm({ repoRoot: f.directory, platform: "linux", env, run: (command, args, options) => {
+    calls += 1;
+    assert.equal(options.cwd, f.directory);
+    assert.equal(options.env, env);
+    if (command === "cargo") {
+      assert.deepEqual(args, ["metadata", "--format-version", "1", "--no-deps", "--locked"]);
+      return JSON.stringify({ target_directory: f.targetDirectory });
+    }
+    assert.equal(command, "pnpm");
+    assert.deepEqual(args.slice(0, 6), ["exec", "tauri", "bundle", "--bundles", "rpm", "--config"]);
+    assert.deepEqual(JSON.parse(args[6]), rpmBundleConfig("0.2.0-alpha.1"));
+    assert.equal(options.stdio, "inherit");
+    const directory = join(f.targetDirectory, "release/bundle/rpm");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "DezirClip-0.2.0-0.alpha.1.aarch64.rpm"), rpm);
+  } });
+  assert.equal(calls, 2);
+  assert.equal(result.appVersion, "0.2.0-alpha.1");
+  assert.equal(result.rpmVersion, "0.2.0");
+  assert.equal(result.rpmRelease, "0.alpha.1");
+  assert.equal(result.sha256, hash(rpm));
+  assert.equal(result.bytes, rpm.length);
+  assert.deepEqual(protectedPaths.map((path) => hash(readFileSync(path))), before);
+  assert.deepEqual(readFileSync(f.hostDefault), f.payload);
+});
+
+test("RPM wrapper skips Windows before reading files or starting any command", () => {
+  const result = bundleRpm({ repoRoot: "missing-fixture", platform: "win32", run: () => { throw new Error("must not execute"); } });
+  assert.equal(result.skipped, true);
+  for (const env of [{ CARGO_BUILD_TARGET: "aarch64-unknown-linux-gnu" }, { TAURI_ENV_TARGET_TRIPLE: "aarch64-unknown-linux-gnu" }]) {
+    assert.throws(() => bundleRpm({ repoRoot: "missing-fixture", platform: "linux", env, run: () => { throw new Error("must not execute"); } }), /native Linux release/);
+  }
+});
+
+test("RPM wrapper rejects unsupported versions and preserves bundle failures", (t) => {
+  const f = fixture(t);
+  mkdirSync(join(f.directory, "src-tauri"));
+  const configPath = join(f.directory, "src-tauri/tauri.conf.json");
+  const writeVersion = (version) => {
+    writeFileSync(join(f.directory, "package.json"), JSON.stringify({ version }));
+    writeFileSync(configPath, JSON.stringify({ version, productName: "DezirClip" }));
+  };
+  writeVersion("0.2.0-preview.1");
+  assert.throws(() => bundleRpm({ repoRoot: f.directory, platform: "linux", run: () => { throw new Error("must not execute"); } }), /Unsupported RPM/);
+  writeVersion("0.2.0-alpha.1");
+  const failure = new Error("actual bundler failure");
+  assert.throws(() => bundleRpm({ repoRoot: f.directory, platform: "linux", run: (command) => {
+    if (command === "cargo") return JSON.stringify({ target_directory: f.targetDirectory });
+    throw failure;
+  } }), (error) => error === failure);
+  writeFileSync(configPath, JSON.stringify({ version: "0.2.0", productName: "DezirClip" }));
+  assert.throws(() => bundleRpm({ repoRoot: f.directory, platform: "linux" }), /versions must match/);
+});
+
+for (const parameters of [
+  { host: "x86_64-pc-windows-msvc" },
+  { host: "x86_64-pc-windows-msvc", target: "aarch64-pc-windows-msvc" },
+  { host: "x86_64-unknown-linux-gnu" },
+  { host: "x86_64-unknown-linux-gnu", target: "aarch64-unknown-linux-gnu" },
+]) {
+  test(`Cargo bundle binaries contain one prepared CLI: ${parameters.target ?? parameters.host}`, (t) => {
+    const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+    const manifest = readFileSync(join(root, "src-tauri/Cargo.toml"), "utf8");
+    const main = /^default-run\s*=\s*"([^"]+)"/m.exec(manifest)?.[1];
+    const binaries = manifest.split(/\r?\n\[\[bin\]\]\r?\n/).slice(1).map((section) => {
+      const name = /^name\s*=\s*"([^"]+)"/m.exec(section)?.[1];
+      const source = /^path\s*=\s*"([^"]+)"/m.exec(section)?.[1];
+      assert(name && source && existsSync(join(root, "src-tauri", source)));
+      return { name, main: name === main };
+    });
+    assert.deepEqual(binaries.filter((item) => item.main).map((item) => item.name), ["dezirclip"]);
+    assert.deepEqual(binaries.filter((item) => !item.main).map((item) => item.name), ["dzc"]);
+    assert.deepEqual(readdirSync(join(root, "src-tauri/src/bin")), ["dzc.rs"]);
+
+    const f = fixture(t, parameters);
+    const proof = prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: { TAURI_ENV_TARGET_TRIPLE: f.target } });
+    const out = f.target === f.host ? dirname(f.hostDefault) : dirname(f.source);
+    const extension = f.target.includes("windows") ? ".exe" : "";
+    const mainPayload = Buffer.from("desktop-main-binary");
+    writeFileSync(join(out, `dezirclip${extension}`), mainPayload);
+    const cargoFiles = binaries.map((item) => ({ name: item.name + extension, path: join(out, item.name + extension) }));
+    const externalFiles = (config.bundle.externalBin ?? []).map((name) => name.split("/").at(-1) + extension);
+    const destinations = [...cargoFiles.map((item) => item.name), ...externalFiles];
+    assert.equal(new Set(destinations).size, destinations.length, "RPM adds Cargo and external files separately and rejects duplicate destinations");
+    assert.equal(destinations.filter((name) => name === `dzc${extension}`).length, 1);
+    assert.equal(new Set([...destinations, `dzc${extension}`]).size, destinations.length, "the old externalBin entry would repeat the Cargo CLI destination");
+    const bundledCli = cargoFiles.find((item) => item.name === `dzc${extension}`);
+    assert.deepEqual(readFileSync(bundledCli.path), f.payload, "the native/cross Cargo bundle input must use the prepared standalone bytes");
+    assert.equal(hash(readFileSync(bundledCli.path)), proof.sha256);
+    assert.deepEqual(readFileSync(cargoFiles.find((item) => item.name === `dezirclip${extension}`).path), mainPayload);
+    assert.deepEqual(readFileSync(proof.binaryPaths.find((item) => item.role === "external-bin").path), f.payload, "the diagnostic staging copy retains the same bytes without a second bundle registration");
+  });
+}
 
 test("native acceptance refuses local execution before any product operation", { skip: process.platform !== "win32" }, () => {
   for (const args of [

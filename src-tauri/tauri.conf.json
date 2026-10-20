@@ -156,9 +156,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/dzc"
-    ],
     "resources": {
       "../skills/dzc-cli/SKILL.md": "skills/dzc-cli/SKILL.md",
       "../skills/dzc-cli/README.md": "skills/dzc-cli/README.md",
@@ -175,8 +172,7 @@
     "targets": [
       "nsis",
       "deb",
-      "appimage",
-      "rpm"
+      "appimage"
     ],
     "windows": {
       "nsis": {

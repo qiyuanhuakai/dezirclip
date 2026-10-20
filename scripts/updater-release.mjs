@@ -137,51 +137,65 @@ function gh(args, binary = false) {
   return execFileSync('gh', args, { encoding: binary ? undefined : 'utf8',
     maxBuffer: 1024 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
 }
-function api(path) { return JSON.parse(gh(['api', `repos/${repository}/${path}`])); }
-function optionalChannelRelease() {
-  try { return api(`releases/tags/${channelTag}`); }
-  catch (error) {
-    if (error.stderr?.toString().includes('(HTTP 404)')) return null;
-    throw error;
+function githubClient(transport) {
+  const api = path => JSON.parse(transport(['api', `repos/${repository}/${path}`]));
+  function releaseByTag(tag, optional = false) {
+    // The by-tag endpoint only returns published releases. Authenticated, fully
+    // paginated listing includes drafts; only a successful empty match is absent.
+    const pages = JSON.parse(transport([
+      'api', `repos/${repository}/releases?per_page=100`, '--paginate', '--slurp',
+    ]));
+    if (!Array.isArray(pages) || pages.some(page => !Array.isArray(page))) {
+      throw new Error('GitHub release listing is incomplete');
+    }
+    const matches = pages.flat().filter(release => release.tag_name === tag);
+    if (!matches.length && optional) return null;
+    if (matches.length !== 1 || !Number.isSafeInteger(matches[0].id) || matches[0].id <= 0) {
+      throw new Error(`Missing or ambiguous GitHub release: ${tag}`);
+    }
+    const release = api(`releases/${matches[0].id}`);
+    if (release.id !== matches[0].id || release.tag_name !== tag) {
+      throw new Error('GitHub release identity changed during lookup');
+    }
+    return release;
   }
-}
-function downloadAsset(asset) {
-  return gh(['api', `repos/${repository}/releases/assets/${asset.id}`, '-H', 'Accept: application/octet-stream'], true);
-}
-function moveAsset(asset, name) {
-  return apiMutation(`releases/assets/${asset.id}`, ['-X', 'PATCH', '-f', `name=${name}`]);
-}
-function apiMutation(path, args) {
-  return JSON.parse(gh(['api', `repos/${repository}/${path}`, ...args]));
+  function downloadAsset(asset) {
+    return transport(['api', `repos/${repository}/releases/assets/${asset.id}`, '-H', 'Accept: application/octet-stream'], true);
+  }
+  function moveAsset(asset, name) {
+    return JSON.parse(transport(['api', `repos/${repository}/releases/assets/${asset.id}`,
+      '-X', 'PATCH', '-f', `name=${name}`]));
+  }
+  function releaseCommit(tag) {
+    let object = api(`git/ref/tags/${encodeURIComponent(tag)}`).object;
+    for (let depth = 0; object.type === 'tag' && depth < 8; depth++) {
+      object = api(`git/tags/${object.sha}`).object;
+    }
+    if (object.type !== 'commit' || !/^[a-f0-9]{40}$/.test(object.sha)) {
+      throw new Error('Release tag does not resolve to a Git commit');
+    }
+    return object.sha;
+  }
+  return { releaseByTag, downloadAsset, moveAsset, releaseCommit };
 }
 
-function releaseCommit(tag) {
-  let object = api(`git/ref/tags/${encodeURIComponent(tag)}`).object;
-  for (let depth = 0; object.type === 'tag' && depth < 8; depth++) {
-    object = api(`git/tags/${object.sha}`).object;
-  }
-  if (object.type !== 'commit' || !/^[a-f0-9]{40}$/.test(object.sha)) {
-    throw new Error('Release tag does not resolve to a Git commit');
-  }
-  return object.sha;
-}
-
-export function publish(version, config, log = console.log) {
+export function publish(version, config, log = console.log, transport = gh) {
+  const client = githubClient(transport);
   const parsed = parseVersion(version);
   const tag = `v${parsed.value}`;
   const channel = promotionChannel(parsed.value);
-  const release = api(`releases/tags/${tag}`);
+  const release = client.releaseByTag(tag);
   if (release.tag_name !== tag || release.prerelease !== Boolean(parsed.pre.length)) {
     throw new Error('Release tag or prerelease flag differs from the signed version');
   }
-  const commit = releaseCommit(tag);
+  const commit = client.releaseCommit(tag);
   const manifest = makeManifest(parsed.value, release.assets, name => {
-    return downloadAsset(release.assets.find(asset => asset.name === name));
+    return client.downloadAsset(release.assets.find(asset => asset.name === name));
   }, config.plugins.updater.pubkey, release.body ?? '');
-  let channels = optionalChannelRelease();
+  let channels = client.releaseByTag(channelTag, true);
   if (channels?.draft) throw new Error('Existing channel release is still a draft; inspect it before retrying');
   const old = channels?.assets.find(asset => asset.name === `${channel}.json`);
-  const current = old ? JSON.parse(downloadAsset(old).toString('utf8')) : null;
+  const current = old ? JSON.parse(client.downloadAsset(old).toString('utf8')) : null;
   if (current) {
     parseVersion(current.version);
     if (channel === 'stable' && parseVersion(current.version).pre.length) {
@@ -189,7 +203,7 @@ export function publish(version, config, log = console.log) {
     }
   }
   // Check asset identity again before making the verified release public.
-  const latest = api(`releases/tags/${tag}`);
+  const latest = client.releaseByTag(tag);
   for (const asset of release.assets) {
     if (!latest.assets.some(value => value.id === asset.id && value.size === asset.size
         && value.updated_at === asset.updated_at)) {
@@ -197,10 +211,10 @@ export function publish(version, config, log = console.log) {
     }
   }
   if (release.draft) {
-    gh(['release', 'edit', tag, '--repo', repository, '--draft=false',
+    transport(['release', 'edit', tag, '--repo', repository, '--draft=false',
       parsed.pre.length ? '--latest=false' : '--latest']);
   }
-  if (api(`releases/tags/${tag}`).draft) throw new Error('Release has not been published');
+  if (client.releaseByTag(tag).draft) throw new Error('Release has not been published');
   if (!shouldPromote(current?.version, parsed.value)) {
     log(`Published ${tag}; ${channel} already points to an equal or newer version.`);
     return;
@@ -213,26 +227,26 @@ export function publish(version, config, log = console.log) {
     writeFileSync(path, contents);
     const fresh = !channels;
     if (fresh) {
-      gh(['release', 'create', channelTag, '--repo', repository, '--draft', '--prerelease',
+      transport(['release', 'create', channelTag, '--repo', repository, '--draft', '--prerelease',
         '--latest=false', '--target', commit, '--title', 'DezirClip updater channels',
         '--notes', 'Signed updater manifests. Stable accepts official releases; Preview checks both channels.']);
-      channels = api(`releases/tags/${channelTag}`);
+      channels = client.releaseByTag(channelTag);
     }
-    gh(['release', 'upload', channelTag, path, '--repo', repository, '--clobber']);
-    channels = api(`releases/tags/${channelTag}`);
+    transport(['release', 'upload', channelTag, path, '--repo', repository, '--clobber']);
+    channels = client.releaseByTag(channelTag);
     const staged = channels.assets.find(asset => asset.name === stagedName);
-    if (!staged || !downloadAsset(staged).equals(contents)) throw new Error('Uploaded channel verification failed');
-    if (old) moveAsset(old, `${channel}-previous-${old.id}.json`);
-    try { moveAsset(staged, `${channel}.json`); }
+    if (!staged || !client.downloadAsset(staged).equals(contents)) throw new Error('Uploaded channel verification failed');
+    if (old) client.moveAsset(old, `${channel}-previous-${old.id}.json`);
+    try { client.moveAsset(staged, `${channel}.json`); }
     catch (error) {
-      const active = api(`releases/tags/${channelTag}`).assets.find(asset => asset.name === `${channel}.json`);
+      const active = client.releaseByTag(channelTag).assets.find(asset => asset.name === `${channel}.json`);
       // A lost API response can follow a successful rename; resolve that outcome first.
-      if (!active || !downloadAsset(active).equals(contents)) {
-        if (old && !active) moveAsset(old, `${channel}.json`);
+      if (!active || !client.downloadAsset(active).equals(contents)) {
+        if (old && !active) client.moveAsset(old, `${channel}.json`);
         throw error;
       }
     }
-    if (fresh) gh(['release', 'edit', channelTag, '--repo', repository, '--draft=false', '--latest=false']);
+    if (fresh) transport(['release', 'edit', channelTag, '--repo', repository, '--draft=false', '--latest=false']);
     log(`Published ${tag}; advanced ${channel}.json after verifying all four signed updater artifacts.`);
   } finally {
     if (resolve(staging).startsWith(resolve(tmpdir()) + (process.platform === 'win32' ? '\\' : '/'))
