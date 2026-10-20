@@ -519,6 +519,97 @@ mod transition_tests {
         )
         .unwrap()
     }
+
+    fn unmerged_repository() -> SqliteClipboardRepository {
+        let repo = repository();
+        seed(&repo, "[]");
+        {
+            let conn = repo.conn.lock().unwrap();
+            for id in 2..=6 {
+                conn.execute("INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags)
+                    VALUES(?1,'text','manualprotected public','public summary','fixture',?1,'[]')", [id]).unwrap();
+            }
+            assert_eq!(conn.query_row("SELECT v FROM clipboard_fts_config WHERE k='automerge'", [], |row| row.get::<_, i64>(0)).unwrap(), 8);
+            let segments: i64 = conn.query_row("SELECT count(DISTINCT segid) FROM clipboard_fts_idx", [], |row| row.get(0)).unwrap();
+            assert_eq!(segments, 6);
+            assert!(segments < 8);
+            assert!(has_secret(&conn));
+            conn.execute("CREATE VIRTUAL TABLE merge_terms USING fts5vocab(clipboard_fts,'instance')", []).unwrap();
+        }
+        repo
+    }
+
+    fn assert_private_postings_removed(conn: &Connection) {
+        assert!(!has_secret(conn), "unique secret must be absent from physical shadow bytes");
+        assert_eq!(conn.query_row("SELECT count(*) FROM merge_terms WHERE doc=1 OR term='qvx'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(conn.query_row("SELECT count(DISTINCT doc) FROM merge_terms WHERE term='man'", [], |row| row.get::<_, i64>(0)).unwrap(), 5);
+        assert_eq!(conn.query_row("SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'manualprotected'", [], |row| row.get::<_, i64>(0)).unwrap(), 5);
+        assert_eq!(conn.query_row("SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'qvx'", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn automerge_eight_unmerged_sensitive_conversion_physically_erases_only_private_postings() {
+        let repo = unmerged_repository();
+        let conn = repo.conn.lock().unwrap();
+        atomic(&conn, |connection| {
+            repo.encrypt_entry_with_conn(connection, 1)?;
+            connection.execute_batch("SAVEPOINT verify_unmerged_flush; RELEASE verify_unmerged_flush;")
+                .map_err(|error| error.to_string())?;
+            assert_private_postings_removed(connection);
+            Ok(())
+        }).unwrap();
+        let stored = fields(&conn);
+        for value in [Some(stored.0.as_str()), Some(stored.1.as_str()), stored.2.as_deref(), stored.4.as_deref()]
+            .into_iter().flatten()
+        {
+            assert!(encryption::has_ciphertext_envelope(value));
+        }
+        assert_eq!(conn.query_row("SELECT v FROM clipboard_fts_config WHERE k='version'", [], |row| row.get::<_, i64>(0)).unwrap(), 5);
+        conn.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)", []).unwrap();
+    }
+
+    #[test]
+    fn automerge_eight_unmerged_late_ocr_cannot_restore_sensitive_plaintext_or_postings() {
+        let repo = unmerged_repository();
+        let conn = repo.conn.lock().unwrap();
+        repo.encrypt_entry_with_conn(&conn, 1).unwrap();
+        let before = fields(&conn);
+        let index = storage_snapshot(&conn);
+        assert_eq!(repo.update_ocr_text_with_conn(&conn, 1, "qvx delayed secret OCR", "done").unwrap_err(), "SensitivePersistenceRejected");
+        assert_eq!(fields(&conn), before);
+        assert_eq!(storage_snapshot(&conn), index);
+        assert_private_postings_removed(&conn);
+    }
+
+    #[test]
+    fn automerge_eight_unmerged_flushed_failure_rolls_back_fields_all_postings_and_can_retry() {
+        let repo = unmerged_repository();
+        let cached = serde_json::to_value(repo.get_history(10, 0, None).unwrap()).unwrap();
+        let conn = repo.conn.lock().unwrap();
+        let before = fields(&conn);
+        let index = storage_snapshot(&conn);
+        let result: Result<(), String> = atomic(&conn, |connection| {
+            repo.encrypt_entry_with_conn(connection, 1)?;
+            connection.execute_batch("SAVEPOINT flush_unmerged_then_fail; RELEASE flush_unmerged_then_fail;")
+                .map_err(|error| error.to_string())?;
+            assert_private_postings_removed(connection);
+            assert_ne!(storage_snapshot(connection), index);
+            connection.execute("INSERT INTO missing_after_merge_flush VALUES(1)", [])
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        });
+        assert!(result.unwrap_err().contains("missing_after_merge_flush"));
+        assert_eq!(fields(&conn), before);
+        assert_eq!(storage_snapshot(&conn), index);
+        assert!(has_secret(&conn));
+        drop(conn);
+        assert_eq!(serde_json::to_value(repo.get_history(10, 0, None).unwrap()).unwrap(), cached);
+        let conn = repo.conn.lock().unwrap();
+        repo.encrypt_entry_with_conn(&conn, 1).unwrap();
+        assert_private_postings_removed(&conn);
+        conn.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)", []).unwrap();
+    }
+
     #[test]
     fn visibility_planning_matches_the_five_field_sql_function() {
         let repo = repository();

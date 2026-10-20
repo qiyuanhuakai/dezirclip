@@ -1,7 +1,7 @@
 """SQLite connections for disposable tests and synthetic render benchmarks only.
 
-Schemas 19/20 need a pure visibility UDF on every fixture writer. Schema 20
-requires SQLite >= 3.50.4, persistent FTS5 secure-delete, and connection-level
+Schemas 19–21 need a pure visibility UDF on every fixture writer. Schemas 20/21
+require SQLite >= 3.50.4, persistent FTS5 secure-delete, and connection-level
 secure_delete. These trusted synthetic fixtures do not validate the product's
 pinned SQLite engine or safely accept untrusted/corrupt database input.
 SQLite 3.42 recognizes format 5; the higher fixture floor excludes older
@@ -108,7 +108,7 @@ def search_visible(tags, content, preview, html_content, ocr_text):
 def require_secure_delete_runtime():
     """Reject unsupported engines; only trusted disposable fixture data is accepted."""
     if sqlite3.sqlite_version_info < (3, 50, 4):
-        raise RuntimeError("Schema 20 synthetic fixtures require SQLite >= 3.50.4; found " + sqlite3.sqlite_version)
+        raise RuntimeError("Schemas 20/21 synthetic fixtures require SQLite >= 3.50.4; found " + sqlite3.sqlite_version)
 
 
 def connect_fixture_database(*args, **kwargs):
@@ -117,16 +117,16 @@ def connect_fixture_database(*args, **kwargs):
         connection.create_function("dc_search_visible", 5, search_visible, deterministic=True)
         schema = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").fetchone()
         version = connection.execute("SELECT COALESCE(MAX(version),0) FROM schema_migrations").fetchone()[0] if schema else 0
-        if version > 20:
-            raise RuntimeError("Synthetic fixture schema is newer than supported schema 20")
-        if version == 20:
+        if version > 21:
+            raise RuntimeError("Synthetic fixture schema is newer than supported schema 21")
+        if version >= 20:
             require_secure_delete_runtime()
             option = connection.execute("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'").fetchone()
             if option != (1,):
-                raise RuntimeError("Schema 20 fixture requires persistent FTS5 secure-delete=1")
+                raise RuntimeError(f"Schema {version} fixture requires persistent FTS5 secure-delete=1")
             connection.execute("PRAGMA secure_delete=ON")
             if connection.execute("PRAGMA secure_delete").fetchone() != (1,):
-                raise RuntimeError("Schema 20 fixture requires connection secure_delete=ON")
+                raise RuntimeError(f"Schema {version} fixture requires connection secure_delete=ON")
     except Exception:
         connection.close()
         raise

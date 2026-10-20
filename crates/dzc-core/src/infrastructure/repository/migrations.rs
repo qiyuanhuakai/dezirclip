@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, Result};
 /// The value `PRAGMA auto_vacuum` reports for the mode `init_db` asks for.
 const AUTO_VACUUM_FULL: i32 = 1;
 
-pub const SUPPORTED_SCHEMA_VERSION: i32 = 20;
+pub const SUPPORTED_SCHEMA_VERSION: i32 = 21;
 
 /// Initialize an additional write connection to an already migrated history.
 /// Read-only readers may register only the pure visibility function instead.
@@ -101,7 +101,7 @@ mod schema_compatibility_tests {
     fn legacy_tombstone() -> Connection {
         let mut connection = Connection::open_in_memory().unwrap();
         run_migrations(&mut connection).unwrap();
-        connection.execute_batch("DELETE FROM schema_migrations WHERE version=20;
+        connection.execute_batch("DELETE FROM schema_migrations WHERE version>=20;
             INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0);
             INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text)
             VALUES(1,'text','ordinary','summary','fixture',1,'[]','qvx');
@@ -122,7 +122,7 @@ mod schema_compatibility_tests {
         let mut connection = legacy_tombstone();
         run_migrations(&mut connection).unwrap();
         assert!(!has_stale_secret(&connection));
-        assert_eq!(connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), 20);
+        assert_eq!(connection.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), SUPPORTED_SCHEMA_VERSION);
         assert_eq!(connection.query_row("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'", [], |row| row.get::<_, i32>(0)).unwrap(), 1);
         let changes = connection.total_changes();
         run_migrations(&mut connection).unwrap();
@@ -304,6 +304,174 @@ mod schema_compatibility_tests {
         assert_eq!(std::fs::read(&path).unwrap(), before);
         assert!(!path.with_extension("db-journal").exists());
         std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod merge_scheduling_tests {
+    use super::*;
+    use rusqlite::types::Value;
+
+    fn option(conn: &Connection, key: &str, default: i64) -> i64 {
+        conn.query_row("SELECT COALESCE((SELECT v FROM clipboard_fts_config WHERE k=?1),?2)",
+            rusqlite::params![key, default], |row| row.get(0)).unwrap()
+    }
+
+    fn historical(version: i32) -> Connection {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).unwrap();
+        conn.execute("DELETE FROM schema_migrations WHERE version>?1", [version]).unwrap();
+        conn.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('automerge',4)", []).unwrap();
+        if version < 20 {
+            conn.execute_batch("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0);
+                DELETE FROM clipboard_fts_config WHERE k IN ('secure-delete','automerge');
+                DROP INDEX idx_clipboard_history_evictable;
+                CREATE INDEX idx_clipboard_history_evictable ON clipboard_history(timestamp)
+                    WHERE is_pinned=0 AND (tags='[]' OR tags IS NULL);").unwrap();
+        }
+        if version == 18 {
+            conn.execute_batch("DROP TRIGGER clipboard_history_ai; DROP TRIGGER clipboard_history_ad;
+                DROP TRIGGER clipboard_history_au; DROP TABLE clipboard_fts; DROP VIEW clipboard_search_content;
+                CREATE VIRTUAL TABLE clipboard_fts USING fts5(content,preview,source_app,content_kinds,ocr_text,
+                    content='clipboard_history',content_rowid='id',tokenize='trigram');
+                CREATE TRIGGER clipboard_history_ai AFTER INSERT ON clipboard_history BEGIN
+                    INSERT INTO clipboard_fts(rowid,content,preview,source_app,content_kinds,ocr_text)
+                    VALUES(new.id,new.content,new.preview,new.source_app,new.content_kinds,new.ocr_text); END;
+                CREATE TRIGGER clipboard_history_ad AFTER DELETE ON clipboard_history BEGIN
+                    INSERT INTO clipboard_fts(clipboard_fts,rowid,content,preview,source_app,content_kinds,ocr_text)
+                    VALUES('delete',old.id,old.content,old.preview,old.source_app,old.content_kinds,old.ocr_text); END;
+                CREATE TRIGGER clipboard_history_au AFTER UPDATE ON clipboard_history BEGIN
+                    INSERT INTO clipboard_fts(clipboard_fts,rowid,content,preview,source_app,content_kinds,ocr_text)
+                    VALUES('delete',old.id,old.content,old.preview,old.source_app,old.content_kinds,old.ocr_text);
+                    INSERT INTO clipboard_fts(rowid,content,preview,source_app,content_kinds,ocr_text)
+                    VALUES(new.id,new.content,new.preview,new.source_app,new.content_kinds,new.ocr_text); END;").unwrap();
+        }
+        conn.execute_batch("INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text)
+            VALUES(7,'text','migration shared qvx','original preview','fixture',7,'[]','original OCR');
+            INSERT OR REPLACE INTO settings(key,value) VALUES('fixture-preserved','original setting');").unwrap();
+        conn
+    }
+
+    fn snapshot(conn: &Connection, normalize_cookie: bool, include_markers: bool) -> Vec<(String, Vec<Vec<Value>>)> {
+        let mut tables = vec!["clipboard_history", "settings", "clipboard_fts_data", "clipboard_fts_idx", "clipboard_fts_docsize"];
+        if include_markers { tables.extend(["schema_migrations", "clipboard_fts_config"]); }
+        tables.into_iter().map(|table| {
+            let mut statement = conn.prepare(&format!("SELECT * FROM {table} ORDER BY 1,2")).unwrap();
+            let mut rows: Vec<Vec<Value>> = statement.query_map([], |row| {
+                (0..row.as_ref().column_count()).map(|index| row.get(index)).collect()
+            }).unwrap().collect::<Result<_>>().unwrap();
+            if normalize_cookie && table == "clipboard_fts_data" {
+                for row in &mut rows {
+                    if row[0] == Value::Integer(10) {
+                        let Value::Blob(blob) = &mut row[1] else { panic!("structure must be a blob") };
+                        blob[..4].fill(0);
+                    }
+                }
+            }
+            (table.to_owned(), rows)
+        }).collect()
+    }
+
+    #[test]
+    fn schema_twenty_one_fresh_and_historical_upgrades_keep_complete_search_and_protection() {
+        let mut fresh = Connection::open_in_memory().unwrap();
+        let cache: i64 = fresh.query_row("PRAGMA cache_size", [], |row| row.get(0)).unwrap();
+        let synchronous: i64 = fresh.query_row("PRAGMA synchronous", [], |row| row.get(0)).unwrap();
+        run_migrations(&mut fresh).unwrap();
+        assert_eq!(option(&fresh, "automerge", 4), 8);
+        assert_eq!(option(&fresh, "secure-delete", 0), 1);
+        assert_eq!(option(&fresh, "crisismerge", 16), 16);
+        assert_eq!(fresh.query_row("PRAGMA cache_size", [], |row| row.get::<_, i64>(0)).unwrap(), cache);
+        assert_eq!(fresh.query_row("PRAGMA synchronous", [], |row| row.get::<_, i64>(0)).unwrap(), synchronous);
+        for version in 18..=20 {
+            let mut conn = historical(version);
+            run_migrations(&mut conn).unwrap();
+            assert_eq!(conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| row.get::<_, i32>(0)).unwrap(), 21);
+            assert_eq!(option(&conn, "automerge", 4), 8);
+            assert_eq!(option(&conn, "secure-delete", 0), 1);
+            assert_eq!(option(&conn, "crisismerge", 16), 16);
+            assert_eq!(conn.query_row("SELECT content FROM clipboard_history WHERE id=7", [], |row| row.get::<_, String>(0)).unwrap(), "migration shared qvx");
+            assert_eq!(conn.query_row("SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'qvx'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+            assert_eq!(conn.query_row("PRAGMA secure_delete", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        }
+    }
+
+    #[test]
+    fn schema_twenty_one_only_changes_merge_option_and_marker_without_rebuilding_fts() {
+        let mut conn = historical(20);
+        let before = snapshot(&conn, true, false);
+        let indexes: Vec<(String, String)> = conn.prepare("SELECT name,sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name").unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().collect::<Result<_>>().unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(snapshot(&conn, true, false), before);
+        let after_indexes: Vec<(String, String)> = conn.prepare("SELECT name,sql FROM sqlite_master WHERE type='index' AND sql IS NOT NULL ORDER BY name").unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().collect::<Result<_>>().unwrap();
+        assert_eq!(after_indexes, indexes);
+        assert_eq!(option(&conn, "automerge", 4), 8);
+        let state = snapshot(&conn, false, true);
+        let changes = conn.total_changes();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(conn.total_changes(), changes);
+        assert_eq!(snapshot(&conn, false, true), state);
+    }
+
+    #[test]
+    fn schema_twenty_one_reopened_file_has_no_writes_or_fts_changes() {
+        let path = std::env::temp_dir().join(format!("dezirclip-merge-reopen-{}.db", uuid::Uuid::new_v4()));
+        let mut conn = Connection::open(&path).unwrap();
+        run_migrations(&mut conn).unwrap();
+        let before = snapshot(&conn, false, true);
+        drop(conn);
+        let bytes = std::fs::read(&path).unwrap();
+        let mut reopened = Connection::open(&path).unwrap();
+        run_migrations(&mut reopened).unwrap();
+        assert_eq!(reopened.total_changes(), 0);
+        assert_eq!(snapshot(&reopened, false, true), before);
+        drop(reopened);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn schema_twenty_one_does_not_repair_missing_or_disabled_secure_configuration() {
+        for missing in [false, true] {
+            let mut conn = historical(20);
+            conn.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0)", []).unwrap();
+            if missing { conn.execute("DELETE FROM clipboard_fts_config WHERE k='secure-delete'", []).unwrap(); }
+            let before = snapshot(&conn, false, true);
+            let error = run_migrations(&mut conn).unwrap_err().to_string();
+            assert!(error.contains("SensitiveIndexProtectionUnavailable"));
+            assert_eq!(snapshot(&conn, false, true), before);
+            assert_eq!(option(&conn, "automerge", 4), 4);
+            assert!(configure_privacy_writer(&conn).is_err());
+        }
+    }
+
+    #[test]
+    fn schema_twenty_one_marker_failure_rolls_back_every_stored_value_and_can_retry() {
+        let mut conn = historical(20);
+        conn.execute_batch("CREATE TRIGGER reject_twenty_one BEFORE INSERT ON schema_migrations
+            WHEN NEW.version=21 BEGIN SELECT RAISE(ABORT,'blocked merge scheduling marker'); END;").unwrap();
+        let before = snapshot(&conn, false, true);
+        assert!(run_migrations(&mut conn).unwrap_err().to_string().contains("blocked merge scheduling marker"));
+        assert_eq!(snapshot(&conn, false, true), before);
+        assert_eq!(option(&conn, "automerge", 4), 4);
+        conn.execute_batch("DROP TRIGGER reject_twenty_one;").unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(option(&conn, "automerge", 4), 8);
+        assert_eq!(option(&conn, "secure-delete", 0), 1);
+        assert_eq!(conn.query_row("SELECT content FROM clipboard_history WHERE id=7", [], |row| row.get::<_, String>(0)).unwrap(), "migration shared qvx");
+    }
+
+    #[test]
+    fn schema_after_twenty_one_is_rejected_without_changing_history_or_fts() {
+        let mut conn = historical(20);
+        run_migrations(&mut conn).unwrap();
+        conn.execute("INSERT INTO schema_migrations(version) VALUES(22)", []).unwrap();
+        let before = snapshot(&conn, false, true);
+        assert!(run_migrations(&mut conn).unwrap_err().to_string().contains("newer than supported 21"));
+        assert!(configure_privacy_writer(&conn).is_err());
+        assert_eq!(snapshot(&conn, false, true), before);
     }
 }
 
@@ -899,6 +1067,10 @@ fn apply_schema_migrations(conn: &Connection) -> Result<()> {
             CREATE INDEX idx_clipboard_history_evictable ON clipboard_history(timestamp)
                 WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]';
             INSERT INTO schema_migrations(version) VALUES(20);")?;
+    }
+    if current_version < 21 {
+        conn.execute_batch("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('automerge',8);
+            INSERT INTO schema_migrations(version) VALUES(21);")?;
     }
     Ok(())
 }

@@ -1,4 +1,4 @@
-"""Disposable fixture writers must preserve schema 20's search privacy contract."""
+"""Disposable fixture writers must preserve schemas 20/21 search privacy contract."""
 
 import base64
 from contextlib import closing, redirect_stdout
@@ -99,17 +99,22 @@ class FixtureVisibilityTests(unittest.TestCase):
 
 
 class SchemaTwentyFixtureTests(unittest.TestCase):
+    """Historical schema20 remains writable without automatic schema migration."""
+    schema_version = 20
+
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory(prefix="dzc-schema20-contract-")
+        self.directory = tempfile.TemporaryDirectory(prefix=f"dzc-schema{self.schema_version}-contract-")
         self.path = Path(self.directory.name) / "history.db"
         with closing(sqlite3.connect(self.path)) as connection, connection:
             connection.executescript("""
                 CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY);
-                INSERT INTO schema_migrations VALUES(20);
                 CREATE VIRTUAL TABLE clipboard_fts USING fts5(content);
                 INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',1);
                 CREATE TABLE reject_failure(value INTEGER CHECK(value>0));
             """)
+            connection.execute("INSERT INTO schema_migrations VALUES(?)", (self.schema_version,))
+            if self.schema_version == 21:
+                connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('automerge',8)")
 
     def tearDown(self):
         self.directory.cleanup()
@@ -135,12 +140,13 @@ class SchemaTwentyFixtureTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT rowid FROM clipboard_fts WHERE clipboard_fts MATCH 'sharedmarker'").fetchall(), [(2,)])
             connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('integrity-check',1)")
 
-    def test_schema20_readonly_reader_enforces_connection_protection(self):
+    def test_readonly_reader_enforces_connection_protection(self):
         with closing(connect_fixture_database(self.path)) as connection, connection:
             connection.execute("INSERT INTO clipboard_fts(content) VALUES('beforereadonly')")
         with closing(connect_fixture_database(self.path)) as connection, connection:
             connection.execute("UPDATE clipboard_fts SET content='readonlymarker' WHERE rowid=1")
         with closing(connect_fixture_database(self.path.as_uri() + "?mode=ro", uri=True)) as connection:
+            self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone(), (self.schema_version,))
             self.assertEqual(connection.execute("PRAGMA secure_delete").fetchone(), (1,))
             self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='version'").fetchone(), (5,))
             self.assertEqual(connection.execute("SELECT rowid FROM clipboard_fts WHERE clipboard_fts MATCH 'readonlymarker'").fetchall(), [(1,)])
@@ -158,7 +164,7 @@ class SchemaTwentyFixtureTests(unittest.TestCase):
     # Standalone FTS above forces actual format5; product external-content
     # protection/purge is verified by the patched Core tests and real CLI below.
 
-    def test_schema20_rejects_disabled_index_protection_without_repairing_it(self):
+    def test_rejects_disabled_index_protection_without_repairing_it(self):
         with closing(sqlite3.connect(self.path)) as connection, connection:
             connection.execute("INSERT INTO clipboard_fts(clipboard_fts,rank) VALUES('secure-delete',0)")
         with self.assertRaisesRegex(RuntimeError, "persistent FTS5 secure-delete=1"):
@@ -167,20 +173,31 @@ class SchemaTwentyFixtureTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'").fetchone(), (0,))
             self.assertEqual(connection.execute("SELECT count(*) FROM clipboard_fts").fetchone(), (0,))
 
-    def test_schema20_rejects_older_runtime_and_future_schema(self):
+    def test_rejects_older_runtime_and_future_schema(self):
         with patch.object(sqlite3, "sqlite_version_info", (3, 50, 3)):
             with self.assertRaisesRegex(RuntimeError, "SQLite >= 3.50.4"):
                 connect_fixture_database(self.path)
         with closing(sqlite3.connect(self.path)) as connection, connection:
-            connection.execute("INSERT INTO schema_migrations VALUES(21)")
+            connection.execute("INSERT INTO schema_migrations VALUES(22)")
         with self.assertRaisesRegex(RuntimeError, "newer than supported"):
             connect_fixture_database(self.path)
 
 
-@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema 20 cross-connection checks")
-class SchemaTwentyWriterTests(unittest.TestCase):
+class SchemaTwentyOneFixtureTests(SchemaTwentyFixtureTests):
+    """Current scheduling keeps the complete schema20 secure-writer contract."""
+    schema_version = 21
+
+    def test_current_schedule_is_not_rewritten_by_the_fixture_opener(self):
+        with closing(connect_fixture_database(self.path)) as connection:
+            self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone(), (21,))
+            self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
+            self.assertEqual(connection.execute("PRAGMA secure_delete").fetchone(), (1,))
+
+
+@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema21 cross-connection checks")
+class SchemaTwentyOneWriterTests(unittest.TestCase):
     def test_cli_and_external_writer_keep_search_view_and_fts_consistent(self):
-        with tempfile.TemporaryDirectory(prefix="dzc-schema20-writer-") as directory:
+        with tempfile.TemporaryDirectory(prefix="dzc-schema21-writer-") as directory:
             path = Path(directory) / "history.db"
             environment = {**os.environ, "DEZIRCLIP_DB_PATH": str(path)}
             binary = str(Path(os.environ["DZC_TEST_BIN"]).resolve())
@@ -191,7 +208,9 @@ class SchemaTwentyWriterTests(unittest.TestCase):
 
             cli("add", "nativekeepmarker")
             with closing(sqlite3.connect(path)) as raw:
-                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (20,))
+                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (21,))
+                self.assertEqual(raw.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
+                self.assertEqual(raw.execute("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'").fetchone(), (1,))
                 with self.assertRaisesRegex(sqlite3.OperationalError, "no such function: dc_search_visible"):
                     raw.execute("UPDATE clipboard_history SET timestamp=id")
             with closing(connect_fixture_database(path)) as database:
@@ -219,7 +238,7 @@ class SchemaTwentyWriterTests(unittest.TestCase):
 @unittest.skipUnless(importlib.util.find_spec("PIL") and importlib.util.find_spec("psutil"),
                      "Synthetic image fixture checks need Pillow and psutil")
 class SyntheticSeederTests(unittest.TestCase):
-    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema20_cases(self):
+    def _assert_seed_cases(self, binary=None):
         spec = importlib.util.spec_from_file_location("seed_performance_fixture", SCRIPT_ROOT / "seed-performance-history.py")
         seed = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(seed)
@@ -229,17 +248,20 @@ class SyntheticSeederTests(unittest.TestCase):
             seed.CASES_ROOT = root / "cases"
             seed.CASES_ROOT.mkdir()
             cases = []
-            for name in ("legacy-no-cli", "current"):
+            for name in ("legacy-no-cli", "current" if binary else "legacy-fresh"):
                 case = seed.CASES_ROOT / name
                 (case / "data").mkdir(parents=True)
                 executable = case / "synthetic-case.exe"
                 executable.write_bytes(b"synthetic benchmark executable placeholder")
                 (case / "case.json").write_text(json.dumps({"executable": str(executable)}), encoding="utf-8")
                 path = case / "data" / "clipboard.db"
-                if name == "current" and os.environ.get("DZC_TEST_BIN"):
-                    subprocess.run([os.environ["DZC_TEST_BIN"], "count", "--json"],
+                if name == "current":
+                    subprocess.run([binary, "count", "--json"],
                                    env={**os.environ, "DEZIRCLIP_DB_PATH": str(path)},
                                    capture_output=True, check=True, timeout=30)
+                    with closing(sqlite3.connect(path)) as database:
+                        self.assertEqual(database.execute("SELECT max(version) FROM schema_migrations").fetchone(), (21,))
+                        self.assertEqual(database.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
                 else:
                     with closing(sqlite3.connect(path)) as database:
                         database.executescript("CREATE TABLE clipboard_history(id INTEGER PRIMARY KEY,content_type TEXT,content TEXT,source_app TEXT,timestamp INTEGER,preview TEXT,tags TEXT); CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT);")
@@ -258,6 +280,13 @@ class SyntheticSeederTests(unittest.TestCase):
                         self.assertEqual(database.execute("SELECT count(*) FROM clipboard_fts_docsize").fetchone(), (14,))
                         self.assertEqual(database.execute("SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'benchmark'").fetchone(), (12,))
             self.assertEqual(len(set(digests)), 1)
+
+    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_without_cli(self):
+        self._assert_seed_cases()
+
+    @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema21 seeder checks")
+    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema21(self):
+        self._assert_seed_cases(os.environ["DZC_TEST_BIN"])
 
 
 if __name__ == "__main__":

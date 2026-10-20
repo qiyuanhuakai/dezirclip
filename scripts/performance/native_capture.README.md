@@ -12,7 +12,7 @@
 
 每个块创建新的 user/PID/network/IPC/UTS/mount namespace、Xvfb、DBus、HOME 和 XDG profile。`--clearenv` 后只建立显式环境；宿主 display、session bus、用户目录、数据库和剪贴板不可见。剪贴板 owner 进程与 GUI 均在私有 PID namespace 内。除只读系统运行库、明确提供的二进制/工具/载荷外，只挂载本块的临时目录。临时根只能由外层工具创建为 `/tmp/dezirclip-native-capture-*`，内层核对普通 marker 文件及 namespace。证据不会自动删除。
 
-GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`，启动后通过真实 `get_data_path` 核对。每端先使用其对应版本 CLI 初始化 schema，再通过 `sqlite_history_fixture` 测试连接插入相同中性历史。旧版保持原 schema，候选使用 schema 20，不让旧程序写新库。persistent 与 deduplicate 开启；persistent limit、idle destroy、privacy detection、OCR、sequential 和 sound 关闭；rich text、files 开启。实际设置、schema 及环境随报告保存。只关闭 window tracker、edge docking、mouse hotkey 服务，剪贴板监听保持启用。
+GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`，启动后通过真实 `get_data_path` 核对。每端先使用其对应版本 CLI 初始化 schema，再通过 `sqlite_history_fixture` 测试连接插入相同中性历史。旧版保持原 schema，当前候选使用 schema 21，不让旧程序写新库；旧冻结树的报告保留其实际 schema，不重贴标签。persistent 与 deduplicate 开启；persistent limit、idle destroy、privacy detection、OCR、sequential 和 sound 关闭；rich text、files 开启。实际设置、schema 及环境随报告保存。只关闭 window tracker、edge docking、mouse hotkey 服务，剪贴板监听保持启用。
 
 两份 `build.json` 至少包含如下信息，完整原文件会复制保留：
 
