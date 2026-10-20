@@ -62,7 +62,7 @@ pub fn encode<T: Serialize>(name: &str, message: &T) -> Result<Vec<u8>, InvalidM
 
 impl WireError {
     pub fn fixed(code: WireErrorCode) -> Self {
-        Self { code, message: format!("{code:?}") }
+        Self { code, message: "Local request failed".into() }
     }
 }
 
@@ -98,5 +98,8 @@ mod tests {
         assert!(decode::<Request>("Request", b"not-json").is_err());
         assert!(decode::<Request>("Request", &vec![b' '; MAX_FRAME_BYTES + 1]).is_err());
         assert!(validate("UnknownSchema", &serde_json::json!({})).is_err());
+        let error = serde_json::to_value(WireError::fixed(WireErrorCode::PermissionDenied)).unwrap();
+        assert_eq!(error["code"], "permission_denied");
+        assert_eq!(error["message"], "Local request failed");
     }
 }
