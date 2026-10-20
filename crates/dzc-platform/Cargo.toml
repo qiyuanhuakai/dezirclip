@@ -34,6 +34,9 @@ keyring.workspace = true
 x11rb = { workspace = true, features = ["xkb"] }
 libc.workspace = true
 x11-clipboard.workspace = true
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = ["Win32_System_Pipes", "Win32_Storage_FileSystem"] }

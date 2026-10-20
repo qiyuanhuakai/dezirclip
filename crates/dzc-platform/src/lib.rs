@@ -7,6 +7,8 @@ pub mod native_clipboard;
 pub mod runtime;
 #[cfg(feature = "ipc")]
 pub mod ipc;
+#[cfg(target_os = "linux")]
+pub mod wayland;
 
 pub struct NativeKeyProvider;
 
