@@ -229,14 +229,15 @@ impl NativeCaptureReader {
             remaining.set(remaining.get() - bytes.len());
             Ok::<_, CaptureFailure>(bytes)
         };
-        let data = if has("text/uri-list") {
+        let local_files = if has("text/uri-list") {
+            let bytes = receive("text/uri-list", 1024 * 1024)?;
+            super::x11_clipboard::parse_uri_list_payload(&bytes)
+        } else { None };
+        let data = if let Some(files) = local_files {
             if !request.files {
                 self.empty = Some(CaptureSkip::FilesDisabled);
                 return Ok(None);
             }
-            let bytes = receive("text/uri-list", 1024 * 1024)?;
-            let files = super::x11_clipboard::parse_uri_list_payload(&bytes)
-                .ok_or_else(|| failure(WaylandError::UnsupportedMime))?;
             let hash = fingerprint(files.join("\n"));
             self.metadata = CaptureReadMetadata {
                 fingerprint: Some(hash),

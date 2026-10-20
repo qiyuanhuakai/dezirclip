@@ -763,6 +763,41 @@ mod tests {
         );
     }
     #[test]
+    fn isolated_uri_offer_falls_back_to_text_unless_local_files_exist() {
+        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") { return; }
+        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+        assert!(runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file());
+        assert!(std::env::var_os("DISPLAY").is_none());
+        use dzc_core::capture::{CaptureData, CaptureReadRequest, CaptureReader, CaptureSkip};
+        use std::io::Write;
+        for uri in ["https://example.invalid/synthetic\r\n", "file:///tmp/synthetic-file.txt\r\n"] {
+            for files in [true, false] {
+                let (cancel, mut trigger) = cancel_pair().unwrap();
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                let payloads = vec![
+                    MimeData { mime: "text/uri-list".into(), bytes: Arc::from(uri.as_bytes()) },
+                    MimeData { mime: "text/plain".into(), bytes: Arc::from(&b"synthetic URI fallback"[..]) },
+                ];
+                let worker = std::thread::spawn(move || WaylandClipboardBackend::serve(payloads, || { tx.send(()).unwrap(); }, cancel));
+                rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                let mut reader = crate::capture::NativeCaptureReader::default();
+                let data = reader.read(CaptureReadRequest { files, rich_text: true }).unwrap();
+                if uri.starts_with("https:") {
+                    assert!(matches!(data, Some(CaptureData::Text(value)) if value == "synthetic URI fallback"));
+                    assert!(!reader.metadata().files);
+                } else if files {
+                    assert!(matches!(data, Some(CaptureData::Files(paths)) if paths == vec!["/tmp/synthetic-file.txt"]));
+                    assert!(reader.metadata().files);
+                } else {
+                    assert!(data.is_none());
+                    assert_eq!(reader.empty_reason(), CaptureSkip::FilesDisabled);
+                }
+                trigger.write_all(&[1]).unwrap();
+                assert_eq!(worker.join().unwrap(), Ok(()));
+            }
+        }
+    }
+    #[test]
     fn isolated_compositor_clipboard_lifecycle() {
         if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {
             return;
