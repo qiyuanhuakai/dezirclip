@@ -117,6 +117,7 @@ mod tests {
             image: false,
             files: false,
             image_content_hash: None,
+            ..CaptureReadMetadata::default()
         }
     }
 

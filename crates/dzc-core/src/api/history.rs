@@ -237,7 +237,7 @@ impl HistoryService {
         self.repository.get_count().map_err(Into::into)
     }
     pub fn save(&self, entry: &ClipboardEntry, data_dir: Option<&Path>) -> CoreResult<i64> {
-        self.repository.save(entry, data_dir).map_err(Into::into)
+        self.save_manual(entry, data_dir, super::ManualPersistenceIntent::Ordinary, chrono::Utc::now().timestamp_millis())
     }
     pub fn update_entry_content(&self, id: i64, content: &str, preview: &str) -> CoreResult<()> {
         self.repository

@@ -209,11 +209,37 @@ pub struct SqliteClipboardRepository {
     search_cache: Arc<Mutex<SimpleLruCache<Vec<ClipboardEntry>>>>,
     content_cache: Arc<Mutex<SimpleLruCache<(String, String, Option<String>)>>>,
     cache_revision: Arc<Mutex<Option<(i64, i64)>>>,
+    privacy_cache_epoch: Arc<Mutex<Option<u64>>>,
     pub(super) encrypt_text: fn(&str) -> Result<EncryptedPayload, EncryptionError>,
     pub(super) prepare_search: fn(&Connection) -> Result<(), String>,
 }
 
 impl SqliteClipboardRepository {
+    pub(crate) fn privacy_service(&self) -> crate::api::PrivacySessionService {
+        let observed = self.privacy_cache_epoch.clone();
+        let history = self.history_cache.clone();
+        let search = self.search_cache.clone();
+        let content = self.content_cache.clone();
+        crate::api::PrivacySessionService::new(self.conn.clone(), Arc::new(move |epoch| {
+            let mut previous = observed.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if *previous != Some(epoch) {
+                history.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+                search.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+                content.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clear();
+                *previous = Some(epoch);
+            }
+        }))
+    }
+
+    pub(crate) fn save_manual(&self, entry: &ClipboardEntry, directory: Option<&std::path::Path>, intent: crate::api::ManualPersistenceIntent, now_ms: i64) -> Result<i64, String> {
+        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable".to_string())?;
+        let tx = rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate).map_err(|_| "PrivacyStateUnavailable".to_string())?;
+        crate::api::privacy_session::check_manual_with_conn(&tx, intent, now_ms).map_err(|error| error.to_string())?;
+        let id = self.save_with_conn(&tx, entry, directory)?;
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(id)
+    }
+
     pub(crate) fn capture_store<'a>(&'a self,directory:&'a std::path::Path)->impl crate::capture::CaptureStore+'a {
         crate::services::capture::sqlite_capture_store(self,self.conn.clone(),directory)
     }
@@ -222,6 +248,7 @@ impl SqliteClipboardRepository {
         Self {
             conn,
             cache_revision: Arc::new(Mutex::new(None)),
+            privacy_cache_epoch: Arc::new(Mutex::new(None)),
             encrypt_text: encryption::encrypt_sensitive,
             prepare_search: super::protection::require_secure_search,
             history_cache: Arc::new(Mutex::new(SimpleLruCache::new(
@@ -559,6 +586,22 @@ impl SqliteClipboardRepository {
         image_hash: Option<i64>,
         attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
     ) -> Result<i64, String> {
+        self.save_capture_guarded(conn, entry, data_dir, image_hash, attachments, None)
+    }
+
+    pub(crate) fn save_automatic_capture_with_conn(
+        &self, conn: &Connection, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>, attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+        ticket: &crate::api::CaptureTicket, now_ms: i64,
+    ) -> Result<i64, String> {
+        self.save_capture_guarded(conn, entry, data_dir, image_hash, attachments, Some((ticket, now_ms)))
+    }
+
+    fn save_capture_guarded(
+        &self, conn: &Connection, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>, attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+        privacy: Option<(&crate::api::CaptureTicket, i64)>,
+    ) -> Result<i64, String> {
         crate::database::ensure_writable(conn)?;
         // The receipt must live until the outermost commit, so captures own this transaction.
         if !conn.is_autocommit() || attachments.is_some_and(|plan| entry.html_content.as_deref() != Some(plan.html())) {
@@ -566,6 +609,10 @@ impl SqliteClipboardRepository {
         }
         let transaction = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
             .map_err(|error| error.to_string())?;
+        if let Some((ticket, now_ms)) = privacy {
+            crate::api::privacy_session::check_capture_with_conn(&transaction, ticket, now_ms)
+                .map_err(|error| error.to_string())?;
+        }
         let id = self.save_entry_with_conn(&transaction, entry, data_dir, image_hash, true)?;
         let created = attachments.map(|plan| plan.materialize()).transpose()?;
         transaction.commit().map_err(|error| error.to_string())?;
@@ -2415,6 +2462,7 @@ mod tests {
         // Roll the whole tail back rather than naming the versions that existed
         // when this test was written: the migration gate is `MAX(version)`, so
         // a leftover later marker would skip the block this test re-runs.
+        super::super::migrations::remove_runtime_state_fixture(&conn);
         conn.execute("DELETE FROM schema_migrations WHERE version >= 13", [])
             .expect("version reset failed");
         conn.execute(
