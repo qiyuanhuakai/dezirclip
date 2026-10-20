@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, X } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";
 import { resolveRichTextSnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshotCache";
 import { setRichTextSnapshotCacheLimit as applySnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshot";
+import { PrivacySessionSection } from "./PrivacySessionSection";
 
 interface LabelWithHintProps {
     label: string;
@@ -639,6 +640,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         </div>
                     )}
 
+                    <PrivacySessionSection t={props.t} appSettings={props.appSettings} />
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('privacy_protection')}

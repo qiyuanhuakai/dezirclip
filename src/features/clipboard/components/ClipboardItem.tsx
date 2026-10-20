@@ -42,6 +42,9 @@ import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
 import { resolveContextMenuPoint } from "./contextMenuPosition";
+import { beginPrivacyAccess, getPrivacyViewState, invokePrivacyBound, refreshPrivacyState, submitPrivacyFeedback, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
+import { ask } from "@tauri-apps/plugin-dialog";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
 const CONTEXT_MENU_OPEN_EVENT = "dezirclip:context-menu-open";
@@ -395,13 +398,14 @@ const placeAndShowPendingCompactPreview = async (
     }
 };
 
-const hideCompactPreviewGlobal = async () => {
+export const hideCompactPreviewGlobal = async () => {
     const previewWindow = compactPreviewWindow;
     compactPreviewLog("hide preview requested", { hasWindow: !!previewWindow });
     clearCompactPreviewPendingState();
     setIgnoreBlurSafe(false);
 
     if (!previewWindow) return;
+    await previewWindow.emit("compact-preview-clear", null).catch(() => undefined);
     if (lastPreviewVisible === false) return;
     lastPreviewVisible = false;
 
@@ -485,6 +489,7 @@ const ensureCompactPreviewLifecycleListeners = async (): Promise<void> => {
     }
 
     compactPreviewLifecycleListenersReady = (async () => {
+        subscribePrivacyInvalidation(() => { void hideCompactPreviewGlobal(); });
         const lifecycleEvents = ["tauri://hide", "tauri://close-requested", "tauri://destroyed"];
         await Promise.all(
             lifecycleEvents.map(async (eventName) => {
@@ -747,6 +752,13 @@ const ClipboardItem = ({
     const [ocrText, setOcrText] = useState<string | null>(item.ocr_text ?? null);
     const [ocrStatus, setOcrStatus] = useState<string | null>(item.ocr_status ?? null);
     const [ocrTextExpanded, setOcrTextExpanded] = useState(false);
+    useEffect(() => subscribePrivacyInvalidation(() => {
+        setOcrText(null);
+        setOcrStatus(null);
+        setOcrTextExpanded(false);
+        setRichTextSnapshotSrc(null);
+        setContextMenuState(null);
+    }), []);
     const imagePreview = useImagePreview(
         item.content_type === "image" && !(item.is_external && item.file_preview_exists === false)
             ? item.content
@@ -873,17 +885,8 @@ const ClipboardItem = ({
     };
 
     const showCompactPreview = async (anchor: CompactPreviewAnchor) => {
-        if (hiddenRef.current) return;
-        let previewItem = item;
-        if (loadFullItem) {
-            try {
-                previewItem = await loadFullItem();
-                if (!hoverAnchorRef.current || hiddenRef.current) return;
-            } catch (error) {
-                console.error("Failed to load compact preview content:", error);
-                return;
-            }
-        }
+        const access = beginPrivacyAccess();
+        if (hiddenRef.current || !access) return;
         compactPreviewLog("show preview requested", {
             itemId: item.id,
             contentType: item.content_type,
@@ -904,7 +907,7 @@ const ClipboardItem = ({
         }
 
         try {
-            if (hiddenRef.current) return;
+            if (hiddenRef.current || !access.isCurrent()) return;
             const rootStyle = getComputedStyle(document.documentElement);
             const clipboardItemFontSizeRaw = parseInt(
                 rootStyle.getPropertyValue("--clipboard-item-font-size")
@@ -928,12 +931,8 @@ const ClipboardItem = ({
                 hasHtml: !!item.html_content
             });
             await previewWindow.emit("compact-preview-update", {
-                contentType: item.content_type,
-                content: previewItem.content,
-                preview: previewItem.preview,
-                htmlContent: previewItem.html_content,
-                sourceApp: item.source_app,
-                timestamp: item.timestamp,
+                id: item.id,
+                privacyEpoch: access.epoch,
                 language,
                 theme,
                 colorMode,
@@ -946,7 +945,7 @@ const ClipboardItem = ({
                 clearTimeout(compactPreviewPendingTimer);
             }
             compactPreviewPendingTimer = setTimeout(async () => {
-                if (!compactPreviewPendingShow || !compactPreviewWindow || !compactPreviewPendingAnchor) {
+                if (!access.isCurrent() || !compactPreviewPendingShow || !compactPreviewWindow || !compactPreviewPendingAnchor) {
                     compactPreviewLog("fallback timer canceled: pending state changed");
                     return;
                 }
@@ -968,17 +967,13 @@ const ClipboardItem = ({
                 previewWindow = await ensureCompactPreviewWindow();
                 if (!previewWindow) return;
                 try {
-                    if (hiddenRef.current) return;
+                    if (hiddenRef.current || !access.isCurrent()) return;
                     compactPreviewPendingShow = true;
                     compactPreviewPendingAnchor = anchor;
                     compactPreviewLog("emit compact-preview-update after recreate");
                     await previewWindow.emit("compact-preview-update", {
-                        contentType: item.content_type,
-                        content: previewItem.content,
-                        preview: previewItem.preview,
-                        htmlContent: previewItem.html_content,
-                        sourceApp: item.source_app,
-                        timestamp: item.timestamp,
+                        id: item.id,
+                        privacyEpoch: access.epoch,
                         language,
                         theme,
                         richTextSnapshotPreview,
@@ -989,7 +984,7 @@ const ClipboardItem = ({
                         clearTimeout(compactPreviewPendingTimer);
                     }
                     compactPreviewPendingTimer = setTimeout(async () => {
-                        if (!compactPreviewPendingShow || !compactPreviewWindow || !compactPreviewPendingAnchor) {
+                        if (!access.isCurrent() || !compactPreviewPendingShow || !compactPreviewWindow || !compactPreviewPendingAnchor) {
                             compactPreviewLog("recreate fallback canceled: pending state changed");
                             return;
                         }
@@ -1102,7 +1097,11 @@ const ClipboardItem = ({
             (itemId) => itemId === ocrItemIdRef.current,
             (payload) => {
                 setOcrStatus(payload.status);
-                setOcrText(payload.text || null);
+                const access = beginPrivacyAccess();
+                if (!access || hiddenRef.current) { setOcrText(null); return; }
+                void invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: ocrItemIdRef.current, expectedEpoch: access.epoch })
+                    .then(entry => { if (access.isCurrent()) setOcrText(entry.ocr_text ?? null); })
+                    .catch(() => { setOcrText(null); });
             }
         );
     }, []);
@@ -1261,6 +1260,24 @@ const ClipboardItem = ({
                 break;
         }
     }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin, handleShare, handleImageBase64Copy]);
+    const handlePrivacyFeedback = useCallback(async (action: PrivacyFeedbackAction) => {
+        const access = beginPrivacyAccess();
+        if (!access || item.id <= 0) return;
+        try {
+            const decision = await invokePrivacyBound<{ reason: string }>("get_privacy_decision", { id: item.id, expectedEpoch: access.epoch });
+            const hint = decision.reason === "scan_incomplete" ? t("privacy_scan_incomplete")
+                : decision.reason === "suspected_sensitive" ? t("privacy_scan_suspected") : "";
+            const prompt = t(action === "not_sensitive" ? "privacy_feedback_unprotect_confirm" : "privacy_feedback_confirm");
+            const confirmed = await ask(hint ? `${hint}\n\n${prompt}` : prompt, { title: t("privacy_feedback_title"), kind: "warning" });
+            if (!confirmed) return;
+            await refreshPrivacyState();
+            if (getPrivacyViewState().phase !== "ready" || getPrivacyViewState().snapshot?.privacy_epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
+            await submitPrivacyFeedback(item.id, action);
+            onTransformItemSuccess?.("privacy_feedback");
+        } catch {
+            onTransformItemError?.("privacy_feedback", t("privacy_action_failed"));
+        }
+    }, [item.id, onTransformItemError, onTransformItemSuccess, t]);
 
     useEffect(() => {
         if (!contextMenuState) return;
@@ -1587,8 +1604,10 @@ const ClipboardItem = ({
                     <Pin size={10} fill="currentColor" />
                 </div>
             )}
-            <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${isSensitiveHidden ? 'sensitive-blur' : ''}`}>
-                {item.content_type === "image" ? (
+            <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${isSensitiveHidden ? 'privacy-concealed' : ''}`}>
+                {isSensitiveHidden ? <div className="privacy-hidden-content">{t("privacy_sensitive_hidden")}</div>
+                    : item.content_type === "file" && !item.content && isRevealed ? <div className="privacy-file-metadata">{item.preview}</div>
+                    : item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
                         {item.is_external && item.file_preview_exists === false ? (
                             <div className="image-preview error-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', height: '100px', fontSize: '12px' }}>
@@ -1908,8 +1927,9 @@ const ClipboardItem = ({
                     onTransform={handleTransform}
                     onOcr={handleOcr}
                     onPasteOcr={() => handlePasteOcr()}
+                    onPrivacyFeedback={action => { void handlePrivacyFeedback(action); }}
                     transformKinds={transformKinds}
-                    language={language === "zh" ? "zh" : language === "en" ? "en" : "zh"}
+                    language={language}
                     ocrRunning={ocrRunning}
                     ocrText={ocrText}
                 />

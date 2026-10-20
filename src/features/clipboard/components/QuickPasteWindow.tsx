@@ -11,6 +11,11 @@ import {
   selectionAfterUpdate,
 } from "../../../shared/lib/quickPasteSelection";
 import type { ClipboardEntry } from "../../../shared/types";
+import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
+import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
+import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBanner";
+import { privacyStatusZh } from "../../../locales/zh";
 import "./QuickPasteWindow.css";
 
 const MAX_ENTRIES = 10;
@@ -19,6 +24,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   _props,
   ref
 ) {
+  const privacyState = usePrivacySession();
+  const t = (key: string) => privacyStatusZh[key as keyof typeof privacyStatusZh] || key;
   const [entries, setEntries] = useState<ClipboardEntry[]>([]);
   const [initialFetchSettled, setInitialFetchSettled] = useState(false);
   const [listenersReady, setListenersReady] = useState(false);
@@ -70,14 +77,14 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   }, []);
 
   const refreshReader = useMemo(() => createSnapshotRefresh(
-    () => invoke<ClipboardEntry[]>("get_clipboard_history", {
+    () => invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
       limit: MAX_ENTRIES,
       offset: 0,
       contentType: null,
     }),
-    (data) => replaceEntries(data ?? []),
+    (data) => replaceEntries((data ?? []).filter(entry => !isSensitiveEntry(entry))),
     () => replaceEntries([]),
-  ), [replaceEntries]);
+  ), [replaceEntries, privacyState.generation]);
   const fetchRecent = useCallback(() => {
     void refreshReader.refresh().finally(() => setInitialFetchSettled(true));
   }, [refreshReader]);
@@ -87,6 +94,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     let disposed = false;
     const applyUpdated = (incoming: ClipboardEntry) => {
       if (disposed) return;
+      if (isSensitiveEntry(incoming)) { fetchRecent(); return; }
       refreshReader.invalidate();
       const { entries: merged, wasPresent } = applyHistoryUpdate(
         entriesRef.current,
@@ -96,7 +104,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       setActiveId((current) => selectionAfterUpdate(current, wasPresent, incoming));
     };
     const captured = createCapturedEntryReader(
-      (id) => invoke<ClipboardEntry>("get_captured_entry_summary", { id }),
+      (id) => invokePrivacyBound<ClipboardEntry>("get_captured_entry_summary", { id }),
       applyUpdated,
       fetchRecent,
     );
@@ -105,11 +113,9 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       refreshReader.invalidate();
       captured.capture(event.payload.id);
     });
-    const unlistenUpdated = listen<ClipboardEntry>("clipboard-updated", (event) => {
+    const unlistenUpdated = listen<{ id: number }>("clipboard-updated", (event) => {
       if (disposed) return;
-      const interrupted = captured.invalidate();
-      applyUpdated(event.payload);
-      if (interrupted) fetchRecent();
+      captured.capture(event.payload.id);
     });
     const unlistenRemoved = listen<number>("clipboard-removed", (event) => {
       if (disposed) return;
@@ -130,7 +136,13 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       captured.invalidate();
       fetchRecent();
     });
-    fetchRecent();
+    const stopPrivacy = subscribePrivacyInvalidation(() => {
+      captured.invalidate();
+      refreshReader.invalidate();
+      replaceEntries([]);
+      setActiveId(null);
+      setSearchQuery("");
+    });
     void Promise.all([unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown])
       .then(() => {
         if (!disposed) setListenersReady(true);
@@ -138,6 +150,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       .catch((error) => console.error("Failed to register quick-paste listeners", error));
     return () => {
       disposed = true;
+      stopPrivacy();
       captured.dispose();
       refreshReader.cancel();
       for (const unlisten of [unlistenCaptured, unlistenUpdated, unlistenRemoved, unlistenChanged, unlistenShown]) {
@@ -145,6 +158,10 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       }
     };
   }, [fetchRecent, refreshReader, replaceEntries]);
+  useEffect(() => {
+    if (privacyState.phase === "ready") fetchRecent();
+    else if (privacyState.phase === "unavailable") setInitialFetchSettled(true);
+  }, [privacyState.phase, privacyState.generation, fetchRecent]);
 
   useEffect(() => {
     document.body.classList.add("quick-paste");
@@ -213,6 +230,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
 
   return (
     <div className="quick-paste-window">
+      <PrivacyStatusBanner t={t} />
       <div className="quick-paste-window__search">
         <input
           ref={inputRef}

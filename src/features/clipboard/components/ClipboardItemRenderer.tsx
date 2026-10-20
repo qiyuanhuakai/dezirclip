@@ -1,8 +1,11 @@
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, MouseEvent, SetStateAction } from "react";
 import type { DragControls } from "framer-motion";
-import ClipboardItem from "./ClipboardItem";
+import ClipboardItem, { hideCompactPreviewGlobal } from "./ClipboardItem";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
+import { beginPrivacyAccess, getPrivacyEntry, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { concealSensitiveEntry, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
+import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
 
 /**
  * Binds a clipboard row to its handlers.
@@ -88,6 +91,24 @@ const ClipboardItemRenderer = ({
     onTransformError,
     onTransformSuccess
 }: ClipboardItemRendererProps) => {
+    const [detail, setDetail] = useState<ClipboardEntry | null>(null);
+    const mounted = useRef(false);
+    const currentItem = useRef(item);
+    currentItem.current = item;
+    const sensitive = isSensitiveEntry(item);
+    useEffect(() => {
+        mounted.current = true;
+        const stop = subscribePrivacyInvalidation(() => { setDetail(null); });
+        return () => { mounted.current = false; stop(); };
+    }, []);
+    useEffect(() => {
+        setDetail(null);
+        setRevealedIds(previous => {
+            if (!previous.has(item.id)) return previous;
+            const next = new Set(previous); next.delete(item.id); return next;
+        });
+    }, [item, setRevealedIds]);
+    const loadFullItem = useCallback(() => getPrivacyEntry(item.id), [item.id]);
     const itemId = item.id;
     const itemContent = item.content;
     const itemContentType = item.content_type;
@@ -108,22 +129,30 @@ const ClipboardItemRenderer = ({
     const onToggleReveal = useCallback(
         (e: MouseEvent) => {
             e.stopPropagation();
-            setRevealedIds((prev) => {
-                const next = new Set(prev);
-                if (next.has(itemId)) next.delete(itemId);
-                else next.add(itemId);
-                return next;
-            });
+            if (isRevealed) {
+                clearRichTextSnapshots();
+                void hideCompactPreviewGlobal();
+                setDetail(null);
+                setRevealedIds(previous => { const next = new Set(previous); next.delete(itemId); return next; });
+                return;
+            }
+            const access = beginPrivacyAccess();
+            if (!access) return;
+            void loadFullItem().then(value => {
+                if (!mounted.current || !access.isCurrent() || currentItem.current !== item) return;
+                setDetail(value);
+                setRevealedIds(previous => new Set(previous).add(itemId));
+            }).catch(() => { if (mounted.current) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
         },
-        [setRevealedIds, itemId]
+        [setRevealedIds, itemId, isRevealed, item, loadFullItem, onTransformError, t]
     );
 
     const onOpen = useCallback(
         (e: MouseEvent) => {
             e.stopPropagation();
-            openContent(item);
+            openContent(detail ?? item);
         },
-        [openContent, item]
+        [openContent, item, detail]
     );
 
     const onTogglePin = useCallback(
@@ -170,8 +199,12 @@ const ClipboardItemRenderer = ({
     );
 
     const onQRCodeForItem = useCallback(() => {
-        onQRCode(item);
-    }, [onQRCode, item]);
+        const access = beginPrivacyAccess();
+        if (!access) return;
+        void loadFullItem().then(value => {
+            if (mounted.current && access.isCurrent()) onQRCode(value);
+        }).catch(() => { if (mounted.current) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
+    }, [onQRCode, item, loadFullItem, onTransformError, t]);
 
     const onTransformItemError = useCallback(
         (kind: string, message: string) => {
@@ -190,11 +223,11 @@ const ClipboardItemRenderer = ({
     return (
         <ClipboardItem
             id={`clipboard-item-${itemId}`}
-            item={item}
+            item={isRevealed && detail ? detail : sensitive ? concealSensitiveEntry(item) : item}
             isSelected={isSelected}
             windowPinned={windowPinned}
-            isSensitiveHidden={isSensitiveHidden}
-            isRevealed={isRevealed}
+            isSensitiveHidden={isSensitiveHidden || (sensitive && !detail)}
+            isRevealed={isRevealed && !!detail}
             isEditingTags={isEditingTags}
             tagInput={tagInput}
             tagColors={tagColors}
@@ -218,6 +251,7 @@ const ClipboardItemRenderer = ({
             onQRCode={onQRCodeForItem}
             onTransformItemError={onTransformItemError}
             onTransformItemSuccess={onTransformItemSuccess}
+            loadFullItem={sensitive ? loadFullItem : undefined}
         />
     );
 };

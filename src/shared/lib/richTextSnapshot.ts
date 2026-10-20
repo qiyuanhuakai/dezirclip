@@ -7,6 +7,7 @@ import {
 
 const SNAPSHOT_CACHE_VERSION = "v4";
 const snapshotCache = new Map<string, string>();
+export const clearRichTextSnapshots = () => { snapshotCache.clear(); };
 
 /**
  * Live limit, owned here because the Map is. `setRichTextSnapshotCacheLimit`

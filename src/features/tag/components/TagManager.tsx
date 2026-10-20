@@ -5,6 +5,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
+import { getPrivacyEntry, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { useTagLibrary } from '../hooks/useTagLibrary';
 import { TagDialog } from './TagDialog';
 import { TagHistoryRow } from './TagHistoryRow';
@@ -81,6 +82,13 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     }, [library.tags, tagSearch]);
     const notifyError = useCallback(() => { if (mounted.current) setActionError(true); }, []);
     const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
+    useEffect(() => subscribePrivacyInvalidation(() => {
+        detailSequence.current += 1;
+        setQrEntry(null);
+        setDialog(null);
+        setValue('');
+        setMenuOpen(false);
+    }), []);
 
     useEffect(() => {
         mounted.current = true;
@@ -149,7 +157,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     }, [tagSearch]);
     const editItem = useCallback((item: ClipboardEntry) => {
         const request = ++detailSequence.current;
-        void invoke<ClipboardEntry>('get_tag_item_detail', { id: item.id }).then(detail => {
+        void getPrivacyEntry(item.id).then(detail => {
             if (!mounted.current || request !== detailSequence.current) return;
             setDialogError(null); setValue(detail.content); setDialog({ kind: 'editItem', id: item.id });
         }).catch(() => { if (request === detailSequence.current) notifyError(); });

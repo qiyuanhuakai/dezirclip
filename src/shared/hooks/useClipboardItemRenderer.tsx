@@ -4,6 +4,7 @@ import type { DragControls } from "framer-motion";
 import ClipboardItemRenderer from "../../features/clipboard/components/ClipboardItemRenderer";
 import type { ClipboardEntry } from "../types";
 import type { Locale } from "../types";
+import { isSensitiveEntry } from "../lib/privacyRuntime";
 
 interface UseClipboardItemRendererOptions {
   privacyProtection: boolean;
@@ -47,7 +48,6 @@ type RenderItemContent = (
 ) => ReactNode;
 
 export const useClipboardItemRenderer = ({
-  privacyProtection,
   revealedIds,
   isKeyboardMode,
   selectedIndex,
@@ -76,8 +76,7 @@ export const useClipboardItemRenderer = ({
   const renderItemContent = useCallback(
     (item: ClipboardEntry, index: number, dragControls?: DragControls, disableLayout?: boolean) => {
       const isSensitiveHidden =
-        privacyProtection &&
-        item.tags?.some(tag => ["sensitive", "密码", "password"].includes(tag.toLowerCase())) &&
+        isSensitiveEntry(item) &&
         !revealedIds.has(item.id);
       const isEditingTags = editingTagsId === item.id;
 
@@ -115,7 +114,6 @@ export const useClipboardItemRenderer = ({
       );
     },
     [
-      privacyProtection,
       revealedIds,
       isKeyboardMode,
       selectedIndex,

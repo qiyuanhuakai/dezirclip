@@ -15,8 +15,13 @@ import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntim
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
+import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
+import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
+import type { ClipboardEntry } from "../../../shared/types";
 
 type PreviewPayload = {
+    privacyEpoch: number;
     contentType: string;
     content: string;
     preview?: string;
@@ -30,6 +35,7 @@ type PreviewPayload = {
     clipboardItemFontSize?: number;
     clipboardTagFontSize?: number;
 };
+type PreviewRequest = Omit<PreviewPayload, "contentType" | "content" | "preview" | "htmlContent" | "sourceApp" | "timestamp"> & { id: number };
 
 import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
@@ -63,7 +69,19 @@ const applyTheme = (payload: PreviewPayload) => {
 };
 
 const CompactPreviewWindow = () => {
-    const [payload, setPayload] = useState<PreviewPayload | null>(null);
+    const privacyState = usePrivacySession();
+    const [storedPayload, setPayload] = useState<PreviewPayload | null>(null);
+    const payload = privacyState.phase === "ready" && storedPayload?.privacyEpoch === privacyState.snapshot?.privacy_epoch ? storedPayload : null;
+    const payloadSequence = useRef(0);
+    const [previewListenerReady, setPreviewListenerReady] = useState(false);
+    useEffect(() => subscribePrivacyInvalidation(() => {
+        payloadSequence.current += 1;
+        setPayload(null);
+        clearRichTextSnapshots();
+    }), []);
+    useEffect(() => {
+        if (privacyState.phase === "ready" && previewListenerReady) void emitTo("main", "compact-preview-mounted", true).catch(() => undefined);
+    }, [privacyState.phase, previewListenerReady]);
     // The hover card can be opened before the main window has ever rendered, so
     // the appearance comes from the backend rather than from local state.
     useBackendAppearance();
@@ -149,26 +167,34 @@ const CompactPreviewWindow = () => {
             }
         })();
         compactPreviewLog("listen compact-preview-update");
-        const unlisten = listen<PreviewPayload>("compact-preview-update", (event) => {
-            compactPreviewLog("received compact-preview-update", {
-                contentType: event.payload.contentType,
-                contentLength: event.payload.content?.length ?? 0,
-                previewLength: event.payload.preview?.length ?? 0,
-                hasHtml: !!event.payload.htmlContent,
-                sourceApp: event.payload.sourceApp
-            });
-            setPayload(event.payload);
-            applyTheme(event.payload);
+        let disposed = false;
+        const unlisten = listen<PreviewRequest>("compact-preview-update", (event) => {
+            const request = event.payload;
+            if (!Number.isSafeInteger(request.id) || request.id === 0 || !Number.isSafeInteger(request.privacyEpoch) || request.privacyEpoch < 0) return;
+            const sequence = ++payloadSequence.current;
+            void (async () => {
+                const access = beginPrivacyAccess();
+                if (!access || access.epoch !== request.privacyEpoch || disposed) return;
+                const entry = await invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: request.id, expectedEpoch: request.privacyEpoch });
+                if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
+                const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
+                    preview: entry.preview, htmlContent: entry.html_content, sourceApp: entry.source_app, timestamp: entry.timestamp };
+                setPayload(next);
+                applyTheme(next);
+            })().catch(() => { if (!disposed && sequence === payloadSequence.current) setPayload(null); });
         });
-        emitTo("main", "compact-preview-mounted", true)
-            .then(() => compactPreviewLog("emit compact-preview-mounted"))
-            .catch((err) => {
-                console.error(err);
-                compactPreviewLog("emit compact-preview-mounted failed", err);
-            });
+        const unlistenClear = listen("compact-preview-clear", () => {
+            payloadSequence.current += 1;
+            setPayload(null);
+            clearRichTextSnapshots();
+        });
+        void Promise.all([unlisten, unlistenClear]).then(() => { if (!disposed) setPreviewListenerReady(true); }).catch(() => undefined);
         return () => {
+            disposed = true;
+            payloadSequence.current += 1;
             compactPreviewLog("window unmount cleanup");
             unlisten.then((f) => f());
+            unlistenClear.then((f) => f(), () => undefined);
         };
     }, []);
 

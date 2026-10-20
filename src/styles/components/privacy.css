@@ -1,0 +1,62 @@
+.privacy-status-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 12px;
+}
+.privacy-status-banner button {
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.privacy-session-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+  padding: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+.privacy-session-section h4, .privacy-session-section p { margin: 0; }
+.privacy-session-section p { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.privacy-session-state { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.privacy-session-controls, .privacy-session-hotkey {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.privacy-session-controls select {
+  max-width: 100%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  padding: 6px;
+}
+.privacy-session-hotkey input { min-width: 120px; flex: 1; }
+.privacy-session-hotkey p { flex-basis: 100%; }
+.privacy-rule-list { font-size: 12px; }
+.privacy-rule-list summary { cursor: pointer; padding: 4px 0; }
+.privacy-rule-list ul { padding: 0; margin: 8px 0 0; list-style: none; }
+.privacy-rule-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; }
+.privacy-rule-list li span { overflow-wrap: anywhere; }
+.privacy-session-section .privacy-action-error { color: var(--error-color, #b83a3a); }
+.privacy-session-section button:disabled, .privacy-status-banner button:disabled { opacity: .55; cursor: default; }
+.privacy-session-section :focus-visible, .privacy-status-banner button:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+.privacy-hidden-content { color: var(--text-secondary); padding: 12px 0; font-size: 12px; }
+.privacy-file-metadata { white-space: pre-wrap; overflow-wrap: anywhere; }
+.item-context-menu { max-height: calc(100vh - 16px); overflow-y: auto; }

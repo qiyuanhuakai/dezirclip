@@ -1,0 +1,151 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
+import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
+import type { ClipboardEntry } from "../types";
+
+export interface PrivacyViewState {
+  phase: "loading" | "ready" | "unavailable";
+  snapshot: PrivacyRuntimeSnapshot | null;
+  pending: boolean;
+  generation: number;
+}
+const fence = createPrivacyFence();
+let model: PrivacyViewState = { phase: "loading", snapshot: null, pending: false, generation: 0 };
+const observers = new Set<() => void>();
+const invalidators = new Set<() => void>();
+let stopEvents: (() => void) | null = null;
+let lifecycle = 0;
+let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshRequest: Promise<void> | null = null;
+
+export const getPrivacyViewState = () => model;
+const publish = (next: Partial<PrivacyViewState>) => {
+  model = { ...model, ...next, generation: fence.current() };
+  observers.forEach(observer => observer());
+};
+const revoke = () => {
+  fence.revoke();
+  invalidators.forEach(invalidate => { try { invalidate(); } catch { /* The request fence remains revoked. */ } });
+};
+export function subscribePrivacyInvalidation(invalidate: () => void): () => void {
+  invalidators.add(invalidate);
+  return () => { invalidators.delete(invalidate); };
+}
+const scheduleExpiry = () => {
+  if (expiryTimer !== null) clearTimeout(expiryTimer);
+  expiryTimer = null;
+  const session = model.snapshot?.session;
+  if (model.phase === "ready" && session?.active && session.expires_at_ms !== null) {
+    expiryTimer = setTimeout(() => { void refreshPrivacyState(); },
+      Math.min(2_147_000_000, Math.max(1, session.expires_at_ms - Date.now() + 50)));
+  }
+};
+const accept = (value: unknown) => {
+  const snapshot = parsePrivacySnapshot(value);
+  publish({ phase: "ready", snapshot });
+  scheduleExpiry();
+};
+
+export async function refreshPrivacyState(): Promise<void> {
+  revoke();
+  publish({ phase: "loading" });
+  if (refreshRequest) return refreshRequest;
+  refreshRequest = (async () => {
+    for (;;) {
+      const token = fence.capture();
+      try {
+        const value = await invoke<unknown>("get_privacy_status");
+        if (fence.isCurrent(token)) { accept(value); return; }
+      } catch {
+        if (fence.isCurrent(token)) { publish({ phase: "unavailable", snapshot: null }); return; }
+      }
+      if (observers.size === 0) return;
+    }
+  })().finally(() => { refreshRequest = null; });
+  return refreshRequest;
+}
+
+const onFocus = () => { void refreshPrivacyState(); };
+export function subscribePrivacyState(observer: () => void): () => void {
+  observers.add(observer);
+  if (observers.size === 1) {
+    const started = ++lifecycle;
+    window.addEventListener("focus", onFocus);
+    void listen<unknown>("privacy-state-changed", () => {
+      if (started === lifecycle) void refreshPrivacyState();
+    }).then(stop => {
+      if (started !== lifecycle) { stop(); return; }
+      stopEvents = stop;
+      void refreshPrivacyState();
+    }, () => {
+      if (started === lifecycle) {
+        revoke();
+        publish({ phase: "unavailable", snapshot: null });
+      }
+    });
+  }
+  return () => {
+    observers.delete(observer);
+    if (observers.size === 0) {
+      lifecycle += 1;
+      stopEvents?.();
+      stopEvents = null;
+      window.removeEventListener("focus", onFocus);
+      if (expiryTimer !== null) clearTimeout(expiryTimer);
+      expiryTimer = null;
+      revoke();
+      model = { phase: "loading", snapshot: null, pending: false, generation: fence.current() };
+    }
+  };
+}
+
+export async function setPrivacySession(enabled: boolean, durationMs: number | null = null): Promise<void> {
+  if (model.pending) throw new Error("PrivacyRequestPending");
+  revoke();
+  publish({ phase: "loading", pending: true });
+  try {
+    await invoke<unknown>("set_privacy_session", { enabled, durationMs });
+    await refreshPrivacyState();
+    if (model.phase !== "ready" || model.snapshot?.session.active !== enabled) {
+      throw new Error("PrivacyStateUnavailable");
+    }
+  } catch (error) {
+    await refreshPrivacyState();
+    throw error;
+  } finally {
+    publish({ pending: false });
+  }
+}
+
+export async function invokePrivacyBound<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
+  const token = fence.capture();
+  const result = await invoke<T>(command, args);
+  if (!fence.isCurrent(token) || model.phase !== "ready") throw new Error("PrivacyEpochChanged");
+  return result;
+}
+
+export function beginPrivacyAccess() {
+  const epoch = model.snapshot?.privacy_epoch;
+  if (model.phase !== "ready" || epoch === undefined) return null;
+  const token = fence.capture();
+  return { epoch, isCurrent: () => fence.isCurrent(token) && model.phase === "ready" };
+}
+
+export function getPrivacyEntry(id: number): Promise<ClipboardEntry> {
+  const epoch = model.snapshot?.privacy_epoch;
+  if (model.phase !== "ready" || epoch === undefined) return Promise.reject(new Error("PrivacyStateUnavailable"));
+  return invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch });
+}
+
+export type PrivacyFeedbackAction = "not_sensitive" | "exact_exception" | "ignore_source" | "protect_source";
+export async function submitPrivacyFeedback(id: number, action: PrivacyFeedbackAction): Promise<void> {
+  const epoch = model.snapshot?.privacy_epoch;
+  if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");
+  try {
+    await invoke("privacy_feedback", { id, expectedEpoch: epoch, action });
+  } finally {
+    await refreshPrivacyState();
+  }
+}
