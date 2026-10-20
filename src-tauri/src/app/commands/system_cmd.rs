@@ -707,9 +707,15 @@ mod path_rewrite_tests {
             std::env::temp_dir().join(format!("dezirclip-path-rewrite-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let path = directory.join("clipboard.db");
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("CREATE TABLE clipboard_history(id INTEGER PRIMARY KEY, content TEXT NOT NULL, html_content TEXT, is_external INTEGER NOT NULL); CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);").unwrap();
+        let mut conn = Connection::open(&path).unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut conn).unwrap();
         (directory, path)
+    }
+
+    fn fixture_connection(path: &std::path::Path) -> Connection {
+        let connection = Connection::open(path).unwrap();
+        crate::infrastructure::repository::migrations::configure_privacy_writer(&connection).unwrap();
+        connection
     }
 
     fn migration_fixture() -> (std::path::PathBuf, std::path::PathBuf, std::path::PathBuf, Connection) {
@@ -719,20 +725,19 @@ mod path_rewrite_tests {
         std::fs::create_dir(&old).unwrap();
         std::fs::create_dir(&new).unwrap();
         std::fs::rename(root.join("clipboard.db"), old.join("clipboard.db")).unwrap();
-        let conn = Connection::open(old.join("clipboard.db")).unwrap();
+        let conn = fixture_connection(&old.join("clipboard.db"));
         conn.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
         std::fs::create_dir(old.join("attachments")).unwrap();
         std::fs::write(old.join("attachments/image.png"), b"fixture image").unwrap();
         let image = old.join("attachments/image.png").to_string_lossy().to_string();
-        conn.execute("INSERT INTO clipboard_history VALUES(1,?1,NULL,1)", [&image]).unwrap();
+        conn.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',1,?1,NULL,1)", [&image]).unwrap();
         (root, old, new, conn)
     }
 
     #[test]
-    fn directory_migration_preserves_schema19_filtered_fts_and_rewrites_html() {
+    fn directory_migration_preserves_schema20_filtered_fts_and_rewrites_html() {
         let (root, old, new, mut conn) = migration_fixture();
-        conn.execute_batch("DROP TABLE clipboard_history; DROP TABLE settings;").unwrap();
-        crate::infrastructure::repository::migrations::run_migrations(&mut conn).unwrap();
+        conn.execute("DELETE FROM clipboard_history", []).unwrap();
         let original = old.join("attachments/image.png").to_string_lossy().to_string();
         let html = format!("<p>ordinaryprobe</p><img src='{original}'>");
         conn.execute("INSERT INTO clipboard_history(id,content_type,content,html_content,source_app,timestamp,preview,tags) VALUES(1,'rich_text','ordinaryprobe',?1,'test',1,'ordinaryprobe','[]')", [&html]).unwrap();
@@ -753,12 +758,13 @@ mod path_rewrite_tests {
         conn.execute_batch("CREATE TRIGGER reject_rewrite BEFORE UPDATE ON clipboard_history BEGIN SELECT RAISE(ABORT,'fixture rejection'); END;").unwrap();
         let redirect = root.join("datapath.txt");
         std::fs::write(&redirect, old.to_string_lossy().as_bytes()).unwrap();
-        assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
+        let error = migrate_with_connection(&mut conn, &old, &new, &redirect).unwrap_err();
+        assert!(error.to_string().contains("fixture rejection"));
         assert_eq!(std::fs::read_to_string(&redirect).unwrap(), old.to_string_lossy());
         assert_eq!(std::fs::read(old.join("attachments/image.png")).unwrap(), b"fixture image");
         assert!(old.join("clipboard.db").exists());
         assert!(!new.join("clipboard.db").exists());
-        conn.execute("INSERT INTO clipboard_history VALUES(2,'still writable',NULL,0)", []).unwrap();
+        conn.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'still writable',NULL,0)", []).unwrap();
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
         drop(conn);
         std::fs::remove_dir_all(root).unwrap();
@@ -767,19 +773,19 @@ mod path_rewrite_tests {
     #[test]
     fn directory_migration_snapshots_committed_wal_and_preserves_source_until_restart() {
         let (root, old, new, mut conn) = migration_fixture();
-        let second = Connection::open(old.join("clipboard.db")).unwrap();
-        second.execute("INSERT INTO clipboard_history VALUES(2,'concurrent committed row',NULL,0)", []).unwrap();
+        let second = fixture_connection(&old.join("clipboard.db"));
+        second.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'concurrent committed row',NULL,0)", []).unwrap();
         let redirect = root.join("datapath.txt");
         migrate_with_connection(&mut conn, &old, &new, &redirect).unwrap();
         assert_eq!(std::fs::read_to_string(&redirect).unwrap(), new.to_string_lossy());
-        let migrated = Connection::open(new.join("clipboard.db")).unwrap();
+        let migrated = fixture_connection(&new.join("clipboard.db"));
         let expected_new = new.join("attachments/image.png").to_string_lossy().to_string();
         let expected_old = old.join("attachments/image.png").to_string_lossy().to_string();
         assert_eq!(migrated.query_row("SELECT content FROM clipboard_history WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), expected_new);
         assert_eq!(conn.query_row("SELECT content FROM clipboard_history WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), expected_old);
         assert_eq!(migrated.query_row("SELECT content FROM clipboard_history WHERE id=2", [], |row| row.get::<_, String>(0)).unwrap(), "concurrent committed row");
         assert_eq!(std::fs::read(old.join("attachments/image.png")).unwrap(), std::fs::read(new.join("attachments/image.png")).unwrap());
-        assert!(conn.execute("INSERT INTO clipboard_history VALUES(3,'blocked until relaunch',NULL,0)", []).is_err());
+        assert!(conn.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',3,'blocked until relaunch',NULL,0)", []).is_err());
         assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
         assert!(conn.pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0)).unwrap());
         drop(migrated);
@@ -794,11 +800,17 @@ mod path_rewrite_tests {
         let redirect = root.join("datapath.txt");
         std::fs::create_dir(&redirect).unwrap();
         std::fs::write(redirect.join("keep"), b"existing configuration obstacle").unwrap();
-        assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
+        let error = migrate_with_connection(&mut conn, &old, &new, &redirect).unwrap_err();
+        assert!(matches!(error, AppError::Internal(_)));
+        let published = fixture_connection(&new.join("clipboard.db"));
+        let rewritten: String = published.query_row("SELECT content FROM clipboard_history WHERE id=1", [], |row| row.get(0)).unwrap();
+        assert_eq!(rewritten, new.join("attachments/image.png").to_string_lossy());
+        assert!(new.join("attachments/image.png").is_file());
+        drop(published);
         assert_eq!(std::fs::read(redirect.join("keep")).unwrap(), b"existing configuration obstacle");
         assert!(old.join("clipboard.db").exists());
         assert!(old.join("attachments/image.png").exists());
-        conn.execute("INSERT INTO clipboard_history VALUES(2,'still writable',NULL,0)", []).unwrap();
+        conn.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'still writable',NULL,0)", []).unwrap();
         drop(conn);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -820,13 +832,16 @@ mod path_rewrite_tests {
     #[test]
     fn directory_migration_source_reservation_blocks_other_writers_through_snapshot() {
         let (root, old, new, mut conn) = migration_fixture();
-        let writer = Connection::open(old.join("clipboard.db")).unwrap();
+        let writer = fixture_connection(&old.join("clipboard.db"));
         writer.busy_timeout(std::time::Duration::ZERO).unwrap();
         let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();
-        assert!(writer.execute("INSERT INTO clipboard_history VALUES(2,'blocked',NULL,0)", []).is_err());
+        let error = writer.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'blocked',NULL,0)", []).unwrap_err();
+        assert!(matches!(error, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::DatabaseBusy));
         migrate_data_directory(&old, &new, &root.join("datapath.txt")).unwrap();
-        assert!(writer.execute("INSERT INTO clipboard_history VALUES(2,'blocked',NULL,0)", []).is_err());
+        let error = writer.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'blocked',NULL,0)", []).unwrap_err();
+        assert!(matches!(error, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::DatabaseBusy));
         transaction.rollback().unwrap();
+        writer.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'unblocked after rollback',NULL,0)", []).unwrap();
         drop(writer);
         drop(conn);
         std::fs::remove_dir_all(root).unwrap();
@@ -839,7 +854,7 @@ mod path_rewrite_tests {
         assert!(std::process::Command::new("mkfifo").arg(old.join("attachments/blocked.png")).status().unwrap().success());
         let redirect = root.join("datapath.txt");
         std::fs::write(&redirect, old.to_string_lossy().as_bytes()).unwrap();
-        let writer = Connection::open(old.join("clipboard.db")).unwrap();
+        let writer = fixture_connection(&old.join("clipboard.db"));
         writer.busy_timeout(std::time::Duration::ZERO).unwrap();
         let (sender, receiver) = std::sync::mpsc::channel();
         let old_thread = old.clone();
@@ -852,7 +867,7 @@ mod path_rewrite_tests {
         });
         receiver.recv_timeout(std::time::Duration::from_secs(5)).expect("FIFO input must be rejected without waiting for a writer");
         worker.join().unwrap();
-        writer.execute("INSERT INTO clipboard_history VALUES(2,'source remains writable',NULL,0)", []).unwrap();
+        writer.execute("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'source remains writable',NULL,0)", []).unwrap();
         assert_eq!(std::fs::read_to_string(&redirect).unwrap(), old.to_string_lossy());
         assert_eq!(std::fs::read(old.join("attachments/image.png")).unwrap(), b"fixture image");
         drop(writer);
@@ -866,9 +881,9 @@ mod path_rewrite_tests {
             "linux:{}",
             base64::engine::general_purpose::STANDARD.encode([0u8; 28])
         );
-        let conn = Connection::open(&path).unwrap();
+        let conn = fixture_connection(&path);
         conn.execute(
-            "INSERT INTO clipboard_history VALUES(1,?1,NULL,1)",
+            "INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',1,?1,NULL,1)",
             [&cipher],
         )
         .unwrap();
@@ -884,8 +899,8 @@ mod path_rewrite_tests {
     #[test]
     fn path_rewrite_sql_failure_rolls_back_every_updated_row() {
         let (directory, path) = database();
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("INSERT INTO clipboard_history VALUES(1,'original one',NULL,1),(2,'original two',NULL,1);
+        let conn = fixture_connection(&path);
+        conn.execute_batch("INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',1,'original one',NULL,1),('text','fixture',1,'preview',2,'original two',NULL,1);
             CREATE TRIGGER reject_second BEFORE UPDATE ON clipboard_history WHEN new.id=2 BEGIN SELECT RAISE(ABORT,'rejected'); END;").unwrap();
         let updates: Vec<_> = [
             (1, "original one", "new one"),
@@ -900,7 +915,8 @@ mod path_rewrite_tests {
             html: None,
         })
         .collect();
-        assert!(apply_attachment_path_rewrites(&path, &updates).is_err());
+        let error = apply_attachment_path_rewrites(&path, &updates).unwrap_err();
+        assert!(error.to_string().contains("rejected"));
         let values: Vec<String> = conn
             .prepare("SELECT content FROM clipboard_history ORDER BY id")
             .unwrap()
@@ -926,18 +942,19 @@ mod path_rewrite_tests {
             .join("two.png")
             .to_string_lossy()
             .to_string();
-        let reader = Connection::open(&path).unwrap();
+        let reader = fixture_connection(&path);
         reader
             .execute(
-                "INSERT INTO clipboard_history VALUES(1,?1,NULL,1),(2,?2,NULL,1)",
+                "INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',1,?1,NULL,1),('text','fixture',1,'preview',2,?2,NULL,1)",
                 params![first, second],
             )
             .unwrap();
         let updates =
             prepare_attachment_path_rewrites(&path, &directory, &directory.join("new")).unwrap();
-        let writer = Connection::open(&path).unwrap();
+        let writer = fixture_connection(&path);
         writer.execute("UPDATE clipboard_history SET content='concurrent edit', html_content='<p>new HTML</p>' WHERE id=2", []).unwrap();
-        assert!(apply_attachment_path_rewrites(&path, &updates).is_err());
+        let error = apply_attachment_path_rewrites(&path, &updates).unwrap_err();
+        assert!(error.to_string().contains("SensitivePersistenceRejected"));
         let unchanged: String = reader
             .query_row(
                 "SELECT content FROM clipboard_history WHERE id=1",
@@ -970,23 +987,24 @@ mod path_rewrite_tests {
             .join("one.png")
             .to_string_lossy()
             .to_string();
-        let reader = Connection::open(&path).unwrap();
+        let reader = fixture_connection(&path);
         reader
             .execute(
-                "INSERT INTO clipboard_history VALUES(1,?1,NULL,1)",
+                "INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',1,?1,NULL,1)",
                 [&original],
             )
             .unwrap();
         let updates =
             prepare_attachment_path_rewrites(&path, &directory, &directory.join("new")).unwrap();
-        let writer = Connection::open(&path).unwrap();
+        let writer = fixture_connection(&path);
         writer
             .execute(
-                "INSERT INTO clipboard_history VALUES(2,'concurrent attachment',NULL,1)",
+                "INSERT INTO clipboard_history(content_type,source_app,timestamp,preview,id,content,html_content,is_external) VALUES('text','fixture',1,'preview',2,'concurrent attachment',NULL,1)",
                 [],
             )
             .unwrap();
-        assert!(apply_attachment_path_rewrites(&path, &updates).is_err());
+        let error = apply_attachment_path_rewrites(&path, &updates).unwrap_err();
+        assert!(error.to_string().contains("SensitivePersistenceRejected"));
         let unchanged: String = reader
             .query_row(
                 "SELECT content FROM clipboard_history WHERE id=1",
