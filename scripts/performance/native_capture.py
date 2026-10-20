@@ -38,6 +38,10 @@ IDENTIFIER = 'io.github.qiyuanhuakai.dezirclip'
 INTERVAL_SECONDS = .7
 MINIMUM_SQLITE = (3, 50, 4)
 SYSTEM_PYTHON = Path('/usr/bin/python3')
+BASELINES = {
+    '802808b06e6b795064c5065d1d880bae9b193b9a': 'clipboard-updated',
+    '90ba9960744b6cd57caaaf597f68533a7e41be45': 'clipboard-captured',
+}
 
 
 def require(condition, message):
@@ -223,6 +227,12 @@ def load_proof(path, gui, cli):
     return value
 
 
+def baseline_contract(proof, revision):
+    require(revision in BASELINES, 'Select an explicitly supported full baseline revision')
+    require(proof.get('source_revision') == revision, 'Baseline proof differs from the explicitly selected source')
+    return {'source_revision': revision, 'event': BASELINES[revision]}
+
+
 def request(port, route, payload=None, method=None):
     data = json.dumps(payload).encode() if payload is not None else None
     query = Request(f'http://127.0.0.1:{port}/{route}', data=data, method=method, headers={'Content-Type': 'application/json'})
@@ -401,7 +411,7 @@ def inside(root, plan, block):
         require(Path(data_path).resolve() == database.parent, 'Actual GUI opened a different profile than its CLI bootstrap')
         driver.invoke('focus_clipboard_window')
         evidence['gui'] = {'data_path': data_path, 'version': driver.invoke('plugin:app|version')}
-        event_name = 'clipboard-updated' if block['variant'] == 'old' else 'clipboard-captured'
+        event_name = plan['baseline']['event'] if block['variant'] == 'old' else 'clipboard-captured'
         listener = request(driver.port, driver.route + '/execute/async', {'script': '''
 const done=arguments[arguments.length-1], name=arguments[0], metadataOnly=arguments[1];
 window.__nativeCapturePerf={events:[],arm:null,error:null};
@@ -413,7 +423,7 @@ const handler=window.__TAURI_INTERNALS__.transformCallback(event=>{
   if(state.arm && observed.id===state.arm.expectedId && !state.arm.hit) state.arm.hit={...observed,elapsed_ms:arrival-state.arm.start};
 });
 window.__TAURI_INTERNALS__.invoke("plugin:event|listen",{event:name,target:{kind:"Any"},handler}).then(id=>done({ok:true,id})).catch(error=>done({ok:false,error:String(error)}));
-''', 'args': [event_name, block['variant'] == 'candidate']})
+''', 'args': [event_name, event_name == 'clipboard-captured']})
         require(listener.get('ok'), 'Actual event listener could not register')
         evidence['event'] = event_name
         time.sleep(1)
@@ -542,7 +552,7 @@ def outside(options):
             driver = regular(Path(options.webkit_driver))
             proof_paths = [('old', options.old_proof)] + ([] if options.baseline_only else [('candidate', options.candidate_proof)])
             proofs = {variant: load_proof(regular(Path(proof)), inputs['old-gui' if variant == 'old' else 'candidate-gui'], inputs['old-cli' if variant == 'old' else 'writer']) for variant, proof in proof_paths}
-            require(proofs['old']['source_revision'] == '802808b06e6b795064c5065d1d880bae9b193b9a', 'Baseline must be the exact archived 802808b source')
+            report['baseline'] = baseline_contract(proofs['old'], options.baseline_revision)
             if options.baseline_only:
                 require(digest(inputs['writer']) == digest(inputs['old-cli']), 'Baseline-only tool checks must explicitly use the proven old CLI writer')
                 report['writer_scope'] = 'Old CLI used only to verify baseline tool functionality; not eligible for comparison.'
@@ -573,6 +583,7 @@ def outside(options):
         if options.mode == 'isolation':
             blocks = [{'name': 'isolation', 'variant': None, 'rows': 0, 'directory': 'isolation'}]
         plan = {'mode': options.mode, 'samples': options.samples, 'warmup': options.warmup, 'cases': options.cases, 'host_namespaces': namespaces(), 'blocks': blocks, 'python_runtime': runtime,
+                'baseline': report.get('baseline'),
                 'payloads': prepare_payloads(root, options.cases, options.samples + options.warmup) if options.mode != 'isolation' else {}}
         save(root / 'plan.json', plan)
         report['plan_sha256'] = digest(root / 'plan.json')
@@ -665,6 +676,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode', choices=('isolation', 'functional', 'formal'), default='functional')
     parser.add_argument('--baseline-only', action='store_true', help='Functional-only old GUI smoke check using its proven old CLI writer')
+    parser.add_argument('--baseline-revision', choices=BASELINES, default='802808b06e6b795064c5065d1d880bae9b193b9a',
+                        help='Exact supported source revision; event contract is fixed by this selection, not caller-provided')
     parser.add_argument('--python-runtime', type=Path, help='Standalone Python 3.13 prefix, mounted read-only at its real path; actual SQLite must be >= 3.50.4')
     for name in ('old-gui', 'old-cli', 'candidate-gui', 'writer', 'old-proof', 'candidate-proof', 'webkit-driver', 'quiet-window-note'):
         parser.add_argument('--' + name)

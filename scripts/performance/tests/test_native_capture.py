@@ -26,6 +26,23 @@ def details(prefix):
             "key_files": {str(path): {"sha256": NATIVE.digest(path), "bytes": path.stat().st_size} for path in (executable, module)}}
 
 
+class BaselineContractTests(unittest.TestCase):
+    def test_alpha1_baseline_requires_its_exact_build_proof_and_id_only_event(self):
+        revision = '90ba9960744b6cd57caaaf597f68533a7e41be45'
+        contract = NATIVE.baseline_contract({'source_revision': revision}, revision)
+        self.assertEqual(contract, {'source_revision': revision, 'event': 'clipboard-captured'})
+        for wrong in ('802808b06e6b795064c5065d1d880bae9b193b9a', revision[:-1], '', None):
+            with self.subTest(wrong=wrong), self.assertRaises(RuntimeError):
+                NATIVE.baseline_contract({'source_revision': wrong}, revision)
+
+    def test_historical_default_keeps_its_original_event_and_rejects_unregistered_baselines(self):
+        revision = '802808b06e6b795064c5065d1d880bae9b193b9a'
+        self.assertEqual(NATIVE.baseline_contract({'source_revision': revision}, revision)['event'], 'clipboard-updated')
+        for selected in ('master', '90ba996', '0' * 40):
+            with self.subTest(selected=selected), self.assertRaises(RuntimeError):
+                NATIVE.baseline_contract({'source_revision': selected}, selected)
+
+
 class RuntimeTests(unittest.TestCase):
     def fixture(self):
         directory = tempfile.TemporaryDirectory(prefix="dzc-native-runtime-")
