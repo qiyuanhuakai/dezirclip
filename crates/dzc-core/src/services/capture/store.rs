@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 pub struct PreparedCapture {
     pub entry: ClipboardEntry,
     pub image_hash: Option<i64>,
+    pub(crate) privacy_ticket: Option<crate::api::CaptureTicket>,
     attachments: Option<HtmlAttachmentPlan>,
 }
 
@@ -18,6 +19,7 @@ impl PreparedCapture {
         Self {
             entry,
             image_hash: None,
+            privacy_ticket: None,
             attachments: None,
         }
     }
@@ -37,6 +39,32 @@ pub struct CaptureCommit {
 
 /// Capture-specific storage operations. A commit must recheck current protection.
 pub trait CaptureStore {
+    fn capture_ticket(
+        &self,
+        _now_ms: i64,
+    ) -> Result<Option<crate::api::CaptureTicket>, CaptureFailure> {
+        Ok(None)
+    }
+    fn check_capture(
+        &self,
+        ticket: Option<&crate::api::CaptureTicket>,
+        _now_ms: i64,
+    ) -> Result<(), CaptureFailure> {
+        if ticket.is_some() {
+            return Err(failure(CaptureStage::Persist, "PrivacyStateUnavailable"));
+        }
+        Ok(())
+    }
+    fn with_capture_guard(
+        &self,
+        ticket: Option<&crate::api::CaptureTicket>,
+        now_ms: i64,
+        publish: &mut dyn FnMut(),
+    ) -> Result<(), CaptureFailure> {
+        self.check_capture(ticket, now_ms)?;
+        publish();
+        Ok(())
+    }
     fn prepare(&self, entry: ClipboardEntry) -> Result<PreparedCapture, CaptureFailure>;
     fn find_duplicate(
         &self,
@@ -71,6 +99,7 @@ fn failure(stage: CaptureStage, error: impl ToString) -> CaptureFailure {
         | "AttachmentPersistenceFailed"
         | "ClipboardRecordUnavailable"
         | "AttachmentBudgetExceeded" => error,
+        "PrivacyStateUnavailable" | "PrivacyEpochChanged" | "PrivacySessionActive" => error,
         _ => "CaptureStorageFailed".to_string(),
     };
     CaptureFailure { stage, code }
@@ -96,7 +125,54 @@ pub(crate) fn sqlite_capture_store<'a>(
 }
 
 impl CaptureStore for SqliteCaptureStore<'_> {
+    fn capture_ticket(
+        &self,
+        now_ms: i64,
+    ) -> Result<Option<crate::api::CaptureTicket>, CaptureFailure> {
+        self.repository
+            .privacy_service()
+            .capture_ticket(now_ms)
+            .map(Some)
+            .map_err(|error| failure(CaptureStage::Read, error))
+    }
+
+    fn check_capture(
+        &self,
+        ticket: Option<&crate::api::CaptureTicket>,
+        now_ms: i64,
+    ) -> Result<(), CaptureFailure> {
+        let ticket =
+            ticket.ok_or_else(|| failure(CaptureStage::Persist, "PrivacyStateUnavailable"))?;
+        self.repository
+            .privacy_service()
+            .check_capture(ticket, now_ms)
+            .map_err(|error| failure(CaptureStage::Persist, error))
+    }
+
+    fn with_capture_guard(
+        &self,
+        ticket: Option<&crate::api::CaptureTicket>,
+        now_ms: i64,
+        publish: &mut dyn FnMut(),
+    ) -> Result<(), CaptureFailure> {
+        let ticket =
+            ticket.ok_or_else(|| failure(CaptureStage::Persist, "PrivacyStateUnavailable"))?;
+        let conn = self
+            .connection
+            .lock()
+            .map_err(|_| failure(CaptureStage::Persist, "PrivacyStateUnavailable"))?;
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|_| failure(CaptureStage::Persist, "PrivacyStateUnavailable"))?;
+        crate::api::privacy_session::check_capture_with_conn(&tx, ticket, now_ms)
+            .map_err(|error| failure(CaptureStage::Persist, error))?;
+        publish();
+        tx.commit()
+            .map_err(|_| failure(CaptureStage::Persist, "PrivacyStateUnavailable"))
+    }
+
     fn prepare(&self, mut entry: ClipboardEntry) -> Result<PreparedCapture, CaptureFailure> {
+        let privacy_ticket = self.capture_ticket(chrono::Utc::now().timestamp_millis())?;
         let attachments = entry
             .html_content
             .as_deref()
@@ -110,6 +186,7 @@ impl CaptureStore for SqliteCaptureStore<'_> {
             entry,
             attachments,
             image_hash: None,
+            privacy_ticket,
         })
     }
 
@@ -179,12 +256,17 @@ impl CaptureStore for SqliteCaptureStore<'_> {
             .map_err(|error| failure(CaptureStage::Persist, error))?;
         let id = self
             .repository
-            .save_capture_with_conn(
+            .save_automatic_capture_with_conn(
                 &connection,
                 &capture.entry,
                 Some(self.directory),
                 capture.image_hash,
                 capture.attachments.as_ref(),
+                capture
+                    .privacy_ticket
+                    .as_ref()
+                    .ok_or_else(|| failure(CaptureStage::Persist, "PrivacyStateUnavailable"))?,
+                chrono::Utc::now().timestamp_millis(),
             )
             .map_err(|error| failure(CaptureStage::Persist, error))?;
         let removed_ids = self
@@ -240,6 +322,13 @@ mod tests {
         }
     }
 
+    fn authorized_frame(context: &CaptureContext<'_>, mut frame: CaptureFrame, store: &dyn CaptureStore, events: &mut dyn EventSink) -> CaptureOutcome {
+        if frame.metadata.privacy_ticket.is_none() {
+            frame.metadata.privacy_ticket = store.capture_ticket(chrono::Utc::now().timestamp_millis()).unwrap();
+        }
+        CaptureEngine::capture_frame(context, frame, store, events)
+    }
+
     fn rich_frame() -> CaptureFrame {
         CaptureFrame {
             data: CaptureData::RichText {
@@ -267,7 +356,7 @@ mod tests {
         let context = context(&session);
         let store = state.capture_store(&directory);
         let CaptureOutcome::Stored(first) =
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut ())
+            authorized_frame(&context, rich_frame(), &store, &mut ())
         else {
             panic!("capture should commit");
         };
@@ -281,7 +370,7 @@ mod tests {
             )
             .unwrap();
         let CaptureOutcome::Stored(second) =
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut ())
+            authorized_frame(&context, rich_frame(), &store, &mut ())
         else {
             panic!("recapture should commit");
         };
@@ -324,7 +413,7 @@ mod tests {
         let store = state.capture_store(&directory);
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut events),
+            authorized_frame(&context, rich_frame(), &store, &mut events),
             CaptureOutcome::Failed(_)
         ));
         assert!(matches!(events.0.as_slice(), [CaptureEvent::Failed(_)]));
@@ -359,7 +448,7 @@ mod tests {
         let store = state.capture_store(&directory);
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut events),
+            authorized_frame(&context, rich_frame(), &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected)
         ));
         assert_eq!(
@@ -410,7 +499,7 @@ mod tests {
         };
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, frame, &store, &mut events),
+            authorized_frame(&context, frame, &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::AttachmentBudgetExceeded)
         ));
         assert_eq!(
@@ -457,7 +546,7 @@ mod tests {
             metadata: CaptureReadMetadata::default(),
         };
         let CaptureOutcome::Stored(first) =
-            CaptureEngine::capture_frame(&context, frame(image.clone()), &store, &mut ())
+            authorized_frame(&context, frame(image.clone()), &store, &mut ())
         else {
             panic!("bounded session HTML should store");
         };
@@ -469,7 +558,7 @@ mod tests {
             .contains("data:image/png;base64,Zml4dHVyZSBpbWFnZQ=="));
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, frame(image.repeat(65)), &store, &mut events),
+            authorized_frame(&context, frame(image.repeat(65)), &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::AttachmentBudgetExceeded)
         ));
         std::fs::File::create(&source)
@@ -477,7 +566,7 @@ mod tests {
             .set_len(16 * 1024 * 1024 + 1)
             .unwrap();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, frame(image), &store, &mut events),
+            authorized_frame(&context, frame(image), &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::AttachmentBudgetExceeded)
         ));
         assert_eq!(
@@ -524,7 +613,7 @@ mod tests {
         };
         let mut events = Events::default();
         assert!(
-            matches!(CaptureEngine::capture_frame(&context, frame, &store, &mut events), CaptureOutcome::Failed(CaptureFailure { stage: CaptureStage::Prepare, ref code }) if code == "AttachmentReadRejected")
+            matches!(authorized_frame(&context, frame, &store, &mut events), CaptureOutcome::Failed(CaptureFailure { stage: CaptureStage::Prepare, ref code }) if code == "AttachmentReadRejected")
         );
         assert!(matches!(events.0.as_slice(), [CaptureEvent::Failed(_)]));
         assert!(session.lock().unwrap().is_empty());
@@ -533,4 +622,128 @@ mod tests {
         drop(state);
         std::fs::remove_dir_all(directory).unwrap();
     }
+    #[test]
+    fn shared_session_stops_before_metadata_or_payload_and_old_frames_never_resume() {
+        struct Reader {
+            calls: usize,
+        }
+        impl CaptureReader for Reader {
+            fn preflight_privacy(&mut self) -> Result<PrivacyPreflight, CaptureFailure> {
+                self.calls += 1;
+                Ok(PrivacyPreflight::default())
+            }
+            fn read(
+                &mut self,
+                _: CaptureReadRequest,
+            ) -> Result<Option<CaptureData>, CaptureFailure> {
+                self.calls += 1;
+                Ok(Some(CaptureData::Text("synthetic body".into())))
+            }
+        }
+        let (directory, state) = database();
+        let other = crate::api::HistoryService::open(&directory.join("clipboard.db")).unwrap();
+        let store = state.capture_store(&directory);
+        let session = Mutex::new(VecDeque::new());
+        let context = context(&session);
+        let now = chrono::Utc::now().timestamp_millis();
+        let old_ticket = store.capture_ticket(now).unwrap().unwrap();
+        other
+            .privacy()
+            .set_session(
+                crate::api::PrivacySessionCommand::On { duration_ms: None },
+                now,
+            )
+            .unwrap();
+        let mut reader = Reader { calls: 0 };
+        let mut events = Events::default();
+        assert!(matches!(
+            CaptureEngine::capture(&context, &mut reader, &store, &mut events),
+            CaptureOutcome::Skipped(CaptureSkip::PrivacySession)
+        ));
+        assert_eq!(reader.calls, 0);
+        other
+            .privacy()
+            .set_session(crate::api::PrivacySessionCommand::Off, now)
+            .unwrap();
+        let mut frame = rich_frame();
+        frame.metadata.privacy_ticket = Some(old_ticket);
+        assert!(matches!(
+            authorized_frame(&context, frame, &store, &mut events),
+            CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged)
+        ));
+        assert_eq!(
+            events.0,
+            vec![
+                CaptureEvent::Skipped(CaptureSkip::PrivacySession),
+                CaptureEvent::Skipped(CaptureSkip::PrivacyEpochChanged)
+            ]
+        );
+        assert!(session.lock().unwrap().is_empty());
+        assert!(!directory.join("attachments").exists());
+        assert_eq!(other.get_count().unwrap(), 0);
+        drop(store);
+        drop(state);
+        drop(other);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn prepared_attachment_commit_checks_epoch_under_the_write_transaction() {
+        let (directory, state) = database();
+        let other = crate::api::HistoryService::open(&directory.join("clipboard.db")).unwrap();
+        let store = state.capture_store(&directory);
+        let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"rich_text","content":"ordinary capture","preview":"ordinary","html_content":"<p>ordinary</p><!--TIEZ_RICH_IMAGE:data:image/png;base64,b3RoZXI=-->","source_app":"test","timestamp":1,"is_pinned":false})).unwrap();
+        let prepared = store.prepare(entry).unwrap();
+        let now = chrono::Utc::now().timestamp_millis();
+        other
+            .privacy()
+            .set_session(
+                crate::api::PrivacySessionCommand::On { duration_ms: None },
+                now,
+            )
+            .unwrap();
+        other
+            .privacy()
+            .set_session(crate::api::PrivacySessionCommand::Off, now)
+            .unwrap();
+        assert!(
+            matches!(store.commit(&prepared), Err(CaptureFailure { ref code, .. }) if code == "PrivacyEpochChanged")
+        );
+        assert_eq!(other.get_count().unwrap(), 0);
+        let conn = state.conn.lock().unwrap();
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM entry_tags", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM clipboard_fts_docsize", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
+            0
+        );
+        assert!(!directory.join("attachments").exists());
+        drop(conn);
+        drop(store);
+        drop(state);
+        drop(other);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn unleased_automatic_frame_cannot_acquire_a_new_epoch_at_commit_time() {
+        let (directory, state) = database();
+        let store = state.capture_store(&directory);
+        let session = Mutex::new(VecDeque::new());
+        let context = context(&session);
+        let outcome = CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut ());
+        assert!(matches!(outcome, CaptureOutcome::Failed(CaptureFailure { ref code, .. }) if code == "PrivacyCaptureTicketMissing"));
+        assert!(!directory.join("attachments").exists());
+        drop(store);
+        drop(state);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
 }

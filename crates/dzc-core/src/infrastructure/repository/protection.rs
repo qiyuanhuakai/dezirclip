@@ -862,7 +862,7 @@ mod transition_tests {
             &context,
             CaptureFrame {
                 data: CaptureData::Text("manualprotected".into()),
-                metadata: Default::default(),
+                metadata: crate::capture::CaptureReadMetadata { privacy_ticket: store.capture_ticket(chrono::Utc::now().timestamp_millis()).unwrap(), ..Default::default() },
             },
             &store,
             &mut (),

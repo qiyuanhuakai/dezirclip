@@ -58,15 +58,21 @@ pub enum PrivacySessionCommand {
 }
 
 /// Constructed only after checking this database's current persistent state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct CaptureTicket {
-    state_id: String,
+    state_id: uuid::Uuid,
     epoch: u64,
 }
 impl CaptureTicket {
     pub fn epoch(&self) -> u64 {
         self.epoch
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManualPersistenceIntent {
+    Ordinary,
+    ConfirmedDuringPrivacySession,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +107,7 @@ impl PrivacyReadPermit {
 
 struct StoredState {
     snapshot: RuntimeSnapshot,
-    state_id: String,
+    state_id: uuid::Uuid,
     enabled: bool,
 }
 
@@ -118,7 +124,14 @@ fn read_state(conn: &Connection, now_ms: i64) -> PrivacyResult<StoredState> {
         FROM privacy_runtime_state WHERE singleton=1",
         [],
         |row| {
-            let state_id: String = row.get(0)?;
+            let state: String = row.get(0)?;
+            let state_id = uuid::Uuid::parse_str(&state).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
             let history: i64 = row.get(1)?;
             let epoch: i64 = row.get(2)?;
             let history_revision = u64::try_from(history)
@@ -147,11 +160,18 @@ fn read_state(conn: &Connection, now_ms: i64) -> PrivacyResult<StoredState> {
 #[derive(Clone)]
 pub struct PrivacySessionService {
     connection: Arc<Mutex<Connection>>,
+    invalidate_epoch: Arc<dyn Fn(u64) + Send + Sync>,
 }
 
 impl PrivacySessionService {
-    pub(crate) fn new(connection: Arc<Mutex<Connection>>) -> Self {
-        Self { connection }
+    pub(crate) fn new(
+        connection: Arc<Mutex<Connection>>,
+        invalidate_epoch: Arc<dyn Fn(u64) + Send + Sync>,
+    ) -> Self {
+        Self {
+            connection,
+            invalidate_epoch,
+        }
     }
 
     /// Expiration is a persisted state transition; a restart keeps an indefinite session active.
@@ -159,7 +179,10 @@ impl PrivacySessionService {
         let mut conn = self.connection.lock().map_err(unavailable)?;
         let state = read_state(&conn, now_ms)?;
         if !state.enabled || state.snapshot.session.active {
-            return Ok(state.snapshot);
+            let snapshot = state.snapshot;
+            drop(conn);
+            (self.invalidate_epoch)(snapshot.privacy_epoch);
+            return Ok(snapshot);
         }
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -175,6 +198,8 @@ impl PrivacySessionService {
         }
         let result = read_state(&tx, now_ms)?.snapshot;
         tx.commit().map_err(unavailable)?;
+        drop(conn);
+        (self.invalidate_epoch)(result.privacy_epoch);
         Ok(result)
     }
 
@@ -216,6 +241,8 @@ impl PrivacySessionService {
         }
         let result = read_state(&tx, now_ms)?.snapshot;
         tx.commit().map_err(unavailable)?;
+        drop(conn);
+        (self.invalidate_epoch)(result.privacy_epoch);
         Ok(result)
     }
 
@@ -283,6 +310,20 @@ impl PrivacySessionService {
     }
 }
 
+pub(crate) fn check_manual_with_conn(
+    conn: &Connection,
+    intent: ManualPersistenceIntent,
+    now_ms: i64,
+) -> PrivacyResult<()> {
+    let state = read_state(conn, now_ms)?;
+    if state.snapshot.session.active
+        && intent != ManualPersistenceIntent::ConfirmedDuringPrivacySession
+    {
+        return Err(PrivacyError::ManualPersistenceConfirmationRequired);
+    }
+    Ok(())
+}
+
 /// Called by automatic capture/OCR writers inside their existing write transaction.
 pub(crate) fn check_capture_with_conn(
     conn: &Connection,
@@ -300,11 +341,43 @@ pub(crate) fn check_capture_with_conn(
 }
 
 impl HistoryService {
+    /// A trusted host maps an explicit user confirmation to this intent, never a client role.
+    pub fn save_manual(
+        &self,
+        entry: &ClipboardEntry,
+        directory: Option<&std::path::Path>,
+        intent: ManualPersistenceIntent,
+        now_ms: i64,
+    ) -> super::CoreResult<i64> {
+        self.privacy()
+            .status(now_ms)
+            .map_err(|error| super::CoreError::from(error.to_string()))?;
+        self.repository
+            .save_manual(entry, directory, intent, now_ms)
+            .map_err(Into::into)
+    }
     pub fn privacy(&self) -> PrivacySessionService {
         self.repository.privacy_service()
     }
     pub fn runtime_snapshot(&self, now_ms: i64) -> PrivacyResult<RuntimeSnapshot> {
         self.privacy().status(now_ms)
+    }
+
+    pub fn query_authorized(
+        &self,
+        query: &HistoryQuery<'_>,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<Vec<ClipboardEntry>> {
+        if !(1..=1000).contains(&query.limit) || query.offset < 0 {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
+        self.privacy().check_read(permit, now_ms)?;
+        let mut restricted = query.clone();
+        restricted.exclude_sensitive = query.exclude_sensitive || !permit.includes_sensitive();
+        let result = self.query(&restricted).map_err(unavailable)?;
+        self.privacy().check_read(permit, now_ms)?;
+        Ok(result)
     }
 
     /// Host callers obtain a fresh permission for each request, never from a client role string.
@@ -555,6 +628,73 @@ mod tests {
         assert_eq!(
             history.privacy().check_read(&read, 1),
             Err(PrivacyError::PrivacyStateUnavailable)
+        );
+    }
+    #[test]
+    fn manual_persistence_needs_explicit_confirmation_without_disabling_the_session() {
+        let history = memory();
+        let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic manual body","preview":"summary","source_app":"test","timestamp":1,"is_pinned":false})).unwrap();
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, 1)
+            .unwrap();
+        assert_eq!(
+            history
+                .save_manual(&entry, None, ManualPersistenceIntent::Ordinary, 1)
+                .unwrap_err()
+                .to_string(),
+            "ManualPersistenceConfirmationRequired"
+        );
+        assert_eq!(history.get_count().unwrap(), 0);
+        history
+            .save_manual(
+                &entry,
+                None,
+                ManualPersistenceIntent::ConfirmedDuringPrivacySession,
+                1,
+            )
+            .unwrap();
+        assert!(history.runtime_snapshot(1).unwrap().session.active);
+        assert_eq!(history.get_count().unwrap(), 1);
+        let permit = history
+            .privacy()
+            .authorize_read(
+                PrivacyAccessIntent::AutomationRead,
+                SensitiveAccess::Denied,
+                None,
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            history
+                .query_authorized(
+                    &HistoryQuery {
+                        limit: 1,
+                        ..Default::default()
+                    },
+                    &permit,
+                    1
+                )
+                .unwrap()
+                .len(),
+            1
+        );
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::Off, 2)
+            .unwrap();
+        assert_eq!(
+            history
+                .query_authorized(
+                    &HistoryQuery {
+                        limit: 1,
+                        ..Default::default()
+                    },
+                    &permit,
+                    2
+                )
+                .unwrap_err(),
+            PrivacyError::PrivacyEpochChanged
         );
     }
 }

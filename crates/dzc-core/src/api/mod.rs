@@ -15,7 +15,7 @@ pub use history::{AutomationHistory, HistoryQuery, HistorySearchMode, HistorySer
 pub use summary::{EntrySummary, SearchRequest, SearchResult, SummaryQuery, SummarySearchMode};
 pub use privacy_session::{CaptureTicket, PrivacyError, PrivacyResult, PrivacySessionCommand,
     PrivacySessionService, PrivacySessionStatus, RuntimeSnapshot, PrivacyAccessIntent,
-    PrivacyReadPermit, SensitiveAccess};
+    PrivacyReadPermit, SensitiveAccess, ManualPersistenceIntent};
 
 /// Storage compatibility version maintained by the authoritative migration code.
 pub const DATABASE_SCHEMA_VERSION: i32 = crate::infrastructure::repository::migrations::SUPPORTED_SCHEMA_VERSION;

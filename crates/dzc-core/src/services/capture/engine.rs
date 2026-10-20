@@ -35,10 +35,36 @@ impl CaptureEngine {
         store: &dyn CaptureStore,
         events: &mut dyn EventSink,
     ) -> CaptureOutcome {
-        match Self::read(context, reader, events) {
+        match Self::read_authorized(context, reader, store, events) {
             Ok(frame) => Self::capture_frame(context, frame, store, events),
             Err(outcome) => outcome,
         }
+    }
+
+    pub fn read_authorized(
+        context: &CaptureContext<'_>,
+        reader: &mut dyn CaptureReader,
+        store: &dyn CaptureStore,
+        events: &mut dyn EventSink,
+    ) -> Result<CaptureFrame, CaptureOutcome> {
+        let ticket = match store.capture_ticket(chrono::Utc::now().timestamp_millis()) {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                let outcome = failure(error);
+                emit_outcome(&outcome, events);
+                return Err(outcome);
+            }
+        };
+        let mut frame = Self::read(context, reader, events)?;
+        frame.metadata.privacy_ticket = ticket;
+        if let Err(error) =
+            store.check_capture(ticket.as_ref(), chrono::Utc::now().timestamp_millis())
+        {
+            let outcome = failure(error);
+            emit_outcome(&outcome, events);
+            return Err(outcome);
+        }
+        Ok(frame)
     }
 
     /// A listener may freeze a frame immediately and submit it to its existing worker.
@@ -74,8 +100,23 @@ impl CaptureEngine {
         reader: &mut dyn CaptureReader,
         events: &mut dyn EventSink,
     ) -> Result<CaptureFrame, CaptureOutcome> {
-        let skip = policy_skip(&source_decision(context));
-        if let Some(reason) = skip {
+        if context.paused {
+            let reason = CaptureSkip::Paused;
+            events.emit(CaptureEvent::Skipped(reason));
+            return Err(CaptureOutcome::Skipped(reason));
+        }
+        let preflight = match reader.preflight_privacy() {
+            Ok(preflight) => preflight,
+            Err(error) => {
+                events.emit(CaptureEvent::Failed(error.clone()));
+                return Err(CaptureOutcome::Failed(error));
+            }
+        };
+        if !preflight.hints.is_empty() {
+            events.emit(CaptureEvent::Skipped(CaptureSkip::ExplicitPrivacyHint));
+            return Err(CaptureOutcome::Skipped(CaptureSkip::ExplicitPrivacyHint));
+        }
+        if let Some(reason) = policy_skip(&source_decision(context)) {
             events.emit(CaptureEvent::Skipped(reason));
             return Err(CaptureOutcome::Skipped(reason));
         }
@@ -83,10 +124,22 @@ impl CaptureEngine {
             files: context.settings.capture_files,
             rich_text: context.settings.capture_rich_text,
         }) {
-            Ok(Some(data)) => Ok(CaptureFrame {
-                data,
-                metadata: reader.metadata(),
-            }),
+            Ok(Some(data)) => {
+                if preflight.selection_id.is_some()
+                    && preflight.selection_id != reader.selection_id()
+                {
+                    let error = CaptureFailure {
+                        stage: CaptureStage::Read,
+                        code: "ClipboardSelectionChanged".into(),
+                    };
+                    events.emit(CaptureEvent::Failed(error.clone()));
+                    return Err(CaptureOutcome::Failed(error));
+                }
+                let mut metadata = reader.metadata();
+                metadata.privacy_hints_checked =
+                    preflight.availability == PrivacyHintAvailability::Checked;
+                Ok(CaptureFrame { data, metadata })
+            }
             Ok(None) => {
                 let reason = reader.empty_reason();
                 events.emit(CaptureEvent::Skipped(reason));
@@ -140,6 +193,8 @@ fn policy_skip(decision: &PrivacyDecision) -> Option<CaptureSkip> {
 
 fn failure(error: CaptureFailure) -> CaptureOutcome {
     match error.code.as_str() {
+        "PrivacySessionActive" => CaptureOutcome::Skipped(CaptureSkip::PrivacySession),
+        "PrivacyEpochChanged" => CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged),
         "SensitivePersistenceRejected" => {
             CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected)
         }
@@ -153,17 +208,42 @@ fn failure(error: CaptureFailure) -> CaptureOutcome {
     }
 }
 
+fn emit_outcome(outcome: &CaptureOutcome, events: &mut dyn EventSink) {
+    match outcome {
+        CaptureOutcome::Skipped(reason) => events.emit(CaptureEvent::Skipped(*reason)),
+        CaptureOutcome::Failed(error) => events.emit(CaptureEvent::Failed(error.clone())),
+        CaptureOutcome::Rejected(reason) => events.emit(CaptureEvent::Rejected(*reason)),
+        CaptureOutcome::Stored(_) => {}
+    }
+}
+
 fn process(
     context: &CaptureContext<'_>,
     frame: CaptureFrame,
     store: &dyn CaptureStore,
 ) -> CaptureOutcome {
+    let ticket = match frame.metadata.privacy_ticket {
+        Some(ticket) => Some(ticket),
+        None => match store.capture_ticket(chrono::Utc::now().timestamp_millis()) {
+            Ok(None) => None,
+            Ok(Some(_)) => return failure(CaptureFailure { stage: CaptureStage::Persist, code: "PrivacyCaptureTicketMissing".into() }),
+            Err(error) => return failure(error),
+        },
+    };
+    if let Err(error) = store.check_capture(ticket.as_ref(), chrono::Utc::now().timestamp_millis())
+    {
+        return failure(error);
+    }
+    let hints_checked = frame.metadata.privacy_hints_checked;
     let read_image_hash = frame.metadata.image_content_hash;
     let initial_decision = source_decision(context);
     if let Some(reason) = policy_skip(&initial_decision) {
         return CaptureOutcome::Skipped(reason);
     }
     let mut evidence = initial_decision.evidence;
+    if hints_checked {
+        evidence.retain(|item| item.reason != PrivacyReason::PrivacyHintsUnavailable);
+    }
     let mut entry = match super::discovery::entry_from_capture(frame.data, context) {
         Ok(entry) => entry,
         Err(error) => return failure(error),
@@ -172,20 +252,15 @@ fn process(
         return CaptureOutcome::Skipped(CaptureSkip::SequentialEcho);
     }
     if context.settings.privacy_protection && is_text_type(&entry.content_type) {
-        let matched = content::contains_sensitive_info(
+        let scan = crate::privacy::scan_content(
             &entry.content,
             &context.settings.privacy_kinds,
             &context.settings.privacy_custom_rules,
+            crate::privacy::ScanBudget::default(),
         );
-        if let Some(rule) = PrivacyPolicy::configured_rule(matched) {
-            evidence.push(rule);
+        evidence.extend(scan.evidence);
+        if PrivacyPolicy.decide(evidence.clone()).action == PrivacyAction::Encrypt {
             entry.tags.push("sensitive".into());
-        } else if entry.content.len() > 5000 {
-            evidence.push(PrivacyEvidence::new(
-                EvidenceSource::ConfiguredRule,
-                EvidenceLevel::Incomplete,
-                PrivacyReason::ScanIncomplete,
-            ));
         }
     }
     if !context.settings.persistent {
@@ -227,6 +302,7 @@ fn process(
         }
         PreparedCapture::without_attachments(entry)
     };
+    prepared.privacy_ticket = ticket;
     let entry = &mut prepared.entry;
     if entry.content_type == "image" {
         prepared.image_hash = read_image_hash;
@@ -337,6 +413,11 @@ fn process(
         removed_ids = committed.removed_ids;
     } else {
         let entry = &mut prepared.entry;
+        if let Err(error) =
+            store.check_capture(ticket.as_ref(), chrono::Utc::now().timestamp_millis())
+        {
+            return failure(error);
+        }
         if let Some(previous) = reused {
             if has_sensitive_tag(&previous.tags) {
                 evidence.push(PrivacyEvidence::new(
@@ -366,18 +447,34 @@ fn process(
             .session
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        session.retain(|item| !pending_removals.contains(&item.id));
-        if !persistent {
-            if let Some(previous) = session.iter_mut().find(|item| item.id == prepared.entry.id) {
-                *previous = prepared.entry.clone();
-            } else {
-                session.push_back(prepared.entry.clone());
-            }
-            if session.len() > 500 {
-                if let Some(removed) = session.pop_front() {
-                    removed_ids.push(removed.id);
+        let previous = (!persistent).then(|| session.clone());
+        let mut publish = || {
+            session.retain(|item| !pending_removals.contains(&item.id));
+            if !persistent {
+                if let Some(previous) = session.iter_mut().find(|item| item.id == prepared.entry.id)
+                {
+                    *previous = prepared.entry.clone();
+                } else {
+                    session.push_back(prepared.entry.clone());
+                }
+                if session.len() > 500 {
+                    if let Some(removed) = session.pop_front() {
+                        removed_ids.push(removed.id);
+                    }
                 }
             }
+        };
+        if persistent {
+            publish();
+        } else if let Err(error) = store.with_capture_guard(
+            ticket.as_ref(),
+            chrono::Utc::now().timestamp_millis(),
+            &mut publish,
+        ) {
+            if let Some(previous) = previous {
+                *session = previous;
+            }
+            return failure(error);
         }
     }
     removed_ids.extend(pending_removals);
@@ -584,7 +681,7 @@ mod tests {
             CaptureOutcome::Skipped(CaptureSkip::SequentialEcho)
         ));
         context.settings.privacy_protection = true;
-        context.settings.privacy_kinds = vec!["email".into()];
+        context.settings.privacy_custom_rules = vec!["private@example\\.com".into()];
         assert!(matches!(
             CaptureEngine::capture_frame(
                 &context,
@@ -776,5 +873,58 @@ mod tests {
         assert_eq!(session.lock().unwrap().len(), 1);
         assert_eq!(store.preparations.get(), 0);
         assert_eq!(store.commits.get(), 0);
+    }
+    #[test]
+    fn explicit_hint_precedes_excluded_source_and_selection_changes_reject_the_body() {
+        struct HintedReader {
+            hint: bool,
+            reads: usize,
+        }
+        impl CaptureReader for HintedReader {
+            fn preflight_privacy(&mut self) -> Result<PrivacyPreflight, CaptureFailure> {
+                Ok(PrivacyPreflight {
+                    hints: if self.hint {
+                        vec![crate::ports::PrivacyHint::ExcludeFromHistory]
+                    } else {
+                        vec![]
+                    },
+                    availability: PrivacyHintAvailability::Checked,
+                    selection_id: Some(1),
+                })
+            }
+            fn selection_id(&self) -> Option<u64> {
+                Some(2)
+            }
+            fn read(
+                &mut self,
+                _: CaptureReadRequest,
+            ) -> Result<Option<CaptureData>, CaptureFailure> {
+                self.reads += 1;
+                Ok(Some(CaptureData::Text(
+                    "body must not appear in errors".into(),
+                )))
+            }
+        }
+        let session = Mutex::new(VecDeque::new());
+        let mut context = context(&session);
+        context.settings.excluded_source_apps = vec!["Editor.exe".into()];
+        let mut reader = HintedReader {
+            hint: true,
+            reads: 0,
+        };
+        assert!(matches!(
+            CaptureEngine::read(&context, &mut reader, &mut ()),
+            Err(CaptureOutcome::Skipped(CaptureSkip::ExplicitPrivacyHint))
+        ));
+        assert_eq!(reader.reads, 0);
+        context.settings.excluded_source_apps.clear();
+        reader.hint = false;
+        let Err(CaptureOutcome::Failed(error)) =
+            CaptureEngine::read(&context, &mut reader, &mut ())
+        else {
+            panic!("selection change must reject");
+        };
+        assert_eq!(error.code, "ClipboardSelectionChanged");
+        assert_eq!(reader.reads, 1);
     }
 }

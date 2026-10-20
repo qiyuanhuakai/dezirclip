@@ -61,7 +61,7 @@ def verify_build_set(cli_info, desktop_info, expected_revision):
         require(not expected_revision or revision == expected_revision.lower(),
                 'Component source differs from the frozen acceptance revision.')
         require(type(info.get('metadata_version')) is int and info['metadata_version'] == 1
-                and type(info.get('database_schema_version')) is int and info['database_schema_version'] == 21,
+                and type(info.get('database_schema_version')) is int and info['database_schema_version'] == 22,
                 'Component metadata or database schema version differs.')
         protocol = info.get('protocol_version')
         require(isinstance(protocol, dict) and protocol == {'major': 1, 'minor': 0}
