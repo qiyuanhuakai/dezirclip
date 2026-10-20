@@ -20,9 +20,15 @@ class WorkspaceDistributionTests(unittest.TestCase):
         self.assertTrue(workspace["profile"]["release"]["lto"])
         self.assertEqual(workspace["profile"]["release"]["panic"], "abort")
 
-    def test_protocol_is_values_only_and_legacy_bridge_is_opt_in(self):
+    def test_protocol_wire_validation_is_offline_opt_in_and_legacy_bridge_is_opt_in(self):
         protocol = tomllib.loads((ROOT / "crates/dzc-protocol/Cargo.toml").read_text(encoding="utf-8"))
-        self.assertEqual(set(protocol["dependencies"]), {"serde", "serde_json"})
+        self.assertEqual(set(protocol["dependencies"]), {"serde", "serde_json", "jsonschema"})
+        validator = protocol["dependencies"]["jsonschema"]
+        self.assertTrue(validator["optional"])
+        self.assertFalse(validator["default-features"])
+        self.assertFalse(set(validator.get("features", [])).intersection({"resolve-http", "resolve-file", "tls-aws-lc-rs", "tls-ring"}))
+        self.assertEqual(protocol["features"]["wire"], ["dep:jsonschema"])
+        self.assertNotIn("wire", protocol.get("features", {}).get("default", []))
         core = tomllib.loads((ROOT / "crates/dzc-core/Cargo.toml").read_text(encoding="utf-8"))
         self.assertNotIn("legacy-bridge", core.get("features", {}).get("default", []))
         platform = tomllib.loads((ROOT / "crates/dzc-platform/Cargo.toml").read_text(encoding="utf-8"))
