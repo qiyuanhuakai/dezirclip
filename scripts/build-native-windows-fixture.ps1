@@ -33,21 +33,17 @@ function Get-NsisApplicationProof([string]$Path) {
         patchOffset = $offset
     }
 }
-function Get-NsisCompilerInputs([string]$Script, [string]$Application, [string]$Staged, [string]$CargoBinary, [string]$ExpectedSha256) {
+function Get-NsisCompilerInputs([string]$Script, [string]$Application, [string]$CargoBinary, [string]$ExpectedSha256) {
+    if ($ExpectedSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Expected a complete standalone CLI SHA-256.' }
     $text = [System.IO.File]::ReadAllText($Script)
     $main = [regex]::Matches($text, '(?m)^\s*!define MAINBINARYSRCPATH "([^"]+)"\s*$')
     if ($main.Count -ne 1 -or [System.IO.Path]::GetFullPath($main[0].Groups[1].Value) -ine [System.IO.Path]::GetFullPath($Application)) { throw 'NSIS did not select the proven GUI build.' }
     $entries = [regex]::Matches($text, '(?im)^\s*File\s+/a\s+"/oname=dzc\.exe"\s+"([^"]+)"\s*$')
-    if ($entries.Count -ne 2) { throw 'Expected both explicit NSIS sidecar inputs; investigate any bundler layout change.' }
-    $expected = @([System.IO.Path]::GetFullPath($Staged), [System.IO.Path]::GetFullPath($CargoBinary))
-    $observed = @()
-    foreach ($entry in $entries) {
-        $source = [System.IO.Path]::GetFullPath($entry.Groups[1].Value)
-        if ($source -in $observed -or $source -notin $expected) { throw 'NSIS selected an unexpected sidecar source.' }
-        if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'NSIS selected a sidecar other than the proven standalone build.' }
-        $observed += $source
-        [pscustomobject]@{ source = $source; destination = 'dzc.exe'; sha256 = $ExpectedSha256 }
-    }
+    if ($entries.Count -ne 1) { throw 'Expected exactly one NSIS Cargo CLI input; investigate any bundler layout change.' }
+    $source = [System.IO.Path]::GetFullPath($entries[0].Groups[1].Value)
+    if ($source -ine [System.IO.Path]::GetFullPath($CargoBinary)) { throw 'NSIS selected a CLI source other than the exact Cargo binary.' }
+    if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'NSIS selected a CLI other than the proven standalone build.' }
+    [pscustomobject]@{ source = $source; destination = 'dzc.exe'; sha256 = $ExpectedSha256; role = 'cargo-binary' }
 }
 $destinationPath = [System.IO.Path]::GetFullPath($Destination)
 $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\', '/')
@@ -103,18 +99,19 @@ if ((Get-FileHash -LiteralPath $sidecar -Algorithm SHA256).Hash -ne $sidecarDige
 if ((Get-FileHash -LiteralPath $cargoSidecar -Algorithm SHA256).Hash -ne $sidecarDigest) { throw 'The Cargo sidecar input changed during bundling.' }
 if ((Get-FileHash -LiteralPath $application -Algorithm SHA256).Hash -ne $applicationProof.rawSha256) { throw 'Tauri did not restore the original GUI after bundling.' }
 $nsisScript = Join-Path $metadata.target_directory 'debug/nsis/x64/installer.nsi'
-$compilerInputs = @(Get-NsisCompilerInputs $nsisScript $application $sidecar $cargoSidecar $sidecarDigest)
+$compilerInputs = @(Get-NsisCompilerInputs $nsisScript $application $cargoSidecar $sidecarDigest)
 Copy-Item -LiteralPath $nsisScript -Destination ($destinationPath + '.nsi')
 $sourceCommit = (& git rev-parse HEAD | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Fixture source commit is unavailable.' }
 @{
-    schemaVersion = 2; kind = 'dezirclip-native-nsis-fixture'; version = $Version; target = $triple
+    schemaVersion = 3; kind = 'dezirclip-native-nsis-fixture'; version = $Version; target = $triple
     installerSha256 = (Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
     applicationSha256 = $applicationProof.packagedSha256
     applicationRawSha256 = $applicationProof.rawSha256; applicationPatchOffset = $applicationProof.patchOffset
     applicationPatch = 'tauri-nsis-bundle-token-v1'
     sidecarSha256 = (Get-FileHash -LiteralPath $sidecar -Algorithm SHA256).Hash
-    sidecarVersion = $sidecarVersion; sidecarSource = 'standalone-no-default-features'; nsisInputs = $compilerInputs
+    sidecarVersion = $sidecarVersion; sidecarSource = 'standalone-no-default-features'
+    nsisInputLayout = 'single-cargo-binary-v1'; nsisInputs = $compilerInputs
     sidecarPreparation = $sidecarProof
     buildInfo = $buildInfo
     nsisScriptSha256 = (Get-FileHash -LiteralPath ($destinationPath + '.nsi') -Algorithm SHA256).Hash

@@ -202,13 +202,12 @@ executable or ignores unrelated byte changes. A missing or duplicate original
 token, unexpected offset or either hash mismatch fails acceptance. This behavior
 is pinned to the [official bundler implementation](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle.rs).
 
-The same CLI builds all Cargo binaries and NSIS enumerates both the configured
-`externalBin` and the non-main Cargo `dzc` binary. Those two sources install to
-the same `dzc.exe` destination. Production retains preparation before the GUI
-build so configured sidecar inputs exist on a fresh checkout, and repeats it in
-the shared `beforeBundleCommand` after the desktop build. The existing build.rs
-separately disables tauri-build's sidecar copy to avoid replacing Cargo output
-during compilation; that does not change the bundler's two inputs. The shared helper builds `dzc`
+The CLI builds all Cargo binaries and NSIS packages the non-main Cargo `dzc`
+binary once. The duplicate `externalBin` registration is removed; the staged
+copy remains diagnostic evidence. Production retains preparation before the GUI
+build and repeats it in the shared `beforeBundleCommand` after the desktop build.
+The existing build.rs guard also prevents an explicit legacy sidecar override
+from replacing Cargo output during compilation. The shared helper builds `dzc`
 with `--locked --no-default-features` and an explicit target triple. It atomically
 replaces and verifies the staged external binary and actual Cargo binary inputs
 with identical standalone bytes, without writing through Cargo cache hardlinks.
@@ -223,9 +222,11 @@ documented packaging commands.
 Native acceptance invokes the real `tauri build --debug --bundles nsis` with
 these production hooks intact. It requires a fresh bundle-phase proof binding
 the helper, lockfile, exact Cargo arguments and every input path/hash. It also
-parses and retains the generated NSIS compiler script, requiring both `dzc.exe`
-sources to match that standalone hash and the main executable to match the
-proven GUI path. This tests the actual packaging entry point instead of a
+parses and retains the generated NSIS compiler script, requiring exactly one
+`dzc.exe` source with the precise Cargo binary path and standalone hash, and the
+main executable to match the proven GUI path. Manifest schema 3 binds this
+single-Cargo layout to the shared proof's unique host-default input; a staged
+substitute, duplicate source or old two-input manifest is rejected. This tests the actual packaging entry point instead of a
 fixture-only restaging sequence. The hook order and binary enumeration are
 defined by the official [CLI hook](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-cli/src/bundle.rs)
 and [NSIS implementation](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.3/crates/tauri-bundler/src/bundle/windows/nsis/mod.rs).
