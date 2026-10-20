@@ -91,18 +91,28 @@ impl Drop for WaylandOwner {
 /// GUI writes keep one owner alive in this process until the next copy or exit.
 /// A failed new negotiation retains the previous owner.
 pub fn write_in_process(payload: crate::native_clipboard::Payload) -> Result<(), WaylandError> {
+    write_in_process_with_intent(payload, false)
+}
+pub fn write_in_process_with_intent(
+    payload: crate::native_clipboard::Payload,
+    suppress_recapture: bool,
+) -> Result<(), WaylandError> {
     static OWNER: OnceLock<Mutex<Option<WaylandOwner>>> = OnceLock::new();
     let mut slot = OWNER
         .get_or_init(Default::default)
         .lock()
         .map_err(|_| WaylandError::Disconnected)?;
-    replace_owner(&mut slot, payload)
+    replace_owner(&mut slot, payload, suppress_recapture)
 }
 pub(crate) fn replace_owner(
     slot: &mut Option<WaylandOwner>,
     payload: crate::native_clipboard::Payload,
+    suppress_recapture: bool,
 ) -> Result<(), WaylandError> {
-    let mut fresh = WaylandOwner::start(super::representations(payload)?)?;
+    let mut fresh = WaylandOwner::start(super::representations_with_intent(
+        payload,
+        suppress_recapture,
+    )?)?;
     if let Err(error) = fresh.wait_ready() {
         let _ = fresh.stop();
         return Err(error);
