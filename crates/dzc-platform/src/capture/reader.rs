@@ -448,18 +448,11 @@ mod tests {
                 sequential_echo: None,
             };
             let mut reader = NativeCaptureReader::default();
-            let data = reader
-                .read(CaptureReadRequest {
-                    files: false,
-                    rich_text: true,
-                })
-                .unwrap()
-                .unwrap();
-            let metadata = reader.metadata();
-            if matches!(&data, CaptureData::RgbaImage { .. }) {
+            let frame = CaptureEngine::read_authorized(&context, &mut reader, &store, &mut ()).unwrap();
+            let metadata = frame.metadata;
+            if matches!(&frame.data, CaptureData::RgbaImage { .. }) {
                 assert!(metadata.image && metadata.files && metadata.image_content_hash.is_some());
             }
-            let frame = CaptureFrame { data, metadata };
             notifications.set_persistence_mode(persistent);
             let exists = notifications.repeats_file(metadata)
                 && CaptureEngine::file_history_exists(&context, &frame, &store).unwrap();

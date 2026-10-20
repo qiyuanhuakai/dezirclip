@@ -336,6 +336,7 @@ mod tests {
         tag_repo::{SqliteTagRepository, TagRepository},
     };
     use dzc_core::privacy::{PrivacyAction, PrivacyReason};
+    use dzc_core::capture::CaptureStore;
     use std::collections::VecDeque;
 
     #[test]
@@ -372,7 +373,7 @@ mod tests {
         let text = "ordinary manually protected text";
         let frame = || CaptureFrame {
             data: ClipboardData::Text(text.into()),
-            metadata: CaptureReadMetadata::default(),
+            metadata: CaptureReadMetadata { privacy_ticket: store.capture_ticket(chrono::Utc::now().timestamp_millis()).unwrap(), ..Default::default() },
         };
         let CaptureOutcome::Stored(first) =
             CaptureEngine::capture_frame(&context, frame(), &store, &mut ())
