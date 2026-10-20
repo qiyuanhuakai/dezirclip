@@ -225,7 +225,8 @@ fn process(
     let ticket = match frame.metadata.privacy_ticket {
         Some(ticket) => Some(ticket),
         None => match store.capture_ticket(chrono::Utc::now().timestamp_millis()) {
-            Ok(ticket) => ticket,
+            Ok(None) => None,
+            Ok(Some(_)) => return failure(CaptureFailure { stage: CaptureStage::Persist, code: "PrivacyCaptureTicketMissing".into() }),
             Err(error) => return failure(error),
         },
     };

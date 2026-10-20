@@ -340,6 +340,21 @@ pub(crate) fn check_capture_with_conn(
     Ok(())
 }
 
+fn session_entry_visible(entry: &ClipboardEntry) -> bool {
+    let Ok(tags) = serde_json::to_string(&entry.tags) else {
+        return false;
+    };
+    crate::infrastructure::repository::migrations::search_visible(
+        Some(&tags),
+        [
+            Some(&entry.content),
+            Some(&entry.preview),
+            entry.html_content.as_deref(),
+            entry.ocr_text.as_deref(),
+        ],
+    )
+}
+
 impl HistoryService {
     /// A trusted host maps an explicit user confirmation to this intent, never a client role.
     pub fn save_manual(
@@ -376,6 +391,72 @@ impl HistoryService {
         let mut restricted = query.clone();
         restricted.exclude_sensitive = query.exclude_sensitive || !permit.includes_sensitive();
         let result = self.query(&restricted).map_err(unavailable)?;
+        self.privacy().check_read(permit, now_ms)?;
+        Ok(result)
+    }
+
+    pub fn authorize_session_entry(
+        &self,
+        entry: &ClipboardEntry,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<ClipboardEntry> {
+        self.privacy().check_read(permit, now_ms)?;
+        if entry.id >= 0 || (!permit.includes_sensitive() && !session_entry_visible(entry)) {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
+        for field in [
+            Some(entry.content.as_str()),
+            Some(entry.preview.as_str()),
+            entry.html_content.as_deref(),
+            entry.ocr_text.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if matches!(
+                crate::infrastructure::encryption::decode_stored_text(field),
+                crate::infrastructure::encryption::StoredText::Failed
+            ) {
+                return Err(PrivacyError::SensitiveAccessDenied);
+            }
+        }
+        let result = entry.clone();
+        self.privacy().check_read(permit, now_ms)?;
+        Ok(result)
+    }
+
+    pub fn summaries_for_session_authorized(
+        &self,
+        entries: &[ClipboardEntry],
+        query: &SummaryQuery,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<SearchResult> {
+        query.validate().map_err(unavailable)?;
+        self.privacy().check_read(permit, now_ms)?;
+        let result = SearchResult {
+            entries: entries
+                .iter()
+                .filter(|entry| {
+                    entry.id < 0
+                        && session_entry_visible(entry)
+                        && query
+                            .kind
+                            .as_ref()
+                            .is_none_or(|kind| &entry.content_type == kind)
+                        && query
+                            .tag
+                            .as_ref()
+                            .is_none_or(|tag| entry.tags.contains(tag))
+                        && (!query.pinned || entry.is_pinned)
+                })
+                .skip(query.offset as usize)
+                .take(query.limit as usize)
+                .cloned()
+                .map(super::summary::summarize)
+                .collect(),
+        };
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
     }
@@ -693,6 +774,58 @@ mod tests {
                     &permit,
                     2
                 )
+                .unwrap_err(),
+            PrivacyError::PrivacyEpochChanged
+        );
+    }
+    #[test]
+    fn session_permissions_use_the_same_visibility_rule_before_paging_and_epoch_checks() {
+        let history = memory();
+        let permit = history
+            .privacy()
+            .authorize_read(
+                PrivacyAccessIntent::RestrictedSummary,
+                SensitiveAccess::Denied,
+                None,
+                1,
+            )
+            .unwrap();
+        let mut entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":-1,"content_type":"text","content":"ordinary","preview":"summary","source_app":"test","timestamp":1,"is_pinned":false})).unwrap();
+        let ordinary = entry.clone();
+        entry.tags = vec![" sensitive ".into()];
+        let mut damaged = ordinary.clone();
+        damaged.id = -2;
+        damaged.ocr_text = Some("linux:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==".into());
+        let entries = [entry.clone(), damaged, ordinary.clone()];
+        let summary = history
+            .summaries_for_session_authorized(
+                &entries,
+                &SummaryQuery {
+                    limit: 1,
+                    ..Default::default()
+                },
+                &permit,
+                1,
+            )
+            .unwrap();
+        assert_eq!(summary.entries.len(), 1);
+        assert_eq!(summary.entries[0].preview.as_deref(), Some("summary"));
+        assert_eq!(
+            history
+                .authorize_session_entry(&entry, &permit, 1)
+                .unwrap_err(),
+            PrivacyError::SensitiveAccessDenied
+        );
+        assert!(history
+            .authorize_session_entry(&ordinary, &permit, 1)
+            .is_ok());
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, 1)
+            .unwrap();
+        assert_eq!(
+            history
+                .summaries_for_session_authorized(&entries, &SummaryQuery::default(), &permit, 1)
                 .unwrap_err(),
             PrivacyError::PrivacyEpochChanged
         );

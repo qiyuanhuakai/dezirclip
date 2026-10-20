@@ -10,6 +10,8 @@ pub mod windows_privacy;
 #[cfg(target_os = "linux")]
 pub mod x11_clipboard;
 #[cfg(target_os = "linux")]
+pub mod x11_privacy;
+#[cfg(target_os = "linux")]
 mod x11_listener;
 
 pub use html::parse_cf_html;

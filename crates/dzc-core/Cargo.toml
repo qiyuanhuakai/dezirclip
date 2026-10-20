@@ -32,3 +32,6 @@ sha2.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
+
+[package.metadata.dzc]
+capture-contract = 2

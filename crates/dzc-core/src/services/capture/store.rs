@@ -322,6 +322,13 @@ mod tests {
         }
     }
 
+    fn authorized_frame(context: &CaptureContext<'_>, mut frame: CaptureFrame, store: &dyn CaptureStore, events: &mut dyn EventSink) -> CaptureOutcome {
+        if frame.metadata.privacy_ticket.is_none() {
+            frame.metadata.privacy_ticket = store.capture_ticket(chrono::Utc::now().timestamp_millis()).unwrap();
+        }
+        CaptureEngine::capture_frame(context, frame, store, events)
+    }
+
     fn rich_frame() -> CaptureFrame {
         CaptureFrame {
             data: CaptureData::RichText {
@@ -349,7 +356,7 @@ mod tests {
         let context = context(&session);
         let store = state.capture_store(&directory);
         let CaptureOutcome::Stored(first) =
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut ())
+            authorized_frame(&context, rich_frame(), &store, &mut ())
         else {
             panic!("capture should commit");
         };
@@ -363,7 +370,7 @@ mod tests {
             )
             .unwrap();
         let CaptureOutcome::Stored(second) =
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut ())
+            authorized_frame(&context, rich_frame(), &store, &mut ())
         else {
             panic!("recapture should commit");
         };
@@ -406,7 +413,7 @@ mod tests {
         let store = state.capture_store(&directory);
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut events),
+            authorized_frame(&context, rich_frame(), &store, &mut events),
             CaptureOutcome::Failed(_)
         ));
         assert!(matches!(events.0.as_slice(), [CaptureEvent::Failed(_)]));
@@ -441,7 +448,7 @@ mod tests {
         let store = state.capture_store(&directory);
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut events),
+            authorized_frame(&context, rich_frame(), &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected)
         ));
         assert_eq!(
@@ -492,7 +499,7 @@ mod tests {
         };
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, frame, &store, &mut events),
+            authorized_frame(&context, frame, &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::AttachmentBudgetExceeded)
         ));
         assert_eq!(
@@ -539,7 +546,7 @@ mod tests {
             metadata: CaptureReadMetadata::default(),
         };
         let CaptureOutcome::Stored(first) =
-            CaptureEngine::capture_frame(&context, frame(image.clone()), &store, &mut ())
+            authorized_frame(&context, frame(image.clone()), &store, &mut ())
         else {
             panic!("bounded session HTML should store");
         };
@@ -551,7 +558,7 @@ mod tests {
             .contains("data:image/png;base64,Zml4dHVyZSBpbWFnZQ=="));
         let mut events = Events::default();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, frame(image.repeat(65)), &store, &mut events),
+            authorized_frame(&context, frame(image.repeat(65)), &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::AttachmentBudgetExceeded)
         ));
         std::fs::File::create(&source)
@@ -559,7 +566,7 @@ mod tests {
             .set_len(16 * 1024 * 1024 + 1)
             .unwrap();
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, frame(image), &store, &mut events),
+            authorized_frame(&context, frame(image), &store, &mut events),
             CaptureOutcome::Rejected(CaptureRejection::AttachmentBudgetExceeded)
         ));
         assert_eq!(
@@ -606,7 +613,7 @@ mod tests {
         };
         let mut events = Events::default();
         assert!(
-            matches!(CaptureEngine::capture_frame(&context, frame, &store, &mut events), CaptureOutcome::Failed(CaptureFailure { stage: CaptureStage::Prepare, ref code }) if code == "AttachmentReadRejected")
+            matches!(authorized_frame(&context, frame, &store, &mut events), CaptureOutcome::Failed(CaptureFailure { stage: CaptureStage::Prepare, ref code }) if code == "AttachmentReadRejected")
         );
         assert!(matches!(events.0.as_slice(), [CaptureEvent::Failed(_)]));
         assert!(session.lock().unwrap().is_empty());
@@ -661,7 +668,7 @@ mod tests {
         let mut frame = rich_frame();
         frame.metadata.privacy_ticket = Some(old_ticket);
         assert!(matches!(
-            CaptureEngine::capture_frame(&context, frame, &store, &mut events),
+            authorized_frame(&context, frame, &store, &mut events),
             CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged)
         ));
         assert_eq!(
@@ -725,4 +732,44 @@ mod tests {
         drop(other);
         std::fs::remove_dir_all(directory).unwrap();
     }
+    #[test]
+    fn unleased_automatic_frame_cannot_acquire_a_new_epoch_at_commit_time() {
+        let (directory, state) = database();
+        let store = state.capture_store(&directory);
+        let session = Mutex::new(VecDeque::new());
+        let context = context(&session);
+        let outcome = CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut ());
+        assert!(matches!(outcome, CaptureOutcome::Failed(CaptureFailure { ref code, .. }) if code == "PrivacyCaptureTicketMissing"));
+        assert!(!directory.join("attachments").exists());
+        drop(store);
+        drop(state);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn malformed_pem_prefixes_cannot_hide_a_later_valid_key_from_persistence_protection() {
+        use base64::Engine;
+        let mut der = vec![0x30, 46, 2, 1, 0, 0x30, 5, 6, 3, 0x2b, 0x65, 0x70, 4, 34, 4, 32];
+        der.extend([7; 32]);
+        let valid = format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----", base64::engine::general_purpose::STANDARD.encode(der));
+        for prefix in ["-----BEGIN PRIVATE KEY-----\nY29udGVudA==\n-----END PRIVATE KEY-----\n", "-----BEGIN PRIVATE KEY-----\nmissing terminator\n", "-----BEGIN PRIVATE KEY-----\n%%%invalid%%%\n-----END PRIVATE KEY-----\n"] {
+            let (directory, state) = database();
+            let store = state.capture_store(&directory);
+            let session = Mutex::new(VecDeque::new());
+            let mut context = context(&session);
+            context.settings.privacy_protection = true;
+            let text = format!("{prefix}{valid}");
+            let frame = CaptureFrame { data: CaptureData::Text(text.clone()), metadata: Default::default() };
+            let CaptureOutcome::Stored(capture) = authorized_frame(&context, frame, &store, &mut ()) else { panic!("structured key must persist under protection"); };
+            assert_eq!(capture.privacy.action, crate::privacy::PrivacyAction::Encrypt);
+            let conn = state.conn.lock().unwrap();
+            let stored: String = conn.query_row("SELECT content FROM clipboard_history WHERE id=?1", [capture.entry.id], |row| row.get(0)).unwrap();
+            assert!(crate::infrastructure::encryption::has_ciphertext_envelope(&stored));
+            assert_eq!(crate::infrastructure::encryption::decode_for_mutation(&stored).unwrap(), text);
+            assert_eq!(conn.query_row("SELECT count(*) FROM clipboard_fts_docsize", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+            drop(conn); drop(store); drop(state);
+            std::fs::remove_dir_all(directory).unwrap();
+        }
+    }
+
 }
