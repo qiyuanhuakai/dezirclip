@@ -1,0 +1,314 @@
+[
+  {
+    "name": "surface-hello",
+    "schema": "Request",
+    "value": {
+      "request_id": "a",
+      "method": "hello",
+      "params": {
+        "protocol_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "client_version": "0.2.0-alpha.1",
+        "client_role": "surface",
+        "capabilities": [
+          "history_read"
+        ],
+        "required_capabilities": []
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "list",
+    "schema": "Request",
+    "value": {
+      "request_id": "b",
+      "method": "history.list",
+      "params": {
+        "limit": 20,
+        "offset": 0
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "zero-id",
+    "schema": "Request",
+    "value": {
+      "request_id": "c",
+      "method": "surface.copy",
+      "params": {
+        "id": 0
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-method",
+    "schema": "Request",
+    "value": {
+      "request_id": "d",
+      "method": "sql.execute",
+      "params": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "bounded-page",
+    "schema": "Request",
+    "value": {
+      "request_id": "e",
+      "method": "history.list",
+      "params": {
+        "limit": 201,
+        "offset": 0
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "no-null-page",
+    "schema": "Request",
+    "value": {
+      "request_id": "f",
+      "method": "history.list",
+      "params": null
+    },
+    "valid": false
+  },
+  {
+    "name": "no-unsafe-counter",
+    "schema": "RuntimeState",
+    "value": {
+      "service_instance_id": "test",
+      "history_revision": 9007199254740992,
+      "privacy_epoch": 0,
+      "event_sequence": 0
+    },
+    "valid": false
+  },
+  {
+    "name": "response-success",
+    "schema": "Response",
+    "value": {
+      "request_id": "g",
+      "result": {}
+    },
+    "valid": true
+  },
+  {
+    "name": "response-failure",
+    "schema": "Response",
+    "value": {
+      "request_id": "g",
+      "error": {
+        "code": "permission_denied",
+        "message": "PermissionDenied"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "response-both",
+    "schema": "Response",
+    "value": {
+      "request_id": "g",
+      "result": {},
+      "error": {
+        "code": "internal",
+        "message": "Internal"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "response-neither",
+    "schema": "Response",
+    "value": {
+      "request_id": "g"
+    },
+    "valid": false
+  },
+  {
+    "name": "metadata-event",
+    "schema": "Event",
+    "value": {
+      "event": "EntryAdded",
+      "state": {
+        "service_instance_id": "test",
+        "history_revision": 3,
+        "privacy_epoch": 1,
+        "event_sequence": 1
+      },
+      "data": {
+        "entry_id": 4
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "body-event-rejected",
+    "schema": "EventData",
+    "value": {
+      "entry_id": 4,
+      "content": "body"
+    },
+    "valid": false
+  },
+  {
+    "name": "nullable-expiry",
+    "schema": "PrivacyState",
+    "value": {
+      "active": false,
+      "privacy_epoch": 0,
+      "expires_at_ms": null
+    },
+    "valid": true
+  },
+  {
+    "name": "optional-forward-field",
+    "schema": "EmptyParams",
+    "value": {
+      "future_flag": true
+    },
+    "valid": true
+  },
+  {
+    "name": "bounded-nesting",
+    "schema": "EmptyParams",
+    "value": {
+      "nested": {
+        "nested": {
+          "nested": {
+            "nested": {
+              "nested": {
+                "nested": {
+                  "nested": {
+                    "nested": {
+                      "nested": {
+                        "nested": {
+                          "nested": {
+                            "nested": {
+                              "nested": {
+                                "nested": {
+                                  "nested": {
+                                    "nested": {
+                                      "nested": {
+                                        "nested": {
+                                          "nested": {
+                                            "nested": {
+                                              "nested": {
+                                                "nested": {
+                                                  "nested": {
+                                                    "nested": {
+                                                      "nested": {
+                                                        "nested": {
+                                                          "nested": {
+                                                            "nested": {
+                                                              "nested": {
+                                                                "nested": {
+                                                                  "nested": {
+                                                                    "nested": {
+                                                                      "nested": {
+                                                                        "nested": {
+                                                                          "nested": {
+                                                                            "nested": {
+                                                                              "nested": {
+                                                                                "nested": {
+                                                                                  "nested": {
+                                                                                    "nested": {
+                                                                                      "nested": {
+                                                                                        "nested": {
+                                                                                          "nested": {
+                                                                                            "nested": {
+                                                                                              "nested": {
+                                                                                                "nested": {
+                                                                                                  "nested": {
+                                                                                                    "nested": {
+                                                                                                      "nested": {
+                                                                                                        "nested": {
+                                                                                                          "nested": {
+                                                                                                            "nested": {
+                                                                                                              "nested": {
+                                                                                                                "nested": {
+                                                                                                                  "nested": {
+                                                                                                                    "nested": {
+                                                                                                                      "nested": {
+                                                                                                                        "nested": {
+                                                                                                                          "nested": {
+                                                                                                                            "nested": {
+                                                                                                                              "nested": {
+                                                                                                                                "nested": {
+                                                                                                                                  "nested": {
+                                                                                                                                    "nested": {
+                                                                                                                                      "nested": {}
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "valid": false
+  }
+]

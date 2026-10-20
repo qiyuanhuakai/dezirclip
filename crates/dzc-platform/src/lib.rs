@@ -5,6 +5,8 @@ pub mod local_file;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
+#[cfg(feature = "ipc")]
+pub mod ipc;
 
 pub struct NativeKeyProvider;
 

@@ -102,6 +102,22 @@ class BuildProvenanceTests(unittest.TestCase):
         revision = self.commit_fixture()
         self.assertNotEqual(self.run_script(DZC_BUILD_SOURCE_ROOT=str(self.root), DZC_BUILD_REVISION=revision).returncode, 0)
 
+    def test_copied_embedded_wire_schema_must_match_declared_checkout(self):
+        schema = self.root / "crates/dzc-protocol/src/wire/schema.json"
+        schema.parent.mkdir()
+        schema.write_text('{"$defs":{}}\n')
+        revision = self.commit_fixture()
+        with tempfile.TemporaryDirectory(prefix="dzc-build-info-wire-copy-") as temporary:
+            copied = Path(temporary).resolve()
+            shutil.copytree(self.root / "crates", copied / "crates")
+            shutil.copyfile(self.root / "Cargo.toml", copied / "Cargo.toml")
+            values = dict(DZC_BUILD_SOURCE_ROOT=str(self.root), DZC_BUILD_REVISION=revision, GITHUB_ACTIONS="true", GITHUB_SHA=revision)
+            self.assertEqual(self.run_script(copied, **values).returncode, 0)
+            (copied / "crates/dzc-protocol/src/wire/schema.json").write_text('{"changed":true}\n')
+            changed = self.run_script(copied, **values)
+            self.assertNotEqual(changed.returncode, 0)
+            self.assertIn("differs from the declared source checkout", changed.stderr)
+
 
 @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for the built CLI metadata contract")
 class CliBuildInfoTests(unittest.TestCase):

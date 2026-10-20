@@ -1,0 +1,1124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Permission": {
+      "type": "string",
+      "enum": [
+        "history_read",
+        "history_body",
+        "clipboard_copy",
+        "clipboard_paste",
+        "privacy_write",
+        "service_manage",
+        "surface_control"
+      ]
+    },
+    "HostMode": {
+      "type": "string",
+      "enum": [
+        "embedded",
+        "service"
+      ]
+    },
+    "CapabilityReport": {
+      "type": "object",
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Permission"
+          },
+          "maxItems": 16
+        },
+        "platform": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "methods",
+        "permissions",
+        "platform"
+      ],
+      "additionalProperties": true
+    },
+    "ServiceStatus": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/HostMode"
+        },
+        "capture_owner": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "privacy": {
+          "$ref": "#/$defs/PrivacyState"
+        }
+      },
+      "required": [
+        "mode",
+        "capture_owner",
+        "state",
+        "privacy"
+      ],
+      "additionalProperties": true
+    },
+    "ClipboardCopyParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true
+    },
+    "OperationResult": {
+      "type": "object",
+      "properties": {
+        "performed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "performed"
+      ],
+      "additionalProperties": true
+    },
+    "SurfaceActionParams": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "ProtocolVersion": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "x-rust-type": "u16"
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "x-rust-type": "u16"
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ],
+      "additionalProperties": true
+    },
+    "ClientRole": {
+      "type": "string",
+      "enum": [
+        "desktop",
+        "surface",
+        "cli",
+        "mcp"
+      ]
+    },
+    "Method": {
+      "type": "string",
+      "enum": [
+        "hello",
+        "capabilities",
+        "health",
+        "history.list",
+        "history.get",
+        "history.search",
+        "clipboard.copy",
+        "privacy.get",
+        "privacy.set",
+        "events.subscribe",
+        "service.status",
+        "service.stop",
+        "service.handoff",
+        "surface.capabilities",
+        "surface.history.list",
+        "surface.history.search",
+        "surface.activate",
+        "surface.dismiss",
+        "surface.copy",
+        "surface.paste"
+      ]
+    },
+    "WireErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "invalid_frame",
+        "frame_too_large",
+        "protocol_mismatch",
+        "handshake_required",
+        "unsupported_capability",
+        "permission_denied",
+        "unavailable",
+        "not_found",
+        "busy",
+        "privacy_blocked",
+        "internal",
+        "deadline_exceeded"
+      ]
+    },
+    "WireError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/WireErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "HelloParams": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "client_version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "client_role": {
+          "$ref": "#/$defs/ClientRole"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "client_version",
+        "client_role",
+        "capabilities",
+        "required_capabilities"
+      ],
+      "additionalProperties": true
+    },
+    "HelloResult": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "protocol_version": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "core_version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Permission"
+          },
+          "maxItems": 16
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "max_frame_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "session_id",
+        "protocol_version",
+        "core_version",
+        "permissions",
+        "state",
+        "max_frame_bytes"
+      ],
+      "additionalProperties": true
+    },
+    "Request": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "method": {
+          "$ref": "#/$defs/Method"
+        },
+        "params": {}
+      },
+      "required": [
+        "request_id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "hello"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HelloParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "capabilities"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "health"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistoryPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EntryIdParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.search"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistorySearchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "clipboard.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/PrivacySetParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "events.subscribe"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SubscribeParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.status"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.stop"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.handoff"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.capabilities"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistoryPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.search"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistorySearchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.activate"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SurfaceActionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.dismiss"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SurfaceActionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.paste"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Response": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "result": {
+          "type": "object"
+        },
+        "error": {
+          "$ref": "#/$defs/WireError"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "required": [
+            "result"
+          ],
+          "not": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "required": [
+            "error"
+          ],
+          "not": {
+            "required": [
+              "result"
+            ]
+          }
+        }
+      ]
+    },
+    "EmptyParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "EventKind": {
+      "type": "string",
+      "enum": [
+        "EntryAdded",
+        "EntryUpdated",
+        "EntryDeleted",
+        "HistoryReset",
+        "PrivacyStateChanged",
+        "CapabilitiesChanged",
+        "ServiceStateChanged"
+      ]
+    },
+    "RuntimeState": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "history_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "privacy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "event_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "history_revision",
+        "privacy_epoch",
+        "event_sequence"
+      ],
+      "additionalProperties": true
+    },
+    "EventData": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "Event": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/EventKind"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "data": {
+          "$ref": "#/$defs/EventData"
+        }
+      },
+      "required": [
+        "event",
+        "state",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "SubscribeParams": {
+      "type": "object",
+      "properties": {
+        "after_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "x-rust-type": "u16"
+        }
+      },
+      "required": [
+        "after_sequence"
+      ],
+      "additionalProperties": true
+    },
+    "EventsResult": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "maxItems": 256
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "resync_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "state",
+        "resync_required"
+      ],
+      "additionalProperties": true
+    },
+    "HistoryPageParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "x-rust-type": "u16"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "x-rust-type": "u32"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tag": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "limit",
+        "offset"
+      ],
+      "additionalProperties": true
+    },
+    "SearchMode": {
+      "type": "string",
+      "enum": [
+        "contains",
+        "fuzzy",
+        "regex",
+        "fts5"
+      ]
+    },
+    "HistorySearchParams": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "mode": {
+          "$ref": "#/$defs/SearchMode"
+        },
+        "page": {
+          "$ref": "#/$defs/HistoryPageParams"
+        }
+      },
+      "required": [
+        "query",
+        "mode",
+        "page"
+      ],
+      "additionalProperties": true
+    },
+    "EntryIdParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true
+    },
+    "EntrySummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "preview": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "source_app": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "privacy_visibility": {
+          "type": "string",
+          "enum": [
+            "ordinary",
+            "masked"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "tags",
+        "pinned",
+        "timestamp",
+        "source_app",
+        "privacy_visibility"
+      ],
+      "additionalProperties": true
+    },
+    "HistoryResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntrySummary"
+          },
+          "maxItems": 200
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "EntryResult": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/EntrySummary"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entry",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "PrivacyState": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "privacy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "expires_at_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "Option<i64>"
+        }
+      },
+      "required": [
+        "active",
+        "privacy_epoch",
+        "expires_at_ms"
+      ],
+      "additionalProperties": true
+    },
+    "PrivacySetParams": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "active"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

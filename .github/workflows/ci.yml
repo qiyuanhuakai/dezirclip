@@ -43,6 +43,9 @@ jobs:
       - name: Check i18n keys
         run: pnpm run i18n:check
 
+      - name: Check single-source local protocol generation
+        run: python scripts/generate-protocol.py --check
+
       - name: Test updater release gates
         run: node --test scripts/tests/updater-release.node.mjs
 
@@ -160,6 +163,38 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+
+      - name: Setup Go for local IPC compatibility
+        if: matrix.can_test
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: clients/go/go.sum
+
+      - name: Test Go local protocol client
+        if: matrix.can_test
+        working-directory: clients/go
+        env:
+          GOTOOLCHAIN: local
+        run: go test ./...
+
+      - name: Test bounded native local IPC
+        if: matrix.can_test
+        run: |
+          cargo test -p dzc-protocol --features wire
+          cargo test -p dzc-platform --features ipc ipc::
+          cargo build -p dzc-platform --features ipc --example ipc_protocol_fixture
+
+      - name: Verify native Rust and Go protocol compatibility
+        if: matrix.can_test
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          fixture = Path("target/debug/examples") / ("ipc_protocol_fixture.exe" if os.name == "nt" else "ipc_protocol_fixture")
+          subprocess.run(["python", "scripts/test-local-ipc.py", "--rust-fixture", str(fixture), "--go", shutil.which("go")], check=True)
 
       - name: Test Tauri crate
         if: matrix.can_test

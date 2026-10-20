@@ -6,6 +6,10 @@ authors.workspace = true
 description = "Versioned capability and error values shared by DezirClip clients"
 publish = false
 
+[features]
+wire = ["dep:jsonschema"]
+
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+jsonschema = { version = "=0.59.0", default-features = false, optional = true }

@@ -1,0 +1,655 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/envelope.schema.json",
+  "$defs": {
+    "ProtocolVersion": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "x-rust-type": "u16"
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "x-rust-type": "u16"
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ],
+      "additionalProperties": true
+    },
+    "ClientRole": {
+      "type": "string",
+      "enum": [
+        "desktop",
+        "surface",
+        "cli",
+        "mcp"
+      ]
+    },
+    "Method": {
+      "type": "string",
+      "enum": [
+        "hello",
+        "capabilities",
+        "health",
+        "history.list",
+        "history.get",
+        "history.search",
+        "clipboard.copy",
+        "privacy.get",
+        "privacy.set",
+        "events.subscribe",
+        "service.status",
+        "service.stop",
+        "service.handoff",
+        "surface.capabilities",
+        "surface.history.list",
+        "surface.history.search",
+        "surface.activate",
+        "surface.dismiss",
+        "surface.copy",
+        "surface.paste"
+      ]
+    },
+    "WireErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "invalid_frame",
+        "frame_too_large",
+        "protocol_mismatch",
+        "handshake_required",
+        "unsupported_capability",
+        "permission_denied",
+        "unavailable",
+        "not_found",
+        "busy",
+        "privacy_blocked",
+        "internal",
+        "deadline_exceeded"
+      ]
+    },
+    "WireError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/WireErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "HelloParams": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/ProtocolVersion"
+        },
+        "client_version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "client_role": {
+          "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/ClientRole"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "client_version",
+        "client_role",
+        "capabilities",
+        "required_capabilities"
+      ],
+      "additionalProperties": true
+    },
+    "HelloResult": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "protocol_version": {
+          "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/ProtocolVersion"
+        },
+        "core_version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/capabilities.schema.json#/$defs/Permission"
+          },
+          "maxItems": 16
+        },
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        },
+        "max_frame_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "session_id",
+        "protocol_version",
+        "core_version",
+        "permissions",
+        "state",
+        "max_frame_bytes"
+      ],
+      "additionalProperties": true
+    },
+    "Request": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "method": {
+          "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/Method"
+        },
+        "params": {}
+      },
+      "required": [
+        "request_id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "hello"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/HelloParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "capabilities"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "health"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/HistoryPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/EntryIdParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.search"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/HistorySearchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "clipboard.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/clipboard.schema.json#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/privacy.schema.json#/$defs/PrivacySetParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "events.subscribe"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/SubscribeParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.status"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.stop"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.handoff"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.capabilities"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/HistoryPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.search"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/HistorySearchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.activate"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/clipboard.schema.json#/$defs/SurfaceActionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.dismiss"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/clipboard.schema.json#/$defs/SurfaceActionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/clipboard.schema.json#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.paste"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/clipboard.schema.json#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Response": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "result": {
+          "type": "object"
+        },
+        "error": {
+          "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/WireError"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "required": [
+            "result"
+          ],
+          "not": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "required": [
+            "error"
+          ],
+          "not": {
+            "required": [
+              "result"
+            ]
+          }
+        }
+      ]
+    },
+    "EmptyParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    }
+  },
+  "$ref": "#/$defs/Request",
+  "x-max-depth": 64,
+  "x-max-frame-bytes": 1048576
+}
