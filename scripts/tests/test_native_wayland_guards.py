@@ -31,7 +31,7 @@ class NativeWaylandGuards(unittest.TestCase):
     def test_runtime_directory_links_are_checked_before_regular_files(self):
         for nested in (False, True):
             with self.subTest(nested=nested), tempfile.TemporaryDirectory() as directory:
-                parent = Path(directory)
+                parent = Path(directory).resolve(strict=True)
                 prefix = self.private_prefix(parent)
                 outside = parent / "outside-library"
                 outside.mkdir()
@@ -52,7 +52,7 @@ class NativeWaylandGuards(unittest.TestCase):
 
     def test_in_tree_directory_links_are_explicitly_rejected_instead_of_omitted(self):
         with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
+            parent = Path(directory).resolve(strict=True)
             prefix = self.private_prefix(parent)
             actual = prefix / "actual"
             actual.mkdir()
@@ -64,7 +64,7 @@ class NativeWaylandGuards(unittest.TestCase):
 
     def test_allowed_file_links_hash_bytes_and_retargeting_while_escape_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
-            parent = Path(directory)
+            parent = Path(directory).resolve(strict=True)
             prefix = self.private_prefix(parent)
             actual = prefix / "lib/synthetic.so.1"
             actual.write_bytes(b"first bytes")
@@ -90,6 +90,24 @@ class NativeWaylandGuards(unittest.TestCase):
                 self.symlink(link, outside)
                 with self.assertRaisesRegex(ValueError, "escapes"):
                     MODULE.private_libraries(prefix)
+
+    def test_library_link_guards_reach_their_assertions_under_a_temporary_root_alias(self):
+        temporary_directory = tempfile.TemporaryDirectory
+        with temporary_directory() as directory:
+            root = Path(directory).resolve(strict=True)
+            actual = root / "actual-temporary-root"
+            actual.mkdir()
+            alias = root / "alias-temporary-root"
+            self.symlink(alias, actual, directory=True)
+            self.assertNotEqual(alias, alias.resolve(strict=True))
+            def under_alias(*args, **kwargs):
+                return temporary_directory(*args, dir=alias, **kwargs)
+            # Exercise the original three test bodies, including confinement
+            # before hashing, byte changes, retargeting and directory rejection.
+            with mock.patch.object(tempfile, "TemporaryDirectory", side_effect=under_alias):
+                self.test_runtime_directory_links_are_checked_before_regular_files()
+                self.test_in_tree_directory_links_are_explicitly_rejected_instead_of_omitted()
+                self.test_allowed_file_links_hash_bytes_and_retargeting_while_escape_is_rejected()
 
     def test_disconnect_wait_timeout_keeps_partial_output_case_and_stops_owned_children(self):
         with tempfile.TemporaryDirectory() as directory:
