@@ -474,7 +474,7 @@ fn sync_tags(conn: &Connection, id: i64, tags: &[String]) -> Result<(), String> 
     }
     Ok(())
 }
-fn protected(entry: &ClipboardEntry) -> bool {
+pub(super) fn protected(entry: &ClipboardEntry) -> bool {
     !super::migrations::search_visible(
         serde_json::to_string(&entry.tags).ok().as_deref(),
         [

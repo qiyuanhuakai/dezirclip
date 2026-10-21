@@ -40,12 +40,9 @@ const loadCliInfo = (forceRefresh: boolean): Promise<CliInfo> => {
 const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
     const [cliInfo, setCliInfo] = useState<CliInfo | null>(cachedCliInfo);
     const [cliInfoLoading, setCliInfoLoading] = useState(false);
-    const [appVersion, setAppVersion] = useState("");
-    const [platformKey, setPlatformKey] = useState("");
     const [pathUpdating, setPathUpdating] = useState(false);
     const [pathStatusKey, setPathStatusKey] = useState<string | null>(null);
     const [pathStatusDetail, setPathStatusDetail] = useState("");
-    const [buildDate] = useState(() => new Date().toISOString().slice(0, 10));
 
     const refreshCliInfo = useCallback((forceRefresh = false) => {
         setCliInfoLoading(true);
@@ -57,12 +54,6 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
 
     useEffect(() => {
         refreshCliInfo();
-        import("@tauri-apps/api/app").then(({ getVersion }) => {
-            getVersion().then(setAppVersion).catch(() => setAppVersion(""));
-        });
-        invoke<{ is_linux: boolean }>("get_platform_info")
-            .then((info) => setPlatformKey(info.is_linux ? "platform_linux" : "platform_windows"))
-            .catch(() => setPlatformKey(""));
     }, [refreshCliInfo]);
 
     const handleAddCliToPath = async () => {
@@ -164,15 +155,6 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                         aria-label={`${t("open_skill_folder")}: ${t(skill.label)}`}>
                         <FolderOpen size={14} />
                     </button>
-                </div>
-            ))}
-            <div className="setting-item">
-                <LabelWithHint label={t("build_info")} hintKey="build_info" />
-            </div>
-            {[["app_version", appVersion || "-"], ["platform_label", platformKey ? t(platformKey) : "-"], ["build_date", buildDate || "-"]].map(([labelKey, value]) => (
-                <div key={labelKey} className="setting-item setting-item--detail">
-                    <div className="item-label-group"><span className="item-label">{t(labelKey)}</span></div>
-                    <span style={{ fontSize: "12px", opacity: 0.7 }}>{value}</span>
                 </div>
             ))}
         </>

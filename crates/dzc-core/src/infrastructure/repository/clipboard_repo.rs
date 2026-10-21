@@ -299,6 +299,68 @@ impl SqliteClipboardRepository {
         }
         Ok(id)
     }
+    pub(crate) fn persist_session_metadata_authorized(
+        &self,
+        original: &ClipboardEntry,
+        pinned: Option<bool>,
+        tags: Option<Vec<String>>,
+        intent: crate::api::ManualPersistenceIntent,
+        permit: &crate::api::PrivacyReadPermit,
+        now_ms: i64,
+    ) -> Result<i64, String> {
+        permit.require_interactive().map_err(|error| error.to_string())?;
+        if original.id >= 0 || (pinned.is_none() && tags.is_none()) {
+            return Err("SessionMetadataMutationRequired".into());
+        }
+        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable")?;
+        let tx = rusqlite::Transaction::new_unchecked(
+            &conn,
+            rusqlite::TransactionBehavior::Immediate,
+        ).map_err(|_| "PrivacyStateUnavailable")?;
+        crate::api::privacy_session::check_read_with_conn(&tx, permit, now_ms)
+            .map_err(|error| error.to_string())?;
+        crate::api::privacy_session::check_manual_with_conn(&tx, intent, now_ms)
+            .map_err(|error| error.to_string())?;
+        let protected = super::privacy_policy::protected(original);
+        if protected && tags.as_ref().is_some_and(|tags| !has_sensitive_tag(tags)) {
+            return Err("SensitiveAccessDenied".into());
+        }
+        let mut entry = original.clone();
+        entry.id = 0;
+        if let Some(pinned) = pinned {
+            entry.is_pinned = pinned;
+        }
+        if let Some(tags) = tags {
+            entry.tags = tags;
+        }
+        if protected {
+            entry.content = encryption::decode_for_mutation(&entry.content)
+                .map_err(|error| error.to_string())?;
+            entry.preview = encryption::decode_for_mutation(&entry.preview)
+                .map_err(|error| error.to_string())?;
+            entry.html_content = entry.html_content.as_deref()
+                .map(encryption::decode_for_mutation).transpose()
+                .map_err(|error| error.to_string())?;
+            entry.ocr_text = entry.ocr_text.as_deref()
+                .map(encryption::decode_for_mutation).transpose()
+                .map_err(|error| error.to_string())?;
+            if !has_sensitive_tag(&entry.tags) {
+                entry.tags.push("sensitive".into());
+            }
+        }
+        let (entry, decision) = super::privacy_policy::prepare_entry_policy(&tx, &entry, true)?;
+        let mut cleanup = super::privacy_policy::transition_cleanup(&tx, &entry)?;
+        let id = self.save_entry_with_policy(&tx, &entry, None, None, true, &decision)?;
+        if let Some(cleanup) = &mut cleanup {
+            cleanup.protect_surviving_references(&tx)?;
+        }
+        tx.commit().map_err(|_| "SensitivePersistenceRejected")?;
+        if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
+            return Err("ProtectedAttachmentCleanupIncomplete".into());
+        }
+        Ok(id)
+    }
+
     pub(crate) fn update_manual_authorized(
         &self,
         id: i64,

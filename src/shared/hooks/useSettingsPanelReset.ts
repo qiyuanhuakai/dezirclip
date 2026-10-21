@@ -17,7 +17,8 @@ export const useSettingsPanelReset = ({
         appearance: true,
         default_apps: true,
         data: true,
-        tools: true
+        tools: true,
+        about: true
       });
     }
   }, [showSettings, setCollapsedGroups]);
