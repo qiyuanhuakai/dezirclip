@@ -81,7 +81,8 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 2. 创建 draft release；四平台桌面包、四平台独立 CLI 和 Flatpak 均上传至 draft。
 3. 所有构建任务成功后，下载四个 NSIS/AppImage 制品及其 `.sig`，验证存在性、长度、Ed25519/BLAKE2b 签名、签名版本及文件名；发布前再次确认资产身份未变化。
 4. 发布版本 release，确认其已公开。
-5. 比较当前通道版本，仅在严格较新时推进该发布对应的一个索引；先上传版本命名的临时资产并回读核对内容，再重命名活动索引。旧活动索引保留为 `*-previous-<asset-id>.json` 供恢复。
+5. 保持更新索引不变，完成公开资产、AppImage 两旧版更新、Windows 升级及正式性能验收，形成绑定版本、来源提交、release ID 和八个安装包/签名资产身份及 SHA-256 的验收文件。
+6. 在相同可信 tag 的 checkout 内运行 `node scripts/updater-release.mjs promote v<version> ACCEPTANCE.json`。脚本要求验收通过且凭据完整，重新下载并验签，核对资产和来源仍一致，才比较当前通道版本并在严格较新时推进对应索引；先上传版本命名的临时资产并回读核对内容，再重命名活动索引。旧活动索引保留为 `*-previous-<asset-id>.json` 供恢复。
 
 整个 release 工作流串行，禁止取消正在运行的发布，避免 Stable/Preview 互相覆盖或旧版本后完成导致回退。签名缺失、缺包、验签失败及构建失败均保持 draft，不推进通道。已公开且有完整已验签制品的旧版本允许保留发布，但不覆盖较新通道。
 
@@ -89,7 +90,7 @@ Flatpak 构建用 deb 暂存根目录时显式关闭 updater artifact 生成；F
 
 GitHub Release 资产重命名不提供事务：替换活动索引时可能短暂出现 404。脚本先保留旧资产，重命名失败会检查操作是否其实成功，并尝试恢复旧名称；断网或 GitHub 故障可能需要维护者恢复活动资产名。这影响索引可用性，不绕过客户端签名/版本检查。首次通道 release 也先建 draft，索引上传核验后才公开。遗留 draft channel release 会中止自动操作，维护者应检查后恢复，不自动猜测未完成状态。
 
-如果版本已公开但通道推广失败，可以在相同可信 tag 的 checkout 内重新运行 `node scripts/updater-release.mjs publish v<version>`；脚本重新验证公开制品并拒绝降级。普通发布工作流拒绝重建已公开的同 tag，避免替换已安装版本的制品。
+发布工作流的 `publish-only` 只公开经过验签的版本，不推进通道。如果版本已公开但通道推广失败，可在相同可信 tag 的 checkout 内使用仍匹配公开资产的验收文件重新运行 `promote`；脚本重新验证公开制品并拒绝降级。资产或来源发生变化时，必须重新验收。验收字段见 [alpha.2 发布验收](specs/v0.2-alpha2-release.md)。普通发布工作流拒绝重建已公开的同 tag，避免替换已安装版本的制品。
 
 ## 验证命令与边界
 
