@@ -25,16 +25,19 @@ interface UseClipboardItemRendererOptions {
     content: string,
     contentType: string,
     pasteWithFormat?: boolean,
-    pasteImageAsBase64?: boolean
+    pasteImageAsBase64?: boolean,
+    expectedPrivacyEpoch?: number,
+    derivedFromId?: number,
+    hostInstanceId?: string
   ) => Promise<void>;
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
-  openContent: (item: ClipboardEntry) => void;
-  togglePin: (event: MouseEvent, id: number, isPinned: boolean) => void;
-  deleteEntry: (event: MouseEvent, id: number) => void;
+  openContent: (item: ClipboardEntry, expectedPrivacyEpoch?: number) => void;
+  togglePin: (event: MouseEvent, id: number, isPinned: boolean, hostInstanceId?: string) => void;
+  deleteEntry: (event: MouseEvent, id: number, hostInstanceId?: string) => void;
   setEditingTagsId: Dispatch<SetStateAction<number | null>>;
   setTagInput: Dispatch<SetStateAction<string>>;
-  handleUpdateTags: (id: number, tags: string[]) => void;
+  handleUpdateTags: (id: number, tags: string[], hostInstanceId?: string) => void;
   onQRCode: (item: ClipboardEntry) => void;
   onTransformError: (item: ClipboardEntry, kind: string, message: string) => void;
   onTransformSuccess: (item: ClipboardEntry, kind: string) => void;

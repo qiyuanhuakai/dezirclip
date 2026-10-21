@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
 import type { ClipboardEntry } from "../types";
+import { entryInstanceArgs } from "./historyIdentity";
 
 export interface PrivacyViewState {
   phase: "loading" | "ready" | "unavailable";
@@ -167,18 +168,18 @@ export function beginPrivacyAccess() {
   return { epoch, isCurrent: () => fence.isCurrent(token) && model.phase === "ready" };
 }
 
-export function getPrivacyEntry(id: number): Promise<ClipboardEntry> {
+export function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) return Promise.reject(new Error("PrivacyStateUnavailable"));
-  return invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch });
+  return invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch, ...entryInstanceArgs(hostInstanceId) });
 }
 
 export type PrivacyFeedbackAction = "not_sensitive" | "exact_exception" | "ignore_source" | "protect_source";
-export async function submitPrivacyFeedback(id: number, action: PrivacyFeedbackAction): Promise<void> {
+export async function submitPrivacyFeedback(id: number, action: PrivacyFeedbackAction, hostInstanceId?: string): Promise<void> {
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");
   try {
-    await invoke("privacy_feedback", { id, expectedEpoch: epoch, action });
+    await invoke("privacy_feedback", { id, expectedEpoch: epoch, action, ...entryInstanceArgs(hostInstanceId) });
   } finally {
     await refreshPrivacyState();
   }

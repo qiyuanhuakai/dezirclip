@@ -1,13 +1,13 @@
 /** Keep one hydration in flight and one latest id; a snapshot fills any gaps. */
 export function createCapturedEntryReader<T extends { id: number }>(
-  read: (id: number) => Promise<T>,
+  read: (id: number, hostInstanceId?: string) => Promise<T>,
   publish: (entry: T) => void,
   refresh: () => void,
 ) {
   let revision = 0;
   let disposed = false;
   let running = false;
-  let pending: { id: number; revision: number } | null = null;
+  let pending: { id: number; revision: number; hostInstanceId?: string } | null = null;
   let refreshNeeded = false;
 
   const invalidate = () => {
@@ -25,7 +25,8 @@ export function createCapturedEntryReader<T extends { id: number }>(
       const request = pending;
       pending = null;
       try {
-        const entry = await read(request.id);
+        const entry = await (request.hostInstanceId === undefined
+          ? read(request.id) : read(request.id, request.hostInstanceId));
         if (!disposed && request.revision === revision) {
           if (entry.id !== request.id) throw new Error("Captured entry id differs");
           publish(entry);
@@ -42,7 +43,7 @@ export function createCapturedEntryReader<T extends { id: number }>(
   };
 
   return {
-    capture(id: number) {
+    capture(id: number, hostInstanceId?: string) {
       if (disposed) return;
       if (!Number.isSafeInteger(id) || id === 0) {
         invalidate();
@@ -51,7 +52,7 @@ export function createCapturedEntryReader<T extends { id: number }>(
       }
       revision += 1;
       if (running) refreshNeeded = true;
-      pending = { id, revision };
+      pending = { id, revision, hostInstanceId };
       void run();
     },
     invalidate,

@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { createCapturedEntryReader } from "../lib/capturedEntryReader";
 import type { ClipboardEntry } from "../types";
 import { invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
+import { entryInstanceArgs } from "../lib/historyIdentity";
 
 interface UseClipboardEventsOptions {
   onUpdated: (entry: ClipboardEntry) => void;
@@ -30,16 +31,16 @@ export const useClipboardEvents = ({ onUpdated, onRemoved, onChanged }: UseClipb
   useEffect(() => {
     let disposed = false;
     const captured = createCapturedEntryReader(
-      (id) => invokePrivacyBound<ClipboardEntry>("get_captured_entry_summary", { id }),
+      (id, hostInstanceId) => invokePrivacyBound<ClipboardEntry>("get_captured_entry_summary", { id, ...entryInstanceArgs(hostInstanceId) }),
       (entry) => onUpdatedRef.current(entry),
       () => onChangedRef.current(),
     );
-    const unlistenCaptured = listen<{ id: number }>("clipboard-captured", (event) => {
-      captured.capture(event.payload.id);
+    const unlistenCaptured = listen<{ id: number; host_instance_id?: string }>("clipboard-captured", (event) => {
+      captured.capture(event.payload.id, event.payload.host_instance_id);
     });
-    const unlistenUpdate = listen<{ id: number }>("clipboard-updated", (event) => {
+    const unlistenUpdate = listen<{ id: number; host_instance_id?: string }>("clipboard-updated", (event) => {
       if (disposed) return;
-      captured.capture(event.payload.id);
+      captured.capture(event.payload.id, event.payload.host_instance_id);
     });
     const unlistenRemove = listen<number>("clipboard-removed", (event) => {
       if (disposed) return;

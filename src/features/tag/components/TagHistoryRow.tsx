@@ -50,7 +50,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         if (!fullItem.current) {
             const generation = detailGeneration.current;
             const requestedItem = currentItem.current;
-            const request: Promise<ClipboardEntry> = getPrivacyEntry(item.id).then(value => {
+            const request: Promise<ClipboardEntry> = getPrivacyEntry(item.id, item.host_instance_id).then(value => {
                 if (fullItem.current === request) fullItem.current = null;
                 if (!mounted.current || managing.current || detailGeneration.current !== generation || currentItem.current !== requestedItem) throw new Error('PrivacyReadSuperseded');
                 return value;
@@ -89,7 +89,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         setDetail(null);
         if (!sensitive && !compactMode && item.content_type === 'rich_text' && !item.html_content) {
             const access = beginPrivacyAccess();
-            if (access) void invokePrivacyBound<ClipboardEntry>('get_history_resource_preview', { id: item.id, expectedEpoch: access.epoch, maxDimension: 480 })
+            if (access) void invokePrivacyBound<ClipboardEntry>('get_history_resource_preview', { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, maxDimension: 480 })
                 .then(next => { if (!disposed && access.isCurrent()) setDetail(next); }).catch(() => { if (!disposed) onError(); });
         }
         return () => { disposed = true; };
@@ -99,7 +99,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         if (managing.current) return;
         const access = beginPrivacyAccess();
         if (!access || (sensitive && !detail)) { onError(); return; }
-        void invoke('copy_to_clipboard', { id: item.id, content: '', contentType: item.content_type,
+        void invoke('copy_to_clipboard', { id: item.id, expectedHostInstanceId: item.host_instance_id, content: '', contentType: item.content_type,
             paste: true, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64,
             expectedPrivacyEpoch: sensitive ? access.epoch : undefined })
             .then(onChanged).catch(onError);
@@ -108,7 +108,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         if (tagBusy || managing.current) return;
         setTagBusy(true);
         try {
-            await invoke('update_tags', { id: item.id, tags });
+            await invoke('update_tags', { id: item.id, expectedHostInstanceId: item.host_instance_id, tags });
             if (mounted.current) { setTagInput(''); setEditingTags(false); onChanged(); }
         } catch { if (mounted.current) onError(); }
         finally { if (mounted.current) setTagBusy(false); }
@@ -153,10 +153,10 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             onOpen={event => {
                 event.stopPropagation(); const access = beginPrivacyAccess();
                 if (!access || (sensitive && !detail)) { onError(); return; }
-                if (!managing.current) void invoke('open_content', { id: item.id, content: '', contentType: item.content_type,
+                if (!managing.current) void invoke('open_content', { id: item.id, expectedHostInstanceId: item.host_instance_id, content: '', contentType: item.content_type,
                     expectedPrivacyEpoch: sensitive ? access.epoch : undefined }).catch(onError);
             }}
-            onTogglePin={event => { event.stopPropagation(); if (!managing.current) void invoke('toggle_clipboard_pin', { id: item.id, isPinned: !item.is_pinned }).then(onChanged).catch(onError); }}
+            onTogglePin={event => { event.stopPropagation(); if (!managing.current) void invoke('toggle_clipboard_pin', { id: item.id, expectedHostInstanceId: item.host_instance_id, isPinned: !item.is_pinned }).then(onChanged).catch(onError); }}
             onDelete={event => { event.stopPropagation(); if (!managing.current) onDelete(item); }}
             onToggleTagEditor={event => { event.stopPropagation(); if (!tagBusy && !managing.current) setEditingTags(current => !current); }}
             onTagInput={setTagInput}

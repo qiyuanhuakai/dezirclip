@@ -31,7 +31,7 @@ type Dialog = { kind: 'createTag' }
     | { kind: 'renameTag'; tag: string }
     | { kind: 'removeTag'; tag: string }
     | { kind: 'createItem'; tag: string; expectedPrivacyEpoch?: number }
-    | { kind: 'editItem'; id: number; protectedContent: boolean }
+    | { kind: 'editItem'; id: number; hostInstanceId?: string; protectedContent: boolean }
     | { kind: 'deleteSelection'; tag: string; selection: TagBatchSelection; count: number; scope: string }
     | { kind: 'deleteItem'; item: ClipboardEntry };
 
@@ -166,9 +166,9 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     }, [tagSearch, notifyError]);
     const editItem = useCallback((item: ClipboardEntry) => {
         const request = ++detailSequence.current;
-        void getPrivacyEntry(item.id).then(detail => {
+        void getPrivacyEntry(item.id, item.host_instance_id).then(detail => {
             if (!mounted.current || request !== detailSequence.current) return;
-            setDialogError(null); setValue(detail.content); setDialog({ kind: 'editItem', id: item.id, protectedContent: isSensitiveEntry(detail) });
+            setDialogError(null); setValue(detail.content); setDialog({ kind: 'editItem', id: item.id, hostInstanceId: item.host_instance_id, protectedContent: isSensitiveEntry(detail) });
         }).catch(() => { if (request === detailSequence.current) notifyError(); });
     }, [notifyError]);
     const deleteItem = useCallback((item: ClipboardEntry) => openDialog({ kind: 'deleteItem', item }), [openDialog]);
@@ -225,11 +225,11 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 await invoke('add_manual_item', { content: value, contentType: 'text', tags: [current.tag],
                     expectedPrivacyEpoch: current.expectedPrivacyEpoch, confirmPersistence: privacyActive && confirmPersistence });
             } else if (current.kind === 'editItem') {
-                await invoke('update_item_content', { id: current.id, newContent: value });
+                await invoke('update_item_content', { id: current.id, expectedHostInstanceId: current.hostInstanceId, newContent: value });
             } else if (current.kind === 'deleteSelection') {
                 const result = await invoke<{ deletedCount: number }>('delete_tag_entries', { tagName: current.tag, selection: current.selection });
                 deletedCount = result.deletedCount;
-            } else await invoke('delete_clipboard_entry', { id: current.item.id });
+            } else await invoke('delete_clipboard_entry', { id: current.item.id, expectedHostInstanceId: current.item.host_instance_id });
             if (!mounted.current) return;
             setDialog(null); changed();
             if (deletedCount !== null) {

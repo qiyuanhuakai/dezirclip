@@ -770,7 +770,8 @@ const ClipboardItem = ({
     }), []);
     const imagePreview = useImagePreview(
         item.id, item.content, item.timestamp,
-        item.content_type === "image" && !isSensitiveHidden && !(item.is_external && item.file_preview_exists === false)
+        item.content_type === "image" && !isSensitiveHidden && !(item.is_external && item.file_preview_exists === false),
+        item.host_instance_id
     );
     const isComposing = useRef(false);
     const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
@@ -940,6 +941,7 @@ const ClipboardItem = ({
             await previewWindow.emit("compact-preview-update", {
                 id: item.id,
                 privacyEpoch: access.epoch,
+                expectedHostInstanceId: item.host_instance_id,
                 allowSensitive: isSensitiveEntry(item) && isRevealed,
                 language,
                 theme,
@@ -982,6 +984,7 @@ const ClipboardItem = ({
                     await previewWindow.emit("compact-preview-update", {
                         id: item.id,
                         privacyEpoch: access.epoch,
+                        expectedHostInstanceId: item.host_instance_id,
                         allowSensitive: isSensitiveEntry(item) && isRevealed,
                         language,
                         theme,
@@ -1107,7 +1110,7 @@ const ClipboardItem = ({
                 const access = beginPrivacyAccess();
                 if (!access || hiddenRef.current) { setOcrText(null); return; }
                 const generation = contentIdentity.current.generation;
-                void invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: ocrItemIdRef.current, expectedEpoch: access.epoch })
+                void invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: ocrItemIdRef.current, expectedHostInstanceId: contentIdentity.current.item.host_instance_id, expectedEpoch: access.epoch })
                     .then(entry => { if (access.isCurrent() && !hiddenRef.current && generation === contentIdentity.current.generation) { setOcrSource(contentIdentity.current.item); setOcrText(entry.ocr_text ?? null); } })
                     .catch(() => { if (generation === contentIdentity.current.generation) setOcrText(null); });
             }
@@ -1132,7 +1135,7 @@ const ClipboardItem = ({
         setOcrSource(item);
         setOcrRunning(true);
         setOcrStatus("processing");
-        invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedPrivacyEpoch: access.epoch })
+        invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedHostInstanceId: item.host_instance_id, expectedPrivacyEpoch: access.epoch })
             .then((result: unknown) => {
                 if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 const res = result as { text: string; status: string };
@@ -1147,7 +1150,7 @@ const ClipboardItem = ({
                 console.error("OCR failed:", msg);
             })
             .finally(() => setOcrRunning(false));
-    }, [item.id, item.content_type, ocrRunning, isSensitiveHidden, onTransformItemError, t]);
+    }, [item.id, item.host_instance_id, item.content_type, ocrRunning, isSensitiveHidden, onTransformItemError, t]);
 
     const handleTransform = useCallback((kind: string) => {
         const access = beginPrivacyAccess();
@@ -1165,6 +1168,7 @@ const ClipboardItem = ({
                 moveToTop: false,
                 pasteImageAsBase64: false,
                 expectedPrivacyEpoch: access.epoch,
+                expectedHostInstanceId: item.host_instance_id,
                 derivedFromId: isSensitiveEntry(item) ? item.id : undefined
             })
                 .then(() => onTransformItemSuccess?.(kind))
@@ -1210,6 +1214,7 @@ const ClipboardItem = ({
                 pasteWithFormat: false,
                 moveToTop: false,
                 pasteImageAsBase64: true,
+                expectedHostInstanceId: item.host_instance_id,
                 expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined
             });
             onTransformItemSuccess?.("image_base64");
@@ -1234,6 +1239,7 @@ const ClipboardItem = ({
                 moveToTop: false,
                 pasteImageAsBase64: false,
                 expectedPrivacyEpoch: access.epoch,
+                expectedHostInstanceId: item.host_instance_id,
                 derivedFromId: isSensitiveEntry(item) ? item.id : undefined,
             });
             onTransformItemSuccess?.("paste_ocr");
@@ -1264,6 +1270,7 @@ const ClipboardItem = ({
                 id: item.id, content: "", contentType: item.content_type, paste: false,
                 deleteAfterUse: false, pasteWithFormat: item.content_type === "rich_text", moveToTop: false,
                 pasteImageAsBase64: false,
+                expectedHostInstanceId: item.host_instance_id,
                 expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined,
             });
         } catch (err) {
@@ -1301,9 +1308,9 @@ const ClipboardItem = ({
     }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin, handleShare, handleImageBase64Copy]);
     const handlePrivacyFeedback = useCallback(async (action: PrivacyFeedbackAction) => {
         const access = beginPrivacyAccess();
-        if (!access || item.id <= 0) return;
+        if (!access || item.id === 0) return;
         try {
-            const decision = await invokePrivacyBound<{ reason: string }>("get_privacy_decision", { id: item.id, expectedEpoch: access.epoch });
+            const decision = await invokePrivacyBound<{ reason: string }>("get_privacy_decision", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch });
             const hint = decision.reason === "scan_incomplete" ? t("privacy_scan_incomplete")
                 : decision.reason === "suspected_sensitive" ? t("privacy_scan_suspected") : "";
             const prompt = t(action === "not_sensitive" ? "privacy_feedback_unprotect_confirm" : "privacy_feedback_confirm");
@@ -1311,7 +1318,7 @@ const ClipboardItem = ({
             if (!confirmed) return;
             await refreshPrivacyState();
             if (getPrivacyViewState().phase !== "ready" || getPrivacyViewState().snapshot?.privacy_epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
-            await submitPrivacyFeedback(item.id, action);
+            await submitPrivacyFeedback(item.id, action, item.host_instance_id);
             onTransformItemSuccess?.("privacy_feedback");
         } catch {
             onTransformItemError?.("privacy_feedback", t("privacy_action_failed"));

@@ -1,5 +1,6 @@
 export interface ClipboardEntry {
   id: number;
+  host_instance_id?: string;
   content_type: string;
   content: string;
   html_content?: string;

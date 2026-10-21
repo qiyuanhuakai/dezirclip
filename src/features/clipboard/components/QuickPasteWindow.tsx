@@ -13,6 +13,7 @@ import {
 import type { ClipboardEntry } from "../../../shared/types";
 import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
 import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { entryInstanceArgs } from "../../../shared/lib/historyIdentity";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBanner";
 import { privacyStatusZh } from "../../../locales/zh";
@@ -104,18 +105,18 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       setActiveId((current) => selectionAfterUpdate(current, wasPresent, incoming));
     };
     const captured = createCapturedEntryReader(
-      (id) => invokePrivacyBound<ClipboardEntry>("get_captured_entry_summary", { id }),
+      (id, hostInstanceId) => invokePrivacyBound<ClipboardEntry>("get_captured_entry_summary", { id, ...entryInstanceArgs(hostInstanceId) }),
       applyUpdated,
       fetchRecent,
     );
-    const unlistenCaptured = listen<{ id: number }>("clipboard-captured", (event) => {
+    const unlistenCaptured = listen<{ id: number; host_instance_id?: string }>("clipboard-captured", (event) => {
       if (disposed) return;
       refreshReader.invalidate();
-      captured.capture(event.payload.id);
+      captured.capture(event.payload.id, event.payload.host_instance_id);
     });
-    const unlistenUpdated = listen<{ id: number }>("clipboard-updated", (event) => {
+    const unlistenUpdated = listen<{ id: number; host_instance_id?: string }>("clipboard-updated", (event) => {
       if (disposed) return;
-      captured.capture(event.payload.id);
+      captured.capture(event.payload.id, event.payload.host_instance_id);
     });
     const unlistenRemoved = listen<number>("clipboard-removed", (event) => {
       if (disposed) return;
@@ -170,7 +171,9 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
 
   const handlePaste = useCallback(async (entryId: number) => {
     try {
-      await invoke("paste_quick_paste_selection", { entryId });
+      const selected = entriesRef.current.find(entry => entry.id === entryId);
+      if (!selected) return;
+      await invoke("paste_quick_paste_selection", { entryId, ...entryInstanceArgs(selected.host_instance_id) });
       await invoke("hide_quick_paste");
     } catch {
       // paste failed — window stays open

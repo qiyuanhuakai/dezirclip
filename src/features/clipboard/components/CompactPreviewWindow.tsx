@@ -36,7 +36,7 @@ type PreviewPayload = {
     clipboardItemFontSize?: number;
     clipboardTagFontSize?: number;
 };
-type PreviewRequest = Omit<PreviewPayload, "contentType" | "content" | "preview" | "htmlContent" | "sourceApp" | "timestamp"> & { id: number; allowSensitive?: boolean };
+type PreviewRequest = Omit<PreviewPayload, "contentType" | "content" | "preview" | "htmlContent" | "sourceApp" | "timestamp"> & { id: number; allowSensitive?: boolean; expectedHostInstanceId?: string };
 
 import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
@@ -177,7 +177,7 @@ const CompactPreviewWindow = () => {
                 const access = beginPrivacyAccess();
                 if (!access || access.epoch !== request.privacyEpoch || disposed) return;
                 const entry = await invokePrivacyBound<ClipboardEntry>(request.allowSensitive === true ? "get_privacy_entry" : "get_history_resource_preview",
-                    { id: request.id, expectedEpoch: request.privacyEpoch, maxDimension: 560 });
+                    { id: request.id, expectedHostInstanceId: request.expectedHostInstanceId, expectedEpoch: request.privacyEpoch, maxDimension: 560 });
                 if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
                 const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
                     protectedContent: isSensitiveEntry(entry),

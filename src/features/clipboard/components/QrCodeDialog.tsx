@@ -59,6 +59,7 @@ const QrCodeDialog = forwardRef<HTMLDivElement, QrCodeDialogProps>(
           pasteImageAsBase64: false,
           expectedPrivacyEpoch: access.epoch,
           derivedFromId: protectedContent ? entry.id : undefined,
+          expectedHostInstanceId: entry.host_instance_id,
         });
       } catch {
         // clipboard write failure is non-critical

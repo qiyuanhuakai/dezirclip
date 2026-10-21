@@ -49,15 +49,16 @@ export interface ClipboardItemRendererProps {
         pasteWithFormat?: boolean,
         pasteImageAsBase64?: boolean,
         expectedPrivacyEpoch?: number,
-        derivedFromId?: number
+        derivedFromId?: number,
+        hostInstanceId?: string
     ) => Promise<void>;
     setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
     openContent: (item: ClipboardEntry, expectedPrivacyEpoch?: number) => void;
-    togglePin: (event: MouseEvent, id: number, isPinned: boolean) => void;
-    deleteEntry: (event: MouseEvent, id: number) => void;
+    togglePin: (event: MouseEvent, id: number, isPinned: boolean, hostInstanceId?: string) => void;
+    deleteEntry: (event: MouseEvent, id: number, hostInstanceId?: string) => void;
     setEditingTagsId: Dispatch<SetStateAction<number | null>>;
     setTagInput: Dispatch<SetStateAction<string>>;
-    handleUpdateTags: (id: number, tags: string[]) => void;
+    handleUpdateTags: (id: number, tags: string[], hostInstanceId?: string) => void;
     onQRCode: (item: ClipboardEntry) => void;
     onTransformError: (item: ClipboardEntry, kind: string, message: string) => void;
     onTransformSuccess: (item: ClipboardEntry, kind: string) => void;
@@ -120,17 +121,17 @@ const ClipboardItemRenderer = ({
     const loadFullItem = useCallback(() => {
         const requestedItem = currentItem.current;
         const generation = detailGeneration.current;
-        return getPrivacyEntry(item.id).then(value => {
+        return getPrivacyEntry(item.id, item.host_instance_id).then(value => {
             if (!mounted.current || detailGeneration.current !== generation || currentItem.current !== requestedItem) throw new Error("PrivacyReadSuperseded");
             return value;
         });
-    }, [item.id]);
+    }, [item.id, item.host_instance_id]);
     useEffect(() => {
         let disposed = false;
         setResourcePreview(null);
         const access = beginPrivacyAccess();
         if (access && !sensitive && !compactMode && item.content_type === "rich_text" && !item.html_content) {
-            void invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id: item.id, expectedEpoch: access.epoch, maxDimension: 480 })
+            void invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, maxDimension: 480 })
                 .then(value => { if (!disposed && access.isCurrent()) setResourcePreview(value); }).catch(() => undefined);
         }
         return () => { disposed = true; };
@@ -151,7 +152,7 @@ const ClipboardItemRenderer = ({
             if (!access || (sensitive && (!isRevealed || !detail))) {
                 onTransformError(item, "privacy_read", t("privacy_reveal_first")); return;
             }
-            copyToClipboard(itemId, itemContent, itemContentType, withFormat, pasteImageAsBase64, sensitive ? access.epoch : undefined);
+            copyToClipboard(itemId, itemContent, itemContentType, withFormat, pasteImageAsBase64, sensitive ? access.epoch : undefined, undefined, item.host_instance_id);
         },
         [copyToClipboard, itemId, itemContent, itemContentType, sensitive, isRevealed, detail, item, onTransformError, t]
     );
@@ -194,16 +195,16 @@ const ClipboardItemRenderer = ({
 
     const onTogglePin = useCallback(
         (e: MouseEvent) => {
-            togglePin(e, itemId, itemIsPinned);
+            togglePin(e, itemId, itemIsPinned, item.host_instance_id);
         },
-        [togglePin, itemId, itemIsPinned]
+        [togglePin, itemId, itemIsPinned, item.host_instance_id]
     );
 
     const onDelete = useCallback(
         (e: MouseEvent) => {
-            deleteEntry(e, itemId);
+            deleteEntry(e, itemId, item.host_instance_id);
         },
-        [deleteEntry, itemId]
+        [deleteEntry, itemId, item.host_instance_id]
     );
 
     const onToggleTagEditor = useCallback(
@@ -222,17 +223,17 @@ const ClipboardItemRenderer = ({
     const onTagAdd = useCallback(() => {
         const newTag = tagInput.trim();
         if (newTag && !itemTags?.includes(newTag)) {
-            handleUpdateTags(itemId, [...(itemTags || []), newTag]);
+            handleUpdateTags(itemId, [...(itemTags || []), newTag], item.host_instance_id);
         }
         setTagInput("");
         setEditingTagsId(null);
-    }, [tagInput, itemTags, handleUpdateTags, setTagInput, setEditingTagsId, itemId]);
+    }, [tagInput, itemTags, handleUpdateTags, setTagInput, setEditingTagsId, itemId, item.host_instance_id]);
 
     const onTagDelete = useCallback(
         (tag: string) => {
-            handleUpdateTags(itemId, itemTags ? itemTags.filter((t) => t !== tag) : []);
+            handleUpdateTags(itemId, itemTags ? itemTags.filter((t) => t !== tag) : [], item.host_instance_id);
         },
-        [handleUpdateTags, itemId, itemTags]
+        [handleUpdateTags, itemId, itemTags, item.host_instance_id]
     );
 
     const onQRCodeForItem = useCallback(() => {

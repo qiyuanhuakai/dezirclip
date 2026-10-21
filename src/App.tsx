@@ -675,7 +675,7 @@ const App = () => {
       pushToast(t("privacy_reveal_first"));
       return Promise.resolve();
     }
-    return copyToClipboard(id, content, contentType, pasteWithFormat, pasteImageAsBase64, epoch ?? undefined);
+    return copyToClipboard(id, content, contentType, pasteWithFormat, pasteImageAsBase64, epoch ?? undefined, undefined, entry.host_instance_id);
   }, [filteredHistory, revealedIds, copyToClipboard, pushToast, t]);
 
   useKeyboardNavigation({
