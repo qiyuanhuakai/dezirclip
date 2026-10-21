@@ -2,9 +2,18 @@ use dzc_protocol::wire::{Event, EventData, EventKind, EventsResult, RuntimeState
 use std::{collections::VecDeque, sync::{Condvar, Mutex}, time::Duration};
 
 pub(crate) struct Events { state: Mutex<EventState>, changed: Condvar }
-struct EventState { sequence: u64, recent: VecDeque<Event> }
+struct EventState { sequence: u64, recent: VecDeque<Event>, interruption: u64,
+    #[cfg(test)] waiters: usize,
+}
 impl Events {
-    pub fn new() -> Self { Self { state: Mutex::new(EventState { sequence: 0, recent: VecDeque::new() }), changed: Condvar::new() } }
+    pub fn new() -> Self { Self { state: Mutex::new(EventState { sequence: 0, recent: VecDeque::new(), interruption: 0,
+        #[cfg(test)] waiters: 0,
+    }), changed: Condvar::new() } }
+    #[cfg(test)]
+    pub fn waiters(&self) -> usize { self.state.lock().unwrap().waiters }
+    pub fn interrupt(&self) {
+        if let Ok(mut state) = self.state.lock() { state.interruption = state.interruption.wrapping_add(1); self.changed.notify_all(); }
+    }
     pub fn sequence(&self) -> Result<u64, ()> { self.state.lock().map(|state| state.sequence).map_err(|_| ()) }
     pub fn push(&self, kind: EventKind, mut snapshot: RuntimeState, data: EventData) -> Result<(), ()> {
         let mut state = self.state.lock().map_err(|_| ())?;
@@ -18,7 +27,10 @@ impl Events {
     pub fn after(&self, after: u64, wait: Duration, mut snapshot: RuntimeState) -> Result<EventsResult, ()> {
         let mut state = self.state.lock().map_err(|_| ())?;
         if state.sequence == after && !wait.is_zero() {
-            state = self.changed.wait_timeout_while(state, wait, |state| state.sequence == after).map_err(|_| ())?.0;
+            let interruption = state.interruption;
+            #[cfg(test)] { state.waiters += 1; }
+            state = self.changed.wait_timeout_while(state, wait, |state| state.sequence == after && state.interruption == interruption).map_err(|_| ())?.0;
+            #[cfg(test)] { state.waiters -= 1; }
         }
         let first = state.recent.front().map(|event| event.state.event_sequence).unwrap_or(1);
         let resync_required = after > state.sequence || after.saturating_add(1) < first;
