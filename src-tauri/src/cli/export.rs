@@ -417,8 +417,14 @@ mod tests {
                         &repo,
                     )
                     .unwrap_err();
-                    assert!(error.contains("could not be decrypted"), "{field}: {error}");
+                    if encrypted {
+                        assert!(error.contains("could not be decrypted"), "{field}: {error}");
+                    } else {
+                        assert_eq!(error, "export: SensitiveBackupPassphraseRequired");
+                    }
                     assert!(!error.contains(&cipher));
+                    assert!(!error.contains("foreign-key private payload"));
+                    assert!(!error.contains("native private payload"));
                     assert_eq!(std::fs::read(path).unwrap(), b"previous usable backup");
                 }
                 let filtered = repo
