@@ -73,6 +73,8 @@ impl Host {
         Ok(())
     }
     pub fn grants(&self) -> &GrantAuthority { &self.grants }
+    #[cfg(test)]
+    pub(crate) fn waiting_subscriptions(&self) -> usize { self.events.waiters() }
     pub fn is_stopping(&self) -> bool { self.stop_requested.load(Ordering::Acquire) }
     pub fn capture_stopped(&self) -> bool { self.stopped.load(Ordering::Acquire) }
     fn capture_active(&self) -> bool {
@@ -85,6 +87,7 @@ impl Host {
     }
     fn stop(&self) -> Result<(), WireErrorCode> {
         self.stop_requested.store(true, Ordering::Release);
+        self.events.interrupt();
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.stop_capture()?; }
         self.actions.stop_helpers()?;
         self.stopped.store(true, Ordering::Release);
@@ -140,11 +143,28 @@ impl Host {
     }
     pub fn dispatch(&self, session: &Session, request: Request) -> Response {
         let id = request.request_id.clone();
-        let Ok(_serial) = self.requests.lock() else { return Response::failure(id, WireErrorCode::Unavailable); };
         if serde_json::to_value(&request).ok().and_then(|value| wire::validate("Request", &value).ok()).is_none() {
             return Response::failure(id, WireErrorCode::InvalidRequest);
         }
+        // Waiting for events owns neither the mutation lock nor the server's
+        // mutation permit. Revalidate a delegated grant after the wait as well.
+        if request.method == Method::EventsSubscribe {
+            return match self.subscribe(session, request.params) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) };
+        }
+        let Ok(_serial) = self.requests.lock() else { return Response::failure(id, WireErrorCode::Unavailable); };
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
+    }
+    fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
+        if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+        if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        let request: SubscribeParams = params(parameters)?;
+        let mut events = self.events.after(request.after_sequence, Duration::from_millis(u64::from(request.wait_ms.unwrap_or(0))), self.snapshot()?).map_err(unavailable)?;
+        if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+        if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        let latest = self.snapshot()?;
+        events.state.history_revision = latest.history_revision;
+        events.state.privacy_epoch = latest.privacy_epoch;
+        result("EventsResult", events)
     }
     fn route(&self, session: &Session, request: Request) -> Result<Value, WireErrorCode> {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
@@ -176,6 +196,7 @@ impl Host {
                 session.require(Permission::ServiceManage)?;
                 let request: GrantRevokeParams = params(request.params)?;
                 self.grants.revoke_delegated(&request.grant)?;
+                self.events.interrupt();
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::PrivacySet => {
@@ -241,14 +262,7 @@ impl Host {
                 if request.method == Method::SurfaceActivate { self.actions.activate(action.entry_id)?; } else { self.actions.dismiss()?; }
                 result("OperationResult", OperationResult { performed: true })
             }
-            Method::EventsSubscribe => {
-                let request: SubscribeParams = params(request.params)?;
-                let mut events = self.events.after(request.after_sequence, Duration::from_millis(u64::from(request.wait_ms.unwrap_or(0))), self.snapshot()?).map_err(unavailable)?;
-                let latest = self.snapshot()?;
-                events.state.history_revision = latest.history_revision;
-                events.state.privacy_epoch = latest.privacy_epoch;
-                result("EventsResult", events)
-            }
+            Method::EventsSubscribe => Err(WireErrorCode::InvalidRequest),
             Method::ServiceStop | Method::ServiceHandoff => {
                 session.require(Permission::ServiceManage)?;
                 if request.method == Method::ServiceHandoff { dzc_platform::ipc::ProcessExit::ensure_supported().map_err(unavailable)?; }
