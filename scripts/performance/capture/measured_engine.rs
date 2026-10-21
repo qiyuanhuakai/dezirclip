@@ -25,6 +25,14 @@ impl<T: CaptureStore> TimedStore<T> {
     }
 }
 impl<T: CaptureStore> CaptureStore for TimedStore<T> {
+    #[cfg(feature = "privacy-policy")]
+    fn privacy_source(&self, source: &CaptureSource) -> Result<app_backend::api::PrivacyDecision, CaptureFailure> {
+        self.timed("privacy_source_ms", || self.actual.privacy_source(source))
+    }
+    #[cfg(feature = "privacy-policy")]
+    fn assess_privacy_entry(&self, entry: &ClipboardEntry) -> Result<Option<app_backend::api::PrivacyDecisionReport>, CaptureFailure> {
+        self.timed("privacy_assess_ms", || self.actual.assess_privacy_entry(entry))
+    }
     #[cfg(feature = "privacy-runtime")]
     fn capture_ticket(&self, now_ms: i64) -> Result<Option<app_backend::api::CaptureTicket>, CaptureFailure> {
         self.timed("privacy_ticket_ms", || self.actual.capture_ticket(now_ms))
@@ -92,6 +100,18 @@ pub fn capture(
 ) -> (i64, BTreeMap<String, f64>) {
     let session = Mutex::new(VecDeque::new());
     let sensitive = app::database::has_sensitive_tag(&input.tags);
+    #[cfg(feature = "privacy-policy")]
+    {
+        let conn = db.conn.lock().unwrap();
+        for (key, value) in [
+            ("app.privacy_protection", if sensitive && input.id == 0 { "true" } else { "false" }),
+            ("app.privacy_protection_custom_rules", if sensitive { "benchmarker" } else { "" }),
+        ] {
+            conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,?2)", [key, value]).unwrap();
+            let actual: String = conn.query_row("SELECT value FROM settings WHERE key=?1", [key], |row| row.get(0)).unwrap();
+            assert_eq!(actual, value);
+        }
+    }
     let context = CaptureContext {
         source: CaptureSource {
             app_name: input.source_app.clone(),
@@ -185,6 +205,11 @@ mod tests {
         assert!(times["commit_ms"] > 0.0);
         assert!(times["privacy_ticket_ms"] >= 0.0);
         assert!(times["privacy_check_ms"] >= 0.0);
+        #[cfg(feature = "privacy-policy")]
+        {
+            assert!(times["privacy_source_ms"] >= 0.0);
+            assert!(times["privacy_assess_ms"] >= 0.0);
+        }
         assert!(times["store_total_ms"] <= times["engine_total_ms"]);
         assert_eq!(times["engine_non_store_ms"], times["engine_total_ms"] - times["store_total_ms"]);
         let postconditions = verify(&db, id, &input, 1000, sensitive);
@@ -240,6 +265,11 @@ mod tests {
         assert_eq!(session.lock().unwrap().len(), 1);
         let times = store.times.into_inner();
         assert!(times["privacy_guard_ms"] >= 0.0);
+        #[cfg(feature = "privacy-policy")]
+        {
+            assert!(times["privacy_source_ms"] >= 0.0);
+            assert!(times["privacy_assess_ms"] >= 0.0);
+        }
         assert!(!times.contains_key("commit_ms"));
         let storage: f64 = times.values().sum();
         assert!(storage <= elapsed, "session store timers overlap: {times:?}; engine={elapsed}");

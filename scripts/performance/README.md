@@ -28,7 +28,11 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 
 `capture/measured_engine.rs` 经共享既有仓库与缓存的 `history_service()` 兼容桥取得 `HistoryService`，再调用公开的 `HistoryService::capture_store` 工厂。包装按泛型 `CaptureStore` 委托 `prepare/find_duplicate/contains/contains_image_hash/commit`，不引用私有 store 类型；各方法前后读取 Instant 并累计时长。EventSink 只计数，不复制正文。没有插入额外事务、查询、SQL 模型或加密实现。`engine_total_ms` 包含这些少量计时记账及事件计数开销，`engine_non_store_ms` 也包含包装开销，不把它全部归因于业务引擎。六个固定文本/HTML 场景不构成图片查重性能证据。
 
-Core 的 `[package.metadata.dzc] capture-contract=2` 声明读前隐私 ticket 契约。测量器仅为该实际源码启用临时 `privacy-runtime` 分支，完整委托 `capture_ticket/check_capture/with_capture_guard`，并在 payload frame 构造前取得真实 SQLite store ticket。计时从取票之前开始；新旧 Engine 模板均包含 payload clone，授权方法另列时长且计入总开销。`privacy_guard_ms` 用 guard 总 Duration 减去其全部 publish 回调的累计 Duration，只记录授权及 guard 自身开销；publish 中的 `commit_ms` 独立记录，不能重复计入 `store_total_ms`。记账不跨 publish 持有 RefCell 借用；若回调时间超出外层或 store 合计超出 Engine 总时长则明确失败，不把负值截成零。内联测试用确定性时钟验证分区，Windows contract2 功能测试另以真实 SQLite/DPAPI 检查普通与敏感捕获。早期契约缺省为 1，未知契约明确拒绝，不能用 fake store 默认方法或计时后补票绕过生产权限。共同 deduplicate+commit 及转换门槛保持原定义，构建凭据记录两端实际契约和 features。
+Core 的 `[package.metadata.dzc] capture-contract=2` 及更高支持版本声明读前隐私 ticket 契约。测量器仅为该实际源码启用临时 `privacy-runtime` 分支，完整委托 `capture_ticket/check_capture/with_capture_guard`，并在 payload frame 构造前取得真实 SQLite store ticket。计时从取票之前开始；新旧 Engine 模板均包含 payload clone，授权方法另列时长且计入总开销。`privacy_guard_ms` 用 guard 总 Duration 减去其全部 publish 回调的累计 Duration，只记录授权及 guard 自身开销；publish 中的 `commit_ms` 独立记录，不能重复计入 `store_total_ms`。记账不跨 publish 持有 RefCell 借用；若回调时间超出外层或 store 合计超出 Engine 总时长则明确失败，不把负值截成零。内联测试用确定性时钟验证分区，Windows contract2 功能测试另以真实 SQLite/DPAPI 检查普通与敏感捕获。早期契约缺省为 1，未知契约明确拒绝，不能用 fake store 默认方法或计时后补票绕过生产权限。共同 deduplicate+commit 及转换门槛保持原定义，构建凭据记录两端实际契约和 features。
+
+`capture-contract=3` 另显式启用 `privacy-policy`：完整委托生产 store 的 `privacy_source` 与 `assess_privacy_entry`，分别记录来源规则与内容策略耗时，不使用 trait 默认分支跳过新策略。实际普通、敏感及 RAM 会话捕获回归均要求这些分区存在，并保留原 ticket、功能后置条件和非重叠总量断言。仅接受整数契约 1、2、3；未知后续版本、布尔值或字符串版本在构建前拒绝。策略耗时计入 engine/store 总量；凭据扫描的 5ms 预算不包含精确内容完整性散列，二者不混称同一预算。
+
+contract3 的合成测量库在计时及取票前写入并读回 `app.privacy_protection` 和 `app.privacy_protection_custom_rules`，与旧 Engine 的场景配置一致；生产 store 因此读取真实数据库策略，测量器不替换判定结果。此准备只作用于独立 fixture 数据库，不计入捕获耗时。
 
 六个场景为普通新捕获、普通重复、富文本新捕获、敏感新捕获、继承手工保护的敏感重复、实际 `encrypt_entry_with_conn` 转换。每次使用新复制的数据库。功能断言包括正文与 HTML 原样解密、预览、敏感字段密文、逻辑 FTS 可见性、重复 ID、记录数，以及实际 Engine 只发一次 Stored 元数据事件。转换场景直接比较同一生产方法的入口至提交，不把旧版异步队列或 tag 提前返回当作加密完成。
 
