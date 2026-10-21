@@ -32,7 +32,7 @@ Core 的 `[package.metadata.dzc] capture-contract=2` 及更高支持版本声明
 
 `capture-contract=3` 另显式启用 `privacy-policy`：完整委托生产 store 的 `privacy_source` 与 `assess_privacy_entry`，分别记录来源规则与内容策略耗时，不使用 trait 默认分支跳过新策略。实际普通、敏感及 RAM 会话捕获回归均要求这些分区存在，并保留原 ticket、功能后置条件和非重叠总量断言。仅接受整数契约 1、2、3；未知后续版本、布尔值或字符串版本在构建前拒绝。策略耗时计入 engine/store 总量；凭据扫描的 5ms 预算不包含精确内容完整性散列，二者不混称同一预算。
 
-contract3 的合成测量库在计时及取票前写入并读回 `app.privacy_protection` 和 `app.privacy_protection_custom_rules`，与旧 Engine 的场景配置一致；生产 store 因此读取真实数据库策略，测量器不替换判定结果。此准备只作用于独立 fixture 数据库，不计入捕获耗时。
+contract3 的合成测量库在计时及取票前写入并读回 `app.privacy_protection`、`app.privacy_protection_custom_rules` 和 `app.privacy_protection_kinds`，与旧 Engine 的场景配置一致。内置种类为空，避免新 Core 的缺省种类为相同场景额外扫描；敏感场景仍由相同自定义规则保护。生产 store 因此读取真实数据库策略，测量器不替换判定结果。此准备只作用于独立 fixture 数据库，不计入捕获耗时。
 
 六个场景为普通新捕获、普通重复、富文本新捕获、敏感新捕获、继承手工保护的敏感重复、实际 `encrypt_entry_with_conn` 转换。每次使用新复制的数据库。功能断言包括正文与 HTML 原样解密、预览、敏感字段密文、逻辑 FTS 可见性、重复 ID、记录数，以及实际 Engine 只发一次 Stored 元数据事件。转换场景直接比较同一生产方法的入口至提交，不把旧版异步队列或 tag 提前返回当作加密完成。
 
