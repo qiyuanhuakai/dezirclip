@@ -15,6 +15,7 @@ import time
 import zlib
 
 MARKER = "private synthetic clipboard only\n"
+PRIVATE_RUNTIME_PARENT = Path("/tmp")
 TESTS = [
     "wayland::tests::isolated_compositor_clipboard_lifecycle",
     "wayland::tests::isolated_uri_offer_falls_back_to_text_unless_local_files_exist",
@@ -69,17 +70,25 @@ def checked_file(value):
 
 def private_libraries(value):
     prefix = Path(value).resolve(strict=True)
-    if (prefix.parent != Path("/tmp") or not prefix.name.startswith("dezirclip-")
+    if (prefix.parent != PRIVATE_RUNTIME_PARENT or not prefix.name.startswith("dezirclip-")
             or not (prefix / "lib").is_dir()
+            or (prefix / "dezirclip-isolated-compositor-prefix").is_symlink()
             or (prefix / "dezirclip-isolated-compositor-prefix").read_text() != MARKER):
         raise ValueError("only a marked private /tmp/dezirclip-* compositor prefix may be mounted")
     files = {}
     for path in sorted(prefix.rglob("*")):
+        # rglob does not descend through directory symlinks. Check links before
+        # filtering regular files so neither escape nor hidden input is skipped.
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(prefix):
+            raise ValueError("private runtime symlink escapes its prefix")
+        if path.is_symlink() and resolved.is_dir():
+            raise ValueError("private runtime directory symlinks are not supported")
         if path.is_file():
-            resolved = path.resolve(strict=True)
-            if not resolved.is_relative_to(prefix):
-                raise ValueError("private runtime symlink escapes its prefix")
-            files["runtime/" + str(path.relative_to(prefix))] = {"path": str(resolved), "sha256": digest(resolved)}
+            files["runtime/" + str(path.relative_to(prefix))] = {
+                "path": str(path), "resolved_path": str(resolved), "sha256": digest(resolved),
+                "symlink_target": os.readlink(path) if path.is_symlink() else None,
+            }
     return prefix, files
 
 
@@ -93,6 +102,51 @@ def stop_owned(process):
             process.wait(timeout=5)
 
 
+def run_disconnect(root, runtime, command, compositor, env, cases, timeout=15, ready_timeout=15):
+    """Keep the disconnect attempt and partial streams for every terminal path."""
+    root, runtime = Path(root), Path(runtime)
+    record = {"label": "disconnect", "command": command, "timeout_seconds": timeout,
+              "ready_timeout_seconds": ready_timeout, "phase": "start"}
+    process = None
+    with (root / "disconnect.stdout.log").open("wb") as out, (root / "disconnect.stderr.log").open("wb") as err:
+        try:
+            process = subprocess.Popen(command, env=env, stdout=out, stderr=err)
+            record.update(pid=process.pid, phase="readiness")
+            deadline = time.monotonic() + ready_timeout
+            while not (runtime / "disconnect-ready").is_file():
+                if process.poll() is not None:
+                    raise RuntimeError("disconnect test exited without private owner readiness")
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(command, ready_timeout)
+                time.sleep(.01)
+            record["phase"] = "compositor_stop"
+            stop_owned(compositor)
+            record["phase"] = "disconnect_wait"
+            code = process.wait(timeout=timeout)
+            record.update(status="completed", exit_code=code)
+            if code != 0:
+                raise RuntimeError("disconnect cleanup failed")
+        except subprocess.TimeoutExpired as error:
+            record.update(status="timeout", exit_code=None, error_type=type(error).__name__,
+                          expired_timeout_seconds=error.timeout)
+            raise
+        except BaseException as error:
+            record.update(status="failed", exit_code=process.poll() if process else None,
+                          error_type=type(error).__name__, error=str(error))
+            raise
+        finally:
+            try:
+                stop_owned(process)
+            except BaseException as error:
+                record.update(cleanup_error=repr(error), status="failed")
+                raise
+            finally:
+                record["final_exit_code"] = process.poll() if process else None
+                # Streams already write directly to disk; flush before the case receipt.
+                out.flush()
+                err.flush()
+                save(root / "disconnect.result.json", record)
+                cases.append(record)
 def inside():
     root = Path("/fixture")
     runtime = root / "runtime"
@@ -174,20 +228,8 @@ def inside():
             test("negative-" + label, NEGATIVE, negative_env)
 
         disconnect_env = dict(env, DEZIRCLIP_WAYLAND_DISCONNECT_TEST="1")
-        with (root / "disconnect.stdout.log").open("wb") as out, (root / "disconnect.stderr.log").open("wb") as err:
-            process = subprocess.Popen(["/fixture/platform-tests", "--exact", DISCONNECT, "--nocapture"], env=disconnect_env, stdout=out, stderr=err)
-            try:
-                deadline = time.monotonic() + 15
-                while not (runtime / "disconnect-ready").is_file():
-                    if process.poll() is not None or time.monotonic() >= deadline:
-                        raise RuntimeError("disconnect test did not confirm private owner readiness")
-                    time.sleep(.01)
-                stop_owned(compositor)
-                code = process.wait(timeout=15)
-                report["cases"].append({"label": "disconnect", "exit_code": code})
-                assert code == 0, "disconnect cleanup failed"
-            finally:
-                stop_owned(process)
+        run_disconnect(root, runtime, ["/fixture/platform-tests", "--exact", DISCONNECT, "--nocapture"],
+                       compositor, disconnect_env, report["cases"])
 
         # Controlled protocol server, generated from official XML. These are not
         # claims about real compositor permission UI or its policy defaults.
@@ -275,6 +317,9 @@ def main():
     finally:
         after = {}
         for name, row in inputs.items():
+            # Validate the runtime tree again before following any runtime path.
+            if name.startswith("runtime/"):
+                continue
             try:
                 after[name] = {"path": row["path"], "sha256": digest(row["path"])}
             except OSError as error:
