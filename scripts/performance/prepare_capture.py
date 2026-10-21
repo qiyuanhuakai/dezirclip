@@ -18,6 +18,7 @@ import tomllib
 import zipfile
 
 TOOL_ROOT = Path(__file__).resolve().parent
+CAPTURE_SOURCES = ("main.rs", "measured_engine.rs", "exclusive_guard.rs")
 
 
 def command(arguments, cwd=None):
@@ -278,7 +279,7 @@ def prepare(args):
     output.mkdir(parents=True, exist_ok=False)
     source = output / "source"
     source.mkdir()
-    for name in ["main.rs", "measured_engine.rs"]:
+    for name in CAPTURE_SOURCES:
         shutil.copyfile(TOOL_ROOT / "capture" / name, source / name)
     baseline_revision = command(["git", "rev-parse", args.baseline_revision], repository)
     baseline, baseline_proof = archive_baseline(repository, baseline_revision, output)
@@ -306,7 +307,7 @@ def prepare(args):
              "build_environment": {key: value for key, value in os.environ.items()
                                    if key in {"RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_TARGET", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER"}
                                    or key.startswith("CARGO_PROFILE_")},
-             "template_sha256": {name: sha256(source / name) for name in ["main.rs", "measured_engine.rs"]},
+             "template_sha256": {name: sha256(source / name) for name in CAPTURE_SOURCES},
              "evidence": copies, "adapters": {}}
     target = args.target_dir.resolve() if args.target_dir else output / "target"
     variants = [("legacy", *baseline_layout(baseline)),

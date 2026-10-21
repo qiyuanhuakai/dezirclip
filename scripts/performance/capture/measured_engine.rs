@@ -6,6 +6,12 @@ use app_backend::capture::*;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 
+#[cfg(feature = "privacy-runtime")]
+#[path = "exclusive_guard.rs"]
+mod exclusive_guard;
+#[cfg(feature = "privacy-runtime")]
+use exclusive_guard::measure_guard_excluding_publish;
+
 struct TimedStore<T> {
     actual: T,
     times: RefCell<BTreeMap<String, f64>>,
@@ -29,7 +35,15 @@ impl<T: CaptureStore> CaptureStore for TimedStore<T> {
     }
     #[cfg(feature = "privacy-runtime")]
     fn with_capture_guard(&self, ticket: Option<&app_backend::api::CaptureTicket>, now_ms: i64, publish: &mut dyn FnMut()) -> Result<(), CaptureFailure> {
-        self.timed("privacy_guard_ms", || self.actual.with_capture_guard(ticket, now_ms, publish))
+        let clock = Instant::now();
+        let (result, exclusive) = measure_guard_excluding_publish(
+            || clock.elapsed(),
+            |publish| self.actual.with_capture_guard(ticket, now_ms, publish),
+            publish,
+        );
+        *self.times.borrow_mut().entry("privacy_guard_ms".into()).or_default() +=
+            exclusive.as_secs_f64() * 1000.0;
+        result
     }
     fn prepare(&self, entry: ClipboardEntry) -> Result<PreparedCapture, CaptureFailure> {
         self.timed("prepare_ms", || self.actual.prepare(entry))
@@ -141,6 +155,7 @@ pub fn capture(
     assert_eq!(events.other, 0);
     let mut times = store.times.into_inner();
     let storage: f64 = times.values().sum();
+    assert!(storage <= elapsed, "store timers must not overlap: {times:?}; engine={elapsed}");
     times.insert("engine_total_ms".into(), elapsed);
     times.insert("store_total_ms".into(), storage);
     times.insert(
@@ -150,4 +165,93 @@ pub fn capture(
     );
     times.insert("engine_non_store_ms".into(), elapsed - storage);
     (stored.entry.id, times)
+}
+
+#[cfg(all(test, feature = "privacy-runtime", target_os = "windows", feature = "native-provider"))]
+mod tests {
+    use super::*;
+
+    fn actual_contract2_partition(sensitive: bool) {
+        dzc_platform::install_default_key_provider();
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "dzc-capture-timer-contract2-{}-{nonce}-{sensitive}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        let database = directory.join("clipboard.db");
+        seed(&database, 1000);
+        let db = state(&database);
+        let input = entry("benchmarker synthetic timer partition 中文🙂", sensitive, sensitive);
+        let (id, times) = capture(&db, &input, &directory);
+        assert!(times["commit_ms"] > 0.0);
+        assert!(times["privacy_ticket_ms"] >= 0.0);
+        assert!(times["privacy_check_ms"] >= 0.0);
+        assert!(times["store_total_ms"] <= times["engine_total_ms"]);
+        assert_eq!(times["engine_non_store_ms"], times["engine_total_ms"] - times["store_total_ms"]);
+        let postconditions = verify(&db, id, &input, 1000, sensitive);
+        eprintln!("contract2-functional-only {}", json!({"sensitive":sensitive,"metrics":times,"postconditions":postconditions}));
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn actual_contract2_ordinary_capture_has_nonoverlapping_timers() {
+        actual_contract2_partition(false);
+    }
+
+    #[test]
+    fn actual_contract2_protected_capture_has_nonoverlapping_timers() {
+        actual_contract2_partition(true);
+    }
+
+    #[test]
+    fn actual_contract2_session_capture_measures_guard_without_a_store_commit() {
+        dzc_platform::install_default_key_provider();
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "dzc-session-timer-contract2-{}-{nonce}", std::process::id()));
+        std::fs::create_dir(&directory).unwrap();
+        let db = state(&directory.join("clipboard.db"));
+        {
+        let history = db.history_service();
+        let store = TimedStore {
+            actual: history.capture_store(&directory),
+            times: RefCell::new(BTreeMap::new()),
+        };
+        let session = Mutex::new(VecDeque::new());
+        let context = CaptureContext {
+            source: CaptureSource { app_name: "synthetic session timer".into(), process_path: None },
+            timestamp: 100_000,
+            settings: CaptureSettings { persistent: false, ..CaptureSettings::default() },
+            session: &session,
+            paused: false,
+            sequential_echo: None,
+        };
+        let start = Instant::now();
+        let ticket = store.capture_ticket(chrono_now_ms()).unwrap().unwrap();
+        let mut events = Events::default();
+        let result = CaptureEngine::capture_frame(&context, CaptureFrame {
+            data: CaptureData::Text("synthetic session timer payload".into()),
+            metadata: CaptureReadMetadata { privacy_ticket: Some(ticket), ..CaptureReadMetadata::default() },
+        }, &store, &mut events);
+        let elapsed = milliseconds(start);
+        let CaptureOutcome::Stored(stored) = result else { panic!("session capture rejected: {result:?}") };
+        assert!(!stored.persistent && stored.entry.id < 0);
+        assert_eq!((events.stored, events.other), (1, 0));
+        assert_eq!(session.lock().unwrap().len(), 1);
+        let times = store.times.into_inner();
+        assert!(times["privacy_guard_ms"] >= 0.0);
+        assert!(!times.contains_key("commit_ms"));
+        let storage: f64 = times.values().sum();
+        assert!(storage <= elapsed, "session store timers overlap: {times:?}; engine={elapsed}");
+        assert_eq!(db.conn.lock().unwrap().query_row("SELECT COUNT(*) FROM clipboard_history", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        eprintln!("contract2-session-functional-only {}", json!({"metrics":times,"engine_total_ms":elapsed,"store_total_ms":storage,"engine_non_store_ms":elapsed-storage,"session_rows":1,"database_rows":0}));
+        }
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn chrono_now_ms() -> i64 {
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+            .unwrap().as_millis().try_into().unwrap()
+    }
 }

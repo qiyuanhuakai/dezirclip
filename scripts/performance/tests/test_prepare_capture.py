@@ -121,6 +121,9 @@ class PreparationTests(unittest.TestCase):
                 return
             PREPARE.prepare(args)
         proof = json.loads((output / "preparation.json").read_text())
+        self.assertEqual(set(proof["template_sha256"]), {"main.rs", "measured_engine.rs", "exclusive_guard.rs"})
+        for name, digest in proof["template_sha256"].items():
+            self.assertEqual(digest, PREPARE.sha256(output / "source" / name))
         self.assertEqual(proof["target"], HOST)
         self.assertEqual(proof["build_environment"]["CARGO_BUILD_TARGET"], cargo_target)
         self.assertTrue(proof["eligible_for_timing"])
