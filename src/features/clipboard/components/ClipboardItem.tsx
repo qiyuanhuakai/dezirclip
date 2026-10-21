@@ -753,11 +753,15 @@ const ClipboardItem = ({
     const [transformKinds, setTransformKinds] = useState<TransformKindDto[]>(
         () => transformKindsCache ?? []
     );
-    const [ocrText, setOcrText] = useState<string | null>(item.ocr_text ?? null);
-    const [ocrStatus, setOcrStatus] = useState<string | null>(item.ocr_status ?? null);
+    const [ocrTextValue, setOcrText] = useState<string | null>(item.ocr_text ?? null);
+    const [ocrStatusValue, setOcrStatus] = useState<string | null>(item.ocr_status ?? null);
+    const [ocrSource, setOcrSource] = useState<ClipboardEntry | null>(item);
+    const ocrText = !isSensitiveHidden && ocrSource === item ? ocrTextValue : null;
+    const ocrStatus = !isSensitiveHidden && ocrSource === item ? ocrStatusValue : null;
     const [ocrTextExpanded, setOcrTextExpanded] = useState(false);
     useEffect(() => subscribePrivacyInvalidation(() => {
         contentIdentity.current.generation += 1;
+        setOcrSource(null);
         setOcrText(null);
         setOcrStatus(null);
         setOcrTextExpanded(false);
@@ -1104,17 +1108,18 @@ const ClipboardItem = ({
                 if (!access || hiddenRef.current) { setOcrText(null); return; }
                 const generation = contentIdentity.current.generation;
                 void invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: ocrItemIdRef.current, expectedEpoch: access.epoch })
-                    .then(entry => { if (access.isCurrent() && !hiddenRef.current && generation === contentIdentity.current.generation) setOcrText(entry.ocr_text ?? null); })
+                    .then(entry => { if (access.isCurrent() && !hiddenRef.current && generation === contentIdentity.current.generation) { setOcrSource(contentIdentity.current.item); setOcrText(entry.ocr_text ?? null); } })
                     .catch(() => { if (generation === contentIdentity.current.generation) setOcrText(null); });
             }
         );
     }, []);
 
     useEffect(() => {
+        setOcrSource(item);
         setOcrText(item.ocr_text ?? null);
         setOcrStatus(item.ocr_status ?? null);
         setOcrTextExpanded(false);
-    }, [item.id, item.ocr_text, item.ocr_status]);
+    }, [item]);
 
     const [ocrRunning, setOcrRunning] = useState(false);
     const shareInFlightRef = useRef(false);
@@ -1124,6 +1129,7 @@ const ClipboardItem = ({
         const access = beginPrivacyAccess();
         if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
         const generation = contentIdentity.current.generation;
+        setOcrSource(item);
         setOcrRunning(true);
         setOcrStatus("processing");
         invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedPrivacyEpoch: access.epoch })
