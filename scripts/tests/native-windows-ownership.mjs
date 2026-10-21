@@ -222,11 +222,15 @@ try {
     });
     await poll("Native repeated capture event", () => evaluate(`window.__dezirclipNativeAcceptance.captured.filter(payload => payload?.id === ${first.id}).length >= 2`));
     const observed = await evaluate("({ captured: window.__dezirclipNativeAcceptance.captured, legacy: window.__dezirclipNativeAcceptance.legacy })");
+    const captureHost = await invoke("get_clipboard_host_status");
+    assert.equal(typeof captureHost?.state?.service_instance_id, "string");
+    assert(captureHost.state.service_instance_id.length > 0);
     assert.equal(await evaluate("window.__dezirclipNativeAcceptance.overflow"), false, "Fixture event evidence overflowed");
     for (const payload of observed.captured) {
       assert(payload && typeof payload === "object" && !Array.isArray(payload));
-      assert.deepEqual(Object.keys(payload).sort(), ["id"], "Capture event broadcast a field beyond its ID");
+      assert.deepEqual(Object.keys(payload).sort(), ["host_instance_id", "id"], "Capture event broadcast a field beyond its owner and ID");
       assert(Number.isSafeInteger(payload.id) && payload.id > 0);
+      assert.equal(payload.host_instance_id, captureHost.state.service_instance_id, "Capture event did not retain its actual Host instance");
     }
     assert(!observed.legacy.some(payload => payload.id === first.id || payload.id === second.id), "Native capture also broadcast a legacy full-entry event");
     evidence.capture = { firstText, secondText, firstId: first.id, secondId: second.id, repeatedId: repeated.id, firstTimestamp: first.timestamp, repeatedTimestamp: repeated.timestamp, ...observed };

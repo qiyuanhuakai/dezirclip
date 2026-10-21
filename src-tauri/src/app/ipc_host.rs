@@ -18,7 +18,14 @@ struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::R
 pub struct DesktopHost(Arc<Inner>);
 pub struct GeneratedUpload {client:Client,id:String}
 impl GeneratedUpload {
-    pub async fn finish(mut self,body:GeneratedBody,source:String,protected:bool)->Result<bool,String> {
+    pub async fn finish(self,body:GeneratedBody,source:String,protected:bool)->Result<bool,String> {
+        self.finish_inner(body,source,protected,None).await
+    }
+    pub async fn finish_copy(self,body:GeneratedBody,paste:bool)->Result<(),String> {
+        if !self.finish_inner(body,"DezirClip Generated".into(),false,Some(paste)).await? {return Err(failed());}
+        Ok(())
+    }
+    async fn finish_inner(mut self,body:GeneratedBody,source:String,protected:bool,paste:Option<bool>)->Result<bool,String> {
         use base64::Engine;
         let bytes=serde_json::to_vec(&body).map_err(|_|failed())?;
         if bytes.len()>32*1024*1024 {return Err("GeneratedBodyTooLarge".into());}
@@ -26,7 +33,7 @@ impl GeneratedUpload {
             let _:OperationResult=self.client.call(Method::DesktopCaptureWrite,CaptureWriteParams {capture_id:self.id.clone(),offset:(index*192*1024) as u32,
                 data_base64:base64::engine::general_purpose::STANDARD.encode(bytes)},"OperationResult").await.map_err(remote_error)?;
         }
-        let result:OperationResult=self.client.call(Method::DesktopCaptureFinish,CaptureFinishParams{capture_id:self.id,source_app:source.chars().take(256).collect(),inherited_protection:protected},"OperationResult").await.map_err(remote_error)?;
+        let result:OperationResult=self.client.call(Method::DesktopCaptureFinish,CaptureFinishParams{capture_id:self.id,source_app:source.chars().take(256).collect(),inherited_protection:protected,paste},"OperationResult").await.map_err(remote_error)?;
         Ok(result.performed)
     }
 }
@@ -162,10 +169,16 @@ impl DesktopHost {
         hosted(result,&state.service_instance_id).map(Some)
     }
     pub async fn begin_generated(&self)->Result<Option<GeneratedUpload>,String> {
+        self.begin_upload(false,None).await
+    }
+    pub async fn begin_generated_copy(&self,epoch:Option<u64>)->Result<GeneratedUpload,String> {
+        self.begin_upload(true,epoch).await?.ok_or_else(failed)
+    }
+    async fn begin_upload(&self,copy_to_clipboard:bool,epoch:Option<u64>)->Result<Option<GeneratedUpload>,String> {
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
         let state=client.hello.state.clone();
-        let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:state.privacy_epoch},"CaptureBeginResult").await.map_err(remote_error)?;
+        let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:epoch.unwrap_or(state.privacy_epoch),copy_to_clipboard:Some(copy_to_clipboard)},"CaptureBeginResult").await.map_err(remote_error)?;
         Ok(result.capture_id.map(|id|GeneratedUpload{client,id}))
     }
     pub async fn mutation(&self,mut request:DesktopMutationParams,expected:Option<&str>)->Result<Option<i64>,String> {

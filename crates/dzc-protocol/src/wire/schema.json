@@ -477,6 +477,9 @@
           "minimum": 0,
           "maximum": 9007199254740991,
           "x-rust-type": "u64"
+        },
+        "copy_to_clipboard": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -539,6 +542,9 @@
           "maxLength": 256
         },
         "inherited_protection": {
+          "type": "boolean"
+        },
+        "paste": {
           "type": "boolean"
         }
       },
