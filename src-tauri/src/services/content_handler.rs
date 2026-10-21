@@ -1,7 +1,6 @@
 // Content handler module for opening various content types
 use crate::database::DbState;
 use crate::error::AppError;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_api::apps::launch_uwp_with_file;
@@ -19,72 +18,93 @@ pub async fn open_content(
     app_handle: tauri::AppHandle,
     state: State<'_, DbState>,
     id: i64,
-    mut content: String,
+    content: String,
     content_type: String,
+    expected_privacy_epoch: Option<u64>,
 ) -> Result<(), AppError> {
-    // 0. Resolve full content if ID is provided and content is placeholder/truncated
-    if id != 0 {
-        if id > 0 {
-            // Fetch from Database
-            if let Ok(Some(full_content)) = state.repo.get_entry_content(id) {
-                content = full_content;
-            }
-        } else {
-            // Fetch from Session
-            let session = app_handle.state::<crate::app_state::SessionHistory>();
-            let session_items = session.0.lock().unwrap();
-            if let Some(item) = session_items.iter().find(|i| i.id == id) {
-                content = item.content.clone();
-            }
-        }
-    }
-
-    // Increment use count if ID is provided
-    if id > 0 {
-        let _ = state.repo.increment_use_count(id);
-    }
-
+    use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
+    let history = state.history_service();
+    let now = || chrono::Utc::now().timestamp_millis();
+    let ticket = history
+        .privacy()
+        .capture_ticket(now())
+        .map_err(|error| AppError::Validation(error.to_string()))?;
+    let permit = history
+        .privacy()
+        .authorize_read(
+            PrivacyAccessIntent::SelectedCopy,
+            if expected_privacy_epoch.is_some() {
+                SensitiveAccess::ExplicitUserAction
+            } else {
+                SensitiveAccess::Denied
+            },
+            Some(expected_privacy_epoch.unwrap_or(ticket.epoch())),
+            now(),
+        )
+        .map_err(|error| AppError::Validation(error.to_string()))?;
+    let entry = if id > 0 {
+        history
+            .get_entry_authorized(id, &permit, now())
+            .map_err(|error| AppError::Validation(error.to_string()))?
+            .ok_or_else(|| AppError::Validation("SensitiveAccessDenied".into()))?
+    } else if id < 0 {
+        let entry = app_handle
+            .state::<crate::app_state::SessionHistory>()
+            .0
+            .lock()
+            .map_err(|_| AppError::Internal("PrivacyStateUnavailable".into()))?
+            .iter()
+            .find(|entry| entry.id == id)
+            .cloned()
+            .ok_or_else(|| AppError::Validation("ClipboardRecordUnavailable".into()))?;
+        history
+            .authorize_session_entry(&entry, &permit, now())
+            .map_err(|error| AppError::Validation(error.to_string()))?
+    } else {
+        serde_json::from_value(serde_json::json!({"id":-1,"content_type":content_type,"content":content,"preview":"","source_app":"Manual","timestamp":now(),"is_pinned":false})).map_err(|_|AppError::Validation("PrivateExportRejected".into()))?
+    };
+    let content_type = entry.content_type.clone();
     let app_path = get_app_path_for_content_type(&state, &content_type)?;
-    let mut temp_path = std::env::temp_dir();
-    let filename = format!("DezirClip_Clip_{}", chrono::Utc::now().format("%Y%m%d-%H%M%S"));
-    let mut use_direct_path = false;
-
-    // Handle links/URLs
-    if content_type == "link" || content_type == "url" {
-        return handle_url_content(&app_path, &content).await;
+    if matches!(content_type.as_str(), "link" | "url") {
+        history
+            .privacy()
+            .check_read(&permit, now())
+            .map_err(|error| AppError::Validation(error.to_string()))?;
+        return handle_url_content(&app_path, &entry.content).await;
     }
-
-    // Check if content points to existing file(s)
-    if is_file_type(&content_type) && !content.starts_with("data:image") {
-        if let Some(path) = get_existing_file_path(&content) {
-            temp_path = path;
-            use_direct_path = true;
-        }
+    let export = if id > 0 {
+        history.external_files_authorized(id, &permit, now())
+    } else {
+        history.session_external_files_authorized(&entry, &permit, now())
     }
-
-    // Create temp file if needed
-    if !use_direct_path {
-        temp_path = create_temp_file(&content, &content_type, &filename, temp_path)?;
+    .map_err(|error| AppError::Validation(error.to_string()))?;
+    let lease = dzc_platform::runtime::private_file_export(export)
+        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let path = lease
+        .paths()
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .into_iter()
+        .next()
+        .ok_or_else(|| AppError::Validation("PrivateExportRejected".into()))?;
+    let file_path = std::path::PathBuf::from(&path);
+    history
+        .privacy()
+        .check_read(&permit, now())
+        .map_err(|error| AppError::Validation(error.to_string()))?;
+    launch_file_with_app(&app_path, &file_path, &path, &content_type, false).await?;
+    history
+        .privacy()
+        .check_read(&permit, now())
+        .map_err(|error| AppError::Validation(error.to_string()))?;
+    lease.retain();
+    if id != 0
+        && matches!(
+            content_type.as_str(),
+            "image" | "text" | "rich_text" | "code"
+        )
+    {
+        start_file_watcher(app_handle, file_path, content_type, id, ticket);
     }
-
-    let path_str = temp_path.to_str().unwrap().to_string();
-    let file_path_clone = temp_path.clone();
-
-    // Launch the file with appropriate application
-    launch_file_with_app(
-        &app_path,
-        &temp_path,
-        &path_str,
-        &content_type,
-        use_direct_path,
-    )
-    .await?;
-
-    // Start background watcher ONLY if we created a temp file
-    if !use_direct_path {
-        start_file_watcher(app_handle, file_path_clone, content_type, id);
-    }
-
     Ok(())
 }
 
@@ -350,6 +370,7 @@ struct WatchEntry {
     file_path: std::path::PathBuf,
     content_type: String,
     id: i64,
+    ticket: dzc_core::api::CaptureTicket,
     last_mtime: Option<std::time::SystemTime>,
     start_time: std::time::Instant,
 }
@@ -360,6 +381,7 @@ enum FileWatcherCommand {
         file_path: std::path::PathBuf,
         content_type: String,
         id: i64,
+        ticket: dzc_core::api::CaptureTicket,
     },
 }
 
@@ -383,6 +405,7 @@ fn run_file_watcher_loop(rx: mpsc::Receiver<FileWatcherCommand>) {
                 file_path,
                 content_type,
                 id,
+                ticket,
             }) => {
                 let key = file_path.to_string_lossy().to_string();
                 let last_mtime = std::fs::metadata(&file_path)
@@ -395,6 +418,7 @@ fn run_file_watcher_loop(rx: mpsc::Receiver<FileWatcherCommand>) {
                         file_path,
                         content_type,
                         id,
+                        ticket,
                         last_mtime,
                         start_time: std::time::Instant::now(),
                     },
@@ -431,6 +455,7 @@ fn run_file_watcher_loop(rx: mpsc::Receiver<FileWatcherCommand>) {
                         entry.id,
                         &new_content,
                         &preview,
+                        &entry.ticket,
                     );
                 }
             }
@@ -446,12 +471,14 @@ fn start_file_watcher(
     file_path: std::path::PathBuf,
     content_type: String,
     id: i64,
+    ticket: dzc_core::api::CaptureTicket,
 ) {
     let _ = watcher_sender().send(FileWatcherCommand::Watch {
         app_handle,
         file_path,
         content_type,
         id,
+        ticket,
     });
 }
 
@@ -524,59 +551,39 @@ fn update_database_with_changes(
     id: i64,
     new_content: &str,
     preview: &str,
+    ticket: &dzc_core::api::CaptureTicket,
 ) {
-    use crate::app_state::SessionHistory;
-
-    if id < 0 {
-        if let Some(session) = app_handle.try_state::<SessionHistory>() {
-            let mut history = session.0.lock().unwrap();
-            if let Some(item) = history.iter_mut().find(|i| i.id == id) {
-                item.content = new_content.to_string();
-                item.preview = preview.to_string();
-                item.html_content = None;
-                if item.content_type == "rich_text" {
-                    item.content_type = "text".to_string();
-                }
-                let _ = app_handle.emit("clipboard-updated", item.clone());
-                println!(
-                    "Session item updated and clipboard-updated event emitted for id: {}",
-                    id
-                );
-                return;
-            }
+    use crate::app_state::{AppDataDir, SessionHistory};
+    use dzc_core::capture::CaptureStore;
+    let history = app_handle.state::<DbState>().history_service();
+    let now = chrono::Utc::now().timestamp_millis();
+    if id > 0 {
+        if history
+            .update_content_authorized(id, new_content, preview, ticket, now)
+            .is_err()
+        {
+            return;
         }
-        let _ = app_handle.emit("clipboard-changed", id);
-        return;
+    } else {
+        let directory = app_handle
+            .state::<AppDataDir>()
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let store = history.capture_store(&directory);
+        let mut updated=false;
+        let mut update=|| {
+            let session=app_handle.state::<SessionHistory>();
+            let Ok(mut entries)=session.0.lock() else {return;};
+            let Some(entry)=entries.iter_mut().find(|entry|entry.id==id) else {return;};
+            entry.content=new_content.to_owned();
+            entry.preview=preview.to_owned();
+            entry.html_content=None;
+            updated=true;
+        };
+        if store.with_capture_guard(Some(ticket),now,&mut update).is_err() || !updated {return;}
+
     }
-
-    let state = app_handle.state::<DbState>();
-
-    if state
-        .repo
-        .update_entry_content(id, new_content, preview)
-        .is_ok()
-    {
-        if let Some(session) = app_handle.try_state::<SessionHistory>() {
-            let mut history = session.0.lock().unwrap();
-            if let Some(item) = history.iter_mut().find(|i| i.id == id) {
-                item.content = new_content.to_string();
-                item.preview = preview.to_string();
-                item.html_content = None;
-                if item.content_type == "rich_text" {
-                    item.content_type = "text".to_string();
-                }
-            }
-        }
-
-        if let Ok(Some(updated_entry)) = state.repo.get_entry_by_id(id) {
-            let _ = app_handle.emit("clipboard-updated", updated_entry);
-            println!(
-                "Database updated and clipboard-updated event emitted for id: {}",
-                id
-            );
-        } else {
-            let _ = app_handle.emit("clipboard-changed", id);
-            println!("Database updated for id: {}", id);
-        }
-    }
+    let _ = app_handle.emit("clipboard-changed", id);
 }

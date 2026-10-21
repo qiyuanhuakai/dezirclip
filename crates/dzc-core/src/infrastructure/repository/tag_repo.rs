@@ -324,6 +324,10 @@ impl TagRepository for SqliteTagRepository {
         let old_tags: String = conn.query_row("SELECT tags FROM clipboard_history WHERE id=?1", [id], |row| row.get(0))
             .map_err(|error| error.to_string())?;
         let old_tags: Vec<String> = serde_json::from_str(&old_tags).map_err(|_| encryption::EncryptionError::SensitivePersistenceRejected.to_string())?;
+        let directory=conn.path().filter(|path|!path.is_empty()).and_then(|path|std::path::Path::new(path).parent()).map(std::path::Path::to_path_buf);
+        let mut cleanup=if crate::database::has_sensitive_tag(&cleaned) {
+            Some(super::sensitive_tags::AttachmentCleanup::for_entries(&conn,directory.as_deref(),&HashSet::from([id]))?)
+        } else {None};
         let mut protector = super::clipboard_repo::SqliteClipboardRepository::new(self.conn.clone());
         protector.encrypt_text = self.encrypt_text;
         if crate::database::has_sensitive_tag(&cleaned) {
@@ -347,7 +351,10 @@ impl TagRepository for SqliteTagRepository {
             params![tags_json, id],
         )
         .map_err(|e| e.to_string())?;
-        conn.commit().map_err(|error| error.to_string())
+        if let Some(cleanup)=&mut cleanup {cleanup.protect_surviving_references(&conn)?;}
+        conn.commit().map_err(|error| error.to_string())?;
+        if cleanup.is_some_and(|cleanup|!cleanup.finish().is_empty()){return Err("ProtectedAttachmentCleanupIncomplete".into());}
+        Ok(())
     }
 }
 

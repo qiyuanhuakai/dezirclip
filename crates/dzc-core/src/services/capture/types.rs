@@ -65,6 +65,8 @@ pub struct CaptureReadMetadata {
     /// Issued before reading the payload; the repository rechecks it inside commit.
     pub privacy_ticket: Option<crate::api::CaptureTicket>,
     pub privacy_hints_checked: bool,
+    /// Trusted generated transformations preserve the protection of their source.
+    pub inherited_protection: bool,
     pub fingerprint: Option<u64>,
     pub echo_hash: Option<u64>,
     pub image: bool,
@@ -154,6 +156,7 @@ pub struct StoredCapture {
     pub persistent: bool,
     pub removed_ids: Vec<i64>,
     pub ocr_target: Option<i64>,
+    pub privacy_ticket: Option<crate::api::CaptureTicket>,
     pub privacy: crate::privacy::PrivacyDecision,
 }
 

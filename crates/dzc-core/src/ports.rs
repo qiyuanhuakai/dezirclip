@@ -6,9 +6,61 @@ pub type PlatformResult<T> = Result<T, PlatformError>;
 #[derive(Debug)]
 pub enum ClipboardPayload {
     Text(String),
-    Html { html: String, text: String },
-    Image { bytes: Vec<u8>, mime: String },
+    Private {
+        payload: Box<ClipboardPayload>,
+        authorization: ClipboardAuthorization,
+    },
+    Html {
+        html: String,
+        text: String,
+    },
+    Image {
+        bytes: Vec<u8>,
+        mime: String,
+    },
     Files(Vec<String>),
+    ProtectedFiles {
+        files: Vec<ClipboardFile>,
+        authorization: ClipboardAuthorization,
+    },
+}
+
+#[derive(Debug)]
+pub struct ClipboardFile {
+    pub name: String,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct AuthorizedFileExport {
+    pub files: Vec<ClipboardFile>,
+    pub authorization: ClipboardAuthorization,
+}
+
+#[derive(Clone)]
+pub struct ClipboardAuthorization(
+    std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+    Option<crate::api::NativeReadLease>,
+);
+impl std::fmt::Debug for ClipboardAuthorization {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ClipboardAuthorization")
+    }
+}
+impl ClipboardAuthorization {
+    pub(crate) fn new(check: impl Fn() -> bool + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(check), None)
+    }
+    pub(crate) fn with_native_lease(mut self, lease: Option<crate::api::NativeReadLease>) -> Self {
+        self.1 = lease;
+        self
+    }
+    pub fn native_lease(&self) -> Option<crate::api::NativeReadLease> {
+        self.1.clone()
+    }
+    pub fn is_current(&self) -> bool {
+        (self.0)()
+    }
 }
 
 pub trait ClipboardReader {

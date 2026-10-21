@@ -3,6 +3,7 @@ pub(crate) mod io;
 mod owner;
 mod payload;
 pub(crate) use owner::replace_owner;
+pub(crate) use owner::revoke_private_owner;
 pub use owner::{write_in_process, write_in_process_with_intent, WaylandOwner};
 pub use payload::{representations, representations_with_intent};
 
@@ -264,6 +265,7 @@ struct State {
     error: Option<WaylandError>,
     owner_cancelled: bool,
     payloads: Vec<MimeData>,
+    leases: Vec<dzc_core::api::NativeReadLease>,
     cancel: Arc<UnixStream>,
 }
 impl State {
@@ -303,9 +305,16 @@ impl State {
         }
         if let Some(data) = self.payloads.iter().find(|data| data.mime == mime) {
             // A cancelled receiver may close its pipe. It does not revoke other offered formats.
-            if io::send(fd, &data.bytes, Some(&self.cancel), transfer_deadline())
-                == Err(WaylandError::Cancelled)
-            {
+            if matches!(
+                io::send_authorized(
+                    fd,
+                    &data.bytes,
+                    Some(&self.cancel),
+                    transfer_deadline(),
+                    &self.leases
+                ),
+                Err(WaylandError::Cancelled | WaylandError::PermissionDenied)
+            ) {
                 self.owner_cancelled = true;
             }
         }
@@ -496,6 +505,7 @@ impl Client {
                 error: None,
                 owner_cancelled: false,
                 payloads: Vec::new(),
+                leases: Vec::new(),
                 cancel,
             },
             manager: None,
@@ -702,15 +712,41 @@ impl WaylandClipboardBackend {
         ready: impl FnOnce(),
         cancel: Arc<UnixStream>,
     ) -> Result<(), WaylandError> {
+        Self::serve_authorized(payloads, Vec::new(), None, ready, cancel)
+    }
+    pub(crate) fn serve_authorized(
+        payloads: Vec<MimeData>,
+        leases: Vec<dzc_core::api::NativeReadLease>,
+        _exports: Option<crate::private_files::BoundExport>,
+        ready: impl FnOnce(),
+        cancel: Arc<UnixStream>,
+    ) -> Result<(), WaylandError> {
         let mut client = Client::new(cancel)?;
+        if leases.iter().any(|lease| !lease.is_current()) {
+            return Err(WaylandError::PermissionDenied);
+        }
+        client.state.leases = leases;
         let _source = client.publish(payloads)?;
+        if client.state.leases.iter().any(|lease| !lease.is_current()) {
+            return Err(WaylandError::PermissionDenied);
+        }
         ready();
+        let private_deadline = Instant::now() + Duration::from_secs(300);
         loop {
+            if !client.state.leases.is_empty()
+                && (Instant::now() >= private_deadline
+                    || client.state.leases.iter().any(|lease| !lease.is_current()))
+            {
+                return Ok(());
+            }
             // Long blocking waits are interrupted by the owned cancellation socket.
-            match client.dispatch_until(
-                Instant::now() + Duration::from_secs(24 * 60 * 60),
-                |state| state.owner_cancelled,
-            ) {
+            // Private owners additionally bound export lifetime, matching the native child lease.
+            let wait = if client.state.leases.is_empty() {
+                Duration::from_secs(24 * 60 * 60)
+            } else {
+                Duration::from_millis(100)
+            };
+            match client.dispatch_until(Instant::now() + wait, |state| state.owner_cancelled) {
                 Ok(()) | Err(WaylandError::Cancelled) => return Ok(()),
                 Err(WaylandError::TimedOut) => (),
                 Err(error) => return Err(error),

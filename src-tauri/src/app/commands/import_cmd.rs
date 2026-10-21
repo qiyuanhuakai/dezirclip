@@ -26,6 +26,7 @@ pub fn import_from_file(
         other => return Err(format!("mode must be 'merge' or 'replace', got '{other}'")),
     };
 
+    let ticket=app.state::<DbState>().history_service().privacy().capture_ticket(chrono::Utc::now().timestamp_millis()).map_err(|error|error.to_string())?;
     let data = std::fs::read(&path).map_err(|e| format!("failed to read file: {e}"))?;
     if data.is_empty() {
         return Err("import file is empty".to_string());
@@ -49,7 +50,7 @@ pub fn import_from_file(
         (entries, summary)
     };
 
-    apply_import(app, import_mode, &entries)?;
+    apply_import(app, import_mode, &entries, &ticket)?;
 
     Ok(ImportSummaryResponse {
         imported: summary.imported,
@@ -70,9 +71,9 @@ fn looks_encrypted(data: &[u8]) -> bool {
     true
 }
 
-fn apply_import(app: AppHandle, mode: ImportMode, entries: &[ExportEntry]) -> Result<(), String> {
+fn apply_import(app: AppHandle, mode: ImportMode, entries: &[ExportEntry],ticket:&dzc_core::api::CaptureTicket) -> Result<(), String> {
     let db = app.state::<DbState>();
-    dzc_core::api::BackupService::new(db.history_service()).apply(entries, mode).map_err(Into::into)
+    dzc_core::api::BackupService::new(db.history_service()).apply_authorized(entries, mode,ticket).map_err(Into::into)
 }
 
 #[cfg(test)]

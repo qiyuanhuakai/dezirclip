@@ -31,6 +31,10 @@ pub fn representations_with_intent(
             });
         }
     };
+    let (payload, private) = match payload {
+        Payload::Private(inner) => (*inner, true),
+        ordinary => (ordinary, false),
+    };
     match payload {
         Payload::Text(value) => text(value, &mut result),
         Payload::Html {
@@ -75,6 +79,16 @@ pub fn representations_with_intent(
                 bytes: bytes.into(),
             });
         }
+        // Lifecycle permits must stay with the real owner, never become MIME bytes.
+        Payload::Private(_) | Payload::Leased { .. } | Payload::LeasedFiles { .. } => {
+            return Err(WaylandError::PermissionDenied);
+        }
+    }
+    if private {
+        result.push(MimeData {
+            mime: super::PASSWORD_HINT_MIME.into(),
+            bytes: Arc::from(&b"secret"[..]),
+        });
     }
     if suppress_recapture {
         result.push(MimeData {

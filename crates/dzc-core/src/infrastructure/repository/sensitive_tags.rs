@@ -13,6 +13,11 @@ pub fn has_unsupported_sensitive_resources(html: &str) -> bool {
     !references.complete || !references.values.is_empty()
 }
 
+pub(crate) fn resource_references(html: &str) -> (Vec<String>, bool) {
+    let references = html_refs::references(html);
+    (references.values, references.complete)
+}
+
 pub const PRIVACY_SETTING: &str = "app.privacy_protection";
 
 /// Call within the setting transaction so an enabled setting cannot be saved

@@ -11,10 +11,19 @@ pub struct WaylandOwner {
     readiness: Mutex<Option<Result<(), WaylandError>>>,
     done: mpsc::Receiver<()>,
     thread: Option<std::thread::JoinHandle<Result<(), WaylandError>>>,
+    private: bool,
 }
 impl WaylandOwner {
     pub fn start(payloads: Vec<MimeData>) -> Result<Self, WaylandError> {
+        Self::start_authorized(payloads, Vec::new(), None)
+    }
+    fn start_authorized(
+        payloads: Vec<MimeData>,
+        leases: Vec<dzc_core::api::NativeReadLease>,
+        exports: Option<crate::private_files::BoundExport>,
+    ) -> Result<Self, WaylandError> {
         super::validate_payloads(&payloads)?;
+        let private = !leases.is_empty();
         let (cancel, trigger) = WaylandClipboardBackend::cancellation_pair()?;
         let (ready_tx, ready) = mpsc::sync_channel(1);
         let (done_tx, done) = mpsc::sync_channel(1);
@@ -22,8 +31,10 @@ impl WaylandOwner {
             .name("wayland-clipboard-owner".into())
             .spawn(move || {
                 let notify = ready_tx.clone();
-                let result = WaylandClipboardBackend::serve(
+                let result = WaylandClipboardBackend::serve_authorized(
                     payloads,
+                    leases,
+                    exports,
                     || {
                         let _ = notify.send(Ok(()));
                     },
@@ -42,6 +53,7 @@ impl WaylandOwner {
             readiness: Mutex::new(None),
             done,
             thread: Some(thread),
+            private,
         })
     }
     pub fn wait_ready(&self) -> Result<(), WaylandError> {
@@ -81,6 +93,9 @@ impl WaylandOwner {
     pub fn is_stopped(&self) -> bool {
         self.thread.is_none()
     }
+    pub(crate) fn is_private(&self) -> bool {
+        self.private
+    }
 }
 impl Drop for WaylandOwner {
     fn drop(&mut self) {
@@ -90,6 +105,8 @@ impl Drop for WaylandOwner {
 
 /// GUI writes keep one owner alive in this process until the next copy or exit.
 /// A failed new negotiation retains the previous owner.
+static OWNER: OnceLock<Mutex<Option<WaylandOwner>>> = OnceLock::new();
+static PENDING: OnceLock<Mutex<Vec<WaylandOwner>>> = OnceLock::new();
 pub fn write_in_process(payload: crate::native_clipboard::Payload) -> Result<(), WaylandError> {
     write_in_process_with_intent(payload, false)
 }
@@ -97,7 +114,6 @@ pub fn write_in_process_with_intent(
     payload: crate::native_clipboard::Payload,
     suppress_recapture: bool,
 ) -> Result<(), WaylandError> {
-    static OWNER: OnceLock<Mutex<Option<WaylandOwner>>> = OnceLock::new();
     let mut slot = OWNER
         .get_or_init(Default::default)
         .lock()
@@ -109,22 +125,63 @@ pub(crate) fn replace_owner(
     payload: crate::native_clipboard::Payload,
     suppress_recapture: bool,
 ) -> Result<(), WaylandError> {
-    let mut fresh = WaylandOwner::start(super::representations_with_intent(
-        payload,
-        suppress_recapture,
-    )?)?;
+    let prepared = crate::native_clipboard::prepare_owner_payload(payload)
+        .map_err(|_| WaylandError::PermissionDenied)?;
+    let mut fresh = WaylandOwner::start_authorized(
+        super::representations_with_intent(prepared.payload, suppress_recapture)?,
+        prepared.leases,
+        prepared.exports,
+    )?;
     if let Err(error) = fresh.wait_ready() {
-        let _ = fresh.stop();
+        stop_or_retain(fresh);
         return Err(error);
     }
     if let Some(mut old) = slot.take() {
         let _ = old.stop();
         if !old.is_stopped() {
             *slot = Some(old);
-            let _ = fresh.stop();
+            stop_or_retain(fresh);
             return Err(WaylandError::TimedOut);
         }
     }
     *slot = Some(fresh);
     Ok(())
+}
+
+fn stop_or_retain(mut owner: WaylandOwner) {
+    let _ = owner.stop();
+    if !owner.is_stopped() {
+        PENDING
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(owner);
+    }
+}
+pub(crate) fn revoke_private_owner() -> Result<(), WaylandError> {
+    let mut failed = false;
+    if let Some(owner) = OWNER.get() {
+        let mut slot = owner.lock().map_err(|_| WaylandError::Disconnected)?;
+        if let Some(owner) = slot.as_mut().filter(|owner| owner.is_private()) {
+            let _ = owner.stop();
+            if owner.is_stopped() {
+                *slot = None;
+            } else {
+                failed = true;
+            }
+        }
+    }
+    if let Some(pending) = PENDING.get() {
+        let mut pending = pending.lock().map_err(|_| WaylandError::Disconnected)?;
+        pending.retain_mut(|owner| {
+            let _ = owner.stop();
+            !owner.is_stopped()
+        });
+        failed |= !pending.is_empty();
+    }
+    if failed {
+        Err(WaylandError::TimedOut)
+    } else {
+        Ok(())
+    }
 }

@@ -1,6 +1,7 @@
 //! Business entry points shared by desktop, terminal and automation clients.
 mod backup;
 mod clipboard;
+mod clipboard_payload;
 mod error;
 mod history;
 mod summary;
@@ -13,7 +14,7 @@ pub use clipboard::ClipboardService;
 pub use error::{CoreError, CoreErrorCode, CoreResult};
 pub use history::{AutomationHistory, HistoryQuery, HistorySearchMode, HistoryService};
 pub use summary::{EntrySummary, SearchRequest, SearchResult, SummaryQuery, SummarySearchMode};
-pub use privacy_session::{CaptureTicket, PrivacyError, PrivacyResult, PrivacySessionCommand,
+pub use privacy_session::{NativeReadLease,CaptureTicket, PrivacyError, PrivacyResult, PrivacySessionCommand,
     PrivacySessionService, PrivacySessionStatus, RuntimeSnapshot, PrivacyAccessIntent,
     PrivacyReadPermit, SensitiveAccess, ManualPersistenceIntent};
 
