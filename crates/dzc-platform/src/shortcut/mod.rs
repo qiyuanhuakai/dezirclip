@@ -333,7 +333,12 @@ impl ShortcutProvider for NativeShortcutProvider {
         let state = CapabilityState::available("win32-register-hotkey", self.active())
             .with_probe("native_registration_required");
         #[cfg(target_os = "linux")]
-        let state = if crate::wayland::requested() {
+        let state = if crate::wayland::service_disabled("global_shortcut") {
+            CapabilityState::unsupported(
+                "linux-shortcut-disabled",
+                UnsupportedReason::DisabledByConfiguration,
+            )
+        } else if crate::wayland::requested() {
             CapabilityState::unsupported(
                 "wayland-global-shortcut-not-attached",
                 UnsupportedReason::AdapterUnavailable,
@@ -350,6 +355,10 @@ impl ShortcutProvider for NativeShortcutProvider {
         mut pressed: Box<dyn FnMut() + Send>,
     ) -> PlatformResult<Box<dyn ShortcutRegistration>> {
         let chord = parse(&shortcut.accelerator)?;
+        #[cfg(target_os = "linux")]
+        if crate::wayland::service_disabled("global_shortcut") {
+            return Err(unsupported(UnsupportedReason::DisabledByConfiguration));
+        }
         #[cfg(target_os = "linux")]
         if crate::wayland::requested() {
             return Err(unsupported(UnsupportedReason::AdapterUnavailable));
