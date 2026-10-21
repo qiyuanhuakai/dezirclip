@@ -1324,7 +1324,7 @@ const ClipboardItem = ({
         } catch {
             onTransformItemError?.("privacy_feedback", t("privacy_action_failed"));
         }
-    }, [item.id, onTransformItemError, onTransformItemSuccess, t]);
+    }, [item.id, item.host_instance_id, onTransformItemError, onTransformItemSuccess, t]);
 
     useEffect(() => {
         if (!contextMenuState) return;
