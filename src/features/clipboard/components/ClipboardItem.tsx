@@ -1952,7 +1952,7 @@ const ClipboardItem = ({
                     onSelect={() => setContextMenuState(null)}
                     onClose={() => setContextMenuState(null)}
                     onCopy={(withFormat) => onCopy(!!withFormat, false)}
-                    onEdit={onEdit}
+                    onEdit={isSensitiveHidden ? undefined : onEdit}
                     editLabel={t('common_edit')}
                     onEditTags={() => handleContextMenuAction("editTags")}
                     onQRCode={() => handleContextMenuAction("qrCode")}

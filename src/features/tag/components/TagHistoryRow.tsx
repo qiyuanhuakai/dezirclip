@@ -5,6 +5,7 @@ import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { beginPrivacyAccess, getPrivacyEntry, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { concealSensitiveEntry, isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
+import { usePlatformCapabilities } from '../../../shared/hooks/usePlatformCapabilities';
 
 interface TagHistoryRowProps {
     item: ClipboardEntry;
@@ -44,6 +45,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     currentItem.current = item;
     const managing = useRef(managementMode);
     const sensitive = isSensitiveEntry(item);
+    const capabilities = usePlatformCapabilities();
     managing.current = managementMode;
 
     const loadFullItem = useCallback(() => {
@@ -97,10 +99,12 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
 
     const copy = (pasteWithFormat = false, pasteImageAsBase64 = false) => {
         if (managing.current) return;
+        if (capabilities.pending || capabilities.failed
+            || capabilities.report?.write.availability.status !== 'available') { onError(); return; }
         const access = beginPrivacyAccess();
         if (!access || (sensitive && !detail)) { onError(); return; }
         void invoke('copy_to_clipboard', { id: item.id, expectedHostInstanceId: item.host_instance_id, content: '', contentType: item.content_type,
-            paste: true, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64,
+            paste: !capabilities.report.native_wayland, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64,
             expectedPrivacyEpoch: sensitive ? access.epoch : undefined })
             .then(onChanged).catch(onError);
     };
