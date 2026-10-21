@@ -25,14 +25,19 @@ pub struct OcrStatusResponse {
     pub ocr_text: Option<String>,
 }
 
-#[tauri::command]
-pub async fn recognize_clipboard_image(
+fn prepare_ocr_image(
+    history: &dzc_core::api::HistoryService,
     item_id: i64,
-    app: AppHandle,
     expected_privacy_epoch: Option<u64>,
-) -> Result<OcrResult, String> {
+) -> Result<
+    (
+        dzc_core::api::CaptureTicket,
+        dzc_core::api::PrivacyReadPermit,
+        Vec<u8>,
+    ),
+    String,
+> {
     use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
-    let history = app.state::<DbState>().history_service();
     let now = || chrono::Utc::now().timestamp_millis();
     let ticket = history
         .privacy()
@@ -51,12 +56,22 @@ pub async fn recognize_clipboard_image(
             now(),
         )
         .map_err(|error| error.to_string())?;
-    let dzc_core::ports::ClipboardPayload::Image { bytes, .. } = history
-        .clipboard_payload_authorized(item_id, &permit, now())
+    let bytes = history
+        .image_bytes_authorized(item_id, &permit, now())
         .map_err(|error| error.to_string())?
-    else {
-        return Err("OcrImageRequired".into());
-    };
+        .ok_or("OcrImageRequired")?;
+    Ok((ticket, permit, bytes))
+}
+
+#[tauri::command]
+pub async fn recognize_clipboard_image(
+    item_id: i64,
+    app: AppHandle,
+    expected_privacy_epoch: Option<u64>,
+) -> Result<OcrResult, String> {
+    let history = app.state::<DbState>().history_service();
+    let now = || chrono::Utc::now().timestamp_millis();
+    let (ticket, permit, bytes) = prepare_ocr_image(&history, item_id, expected_privacy_epoch)?;
     let text = tokio::task::spawn_blocking(move || {
         crate::services::ocr::OcrService::new()
             .map_err(|_| "OcrEngineUnavailable".to_owned())?
@@ -136,6 +151,69 @@ pub fn check_ocr_engine_available() -> OcrEngineInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(target_os = "windows", not(feature = "portable")))]
+    #[test]
+    fn manual_ocr_command_preparation_accepts_private_images_and_rejects_stale_epoch() {
+        use base64::Engine;
+        use dzc_core::api::{HistoryService, PrivacySessionCommand};
+        dzc_platform::install_default_key_provider();
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let content = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(png.get_ref())
+        );
+        for sensitive in [false, true] {
+            let entry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"image","content":content,"preview":"synthetic","source_app":"Synthetic OCR","timestamp":1,"is_pinned":false,"tags":if sensitive {vec!["sensitive"]} else {vec![]}})).unwrap();
+            let id = history.save(&entry, None).unwrap();
+            if sensitive {
+                assert_eq!(
+                    prepare_ocr_image(&history, id, None).unwrap_err(),
+                    "SensitiveAccessDenied"
+                );
+            } else {
+                assert_eq!(
+                    prepare_ocr_image(&history, id, None).unwrap().2,
+                    *png.get_ref()
+                );
+            }
+            let epoch = history
+                .privacy()
+                .status(chrono::Utc::now().timestamp_millis())
+                .unwrap()
+                .privacy_epoch;
+            assert_eq!(
+                prepare_ocr_image(&history, id, Some(epoch)).unwrap().2,
+                *png.get_ref()
+            );
+            history
+                .privacy()
+                .set_session(
+                    PrivacySessionCommand::On { duration_ms: None },
+                    chrono::Utc::now().timestamp_millis(),
+                )
+                .unwrap();
+            assert_eq!(
+                prepare_ocr_image(&history, id, Some(epoch)).unwrap_err(),
+                "PrivacySessionActive"
+            );
+            history
+                .privacy()
+                .set_session(
+                    PrivacySessionCommand::Off,
+                    chrono::Utc::now().timestamp_millis(),
+                )
+                .unwrap();
+            assert_eq!(
+                prepare_ocr_image(&history, id, Some(epoch)).unwrap_err(),
+                "PrivacyEpochChanged"
+            );
+        }
+    }
 
     #[test]
     fn test_ocr_result_serialize_roundtrip() {

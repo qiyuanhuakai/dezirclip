@@ -58,7 +58,8 @@ impl ClipboardWriter for StandaloneClipboardWriter {
         native::clipboard_probe()
     }
     fn write(&self, payload: ClipboardPayload) -> PlatformResult<()> {
-        crate::private_files::revoke_clipboard();
+        crate::private_files::revoke_clipboard()
+            .map_err(|_| clipboard_failure(Capability::Write))?;
         crate::native_clipboard::revoke_private_owners()
             .map_err(|_| clipboard_failure(Capability::Write))?;
         let (payload, mut authorization) = match payload {
@@ -228,7 +229,8 @@ mod tests {
 
 /// The unique native owner calls this synchronously before acknowledging a privacy epoch change.
 pub fn revoke_private_exports() -> PlatformResult<()> {
-    crate::private_files::revoke();
+    crate::private_files::revoke()
+        .map_err(|_| PlatformError::failed(Capability::Write))?;
     crate::native_clipboard::revoke_private_owners()
         .map_err(|_| PlatformError::failed(Capability::Write))
 }
@@ -243,6 +245,12 @@ impl PrivateFileExport {
     }
     pub fn is_current(&self) -> bool {
         self.0.paths().is_ok()
+    }
+    pub fn modified(&self, index: usize) -> PlatformResult<std::time::SystemTime> {
+        self.0.modified(index).map_err(|_| clipboard_failure(Capability::Write))
+    }
+    pub fn read(&self, index: usize) -> PlatformResult<Vec<u8>> {
+        self.0.read(index).map_err(|_| clipboard_failure(Capability::Write))
     }
     pub fn retain(self) {
         self.0.retain();
