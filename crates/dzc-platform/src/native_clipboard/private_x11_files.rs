@@ -22,7 +22,7 @@ pub(super) struct FileOwner {
     cancel: UnixStream,
     done: mpsc::Receiver<()>,
     worker: Option<std::thread::JoinHandle<Result<(), String>>>,
-    exports: Option<crate::private_files::BoundExport>,
+    exports: super::selection_export::SelectionExport,
 }
 impl FileOwner {
     pub(super) fn start(
@@ -36,12 +36,15 @@ impl FileOwner {
         let (cancel, trigger) = UnixStream::pair().map_err(|_| "PrivateFileOwnerUnavailable")?;
         let (ready_tx, ready) = mpsc::sync_channel(1);
         let (done_tx, done) = mpsc::sync_channel(1);
+        let exports = super::selection_export::SelectionExport::new(exports);
+        let worker_export = exports.clone();
         let worker = std::thread::Builder::new()
             .name("private-x11-file-owner".into())
             .spawn(move || {
                 let result = run(paths, leases, cancel, || {
                     let _ = ready_tx.send(Ok(()));
                 });
+                let result = result.and(worker_export.close());
                 if let Err(error) = &result {
                     let _ = ready_tx.try_send(Err(error.clone()));
                 }
@@ -82,7 +85,7 @@ impl FileOwner {
         self.wait()
     }
     pub(super) fn is_stopped(&self) -> bool {
-        self.worker.is_none() && self.exports.is_none()
+        self.worker.is_none() && self.exports.is_closed()
     }
     pub(super) fn wait(&mut self) -> Result<(), String> {
         let result = match self.worker.take() {
@@ -93,11 +96,7 @@ impl FileOwner {
         result
     }
     fn close_export(&mut self) -> Result<(), String> {
-        if let Some(export) = self.exports.as_mut() {
-            export.close()?;
-        }
-        self.exports = None;
-        Ok(())
+        self.exports.close()
     }
 }
 impl Drop for FileOwner {

@@ -38,6 +38,8 @@ CLI、直接链接的 Core 客户端和 GUI 根据运行时会话选择同一原
 
 受保护文件只导出 kernel-owned 文件句柄，owner 保留句柄至撤销、替换或停止。Wayland 私有 owner 与 X11 文件 owner 在每次供数前检查许可，另以100ms边界检查撤销/最多五分钟存活期；普通监听和普通 owner 不因此增加轮询。X11 文件使用受限的 URI/KDE secret/TARGETS owner，避免通用库 canonicalize memfd URI。X11 的文本、HTML 与图像仍使用原生库提供同 offer secret，由 Host 同步撤销其进程内 owner。已获得文件句柄的外部读取者可以完成现有读取，撤销阻止新的打开；不能宣称撤回其他应用已读取的字节。
 
+GUI 普通与受保护 Wayland 复制使用同一个长期 owner；Windows/X11 既有多格式写入在替换前只关闭本 GUI 之前的私有 selection。Linux 文件导出直接归实际 Wayland/X11 selection worker 所有，外部原生客户端替换、自然取消或断线退出时，先关闭该 scoped export 再通知 worker 完成，不需要后续显式 stop、epoch 变化或等待五分钟期限。关闭失败仍保留原 owner/export 及 ACTIVE 跟踪，显式停止可重试；不关闭其他 writer 或外部编辑器的导出。隔离 wlr、ext 和 Xvfb 回归均覆盖私有文件 A 被普通内容替换后旧 URI 无法新打开，及独立原生客户端替换后相同边界；既有 reader 已持有的句柄不在撤回承诺内。
+
 捕获读取器在正文前读取同一 offer 的 KDE hint，交给 Core 隐私预检；明确 secret 直接跳过。Windows/X11 使用各自受限预检，X11 缺少足够 selection 跟踪证据时不会把空结果当作完整检查。GUI 历史项在 Wayland 中执行手动复制，保留当前搜索和记录，不自动粘贴或按“粘贴后删除”修改历史。
 
 全局快捷键、自动粘贴、快速粘贴浮层、跨应用焦点恢复、全局定位/贴边、置顶、透明调整与截图目前没有获授权的原生适配器；GUI 禁用对应设置并说明原因，后端也在任何 X11/xdotool 操作之前拒绝。现有设置值不改写，重新在 Windows/X11 打开时仍可使用。Portal 探测只查询已运行服务的接口版本，不激活服务、不创建授权会话；接口存在不等于用户已授权，也不使上述能力变为 available。
