@@ -26,57 +26,67 @@ pub struct OcrStatusResponse {
 }
 
 #[tauri::command]
-pub async fn recognize_clipboard_image(item_id: i64, app: AppHandle) -> Result<OcrResult, String> {
-    let db_state = app.state::<DbState>();
-    let conn = db_state
-        .conn
-        .lock()
-        .map_err(|e| format!("DB lock failed: {e}"))?;
-
-    let entry = db_state
-        .repo
-        .get_entry_by_id_with_conn(&conn, item_id)?
-        .ok_or_else(|| format!("Clipboard entry {item_id} not found"))?;
-
-    if entry.content_type != "image" {
-        return Err(format!(
-            "Entry {item_id} is not an image (content_type={})",
-            entry.content_type
-        ));
-    }
-
-    let png_bytes = crate::services::clipboard_ops::resolve_image_bytes(&entry.content)
-        .ok_or_else(|| {
-            format!(
-                "Failed to resolve image bytes for entry {item_id} (content_len={})",
-                entry.content.len()
-            )
-        })?;
-
-    let text = {
-        let service = crate::services::ocr::OcrService::new()
-            .map_err(|e| format!("OCR engine init failed: {e}"))?;
-        service
-            .recognize(&png_bytes)
-            .map_err(|e| format!("OCR recognition failed: {e}"))?
+pub async fn recognize_clipboard_image(
+    item_id: i64,
+    app: AppHandle,
+    expected_privacy_epoch: Option<u64>,
+) -> Result<OcrResult, String> {
+    use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
+    let history = app.state::<DbState>().history_service();
+    let now = || chrono::Utc::now().timestamp_millis();
+    let ticket = history
+        .privacy()
+        .capture_ticket(now())
+        .map_err(|error| error.to_string())?;
+    let permit = history
+        .privacy()
+        .authorize_read(
+            PrivacyAccessIntent::SelectedCopy,
+            if expected_privacy_epoch.is_some() {
+                SensitiveAccess::ExplicitUserAction
+            } else {
+                SensitiveAccess::Denied
+            },
+            Some(expected_privacy_epoch.unwrap_or(ticket.epoch())),
+            now(),
+        )
+        .map_err(|error| error.to_string())?;
+    let dzc_core::ports::ClipboardPayload::Image { bytes, .. } = history
+        .clipboard_payload_authorized(item_id, &permit, now())
+        .map_err(|error| error.to_string())?
+    else {
+        return Err("OcrImageRequired".into());
     };
-
-    db_state
-        .repo
-        .update_ocr_text_with_conn(&conn, item_id, &text, "done")
-        .map_err(|e| format!("Failed to persist OCR text: {e}"))?;
-
-    drop(conn);
-
+    let text = tokio::task::spawn_blocking(move || {
+        crate::services::ocr::OcrService::new()
+            .map_err(|_| "OcrEngineUnavailable".to_owned())?
+            .recognize(&bytes)
+            .map_err(|_| "OcrRecognitionFailed".to_owned())
+    })
+    .await
+    .map_err(|_| "OcrRecognitionFailed")??;
+    history
+        .update_ocr_authorized(item_id, &text, "done", &ticket, now())
+        .map_err(|error| error.to_string())?;
+    history
+        .privacy()
+        .check_read(&permit, now())
+        .map_err(|error| error.to_string())?;
     let result = OcrResult {
         item_id,
-        text: text.clone(),
+        text,
         confidence: None,
-        status: "done".to_string(),
+        status: "done".into(),
     };
-
-    let _ = app.emit("ocr:complete", &result);
-
+    let _ = app.emit(
+        "ocr:complete",
+        OcrResult {
+            item_id,
+            text: String::new(),
+            confidence: None,
+            status: "done".into(),
+        },
+    );
     Ok(result)
 }
 
@@ -85,18 +95,26 @@ pub fn get_ocr_status(
     state: State<'_, DbState>,
     item_id: i64,
 ) -> Result<OcrStatusResponse, String> {
-    let conn = state
-        .conn
-        .lock()
-        .map_err(|e| format!("DB lock failed: {e}"))?;
-    let (ocr_status, ocr_text) = state
-        .repo
-        .get_ocr_status_with_conn(&conn, item_id)?
-        .ok_or_else(|| format!("Clipboard entry {item_id} not found"))?;
+    use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
+    let now = || chrono::Utc::now().timestamp_millis();
+    let history = state.history_service();
+    let permit = history
+        .privacy()
+        .authorize_read(
+            PrivacyAccessIntent::AutomationRead,
+            SensitiveAccess::Denied,
+            None,
+            now(),
+        )
+        .map_err(|error| error.to_string())?;
+    let entry = history
+        .get_entry_authorized(item_id, &permit, now())
+        .map_err(|error| error.to_string())?
+        .ok_or("SensitiveAccessDenied")?;
     Ok(OcrStatusResponse {
         item_id,
-        ocr_status,
-        ocr_text,
+        ocr_status: entry.ocr_status.unwrap_or_else(|| "pending".into()),
+        ocr_text: entry.ocr_text,
     })
 }
 

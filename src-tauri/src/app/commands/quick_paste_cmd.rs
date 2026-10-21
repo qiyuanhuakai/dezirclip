@@ -323,6 +323,8 @@ pub async fn paste_quick_paste_selection(
         Some(plan.paste_with_format),
         Some(plan.move_to_top),
         Some(plan.paste_image_as_base64),
+        None,
+        None,
     )
     .await
     .map_err(|e| e.to_string())

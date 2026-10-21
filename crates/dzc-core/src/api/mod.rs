@@ -14,7 +14,7 @@ pub use clipboard::ClipboardService;
 pub use error::{CoreError, CoreErrorCode, CoreResult};
 pub use history::{AutomationHistory, HistoryQuery, HistorySearchMode, HistoryService};
 pub use summary::{EntrySummary, SearchRequest, SearchResult, SummaryQuery, SummarySearchMode};
-pub use privacy_session::{CaptureTicket, PrivacyError, PrivacyResult, PrivacySessionCommand,
+pub use privacy_session::{NativeReadLease,CaptureTicket, PrivacyError, PrivacyResult, PrivacySessionCommand,
     PrivacySessionService, PrivacySessionStatus, RuntimeSnapshot, PrivacyAccessIntent,
     PrivacyReadPermit, SensitiveAccess, ManualPersistenceIntent};
 

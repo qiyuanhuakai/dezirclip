@@ -1,4 +1,4 @@
-"""Disposable fixture writers must preserve schemas 20–22 search privacy contract."""
+"""Disposable fixture writers must preserve schemas 20–23 search privacy contract."""
 
 import base64
 from contextlib import closing, redirect_stdout
@@ -178,7 +178,7 @@ class SchemaTwentyFixtureTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "SQLite >= 3.50.4"):
                 connect_fixture_database(self.path)
         with closing(sqlite3.connect(self.path)) as connection, connection:
-            connection.execute("INSERT INTO schema_migrations VALUES(23)")
+            connection.execute("INSERT INTO schema_migrations VALUES(24)")
         with self.assertRaisesRegex(RuntimeError, "newer than supported"):
             connect_fixture_database(self.path)
 
@@ -231,10 +231,40 @@ class SchemaTwentyTwoFixtureTests(SchemaTwentyOneFixtureTests):
             connect_fixture_database(self.path)
 
 
-@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema22 cross-connection checks")
-class SchemaTwentyTwoWriterTests(unittest.TestCase):
+class SchemaTwentyThreeFixtureTests(SchemaTwentyTwoFixtureTests):
+    """Binary protection contract keeps 22 state and revokes record visibility transitions."""
+    schema_version = 23
+
+    def setUp(self):
+        super().setUp()
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            for field in ("tags TEXT DEFAULT '[]'", "content TEXT DEFAULT ''", "preview TEXT DEFAULT ''", "html_content TEXT", "ocr_text TEXT"):
+                connection.execute("ALTER TABLE clipboard_history ADD COLUMN " + field)
+            connection.create_function("dc_search_visible", 5, search_visible, deterministic=True)
+            connection.execute("CREATE TRIGGER privacy_record_visibility AFTER UPDATE OF tags,content,preview,html_content,ocr_text ON clipboard_history "
+                "WHEN dc_search_visible(old.tags,old.content,old.preview,old.html_content,old.ocr_text) <> dc_search_visible(new.tags,new.content,new.preview,new.html_content,new.ocr_text) "
+                "BEGIN UPDATE privacy_runtime_state SET privacy_epoch=privacy_epoch+1 WHERE singleton=1; END")
+
+    def test_current_schedule_is_not_rewritten_by_the_fixture_opener(self):
+        with closing(connect_fixture_database(self.path)) as connection:
+            self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone(), (23,))
+            self.assertEqual(connection.execute("SELECT privacy_epoch,session_enabled FROM privacy_runtime_state").fetchone(), (0, 0))
+            self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
+
+    def test_visibility_transition_revokes_epoch_and_missing_guard_is_rejected(self):
+        with closing(connect_fixture_database(self.path)) as connection, connection:
+            connection.execute("INSERT INTO clipboard_history(id,content) VALUES(1,'ordinary')")
+            connection.execute('UPDATE clipboard_history SET tags=? WHERE id=1', ('["sensitive"]',))
+            self.assertEqual(connection.execute("SELECT privacy_epoch FROM privacy_runtime_state").fetchone(), (1,))
+            connection.execute("DROP TRIGGER privacy_record_visibility")
+        with self.assertRaisesRegex(RuntimeError, "revision and privacy epoch triggers"):
+            connect_fixture_database(self.path)
+
+
+@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema23 cross-connection checks")
+class SchemaTwentyThreeWriterTests(unittest.TestCase):
     def test_cli_and_external_writer_keep_search_view_and_fts_consistent(self):
-        with tempfile.TemporaryDirectory(prefix="dzc-schema22-writer-") as directory:
+        with tempfile.TemporaryDirectory(prefix="dzc-schema23-writer-") as directory:
             path = Path(directory) / "history.db"
             environment = {**os.environ, "DEZIRCLIP_DB_PATH": str(path)}
             binary = str(Path(os.environ["DZC_TEST_BIN"]).resolve())
@@ -245,7 +275,7 @@ class SchemaTwentyTwoWriterTests(unittest.TestCase):
 
             cli("add", "nativekeepmarker")
             with closing(sqlite3.connect(path)) as raw:
-                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (22,))
+                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (23,))
                 self.assertEqual(raw.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
                 self.assertEqual(raw.execute("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'").fetchone(), (1,))
                 with self.assertRaisesRegex(sqlite3.OperationalError, "no such function: dc_search_visible"):
@@ -300,7 +330,7 @@ class SyntheticSeederTests(unittest.TestCase):
                                    env={**os.environ, "DEZIRCLIP_DB_PATH": str(path)},
                                    capture_output=True, check=True, timeout=30)
                     with closing(sqlite3.connect(path)) as database:
-                        self.assertEqual(database.execute("SELECT max(version) FROM schema_migrations").fetchone(), (22,))
+                        self.assertEqual(database.execute("SELECT max(version) FROM schema_migrations").fetchone(), (23,))
                         self.assertEqual(database.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
                 else:
                     with closing(sqlite3.connect(path)) as database:
@@ -324,8 +354,8 @@ class SyntheticSeederTests(unittest.TestCase):
     def test_direct_sqlite_fixture_stays_deterministic_for_legacy_without_cli(self):
         self._assert_seed_cases()
 
-    @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema22 seeder checks")
-    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema22(self):
+    @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema23 seeder checks")
+    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema23(self):
         self._assert_seed_cases(os.environ["DZC_TEST_BIN"])
 
 

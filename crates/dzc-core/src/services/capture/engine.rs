@@ -248,6 +248,10 @@ fn process(
         Ok(entry) => entry,
         Err(error) => return failure(error),
     };
+    if frame.metadata.inherited_protection {
+        entry.tags.push("sensitive".into());
+        evidence.push(PrivacyEvidence::new(EvidenceSource::ExistingRecord, EvidenceLevel::Explicit, PrivacyReason::ExistingRecordProtected));
+    }
     if context.sequential_echo.as_deref() == Some(&entry.content) {
         return CaptureOutcome::Skipped(CaptureSkip::SequentialEcho);
     }
@@ -272,17 +276,6 @@ fn process(
     }
     let mut decision = PrivacyPolicy.decide(evidence.clone());
     let persistent = context.settings.persistent && decision.action != PrivacyAction::SessionOnly;
-    if persistent
-        && decision.action == PrivacyAction::Encrypt
-        && crate::infrastructure::repository::protection::validate_sensitive_record(
-            &entry.content_type,
-            entry.is_external,
-            entry.html_content.as_deref(),
-        )
-        .is_err()
-    {
-        return CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected);
-    }
     let mut prepared = if persistent {
         match store.prepare(entry) {
             Ok(prepared) => prepared,
@@ -389,16 +382,6 @@ fn process(
     let new_image = entry.id == 0 && entry.content_type == "image";
     let mut removed_ids;
     if persistent {
-        if decision.action == PrivacyAction::Encrypt
-            && crate::infrastructure::repository::protection::validate_sensitive_record(
-                &prepared.entry.content_type,
-                prepared.entry.is_external,
-                prepared.entry.html_content.as_deref(),
-            )
-            .is_err()
-        {
-            return CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected);
-        }
         let committed = match store.commit(&prepared) {
             Ok(committed) => committed,
             Err(error) => return failure(error),
@@ -483,6 +466,7 @@ fn process(
     let ocr_target =
         (persistent && new_image && context.settings.ocr_enabled).then_some(prepared.entry.id);
     CaptureOutcome::Stored(StoredCapture {
+        privacy_ticket: ticket,
         entry: prepared.entry,
         persistent,
         removed_ids,
@@ -664,12 +648,12 @@ mod tests {
     }
 
     #[test]
-    fn echo_and_unsupported_sensitive_html_stop_before_preparation_or_commit() {
+    fn echo_skips_read_and_store_resource_failure_has_no_commit() {
         let session = Mutex::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = true;
         context.sequential_echo = Some("queue echo".into());
-        let store = Store::default();
+        let mut store = Store::default();
         let mut events = Events::default();
         assert!(matches!(
             CaptureEngine::capture_frame(
@@ -680,6 +664,7 @@ mod tests {
             ),
             CaptureOutcome::Skipped(CaptureSkip::SequentialEcho)
         ));
+        store.preparation_error = Some(CaptureFailure { stage:CaptureStage::Prepare, code:"SensitivePersistenceRejected".into() });
         context.settings.privacy_protection = true;
         context.settings.privacy_custom_rules = vec!["private@example\\.com".into()];
         assert!(matches!(
@@ -694,7 +679,7 @@ mod tests {
             ),
             CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected)
         ));
-        assert_eq!(store.preparations.get(), 0);
+        assert_eq!(store.preparations.get(), 1);
         assert_eq!(store.commits.get(), 0);
         assert_eq!(
             events.0,
