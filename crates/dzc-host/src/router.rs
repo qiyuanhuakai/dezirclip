@@ -237,6 +237,9 @@ impl Host {
         if can(Permission::SurfaceControl) && self.actions.can_activate() { methods.extend(["surface.activate", "surface.dismiss"]); }
         let mut platform = self.actions.platform_capabilities();
         if let Some(platform) = platform.as_object_mut() {
+            if can(Permission::DesktopHistory) && session.role()==ClientRole::Desktop {
+                platform.insert("desktop_generated_copy".into(),serde_json::json!({"supported":self.actions.can_copy(),"version":1}));
+            }
             platform.insert("service_start".into(),serde_json::json!({"supported":service_transition,
                 "reason":if service_transition {"available"} else {"process_exit_observation_unavailable"}}));
         }

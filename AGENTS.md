@@ -81,7 +81,7 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 
 4. **NO macOS code.** `cfg(target_os = "macos")` is forbidden. README states macOS support was deliberately removed. Any re-introduction = fork principle violation.
 
-5. **NO networking features.** Cloud sync, MQTT, AI assistant — all removed per fork. `services/` has no HTTP client, no WebSocket, no DNS. `tauri.conf.json` external URL whitelist is exactly 2 origins (`github.com/qiyuanhuakai/dezirclip`, `github.com/jimuzhe/tie-z`).
+5. **NO networking features beyond the explicitly approved signed updater.** Cloud sync, MQTT and AI assistant remain removed. The v0.2 updater may use its fixed GitHub release endpoints for signed application updates; local IPC Host/Service does not permit remote network access. See `docs/updater.md` and `docs/specs/v0.2-execution.md` for this limited exception.
 
 6. **NO inline theme CSS.** All styles must live under `src/styles/`. No `<style>` blocks in components.
 
@@ -91,7 +91,7 @@ Each feature owns its hooks. No Redux/Zustand/Jotai. Cross-feature state flows v
 
 9. **NO ESLint / Prettier / rustfmt config.** Project relies on `tsc --strict` + `cargo clippy` (not configured either) + code review. Adding these is a deliberate decision, not an oversight.
 
-10. **NO CI workflows.** `.github/` contains issue templates only. No `.github/workflows/*.yml`. All builds are local via pnpm scripts.
+10. **NO new general-purpose CI workflows.** The approved v0.2 execution scope maintains the existing `.github/workflows/{ci,release,standalone-cli,flatpak}.yml` for signed releases and focused protocol, platform, privacy, packaging and native upgrade gates. Extending those existing checks for Phase 1–5 follows `docs/specs/v0.2-execution.md`; it does not authorize unrelated automation. Normal local builds continue through pnpm scripts.
 
 11. **NO npm commands for project management.** `package.json` pins `packageManager: pnpm@11.0.9`; use `pnpm install`, `pnpm run ...`, and `pnpm exec ...` for all frontend/Tauri package tasks. Do not use `npm install`, `npm run ...`, or `npx` in project instructions or local verification commands.
 

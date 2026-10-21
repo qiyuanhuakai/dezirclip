@@ -106,6 +106,7 @@ pub fn capture(
         for (key, value) in [
             ("app.privacy_protection", if sensitive && input.id == 0 { "true" } else { "false" }),
             ("app.privacy_protection_custom_rules", if sensitive { "benchmarker" } else { "" }),
+            ("app.privacy_protection_kinds", ""),
         ] {
             conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES(?1,?2)", [key, value]).unwrap();
             let actual: String = conn.query_row("SELECT value FROM settings WHERE key=?1", [key], |row| row.get(0)).unwrap();

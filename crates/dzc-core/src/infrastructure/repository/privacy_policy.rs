@@ -738,26 +738,31 @@ impl SqliteClipboardRepository {
         } else {
             None
         };
+        tx.execute("DELETE FROM privacy_rules WHERE id=?1", [id])
+            .map_err(unavailable)?;
         let mut changed_session = Vec::new();
         if rule.kind == PrivacyRuleKind::ExactException {
+            let should_reprotect = |entry: &ClipboardEntry| -> Result<bool, String> {
+                Ok(rule.originally_protected
+                    || assess_entry(&tx, entry, true)?.decision.action
+                        == crate::privacy::PrivacyAction::Encrypt)
+            };
             for entry_id in ids {
                 let mut entry = strict_entry(self, &tx, entry_id)?;
-                if !protected(&entry) {
+                if !protected(&entry) && should_reprotect(&entry)? {
                     self.encrypt_entry_with_conn(&tx, entry_id)?;
                     entry.tags.push("sensitive".into());
                     sync_tags(&tx, entry_id, &entry.tags)?;
                 }
             }
             for (index, entry) in session.iter().enumerate() {
-                if !protected(entry) && rule.matches_entry(entry)? {
+                if !protected(entry) && rule.matches_entry(entry)? && should_reprotect(entry)? {
                     let mut protected = entry.clone();
                     add_protection(&mut protected)?;
                     changed_session.push((index, protected));
                 }
             }
         }
-        tx.execute("DELETE FROM privacy_rules WHERE id=?1", [id])
-            .map_err(unavailable)?;
         if let Some(cleanup) = &mut cleanup {
             cleanup.protect_surviving_references(&tx)?;
         }

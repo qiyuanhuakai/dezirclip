@@ -12,6 +12,24 @@ const TAG_CONTENT_LIMIT: usize = 50000;
 const MAX_HISTORY_LIMIT: i32 = 150;
 const MIN_HISTORY_LIMIT: i32 = 1;
 
+#[derive(serde::Serialize)]
+pub struct HostedTagItemsPage {
+    pub items:Vec<HostedEntry>,
+    pub total:usize,
+    pub has_more:bool,
+    pub next_offset:Option<usize>,
+}
+impl HostedTagItemsPage {
+    fn from_core(page:dzc_core::api::TagItemsPage,instance:&str)->Self {
+        Self {items:page.items.into_iter().map(|entry|HostedEntry{entry,host_instance_id:Some(instance.into())}).collect(),
+            total:page.total,has_more:page.has_more,next_offset:page.next_offset}
+    }
+}
+fn check_tag_host_instance(original:&str,current:&str)->AppResult<()> {
+    if original!=current {return Err(AppError::Validation("ClipboardHostInstanceChanged".into()));}
+    Ok(())
+}
+
 fn is_text_like_content_type(content_type: &str) -> bool {
     matches!(content_type, "text" | "code" | "url" | "rich_text")
 }
@@ -244,15 +262,18 @@ pub async fn get_tag_items(
 
 #[tauri::command]
 pub async fn get_tag_items_page(
+    app:AppHandle,
     state: State<'_, DbState>,
     tag: String,
     query: Option<String>,
     sort_by: Option<String>,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> AppResult<dzc_core::api::TagItemsPage> {
+) -> AppResult<HostedTagItemsPage> {
+    let bridge=app.state::<DesktopHost>().inner().clone();
+    let instance=bridge.instance().map_err(AppError::Validation)?;
     let repository = state.history_service();
-    tauri::async_runtime::spawn_blocking(move || {
+    let page=tauri::async_runtime::spawn_blocking(move || {
         let mut page=repository.tag_page(
             &tag,
             query.as_deref().unwrap_or(""),
@@ -265,13 +286,17 @@ pub async fn get_tag_items_page(
     })
     .await
     .map_err(|error| AppError::Internal(error.to_string()))?
-    .map_err(AppError::from)
+    .map_err(AppError::from)?;
+    check_tag_host_instance(&instance,&bridge.instance().map_err(AppError::Validation)?)?;
+    Ok(HostedTagItemsPage::from_core(page,&instance))
 }
 
 #[tauri::command]
-pub async fn get_tag_item_detail(state: State<'_, DbState>, id: i64) -> AppResult<ClipboardEntry> {
+pub async fn get_tag_item_detail(app:AppHandle,state: State<'_, DbState>, id: i64) -> AppResult<HostedEntry> {
+    let bridge=app.state::<DesktopHost>().inner().clone();
+    let instance=bridge.instance().map_err(AppError::Validation)?;
     let repository = state.history_service();
-    tauri::async_runtime::spawn_blocking(move || {
+    let entry=tauri::async_runtime::spawn_blocking(move || {
         let entry=repository.get_entry_by_id(id)?;
         let mut entries=entry.into_iter().collect();
         repository.entries_for_gui(&mut entries,true,chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
@@ -280,7 +305,9 @@ pub async fn get_tag_item_detail(state: State<'_, DbState>, id: i64) -> AppResul
         .await
         .map_err(|error| AppError::Internal(error.to_string()))?
         .map_err(AppError::from)?
-        .ok_or_else(|| AppError::Validation("Entry not found".into()))
+        .ok_or_else(|| AppError::Validation("Entry not found".into()))?;
+    check_tag_host_instance(&instance,&bridge.instance().map_err(AppError::Validation)?)?;
+    Ok(HostedEntry{entry,host_instance_id:Some(instance)})
 }
 
 #[tauri::command]
@@ -522,6 +549,29 @@ mod capture_summary_tests {
         dzc_core::api::HistoryService::from_legacy_connection(Arc::new(Mutex::new(
             crate::database::init_db(":memory:").unwrap(),
         )))
+    }
+
+    #[test]
+    fn tag_page_keeps_hidden_core_projection_and_original_host_identity() {
+        let repository=repository();
+        let mut hidden=entry(2);
+        hidden.tags=vec!["sensitive".into()];
+        hidden.content="synthetic private tag body".into();
+        hidden.preview=hidden.content.clone();
+        hidden.html_content=Some("<b>synthetic private tag body</b>".into());
+        let mut items=vec![hidden];
+        repository.entries_for_gui(&mut items,true,chrono::Utc::now().timestamp_millis()).unwrap();
+        let page=HostedTagItemsPage::from_core(dzc_core::api::TagItemsPage{items,total:61,has_more:true,next_offset:Some(60)},"original-tag-host");
+        let json=serde_json::to_value(page).unwrap();
+        assert_eq!(json["items"][0]["id"],2);
+        assert_eq!(json["items"][0]["host_instance_id"],"original-tag-host");
+        assert_eq!(json["total"],61);
+        assert_eq!(json["has_more"],true);
+        assert_eq!(json["next_offset"],60);
+        assert_eq!(json.as_object().unwrap().len(),4);
+        assert!(!json.to_string().contains("synthetic private tag body"));
+        check_tag_host_instance("original-tag-host","original-tag-host").unwrap();
+        assert!(check_tag_host_instance("original-tag-host","replacement-tag-host").unwrap_err().to_string().ends_with("ClipboardHostInstanceChanged"));
     }
 
     #[test]
