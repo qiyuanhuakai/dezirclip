@@ -218,12 +218,14 @@ fn native_payload(payload: ClipboardPayload) -> PlatformResult<crate::native_cli
 #[derive(Clone)]
 pub struct EmbeddedClipboardWriter {
     owner: std::sync::Arc<std::sync::Mutex<crate::native_clipboard::EmbeddedOwner>>,
+    #[cfg(target_os = "windows")]
     private_files: std::sync::Arc<std::sync::Mutex<Option<PrivateFileExport>>>,
 }
 impl Default for EmbeddedClipboardWriter {
     fn default() -> Self {
         Self {
             owner: crate::native_clipboard::EmbeddedOwner::shared(),
+            #[cfg(target_os = "windows")]
             private_files: Default::default(),
         }
     }
@@ -238,6 +240,7 @@ impl EmbeddedClipboardWriter {
             .owner
             .lock()
             .map_err(|_| PlatformError::failed(Capability::Write))?;
+        #[cfg(target_os = "windows")]
         let mut export_slot = self
             .private_files
             .lock()
@@ -255,6 +258,7 @@ impl EmbeddedClipboardWriter {
         {
             return Err(clipboard_failure(Capability::Write));
         }
+        #[cfg(target_os = "windows")]
         let mut export = None;
         let (payload, authorization) = match payload {
             ClipboardPayload::Private { .. } => return Err(clipboard_failure(Capability::Write)),
@@ -262,14 +266,24 @@ impl EmbeddedClipboardWriter {
                 files,
                 authorization: permission,
             } => {
-                // The in-process owner retains these handles. It never spawns the current executable.
-                let files = prepare_private_files(files, permission.clone())?;
-                let paths = files.paths()?;
-                export = Some(files);
-                (
-                    crate::native_clipboard::Payload::Files(paths),
-                    Some(permission),
-                )
+                #[cfg(target_os = "linux")]
+                {
+                    // The actual selection worker owns and closes its scoped kernel export.
+                    let lease = permission.native_lease().ok_or_else(|| clipboard_failure(Capability::Write))?;
+                    (crate::native_clipboard::Payload::LeasedFiles {
+                        files: files.into_iter().map(|file| crate::native_clipboard::NativeFile {
+                            name: file.name, bytes: file.bytes,
+                        }).collect(),
+                        lease,
+                    }, Some(permission))
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let files = prepare_private_files(files, permission.clone())?;
+                    let paths = files.paths()?;
+                    export = Some(files);
+                    (crate::native_clipboard::Payload::Files(paths), Some(permission))
+                }
             }
             ordinary => (native_payload(ordinary)?, authorization),
         };
@@ -292,10 +306,13 @@ impl EmbeddedClipboardWriter {
         owner
             .write_with_intent(payload, suppress)
             .map_err(|_| clipboard_failure(Capability::Write))?;
-        if let Some(previous) = export_slot.as_mut() {
-            previous.close()?;
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(previous) = export_slot.as_mut() {
+                previous.close()?;
+            }
+            *export_slot = export;
         }
-        *export_slot = export;
         if authorization
             .as_ref()
             .is_some_and(|auth| !auth.is_current())
@@ -304,10 +321,13 @@ impl EmbeddedClipboardWriter {
             owner
                 .revoke_private()
                 .map_err(|_| PlatformError::failed(Capability::Write))?;
-            if let Some(export) = export_slot.as_mut() {
-                export.close()?;
+            #[cfg(target_os = "windows")]
+            {
+                if let Some(export) = export_slot.as_mut() {
+                    export.close()?;
+                }
+                *export_slot = None;
             }
-            *export_slot = None;
             return Err(clipboard_failure(Capability::Write));
         }
         Ok(())
@@ -318,6 +338,8 @@ impl EmbeddedClipboardWriter {
             .map_err(|_| PlatformError::failed(Capability::Write))?
             .stop()
             .map_err(|_| PlatformError::failed(Capability::Write))?;
+        #[cfg(target_os = "windows")]
+        {
         let mut files = self
             .private_files
             .lock()
@@ -326,6 +348,19 @@ impl EmbeddedClipboardWriter {
             export.close()?;
         }
         *files = None;
+        }
+        Ok(())
+    }
+    /// Ordinary legacy GUI writes close only this GUI's previous private selection.
+    pub fn release_private_selection(&self) -> PlatformResult<()> {
+        let mut owner = self.owner.lock().map_err(|_| PlatformError::failed(Capability::Write))?;
+        owner.revoke_private().map_err(|_| PlatformError::failed(Capability::Write))?;
+        #[cfg(target_os = "windows")]
+        {
+            let mut files = self.private_files.lock().map_err(|_| PlatformError::failed(Capability::Write))?;
+            if let Some(export) = files.as_mut() { export.close()?; }
+            *files = None;
+        }
         Ok(())
     }
 }
@@ -1084,12 +1119,47 @@ mod tests {
             })
             .unwrap();
         let second_path = file_path();
-        first.stop().unwrap();
-        assert!(std::fs::read(&first_path).is_err());
+        wait_for_private_uri_closed(&first_path);
         assert_eq!(std::fs::read(&second_path).unwrap(), b"scoped second");
+        first.stop().unwrap();
         assert_eq!(file_path(), second_path);
         second.stop().unwrap();
         assert!(std::fs::read(&second_path).is_err());
+
+        // This is the same shared owner used by ordinary and protected GUI writes.
+        let gui = shared_embedded_clipboard_writer();
+        gui.write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+            files: vec![ClipboardFile { name: "gui.txt".into(), bytes: b"GUI protected file".to_vec() }],
+            authorization: authorize(),
+        }).unwrap();
+        let gui_path = file_path();
+        gui.write_suppressing_recapture(ClipboardPayload::Text("ordinary GUI replacement".into())).unwrap();
+        wait_for_private_uri_closed(&gui_path);
+        assert_eq!(NativeClipboard.read_representation("text/plain").unwrap(), b"ordinary GUI replacement");
+        gui.stop().unwrap();
+
+        // A separate native client replaces the offer; no stop/revoke/epoch change closes A.
+        let replaced = EmbeddedClipboardWriter::default();
+        replaced.write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+            files: vec![ClipboardFile { name: "external.txt".into(), bytes: b"external replacement protected file".to_vec() }],
+            authorization: authorize(),
+        }).unwrap();
+        let replaced_path = file_path();
+        crate::native_clipboard::write_embedded_with_intent(
+            crate::native_clipboard::Payload::Text("independent native replacement".into()), false,
+        ).unwrap();
+        wait_for_private_uri_closed(&replaced_path);
+        assert_eq!(NativeClipboard.read_representation("text/plain").unwrap(), b"independent native replacement");
+        replaced.stop().unwrap();
+        assert_eq!(NativeClipboard.read_representation("text/plain").unwrap(), b"independent native replacement");
+    }
+
+    fn wait_for_private_uri_closed(path: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while std::fs::read(path).is_ok() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(std::fs::read(path).is_err(), "the replaced selection must close its scoped export");
     }
 }
 

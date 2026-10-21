@@ -78,7 +78,7 @@ const AppHeader = ({
   typeFilter,
   setTypeFilter
 }: AppHeaderProps) => {
-  const { desktopInteractions } = usePlatformCapabilities();
+  const { desktopInteractions, failed, pending } = usePlatformCapabilities();
   const panelOnTop = showSettings || showTagManager || showEmojiPanel;
   const searchBoxVisible = showSearchBox || search.trim().length > 0;
   // The whole search box sits behind a panel guard, so closing a panel remounts
@@ -126,7 +126,7 @@ const AppHeader = ({
         <button
           className={`btn-icon btn-icon-scalable btn-icon-size-header ${isWindowPinned ? 'active' : ''}`}
           disabled={!desktopInteractions}
-          title={t(desktopInteractions ? 'pin' : 'wayland_interaction_unavailable')}
+          title={t(desktopInteractions ? 'pin' : pending ? 'platform_capabilities_checking' : failed ? 'platform_capabilities_unavailable' : 'wayland_interaction_unavailable')}
           onClick={() => {
             const newVal = !isWindowPinned;
             setIsWindowPinned(newVal);

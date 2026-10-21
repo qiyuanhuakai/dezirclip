@@ -11,7 +11,11 @@ impl ClipboardMonitor for NativeClipboardMonitor {
     fn capability(&self) -> CapabilityState {
         let active = self.active.load(Ordering::Acquire);
         #[cfg(target_os = "linux")]
-        let active = active || crate::wayland::WaylandClipboardBackend::monitor_active();
+        let active = if crate::wayland::requested() {
+            crate::wayland::WaylandClipboardBackend::monitor_active()
+        } else {
+            active
+        };
         let mut state = match crate::capture::probe_clipboard_monitor() {
             Ok(backend) => {
                 CapabilityState::available(backend, active).with_probe("native_monitor_setup")
