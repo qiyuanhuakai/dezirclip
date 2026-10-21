@@ -363,6 +363,20 @@ impl PrivacySessionService {
         check_capture_with_conn(&conn, ticket, now_ms)
     }
 
+    /// Internal background OCR uses the original unforgeable capture ticket, never a user grant.
+    pub(super) fn capture_ocr_permit(
+        &self,
+        ticket: &CaptureTicket,
+        now_ms: i64,
+    ) -> PrivacyResult<PrivacyReadPermit> {
+        self.check_capture(ticket, now_ms)?;
+        Ok(PrivacyReadPermit {
+            intent: PrivacyAccessIntent::SelectedCopy,
+            ticket: *ticket,
+            sensitive: true,
+        })
+    }
+
     pub fn authorize_read(
         &self,
         intent: PrivacyAccessIntent,
