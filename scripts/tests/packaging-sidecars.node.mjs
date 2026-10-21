@@ -144,7 +144,6 @@ test("invalid hook settings fail closed before building", () => {
 
 test("packaging entry points use the shared hook and portable CLI feature", () => {
   const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
-  config.version = JSON.parse(readFileSync(join(f.directory, "package.json"), "utf8")).version;
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal(config.build.beforeBuildCommand, "pnpm run build && pnpm run tauri:prepare-sidecars --phase build");
   assert.equal(config.build.beforeBundleCommand, "pnpm run tauri:prepare-sidecars --phase bundle");
@@ -188,6 +187,7 @@ test("RPM wrapper invokes only the bundle process and keeps source versions and 
   prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: {} });
   mkdirSync(join(f.directory, "src-tauri"), { recursive: true });
   const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  config.version = JSON.parse(readFileSync(join(f.directory, "package.json"), "utf8")).version;
   writeFileSync(join(f.directory, "src-tauri/tauri.conf.json"), JSON.stringify(config));
   const protectedPaths = [join(f.directory, "package.json"), join(f.directory, "src-tauri/tauri.conf.json"), join(f.directory, "Cargo.lock"), f.hostDefault];
   const before = protectedPaths.map((path) => hash(readFileSync(path)));
