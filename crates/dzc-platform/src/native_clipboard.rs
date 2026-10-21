@@ -394,7 +394,9 @@ pub fn serve_owner() -> Result<(), String> {
             }
             conn.flush().map_err(|e| e.to_string())?;
         }
-        drop(exports);
+        if let Some(mut exports) = exports {
+            exports.stop()?;
+        }
         Ok(())
     }
     #[cfg(target_os = "windows")]
