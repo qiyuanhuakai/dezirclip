@@ -740,6 +740,10 @@ const ClipboardItem = ({
     const tagInputRef = useRef<HTMLInputElement>(null);
     const hiddenRef = useRef(isSensitiveHidden);
     hiddenRef.current = isSensitiveHidden;
+    const contentIdentity = useRef({ item, hidden: isSensitiveHidden, generation: 0 });
+    if (contentIdentity.current.item !== item || contentIdentity.current.hidden !== isSensitiveHidden) {
+        contentIdentity.current = { item, hidden: isSensitiveHidden, generation: contentIdentity.current.generation + 1 };
+    }
     const [localTagInput, setLocalTagInput] = useState(tagInput);
     const [snapshotFailed, setSnapshotFailed] = useState(false);
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
@@ -753,6 +757,7 @@ const ClipboardItem = ({
     const [ocrStatus, setOcrStatus] = useState<string | null>(item.ocr_status ?? null);
     const [ocrTextExpanded, setOcrTextExpanded] = useState(false);
     useEffect(() => subscribePrivacyInvalidation(() => {
+        contentIdentity.current.generation += 1;
         setOcrText(null);
         setOcrStatus(null);
         setOcrTextExpanded(false);
@@ -1088,9 +1093,7 @@ const ClipboardItem = ({
     // it, so the subscription reads the id it is currently showing instead of
     // re-subscribing on every shift.
     const ocrItemIdRef = useRef(item.id);
-    useEffect(() => {
-        ocrItemIdRef.current = item.id;
-    }, [item.id]);
+    ocrItemIdRef.current = item.id;
 
     useEffect(() => {
         return subscribeOcrComplete(
@@ -1099,9 +1102,10 @@ const ClipboardItem = ({
                 setOcrStatus(payload.status);
                 const access = beginPrivacyAccess();
                 if (!access || hiddenRef.current) { setOcrText(null); return; }
+                const generation = contentIdentity.current.generation;
                 void invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: ocrItemIdRef.current, expectedEpoch: access.epoch })
-                    .then(entry => { if (access.isCurrent()) setOcrText(entry.ocr_text ?? null); })
-                    .catch(() => { setOcrText(null); });
+                    .then(entry => { if (access.isCurrent() && !hiddenRef.current && generation === contentIdentity.current.generation) setOcrText(entry.ocr_text ?? null); })
+                    .catch(() => { if (generation === contentIdentity.current.generation) setOcrText(null); });
             }
         );
     }, []);
@@ -1119,17 +1123,18 @@ const ClipboardItem = ({
         if (ocrRunning || item.content_type !== "image") return;
         const access = beginPrivacyAccess();
         if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
+        const generation = contentIdentity.current.generation;
         setOcrRunning(true);
         setOcrStatus("processing");
         invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedPrivacyEpoch: access.epoch })
             .then((result: unknown) => {
-                if (!access.isCurrent() || ocrItemIdRef.current !== item.id) return;
+                if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 const res = result as { text: string; status: string };
                 setOcrText(res.text || null);
                 setOcrStatus(res.status);
             })
             .catch((err) => {
-                if (!access.isCurrent() || ocrItemIdRef.current !== item.id) return;
+                if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 const msg = err instanceof Error ? err.message : String(err);
                 setOcrStatus("failed");
                 setContextMenuState(null);
@@ -1141,8 +1146,9 @@ const ClipboardItem = ({
     const handleTransform = useCallback((kind: string) => {
         const access = beginPrivacyAccess();
         if (!access || isSensitiveHidden) { onTransformItemError?.(kind, t("privacy_reveal_first")); return; }
+        const generation = contentIdentity.current.generation;
         const proceed = (text: string) => {
-            if (!access.isCurrent()) return;
+            if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
             invoke("copy_to_clipboard", {
                 content: text,
                 contentType: "text",
@@ -1152,7 +1158,8 @@ const ClipboardItem = ({
                 pasteWithFormat: false,
                 moveToTop: false,
                 pasteImageAsBase64: false,
-                expectedPrivacyEpoch: access.epoch
+                expectedPrivacyEpoch: access.epoch,
+                derivedFromId: isSensitiveEntry(item) ? item.id : undefined
             })
                 .then(() => onTransformItemSuccess?.(kind))
                 .catch((err) => {
@@ -1163,7 +1170,7 @@ const ClipboardItem = ({
         onTransformItem?.(kind);
         const transform = (entry: ClipboardEntry) => invoke<string>("transform_text", { text: entry.content, kind })
             .then((result) => {
-                if (!access.isCurrent()) return;
+                if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 if (result) {
                     proceed(result);
                 } else {
@@ -1221,13 +1228,14 @@ const ClipboardItem = ({
                 moveToTop: false,
                 pasteImageAsBase64: false,
                 expectedPrivacyEpoch: access.epoch,
+                derivedFromId: isSensitiveEntry(item) ? item.id : undefined,
             });
             onTransformItemSuccess?.("paste_ocr");
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             onTransformItemError?.("paste_ocr", msg);
         }
-    }, [ocrText, onTransformItemError, onTransformItemSuccess, isSensitiveHidden, t]);
+    }, [ocrText, onTransformItemError, onTransformItemSuccess, isSensitiveHidden, t, item]);
 
     const handleShare = useCallback(async () => {
         if (shareInFlightRef.current) {
@@ -1238,20 +1246,27 @@ const ClipboardItem = ({
         try {
             const access = beginPrivacyAccess();
             if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
-            const content = loadFullItem ? (await loadFullItem()).content : item.content;
-            if (!access.isCurrent()) return;
+            const generation = contentIdentity.current.generation;
             if (navigator.share) {
+                const content = loadFullItem ? (await loadFullItem()).content : item.content;
+                if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 await navigator.share({ text: content });
                 return;
             }
-            await navigator.clipboard.writeText(content);
+            if (!access.isCurrent()) return;
+            await invoke("copy_to_clipboard", {
+                id: item.id, content: "", contentType: item.content_type, paste: false,
+                deleteAfterUse: false, pasteWithFormat: item.content_type === "rich_text", moveToTop: false,
+                pasteImageAsBase64: false,
+                expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined,
+            });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             onTransformItemError?.("share", msg);
         } finally {
             shareInFlightRef.current = false;
         }
-    }, [item.content, loadFullItem, onTransformItemError, t, isSensitiveHidden]);
+    }, [item, loadFullItem, onTransformItemError, t, isSensitiveHidden]);
 
     const handleContextMenuAction = useCallback((action: string) => {
         switch (action) {
@@ -1549,7 +1564,7 @@ const ClipboardItem = ({
                                 onEdit();
                             }}><Edit2 size={12} /></button>
                         )}
-                        {showSensitiveVisibilityControl && item.tags?.some(tag => ['sensitive', '密码', 'password'].includes(tag.toLowerCase())) && (
+                        {showSensitiveVisibilityControl && isSensitiveEntry(item) && (
                             <button
                                 className={`btn-icon ${isRevealed ? "active" : ""}`}
                                 onClick={onToggleReveal}
@@ -1622,7 +1637,8 @@ const ClipboardItem = ({
                     <Pin size={10} fill="currentColor" />
                 </div>
             )}
-            <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${isSensitiveHidden ? 'privacy-concealed' : ''}`}>
+            <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${isSensitiveHidden ? 'privacy-concealed' : ''}`}
+                onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}>
                 {isSensitiveHidden ? <div className="privacy-hidden-content">{t("privacy_sensitive_hidden")}</div>
                     : item.content_type === "file" && !item.content ? <div className="privacy-file-metadata">{item.preview}</div>
                     : item.content_type === "image" ? (
@@ -1691,8 +1707,7 @@ const ClipboardItem = ({
                                 if (useRichImageFallback) {
                                     richPreviewFailureLog("fallback image load error -> switch to snapshot", {
                                         itemId: item.id,
-                                        srcLength: (richTextPreviewSrc || "").length,
-                                        srcSample: (richTextPreviewSrc || "").slice(0, 140)
+                                        srcLength: (richTextPreviewSrc || "").length
                                     });
                                     setRichImageFallbackFailed(true);
                                     return;
@@ -1704,8 +1719,7 @@ const ClipboardItem = ({
                                 if (effectiveRichTextSnapshotSrc) {
                                     richPreviewFailureLog("snapshot image load error -> fallback to html", {
                                         itemId: item.id,
-                                        srcLength: (richTextPreviewSrc || "").length,
-                                        srcSample: (richTextPreviewSrc || "").slice(0, 140)
+                                        srcLength: (richTextPreviewSrc || "").length
                                     });
                                     setSnapshotFailed(true);
                                 }

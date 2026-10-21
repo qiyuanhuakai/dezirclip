@@ -31,7 +31,8 @@ export const useClipboardActions = ({
       contentType: string,
       pasteWithFormat = false,
       pasteImageAsBase64 = false,
-      expectedPrivacyEpoch?: number
+      expectedPrivacyEpoch?: number,
+      derivedFromId?: number
     ) => {
       try {
         if (document.activeElement instanceof HTMLElement) {
@@ -47,7 +48,8 @@ export const useClipboardActions = ({
           pasteWithFormat,
           pasteImageAsBase64,
           moveToTop: moveToTopAfterPaste,
-          expectedPrivacyEpoch
+          expectedPrivacyEpoch,
+          derivedFromId
         });
 
         if (moveToTopAfterPaste && !deleteAfterPaste) {

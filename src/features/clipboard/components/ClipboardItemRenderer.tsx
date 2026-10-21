@@ -48,7 +48,8 @@ export interface ClipboardItemRendererProps {
         contentType: string,
         pasteWithFormat?: boolean,
         pasteImageAsBase64?: boolean,
-        expectedPrivacyEpoch?: number
+        expectedPrivacyEpoch?: number,
+        derivedFromId?: number
     ) => Promise<void>;
     setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
     openContent: (item: ClipboardEntry, expectedPrivacyEpoch?: number) => void;
@@ -92,25 +93,38 @@ const ClipboardItemRenderer = ({
     onTransformError,
     onTransformSuccess
 }: ClipboardItemRendererProps) => {
-    const [detail, setDetail] = useState<ClipboardEntry | null>(null);
-    const [resourcePreview, setResourcePreview] = useState<ClipboardEntry | null>(null);
+    const [detailState, setDetailState] = useState<{ source: ClipboardEntry; value: ClipboardEntry } | null>(null);
+    const detail = detailState?.source === item ? detailState.value : null;
+    const setDetail = (value: ClipboardEntry | null) => setDetailState(value ? { source: item, value } : null);
+    const [resourceState, setResourceState] = useState<{ source: ClipboardEntry; value: ClipboardEntry } | null>(null);
+    const resourcePreview = resourceState?.source === item ? resourceState.value : null;
+    const setResourcePreview = (value: ClipboardEntry | null) => setResourceState(value ? { source: item, value } : null);
     const mounted = useRef(false);
+    const detailGeneration = useRef(0);
     const currentItem = useRef(item);
     currentItem.current = item;
     const sensitive = isSensitiveEntry(item);
     useEffect(() => {
         mounted.current = true;
-        const stop = subscribePrivacyInvalidation(() => { setDetail(null); setResourcePreview(null); });
-        return () => { mounted.current = false; stop(); };
+        const stop = subscribePrivacyInvalidation(() => { detailGeneration.current += 1; setDetail(null); setResourcePreview(null); });
+        return () => { mounted.current = false; detailGeneration.current += 1; stop(); };
     }, []);
     useEffect(() => {
+        detailGeneration.current += 1;
         setDetail(null);
         setRevealedIds(previous => {
             if (!previous.has(item.id)) return previous;
             const next = new Set(previous); next.delete(item.id); return next;
         });
     }, [item, setRevealedIds]);
-    const loadFullItem = useCallback(() => getPrivacyEntry(item.id), [item.id]);
+    const loadFullItem = useCallback(() => {
+        const requestedItem = currentItem.current;
+        const generation = detailGeneration.current;
+        return getPrivacyEntry(item.id).then(value => {
+            if (!mounted.current || detailGeneration.current !== generation || currentItem.current !== requestedItem) throw new Error("PrivacyReadSuperseded");
+            return value;
+        });
+    }, [item.id]);
     useEffect(() => {
         let disposed = false;
         setResourcePreview(null);
@@ -145,6 +159,7 @@ const ClipboardItemRenderer = ({
     const onToggleReveal = useCallback(
         (e: MouseEvent) => {
             e.stopPropagation();
+            const generation = ++detailGeneration.current;
             if (isRevealed) {
                 clearRichTextSnapshots();
                 void hideCompactPreviewGlobal();
@@ -155,10 +170,10 @@ const ClipboardItemRenderer = ({
             const access = beginPrivacyAccess();
             if (!access) return;
             void loadFullItem().then(value => {
-                if (!mounted.current || !access.isCurrent() || currentItem.current !== item) return;
+                if (!mounted.current || !access.isCurrent() || currentItem.current !== item || detailGeneration.current !== generation) return;
                 setDetail(value);
                 setRevealedIds(previous => new Set(previous).add(itemId));
-            }).catch(() => { if (mounted.current) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
+            }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
         },
         [setRevealedIds, itemId, isRevealed, item, loadFullItem, onTransformError, t]
     );
@@ -222,9 +237,10 @@ const ClipboardItemRenderer = ({
         if (sensitive && (!isRevealed || !detail)) { onTransformError(item, "privacy_read", t("privacy_reveal_first")); return; }
         const access = beginPrivacyAccess();
         if (!access) return;
+        const generation = detailGeneration.current;
         void loadFullItem().then(value => {
-            if (mounted.current && access.isCurrent()) onQRCode(value);
-        }).catch(() => { if (mounted.current) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
+            if (mounted.current && access.isCurrent() && currentItem.current === item && detailGeneration.current === generation) onQRCode(value);
+        }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
     }, [onQRCode, item, loadFullItem, onTransformError, t, sensitive, isRevealed, detail]);
 
     const onTransformItemError = useCallback(
