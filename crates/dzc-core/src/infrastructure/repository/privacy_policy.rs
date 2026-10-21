@@ -22,6 +22,8 @@ pub(super) struct StoredRule {
     pub version: u8,
     pub kind: PrivacyRuleKind,
     pub source_app: Option<String>,
+    #[serde(default)]
+    pub content_type: Option<String>,
     pub salt: [u8; 16],
     pub digest: Option<[u8; 32]>,
     pub origin_entry_id: Option<i64>,
@@ -105,6 +107,10 @@ impl StoredRule {
     fn matches_entry(&self, entry: &ClipboardEntry) -> Result<bool, String> {
         Ok(self.kind == PrivacyRuleKind::ExactException
             && source_matches(self, &entry.source_app)
+            && self
+                .content_type
+                .as_deref()
+                .is_none_or(|value| value == entry.content_type)
             && self.digest == Some(fingerprint(entry, &self.salt)?))
     }
     fn evidence(&self, reason: PrivacyReason) -> PrivacyEvidence {
@@ -140,8 +146,13 @@ fn load_rules(conn: &Connection) -> Result<Vec<StoredRule>, String> {
             || rule.source_app.as_ref().is_some_and(|value| {
                 value.len() > 1024 || value.trim().is_empty() || value.chars().any(char::is_control)
             })
+            || rule.content_type.as_ref().is_some_and(|value| {
+                value.is_empty() || value.len() > 64 || value.chars().any(char::is_control)
+            })
             || rule.kind != PrivacyRuleKind::ExactException
-                && (rule.source_app.is_none() || rule.digest.is_some())
+                && (rule.source_app.is_none()
+                    || rule.digest.is_some()
+                    || rule.content_type.is_some())
             || rule.kind == PrivacyRuleKind::ExactException && rule.digest.is_none()
         {
             return Err(unavailable(()));
@@ -176,7 +187,7 @@ fn settings(conn: &Connection) -> Result<Settings, String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .take(33)
-        .map(str::to_owned)
+        .map(|value| value.chars().take(8 * 1024 + 1).collect())
         .collect();
     let excluded = crate::services::capture::source_exclusion::parse_excluded_source_apps(
         &raw("app.excluded_source_apps")?.unwrap_or_default(),
@@ -279,7 +290,12 @@ pub(crate) fn assess_entry(
     let matching: Vec<_> = rules
         .iter()
         .filter(|rule| {
-            rule.kind == PrivacyRuleKind::ExactException && source_matches(rule, &entry.source_app)
+            rule.kind == PrivacyRuleKind::ExactException
+                && source_matches(rule, &entry.source_app)
+                && rule
+                    .content_type
+                    .as_deref()
+                    .is_none_or(|value| value == entry.content_type)
         })
         .collect();
     if !matching.is_empty() {
@@ -547,11 +563,22 @@ impl SqliteClipboardRepository {
                     rule.kind == PrivacyRuleKind::ExactException || !source_matches(rule, source)
                 });
             }
+            let exact_digest = if kind == PrivacyRuleKind::ExactException {
+                Some(content_digest(&entry)?)
+            } else {
+                None
+            };
             let mut matching = None;
             for rule in &rules {
                 if rule.kind == kind
                     && source_matches(rule, source)
-                    && (kind != PrivacyRuleKind::ExactException || rule.matches_entry(&entry)?)
+                    && (kind != PrivacyRuleKind::ExactException
+                        || (rule
+                            .content_type
+                            .as_deref()
+                            .is_none_or(|value| value == entry.content_type)
+                            && rule.digest
+                                == exact_digest.map(|digest| salted_digest(&digest, &rule.salt))))
                 {
                     matching = Some(rule);
                     break;
@@ -572,9 +599,14 @@ impl SqliteClipboardRepository {
                     version: 1,
                     kind,
                     source_app: Some(source.to_owned()),
+                    content_type: (kind == PrivacyRuleKind::ExactException)
+                        .then(|| entry.content_type.clone()),
                     salt,
                     digest: if kind == PrivacyRuleKind::ExactException {
-                        Some(fingerprint(&entry, &salt)?)
+                        Some(salted_digest(
+                            &exact_digest.expect("exact digest prepared"),
+                            &salt,
+                        ))
                     } else {
                         None
                     },
