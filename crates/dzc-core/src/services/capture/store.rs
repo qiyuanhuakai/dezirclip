@@ -532,6 +532,74 @@ mod tests {
     }
 
     #[test]
+    fn protected_session_files_keep_complete_bytes_in_ram_and_old_tickets_cannot_publish() {
+        let (directory, state) = database();
+        let source = directory.join("synthetic.txt");
+        std::fs::write(&source, b"synthetic session private bytes").unwrap();
+        let session = Mutex::new(VecDeque::new());
+        let mut context = context(&session);
+        context.settings.persistent = false;
+        let store = state.capture_store(&directory);
+        let frame = |ticket| CaptureFrame {
+            data: CaptureData::Files(vec![source.to_string_lossy().into_owned()]),
+            metadata: CaptureReadMetadata {
+                privacy_ticket: Some(ticket),
+                inherited_protection: true,
+                ..Default::default()
+            },
+        };
+        let ticket = store.capture_ticket(1).unwrap().unwrap();
+        let result = CaptureEngine::capture_frame(&context, frame(ticket), &store, &mut ());
+        let CaptureOutcome::Stored(result) = result else {
+            panic!("complete protected session archive should publish")
+        };
+        assert!(result.entry.id < 0);
+        assert!(crate::database::has_sensitive_tag(&result.entry.tags));
+        let decoded =
+            crate::infrastructure::protected_resources::decode_files(&result.entry.content)
+                .unwrap();
+        assert_eq!(decoded[0].bytes, b"synthetic session private bytes");
+        assert!(!result.entry.is_external);
+        assert!(!directory.join("attachments").exists());
+        let old = store.capture_ticket(1).unwrap().unwrap();
+        state
+            .repo
+            .privacy_service()
+            .set_session(
+                crate::api::PrivacySessionCommand::On { duration_ms: None },
+                2,
+            )
+            .unwrap();
+        state
+            .repo
+            .privacy_service()
+            .set_session(crate::api::PrivacySessionCommand::Off, 3)
+            .unwrap();
+        assert!(matches!(
+            CaptureEngine::capture_frame(&context, frame(old), &store, &mut ()),
+            CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged)
+        ));
+        assert_eq!(session.lock().unwrap().len(), 1);
+        assert_eq!(
+            std::fs::read(&source).unwrap(),
+            b"synthetic session private bytes"
+        );
+        assert_eq!(
+            state
+                .conn
+                .lock()
+                .unwrap()
+                .query_row("SELECT count(*) FROM clipboard_history", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        drop(store);
+        drop(state);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn session_html_embeds_with_a_budget_and_failed_reads_leave_session_unchanged() {
         let (directory, state) = database();
         let source = directory.join("source.png");
