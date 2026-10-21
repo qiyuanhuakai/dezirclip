@@ -1,4 +1,22 @@
 /* Settings Panel */
+.about-settings-group .group-header h3 { margin: 0; width: 100%; }
+.about-group-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0; border: 0; color: inherit; background: none; font: inherit; cursor: pointer; text-align: start; }
+.about-group-toggle:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 4px; }
+.about-build {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.about-build h4 { margin: 8px 0; font-size: var(--font-size-md); }
+.about-app-version { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin: 12px 0; }
+.about-app-version strong { font-size: var(--font-size-lg); }
+.about-build-details summary { cursor: pointer; font-size: var(--font-size-sm); color: var(--text-secondary); }
+.about-build-details dl { margin: 12px 0 0; font-size: var(--font-size-sm); }
+.about-build-details dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; padding: 6px 0; }
+.about-build-details dt { color: var(--text-secondary); }
+.about-build-details dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
+.about-build-error p { color: var(--text-secondary); }
+
 .update-settings {
   grid-column: 1 / -1;
   min-width: 0;
