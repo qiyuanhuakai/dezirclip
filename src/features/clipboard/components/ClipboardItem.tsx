@@ -750,6 +750,7 @@ const ClipboardItem = ({
     const [richTextSnapshotSrc, setRichTextSnapshotSrc] = useState<string | null>(null);
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
     const [contextMenuState, setContextMenuState] = useState<{ x: number; y: number } | null>(null);
+    const [privacyFeedbackPending, setPrivacyFeedbackPending] = useState(false);
     const [transformKinds, setTransformKinds] = useState<TransformKindDto[]>(
         () => transformKindsCache ?? []
     );
@@ -1308,7 +1309,8 @@ const ClipboardItem = ({
     }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin, handleShare, handleImageBase64Copy]);
     const handlePrivacyFeedback = useCallback(async (action: PrivacyFeedbackAction) => {
         const access = beginPrivacyAccess();
-        if (!access || item.id === 0) return;
+        if (!access || item.id === 0 || privacyFeedbackPending) return;
+        setPrivacyFeedbackPending(true);
         try {
             const decision = await invokePrivacyBound<{ reason: string }>("get_privacy_decision", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch });
             const hint = decision.reason === "scan_incomplete" ? t("privacy_scan_incomplete")
@@ -1316,18 +1318,20 @@ const ClipboardItem = ({
             const prompt = t(action === "not_sensitive" ? "privacy_feedback_unprotect_confirm"
                 : action === "exact_exception" ? "privacy_feedback_exact_confirm" : "privacy_feedback_confirm");
             const confirmed = await ask(hint ? `${hint}\n\n${prompt}` : prompt, { title: t("privacy_feedback_title"), kind: "warning" });
-            if (!confirmed) return;
+            if (!confirmed) { await invoke("activate_window_focus"); return; }
             await refreshPrivacyAfterConfirmation(access.epoch);
             if (getPrivacyViewState().phase !== "ready" || getPrivacyViewState().snapshot?.privacy_epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
             await submitPrivacyFeedback(item.id, action, item.host_instance_id);
             onTransformItemSuccess?.("privacy_feedback");
         } catch {
             onTransformItemError?.("privacy_feedback", t("privacy_action_failed"));
+        } finally {
+            setPrivacyFeedbackPending(false);
         }
-    }, [item.id, item.host_instance_id, onTransformItemError, onTransformItemSuccess, t]);
+    }, [item.id, item.host_instance_id, privacyFeedbackPending, onTransformItemError, onTransformItemSuccess, t]);
 
     useEffect(() => {
-        if (!contextMenuState) return;
+        if (!contextMenuState && !privacyFeedbackPending) return;
         setIgnoreBlurSafe(true);
         const handleClick = () => setContextMenuState(null);
         document.addEventListener("click", handleClick);
@@ -1335,7 +1339,7 @@ const ClipboardItem = ({
             document.removeEventListener("click", handleClick);
             setIgnoreBlurSafe(false);
         };
-    }, [contextMenuState]);
+    }, [contextMenuState, privacyFeedbackPending]);
 
     useEffect(() => {
         const handleOtherMenuOpen = (e: Event) => {
