@@ -69,7 +69,11 @@
         "desktop.capture.finish",
         "desktop.history.summary",
         "desktop.history.mutate",
-        "desktop.clipboard.copy"
+        "desktop.clipboard.copy",
+        "desktop.privacy.rules",
+        "desktop.privacy.decision",
+        "desktop.privacy.feedback",
+        "desktop.privacy.remove_rule"
       ]
     },
     "WireErrorCode": {
@@ -87,7 +91,13 @@
         "busy",
         "privacy_blocked",
         "internal",
-        "deadline_exceeded"
+        "deadline_exceeded",
+        "privacy_state_unavailable",
+        "privacy_epoch_changed",
+        "privacy_session_active",
+        "sensitive_access_denied",
+        "manual_persistence_confirmation_required",
+        "privacy_duration_invalid"
       ]
     },
     "WireError": {
@@ -880,6 +890,110 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.rules"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.decision"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "id"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.feedback"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "id",
+                      "action"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.remove_rule"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "rule_id"
+                    ]
+                  }
+                ]
               }
             }
           }

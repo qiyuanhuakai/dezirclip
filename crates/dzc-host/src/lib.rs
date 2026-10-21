@@ -8,6 +8,7 @@ mod client;
 mod work;
 mod desktop;
 mod desktop_actions;
+mod desktop_policy;
 mod hotkey;
 mod upload;
 mod ocr;

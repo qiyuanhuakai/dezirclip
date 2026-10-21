@@ -13,7 +13,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{Emitter, Manager, State};
 use urlencoding::decode;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
@@ -115,6 +115,7 @@ pub fn copy_image_bytes_to_system_clipboard(bytes: Vec<u8>) -> AppResult<()> {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+    owned_clipboard_writer()?.release_private_selection().map_err(|error|AppError::Internal(error.to_string()))?;
     let hashes = copy_image_bytes_to_clipboard(bytes, current_time)?;
     crate::LAST_APP_SET_HASH.store(hashes.0, Ordering::SeqCst);
     crate::LAST_APP_SET_HASH_ALT.store(hashes.1, Ordering::SeqCst);
@@ -429,11 +430,11 @@ pub(crate) fn write_content_to_system_clipboard(
 ) -> AppResult<()> {
     let (content_hash, current_time) = calculate_content_hash(content);
 
-    let clipboard_hashes = if dzc_platform::runtime::is_native_wayland() {
+    let clipboard_hashes = if cfg!(target_os="linux") {
         write_native_wayland_content(content, &options)?;
         (content_hash.max(1), 0)
     } else {
-        dzc_platform::runtime::shared_embedded_clipboard_writer()
+        owned_clipboard_writer()?
             .release_private_selection().map_err(|error| AppError::Internal(error.to_string()))?;
         match options.content_type {
         "image" | "video" | "file" => {
@@ -492,9 +493,19 @@ fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'
         }
         _ => Payload::Text(content.to_string()),
     };
-    let writer = dzc_platform::runtime::shared_embedded_clipboard_writer();
+    let writer = owned_clipboard_writer()?;
     if options.mark_as_self_copy { writer.write_suppressing_recapture(payload) } else { writer.write(payload) }
         .map_err(|error| AppError::Internal(error.to_string()))
+}
+
+fn owned_clipboard_writer()->AppResult<dzc_platform::runtime::EmbeddedClipboardWriter> {
+    if let Some(app)=crate::global_state::GLOBAL_APP_HANDLE.get() {
+        return app.state::<crate::app::ipc_host::DesktopHost>().writer().map_err(AppError::Validation);
+    }
+    #[cfg(test)]
+    return Ok(dzc_platform::runtime::shared_embedded_clipboard_writer().clone());
+    #[cfg(not(test))]
+    Err(AppError::Validation("ClipboardHostUnavailable".into()))
 }
 
 fn copy_file_like_content(
@@ -808,14 +819,9 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
 
     #[cfg(target_os = "linux")]
     {
-        crate::infrastructure::linux_api::clipboard::set_clipboard_image_with_formats(
-            crate::infrastructure::linux_api::clipboard::ImageData {
-                width: width as usize,
-                height: height as usize,
-                bytes: rgba.into_raw(),
-            },
-        )
-        .map_err(AppError::from)?;
+        use dzc_core::ports::ClipboardWriter;
+        owned_clipboard_writer()?.write_suppressing_recapture(dzc_core::ports::ClipboardPayload::Image{bytes,mime:if is_gif{"image/gif"}else{"image/png"}.into()})
+            .map_err(|error|AppError::Internal(error.to_string()))?;
     }
 
     Ok((primary_hash, secondary_hash))
@@ -1511,13 +1517,6 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
     });
 }
 
-#[cfg_attr(
-    not(target_os = "windows"),
-    allow(
-        unused_variables,
-        reason = "Linux OCR is stubbed; bytes only consumed on Windows"
-    )
-)]
 #[cfg(test)]
 mod tests {
     use super::*;

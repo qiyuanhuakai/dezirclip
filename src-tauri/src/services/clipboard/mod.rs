@@ -1,6 +1,6 @@
 mod utils;
 
-use crate::app_state::{PasteQueue, SessionHistory, SettingsState};
+use crate::app_state::{PasteQueue, SettingsState};
 pub use crate::database::DbState;
 use dzc_core::capture::{CaptureContext, CaptureEngine, CaptureEvent, CaptureFrame, CaptureOutcome, CaptureReadMetadata, CaptureSettings, CaptureSource, StoredCapture, OwnClipboardCopy};
 use std::sync::{Arc, Mutex, atomic::Ordering};

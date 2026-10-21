@@ -12,6 +12,11 @@ fn now() -> i64 {
 }
 
 #[tauri::command]
+pub async fn get_clipboard_host_status(app:AppHandle)->Result<dzc_host::wire::ServiceStatus,String> {
+    app.state::<DesktopHost>().call(Method::ServiceStatus,serde_json::json!({}),"ServiceStatus").await
+}
+
+#[tauri::command]
 pub async fn get_privacy_status(app: AppHandle) -> Result<RuntimeSnapshot, String> {
     let bridge=app.state::<DesktopHost>();
     let privacy:PrivacyState=bridge.call(Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await?;

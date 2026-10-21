@@ -221,6 +221,10 @@ const (
     MethodDesktopHistorySummary Method = "desktop.history.summary"
     MethodDesktopHistoryMutate Method = "desktop.history.mutate"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
+    MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
+    MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"
+    MethodDesktopPrivacyFeedback Method = "desktop.privacy.feedback"
+    MethodDesktopPrivacyRemoveRule Method = "desktop.privacy.remove_rule"
 )
 
 type WireErrorCode string
@@ -238,6 +242,12 @@ const (
     WireErrorCodePrivacyBlocked WireErrorCode = "privacy_blocked"
     WireErrorCodeInternal WireErrorCode = "internal"
     WireErrorCodeDeadlineExceeded WireErrorCode = "deadline_exceeded"
+    WireErrorCodePrivacyStateUnavailable WireErrorCode = "privacy_state_unavailable"
+    WireErrorCodePrivacyEpochChanged WireErrorCode = "privacy_epoch_changed"
+    WireErrorCodePrivacySessionActive WireErrorCode = "privacy_session_active"
+    WireErrorCodeSensitiveAccessDenied WireErrorCode = "sensitive_access_denied"
+    WireErrorCodeManualPersistenceConfirmationRequired WireErrorCode = "manual_persistence_confirmation_required"
+    WireErrorCodePrivacyDurationInvalid WireErrorCode = "privacy_duration_invalid"
 )
 
 type WireError struct {
@@ -379,6 +389,46 @@ type EntryResult struct {
     Entry EntrySummary `json:"entry"`
     Text *string `json:"text,omitempty"`
     Truncated bool `json:"truncated"`
+}
+
+type DesktopPolicyParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id *int64 `json:"id,omitempty"`
+    Action *string `json:"action,omitempty"`
+    RuleId *string `json:"rule_id,omitempty"`
+}
+
+type PolicyRuleValue struct {
+    Id string `json:"id"`
+    Kind string `json:"kind"`
+    SourceApp *string `json:"source_app"`
+    CreatedAtMs int64 `json:"created_at_ms"`
+}
+
+type DesktopPolicyRules struct {
+    Rules []PolicyRuleValue `json:"rules"`
+}
+
+type PolicyEvidenceValue struct {
+    Source string `json:"source"`
+    Level string `json:"level"`
+    Reason string `json:"reason"`
+    RuleId *string `json:"rule_id,omitempty"`
+}
+
+type DesktopPolicyDecision struct {
+    Action string `json:"action"`
+    Reason string `json:"reason"`
+    Evidence []PolicyEvidenceValue `json:"evidence"`
+    ScanStatus string `json:"scan_status"`
+    ScannedBytes uint64 `json:"scanned_bytes"`
+    TotalBytes uint64 `json:"total_bytes"`
+}
+
+type DesktopRuntimeValue struct {
+    State RuntimeState `json:"state"`
+    Privacy PrivacyState `json:"privacy"`
 }
 
 type PrivacyState struct {

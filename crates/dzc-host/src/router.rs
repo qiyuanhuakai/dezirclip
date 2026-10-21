@@ -49,7 +49,7 @@ pub struct Host {
     pub(crate) stop_requested: AtomicBool,
     pub(crate) capture_owner: AtomicBool,
     pub(crate) lifecycle: Mutex<Option<Arc<dyn HostLifecycle>>>,
-    requests: Mutex<()>,
+    pub(crate) requests: Mutex<()>,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
@@ -61,7 +61,14 @@ pub fn now_ms() -> Result<i64, WireErrorCode> {
     i64::try_from(SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| WireErrorCode::Unavailable)?.as_millis()).map_err(|_| WireErrorCode::Unavailable)
 }
 fn unavailable<T>(_: T) -> WireErrorCode { WireErrorCode::Unavailable }
-fn privacy_error<T>(_: T) -> WireErrorCode { WireErrorCode::PrivacyBlocked }
+pub(crate) fn privacy_error(error:impl ToString) -> WireErrorCode {
+    match error.to_string().as_str() {
+        "PrivacyStateUnavailable"=>WireErrorCode::PrivacyStateUnavailable,"PrivacyEpochChanged"=>WireErrorCode::PrivacyEpochChanged,
+        "PrivacySessionActive"=>WireErrorCode::PrivacySessionActive,"SensitiveAccessDenied"=>WireErrorCode::SensitiveAccessDenied,
+        "ManualPersistenceConfirmationRequired"=>WireErrorCode::ManualPersistenceConfirmationRequired,"PrivacyDurationInvalid"=>WireErrorCode::PrivacyDurationInvalid,
+        _=>WireErrorCode::PrivacyBlocked,
+    }
+}
 fn result<T: Serialize>(schema: &str, value: T) -> Result<Value, WireErrorCode> {
     let value = serde_json::to_value(value).map_err(|_| WireErrorCode::Internal)?;
     wire::validate(schema, &value).map_err(|_| WireErrorCode::Internal)?;
@@ -127,7 +134,7 @@ impl Host {
     /// Observe committed cross-process Core policy changes before acknowledging
     /// a request. Failed native revocation leaves the old observed epoch so the
     /// next request retries; no successful ACK or privacy event is published.
-    fn synchronize_privacy(&self) -> Result<(), WireErrorCode> {
+    pub(crate) fn synchronize_privacy(&self) -> Result<(), WireErrorCode> {
         let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
         let mut observed = self.observed_epoch.lock().map_err(unavailable)?;
         if *observed == snapshot.privacy_epoch { return Ok(()); }
@@ -199,7 +206,11 @@ impl Host {
         if can(Permission::ClipboardCopy) && self.actions.can_copy() { methods.extend(["clipboard.copy", "surface.copy"]); }
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
-        if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop { methods.extend(["desktop.history.page", "desktop.history.get", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]); }
+        if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
+            methods.extend(["desktop.history.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
+            if self.actions.can_copy() {methods.push("desktop.clipboard.copy");}
+            if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
+        }
         if can(Permission::ServiceManage) {
             methods.extend(["service.stop", "service.grant", "service.revoke"]);
             if service_transition { methods.push("service.handoff"); }
@@ -301,6 +312,7 @@ impl Host {
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
+            Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
             Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),
             Method::HistoryList | Method::SurfaceHistoryList => {
                 session.require(Permission::HistoryRead)?;
@@ -469,7 +481,7 @@ pub(crate) mod tests {
         assert_eq!(result.entries.iter().map(|entry| entry.id).collect::<Vec<_>>(), vec![ordinary]);
         assert!(!serde_json::to_string(&result).unwrap().contains("private synthetic"));
         let response = dispatch(&host, &session, Method::SurfaceCopy, serde_json::json!({"id":protected}));
-        assert_eq!(response.error.unwrap().code, WireErrorCode::PrivacyBlocked);
+        assert_eq!(response.error.unwrap().code, WireErrorCode::SensitiveAccessDenied);
         let response = dispatch(&host, &session, Method::SurfaceCopy, serde_json::json!({"id":ordinary}));
         assert_eq!(response.result.unwrap()["performed"], true);
         let response = dispatch(&host, &session, Method::HistoryGet, serde_json::json!({"id":ordinary}));

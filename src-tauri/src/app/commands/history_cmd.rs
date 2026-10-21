@@ -183,12 +183,17 @@ pub async fn search_clipboard_history(
 }
 
 #[tauri::command]
-pub fn delete_clipboard_entry(
+pub async fn delete_clipboard_entry(
+    app:AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     app_data: State<'_, AppDataDir>,
     id: i64,
+    expected_host_instance_id:Option<String>,
 ) -> AppResult<()> {
+    let bridge=app.state::<DesktopHost>();
+    let request=bridge.mutation_request(id,"delete",None).map_err(AppError::Validation)?;
+    if bridge.mutation(request,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)?.is_some() {return Ok(());}
     {
         let mut session_items = session.inner().0.lock().unwrap();
         session_items.retain(|item| item.id != id);
@@ -198,6 +203,7 @@ pub fn delete_clipboard_entry(
         let data_dir = app_data.0.lock().unwrap();
         state.history_service().delete(id, Some(&data_dir))?;
     }
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     Ok(())
 }
 

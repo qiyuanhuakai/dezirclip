@@ -8,9 +8,11 @@ use std::{path::PathBuf, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, tim
 use tauri::{AppHandle, Emitter, Manager};
 
 enum Mode { Starting, Embedded(Arc<Host>), Remote(String), Unavailable }
+#[derive(Clone,Copy)]
+enum RestoreMode {Embedded,Service{no_capture:bool}}
 struct Inner { mode:Mutex<Mode>, history:HistoryService, directory:PathBuf, database:PathBuf,
     session:Arc<Mutex<std::collections::VecDeque<ClipboardEntry>>>, closing:AtomicBool,writer:Mutex<Option<dzc_platform::runtime::EmbeddedClipboardWriter>>,
-    server:Mutex<Option<ServerTask>>,restore:Mutex<Option<bool>> }
+    server:Mutex<Option<ServerTask>>,restore:Mutex<Option<RestoreMode>> }
 struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::Receiver<()>}
 #[derive(Clone)]
 pub struct DesktopHost(Arc<Inner>);
@@ -22,9 +24,9 @@ impl GeneratedUpload {
         if bytes.len()>32*1024*1024 {return Err("GeneratedBodyTooLarge".into());}
         for (index,bytes) in bytes.chunks(192*1024).enumerate() {
             let _:OperationResult=self.client.call(Method::DesktopCaptureWrite,CaptureWriteParams {capture_id:self.id.clone(),offset:(index*192*1024) as u32,
-                data_base64:base64::engine::general_purpose::STANDARD.encode(bytes)},"OperationResult").await.map_err(|error|error.to_string())?;
+                data_base64:base64::engine::general_purpose::STANDARD.encode(bytes)},"OperationResult").await.map_err(remote_error)?;
         }
-        let result:OperationResult=self.client.call(Method::DesktopCaptureFinish,CaptureFinishParams{capture_id:self.id,source_app:source.chars().take(256).collect(),inherited_protection:protected},"OperationResult").await.map_err(|error|error.to_string())?;
+        let result:OperationResult=self.client.call(Method::DesktopCaptureFinish,CaptureFinishParams{capture_id:self.id,source_app:source.chars().take(256).collect(),inherited_protection:protected},"OperationResult").await.map_err(remote_error)?;
         Ok(result.performed)
     }
 }
@@ -40,6 +42,20 @@ impl std::ops::Deref for HostedEntry {type Target=ClipboardEntry;fn deref(&self)
 fn app()->Option<&'static AppHandle> {crate::global_state::GLOBAL_APP_HANDLE.get()}
 fn emit(name:&str,value:impl Serialize+Clone) {if let Some(app)=app() {let _=app.emit(name,value);}}
 fn failed()->String {"ClipboardHostUnavailable".into()}
+fn public_code(code:WireErrorCode)->String {match code {
+    WireErrorCode::PrivacyStateUnavailable=>"PrivacyStateUnavailable",WireErrorCode::PrivacyEpochChanged=>"PrivacyEpochChanged",
+    WireErrorCode::PrivacySessionActive=>"PrivacySessionActive",WireErrorCode::SensitiveAccessDenied=>"SensitiveAccessDenied",
+    WireErrorCode::ManualPersistenceConfirmationRequired=>"ManualPersistenceConfirmationRequired",WireErrorCode::PrivacyDurationInvalid=>"PrivacyDurationInvalid",
+    WireErrorCode::NotFound=>"ClipboardRecordUnavailable",WireErrorCode::Busy=>"ClipboardHostBusy",WireErrorCode::PrivacyBlocked=>"SensitiveAccessDenied",
+    WireErrorCode::PermissionDenied=>"ClipboardHostPermissionDenied",_=>"ClipboardHostUnavailable",
+}.into()}
+fn remote_error(error:impl ToString)->String {
+    let message=error.to_string();
+    serde_json::from_str::<WireErrorCode>(&message).map(public_code).unwrap_or_else(|_|match message.as_str() {
+        "PrivacyStateUnavailable"|"PrivacyEpochChanged"|"PrivacySessionActive"|"SensitiveAccessDenied"|"ManualPersistenceConfirmationRequired"|"PrivacyDurationInvalid"=>message,
+        _=>failed(),
+    })
+}
 fn now()->i64 {chrono::Utc::now().timestamp_millis()}
 struct DesktopActions {writer:dzc_platform::runtime::EmbeddedClipboardWriter}
 impl HostActions for DesktopActions {
@@ -87,7 +103,7 @@ impl DesktopHost {
     }
     pub fn hosted(&self,entry:ClipboardEntry)->Result<HostedEntry,String> {Ok(HostedEntry{entry,host_instance_id:Some(self.instance()?)})}
     pub fn snapshot_after(&self,privacy:PrivacyState)->Result<dzc_core::api::RuntimeSnapshot,String> {
-        let snapshot=self.0.history.runtime_snapshot(now()).map_err(|error|error.to_string())?;
+        let snapshot=self.0.history.runtime_snapshot(now()).map_err(remote_error)?;
         if snapshot.privacy_epoch!=privacy.privacy_epoch {return Err("PrivacyEpochChanged".into());}
         Ok(snapshot)
     }
@@ -105,20 +121,20 @@ impl DesktopHost {
             let (session,_)=match accepted {Ok(value)=>value,Err(_)=>{host.grants().revoke(&grant);return Err(failed());}};
             let response=host.dispatch(&session,Request{request_id:"embedded-desktop".into(),method,params:serde_json::to_value(params).map_err(|_|failed())?});
             host.grants().revoke(&grant);
-            if let Some(error)=response.error {return Err(serde_json::to_string(&error.code).unwrap_or_else(|_|failed()));}
+            if let Some(error)=response.error {return Err(public_code(error.code));}
             return serde_json::from_value(response.result.ok_or_else(failed)?).map_err(|_|failed());
         }
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
-        client.call(method,params,schema).await.map_err(|error|error.to_string())
+        client.call(method,params,schema).await.map_err(remote_error)
     }
     pub async fn page(&self,limit:i32,offset:i32,kind:Option<String>,query:Option<String>)->Result<Option<Vec<HostedEntry>>,String> {
         if self.embedded()?.is_some() {return Ok(None);}
         let mut client=self.service_client().await?;
         let instance=client.hello.state.service_instance_id.clone();
         if instance!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
-        let body:BodySnapshot=client.call(Method::DesktopHistoryPage,DesktopPageParams {limit:limit.clamp(1,150) as u16,offset:offset.max(0) as u32,kind,query},"BodySnapshot").await.map_err(|error|error.to_string())?;
-        let result:DesktopEntries=client.read_snapshot(body,"DesktopEntries").await.map_err(|error|error.to_string())?;
+        let body:BodySnapshot=client.call(Method::DesktopHistoryPage,DesktopPageParams {limit:limit.clamp(1,150) as u16,offset:offset.max(0) as u32,kind,query},"BodySnapshot").await.map_err(remote_error)?;
+        let result:DesktopEntries=client.read_snapshot(body,"DesktopEntries").await.map_err(remote_error)?;
         result.entries.into_iter().map(|entry|hosted(entry,&instance)).collect::<Result<Vec<_>,_>>().map(Some)
     }
     pub async fn entry(&self,id:i64,epoch:u64,reveal:bool,thumbnail:Option<u32>,expected:Option<&str>)->Result<Option<HostedEntry>,String> {
@@ -127,8 +143,8 @@ impl DesktopHost {
         let mut client=self.service_client().await?;
         let instance=self.instance()?;
         if client.hello.state.service_instance_id!=instance {return Err("ClipboardHostInstanceChanged".into());}
-        let body:BodySnapshot=client.call(Method::DesktopHistoryGet,DesktopEntryParams{id,expected_epoch:epoch,reveal,thumbnail_dimension:thumbnail,service_instance_id:instance.clone()},"BodySnapshot").await.map_err(|error|error.to_string())?;
-        let result:DesktopEntry=client.read_snapshot(body,"DesktopEntry").await.map_err(|error|error.to_string())?;
+        let body:BodySnapshot=client.call(Method::DesktopHistoryGet,DesktopEntryParams{id,expected_epoch:epoch,reveal,thumbnail_dimension:thumbnail,service_instance_id:instance.clone()},"BodySnapshot").await.map_err(remote_error)?;
+        let result:DesktopEntry=client.read_snapshot(body,"DesktopEntry").await.map_err(remote_error)?;
         hosted(result,&instance).map(Some)
     }
     pub async fn summary(&self,id:i64,expected:Option<&str>)->Result<Option<HostedEntry>,String> {
@@ -137,16 +153,53 @@ impl DesktopHost {
         let mut client=self.service_client().await?;
         let state=client.hello.state.clone();
         if state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
-        let body:BodySnapshot=client.call(Method::DesktopHistorySummary,DesktopEntryParams{id,service_instance_id:state.service_instance_id.clone(),expected_epoch:state.privacy_epoch,reveal:false,thumbnail_dimension:None},"BodySnapshot").await.map_err(|error|error.to_string())?;
-        let result:DesktopEntry=client.read_snapshot(body,"DesktopEntry").await.map_err(|error|error.to_string())?;
+        let body:BodySnapshot=client.call(Method::DesktopHistorySummary,DesktopEntryParams{id,service_instance_id:state.service_instance_id.clone(),expected_epoch:state.privacy_epoch,reveal:false,thumbnail_dimension:None},"BodySnapshot").await.map_err(remote_error)?;
+        let result:DesktopEntry=client.read_snapshot(body,"DesktopEntry").await.map_err(remote_error)?;
         hosted(result,&state.service_instance_id).map(Some)
     }
     pub async fn begin_generated(&self)->Result<Option<GeneratedUpload>,String> {
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
         let state=client.hello.state.clone();
-        let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:state.privacy_epoch},"CaptureBeginResult").await.map_err(|error|error.to_string())?;
+        let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:state.privacy_epoch},"CaptureBeginResult").await.map_err(remote_error)?;
         Ok(result.capture_id.map(|id|GeneratedUpload{client,id}))
+    }
+    pub async fn mutation(&self,mut request:DesktopMutationParams,expected:Option<&str>)->Result<Option<i64>,String> {
+        self.check_instance(request.id,expected)?;
+        if let Some(host)=self.embedded()? {return host.mutate_owned(request).map(|result|Some(result.id)).map_err(public_code);}
+        request.service_instance_id=self.instance()?;
+        let result:DesktopMutationResult=self.call(Method::DesktopHistoryMutate,request,"DesktopMutationResult").await?;
+        Ok(Some(result.id))
+    }
+    pub fn mutation_request(&self,id:i64,action:&str,epoch:Option<u64>)->Result<DesktopMutationParams,String> {
+        Ok(DesktopMutationParams{id,action:action.into(),service_instance_id:self.instance()?,expected_epoch:epoch.unwrap_or(self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch),
+            reveal:false,pinned:None,tags:None,content:None,confirm_persistence:None})
+    }
+    pub async fn feedback(&self,id:i64,action:dzc_core::api::PrivacyFeedbackAction,epoch:u64,expected:Option<&str>)->Result<dzc_core::api::RuntimeSnapshot,String> {
+        self.check_instance(id,expected)?;
+        if let Some(host)=self.embedded()? {return host.policy_feedback_owned(id,action,epoch).map_err(public_code);}
+        let action=serde_json::to_value(action).map_err(|_|failed())?.as_str().ok_or_else(failed)?.to_owned();
+        let result:DesktopRuntimeValue=self.call(Method::DesktopPrivacyFeedback,DesktopPolicyParams{service_instance_id:self.instance()?,expected_epoch:epoch,id:Some(id),action:Some(action),rule_id:None},"DesktopRuntimeValue").await?;
+        self.snapshot_after(result.privacy)
+    }
+    pub async fn remove_rule(&self,id:String,epoch:u64)->Result<dzc_core::api::RuntimeSnapshot,String> {
+        if let Some(host)=self.embedded()? {return host.policy_remove_owned(&id,epoch).map_err(public_code);}
+        let result:DesktopRuntimeValue=self.call(Method::DesktopPrivacyRemoveRule,DesktopPolicyParams{service_instance_id:self.instance()?,expected_epoch:epoch,id:None,action:None,rule_id:Some(id)},"DesktopRuntimeValue").await?;
+        self.snapshot_after(result.privacy)
+    }
+    pub async fn policy_decision(&self,id:i64,epoch:u64,expected:Option<&str>)->Result<dzc_core::api::PrivacyDecisionReport,String> {
+        self.check_instance(id,expected)?;
+        if let Some(host)=self.embedded()? {return host.policy_decision_owned(id,epoch).map_err(public_code);}
+        let result:DesktopPolicyDecision=self.call(Method::DesktopPrivacyDecision,DesktopPolicyParams{service_instance_id:self.instance()?,expected_epoch:epoch,id:Some(id),action:None,rule_id:None},"DesktopPolicyDecision").await?;
+        serde_json::from_value(serde_json::to_value(result).map_err(|_|failed())?).map_err(|_|failed())
+    }
+    pub async fn policy_rules(&self)->Result<Vec<dzc_core::api::PrivacyRuleSummary>,String> {
+        let epoch=self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch;
+        if let Some(host)=self.embedded()? {return host.policy_rules_owned(epoch).map_err(public_code);}
+        let mut client=self.service_client().await?;
+        let descriptor:BodySnapshot=client.call(Method::DesktopPrivacyRules,DesktopPolicyParams{service_instance_id:self.instance()?,expected_epoch:epoch,id:None,action:None,rule_id:None},"BodySnapshot").await.map_err(remote_error)?;
+        let result:DesktopPolicyRules=client.read_snapshot(descriptor,"DesktopPolicyRules").await.map_err(remote_error)?;
+        serde_json::from_value(serde_json::to_value(result.rules).map_err(|_|failed())?).map_err(|_|failed())
     }
     async fn initialize(&self)->Result<(),String> {
         if let Ok(client)=self.service_client().await {self.begin_remote(client);return Ok(());}
@@ -235,17 +288,25 @@ impl DesktopHost {
     }
     async fn prepare_update(&self)->Result<(),String> {
         let remote=self.embedded()?.is_none();
-        *self.0.restore.lock().map_err(|_|failed())?=Some(remote);
+        let desired=if remote {
+            let mut client=self.service_client().await?;
+            if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
+            let status:ServiceStatus=client.call(Method::ServiceStatus,serde_json::json!({}),"ServiceStatus").await.map_err(remote_error)?;
+            RestoreMode::Service{no_capture:!status.capture_owner}
+        }else {RestoreMode::Embedded};
+        *self.0.restore.lock().map_err(|_|failed())?=Some(desired);
         self.0.closing.store(true,Ordering::Release);
-        if remote {dzc_host::controller::stop(&self.0.database).await.map_err(|error|error.to_string())?;Ok(())}
+        if remote {dzc_host::controller::stop(&self.0.database).await.map_err(remote_error)?;Ok(())}
         else {self.shutdown()}
     }
     async fn restore_after_update(&self)->Result<(),String> {
+        self.restore_after_update_with(dzc_host::controller::sibling_executable().map_err(|_|failed())?).await
+    }
+    async fn restore_after_update_with(&self,executable:PathBuf)->Result<(),String> {
         let desired=self.0.restore.lock().map_err(|_|failed())?.take();
         self.0.closing.store(false,Ordering::Release);
-        if desired==Some(true) {
-            let executable=dzc_host::controller::sibling_executable().map_err(|_|failed())?;
-            dzc_host::controller::start(&self.0.database,&executable,false).await.map_err(|error|error.to_string())?;
+        if let Some(RestoreMode::Service{no_capture})=desired {
+            dzc_host::controller::start(&self.0.database,&executable,no_capture).await.map_err(remote_error)?;
             let client=self.service_client().await?;self.begin_remote(client);Ok(())
         }else if desired.is_some() {self.begin_embedded()}else{Ok(())}
     }
@@ -270,4 +331,44 @@ fn coordinate(operation:impl FnOnce(DesktopHost)->Result<(),String>+Send+'static
 impl crate::domain::update_host::UpdateHost for DesktopUpdateHost {
     fn prepare_install(&self)->Result<(),()> {coordinate(|bridge|tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|failed())?.block_on(bridge.prepare_update()))}
     fn install_aborted(&self) {if coordinate(|bridge|tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|failed())?.block_on(bridge.restore_after_update())).is_err() {emit("clipboard-host-unavailable",());}}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Cleanup(PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let database=self.0.join("clipboard.db");
+            let _=std::thread::spawn(move|| {
+                if let Ok(runtime)=tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                    let _=runtime.block_on(dzc_host::controller::stop(&database));
+                }
+            }).join();
+            let _=std::fs::remove_dir_all(&self.0);
+        }
+    }
+    #[test]
+    #[ignore="requires an explicitly built same-source service helper; no native clipboard is initialized"]
+    fn verified_update_prepare_and_abort_restore_the_real_no_capture_service() {
+        let executable=PathBuf::from(std::env::var_os("DEZIRCLIP_SERVICE_TEST_BIN").expect("explicit synthetic service helper"));
+        assert!(executable.is_file());
+        let directory=std::env::temp_dir().join(format!("dzc-update-host-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();let _cleanup=Cleanup(directory.clone());
+        let database=directory.join("clipboard.db");let history=HistoryService::open(&database).unwrap();
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let original=dzc_host::controller::start(&database,&executable,true).await.unwrap();
+            assert!(!original.capture_owner);
+            let bridge=DesktopHost(Arc::new(Inner{mode:Mutex::new(Mode::Remote(original.state.service_instance_id.clone())),history,
+                directory,database:database.clone(),session:Arc::new(Mutex::new(Default::default())),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
+            bridge.prepare_update().await.unwrap();
+            assert!(dzc_host::controller::status(&database).await.is_err());
+            assert!(matches!(*bridge.0.restore.lock().unwrap(),Some(RestoreMode::Service{no_capture:true})));
+            bridge.restore_after_update_with(executable).await.unwrap();
+            let restored=dzc_host::controller::status(&database).await.unwrap();
+            assert!(!restored.capture_owner);assert_ne!(restored.state.service_instance_id,original.state.service_instance_id);
+            bridge.0.closing.store(true,Ordering::Release);
+            dzc_host::controller::stop(&database).await.unwrap();
+        });
+    }
 }

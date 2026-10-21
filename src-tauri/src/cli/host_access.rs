@@ -11,7 +11,7 @@ pub(crate) fn query(query:&HistoryQuery<'_>)->Result<Vec<ClipboardEntry>,String>
     let database=dzc_host::data::database_path()?;
     let endpoint=dzc_host::controller::endpoint(&database).map_err(|_|"LocalHostUnavailable")?;
     tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_|"LocalHostUnavailable")?.block_on(async {
-        let grant=std::env::var("DEZIRCLIP_HOST_GRANT").ok();
+        let grant=std::env::var("DEZIRCLIP_HOST_GRANT").ok().filter(|grant|!grant.is_empty());
         let mut client=Client::connect(&endpoint,ClientRole::Mcp,grant).await.map_err(|_|"LocalHostUnavailable")?;
         if let Some(id)=query.id {
             let result:EntryResult=client.call(Method::HistoryGet,serde_json::json!({"id":id,"service_instance_id":client.hello.state.service_instance_id}),"EntryResult").await.map_err(|_|"HostEntryUnavailable")?;

@@ -5,10 +5,10 @@ use dzc_core::{api::{PrivacyAccessIntent,SensitiveAccess},capture::{CaptureData,
 use dzc_protocol::wire::*;
 use serde_json::Value;
 use base64::Engine;
-fn denied<T>(_:T)->WireErrorCode {WireErrorCode::PrivacyBlocked}
+fn denied(error:impl ToString)->WireErrorCode {crate::router::privacy_error(error)}
 fn encoded<T:serde::Serialize>(value:T)->Result<Value,WireErrorCode> {serde_json::to_value(value).map_err(|_|WireErrorCode::Internal)}
 impl Host {
-    fn desktop_permission(&self,session:&Session,instance:&str)->Result<(),WireErrorCode> {
+    pub(crate) fn desktop_permission(&self,session:&Session,instance:&str)->Result<(),WireErrorCode> {
         session.require(Permission::DesktopHistory)?;
         if session.role()!=ClientRole::Desktop {return Err(WireErrorCode::PermissionDenied);}
         if instance!=self.snapshot()?.service_instance_id {return Err(WireErrorCode::PrivacyBlocked);}
@@ -73,31 +73,71 @@ impl Host {
     pub(crate) fn desktop_mutate(&self,session:&Session,parameters:Value)->Result<Value,WireErrorCode> {
         let request:DesktopMutationParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
         self.desktop_permission(session,&request.service_instance_id)?;
+        encoded(self.mutate_inner(request)?)
+    }
+    /// Trusted Embedded Desktop action. Body fields remain owned Rust values;
+    /// remote callers additionally pass the router's role/grant checks.
+    pub fn mutate_owned(&self,request:DesktopMutationParams)->Result<DesktopMutationResult,WireErrorCode> {
+        let _request=self.requests.lock().map_err(|_|WireErrorCode::Unavailable)?;
+        self.mutate_inner(request)
+    }
+    fn mutate_inner(&self,request:DesktopMutationParams)->Result<DesktopMutationResult,WireErrorCode> {
+        if self.is_stopping() {return Err(WireErrorCode::Busy);}
+        if request.service_instance_id!=self.snapshot()?.service_instance_id {return Err(WireErrorCode::PrivacyBlocked);}
         let now=crate::router::now_ms()?;
         let permit=self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead,if request.reveal{SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
         if request.action=="delete" {
             if request.id<0 {
                 let mut rows=self.session.lock().map_err(|_|WireErrorCode::Unavailable)?;
-                let row=rows.iter().find(|row|row.id==request.id).ok_or(WireErrorCode::NotFound)?;
-                self.history.authorize_session_entry(row,&permit,now).map_err(denied)?;
+                if !rows.iter().any(|row|row.id==request.id) {return Err(WireErrorCode::NotFound);}
+                self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
                 rows.retain(|row|row.id!=request.id);
             } else {
-                self.history.get_entry_authorized(request.id,&permit,now).map_err(denied)?.ok_or(WireErrorCode::NotFound)?;
+                let rows=self.history.query(&dzc_core::api::HistoryQuery{id:Some(request.id),metadata:true,limit:1,..Default::default()}).map_err(|_|WireErrorCode::Unavailable)?;
+                if rows.is_empty() {return Err(WireErrorCode::NotFound);}
+                self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
                 self.history.delete(request.id,Some(&self.directory)).map_err(|_|WireErrorCode::Unavailable)?;
             }
             self.publish(EventKind::EntryDeleted,EventData{entry_id:Some(request.id),status:None})?;
-            return encoded(DesktopMutationResult{id:request.id,performed:true});
+            return Ok(DesktopMutationResult{id:request.id,performed:true});
         }
-        if request.id<0 {return Err(WireErrorCode::UnsupportedCapability);}
+        let intent=if request.confirm_persistence.unwrap_or(false){dzc_core::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}else{dzc_core::api::ManualPersistenceIntent::Ordinary};
+        if request.id<0 {
+            let mut rows=self.session.lock().map_err(|_|WireErrorCode::Unavailable)?;
+            let index=rows.iter().position(|row|row.id==request.id).ok_or(WireErrorCode::NotFound)?;
+            self.history.authorize_session_entry(&rows[index],&permit,now).map_err(denied)?;
+            let mut result_id=request.id;
+            match request.action.as_str() {
+                "pin" if request.pinned==Some(false)=>rows[index].is_pinned=false,
+                "edit"=>{
+                    let content=request.content.ok_or(WireErrorCode::InvalidRequest)?;
+                    let preview:String=content.chars().take(500).collect();
+                    self.history.update_session_manual_authorized(&mut rows[index],&content,&preview,intent,&permit,now).map_err(denied)?;
+                }
+                "pin"|"tags"=>{
+                    let mut entry=rows[index].clone();entry.id=0;
+                    if request.action=="pin" {entry.is_pinned=request.pinned.ok_or(WireErrorCode::InvalidRequest)?;}
+                    else {entry.tags=request.tags.ok_or(WireErrorCode::InvalidRequest)?;}
+                    result_id=self.history.save_manual_authorized(&entry,Some(&self.directory),intent,&permit,now).map_err(denied)?;
+                    rows.remove(index);
+                }
+                _=>return Err(WireErrorCode::InvalidRequest),
+            }
+            drop(rows);
+            if result_id!=request.id {self.publish(EventKind::EntryDeleted,EventData{entry_id:Some(request.id),status:None})?;}
+            self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(result_id),status:None})?;
+            return Ok(DesktopMutationResult{id:result_id,performed:true});
+        }
         self.history.get_entry_authorized(request.id,&permit,now).map_err(denied)?.ok_or(WireErrorCode::NotFound)?;
         match request.action.as_str() {
             "pin"=>self.history.toggle_pin(request.id,request.pinned.ok_or(WireErrorCode::InvalidRequest)?).map_err(|_|WireErrorCode::Unavailable)?,
             "tags"=>self.history.update_entry_tags(request.id,request.tags.ok_or(WireErrorCode::InvalidRequest)?).map_err(|_|WireErrorCode::Unavailable)?,
-            "edit"=>return Err(WireErrorCode::UnsupportedCapability),
+            "edit"=>{let content=request.content.ok_or(WireErrorCode::InvalidRequest)?;let preview:String=content.chars().take(500).collect();
+                self.history.update_manual_authorized(request.id,&content,&preview,intent,&permit,now).map_err(denied)?;}
             _=>return Err(WireErrorCode::InvalidRequest),
         }
         self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(request.id),status:None})?;
-        encoded(DesktopMutationResult{id:request.id,performed:true})
+        Ok(DesktopMutationResult{id:request.id,performed:true})
     }
 }
 fn plain(payload:ClipboardPayload)->ClipboardPayload {match payload {

@@ -309,6 +309,14 @@ pub enum Method {
     DesktopHistoryMutate,
     #[serde(rename = "desktop.clipboard.copy")]
     DesktopClipboardCopy,
+    #[serde(rename = "desktop.privacy.rules")]
+    DesktopPrivacyRules,
+    #[serde(rename = "desktop.privacy.decision")]
+    DesktopPrivacyDecision,
+    #[serde(rename = "desktop.privacy.feedback")]
+    DesktopPrivacyFeedback,
+    #[serde(rename = "desktop.privacy.remove_rule")]
+    DesktopPrivacyRemoveRule,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -339,6 +347,18 @@ pub enum WireErrorCode {
     Internal,
     #[serde(rename = "deadline_exceeded")]
     DeadlineExceeded,
+    #[serde(rename = "privacy_state_unavailable")]
+    PrivacyStateUnavailable,
+    #[serde(rename = "privacy_epoch_changed")]
+    PrivacyEpochChanged,
+    #[serde(rename = "privacy_session_active")]
+    PrivacySessionActive,
+    #[serde(rename = "sensitive_access_denied")]
+    SensitiveAccessDenied,
+    #[serde(rename = "manual_persistence_confirmation_required")]
+    ManualPersistenceConfirmationRequired,
+    #[serde(rename = "privacy_duration_invalid")]
+    PrivacyDurationInvalid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -524,6 +544,56 @@ pub struct EntryResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopPolicyParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PolicyRuleValue {
+    pub id: String,
+    pub kind: String,
+    pub source_app: Option<String>,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopPolicyRules {
+    pub rules: Vec<PolicyRuleValue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PolicyEvidenceValue {
+    pub source: String,
+    pub level: String,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopPolicyDecision {
+    pub action: String,
+    pub reason: String,
+    pub evidence: Vec<PolicyEvidenceValue>,
+    pub scan_status: String,
+    pub scanned_bytes: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopRuntimeValue {
+    pub state: RuntimeState,
+    pub privacy: PrivacyState,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
