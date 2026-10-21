@@ -150,6 +150,8 @@ pub struct PrivacyHotkey {
 pub struct CaptureBeginParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_to_clipboard: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -171,6 +173,8 @@ pub struct CaptureFinishParams {
     pub capture_id: String,
     pub source_app: String,
     pub inherited_protection: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paste: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
