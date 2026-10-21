@@ -66,9 +66,7 @@ func Decode(name string, raw []byte, result any) error {
     if err := Validate(name, raw); err != nil { return err }
     destination := reflect.TypeOf(result)
     if destination == nil || destination.Kind() != reflect.Pointer || reflect.ValueOf(result).IsNil() { return ErrInvalidMessage }
-    value, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-    if err != nil { return ErrInvalidMessage }
-    exact, err := json.Marshal(exactFields(value, destination.Elem()))
+    exact, err := exactFields(raw, destination.Elem())
     if err != nil { return ErrInvalidMessage }
     if err = json.Unmarshal(exact, result); err != nil { return ErrInvalidMessage }
     return nil
@@ -77,29 +75,51 @@ func Decode(name string, raw []byte, result any) error {
 // encoding/json otherwise accepts case-insensitive field aliases. Project only
 // the exact tags in the generated DTO, recursively, before typed decoding. This
 // mirrors serde's unknown-field behavior without maintaining a second schema.
-func exactFields(value any, destination reflect.Type) any {
+// Keep each selected raw value intact so nested Result/Params decoding checks
+// the original wire bytes rather than an expanded, escaped representation.
+func exactFields(raw []byte, destination reflect.Type) ([]byte, error) {
     for destination.Kind() == reflect.Pointer { destination = destination.Elem() }
-    if destination == reflect.TypeOf(json.RawMessage{}) { return value }
+    if destination == reflect.TypeOf(json.RawMessage{}) || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) { return raw, nil }
     switch destination.Kind() {
     case reflect.Struct:
-        object, ok := value.(map[string]any)
-        if !ok { return value }
-        exact := make(map[string]any)
+        var object map[string]json.RawMessage
+        if err := json.Unmarshal(raw, &object); err != nil { return nil, err }
+        var exact bytes.Buffer
+        exact.WriteByte('{')
+        first := true
         for index := 0; index < destination.NumField(); index++ {
             field := destination.Field(index)
             tag := strings.Split(field.Tag.Get("json"), ",")[0]
             if tag == "" || tag == "-" { continue }
-            if child, exists := object[tag]; exists { exact[tag] = exactFields(child, field.Type) }
+            if child, exists := object[tag]; exists {
+                value, err := exactFields(child, field.Type)
+                if err != nil { return nil, err }
+                key, err := json.Marshal(tag)
+                if err != nil { return nil, err }
+                if !first { exact.WriteByte(',') }
+                first = false
+                exact.Write(key)
+                exact.WriteByte(':')
+                exact.Write(value)
+            }
         }
-        return exact
+        exact.WriteByte('}')
+        return exact.Bytes(), nil
     case reflect.Slice, reflect.Array:
-        array, ok := value.([]any)
-        if !ok { return value }
-        exact := make([]any, len(array))
-        for index, child := range array { exact[index] = exactFields(child, destination.Elem()) }
-        return exact
+        var array []json.RawMessage
+        if err := json.Unmarshal(raw, &array); err != nil { return nil, err }
+        var exact bytes.Buffer
+        exact.WriteByte('[')
+        for index, child := range array {
+            value, err := exactFields(child, destination.Elem())
+            if err != nil { return nil, err }
+            if index > 0 { exact.WriteByte(',') }
+            exact.Write(value)
+        }
+        exact.WriteByte(']')
+        return exact.Bytes(), nil
     default:
-        return value
+        return raw, nil
     }
 }
 
