@@ -1,4 +1,4 @@
-"""Disposable fixture writers must preserve schemas 20–23 search privacy contract."""
+"""Disposable fixture writers must preserve schemas 20–24 search privacy contract."""
 
 import base64
 from contextlib import closing, redirect_stdout
@@ -178,7 +178,7 @@ class SchemaTwentyFixtureTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "SQLite >= 3.50.4"):
                 connect_fixture_database(self.path)
         with closing(sqlite3.connect(self.path)) as connection, connection:
-            connection.execute("INSERT INTO schema_migrations VALUES(24)")
+            connection.execute("INSERT INTO schema_migrations VALUES(25)")
         with self.assertRaisesRegex(RuntimeError, "newer than supported"):
             connect_fixture_database(self.path)
 
@@ -261,10 +261,57 @@ class SchemaTwentyThreeFixtureTests(SchemaTwentyTwoFixtureTests):
             connect_fixture_database(self.path)
 
 
-@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema23 cross-connection checks")
-class SchemaTwentyThreeWriterTests(unittest.TestCase):
+class SchemaTwentyFourFixtureTests(SchemaTwentyThreeFixtureTests):
+    """Rules and exact-exception provenance revoke epochs without opening encrypted values."""
+    schema_version = 24
+
+    def setUp(self):
+        super().setUp()
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.executescript("""
+                CREATE TABLE privacy_rules(id TEXT PRIMARY KEY,encrypted_rule TEXT NOT NULL,created_at_ms INTEGER NOT NULL CHECK(created_at_ms>=0));
+                CREATE TABLE privacy_rule_entries(rule_id TEXT NOT NULL,entry_id INTEGER NOT NULL,PRIMARY KEY(rule_id,entry_id));
+                CREATE INDEX privacy_rule_entries_entry ON privacy_rule_entries(entry_id);
+                CREATE TRIGGER privacy_rule_entry_update AFTER UPDATE OF content_type,content,html_content,ocr_text,source_app,tags ON clipboard_history BEGIN DELETE FROM privacy_rule_entries WHERE entry_id=old.id; END;
+                CREATE TRIGGER privacy_rule_entry_delete AFTER DELETE ON clipboard_history BEGIN DELETE FROM privacy_rule_entries WHERE entry_id=old.id; END;
+                CREATE TRIGGER privacy_rule_insert AFTER INSERT ON privacy_rules BEGIN UPDATE privacy_runtime_state SET privacy_epoch=privacy_epoch+1 WHERE singleton=1; END;
+                CREATE TRIGGER privacy_rule_update AFTER UPDATE ON privacy_rules BEGIN UPDATE privacy_runtime_state SET privacy_epoch=privacy_epoch+1 WHERE singleton=1; END;
+                CREATE TRIGGER privacy_rule_delete AFTER DELETE ON privacy_rules BEGIN DELETE FROM privacy_rule_entries WHERE rule_id=old.id; UPDATE privacy_runtime_state SET privacy_epoch=privacy_epoch+1 WHERE singleton=1; END;
+            """)
+
+    def test_current_schedule_is_not_rewritten_by_the_fixture_opener(self):
+        with closing(connect_fixture_database(self.path)) as connection:
+            self.assertEqual(connection.execute("SELECT max(version) FROM schema_migrations").fetchone(), (24,))
+            self.assertEqual(connection.execute("SELECT privacy_epoch,session_enabled FROM privacy_runtime_state").fetchone(), (0, 0))
+            self.assertEqual(connection.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
+
+    def test_rule_change_and_entry_edit_revoke_provenance_atomically(self):
+        with closing(connect_fixture_database(self.path)) as connection, connection:
+            connection.execute("INSERT INTO clipboard_history(id,content) VALUES(1,'synthetic ordinary')")
+            connection.execute("INSERT INTO privacy_rules VALUES('synthetic-id','opaque synthetic cipher',1)")
+            connection.execute("INSERT INTO privacy_rule_entries VALUES('synthetic-id',1)")
+            self.assertEqual(connection.execute("SELECT privacy_epoch FROM privacy_runtime_state").fetchone(), (1,))
+            connection.commit()
+            with self.assertRaises(sqlite3.IntegrityError), connection:
+                connection.execute("UPDATE clipboard_history SET content='attempted edit' WHERE id=1")
+                connection.execute("INSERT INTO reject_failure VALUES(-1)")
+            self.assertEqual(connection.execute("SELECT count(*) FROM privacy_rule_entries").fetchone(), (1,))
+            connection.execute("UPDATE clipboard_history SET content='independent edit' WHERE id=1")
+            self.assertEqual(connection.execute("SELECT count(*) FROM privacy_rule_entries").fetchone(), (0,))
+            connection.execute("DELETE FROM privacy_rules")
+            self.assertEqual(connection.execute("SELECT privacy_epoch FROM privacy_runtime_state").fetchone(), (2,))
+
+    def test_missing_rule_guard_is_rejected_without_repair(self):
+        with closing(sqlite3.connect(self.path)) as connection, connection:
+            connection.execute("DROP TRIGGER privacy_rule_delete")
+        with self.assertRaisesRegex(RuntimeError, "rule revocation triggers"):
+            connect_fixture_database(self.path)
+
+
+@unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema24 cross-connection checks")
+class SchemaTwentyFourWriterTests(unittest.TestCase):
     def test_cli_and_external_writer_keep_search_view_and_fts_consistent(self):
-        with tempfile.TemporaryDirectory(prefix="dzc-schema23-writer-") as directory:
+        with tempfile.TemporaryDirectory(prefix="dzc-schema24-writer-") as directory:
             path = Path(directory) / "history.db"
             environment = {**os.environ, "DEZIRCLIP_DB_PATH": str(path)}
             binary = str(Path(os.environ["DZC_TEST_BIN"]).resolve())
@@ -275,7 +322,7 @@ class SchemaTwentyThreeWriterTests(unittest.TestCase):
 
             cli("add", "nativekeepmarker")
             with closing(sqlite3.connect(path)) as raw:
-                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (23,))
+                self.assertEqual(raw.execute("SELECT max(version) FROM schema_migrations").fetchone(), (24,))
                 self.assertEqual(raw.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
                 self.assertEqual(raw.execute("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'").fetchone(), (1,))
                 with self.assertRaisesRegex(sqlite3.OperationalError, "no such function: dc_search_visible"):
@@ -330,7 +377,7 @@ class SyntheticSeederTests(unittest.TestCase):
                                    env={**os.environ, "DEZIRCLIP_DB_PATH": str(path)},
                                    capture_output=True, check=True, timeout=30)
                     with closing(sqlite3.connect(path)) as database:
-                        self.assertEqual(database.execute("SELECT max(version) FROM schema_migrations").fetchone(), (23,))
+                        self.assertEqual(database.execute("SELECT max(version) FROM schema_migrations").fetchone(), (24,))
                         self.assertEqual(database.execute("SELECT v FROM clipboard_fts_config WHERE k='automerge'").fetchone(), (8,))
                 else:
                     with closing(sqlite3.connect(path)) as database:
@@ -354,8 +401,8 @@ class SyntheticSeederTests(unittest.TestCase):
     def test_direct_sqlite_fixture_stays_deterministic_for_legacy_without_cli(self):
         self._assert_seed_cases()
 
-    @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema23 seeder checks")
-    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema23(self):
+    @unittest.skipUnless(os.environ.get("DZC_TEST_BIN"), "Set DZC_TEST_BIN for real schema24 seeder checks")
+    def test_direct_sqlite_fixture_stays_deterministic_for_legacy_and_schema24(self):
         self._assert_seed_cases(os.environ["DZC_TEST_BIN"])
 
 

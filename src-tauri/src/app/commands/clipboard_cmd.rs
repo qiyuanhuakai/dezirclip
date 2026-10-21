@@ -109,6 +109,8 @@ pub async fn add_manual_item(
     content: String,
     content_type: String,
     tags: Vec<String>,
+    expected_privacy_epoch: Option<u64>,
+    confirm_persistence: Option<bool>,
 ) -> AppResult<i64> {
     let preview = truncate_chars_with_suffix(&content, 200, "...");
 
@@ -134,7 +136,19 @@ pub async fn add_manual_item(
 
     let app_data_dir = app_handle.state::<AppDataDir>();
     let data_dir = app_data_dir.0.lock().unwrap().clone();
-    let new_id = state.history_service().save(&entry, Some(&data_dir))?;
+    let confirmed=confirm_persistence.unwrap_or(false);
+    if confirmed && expected_privacy_epoch.is_none() {
+        return Err(AppError::Validation("PrivacyEpochRequired".into()));
+    }
+    let history=state.history_service();
+    let permit=history.privacy().authorize_read(
+        dzc_core::api::PrivacyAccessIntent::InteractiveRead,
+        dzc_core::api::SensitiveAccess::Denied,
+        expected_privacy_epoch,chrono::Utc::now().timestamp_millis(),
+    ).map_err(|error|AppError::Validation(error.to_string()))?;
+    let intent=if confirmed {dzc_core::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}
+        else{dzc_core::api::ManualPersistenceIntent::Ordinary};
+    let new_id=history.save_manual_authorized(&entry,Some(&data_dir),intent,&permit,chrono::Utc::now().timestamp_millis())?;
     let _ = app_handle.emit("clipboard-changed", ());
     Ok(new_id)
 }

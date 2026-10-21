@@ -200,6 +200,7 @@ pub(super) struct AttachmentCleanup {
 }
 
 impl AttachmentCleanup {
+    pub(super) fn is_empty(&self) -> bool { self.candidates.is_empty() }
     pub(super) fn for_entries(
         conn: &Connection,
         data_dir: Option<&Path>,

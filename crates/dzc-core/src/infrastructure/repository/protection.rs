@@ -2,6 +2,38 @@
 use crate::infrastructure::encryption::EncryptionError;
 use rusqlite::Connection;
 
+/// File cleanup is deferred until the outer commit; a legacy nested caller cannot acknowledge it.
+pub(super) fn atomic_with_cleanup<T>(
+    conn: &Connection,
+    operation: impl FnOnce(
+        &Connection,
+    ) -> Result<(T, Option<super::sensitive_tags::AttachmentCleanup>), String>,
+) -> Result<T, String> {
+    if !conn.is_autocommit() {
+        return atomic(conn, |conn| {
+            let (value, mut cleanup) = operation(conn)?;
+            if let Some(cleanup) = &mut cleanup {
+                cleanup.protect_surviving_references(conn)?;
+                if !cleanup.is_empty() {
+                    return Err("AttachmentPersistenceRejected".into());
+                }
+            }
+            Ok(value)
+        });
+    }
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let (value, mut cleanup) = operation(&tx)?;
+    if let Some(cleanup) = &mut cleanup {
+        cleanup.protect_surviving_references(&tx)?;
+    }
+    tx.commit().map_err(|error| error.to_string())?;
+    if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
+        return Err("ProtectedAttachmentCleanupIncomplete".into());
+    }
+    Ok(value)
+}
+
 pub(super) fn atomic<T>(
     conn: &Connection,
     operation: impl FnOnce(&Connection) -> Result<T, String>,

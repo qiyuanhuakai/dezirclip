@@ -34,4 +34,4 @@ sha2.workspace = true
 libc.workspace = true
 
 [package.metadata.dzc]
-capture-contract = 2
+capture-contract = 3

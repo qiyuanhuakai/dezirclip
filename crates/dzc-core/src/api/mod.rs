@@ -29,3 +29,6 @@ pub use crate::infrastructure::repository::{
 pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 
 mod capture_store;
+
+mod privacy_policy;
+pub use privacy_policy::{PrivacyPolicyService,PrivacyRuleKind,PrivacyRuleSummary,PrivacyFeedbackAction,PrivacyDecisionReport,PrivacyScanStatus};
