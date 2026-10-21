@@ -184,3 +184,24 @@ export async function submitPrivacyFeedback(id: number, action: PrivacyFeedbackA
     await refreshPrivacyState();
   }
 }
+
+export async function refreshPrivacyAfterConfirmation(expectedEpoch: number): Promise<void> {
+  await invoke("activate_window_focus");
+  await new Promise<void>((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timeout);
+      observers.delete(check);
+      window.removeEventListener("focus", check);
+      if (error) reject(error); else resolve();
+    };
+    const check = () => {
+      if (viewSuspended || document.hidden || !document.hasFocus() || model.phase !== "ready") return;
+      finish(model.snapshot?.privacy_epoch === expectedEpoch ? undefined : new Error("PrivacyEpochChanged"));
+    };
+    const timeout = setTimeout(() => finish(new Error("PrivacyStateUnavailable")), 2000);
+    observers.add(check);
+    window.addEventListener("focus", check);
+    void refreshPrivacyState();
+    check();
+  });
+}
