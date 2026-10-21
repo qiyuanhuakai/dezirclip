@@ -25,6 +25,17 @@ impl Client {
             _ => return Err(io::Error::from(io::ErrorKind::PermissionDenied)) };
         Self::connect(endpoint, role, Some(grant)).await
     }
+    /// Protocol 1.0 peers may ignore later optional upload fields. Require an
+    /// explicit extension version before sending any generated-copy body.
+    pub async fn require_generated_copy(&mut self) -> io::Result<()> {
+        let capabilities:CapabilityReport=self.call(Method::Capabilities,serde_json::json!({}),"CapabilityReport").await?;
+        let feature=&capabilities.platform["desktop_generated_copy"];
+        if feature["supported"].as_bool()!=Some(true) || feature["version"].as_u64()!=Some(1) {
+            self.stream.take();
+            return Err(io::Error::new(io::ErrorKind::Unsupported,"GeneratedCopyCapabilityUnavailable"));
+        }
+        Ok(())
+    }
     pub async fn call<T: DeserializeOwned>(&mut self, method: Method, parameters: impl Serialize, schema: &str) -> io::Result<T> {
         self.next = self.next.checked_add(1).ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
         let request = Request { request_id: self.next.to_string(), method, params: serde_json::to_value(parameters)? };
@@ -168,5 +179,58 @@ mod tests {
     }
     fn encoded_health_request_length() -> usize {
         wire::encode("Request", &Request { request_id: "3".into(), method: Method::Health, params: serde_json::json!({}) }).unwrap().len()
+    }
+    #[test]
+    fn native_legacy_peer_cannot_accept_a_generated_copy_as_an_ordinary_capture() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            for feature in [serde_json::Value::Null,serde_json::json!({"supported":true,"version":0}),
+                serde_json::json!({"supported":true,"version":2}),serde_json::json!({"supported":false,"version":1}),
+                serde_json::json!({"supported":true,"version":1})] {
+                let accepted=feature==serde_json::json!({"supported":true,"version":1});
+                let directory=std::env::temp_dir().join(format!("dzc-generated-peer-{}",uuid::Uuid::new_v4()));
+                std::fs::create_dir(&directory).unwrap();
+                #[cfg(target_os="linux")]
+                {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(&directory,std::fs::Permissions::from_mode(0o700)).unwrap();}
+                let endpoint=Endpoint::in_directory(&directory).unwrap();
+                let mut listener=endpoint.bind().unwrap();
+                let server=tokio::spawn(async move {
+                    let mut stream=listener.accept().await.unwrap();
+                    let bytes=ipc::read_frame(&mut stream,Duration::from_secs(3)).await.unwrap();
+                    stream.authenticate_after_read().unwrap();
+                    let request:Request=wire::decode("Request",&bytes).unwrap();
+                    let state=RuntimeState{service_instance_id:"synthetic-legacy-host".into(),history_revision:0,privacy_epoch:0,event_sequence:0};
+                    let hello=serde_json::to_value(HelloResult{session_id:"synthetic-desktop".into(),protocol_version:VERSION,core_version:env!("CARGO_PKG_VERSION").into(),
+                        permissions:vec![Permission::DesktopHistory],state:state.clone(),max_frame_bytes:wire::MAX_FRAME_BYTES as u32}).unwrap();
+                    ipc::write_frame(&mut stream,&wire::encode("Response",&Response{request_id:request.request_id,result:Some(hello),error:None}).unwrap(),Duration::from_secs(3)).await.unwrap();
+                    let bytes=ipc::read_frame(&mut stream,Duration::from_secs(3)).await.unwrap();
+                    let request:Request=wire::decode("Request",&bytes).unwrap();
+                    assert_eq!(request.method,Method::Capabilities);
+                    let capabilities=serde_json::json!({"methods":["desktop.capture.begin","desktop.capture.write","desktop.capture.finish"],
+                        "permissions":["desktop_history"],"platform":if feature.is_null(){serde_json::json!({})}else{serde_json::json!({"desktop_generated_copy":feature})}});
+                    ipc::write_frame(&mut stream,&wire::encode("Response",&Response{request_id:request.request_id,result:Some(capabilities),error:None}).unwrap(),Duration::from_secs(3)).await.unwrap();
+                    if accepted {
+                        let bytes=ipc::read_frame(&mut stream,Duration::from_secs(3)).await.unwrap();
+                        let request:Request=wire::decode("Request",&bytes).unwrap();
+                        assert_eq!(request.method,Method::DesktopCaptureBegin);
+                        assert_eq!(request.params["copy_to_clipboard"],true);
+                        let result=serde_json::to_value(CaptureBeginResult{capture_id:Some("1".repeat(32)),state}).unwrap();
+                        ipc::write_frame(&mut stream,&wire::encode("Response",&Response{request_id:request.request_id,result:Some(result),error:None}).unwrap(),Duration::from_secs(3)).await.unwrap();
+                    } else {
+                        let mut first=[0_u8;1];
+                        match tokio::time::timeout(Duration::from_secs(3),stream.read(&mut first)).await.unwrap() {
+                            Ok(0)=>(),Err(error) if matches!(error.kind(),io::ErrorKind::BrokenPipe|io::ErrorKind::UnexpectedEof|io::ErrorKind::ConnectionReset)=>(),
+                            value=>panic!("a generated-copy upload reached an incompatible peer: {value:?}"),
+                        }
+                    }
+                });
+                let mut client=Client::connect(&endpoint,ClientRole::Desktop,None).await.unwrap();
+                let result=client.require_generated_copy().await;
+                if accepted {
+                    result.unwrap();
+                    let _:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:client.hello.state.service_instance_id.clone(),expected_epoch:0,copy_to_clipboard:Some(true)},"CaptureBeginResult").await.unwrap();
+                } else {assert_eq!(result.unwrap_err().kind(),io::ErrorKind::Unsupported);}
+                drop(client);server.await.unwrap();std::fs::remove_dir_all(directory).unwrap();
+            }
+        });
     }
 }

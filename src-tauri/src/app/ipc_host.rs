@@ -177,6 +177,7 @@ impl DesktopHost {
     async fn begin_upload(&self,copy_to_clipboard:bool,epoch:Option<u64>)->Result<Option<GeneratedUpload>,String> {
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
+        if copy_to_clipboard {client.require_generated_copy().await.map_err(|_|"ClipboardHostCapabilityUnavailable".to_owned())?;}
         let state=client.hello.state.clone();
         let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:epoch.unwrap_or(state.privacy_epoch),copy_to_clipboard:Some(copy_to_clipboard)},"CaptureBeginResult").await.map_err(remote_error)?;
         Ok(result.capture_id.map(|id|GeneratedUpload{client,id}))

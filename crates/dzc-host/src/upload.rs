@@ -168,6 +168,10 @@ mod tests {
         assert_eq!(begin(&host,&session(&host,ClientRole::Cli,true),true).error.unwrap().code,WireErrorCode::PermissionDenied);
         let desktop=session(&host,ClientRole::Desktop,true);
         let other=session(&host,ClientRole::Desktop,true);
+        let capabilities=call(&host,&desktop,Method::Capabilities,serde_json::json!({})).result.unwrap();
+        assert_eq!(capabilities["platform"]["desktop_generated_copy"],serde_json::json!({"supported":true,"version":1}));
+        let capabilities=call(&host,&session(&host,ClientRole::Cli,true),Method::Capabilities,serde_json::json!({})).result.unwrap();
+        assert!(capabilities["platform"].get("desktop_generated_copy").is_none());
         let bodies=[serde_json::json!({"kind":"text","text":"🎸"}),
             serde_json::json!({"kind":"image","text":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVQI12P4z8AAAAMBAQAY3Y2wAAAAAElFTkSuQmCC"}),
             serde_json::json!({"kind":"html","text":"plain","html":"<b>plain</b>"}),
