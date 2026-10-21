@@ -6,6 +6,8 @@ import type { ClipboardEntry, Locale } from "../../../shared/types";
 import { beginPrivacyAccess, forgetPrivacyReveal, getPrivacyEntry, invokePrivacyBound, registerPrivacyReveal, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
+import type { PrivacyMetadataIntent } from "../../../shared/lib/privacyMetadataIntent";
+import { matchesEntryIdentity } from "../../../shared/lib/historyIdentity";
 
 /**
  * Binds a clipboard row to its handlers.
@@ -54,11 +56,11 @@ export interface ClipboardItemRendererProps {
     ) => Promise<void>;
     setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
     openContent: (item: ClipboardEntry, expectedPrivacyEpoch?: number) => void;
-    togglePin: (event: MouseEvent, id: number, isPinned: boolean, hostInstanceId?: string) => void;
+    togglePin: (event: MouseEvent, id: number, isPinned: boolean, hostInstanceId?: string, intent?: PrivacyMetadataIntent) => void | Promise<void>;
     deleteEntry: (event: MouseEvent, id: number, hostInstanceId?: string) => void;
     setEditingTagsId: Dispatch<SetStateAction<number | null>>;
     setTagInput: Dispatch<SetStateAction<string>>;
-    handleUpdateTags: (id: number, tags: string[], hostInstanceId?: string) => void;
+    handleUpdateTags: (id: number, tags: string[], hostInstanceId?: string, intent?: PrivacyMetadataIntent) => void | Promise<void>;
     onQRCode: (item: ClipboardEntry) => void;
     onTransformError: (item: ClipboardEntry, kind: string, message: string) => void;
     onTransformSuccess: (item: ClipboardEntry, kind: string) => void;
@@ -194,10 +196,11 @@ const ClipboardItemRenderer = ({
     );
 
     const onTogglePin = useCallback(
-        (e: MouseEvent) => {
-            togglePin(e, itemId, itemIsPinned, item.host_instance_id);
+        (e: MouseEvent, intent?: PrivacyMetadataIntent) => {
+            return togglePin(e, itemId, itemIsPinned, item.host_instance_id, intent && { ...intent,
+                isCurrent: () => matchesEntryIdentity(currentItem.current, item.id, item.host_instance_id) });
         },
-        [togglePin, itemId, itemIsPinned, item.host_instance_id]
+        [togglePin, itemId, itemIsPinned, item]
     );
 
     const onDelete = useCallback(
@@ -220,20 +223,22 @@ const ClipboardItemRenderer = ({
         [isEditingTags, setEditingTagsId, setTagInput, itemId]
     );
 
-    const onTagAdd = useCallback(() => {
+    const onTagAdd = useCallback(async (intent?: PrivacyMetadataIntent) => {
         const newTag = tagInput.trim();
         if (newTag && !itemTags?.includes(newTag)) {
-            handleUpdateTags(itemId, [...(itemTags || []), newTag], item.host_instance_id);
+            await handleUpdateTags(itemId, [...(itemTags || []), newTag], item.host_instance_id, intent && { ...intent,
+                isCurrent: () => matchesEntryIdentity(currentItem.current, item.id, item.host_instance_id) });
         }
         setTagInput("");
         setEditingTagsId(null);
-    }, [tagInput, itemTags, handleUpdateTags, setTagInput, setEditingTagsId, itemId, item.host_instance_id]);
+    }, [tagInput, itemTags, handleUpdateTags, setTagInput, setEditingTagsId, itemId, item]);
 
     const onTagDelete = useCallback(
-        (tag: string) => {
-            handleUpdateTags(itemId, itemTags ? itemTags.filter((t) => t !== tag) : [], item.host_instance_id);
+        (tag: string, intent?: PrivacyMetadataIntent) => {
+            return handleUpdateTags(itemId, itemTags ? itemTags.filter((t) => t !== tag) : [], item.host_instance_id, intent && { ...intent,
+                isCurrent: () => matchesEntryIdentity(currentItem.current, item.id, item.host_instance_id) });
         },
-        [handleUpdateTags, itemId, itemTags, item.host_instance_id]
+        [handleUpdateTags, itemId, itemTags, item]
     );
 
     const onQRCodeForItem = useCallback(() => {

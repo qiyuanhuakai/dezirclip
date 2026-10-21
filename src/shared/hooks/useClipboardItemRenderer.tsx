@@ -5,6 +5,7 @@ import ClipboardItemRenderer from "../../features/clipboard/components/Clipboard
 import type { ClipboardEntry } from "../types";
 import type { Locale } from "../types";
 import { isSensitiveEntry } from "../lib/privacyRuntime";
+import type { PrivacyMetadataIntent } from "../lib/privacyMetadataIntent";
 
 interface UseClipboardItemRendererOptions {
   privacyProtection: boolean;
@@ -33,11 +34,11 @@ interface UseClipboardItemRendererOptions {
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
   openContent: (item: ClipboardEntry, expectedPrivacyEpoch?: number) => void;
-  togglePin: (event: MouseEvent, id: number, isPinned: boolean, hostInstanceId?: string) => void;
+  togglePin: (event: MouseEvent, id: number, isPinned: boolean, hostInstanceId?: string, intent?: PrivacyMetadataIntent) => void | Promise<void>;
   deleteEntry: (event: MouseEvent, id: number, hostInstanceId?: string) => void;
   setEditingTagsId: Dispatch<SetStateAction<number | null>>;
   setTagInput: Dispatch<SetStateAction<string>>;
-  handleUpdateTags: (id: number, tags: string[], hostInstanceId?: string) => void;
+  handleUpdateTags: (id: number, tags: string[], hostInstanceId?: string, intent?: PrivacyMetadataIntent) => void | Promise<void>;
   onQRCode: (item: ClipboardEntry) => void;
   onTransformError: (item: ClipboardEntry, kind: string, message: string) => void;
   onTransformSuccess: (item: ClipboardEntry, kind: string) => void;
