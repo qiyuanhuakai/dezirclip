@@ -238,6 +238,11 @@ pub fn revoke_private_exports() -> PlatformResult<()> {
 /// Native-only export handles; paths never belong to a WebView or external Surface response.
 pub struct PrivateFileExport(crate::private_files::BoundExport);
 impl PrivateFileExport {
+    pub fn close(&mut self) -> PlatformResult<()> {
+        self.0
+            .close()
+            .map_err(|_| PlatformError::failed(Capability::Write))
+    }
     pub fn paths(&self) -> PlatformResult<Vec<String>> {
         self.0
             .paths()
