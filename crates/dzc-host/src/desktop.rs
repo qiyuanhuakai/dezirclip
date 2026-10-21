@@ -4,14 +4,14 @@ use dzc_core::api::{self, PrivacyReadPermit};
 use dzc_protocol::wire::*;
 use serde::Serialize;
 use serde_json::Value;
-use std::{sync::{Arc,Mutex}, time::{Duration, Instant}};
+use std::{sync::{Arc,Mutex,atomic::{AtomicBool,Ordering}}, time::{Duration, Instant}};
 use base64::Engine;
 
 const MAX_BYTES: usize = 32 * 1024 * 1024;
 const CHUNK_BYTES: usize = 192 * 1024;
 struct Snapshot { id: String, owner: String, epoch: u64, expires: Instant, bytes: Vec<u8> }
 #[derive(Default)]
-pub(crate) struct Snapshots(Arc<Mutex<Vec<Snapshot>>>);
+pub(crate) struct Snapshots(Arc<Mutex<Vec<Snapshot>>>,Arc<AtomicBool>);
 impl Snapshots {
     pub(crate) fn clear(&self) -> Result<(), WireErrorCode> {
         self.0.lock().map_err(|_| WireErrorCode::Unavailable)?.clear();
@@ -28,24 +28,41 @@ impl Snapshots {
         let id = uuid::Uuid::new_v4().simple().to_string();
         let total_bytes = bytes.len() as u32;
         snapshots.push(Snapshot { id: id.clone(), owner: owner.id().into(), epoch: state.privacy_epoch, expires: Instant::now() + Duration::from_secs(5), bytes });
-        let storage=self.0.clone();
-        let expired_id=id.clone();
-        if std::thread::Builder::new().name("dzc-snapshot-expiry".into()).spawn(move|| {
-            std::thread::sleep(Duration::from_secs(5));
-            if let Ok(mut snapshots)=storage.lock() {snapshots.retain(|snapshot|snapshot.id!=expired_id);}
-        }).is_err() {snapshots.retain(|snapshot|snapshot.id!=id);return Err(WireErrorCode::Unavailable);}
+        if !self.1.swap(true,Ordering::AcqRel) {
+            let storage=self.0.clone();
+            let running=self.1.clone();
+            if std::thread::Builder::new().name("dzc-snapshot-expiry".into()).spawn(move||loop {
+                let delay={
+                    let Ok(mut snapshots)=storage.lock() else {running.store(false,Ordering::Release);return;};
+                    let now=Instant::now();
+                    snapshots.retain(|snapshot|snapshot.expires>now);
+                    let Some(expires)=snapshots.iter().map(|snapshot|snapshot.expires).min() else {
+                        running.store(false,Ordering::Release);return;
+                    };
+                    expires.saturating_duration_since(now)
+                };
+                std::thread::sleep(delay);
+            }).is_err() {
+                self.1.store(false,Ordering::Release);
+                snapshots.retain(|snapshot|snapshot.id!=id);
+                return Err(WireErrorCode::Unavailable);
+            }
+        }
         Ok(BodySnapshot { snapshot_id: id, total_bytes, state })
     }
     fn read(&self, owner: &Session, state: RuntimeState, request: SnapshotReadParams) -> Result<SnapshotChunk, WireErrorCode> {
         if request.service_instance_id != state.service_instance_id || request.expected_epoch != state.privacy_epoch { return Err(WireErrorCode::PrivacyBlocked); }
         let mut snapshots = self.0.lock().map_err(|_| WireErrorCode::Unavailable)?;
         snapshots.retain(|snapshot| snapshot.expires > Instant::now() && snapshot.epoch == state.privacy_epoch);
-        let snapshot = snapshots.iter().find(|snapshot| snapshot.id == request.snapshot_id && snapshot.owner == owner.id()).ok_or(WireErrorCode::NotFound)?;
+        let index = snapshots.iter().position(|snapshot| snapshot.id == request.snapshot_id && snapshot.owner == owner.id()).ok_or(WireErrorCode::NotFound)?;
+        let snapshot = &snapshots[index];
         let start = request.offset as usize;
         if start > snapshot.bytes.len() { return Err(WireErrorCode::InvalidRequest); }
         let end = start.saturating_add(CHUNK_BYTES).min(snapshot.bytes.len());
-        Ok(SnapshotChunk { data_base64: base64::engine::general_purpose::STANDARD.encode(&snapshot.bytes[start..end]),
-            offset: request.offset, next_offset: end as u32, finished: end == snapshot.bytes.len(), state })
+        let chunk = SnapshotChunk { data_base64: base64::engine::general_purpose::STANDARD.encode(&snapshot.bytes[start..end]),
+            offset: request.offset, next_offset: end as u32, finished: end == snapshot.bytes.len(), state };
+        if chunk.finished { snapshots.remove(index); }
+        Ok(chunk)
     }
 }
 
@@ -186,6 +203,31 @@ mod tests {
         assert_eq!(entry["content"],"synthetic protected body");
         assert!(entry.get("source_app_path").is_none());
         assert!(!String::from_utf8(bytes).unwrap().contains("process.exe"));
+    }
+    #[test]
+    fn completed_snapshots_release_quota_while_incomplete_snapshots_remain_bounded() {
+        let host=crate::router::tests::synthetic_host();
+        let desktop=session(&host,ClientRole::Desktop,true);
+        let id=insert(&host,"ordinary completed snapshot",false);
+        for _ in 0..5 {
+            let descriptor:BodySnapshot=serde_json::from_value(get(&host,&desktop,id,false).result.unwrap()).unwrap();
+            let request=SnapshotReadParams{snapshot_id:descriptor.snapshot_id,offset:0,
+                expected_epoch:descriptor.state.privacy_epoch,service_instance_id:descriptor.state.service_instance_id};
+            let response=call(&host,&desktop,Method::DesktopSnapshotRead,serde_json::to_value(&request).unwrap());
+            let chunk:SnapshotChunk=serde_json::from_value(response.result.unwrap()).unwrap();
+            assert!(chunk.finished);
+            assert!(host.snapshots.0.lock().unwrap().is_empty());
+            assert_eq!(call(&host,&desktop,Method::DesktopSnapshotRead,serde_json::to_value(request).unwrap()).error.unwrap().code,WireErrorCode::NotFound);
+        }
+        let large="x".repeat(CHUNK_BYTES+1);
+        for _ in 0..4 {
+            let descriptor=host.snapshots.store(&desktop,host.snapshot().unwrap(),&large).unwrap();
+            let chunk=host.snapshots.read(&desktop,host.snapshot().unwrap(),SnapshotReadParams{snapshot_id:descriptor.snapshot_id,offset:0,
+                expected_epoch:descriptor.state.privacy_epoch,service_instance_id:descriptor.state.service_instance_id}).unwrap();
+            assert!(!chunk.finished);
+        }
+        assert_eq!(host.snapshots.0.lock().unwrap().len(),4);
+        assert_eq!(host.snapshots.store(&desktop,host.snapshot().unwrap(),&"still bounded").unwrap_err(),WireErrorCode::Busy);
     }
     #[test]
     fn snapshots_are_bound_to_connection_instance_epoch_expiry_and_total_budget() {

@@ -118,6 +118,7 @@ type PrivacyHotkey struct {
 type CaptureBeginParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
+    CopyToClipboard *bool `json:"copy_to_clipboard,omitempty"`
 }
 
 type CaptureBeginResult struct {
@@ -135,6 +136,7 @@ type CaptureFinishParams struct {
     CaptureId string `json:"capture_id"`
     SourceApp string `json:"source_app"`
     InheritedProtection bool `json:"inherited_protection"`
+    Paste *bool `json:"paste,omitempty"`
 }
 
 type GeneratedBody struct {

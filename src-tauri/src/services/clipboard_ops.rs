@@ -146,8 +146,15 @@ pub async fn copy_to_clipboard(
     let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>();
     let source_id=if id!=0 {id}else{derived_from_id.unwrap_or(0)};
     bridge.check_instance(source_id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
-    if bridge.embedded().map_err(AppError::Validation)?.is_none() && source_id!=0 {
+    if bridge.embedded().map_err(AppError::Validation)?.is_none() {
         if paste {handle_window_focus_for_paste(&app_handle).await?;}
+        if source_id==0 {
+            let upload=bridge.begin_generated_copy(expected_privacy_epoch).await.map_err(AppError::Validation)?;
+            let body=generated_copy_body(&content,&content_type,paste_image_as_base64.unwrap_or(false))?;
+            upload.finish_copy(body,paste).await.map_err(AppError::Validation)?;
+            if paste {play_paste_sound_if_enabled(&app_handle);}
+            return Ok(());
+        }
         let epoch=expected_privacy_epoch.unwrap_or(state.history_service().runtime_snapshot(Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch);
         let _:dzc_host::wire::OperationResult=bridge.call(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams {
             id:source_id,service_instance_id:bridge.instance().map_err(AppError::Validation)?,expected_epoch:epoch,reveal:expected_privacy_epoch.is_some(),paste,
@@ -290,6 +297,30 @@ pub async fn copy_to_clipboard(
     }
 
     Ok(())
+}
+
+fn generated_copy_body(content:&str,kind:&str,image_as_text:bool)->AppResult<dzc_host::wire::GeneratedBody> {
+    let (kind,text)=if kind=="image" && !image_as_text {
+        let unavailable=||AppError::Validation("GeneratedImageUnavailable".into());
+        let maximum=16*1024*1024;
+        let value=content.trim();
+        let bytes=if value.starts_with("data:image/") {
+            if value.len()>maximum*4/3+1024 {return Err(unavailable());}
+            let (header,data)=value.split_once(',').ok_or_else(unavailable)?;
+            if !header.ends_with(";base64") {return Err(unavailable());}
+            general_purpose::STANDARD.decode(data).map_err(|_|unavailable())?
+        } else {
+            let raw=value.strip_prefix("file://").unwrap_or(value);
+            let raw=if raw.starts_with('/') && raw.chars().nth(2)==Some(':') {&raw[1..]}else{raw};
+            let path=decode(raw).map_err(|_|unavailable())?;
+            dzc_core::filesystem::read_bounded_regular(std::path::Path::new(path.as_ref()),maximum).map_err(|_|unavailable())?
+        };
+        if bytes.len()>maximum {return Err(unavailable());}
+        let format=image::guess_format(&bytes).map_err(|_|unavailable())?;
+        ("image",format!("data:{};base64,{}",format.to_mime_type(),general_purpose::STANDARD.encode(bytes)))
+    } else if matches!(kind,"text"|"code"|"url"|"rich_text"|"image") {("text",content.into())}
+    else {return Err(AppError::Validation("GeneratedPayloadKindRejected".into()));};
+    Ok(dzc_host::wire::GeneratedBody{kind:kind.into(),text,html:None})
 }
 
 async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResult<()> {
@@ -1520,6 +1551,26 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn generated_remote_copy_normalizes_favorite_images_and_keeps_ocr_as_text() {
+        let emoji=generated_copy_body("🎸","text",false).unwrap();
+        assert_eq!((emoji.kind.as_str(),emoji.text.as_str()),("text","🎸"));
+        let image="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVQI12P4z8AAAAMBAQAY3Y2wAAAAAElFTkSuQmCC";
+        let directory=std::env::temp_dir().join(format!("dzc-generated-image-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path=directory.join("favorite.png");
+        std::fs::write(&path,general_purpose::STANDARD.decode(image.split_once(',').unwrap().1).unwrap()).unwrap();
+        let favorite=generated_copy_body(path.to_str().unwrap(),"image",false).unwrap();
+        assert_eq!(favorite.kind,"image");
+        assert_eq!(favorite.text,image);
+        assert!(favorite.html.is_none());
+        let ocr=generated_copy_body("ordinary OCR result","image",true).unwrap();
+        assert_eq!((ocr.kind.as_str(),ocr.text.as_str()),("text","ordinary OCR result"));
+        assert!(generated_copy_body("data:image/png,not-base64","image",false).is_err());
+        assert!(generated_copy_body("/synthetic/file","files",false).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
     #[cfg(target_os = "linux")]
     #[test]
     fn isolated_wayland_gui_write_intent_preserves_generated_capture() {
