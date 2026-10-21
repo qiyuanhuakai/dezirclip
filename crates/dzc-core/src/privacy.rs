@@ -39,6 +39,7 @@ pub enum PrivacyReason {
     ConfiguredRuleMatched,
     ExistingRecordProtected,
     UserRequestedProtection,
+    ExactExceptionMatched,
     NoProtectionMatch,
     PrivacyHintsUnavailable,
     ScanIncomplete,
@@ -137,6 +138,8 @@ impl PrivacyPolicy {
             (PrivacyAction::Encrypt, ExistingRecordProtected)
         } else if applicable(UserRequestedProtection) {
             (PrivacyAction::Encrypt, UserRequestedProtection)
+        } else if applicable(ExactExceptionMatched) {
+            (PrivacyAction::Allow, ExactExceptionMatched)
         } else if applicable(SourceProtectionRequested) {
             (PrivacyAction::Encrypt, SourceProtectionRequested)
         } else if applicable(CredentialStructureVerified) {
