@@ -127,5 +127,28 @@ class BuildSetTests(unittest.TestCase):
             self.verify(self.component('cli'), self.component('desktop'), service, '')
 
 
+class PreviousAlphaTests(unittest.TestCase):
+    def test_previous_alpha_is_bound_to_the_published_source_schema_and_inventory(self):
+        verify = load_fixture_function('verify_previous_alpha')
+        revision = '90ba9960744b6cd57caaaf597f68533a7e41be45'
+        version = '0.2.0-alpha.1'
+        original = {'component': 'cli', 'component_version': version,
+                    'source_revision': revision, 'build_id': version + '@' + revision,
+                    'source_state': 'verified_checkout', 'metadata_version': 1,
+                    'database_schema_version': 21, 'protocol_version': {'major': 1, 'minor': 0},
+                    'target': 'x86_64-unknown-linux-gnu',
+                    'linked_components': [{'component': name, 'version': version}
+                                          for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]}
+        self.assertTrue(verify(original)['verified'])
+        for field, value in [('component_version', '0.2.0-alpha.2'), ('source_revision', 'a' * 40),
+                             ('build_id', None), ('source_state', 'modified_checkout'),
+                             ('metadata_version', True), ('database_schema_version', 24),
+                             ('database_schema_version', True), ('target', 'aarch64-unknown-linux-gnu'),
+                             ('protocol_version', {'major': True, 'minor': 0}),
+                             ('linked_components', [])]:
+            with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
+                verify({**original, field: value})
+
+
 if __name__ == '__main__':
     unittest.main()
