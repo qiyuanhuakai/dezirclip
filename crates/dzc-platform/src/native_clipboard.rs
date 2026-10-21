@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 mod private_x11_files;
 #[cfg(target_os = "linux")]
+pub(crate) mod selection_export;
+#[cfg(target_os = "linux")]
 use std::io::{Read, Write};
 
 #[derive(Serialize, Deserialize)]

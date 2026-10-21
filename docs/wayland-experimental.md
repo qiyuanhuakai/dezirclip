@@ -38,14 +38,28 @@ CLI、直接链接的 Core 客户端和 GUI 根据运行时会话选择同一原
 
 受保护文件只导出 kernel-owned 文件句柄，owner 保留句柄至撤销、替换或停止。Wayland 私有 owner 与 X11 文件 owner 在每次供数前检查许可，另以100ms边界检查撤销/最多五分钟存活期；普通监听和普通 owner 不因此增加轮询。X11 文件使用受限的 URI/KDE secret/TARGETS owner，避免通用库 canonicalize memfd URI。X11 的文本、HTML 与图像仍使用原生库提供同 offer secret，由 Host 同步撤销其进程内 owner。已获得文件句柄的外部读取者可以完成现有读取，撤销阻止新的打开；不能宣称撤回其他应用已读取的字节。
 
+GUI 普通与受保护 Wayland 复制使用同一个长期 owner；Windows/X11 既有多格式写入在替换前只关闭本 GUI 之前的私有 selection。Linux 文件导出直接归实际 Wayland/X11 selection worker 所有，外部原生客户端替换、自然取消或断线退出时，先关闭该 scoped export 再通知 worker 完成，不需要后续显式 stop、epoch 变化或等待五分钟期限。关闭失败仍保留原 owner/export 及 ACTIVE 跟踪，显式停止可重试；不关闭其他 writer 或外部编辑器的导出。隔离 wlr、ext 和 Xvfb 回归均覆盖私有文件 A 被普通内容替换后旧 URI 无法新打开，及独立原生客户端替换后相同边界；既有 reader 已持有的句柄不在撤回承诺内。
+
 捕获读取器在正文前读取同一 offer 的 KDE hint，交给 Core 隐私预检；明确 secret 直接跳过。Windows/X11 使用各自受限预检，X11 缺少足够 selection 跟踪证据时不会把空结果当作完整检查。GUI 历史项在 Wayland 中执行手动复制，保留当前搜索和记录，不自动粘贴或按“粘贴后删除”修改历史。
 
 全局快捷键、自动粘贴、快速粘贴浮层、跨应用焦点恢复、全局定位/贴边、置顶、透明调整与截图目前没有获授权的原生适配器；GUI 禁用对应设置并说明原因，后端也在任何 X11/xdotool 操作之前拒绝。现有设置值不改写，重新在 Windows/X11 打开时仍可使用。Portal 探测只查询已运行服务的接口版本，不激活服务、不创建授权会话；接口存在不等于用户已授权，也不使上述能力变为 available。
 
 能力查询不读取正文；GUI 每个 WebView 只发起一次查询，探测失败时交互保持禁用并提示重新打开窗口。`is_finished()` 只表示监听 worker 已结束；释放捕获所有权仍必须等 `stop()` join 确认。
 
-## 当前验证与边界
+## 原生协议验收
 
-P5-A 的后端测试在 Ubuntu24.04 WSL、Sway1.9 / wlroots0.17.1 的 headless pixman 合成器完成；使用清空环境的 bubblewrap、私有 user/PID/network/IPC namespace、HOME、runtime 和 display，禁用 XWayland，不接触宿主剪贴板。实际验证了 wlr 的文本/HTML、KDE secret marker、替换 owner、取消监听与 owner、selection 清空，以及统一订阅 ready/stop/join。Xvfb 私有 display 另验证 XFixes 和原轮询降级的订阅停止。
+P5-C 在 Ubuntu24.04.4 WSL 中分别使用 Sway1.9 / wlroots0.17.1（实际 wlr v2）和私有 Sway1.11 / wlroots0.19.0（实际 ext v1）的 headless pixman 合成器验收。两者均在清空环境的 bubblewrap 私有 user/PID/network/IPC/UTS namespace、HOME、runtime 和 display 中运行，禁用 XWayland，不接触宿主剪贴板或数据库。探测声明的版本必须与实际协商版本相符。
 
-ext 分支已有类型/版本优先级回归，但 P5-A 尚未在提供 ext 的真实合成器执行；后续 P5-C 补充协议矩阵与断线负控。P5-A 已将 NativeCaptureReader 绑定同代 Wayland offer，并在 Core preflight 完整接线前防御拒绝明确的 secret 来源；P5-B 补齐 CLI/GUI 写入、完整能力报告与桌面交互降级。上述分阶段范围不表示已完成全局快捷键、自动粘贴、Surface 焦点恢复、置顶、透明或截图；PRIMARY 也未作支持承诺。
+两套矩阵均通过以下检查：
+
+- 独立 CLI 写入文本、HTML、PNG、文件 URI，写进程退出后由其明确的 owner 子进程继续提供完全相同的 MIME 字节。
+- 同 offer 的富文本、KDE secret 预检、owner 替换、selection 清空，以及监听和 owner 的显式取消、join。
+- 生成文本与 OCR 经真实 Core/SQLite 捕获各一条；已有历史项复制不重复；隐私会话或 epoch 改变不读取/保存被拒绝的正文。
+- HTTPS URI 加纯文本在文件功能开/关时均回退同 offer 文本；只有实际本地 file URI 才受文件开关约束。
+- 缺连接、指定 seat 不存在、服务关闭、只有继承 fd 时明确拒绝；即使给出无效 DISPLAY 也不尝试 X11 回退。终止私有合成器后，监听 worker 结束并由 stop 确认 join，能力不再报告 active。
+
+缺 data-control、缺 seat 和设备立即 finished 的负控由官方 XML 生成的独立协议服务验证，证明客户端错误分类和清理路径；它们不是合成器权限对话框或桌面授权策略的实测。协议服务不拥有剪贴板、不提供正文。可复现命令见 [原生协议测试工具](../scripts/native-wayland-fixture/README.md)。测试默认只准备，明确 --execute 才创建新的临时隔离环境；每次保留命令、原始日志、合成载荷、实际能力和输入前后 SHA256，失败也保留。
+
+Windows 平台测试31通过、1个既有忽略；Linux 平台69通过，两端 workspace all-targets locked check 通过。私有 Xvfb 另验证 XFixes 与原轮询降级的订阅停止。前端生产构建和三语言键检查通过，真实 React 加受控 Tauri bridge 的四场景检查覆盖 Wayland 禁用理由、普通历史/隐私控制仍可用、手动复制不删除/移位/清搜索、X11 原行为和探测失败时拒绝交互；这不代替原生 GUI 桌面验收。
+
+以上仅为 Experimental 剪贴板协议与降级验收，不表示已完成全局快捷键、自动粘贴、Surface 焦点恢复、置顶、透明、截图、PRIMARY、Portal 授权、物理 ARM 或各桌面发行版的完整原生支持。本次不是正式性能采样；私有合成器的就绪时序和测试工具早期失败均保留，未作为成功结果。

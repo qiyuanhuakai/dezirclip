@@ -432,7 +432,10 @@ pub(crate) fn write_content_to_system_clipboard(
     let clipboard_hashes = if dzc_platform::runtime::is_native_wayland() {
         write_native_wayland_content(content, &options)?;
         (content_hash.max(1), 0)
-    } else { match options.content_type {
+    } else {
+        dzc_platform::runtime::shared_embedded_clipboard_writer()
+            .release_private_selection().map_err(|error| AppError::Internal(error.to_string()))?;
+        match options.content_type {
         "image" | "video" | "file" => {
             copy_file_like_content(content, options.content_type, current_time, content_hash)?
         }
@@ -460,7 +463,7 @@ pub(crate) fn write_content_to_system_clipboard(
 }
 
 fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'_>) -> AppResult<()> {
-    use dzc_platform::native_clipboard::Payload;
+    use dzc_core::ports::{ClipboardPayload as Payload, ClipboardWriter};
     let payload = match options.content_type {
         "image" => {
             const LIMIT: usize = 64 * 1024 * 1024;
@@ -472,7 +475,15 @@ fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'
                 if encoded.len() > (LIMIT / 3 + 1) * 4 { return Err(AppError::Validation("WaylandTransferBudgetExceeded".into())); }
                 general_purpose::STANDARD.decode(encoded).map_err(|_| AppError::Validation("ClipboardImageInvalid".into()))?
             };
-            Payload::Image(bytes)
+            let mime = match image::guess_format(&bytes).map_err(|_| AppError::Validation("ClipboardImageInvalid".into()))? {
+                image::ImageFormat::Png => "image/png",
+                image::ImageFormat::Jpeg => "image/jpeg",
+                image::ImageFormat::Gif => "image/gif",
+                image::ImageFormat::WebP => "image/webp",
+                image::ImageFormat::Bmp => "image/bmp",
+                _ => return Err(AppError::Validation("ClipboardImageInvalid".into())),
+            };
+            Payload::Image { bytes, mime: mime.into() }
         }
         "file" | "files" | "video" if content.starts_with('/') || content.contains(":\\") => Payload::Files(split_local_paths(content)),
         _ if options.paste_with_format && options.html_content.is_some() => {
@@ -481,7 +492,9 @@ fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'
         }
         _ => Payload::Text(content.to_string()),
     };
-    dzc_platform::native_clipboard::write_embedded_with_intent(payload, options.mark_as_self_copy).map_err(AppError::Internal)
+    let writer = dzc_platform::runtime::shared_embedded_clipboard_writer();
+    if options.mark_as_self_copy { writer.write_suppressing_recapture(payload) } else { writer.write(payload) }
+        .map_err(|error| AppError::Internal(error.to_string()))
 }
 
 fn copy_file_like_content(

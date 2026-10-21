@@ -826,6 +826,80 @@ impl WaylandClipboardBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn isolated_runtime() -> Option<std::path::PathBuf> {
+        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") {
+            return None;
+        }
+        let runtime =
+            std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").expect("private runtime"));
+        assert!(
+            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
+        );
+        Some(runtime)
+    }
+    #[test]
+    fn isolated_negative_capabilities_fail_closed_without_x11_fallback() {
+        if isolated_runtime().is_none() {
+            return;
+        }
+        let expected = match std::env::var("DEZIRCLIP_EXPECT_WAYLAND_FAILURE").as_deref() {
+            Ok("connection") => WaylandError::ConnectionUnavailable,
+            Ok("protocol") => WaylandError::DataControlUnavailable,
+            Ok("seat") => WaylandError::SeatUnavailable,
+            Ok("seat_name") => WaylandError::SeatNotFound,
+            Ok("permission") => WaylandError::PermissionDenied,
+            Ok("disabled") => WaylandError::DisabledByConfiguration,
+            Ok("inherited_fd") => WaylandError::InheritedSocketUnavailable,
+            _ => return,
+        };
+        assert_eq!(WaylandClipboardBackend::probe().unwrap_err(), expected);
+        let report = crate::runtime::session_capabilities();
+        assert!(report.native_wayland);
+        assert!(!report.platform.read.is_available());
+        assert!(!report.platform.write.is_available());
+        assert!(!report.platform.monitor.is_available());
+        assert!(!report.platform.monitor.active);
+        assert!(!report.platform.auto_paste.is_available());
+        assert!(!report.platform.resolve_source.is_available());
+        println!(
+            "negative capability: {}",
+            serde_json::to_string(&report).unwrap()
+        );
+    }
+    #[test]
+    fn isolated_disconnect_joins_owner_and_subscription() {
+        let Some(runtime) = isolated_runtime() else {
+            return;
+        };
+        if std::env::var("DEZIRCLIP_WAYLAND_DISCONNECT_TEST").as_deref() != Ok("1") {
+            return;
+        }
+        let mut subscription = crate::capture::subscribe_clipboard(Arc::new(|_| {})).unwrap();
+        subscription.wait_ready(Duration::from_secs(5)).unwrap();
+        let mut owner = WaylandOwner::start(vec![MimeData {
+            mime: "text/plain".into(),
+            bytes: Arc::from(&b"synthetic disconnect fixture"[..]),
+        }])
+        .unwrap();
+        owner.wait_ready().unwrap();
+        std::fs::write(
+            runtime.join("disconnect-ready"),
+            b"owned private compositor only\n",
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !subscription.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(subscription.is_finished());
+        assert!(subscription.stop().is_err());
+        assert!(subscription.is_stopped());
+        // Explicit cancellation may win the race with the owner's disconnect event.
+        println!("owner stop after private disconnect: {:?}", owner.stop());
+        assert!(owner.is_stopped());
+        assert!(!WaylandClipboardBackend::monitor_active());
+        assert!(WaylandClipboardBackend::probe().is_err());
+    }
     #[test]
     fn protocol_selection_prefers_ext_and_only_binds_supported_versions() {
         let globals = [
