@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, lstatSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // This bridge observes the installed GUI; it never mocks invoke or emits fixture events.
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted" || process.platform !== "win32" || !process.env.RUNNER_TEMP) {
@@ -33,7 +34,7 @@ assert.match(configuration.expectedVersion, /^0\.2\.0-alpha\.[01]$/);
 assert.match(configuration.marker, /^nativeupgradefixturemarker[a-f0-9]{32}$/);
 assert.equal(typeof configuration.acquireOwnership, "boolean");
 assert.equal(typeof configuration.verifyCapture, "boolean");
-const evidence = { schemaVersion: 2, configuration, observations: [], result: "running" };
+const evidence = { schemaVersion: 3, configuration, observations: [], nativeClipboardWrites: [], result: "running" };
 const delay = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
 let socket;
 let page;
@@ -76,18 +77,37 @@ async function poll(label, operation) {
 async function setNativeClipboard(text) {
   // Supply synthetic text as environment data, never shell source.
   await new Promise((resolve, reject) => {
-    const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", "Set-Clipboard -Value $env:DEZIRCLIP_NATIVE_CAPTURE_TEXT"], {
+    const observation = { startedAt: new Date().toISOString(), status: "starting", stdout: "", stderr: "" };
+    evidence.nativeClipboardWrites.push(observation);
+    const child = spawn("python", [fileURLToPath(new URL("./native-windows-clipboard.py", import.meta.url))], {
       env: { ...process.env, DEZIRCLIP_NATIVE_CAPTURE_TEXT: text }, windowsHide: true,
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    let stderr = "";
-    child.stderr.on("data", chunk => { stderr += chunk; });
-    const timeout = setTimeout(() => { child.kill(); reject(new Error("Native Set-Clipboard timed out")); }, 15000);
-    child.once("error", error => { clearTimeout(timeout); reject(error); });
-    child.once("exit", code => {
+    observation.pid = child.pid;
+    const retain = (field, chunk) => { observation[field] = (observation[field] + chunk.toString("utf8")).slice(0, 65536); };
+    child.stdout.on("data", chunk => retain("stdout", chunk));
+    child.stderr.on("data", chunk => retain("stderr", chunk));
+    let settled = false;
+    let killDeadline;
+    const finish = (code, error) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
-      if (code === 0) resolve(); else reject(new Error(`Native Set-Clipboard failed (${code}): ${stderr}`));
-    });
+      clearTimeout(killDeadline);
+      observation.finishedAt = new Date().toISOString();
+      observation.exitCode = code;
+      if (error || code !== 0) {
+        if (observation.status !== "timeout") observation.status = "failed";
+        reject(error || new Error(`Native clipboard writer failed (${code}): ${observation.stdout} ${observation.stderr}`));
+      } else { observation.status = "passed"; resolve(); }
+    };
+    const timeout = setTimeout(() => {
+      observation.status = "timeout";
+      observation.killRequested = child.kill();
+      killDeadline = setTimeout(() => finish(null, new Error("Native clipboard writer timed out; partial output retained")), 2000);
+    }, 15000);
+    child.once("error", error => finish(null, error));
+    child.once("close", code => finish(code, observation.status === "timeout" ? new Error("Native clipboard writer timed out; partial output retained") : null));
   });
 }
 function comparablePath(value) {
