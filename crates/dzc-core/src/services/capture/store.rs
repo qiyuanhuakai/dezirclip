@@ -39,8 +39,10 @@ pub struct CaptureCommit {
 
 /// Capture-specific storage operations. A commit must recheck current protection.
 pub trait CaptureStore {
-    fn privacy_source(&self,_source:&CaptureSource)->Result<crate::privacy::PrivacyDecision,CaptureFailure>{Ok(crate::privacy::PrivacyPolicy.decide(Vec::new()))}
-    fn assess_privacy_entry(&self,_entry:&ClipboardEntry)->Result<Option<crate::api::PrivacyDecisionReport>,CaptureFailure>{Ok(None)}
+    /// Adapters must explicitly preserve the authoritative source policy.
+    fn privacy_source(&self,source:&CaptureSource)->Result<crate::privacy::PrivacyDecision,CaptureFailure>;
+    /// A database adapter returns its actual policy report; None is an explicit in-memory policy.
+    fn assess_privacy_entry(&self,entry:&ClipboardEntry)->Result<Option<crate::api::PrivacyDecisionReport>,CaptureFailure>;
 
     fn capture_ticket(
         &self,
@@ -411,6 +413,192 @@ mod tests {
         drop(store);
         drop(state);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rich_text_exceptions_match_planned_ram_images_without_premature_materialization() {
+        use crate::api::{PrivacyAccessIntent, PrivacyFeedbackAction, SensitiveAccess};
+        use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+        use rusqlite::functions::FunctionFlags;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        for matches_exception in [false, true] {
+            let (directory, state) = database();
+            state.conn.lock().unwrap().execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.privacy_protection','false')",[]).unwrap();
+            let image = |pixel: u8| {
+                let mut bytes = std::io::Cursor::new(Vec::new());
+                image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                    2,
+                    2,
+                    image::Rgba([pixel, 17, 23, 255]),
+                ))
+                .write_to(&mut bytes, image::ImageFormat::Png)
+                .unwrap();
+                bytes.into_inner()
+            };
+            let png = image(37);
+            let source = directory.join("synthetic-original.png");
+            std::fs::write(&source, &png).unwrap();
+            let html = format!(
+                "<p>freshordinarycapture</p><img src='file://{}'>",
+                source.to_string_lossy().replace('\\', "/")
+            );
+            let seed_html = if matches_exception {
+                html.clone()
+            } else {
+                "<p>different exception without images</p>".into()
+            };
+            let seed_text = if matches_exception {
+                "freshordinarycapture"
+            } else {
+                "different exception"
+            };
+            let seed:ClipboardEntry=serde_json::from_value(serde_json::json!({
+                "id":0,"content_type":"rich_text","content":seed_text,"html_content":seed_html,
+                "preview":"synthetic","source_app":"Editor","timestamp":1,"is_pinned":false,"tags":["sensitive"]
+            })).unwrap();
+            let id = state.repo.save(&seed, None).unwrap();
+            let permission = state
+                .repo
+                .privacy_service()
+                .authorize_read(
+                    PrivacyAccessIntent::InteractiveRead,
+                    SensitiveAccess::ExplicitUserAction,
+                    None,
+                    1,
+                )
+                .unwrap();
+            state
+                .repo
+                .privacy_feedback(
+                    id,
+                    None,
+                    PrivacyFeedbackAction::ExactException,
+                    &permission,
+                    1,
+                )
+                .unwrap();
+            assert!(!directory.join("attachments").exists());
+            let inspected = Arc::new(AtomicUsize::new(0));
+            let inspected_sql = inspected.clone();
+            let attachments = directory.join("attachments");
+            state
+                .conn
+                .lock()
+                .unwrap()
+                .create_scalar_function(
+                    "fixture_no_early_assets",
+                    0,
+                    FunctionFlags::SQLITE_UTF8,
+                    move |_| {
+                        inspected_sql.fetch_add(1, Ordering::SeqCst);
+                        Ok(!attachments.exists())
+                    },
+                )
+                .unwrap();
+            state.conn.lock().unwrap().execute_batch("CREATE TRIGGER inspect_planned_capture BEFORE INSERT ON clipboard_history BEGIN SELECT CASE WHEN fixture_no_early_assets()=0 THEN RAISE(ABORT,'premature synthetic materialization') END; END;").unwrap();
+            let session = Mutex::new(VecDeque::new());
+            let mut context = context(&session);
+            context.settings.capture_rich_text = true;
+            context.settings.deduplicate = false;
+            let store = state.capture_store(&directory);
+            let planned=store.prepare(serde_json::from_value(serde_json::json!({
+                "id":0,"content_type":"rich_text","content":"freshordinarycapture","html_content":html.clone(),
+                "preview":"synthetic","source_app":"Editor","timestamp":1,"is_pinned":false,"tags":[]
+            })).unwrap()).unwrap();
+            assert!(!directory.join("attachments").exists());
+            assert_eq!(
+                state
+                    .repo
+                    .assess_privacy_entry(&planned.entry, true)
+                    .unwrap_err(),
+                "AttachmentReadRejected"
+            );
+            let frame = |text: &str, html: String| CaptureFrame {
+                data: CaptureData::RichText {
+                    text: text.into(),
+                    html,
+                },
+                metadata: CaptureReadMetadata::default(),
+            };
+            let outcome = authorized_frame(
+                &context,
+                frame("freshordinarycapture", html),
+                &store,
+                &mut (),
+            );
+            let CaptureOutcome::Stored(stored) = outcome else {
+                panic!("valid RAM attachment plan must commit with a same-source rich-text exception: {outcome:?}")
+            };
+            assert_eq!(inspected.load(Ordering::SeqCst), 1);
+            assert_eq!(
+                stored.privacy.reason,
+                if matches_exception {
+                    crate::privacy::PrivacyReason::ExactExceptionMatched
+                } else {
+                    crate::privacy::PrivacyReason::NoProtectionMatch
+                }
+            );
+            assert!(!crate::database::has_sensitive_tag(&stored.entry.tags));
+            let paths: Vec<_> = std::fs::read_dir(directory.join("attachments"))
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(std::fs::read(&paths[0]).unwrap(), png);
+            let conn = state.conn.lock().unwrap();
+            let raw: String = conn
+                .query_row(
+                    "SELECT html_content FROM clipboard_history WHERE id=?1",
+                    [stored.entry.id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(raw.contains("attachments"));
+            assert!(!raw.contains("data:image/"));
+            conn.execute_batch("DROP TRIGGER inspect_planned_capture; PRAGMA foreign_keys=ON;
+                CREATE TABLE reject_planned_capture(history_id INTEGER REFERENCES clipboard_history(id) DEFERRABLE INITIALLY DEFERRED);
+                CREATE TRIGGER reject_planned_commit AFTER INSERT ON clipboard_history BEGIN INSERT INTO reject_planned_capture VALUES(-999); END;").unwrap();
+            drop(conn);
+            let other = directory.join("synthetic-second.png");
+            std::fs::write(&other, image(73)).unwrap();
+            let html = format!(
+                "<p>failedordinarycapture</p><img src='file://{}'>",
+                other.to_string_lossy().replace('\\', "/")
+            );
+            let mut events = Events::default();
+            assert!(matches!(
+                authorized_frame(
+                    &context,
+                    frame("failedordinarycapture", html),
+                    &store,
+                    &mut events
+                ),
+                CaptureOutcome::Failed(_)
+            ));
+            assert!(matches!(events.0.as_slice(), [CaptureEvent::Failed(_)]));
+            assert_eq!(
+                state
+                    .conn
+                    .lock()
+                    .unwrap()
+                    .query_row("SELECT count(*) FROM clipboard_history", [], |row| row
+                        .get::<_, i64>(0))
+                    .unwrap(),
+                2
+            );
+            assert_eq!(
+                std::fs::read_dir(directory.join("attachments"))
+                    .unwrap()
+                    .count(),
+                1
+            );
+            assert_eq!(std::fs::read(&paths[0]).unwrap(), png);
+            assert!(source.exists());
+            assert!(other.exists());
+            drop(store);
+            drop(state);
+            std::fs::remove_dir_all(directory).unwrap();
+        }
     }
 
     #[test]
