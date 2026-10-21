@@ -1313,7 +1313,8 @@ const ClipboardItem = ({
             const decision = await invokePrivacyBound<{ reason: string }>("get_privacy_decision", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch });
             const hint = decision.reason === "scan_incomplete" ? t("privacy_scan_incomplete")
                 : decision.reason === "suspected_sensitive" ? t("privacy_scan_suspected") : "";
-            const prompt = t(action === "not_sensitive" ? "privacy_feedback_unprotect_confirm" : "privacy_feedback_confirm");
+            const prompt = t(action === "not_sensitive" ? "privacy_feedback_unprotect_confirm"
+                : action === "exact_exception" ? "privacy_feedback_exact_confirm" : "privacy_feedback_confirm");
             const confirmed = await ask(hint ? `${hint}\n\n${prompt}` : prompt, { title: t("privacy_feedback_title"), kind: "warning" });
             if (!confirmed) return;
             await refreshPrivacyState();
@@ -1571,7 +1572,7 @@ const ClipboardItem = ({
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div className="item-actions">
-                        {onEdit && (item.content_type === "text" || item.content_type === "code") && (
+                        {onEdit && !isSensitiveHidden && (item.content_type === "text" || item.content_type === "code") && (
                             <button className="btn-icon" title={t('common_edit')} onClick={(event) => {
                                 event.stopPropagation();
                                 onEdit();

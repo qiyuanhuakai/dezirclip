@@ -5,7 +5,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
-import { beginPrivacyAccess, getPrivacyEntry, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
 import { useTagLibrary } from '../hooks/useTagLibrary';
@@ -164,11 +164,19 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         setConfirmPersistence(false);
         setDialog(next.kind === 'createItem' ? { ...next, expectedPrivacyEpoch: access?.epoch } : next);
     }, [tagSearch, notifyError]);
-    const editItem = useCallback((item: ClipboardEntry) => {
+    const editItem = useCallback((item: ClipboardEntry, revealedDetail?: ClipboardEntry) => {
         const request = ++detailSequence.current;
-        void getPrivacyEntry(item.id, item.host_instance_id).then(detail => {
+        if (!beginPrivacyAccess()) { notifyError(); return; }
+        if (isSensitiveEntry(item)) {
+            if (!revealedDetail || revealedDetail.id !== item.id
+                || revealedDetail.host_instance_id !== item.host_instance_id) { notifyError(); return; }
+            setDialogError(null); setValue(revealedDetail.content);
+            setDialog({ kind: 'editItem', id: item.id, hostInstanceId: item.host_instance_id, protectedContent: true });
+            return;
+        }
+        void invokePrivacyBound<string>('get_clipboard_content', { id: item.id, expectedHostInstanceId: item.host_instance_id }).then(content => {
             if (!mounted.current || request !== detailSequence.current) return;
-            setDialogError(null); setValue(detail.content); setDialog({ kind: 'editItem', id: item.id, hostInstanceId: item.host_instance_id, protectedContent: isSensitiveEntry(detail) });
+            setDialogError(null); setValue(content); setDialog({ kind: 'editItem', id: item.id, hostInstanceId: item.host_instance_id, protectedContent: false });
         }).catch(() => { if (request === detailSequence.current) notifyError(); });
     }, [notifyError]);
     const deleteItem = useCallback((item: ClipboardEntry) => openDialog({ kind: 'deleteItem', item }), [openDialog]);
