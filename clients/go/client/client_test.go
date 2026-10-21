@@ -7,6 +7,7 @@ import (
     "fmt"
     "io"
     "net"
+    "strings"
     "testing"
     "time"
 
@@ -62,6 +63,34 @@ func TestInvalidTypedResultDisconnects(t *testing.T) {
 }
 
 func pointer[T any](value T) *T { return &value }
+
+func TestHistoryResponsePreservesRawResultBudget(t *testing.T) {
+    for _, marker := range []string{"<", ">", "&", "\u2028", "\u2029"} {
+        t.Run(fmt.Sprintf("U%04X", []rune(marker)[0]), func(t *testing.T) {
+            tag := strings.Repeat(marker, 256)
+            tags := strings.TrimSuffix(strings.Repeat(`"`+tag+`",`, 128), ",")
+            entry := `{"id":1,"kind":"text","tags":[`+tags+`],"pinned":false,"timestamp":0,"source_app":"synthetic","privacy_visibility":"ordinary"}`
+            result := `{"entries":[`+strings.TrimSuffix(strings.Repeat(entry+",", 6), ",")+`]}`
+            response := []byte(`{"request_id":"1","result":`+result+`}`)
+            if len(response) >= protocol.MaxFrameBytes { t.Fatal("fixture exceeds the actual wire budget") }
+            local, remote := net.Pipe()
+            defer remote.Close()
+            client := &Client{conn:local}
+            defer client.Close()
+            completed := make(chan error, 1)
+            go func() {
+                if _, err := readFrame(remote); err != nil { completed <- err; return }
+                completed <- writeFrame(remote, response)
+            }()
+            ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+            defer cancel()
+            var history protocol.HistoryResult
+            if err := client.Call(ctx, protocol.MethodHistoryList, protocol.HistoryPageParams{Limit:6}, "HistoryResult", &history); err != nil { t.Fatal(err) }
+            if len(history.Entries) != 6 || len(history.Entries[5].Tags) != 128 || history.Entries[5].Tags[127] != tag { t.Fatal("decoded raw result differs from the legal wire response") }
+            if err := <-completed; err != nil { t.Fatal(err) }
+        })
+    }
+}
 
 func TestNegotiatedFrameLimitAfterRealHandshake(t *testing.T) {
     request := protocol.Request{RequestId: "2", Method: protocol.MethodHealth, Params: json.RawMessage(`{}`)}
