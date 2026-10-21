@@ -739,8 +739,9 @@ impl SqliteClipboardRepository {
             crate::api::privacy_session::check_capture_with_conn(&transaction, ticket, now_ms)
                 .map_err(|error| error.to_string())?;
         }
-        let (mut entry, decision) =
-            super::privacy_policy::prepare_entry_policy(&transaction, entry, true)?;
+        let (mut entry, decision) = super::privacy_policy::prepare_entry_policy_with_plan(
+            &transaction,entry,true,attachments,
+        )?;
         let sensitive = has_sensitive_tag(&entry.tags);
         let mut cleanup = super::privacy_policy::transition_cleanup(&transaction, &entry)?;
         if sensitive {
