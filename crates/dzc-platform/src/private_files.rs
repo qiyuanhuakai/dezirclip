@@ -393,6 +393,13 @@ impl BoundExport {
     pub(crate) fn retain(mut self) {
         self.retained = true;
     }
+    pub(crate) fn close(&mut self) -> Result<(), String> {
+        let mut lease = self
+            .lease
+            .lock()
+            .map_err(|_| "PrivateExportRevocationUnconfirmed")?;
+        close_exports(&mut lease)
+    }
 }
 impl Drop for BoundExport {
     fn drop(&mut self) {

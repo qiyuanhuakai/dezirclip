@@ -1,3 +1,4 @@
+import { usePlatformCapabilities } from "./usePlatformCapabilities";
 import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, RefObject, SetStateAction } from "react";
@@ -24,6 +25,8 @@ export const useClipboardActions = ({
   setHistory,
   virtualListRef
 }: UseClipboardActionsOptions) => {
+  const { report, pending, failed } = usePlatformCapabilities();
+  const manualCopy = report?.native_wayland === true;
   const copyToClipboard = useCallback(
     async (
       id: number,
@@ -35,6 +38,8 @@ export const useClipboardActions = ({
       derivedFromId?: number
     ) => {
       try {
+        if (pending || failed) { pushToast(t("platform_capabilities_unavailable"), 3000); return; }
+        if (report?.write.availability.status !== "available") { pushToast(t("wayland_unavailable"), 3000); return; }
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
@@ -42,17 +47,17 @@ export const useClipboardActions = ({
         await invoke("copy_to_clipboard", {
           content,
           contentType,
-          paste: true,
+          paste: !manualCopy,
           id: id,
-          deleteAfterUse: deleteAfterPaste,
+          deleteAfterUse: !manualCopy && deleteAfterPaste,
           pasteWithFormat,
           pasteImageAsBase64,
-          moveToTop: moveToTopAfterPaste,
           expectedPrivacyEpoch,
-          derivedFromId
+          derivedFromId,
+          moveToTop: !manualCopy && moveToTopAfterPaste
         });
 
-        if (moveToTopAfterPaste && !deleteAfterPaste) {
+        if (!manualCopy && moveToTopAfterPaste && !deleteAfterPaste) {
           const now = Date.now();
           setHistory((prev) =>
             prev.map((item) =>
@@ -61,13 +66,14 @@ export const useClipboardActions = ({
           );
         }
 
-        setSearch("");
+        if (manualCopy) pushToast(t("wayland_manual_copy_done"));
+        else setSearch("");
       } catch (err) {
         const errorMsg = t("copy_failed") + (err?.toString() || "");
         pushToast(errorMsg, 3000);
       }
     },
-    [deleteAfterPaste, moveToTopAfterPaste, pushToast, setHistory, setSearch, t]
+    [deleteAfterPaste, moveToTopAfterPaste, pushToast, setHistory, setSearch, t, manualCopy, pending, failed, report]
   );
 
   const openContent = useCallback(

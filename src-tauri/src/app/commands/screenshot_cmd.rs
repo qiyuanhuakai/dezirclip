@@ -223,6 +223,7 @@ fn apply_remembered_overlay_rect(window: &tauri::Window) {
 /// which deadlocks if this runs on the main thread.
 #[tauri::command]
 pub async fn show_region_selector(app: AppHandle) -> Result<(), String> {
+    super::capability_cmd::require_desktop_interaction()?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, REGION_SELECT_LABEL, |window, _created| {
             crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
@@ -272,6 +273,7 @@ pub fn hide_region_select(app: AppHandle) {
 /// place the main window is guaranteed to be on screen.
 #[tauri::command]
 pub async fn capture_full_screen(app: AppHandle) -> Result<ScreenshotResult, String> {
+    super::capability_cmd::require_desktop_interaction()?;
     let ticket = crate::services::clipboard::generated_capture_ticket(&app)?;
     let result = screenshot::capture_full_screen(global_cursor(&app)).map_err(|e| e.to_string())?;
     copy_screenshot_to_clipboard(&result)?;
@@ -296,6 +298,7 @@ pub async fn capture_region(
     height: u32,
     app: AppHandle,
 ) -> Result<ScreenshotResult, String> {
+    super::capability_cmd::require_desktop_interaction()?;
     let ticket = crate::services::clipboard::generated_capture_ticket(&app)?;
     // The frontend already hid the overlay so it does not appear in the capture.
     crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);

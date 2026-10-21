@@ -2,6 +2,7 @@
 mod html;
 mod listener;
 mod reader;
+mod subscription;
 #[cfg(target_os = "windows")]
 pub mod windows_clipboard;
 #[cfg(target_os = "windows")]
@@ -16,6 +17,7 @@ mod x11_listener;
 pub use html::parse_cf_html;
 pub use listener::{listen_clipboard, probe_clipboard_monitor, run_clipboard_monitor};
 pub use reader::NativeCaptureReader;
+pub use subscription::{subscribe_clipboard, ClipboardSubscription};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ClipboardChange {

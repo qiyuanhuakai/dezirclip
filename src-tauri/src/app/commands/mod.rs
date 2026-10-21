@@ -1,3 +1,4 @@
+pub mod capability_cmd;
 pub mod classification_cmd;
 pub mod clipboard_cmd;
 pub mod export_cmd;

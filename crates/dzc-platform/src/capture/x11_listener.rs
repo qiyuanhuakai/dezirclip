@@ -1,5 +1,6 @@
 use super::{sequence_number, ClipboardChange};
 use std::hash::{Hash, Hasher};
+use std::os::{fd::AsRawFd, unix::net::UnixStream};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -37,38 +38,65 @@ fn service_disabled(service: &str) -> bool {
         .unwrap_or(false)
 }
 
-pub fn run_clipboard_monitor(
+pub(super) fn run_controlled(
     callback: Arc<dyn Fn(ClipboardChange) + Send + Sync + 'static>,
+    cancel: Arc<UnixStream>,
+    ready: impl FnOnce(),
 ) -> Result<(), String> {
     if service_disabled("clipboard_listener") {
         eprintln!("[clipboard] Linux clipboard listener disabled by environment");
-        return Ok(());
+        return Err("ClipboardMonitorDisabled".into());
     }
     crate::runtime_display::validate_x11_display().map_err(|error| error.to_string())?;
 
     if !service_disabled("clipboard_xfixes") {
-        if let Err(error) = listen_xfixes(&callback) {
-            eprintln!("[clipboard] XFixes unavailable ({error}); using clipboard polling");
+        match connect_xfixes() {
+            Ok((connection, clipboard)) => {
+                ready();
+                return listen_xfixes(&callback, &cancel, connection, clipboard);
+            }
+            Err(error) => {
+                eprintln!("[clipboard] XFixes unavailable ({error}); using clipboard polling")
+            }
         }
     }
-    poll_clipboard(&callback)
+    arboard::Clipboard::new().map_err(|_| "ClipboardConnectionUnavailable".to_owned())?;
+    ready();
+    poll_clipboard(&callback, &cancel)
 }
 
 fn listen_xfixes(
     callback: &Arc<dyn Fn(ClipboardChange) + Send + Sync + 'static>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (connection, clipboard) = connect_xfixes()?;
+    cancel: &UnixStream,
+    connection: x11rb::rust_connection::RustConnection,
+    clipboard: u32,
+) -> Result<(), String> {
     eprintln!("[clipboard] X11 XFixes clipboard listener started");
     loop {
-        if let Event::XfixesSelectionNotify(event) = connection.wait_for_event()? {
-            if event.selection == clipboard
-                && event.owner != x11rb::NONE
-                && event.subtype == SelectionEvent::SET_SELECTION_OWNER
-            {
-                callback(ClipboardChange {
-                    sequence: sequence_number(),
-                });
+        while let Some(event) = connection
+            .poll_for_event()
+            .map_err(|_| "ClipboardConnectionLost".to_owned())?
+        {
+            if let Event::XfixesSelectionNotify(event) = event {
+                if event.selection == clipboard
+                    && event.owner != x11rb::NONE
+                    && event.subtype == SelectionEvent::SET_SELECTION_OWNER
+                {
+                    callback(ClipboardChange {
+                        sequence: sequence_number(),
+                    });
+                }
             }
+        }
+        match crate::wayland::io::wait(
+            connection.stream().as_raw_fd(),
+            libc::POLLIN,
+            Some(cancel),
+            std::time::Instant::now() + Duration::from_secs(24 * 60 * 60),
+        ) {
+            Ok(()) | Err(crate::wayland::WaylandError::TimedOut) => (),
+            Err(crate::wayland::WaylandError::Cancelled) => return Ok(()),
+            Err(_) => return Err("ClipboardConnectionLost".into()),
         }
     }
 }
@@ -120,7 +148,10 @@ fn read_fingerprint(clipboard: &mut arboard::Clipboard) -> Option<u64> {
     )
 }
 
-fn poll_clipboard(callback: &Arc<dyn Fn(ClipboardChange) + Send + Sync + 'static>) -> ! {
+fn poll_clipboard(
+    callback: &Arc<dyn Fn(ClipboardChange) + Send + Sync + 'static>,
+    cancel: &UnixStream,
+) -> Result<(), String> {
     let mut last_fingerprint = None;
     let mut initialized = false;
     loop {
@@ -137,7 +168,16 @@ fn poll_clipboard(callback: &Arc<dyn Fn(ClipboardChange) + Send + Sync + 'static
             }
             Err(_) => initialized = false,
         }
-        std::thread::sleep(POLL_INTERVAL);
+        match crate::wayland::io::wait(
+            cancel.as_raw_fd(),
+            libc::POLLIN,
+            None,
+            std::time::Instant::now() + POLL_INTERVAL,
+        ) {
+            Ok(()) => return Ok(()),
+            Err(crate::wayland::WaylandError::TimedOut) => (),
+            Err(_) => return Err("ClipboardCancellationFailed".into()),
+        }
     }
 }
 

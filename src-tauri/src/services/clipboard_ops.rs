@@ -138,12 +138,16 @@ pub async fn copy_to_clipboard(
     expected_privacy_epoch: Option<u64>,
     derived_from_id: Option<i64>,
 ) -> AppResult<()> {
+    if paste && dzc_platform::runtime::is_native_wayland() {
+        return Err(AppError::Validation("wayland_interaction_unavailable".into()));
+    }
     let operation_permission=if let Some(epoch)=expected_privacy_epoch {
         Some(state.history_service().privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
     } else {None};
     let generated_ticket = if paste_image_as_base64.unwrap_or(false) || derived_from_id.is_some() {
         crate::services::clipboard::generated_capture_ticket(&app_handle)?
     } else { None };
+
     println!(
         "[DEBUG] copy_to_clipboard called: id={}, paste={}, content_type={}, content_len={}",
         id,
@@ -240,7 +244,7 @@ pub async fn copy_to_clipboard(
         if let dzc_core::ports::ClipboardPayload::Private{payload:inner,..}=&mut payload {
             if self_insert_label.is_some() || !paste_with_format.unwrap_or(effective_content_type=="rich_text" && html_content.is_some()) && matches!(inner.as_ref(),dzc_core::ports::ClipboardPayload::Html{..}) { **inner=dzc_core::ports::ClipboardPayload::Text(content.clone()); }
         }
-        dzc_platform::runtime::standalone_clipboard_service().write(payload).map_err(|error|AppError::Internal(error.to_string()))?;
+        dzc_platform::runtime::shared_embedded_clipboard_writer().write_suppressing_recapture(payload).map_err(|error|AppError::Internal(error.to_string()))?;
     } else {
     write_content_to_system_clipboard(
         &content,
@@ -410,7 +414,10 @@ pub(crate) fn write_content_to_system_clipboard(
 ) -> AppResult<()> {
     let (content_hash, current_time) = calculate_content_hash(content);
 
-    let clipboard_hashes = match options.content_type {
+    let clipboard_hashes = if dzc_platform::runtime::is_native_wayland() {
+        write_native_wayland_content(content, &options)?;
+        (content_hash.max(1), 0)
+    } else { match options.content_type {
         "image" | "video" | "file" => {
             copy_file_like_content(content, options.content_type, current_time, content_hash)?
         }
@@ -426,7 +433,7 @@ pub(crate) fn write_content_to_system_clipboard(
             copy_text_with_retry(content)?;
             (content_hash, 0)
         }
-    };
+    }};
 
     if options.mark_as_self_copy {
         crate::LAST_APP_SET_HASH.store(clipboard_hashes.0, Ordering::SeqCst);
@@ -435,6 +442,31 @@ pub(crate) fn write_content_to_system_clipboard(
     }
 
     Ok(())
+}
+
+fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'_>) -> AppResult<()> {
+    use dzc_platform::native_clipboard::Payload;
+    let payload = match options.content_type {
+        "image" => {
+            const LIMIT: usize = 64 * 1024 * 1024;
+            let bytes = if content.starts_with('/') || content.starts_with("file://") || content.contains(":\\") {
+                let path = crate::infrastructure::attachments::path_from_uri(content).map_err(AppError::Internal)?;
+                dzc_platform::local_file::read_bounded_regular(std::path::Path::new(&path), LIMIT).map_err(AppError::from)?
+            } else {
+                let encoded = content.split_once(',').filter(|_| content.starts_with("data:image/")).map(|(_, data)| data).unwrap_or(content);
+                if encoded.len() > (LIMIT / 3 + 1) * 4 { return Err(AppError::Validation("WaylandTransferBudgetExceeded".into())); }
+                general_purpose::STANDARD.decode(encoded).map_err(|_| AppError::Validation("ClipboardImageInvalid".into()))?
+            };
+            Payload::Image(bytes)
+        }
+        "file" | "files" | "video" if content.starts_with('/') || content.contains(":\\") => Payload::Files(split_local_paths(content)),
+        _ if options.paste_with_format && options.html_content.is_some() => {
+            let (html, _) = split_rich_html_and_image_fallback(options.html_content.expect("checked above"));
+            Payload::Html { html, text: content.to_string() }
+        }
+        _ => Payload::Text(content.to_string()),
+    };
+    dzc_platform::native_clipboard::write_embedded_with_intent(payload, options.mark_as_self_copy).map_err(AppError::Internal)
 }
 
 fn copy_file_like_content(
@@ -451,10 +483,7 @@ fn copy_file_like_content(
         return copy_inline_image_content(content, current_time);
     }
 
-    let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
-    clipboard
-        .set_text(content.to_string())
-        .map_err(AppError::from)?;
+    copy_text_with_retry(content)?;
     Ok((content_hash.max(1), 0))
 }
 
@@ -520,6 +549,14 @@ fn copy_rich_text_content(
         let (content_hash, _) = calculate_content_hash(content);
         return Ok((content_hash.max(1), 0));
     };
+
+    #[cfg(target_os = "linux")]
+    if dzc_platform::runtime::is_native_wayland() && paste_with_format {
+        let (html, _) = split_rich_html_and_image_fallback(html);
+        crate::infrastructure::linux_api::clipboard::set_clipboard_text_and_html(content.to_string(), Some(html))?;
+        let (content_hash, _) = calculate_content_hash(content);
+        return Ok((content_hash.max(1), 0));
+    }
 
     if !paste_with_format {
         copy_text_with_retry(content)?;
@@ -1574,6 +1611,33 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, ticket
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn isolated_wayland_gui_write_intent_preserves_generated_capture() {
+        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") { return; }
+        use dzc_core::capture::*;
+        use dzc_core::api::{HistoryQuery, HistoryService};
+        use std::{collections::VecDeque, sync::Mutex};
+        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+        assert!(runtime.join("dezirclip-isolated-wayland-fixture").is_file());
+        assert!(std::env::var_os("DISPLAY").is_none());
+        let history = HistoryService::open(&runtime.join("gui-write-intent.db")).unwrap();
+        let store = history.capture_store(&runtime);
+        let session = Mutex::new(VecDeque::new());
+        let context = CaptureContext { source: CaptureSource::default(), timestamp: 12345,
+            settings: CaptureSettings { persistent: true, ..Default::default() }, session: &session, paused: false, sequential_echo: None };
+        for (id, text) in [(0, "synthetic conversion text"), (0, "synthetic OCR text"), (7, "synthetic existing history copy")] {
+            write_content_to_system_clipboard(text, ClipboardWriteOptions { content_type: "text", html_content: None,
+                paste_with_format: false, mark_as_self_copy: should_mark_clipboard_write_as_self_copy(id, false, false) }).unwrap();
+            let result = CaptureEngine::capture(&context, &mut dzc_platform::capture::NativeCaptureReader::default(), &store, &mut ());
+            if id == 0 { assert!(matches!(result, CaptureOutcome::Stored(_))); }
+            else { assert!(matches!(result, CaptureOutcome::Skipped(CaptureSkip::OwnClipboard))); }
+        }
+        let rows = history.query(&HistoryQuery { limit: 10, ..Default::default() }).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row.content == "synthetic conversion text"));
+        assert!(rows.iter().any(|row| row.content == "synthetic OCR text"));
+    }
 
     // `copy_image_bytes_to_clipboard` hashes the decoded pixels so the monitor
     // can recognise and skip our own copy. The monitor side hashes the

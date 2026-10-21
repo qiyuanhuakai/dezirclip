@@ -1,3 +1,4 @@
+import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Camera } from "lucide-react";
@@ -175,6 +176,7 @@ const ToolsCaptureSection = ({
     return (
         <>
             <div className="setting-item"><div className="item-label-group"><span className="item-label">{t("capture_settings")}</span></div></div>
+            <NativeFeatureBoundary t={t}>
             <div className="setting-item">
                 <LabelWithHint label={t("screenshot_enabled")} hintKey="screenshot_enabled" />
                 <label className="switch"><input className="cb" type="checkbox" checked={screenshotEnabled} onChange={(e) => { setScreenshotEnabled(e.target.checked); saveAppSetting("screenshot_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
@@ -197,6 +199,7 @@ const ToolsCaptureSection = ({
                 <label className="switch"><input className="cb" type="checkbox" checked={quickPasteEnabled} onChange={(e) => { setQuickPasteEnabled(e.target.checked); saveAppSetting("quick_paste_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
             </div>
             {quickPasteEnabled && <HotkeyRecorder t={t} labelKey="quick_paste_hotkey_label" hotkey={quickPasteHotkey} recording={isRecordingQuickPaste} setRecording={setIsRecordingQuickPaste} onHotkeyChange={updateQuickPasteHotkey} />}
+            </NativeFeatureBoundary>
             <div className="setting-item">
                 <LabelWithHint label={t("ocr_enabled")} hintKey="ocr_enabled" />
                 <label className="switch"><input className="cb" type="checkbox" checked={ocrEnabled} onChange={(e) => { setOcrEnabled(e.target.checked); saveAppSetting("ocr_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>

@@ -13,8 +13,8 @@ use windows::Win32::System::DataExchange::{
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
-    GetWindowLongPtrW, RegisterClassW, SetWindowLongPtrW, GWLP_USERDATA, HWND_MESSAGE, MSG,
-    WM_CLIPBOARDUPDATE, WNDCLASSW,
+    GetWindowLongPtrW, PostMessageW, PostQuitMessage, RegisterClassW, SetWindowLongPtrW,
+    GWLP_USERDATA, HWND_MESSAGE, MSG, WM_CLIPBOARDUPDATE, WM_CLOSE, WNDCLASSW,
 };
 
 type Callback = Arc<dyn Fn(ClipboardChange) + Send + Sync + 'static>;
@@ -23,6 +23,19 @@ type Callback = Arc<dyn Fn(ClipboardChange) + Send + Sync + 'static>;
 pub fn probe_clipboard_monitor() -> Result<&'static str, String> {
     #[cfg(target_os = "linux")]
     {
+        if crate::wayland::requested() {
+            if crate::wayland::service_disabled("clipboard_listener")
+                || crate::wayland::service_disabled("wayland_clipboard")
+            {
+                return Err("ClipboardMonitorDisabled".into());
+            }
+            return crate::wayland::WaylandClipboardBackend::probe()
+                .map(|status| match status.protocol {
+                    crate::wayland::DataControlProtocol::Ext => "wayland-ext-data-control-v1",
+                    crate::wayland::DataControlProtocol::Wlr => "wayland-wlr-data-control",
+                })
+                .map_err(|error| error.to_string());
+        }
         super::x11_listener::probe_clipboard_monitor()
     }
     #[cfg(target_os = "windows")]
@@ -45,7 +58,9 @@ pub fn listen_clipboard(callback: Callback) {
             use dzc_core::ports::ClipboardMonitor;
             let monitor = crate::runtime::NativeClipboardMonitor::default();
             if let Err(error) = monitor.run(Box::new(move |change| {
-                callback(ClipboardChange { sequence: change.sequence as u32 })
+                callback(ClipboardChange {
+                    sequence: change.sequence as u32,
+                })
             })) {
                 eprintln!("[clipboard-listener] {error}");
             }
@@ -54,9 +69,38 @@ pub fn listen_clipboard(callback: Callback) {
 
 /// Blocking native event loop. Cancellation is not claimed by this interface.
 pub fn run_clipboard_monitor(callback: Callback) -> Result<(), String> {
+    run_controlled(
+        callback,
+        Arc::new(super::subscription::Control::default()),
+        || {},
+    )
+}
+
+pub(super) fn run_controlled(
+    callback: Callback,
+    control: Arc<super::subscription::Control>,
+    ready: impl FnOnce(),
+) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        super::x11_listener::run_clipboard_monitor(callback)
+        use std::io::Write;
+        let (cancel, wake) = crate::wayland::WaylandClipboardBackend::cancellation_pair()
+            .map_err(|error| error.to_string())?;
+        control.install(Box::new(move || {
+            (&wake)
+                .write_all(&[1])
+                .map_err(|_| "ClipboardCancellationFailed".to_owned())
+        }))?;
+        if crate::wayland::requested() {
+            crate::wayland::WaylandClipboardBackend::monitor_ready(cancel, ready, |sequence| {
+                callback(ClipboardChange {
+                    sequence: sequence as u32,
+                })
+            })
+            .map_err(|error| error.to_string())
+        } else {
+            super::x11_listener::run_controlled(callback, cancel, ready)
+        }
     }
     #[cfg(target_os = "windows")]
     unsafe {
@@ -69,6 +113,32 @@ pub fn run_clipboard_monitor(callback: Callback) -> Result<(), String> {
             let _ = DestroyWindow(window);
             return Err(error.to_string());
         }
+        let window_id = window.0 as usize;
+        if let Err(error) = control.install(Box::new(move || {
+            PostMessageW(
+                Some(HWND(window_id as *mut std::ffi::c_void)),
+                WM_CLOSE,
+                WPARAM(0),
+                LPARAM(0),
+            )
+            .map_err(|_| "ClipboardCancellationFailed".to_owned())
+        })) {
+            control.clear();
+            let _ = RemoveClipboardFormatListener(window);
+            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+            let _ = Box::from_raw(pointer);
+            let _ = DestroyWindow(window);
+            return Err(error);
+        }
+        if control.requested() {
+            control.clear();
+            let _ = RemoveClipboardFormatListener(window);
+            SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+            let _ = Box::from_raw(pointer);
+            let _ = DestroyWindow(window);
+            return Ok(());
+        }
+        ready();
         let mut message = MSG::default();
         let result = loop {
             let result = GetMessageW(&mut message, None, 0, 0).0;
@@ -80,6 +150,7 @@ pub fn run_clipboard_monitor(callback: Callback) -> Result<(), String> {
             }
             DispatchMessageW(&message);
         };
+        control.clear();
         let _ = RemoveClipboardFormatListener(window);
         SetWindowLongPtrW(window, GWLP_USERDATA, 0);
         let _ = Box::from_raw(pointer);
@@ -127,7 +198,10 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if message == WM_CLIPBOARDUPDATE {
+    if message == WM_CLOSE {
+        PostQuitMessage(0);
+        LRESULT(0)
+    } else if message == WM_CLIPBOARDUPDATE {
         let pointer = GetWindowLongPtrW(window, GWLP_USERDATA);
         if pointer != 0 {
             let callback = &*(pointer as *const Callback);
@@ -182,6 +256,9 @@ mod tests {
             ])
             .env(CHILD, "1")
             .env("DISPLAY", ":65530")
+            .env("XDG_SESSION_TYPE", "x11")
+            .env_remove("WAYLAND_DISPLAY")
+            .env_remove("WAYLAND_SOCKET")
             .env_remove("DEZIRCLIP_DISABLE_LINUX_SERVICES")
             .env_remove("TIEZ_DISABLE_LINUX_SERVICES")
             .output()

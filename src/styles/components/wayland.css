@@ -1,0 +1,15 @@
+.wayland-capabilities {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color, var(--text-secondary));
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.wayland-capabilities p + p, .wayland-capabilities dl { margin-top: 8px; }
+.wayland-capabilities dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; }
+.wayland-capabilities dd { overflow-wrap: anywhere; }
+.native-feature-boundary { border: 0; padding: 0; margin: 0; min-width: 0; }
+.native-feature-boundary:disabled { opacity: .55; }
+.native-feature-boundary:disabled .key-group { pointer-events: none; }
+.native-feature-reason { color: var(--text-secondary); font-size: 12px; padding: 8px 0; line-height: 1.6; }

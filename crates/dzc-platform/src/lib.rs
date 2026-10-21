@@ -5,6 +5,8 @@ pub mod local_file;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
+#[cfg(target_os = "linux")]
+pub mod wayland;
 
 pub struct NativeKeyProvider;
 

@@ -1,6 +1,8 @@
 //! Native clipboard access shared by the standalone CLI and its X11 owner process.
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
+mod private_x11_files;
+#[cfg(target_os = "linux")]
 use std::io::{Read, Write};
 
 #[derive(Serialize, Deserialize)]
@@ -29,6 +31,245 @@ pub struct NativeFile {
     pub bytes: Vec<u8>,
 }
 
+/// Explicit long-lived host ownership. No connection is opened until write.
+#[derive(Default)]
+pub struct EmbeddedOwner {
+    clipboard: Option<arboard::Clipboard>,
+    #[cfg(target_os = "linux")]
+    wayland: Option<crate::wayland::WaylandOwner>,
+    #[cfg(target_os = "linux")]
+    x11_files: Option<private_x11_files::FileOwner>,
+    exports: Option<crate::private_files::BoundExport>,
+    private: bool,
+    stopped: bool,
+}
+type SharedOwner = std::sync::Arc<std::sync::Mutex<EmbeddedOwner>>;
+static EMBEDDED_OWNERS: std::sync::OnceLock<
+    std::sync::Mutex<Vec<std::sync::Weak<std::sync::Mutex<EmbeddedOwner>>>>,
+> = std::sync::OnceLock::new();
+impl EmbeddedOwner {
+    pub(crate) fn shared() -> SharedOwner {
+        let owner = std::sync::Arc::new(std::sync::Mutex::new(Self::default()));
+        EMBEDDED_OWNERS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(std::sync::Arc::downgrade(&owner));
+        owner
+    }
+    pub fn write(&mut self, payload: Payload) -> Result<(), String> {
+        self.write_with_intent(payload, false)
+    }
+    pub fn write_with_intent(
+        &mut self,
+        payload: Payload,
+        suppress_recapture: bool,
+    ) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        let _ = suppress_recapture;
+        if self.stopped {
+            return Err("ClipboardOwnerStopped".into());
+        }
+        #[cfg(target_os = "linux")]
+        if crate::wayland::requested() {
+            return crate::wayland::replace_owner(&mut self.wayland, payload, suppress_recapture)
+                .map_err(|error| error.to_string());
+        }
+        let prepared = prepare_owner_payload(payload)?;
+        #[cfg(target_os = "linux")]
+        if matches!(&prepared.payload, Payload::Private(inner) if matches!(inner.as_ref(),Payload::Files(_)))
+        {
+            let Payload::Private(inner) = prepared.payload else {
+                unreachable!()
+            };
+            let Payload::Files(paths) = *inner else {
+                unreachable!()
+            };
+            let mut fresh =
+                private_x11_files::FileOwner::start(paths, prepared.leases, prepared.exports)?;
+            if let Err(error) = self.release_selection() {
+                let _ = fresh.stop();
+                if !fresh.is_stopped() {
+                    private_x11_files::retain(fresh);
+                }
+                return Err(error);
+            }
+            self.x11_files = Some(fresh);
+            self.private = true;
+            return Ok(());
+        }
+        if self.clipboard.is_none() {
+            self.clipboard = Some(open()?);
+        }
+        set(
+            self.clipboard.as_mut().expect("clipboard opened above"),
+            prepared.payload,
+        )?;
+        #[cfg(target_os = "linux")]
+        if let Some(owner) = self.x11_files.as_mut() {
+            let result = owner.stop();
+            if !owner.is_stopped() {
+                return Err(result.err().unwrap_or("PrivateFileStopNotConfirmed".into()));
+            }
+            self.x11_files = None;
+        }
+        self.exports = prepared.exports;
+        self.private = prepared.private;
+        if prepared.leases.iter().any(|lease| !lease.is_current()) {
+            self.release_selection()?;
+            return Err("PrivacyEpochChanged".into());
+        }
+        Ok(())
+    }
+    fn release_selection(&mut self) -> Result<(), String> {
+        #[cfg(target_os = "linux")]
+        if let Some(owner) = self.x11_files.as_mut() {
+            let result = owner.stop();
+            if !owner.is_stopped() {
+                return Err(result.err().unwrap_or("PrivateFileStopNotConfirmed".into()));
+            }
+            self.x11_files = None;
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(owner) = self.wayland.as_mut() {
+            let result = owner.stop();
+            if !owner.is_stopped() {
+                return Err(result
+                    .err()
+                    .unwrap_or(crate::wayland::WaylandError::TimedOut)
+                    .to_string());
+            }
+            self.wayland = None;
+        }
+        self.clipboard = None;
+        if let Some(export) = self.exports.as_mut() {
+            export.close()?;
+        }
+        self.exports = None;
+        self.private = false;
+        Ok(())
+    }
+    pub(crate) fn revoke_private(&mut self) -> Result<(), String> {
+        #[cfg(target_os = "linux")]
+        let private = self.private
+            || self
+                .wayland
+                .as_ref()
+                .is_some_and(|owner| owner.is_private());
+        #[cfg(target_os = "windows")]
+        let private = self.private;
+        if private {
+            self.release_selection()?;
+        }
+        Ok(())
+    }
+    /// Stop confirmation is required for ownership handoff. A timeout retains the owner.
+    pub fn stop(&mut self) -> Result<(), String> {
+        self.stopped = true;
+        self.release_selection()
+    }
+}
+impl Drop for EmbeddedOwner {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}
+fn revoke_embedded_private_owners() -> Result<(), String> {
+    if let Some(owners) = EMBEDDED_OWNERS.get() {
+        let mut owners = owners
+            .lock()
+            .map_err(|_| "PrivateExportRevocationUnconfirmed")?;
+        let mut failed = false;
+        owners.retain(|weak| {
+            let Some(owner) = weak.upgrade() else {
+                return false;
+            };
+            if owner
+                .lock()
+                .map_err(|_| ())
+                .and_then(|mut owner| owner.revoke_private().map_err(|_| ()))
+                .is_err()
+            {
+                failed = true;
+            }
+            true
+        });
+        if failed {
+            return Err("PrivateExportRevocationUnconfirmed".into());
+        }
+    }
+    Ok(())
+}
+
+pub(crate) struct PreparedOwner {
+    pub payload: Payload,
+    pub leases: Vec<dzc_core::api::NativeReadLease>,
+    pub exports: Option<crate::private_files::BoundExport>,
+    pub private: bool,
+}
+/// Unwrap only native lifecycle permits. No history access or decryption occurs here.
+pub(crate) fn prepare_owner_payload(mut payload: Payload) -> Result<PreparedOwner, String> {
+    let mut leases = Vec::new();
+    let mut private = false;
+    let mut exports = None;
+    let mut depth = 0;
+    loop {
+        depth += 1;
+        if depth > 8 {
+            return Err("OwnerPayloadRejected".into());
+        }
+        payload = match payload {
+            Payload::Leased { payload, lease } => {
+                if !lease.is_current() {
+                    return Err("PrivacyEpochChanged".into());
+                }
+                leases.push(lease);
+                *payload
+            }
+            Payload::Private(inner) => {
+                private = true;
+                *inner
+            }
+            Payload::LeasedFiles { files, lease } => {
+                if !lease.is_current() {
+                    return Err("PrivacyEpochChanged".into());
+                }
+                leases.push(lease.clone());
+                private = true;
+                let owned = crate::private_files::BoundExport::readonly(
+                    files
+                        .into_iter()
+                        .map(|file| dzc_core::ports::ClipboardFile {
+                            name: file.name,
+                            bytes: file.bytes,
+                        })
+                        .collect(),
+                    lease.authorization(),
+                )?;
+                let paths = owned.paths()?;
+                exports = Some(owned);
+                Payload::Files(paths)
+            }
+            ordinary => {
+                #[cfg(target_os = "linux")]
+                if private && leases.is_empty() {
+                    return Err("NativeLeaseOwnerRequired".into());
+                }
+                return Ok(PreparedOwner {
+                    payload: if private {
+                        Payload::Private(Box::new(ordinary))
+                    } else {
+                        ordinary
+                    },
+                    leases,
+                    exports,
+                    private,
+                });
+            }
+        };
+    }
+}
+
 fn open() -> Result<arboard::Clipboard, String> {
     #[cfg(target_os = "linux")]
     crate::runtime_display::validate_x11_display().map_err(|error| error.to_string())?;
@@ -36,6 +277,46 @@ fn open() -> Result<arboard::Clipboard, String> {
 }
 
 pub fn read(mime: &str) -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "linux")]
+    if crate::wayland::requested() {
+        let selection =
+            crate::wayland::WaylandClipboardBackend::snapshot().map_err(|e| e.to_string())?;
+        let actual =
+            if mime == "text/plain" && !selection.mime_types().iter().any(|value| value == mime) {
+                [
+                    "text/plain;charset=utf-8",
+                    "text/plain;charset=UTF-8",
+                    "UTF8_STRING",
+                ]
+                .into_iter()
+                .find(|candidate| {
+                    selection
+                        .mime_types()
+                        .iter()
+                        .any(|value| value == candidate)
+                })
+                .unwrap_or(mime)
+            } else {
+                mime
+            };
+        return selection
+            .receive(actual, crate::wayland::MAX_TRANSFER_BYTES)
+            .map_err(|e| e.to_string());
+    }
+    #[cfg(target_os = "linux")]
+    if mime == "text/uri-list" {
+        crate::runtime_display::validate_x11_display().map_err(|error| error.to_string())?;
+        // Keep CRLF URI delimiters out of decoded paths; arboard's file parser splits only LF.
+        return crate::capture::x11_clipboard::get_clipboard_files()
+            .map(|paths| {
+                paths
+                    .iter()
+                    .map(|path| file_uri(path) + "\r\n")
+                    .collect::<String>()
+                    .into_bytes()
+            })
+            .ok_or_else(|| "ClipboardFileRepresentationUnavailable".into());
+    }
     let mut cb = open()?;
     match mime {
         "text/plain" => cb
@@ -108,7 +389,15 @@ pub fn file_uri(path: &str) -> String {
     format!("{prefix}{encoded}")
 }
 
-pub fn formats() -> Result<Vec<&'static str>, String> {
+pub fn formats() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "linux")]
+    if crate::wayland::requested() {
+        return match crate::wayland::WaylandClipboardBackend::snapshot() {
+            Ok(snapshot) => Ok(snapshot.mime_types().to_vec()),
+            Err(crate::wayland::WaylandError::EmptySelection) => Ok(Vec::new()),
+            Err(error) => Err(error.to_string()),
+        };
+    }
     let mut cb = open()?;
     let mut result = Vec::new();
     if cb.get_text().is_ok() {
@@ -123,7 +412,7 @@ pub fn formats() -> Result<Vec<&'static str>, String> {
     if cb.get().file_list().is_ok() {
         result.push("text/uri-list");
     }
-    Ok(result)
+    Ok(result.into_iter().map(str::to_owned).collect())
 }
 
 fn set(cb: &mut arboard::Clipboard, payload: Payload) -> Result<(), String> {
@@ -193,6 +482,11 @@ pub fn write_private(
 static PRIVATE_OWNERS: std::sync::OnceLock<std::sync::Mutex<Vec<std::process::Child>>> =
     std::sync::OnceLock::new();
 pub(crate) fn revoke_private_owners() -> Result<(), String> {
+    revoke_embedded_private_owners()?;
+    #[cfg(target_os = "linux")]
+    crate::wayland::revoke_private_owner().map_err(|_| "PrivateExportRevocationUnconfirmed")?;
+    #[cfg(target_os = "linux")]
+    private_x11_files::drain()?;
     #[cfg(target_os = "linux")]
     if let Some(owners) = PRIVATE_OWNERS.get() {
         let mut owners = owners
@@ -278,7 +572,8 @@ pub fn write(payload: Payload) -> Result<(), String> {
                 .map(|_| line);
             let _ = tx.send(result);
         });
-        match rx.recv_timeout(Duration::from_secs(5)) {
+        let timeout = if crate::wayland::requested() { 15 } else { 5 };
+        match rx.recv_timeout(Duration::from_secs(timeout)) {
             Ok(Ok(line)) if line.trim() == "ready" => {
                 if private {
                     let owners = owners
@@ -293,8 +588,50 @@ pub fn write(payload: Payload) -> Result<(), String> {
                 let _ = child.kill();
                 let _ = child.wait();
                 Err(format!(
-                    "X11 clipboard owner failed to acquire selection: {result:?}"
+                    "Native clipboard owner failed to acquire selection: {result:?}"
                 ))
+            }
+        }
+    }
+}
+
+/// Long-lived hosts retain their selection owner in this process.
+pub fn write_embedded(payload: Payload) -> Result<(), String> {
+    write_embedded_with_intent(payload, false)
+}
+pub fn write_embedded_with_intent(
+    payload: Payload,
+    suppress_recapture: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let _ = suppress_recapture;
+    #[cfg(target_os = "windows")]
+    {
+        write(payload)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if crate::wayland::requested() {
+            return crate::wayland::write_in_process_with_intent(payload, suppress_recapture)
+                .map_err(|error| error.to_string());
+        }
+        use crate::capture::x11_clipboard as x11;
+        match payload {
+            Payload::Text(text) => x11::set_clipboard_text_and_html(text, None),
+            Payload::Html { html, text } => x11::set_clipboard_text_and_html(text, Some(html)),
+            Payload::Files(paths) => x11::set_clipboard_files(paths),
+            Payload::Private(_) | Payload::Leased { .. } | Payload::LeasedFiles { .. } => {
+                return Err("NativeLeaseOwnerRequired".into());
+            }
+            Payload::Image(bytes) => {
+                let image = image::load_from_memory(&bytes)
+                    .map_err(|_| "ClipboardImageInvalid")?
+                    .into_rgba8();
+                x11::set_clipboard_image_with_formats(x11::ImageData {
+                    width: image.width() as usize,
+                    height: image.height() as usize,
+                    bytes: image.into_raw(),
+                })
             }
         }
     }
@@ -311,49 +648,44 @@ pub fn serve_owner() -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         let payload: Payload =
             serde_json::from_slice(&input).map_err(|_| "OwnerPayloadRejected")?;
-        let (payload, mut lease) = match payload {
-            Payload::Leased { payload, lease } => {
-                if !lease.is_current() {
-                    return Err("PrivacyEpochChanged".into());
-                }
-                (*payload, Some(lease))
-            }
-            value => (value, None),
-        };
-        let (payload, private) = match payload {
-            Payload::Private(inner) => (*inner, true),
-            value => (value, false),
-        };
-        let mut exports = None;
-        let payload = match payload {
-            Payload::LeasedFiles {
-                files,
-                lease: permission,
-            } => {
-                if !permission.is_current() {
-                    return Err("PrivacyEpochChanged".into());
-                }
-                let files = files
-                    .into_iter()
-                    .map(|file| dzc_core::ports::ClipboardFile {
-                        name: file.name,
-                        bytes: file.bytes,
-                    })
-                    .collect();
-                let owned = crate::private_files::Exports::create(files)?;
-                let paths = owned.paths();
-                exports = Some(owned);
-                lease = Some(permission);
-                Payload::Private(Box::new(Payload::Files(paths)))
-            }
-            value => {
-                if private {
-                    Payload::Private(Box::new(value))
-                } else {
-                    value
-                }
-            }
-        };
+        let prepared = prepare_owner_payload(payload)?;
+        if crate::wayland::requested() {
+            let payloads = crate::wayland::representations(prepared.payload)
+                .map_err(|error| error.to_string())?;
+            let (cancel, _keep_alive) =
+                crate::wayland::WaylandClipboardBackend::cancellation_pair()
+                    .map_err(|error| error.to_string())?;
+            return crate::wayland::WaylandClipboardBackend::serve_authorized(
+                payloads,
+                prepared.leases,
+                prepared.exports,
+                || {
+                    println!("ready");
+                    let _ = std::io::stdout().flush();
+                },
+                cancel,
+            )
+            .map_err(|error| error.to_string());
+        }
+        if matches!(&prepared.payload,Payload::Private(inner) if matches!(inner.as_ref(),Payload::Files(_)))
+        {
+            let Payload::Private(inner) = prepared.payload else {
+                unreachable!()
+            };
+            let Payload::Files(paths) = *inner else {
+                unreachable!()
+            };
+            let mut owner =
+                private_x11_files::FileOwner::start(paths, prepared.leases, prepared.exports)?;
+            println!("ready");
+            std::io::stdout()
+                .flush()
+                .map_err(|_| "PrivateFileOwnerUnavailable")?;
+            return owner.wait();
+        }
+        let leases = prepared.leases;
+        let exports = prepared.exports;
+        let payload = prepared.payload;
         let mut cb = open()?;
         set(&mut cb, payload)?;
         let (conn, _) = x11rb::connect(None).map_err(|e| e.to_string())?;
@@ -376,9 +708,9 @@ pub fn serve_owner() -> Result<(), String> {
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
         loop {
-            if lease
-                .as_ref()
-                .is_some_and(|lease| !lease.is_current() || std::time::Instant::now() >= deadline)
+            if !leases.is_empty()
+                && (leases.iter().any(|lease| !lease.is_current())
+                    || std::time::Instant::now() >= deadline)
             {
                 break;
             }
@@ -395,7 +727,7 @@ pub fn serve_owner() -> Result<(), String> {
             conn.flush().map_err(|e| e.to_string())?;
         }
         if let Some(mut exports) = exports {
-            exports.stop()?;
+            exports.close()?;
         }
         Ok(())
     }
