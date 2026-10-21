@@ -57,7 +57,7 @@ impl Host {
             }
         }
         self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
-        self.actions.copy(payload)?;
+        self.copy_payload(payload)?;
         if request.paste {self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;self.actions.paste()?;}
         if request.delete_after_use==Some(true) {
             if request.id<0 {self.session.lock().map_err(|_|WireErrorCode::Unavailable)?.retain(|row|row.id!=request.id);}
@@ -105,20 +105,21 @@ impl Host {
         if request.id<0 {
             let mut rows=self.session.lock().map_err(|_|WireErrorCode::Unavailable)?;
             let index=rows.iter().position(|row|row.id==request.id).ok_or(WireErrorCode::NotFound)?;
-            self.history.authorize_session_entry(&rows[index],&permit,now).map_err(denied)?;
             let mut result_id=request.id;
             match request.action.as_str() {
-                "pin" if request.pinned==Some(false)=>rows[index].is_pinned=false,
+                "pin" if request.pinned==Some(false)=>{
+                    self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
+                    rows[index].is_pinned=false;
+                },
                 "edit"=>{
                     let content=request.content.ok_or(WireErrorCode::InvalidRequest)?;
                     let preview:String=content.chars().take(500).collect();
                     self.history.update_session_manual_authorized(&mut rows[index],&content,&preview,intent,&permit,now).map_err(denied)?;
                 }
                 "pin"|"tags"=>{
-                    let mut entry=rows[index].clone();entry.id=0;
-                    if request.action=="pin" {entry.is_pinned=request.pinned.ok_or(WireErrorCode::InvalidRequest)?;}
-                    else {entry.tags=request.tags.ok_or(WireErrorCode::InvalidRequest)?;}
-                    result_id=self.history.save_manual_authorized(&entry,Some(&self.directory),intent,&permit,now).map_err(denied)?;
+                    let (pinned,tags)=if request.action=="pin" {(Some(request.pinned.ok_or(WireErrorCode::InvalidRequest)?),None)}
+                        else {(None,Some(request.tags.ok_or(WireErrorCode::InvalidRequest)?))};
+                    result_id=self.history.persist_session_metadata_authorized(&rows[index],pinned,tags,intent,&permit,now).map_err(denied)?;
                     rows.remove(index);
                 }
                 _=>return Err(WireErrorCode::InvalidRequest),
@@ -128,10 +129,9 @@ impl Host {
             self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(result_id),status:None})?;
             return Ok(DesktopMutationResult{id:result_id,performed:true});
         }
-        self.history.get_entry_authorized(request.id,&permit,now).map_err(denied)?.ok_or(WireErrorCode::NotFound)?;
         match request.action.as_str() {
-            "pin"=>self.history.toggle_pin(request.id,request.pinned.ok_or(WireErrorCode::InvalidRequest)?).map_err(|_|WireErrorCode::Unavailable)?,
-            "tags"=>self.history.update_entry_tags(request.id,request.tags.ok_or(WireErrorCode::InvalidRequest)?).map_err(|_|WireErrorCode::Unavailable)?,
+            "pin"=>self.history.update_entry_metadata_authorized(request.id,Some(request.pinned.ok_or(WireErrorCode::InvalidRequest)?),None,&permit,now).map_err(denied)?,
+            "tags"=>self.history.update_entry_metadata_authorized(request.id,None,Some(request.tags.ok_or(WireErrorCode::InvalidRequest)?),&permit,now).map_err(denied)?,
             "edit"=>{let content=request.content.ok_or(WireErrorCode::InvalidRequest)?;let preview:String=content.chars().take(500).collect();
                 self.history.update_manual_authorized(request.id,&content,&preview,intent,&permit,now).map_err(denied)?;}
             _=>return Err(WireErrorCode::InvalidRequest),

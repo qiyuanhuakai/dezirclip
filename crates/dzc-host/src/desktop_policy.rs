@@ -95,10 +95,13 @@ mod tests {
         let mut protected=entry(-8,"synthetic protected RAM item");protected.tags.push("sensitive".into());
         host.session.lock().unwrap().push_back(protected);
         let state=host.snapshot().unwrap();
-        let denied=dispatch(serde_json::json!({"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,
+        let saved=dispatch(serde_json::json!({"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,
             "id":-8,"action":"pin","pinned":true,"reveal":false,"confirm_persistence":true}));
-        assert_eq!(denied.error.unwrap().code,WireErrorCode::SensitiveAccessDenied);
-        assert_eq!(host.session.lock().unwrap()[0].id,-8,"write confirmation is not a sensitive read grant");
+        let id=saved.result.unwrap()["id"].as_i64().unwrap();assert!(id>0);
+        assert!(host.session.lock().unwrap().is_empty());
+        let now=crate::router::now_ms().unwrap();
+        let permit=host.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead,SensitiveAccess::Denied,None,now).unwrap();
+        assert!(host.history.get_entry_authorized(id,&permit,now).unwrap().is_none(),"metadata persistence is not a sensitive read grant");
     }
 }
 impl Host {

@@ -57,6 +57,10 @@ fn remote_error(error:impl ToString)->String {
     })
 }
 fn now()->i64 {chrono::Utc::now().timestamp_millis()}
+fn confirmed_fallback<T>(host:&Host,create:impl FnOnce()->Result<T,String>)->Result<T,String> {
+    host.shutdown().map_err(|_|"CaptureStopUnconfirmed".to_owned())?;
+    create()
+}
 struct DesktopActions {writer:dzc_platform::runtime::EmbeddedClipboardWriter}
 impl HostActions for DesktopActions {
     fn platform_capabilities(&self)->serde_json::Value {serde_json::to_value(dzc_platform::runtime::standalone_capabilities()).unwrap_or_default()}
@@ -209,12 +213,21 @@ impl DesktopHost {
         if self.0.closing.load(Ordering::Acquire) {return Err(failed());}
         let endpoint=dzc_host::controller::endpoint(&self.0.database).map_err(|_|failed())?;
         let listener=endpoint.bind().map_err(|_|failed())?;
-        let writer=dzc_platform::runtime::EmbeddedClipboardWriter::default();
-        let host=Host::with_session(HostOptions {mode:HostMode::Embedded,history:self.0.history.clone(),directory:self.0.directory.clone(),
-            actions:Arc::new(DesktopActions{writer:writer.clone()})},self.0.session.clone()).map_err(|_|failed())?;
-        let (capture,ready)=CaptureManager::start_with_hooks(&host,Arc::new(crate::services::clipboard::DesktopHooks)).map_err(|_|failed())?;
-        if ready.is_err() {capture.stop().map_err(|_|"CaptureStopUnconfirmed".to_owned())?;return Err("ClipboardCaptureUnavailable".into());}
-        if host.initialize_privacy_shortcut().is_err() {host.shutdown().map_err(|_|"CaptureStopUnconfirmed".to_owned())?;return Err("PrivacyShortcutUnavailable".into());}
+        let (mut host,mut writer)=self.fresh_embedded()?;
+        let unavailable=match CaptureManager::start_with_hooks(&host,Arc::new(crate::services::clipboard::DesktopHooks)) {
+            Ok((_,Ok(())))=>None,
+            Ok((_,Err(_)))=>Some("native_listener_unavailable"),
+            Err(WireErrorCode::Busy)=>Some("capture_ownership_unavailable"),
+            Err(_)=>Some("native_listener_unavailable"),
+        };
+        if let Some(reason)=unavailable {
+            (host,writer)=confirmed_fallback(&host,||self.fresh_embedded())?;
+            host.set_capture_diagnostic(reason).map_err(public_code)?;
+            emit("clipboard-capture-unavailable",reason);
+        }else if host.initialize_privacy_shortcut().is_err() {
+            let _=host.publish(EventKind::ServiceStateChanged,EventData{entry_id:None,status:Some("PrivacyShortcutUnavailable".into())});
+            emit("privacy-shortcut-unavailable",());
+        }
         let credentials=match ControlFile::publish(&host,&endpoint) {Ok(credentials)=>credentials,Err(_)=>{host.shutdown().map_err(|_|"CaptureStopUnconfirmed".to_owned())?;return Err(failed());}};
         *self.0.writer.lock().map_err(|_|failed())?=Some(writer);
         self.set_mode(Mode::Embedded(host.clone()));
@@ -239,6 +252,12 @@ impl DesktopHost {
             if bridge.begin_embedded().is_err() {bridge.set_mode(Mode::Unavailable);emit("clipboard-host-unavailable",());}
         });
         Ok(())
+    }
+    fn fresh_embedded(&self)->Result<(Arc<Host>,dzc_platform::runtime::EmbeddedClipboardWriter),String> {
+        let writer=dzc_platform::runtime::EmbeddedClipboardWriter::default();
+        let host=Host::with_session(HostOptions{mode:HostMode::Embedded,history:self.0.history.clone(),directory:self.0.directory.clone(),
+            actions:Arc::new(DesktopActions{writer:writer.clone()})},self.0.session.clone()).map_err(public_code)?;
+        Ok((host,writer))
     }
     fn begin_remote(&self,mut client:Client) {
         let instance=client.hello.state.service_instance_id.clone();
@@ -336,6 +355,56 @@ impl crate::domain::update_host::UpdateHost for DesktopUpdateHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn confirmed_fallback_keeps_history_only_host_behind_confirmed_worker_stop() {
+        struct Actions;
+        impl HostActions for Actions {
+            fn platform_capabilities(&self)->serde_json::Value {serde_json::json!({})}
+            fn can_copy(&self)->bool {false}
+            fn copy(&self,_:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode> {Err(WireErrorCode::Unavailable)}
+            fn can_paste(&self)->bool {false}
+            fn paste(&self)->Result<(),WireErrorCode> {Err(WireErrorCode::Unavailable)}
+            fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+            fn revoke_private_exports(&self)->Result<(),WireErrorCode> {Ok(())}
+        }
+        struct Lifecycle {fail:AtomicBool,released:std::sync::atomic::AtomicUsize}
+        impl dzc_host::HostLifecycle for Lifecycle {
+            fn stop_capture(&self)->Result<(),WireErrorCode> {
+                if self.fail.load(Ordering::Acquire) {Err(WireErrorCode::Busy)}else{Ok(())}
+            }
+            fn release_ownership(&self)->Result<(),WireErrorCode> {self.released.fetch_add(1,Ordering::AcqRel);Ok(())}
+            fn capture_active(&self)->bool {self.released.load(Ordering::Acquire)==0}
+        }
+        let directory=std::env::temp_dir().join(format!("dzc-history-fallback-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let history=HistoryService::open(&directory.join("clipboard.db")).unwrap();
+        let fresh=||Host::new(HostOptions{mode:HostMode::Embedded,history:history.clone(),directory:directory.clone(),actions:Arc::new(Actions)}).map_err(public_code);
+        let host=fresh().unwrap();
+        let worker=Arc::new(Lifecycle{fail:AtomicBool::new(true),released:std::sync::atomic::AtomicUsize::new(0)});
+        host.attach_lifecycle(worker.clone()).unwrap();
+        let created=std::sync::atomic::AtomicUsize::new(0);
+        let create=||{created.fetch_add(1,Ordering::AcqRel);fresh()};
+        assert!(matches!(confirmed_fallback(&host,create),Err(error) if error=="CaptureStopUnconfirmed"));
+        assert_eq!(created.load(Ordering::Acquire),0);
+        assert_eq!(worker.released.load(Ordering::Acquire),0);
+        assert!(!host.capture_stopped());
+        worker.fail.store(false,Ordering::Release);
+        let passive=confirmed_fallback(&host,create).unwrap();
+        assert_eq!(created.load(Ordering::Acquire),1);
+        assert_eq!(worker.released.load(Ordering::Acquire),1);
+        assert!(host.capture_stopped());
+        passive.set_capture_diagnostic("native_listener_unavailable").unwrap();
+        assert_eq!(passive.set_capture_diagnostic("untrusted native environment"),Err(WireErrorCode::InvalidRequest));
+        let (session,_)=passive.hello(HelloParams{protocol_version:VERSION,client_version:"synthetic-fallback".into(),client_role:ClientRole::Surface,
+            capabilities:vec![],required_capabilities:vec![],grant:None}).unwrap();
+        let response=passive.dispatch(&session,Request{request_id:"fallback-status".into(),method:Method::ServiceStatus,params:serde_json::json!({})});
+        let status=response.result.unwrap();
+        assert_eq!(status["capture_owner"],false);
+        assert_eq!(status["capture_unavailable_reason"],"native_listener_unavailable");
+        assert_ne!(passive.snapshot().unwrap().service_instance_id,host.snapshot().unwrap().service_instance_id);
+        passive.shutdown().unwrap();drop(passive);drop(host);drop(history);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
     struct Cleanup(PathBuf);
     impl Drop for Cleanup {
         fn drop(&mut self) {
