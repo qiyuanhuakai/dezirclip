@@ -166,9 +166,9 @@ impl PrivacyPolicyService {
     ) -> CoreResult<PrivacyDecisionReport> {
         let entry = self
             .history
-            .get_entry_authorized(id, permit, now_ms)
-            .map_err(|error| CoreError::from(error.to_string()))?
-            .ok_or_else(|| CoreError::from("ClipboardRecordUnavailable".to_owned()))?;
+            .repository
+            .policy_entry_authorized(id, permit, now_ms)
+            .map_err(CoreError::from)?;
         self.decision_for_entry(&entry, permit, now_ms)
     }
     pub fn decision_for_session_entry(

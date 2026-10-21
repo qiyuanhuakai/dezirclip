@@ -626,14 +626,79 @@ fn bounded_scan_is_explicitly_incomplete_and_suspicions_are_not_a_blanket_encryp
     assert!(report.scanned_bytes <= 64 * 1024);
     let conn = repo.conn.lock().unwrap();
     for n in 0..129 {
+        let id = uuid::Uuid::new_v4().to_string();
+        let rule = StoredRule {
+            id: id.clone(),
+            version: 1,
+            kind: crate::api::PrivacyRuleKind::ProtectSource,
+            source_app: Some(format!("Synthetic {n}")),
+            salt: [0; 16],
+            digest: None,
+            origin_entry_id: None,
+            originally_protected: false,
+            created_at_ms: 1,
+        };
+        let cipher = encryption::encrypt_sensitive(&serde_json::to_string(&rule).unwrap())
+            .unwrap()
+            .into_string();
         conn.execute(
-            "INSERT INTO privacy_rules VALUES(?1,'invalid',1)",
-            [format!("{n}")],
+            "INSERT INTO privacy_rules VALUES(?1,?2,1)",
+            rusqlite::params![id, cipher],
         )
         .unwrap();
     }
     drop(conn);
-    assert!(repo.privacy_rule_summaries().is_err());
+    assert_eq!(
+        repo.privacy_rule_summaries().unwrap_err(),
+        "PrivacyRuleLimitExceeded"
+    );
+}
+
+#[test]
+fn explanations_remain_flat_and_old_untagged_or_unreadable_cipher_is_never_reported_public() {
+    let repo = memory();
+    let id = repo
+        .save(&entry("ordinary protected legacy"), None)
+        .unwrap();
+    let cipher = encryption::encrypt_sensitive("legacy protected body")
+        .unwrap()
+        .into_string();
+    repo.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE clipboard_history SET content=?1,tags='[]' WHERE id=?2",
+            rusqlite::params![cipher, id],
+        )
+        .unwrap();
+    let permitted = permit(&repo);
+    let candidate = repo.policy_entry_authorized(id, &permitted, 1).unwrap();
+    let report = repo.assess_privacy_entry(&candidate, true).unwrap();
+    assert_eq!(
+        report.decision.reason,
+        PrivacyReason::ExistingRecordProtected
+    );
+    let encoded = serde_json::to_value(&report).unwrap();
+    assert_eq!(encoded["action"], "encrypt");
+    assert!(encoded.get("decision").is_none());
+    assert!(!encoded.to_string().contains("legacy protected body"));
+    let damaged = format!(
+        "linux:{}",
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, [255u8; 28])
+    );
+    repo.conn
+        .lock()
+        .unwrap()
+        .execute(
+            "UPDATE clipboard_history SET content=?1 WHERE id=?2",
+            rusqlite::params![damaged, id],
+        )
+        .unwrap();
+    assert_eq!(
+        repo.policy_entry_authorized(id, &permit(&repo), 1)
+            .unwrap_err(),
+        "ProtectedRecordUnavailable"
+    );
 }
 
 #[test]
