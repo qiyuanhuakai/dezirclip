@@ -99,6 +99,17 @@ pub struct PrivacyReadPermit {
     sensitive: bool,
 }
 impl PrivacyReadPermit {
+    pub(crate) fn require_interactive(&self) -> PrivacyResult<()> {
+        if self.intent != PrivacyAccessIntent::InteractiveRead {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
+        Ok(())
+    }
+    pub(crate) fn require_policy_change(&self) -> PrivacyResult<()> {
+        self.require_interactive()?;
+        if !self.includes_sensitive() { return Err(PrivacyError::SensitiveAccessDenied); }
+        Ok(())
+    }
     pub fn epoch(&self) -> u64 {
         self.ticket.epoch
     }
@@ -363,6 +374,20 @@ impl PrivacySessionService {
         check_capture_with_conn(&conn, ticket, now_ms)
     }
 
+    /// Internal background OCR uses the original unforgeable capture ticket, never a user grant.
+    pub(super) fn capture_ocr_permit(
+        &self,
+        ticket: &CaptureTicket,
+        now_ms: i64,
+    ) -> PrivacyResult<PrivacyReadPermit> {
+        self.check_capture(ticket, now_ms)?;
+        Ok(PrivacyReadPermit {
+            intent: PrivacyAccessIntent::SelectedCopy,
+            ticket: *ticket,
+            sensitive: true,
+        })
+    }
+
     pub fn authorize_read(
         &self,
         intent: PrivacyAccessIntent,
@@ -421,6 +446,17 @@ pub(crate) fn check_manual_with_conn(
         return Err(PrivacyError::ManualPersistenceConfirmationRequired);
     }
     Ok(())
+}
+
+pub(crate) fn check_read_with_conn(conn: &Connection, permit: &PrivacyReadPermit, now_ms: i64) -> PrivacyResult<()> {
+    let state = read_state(conn, now_ms)?;
+    if permit.ticket.state_id != state.state_id || permit.ticket.epoch != state.snapshot.privacy_epoch {
+        return Err(PrivacyError::PrivacyEpochChanged);
+    }
+    Ok(())
+}
+pub(crate) fn snapshot_with_conn(conn: &Connection, now_ms: i64) -> PrivacyResult<RuntimeSnapshot> {
+    Ok(read_state(conn, now_ms)?.snapshot)
 }
 
 /// Called by automatic capture/OCR writers inside their existing write transaction.

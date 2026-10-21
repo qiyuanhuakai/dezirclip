@@ -1,4 +1,4 @@
-use super::{CaptureFailure, CaptureStage};
+use super::{CaptureFailure, CaptureStage, CaptureSource};
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::attachments::{plan_html_attachments, HtmlAttachmentPlan};
@@ -39,6 +39,9 @@ pub struct CaptureCommit {
 
 /// Capture-specific storage operations. A commit must recheck current protection.
 pub trait CaptureStore {
+    fn privacy_source(&self,_source:&CaptureSource)->Result<crate::privacy::PrivacyDecision,CaptureFailure>{Ok(crate::privacy::PrivacyPolicy.decide(Vec::new()))}
+    fn assess_privacy_entry(&self,_entry:&ClipboardEntry)->Result<Option<crate::api::PrivacyDecisionReport>,CaptureFailure>{Ok(None)}
+
     fn capture_ticket(
         &self,
         _now_ms: i64,
@@ -98,7 +101,7 @@ fn failure(stage: CaptureStage, error: impl ToString) -> CaptureFailure {
         | "AttachmentPersistenceRejected"
         | "AttachmentPersistenceFailed"
         | "ClipboardRecordUnavailable"
-        | "AttachmentBudgetExceeded" => error,
+        | "AttachmentBudgetExceeded" | "PrivacyRulesUnavailable" | "PrivacyRuleLimitExceeded" | "PrivacySettingsInvalid" | "PrivacySourceExcluded" => error,
         "PrivacyStateUnavailable" | "PrivacyEpochChanged" | "PrivacySessionActive" => error,
         _ => "CaptureStorageFailed".to_string(),
     };
@@ -125,6 +128,14 @@ pub(crate) fn sqlite_capture_store<'a>(
 }
 
 impl CaptureStore for SqliteCaptureStore<'_> {
+    fn privacy_source(&self,source:&CaptureSource)->Result<crate::privacy::PrivacyDecision,CaptureFailure>{
+        let conn=self.connection.lock().map_err(|_|failure(CaptureStage::Read,"PrivacyStateUnavailable"))?;
+        crate::infrastructure::repository::privacy_policy::assess_source(&conn,source).map_err(|error|failure(CaptureStage::Read,error))
+    }
+    fn assess_privacy_entry(&self,entry:&ClipboardEntry)->Result<Option<crate::api::PrivacyDecisionReport>,CaptureFailure>{
+        self.repository.assess_privacy_entry(entry,true).map(Some).map_err(|error|failure(CaptureStage::Prepare,error))
+    }
+
     fn capture_ticket(
         &self,
         now_ms: i64,
