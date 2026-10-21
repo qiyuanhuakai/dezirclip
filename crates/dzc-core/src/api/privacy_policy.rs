@@ -70,6 +70,20 @@ impl HistoryService {
             .save_manual_authorized(entry, directory, intent, permit, now_ms)
             .map_err(CoreError::from)
     }
+    /// Changes existing metadata without granting body access or removing protection.
+    pub fn update_entry_metadata_authorized(
+        &self,
+        id: i64,
+        pinned: Option<bool>,
+        tags: Option<Vec<String>>,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> CoreResult<()> {
+        self.repository
+            .update_entry_metadata_authorized(id, pinned, tags, permit, now_ms)
+            .map_err(CoreError::from)
+    }
+
     /// Persists a Host-owned session entry with metadata changes only; grants no body read.
     pub fn persist_session_metadata_authorized(
         &self,
