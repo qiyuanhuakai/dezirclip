@@ -276,6 +276,34 @@ fn removing_an_exception_does_not_reprotect_an_independently_edited_record() {
 }
 
 #[test]
+fn removing_a_text_exception_does_not_read_unrelated_missing_session_files() {
+    let repo = memory();
+    configure_custom(&repo);
+    let id = repo.save(&entry("qvxcredential"), None).unwrap();
+    repo.privacy_feedback(
+        id,
+        None,
+        PrivacyFeedbackAction::ExactException,
+        &permit(&repo),
+        1,
+    )
+    .unwrap();
+    let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+    let mut unrelated = entry("synthetic-file-that-does-not-exist");
+    unrelated.id = -1;
+    unrelated.content_type = "file".into();
+    repo.remove_privacy_rule(
+        &rule.id,
+        std::slice::from_mut(&mut unrelated),
+        &permit(&repo),
+        1,
+    )
+    .unwrap();
+    assert!(!visible(&repo, id));
+    assert!(unrelated.tags.is_empty());
+}
+
+#[test]
 fn failed_rule_or_field_write_rolls_back_epoch_provenance_fts_and_cached_body() {
     let repo = memory();
     configure_custom(&repo);
@@ -632,6 +660,7 @@ fn bounded_scan_is_explicitly_incomplete_and_suspicions_are_not_a_blanket_encryp
             version: 1,
             kind: crate::api::PrivacyRuleKind::ProtectSource,
             source_app: Some(format!("Synthetic {n}")),
+            content_type: None,
             salt: [0; 16],
             digest: None,
             origin_entry_id: None,
