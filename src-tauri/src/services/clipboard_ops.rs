@@ -128,15 +128,20 @@ pub async fn copy_to_clipboard(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     mut content: String,
-    content_type: String,
+    mut content_type: String,
     paste: bool,
     id: i64,
     delete_after_use: bool,
     paste_with_format: Option<bool>,
     move_to_top: Option<bool>,
     paste_image_as_base64: Option<bool>,
+    expected_privacy_epoch: Option<u64>,
+    derived_from_id: Option<i64>,
 ) -> AppResult<()> {
-    let generated_ticket = if paste_image_as_base64.unwrap_or(false) {
+    let operation_permission=if let Some(epoch)=expected_privacy_epoch {
+        Some(state.history_service().privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
+    } else {None};
+    let generated_ticket = if paste_image_as_base64.unwrap_or(false) || derived_from_id.is_some() {
         crate::services::clipboard::generated_capture_ticket(&app_handle)?
     } else { None };
     println!(
@@ -149,24 +154,31 @@ pub async fn copy_to_clipboard(
 
     let mut html_content: Option<String> = None;
 
-    // 0. Resolve full content if ID is provided and content is placeholder/truncated
+    let history=state.history_service();
+    let mut read_permit=None;
+    let mut private_payload=None;
     if id != 0 {
-        if id > 0 {
-            // Fetch from Database
-            if let Ok(Some((full_content, _ctype, html))) =
-                state.repo.get_entry_content_with_html(id)
-            {
-                content = full_content;
-                html_content = html;
-            }
-        } else {
-            // Fetch from Session
-            let session_items = session.inner().0.lock().unwrap();
-            if let Some(item) = session_items.iter().find(|i| i.id == id) {
-                content = item.content.clone();
-                html_content = item.html_content.clone();
-            }
-        }
+        let sensitive=if expected_privacy_epoch.is_some() { dzc_core::api::SensitiveAccess::ExplicitUserAction } else { dzc_core::api::SensitiveAccess::Denied };
+        let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+        let entry=if id>0 { history.get_entry_authorized(id,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))? }
+            else {
+                let entry=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
+                history.authorize_session_entry(&entry,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?
+            };
+        content=entry.content.clone();html_content=entry.html_content.clone();content_type=entry.content_type.clone();
+        let payload=if id>0 { history.clipboard_payload_authorized(id,&permit,chrono::Utc::now().timestamp_millis()) } else { history.session_clipboard_payload_authorized(&entry,&permit,chrono::Utc::now().timestamp_millis()) }.map_err(|error|AppError::Validation(error.to_string()))?;
+        if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}|dzc_core::ports::ClipboardPayload::ProtectedFiles{..}) { private_payload=Some(payload); }
+        read_permit=Some(permit);
+    } else if let Some(source_id)=derived_from_id {
+        if source_id==0 || !matches!(content_type.as_str(),"text"|"code"|"url"|"rich_text") { return Err(AppError::Validation("DerivedPayloadKindRejected".into())); }
+        let sensitive=if expected_privacy_epoch.is_some(){dzc_core::api::SensitiveAccess::ExplicitUserAction}else{dzc_core::api::SensitiveAccess::Denied};
+        let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+        let payload=if source_id>0 {history.derived_text_payload_authorized(source_id,content.clone(),&permit,chrono::Utc::now().timestamp_millis())} else {
+            let source=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==source_id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
+            history.session_derived_text_payload_authorized(&source,content.clone(),&permit,chrono::Utc::now().timestamp_millis())
+        }.map_err(|error|AppError::Validation(error.to_string()))?;
+        if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}){ private_payload=Some(payload); }
+        read_permit=Some(permit);
     }
 
     let paste_image_as_base64_requested = paste_image_as_base64.unwrap_or(false);
@@ -190,6 +202,8 @@ pub async fn copy_to_clipboard(
         }
     }
 
+    if derived_from_id.is_some() && private_payload.is_some() && self_insert_label.is_none() { self_insert_label=Some("DezirClip Protected Derived".into()); }
+
     // 1. Handle Window Visibility and Focus
     if paste {
         handle_window_focus_for_paste(&app_handle).await?;
@@ -202,12 +216,13 @@ pub async fn copy_to_clipboard(
     // clipboard write below is then marked as a self-copy so the OS clipboard monitor
     // does not race us by creating a duplicate row.
     if let Some(label) = self_insert_label.as_ref() {
-        crate::services::clipboard::process_new_entry(
+        crate::services::clipboard::process_new_entry_with_protection(
             &app_handle,
             crate::services::clipboard::ClipboardData::Text(content.clone()),
             Some(label.clone()),
             None,
             generated_ticket,
+            private_payload.is_some(),
         )?;
     }
 
@@ -219,6 +234,14 @@ pub async fn copy_to_clipboard(
         should_mark_clipboard_write_as_self_copy(id, paste, paste_image_as_base64_requested)
     };
 
+    if let Some(permit)=&operation_permission { history.privacy().check_read(permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?; }
+    if let Some(permit)=&read_permit { history.privacy().check_read(permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?; }
+    if let Some(mut payload)=private_payload {
+        if let dzc_core::ports::ClipboardPayload::Private{payload:inner,..}=&mut payload {
+            if self_insert_label.is_some() || !paste_with_format.unwrap_or(effective_content_type=="rich_text" && html_content.is_some()) && matches!(inner.as_ref(),dzc_core::ports::ClipboardPayload::Html{..}) { **inner=dzc_core::ports::ClipboardPayload::Text(content.clone()); }
+        }
+        dzc_platform::runtime::standalone_clipboard_service().write(payload).map_err(|error|AppError::Internal(error.to_string()))?;
+    } else {
     write_content_to_system_clipboard(
         &content,
         ClipboardWriteOptions {
@@ -230,6 +253,7 @@ pub async fn copy_to_clipboard(
             mark_as_self_copy,
         },
     )?;
+    }
 
     // 4. Perform paste action if requested
     if paste {
@@ -1411,6 +1435,8 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
                     Some(true),   // paste_with_format
                     None,
                     None,
+                    None,
+                    None,
                 )
                 .await;
             }
@@ -1425,7 +1451,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
         reason = "Linux OCR is stubbed; bytes only consumed on Windows"
     )
 )]
-pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: AppHandle) {
+pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, ticket: dzc_core::api::CaptureTicket, app: AppHandle) {
     let db_state = app.state::<DbState>();
     {
         let conn = match db_state.conn.lock() {
@@ -1437,7 +1463,7 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: A
         };
         if let Err(e) = db_state
             .repo
-            .update_ocr_text_with_conn(&conn, item_id, "", "processing")
+            .update_ocr_authorized_with_conn(&conn, item_id, "", "processing", &ticket, chrono::Utc::now().timestamp_millis())
         {
             crate::error!(
                 "[ocr-trigger] Failed to set processing status for id={}: {}",
@@ -1490,7 +1516,7 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: A
             Ok(text) => {
                 if let Err(e) = db_state
                     .repo
-                    .update_ocr_text_with_conn(&conn, item_id, &text, "done")
+                    .update_ocr_authorized_with_conn(&conn, item_id, &text, "done", &ticket, chrono::Utc::now().timestamp_millis())
                 {
                     crate::error!(
                         "[ocr-trigger] Failed to persist OCR text for id={}: {}",
@@ -1504,7 +1530,7 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: A
                     "ocr:complete",
                     crate::app::commands::ocr_cmd::OcrResult {
                         item_id,
-                        text,
+                        text: String::new(),
                         confidence: None,
                         status: "done".to_string(),
                     },
@@ -1519,7 +1545,7 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: A
                 };
                 if let Err(e2) = db_state
                     .repo
-                    .update_ocr_text_with_conn(&conn, item_id, "", status)
+                    .update_ocr_authorized_with_conn(&conn, item_id, "", status, &ticket, chrono::Utc::now().timestamp_millis())
                 {
                     crate::error!(
                         "[ocr-trigger] Failed to set {} status for id={}: {}",

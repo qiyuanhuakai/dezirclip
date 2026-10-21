@@ -49,6 +49,13 @@ impl SqliteClipboardRepository {
         entries: &[ClipboardEntry],
         replace: bool,
     ) -> Result<(), String> {
+        let ticket=self.privacy_service().capture_ticket(chrono::Utc::now().timestamp_millis()).map_err(|error|error.to_string())?;
+        self.import_cli_entries_authorized(entries, replace, &ticket)
+    }
+
+    pub(crate) fn import_cli_entries_authorized(
+        &self, entries: &[ClipboardEntry], replace: bool, ticket: &crate::api::CaptureTicket,
+    ) -> Result<(), String> {
         let mut seen = std::collections::HashSet::new();
         if entries
             .iter()
@@ -57,7 +64,8 @@ impl SqliteClipboardRepository {
             return Err("import: entry IDs must be unique positive integers".to_string());
         }
         let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let transaction = conn.transaction().map_err(|e| e.to_string())?;
+        let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
+        crate::api::privacy_session::check_capture_with_conn(&transaction, ticket, chrono::Utc::now().timestamp_millis()).map_err(|error| error.to_string())?;
         if replace {
             transaction
                 .execute("DELETE FROM entry_tags", [])

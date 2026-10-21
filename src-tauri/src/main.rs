@@ -185,6 +185,7 @@ fn main() {
             app::commands::set_privacy_session,
             app::commands::toggle_privacy_session,
             app::commands::get_privacy_entry,
+            app::commands::get_history_resource_preview,
             app::commands::get_clipboard_history,
             app::commands::get_captured_entry_summary,
             app::commands::search_clipboard_history,

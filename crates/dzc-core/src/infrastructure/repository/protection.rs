@@ -1,19 +1,6 @@
+#[cfg(test)]
 use crate::infrastructure::encryption::EncryptionError;
 use rusqlite::Connection;
-
-pub fn validate_sensitive_record(
-    content_type: &str,
-    external: bool,
-    html: Option<&str>,
-) -> Result<(), String> {
-    if external
-        || matches!(content_type, "image" | "file" | "video")
-        || html.is_some_and(super::sensitive_tags::has_unsupported_sensitive_resources)
-    {
-        return Err(EncryptionError::SensitivePersistenceRejected.to_string());
-    }
-    Ok(())
-}
 
 pub(super) fn atomic<T>(
     conn: &Connection,
@@ -109,35 +96,6 @@ mod tests {
             .unwrap(),
             "true"
         );
-    }
-
-    #[test]
-    fn sensitive_resources_are_rejected_before_any_persistence() {
-        for kind in ["image", "file", "video"] {
-            assert_eq!(
-                validate_sensitive_record(kind, false, None).unwrap_err(),
-                "SensitivePersistenceRejected"
-            );
-        }
-        for html in [
-            "<img src='file:///private.png'>",
-            "<p style='background:url(private.png)'>text</p>",
-            "<!--TIEZ_RICH_IMAGE:data:image/png;base64,AAAA-->",
-            "<img src='data:image/png;base64,AAAA'>",
-            "<svg><image href='private.png'/></svg>",
-            "<!--> <img src='private.png'> -->",
-        ] {
-            assert_eq!(
-                validate_sensitive_record("rich_text", false, Some(html)).unwrap_err(),
-                "SensitivePersistenceRejected"
-            );
-        }
-        assert!(
-            validate_sensitive_record("rich_text", false, Some("<p>private <b>text</b></p>"))
-                .is_ok()
-        );
-        assert!(validate_sensitive_record("text", false, None).is_ok());
-        assert!(validate_sensitive_record("text", true, None).is_err());
     }
 
     #[test]

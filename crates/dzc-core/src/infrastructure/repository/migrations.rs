@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, Result};
 /// The value `PRAGMA auto_vacuum` reports for the mode `init_db` asks for.
 const AUTO_VACUUM_FULL: i32 = 1;
 
-pub const SUPPORTED_SCHEMA_VERSION: i32 = 22;
+pub const SUPPORTED_SCHEMA_VERSION: i32 = 23;
 
 #[cfg(test)]
 pub(crate) fn remove_runtime_state_fixture(conn: &Connection) {
@@ -16,7 +16,7 @@ pub(crate) fn remove_runtime_state_fixture(conn: &Connection) {
     for operation in ["INSERT", "UPDATE", "DELETE"] {
         conn.execute_batch(&format!("DROP TRIGGER IF EXISTS privacy_settings_{operation};")).unwrap();
     }
-    conn.execute_batch("DROP TABLE privacy_runtime_state;").unwrap();
+    conn.execute_batch("DROP TRIGGER IF EXISTS privacy_record_visibility; DROP TABLE privacy_runtime_state;").unwrap();
 }
 
 /// Initialize an additional write connection to an already migrated history.
@@ -482,9 +482,9 @@ mod merge_scheduling_tests {
     fn schema_after_twenty_one_is_rejected_without_changing_history_or_fts() {
         let mut conn = historical(20);
         run_migrations(&mut conn).unwrap();
-        conn.execute("INSERT INTO schema_migrations(version) VALUES(23)", []).unwrap();
+        conn.execute("INSERT INTO schema_migrations(version) VALUES(24)", []).unwrap();
         let before = snapshot(&conn, false, true);
-        assert!(run_migrations(&mut conn).unwrap_err().to_string().contains("newer than supported 22"));
+        assert!(run_migrations(&mut conn).unwrap_err().to_string().contains("newer than supported 23"));
         assert!(configure_privacy_writer(&conn).is_err());
         assert_eq!(snapshot(&conn, false, true), before);
     }
@@ -1121,6 +1121,13 @@ fn apply_schema_migrations(conn: &Connection) -> Result<()> {
         }
         conn.execute("INSERT INTO schema_migrations(version) VALUES(22)", [])?;
     }
+    // This marker rejects older writers before protected binary/archive semantics can be changed.
+    if current_version < 23 {
+        conn.execute_batch("CREATE TRIGGER privacy_record_visibility AFTER UPDATE OF tags,content,preview,html_content,ocr_text ON clipboard_history
+            WHEN dc_search_visible(old.tags,old.content,old.preview,old.html_content,old.ocr_text) <> dc_search_visible(new.tags,new.content,new.preview,new.html_content,new.ocr_text)
+            BEGIN UPDATE privacy_runtime_state SET privacy_epoch=privacy_epoch+1 WHERE singleton=1; END;")?;
+        conn.execute("INSERT INTO schema_migrations(version) VALUES(23)", [])?;
+    }
     Ok(())
 }
 
@@ -1132,7 +1139,7 @@ mod runtime_state_tests {
         let mut conn = Connection::open_in_memory().unwrap();
         run_migrations(&mut conn).unwrap();
         remove_runtime_state_fixture(&conn);
-        conn.execute("DELETE FROM schema_migrations WHERE version=22", []).unwrap();
+        conn.execute("DELETE FROM schema_migrations WHERE version>=22", []).unwrap();
         conn
     }
 
@@ -1961,5 +1968,26 @@ mod tests {
             sql.unwrap().contains("(content, content_type)"),
             "the index must be ordered content first so the content arm can seek on it alone"
         );
+    }
+}
+
+#[cfg(test)]
+mod protected_visibility_migration_tests {
+    use super::*;
+    #[test]
+    fn schema_twenty_three_visibility_guard_and_marker_rollback_together_and_reopen_idempotently() {
+        let mut conn=Connection::open_in_memory().unwrap();
+        run_migrations(&mut conn).unwrap();
+        conn.execute_batch("DROP TRIGGER privacy_record_visibility; DELETE FROM schema_migrations WHERE version>=23; CREATE TRIGGER reject_visibility_marker BEFORE INSERT ON schema_migrations WHEN NEW.version=23 BEGIN SELECT RAISE(ABORT,'synthetic marker rejection'); END;").unwrap();
+        assert!(run_migrations(&mut conn).is_err());
+        assert_eq!(conn.query_row("SELECT MAX(version) FROM schema_migrations",[],|row|row.get::<_,i64>(0)).unwrap(),22);
+        assert_eq!(conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='privacy_record_visibility'",[],|row|row.get::<_,i64>(0)).unwrap(),0);
+        conn.execute_batch("DROP TRIGGER reject_visibility_marker").unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(conn.query_row("SELECT MAX(version) FROM schema_migrations",[],|row|row.get::<_,i64>(0)).unwrap(),23);
+        let before:(i64,i64)=conn.query_row("SELECT history_revision,privacy_epoch FROM privacy_runtime_state",[],|row|Ok((row.get(0)?,row.get(1)?))).unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert_eq!(conn.query_row("SELECT history_revision,privacy_epoch FROM privacy_runtime_state",[],|row|Ok((row.get::<_,i64>(0)?,row.get::<_,i64>(1)?))).unwrap(),before);
+        assert_eq!(conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='trigger' AND name='privacy_record_visibility'",[],|row|row.get::<_,i64>(0)).unwrap(),1);
     }
 }

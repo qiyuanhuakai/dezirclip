@@ -58,7 +58,63 @@ impl ClipboardWriter for StandaloneClipboardWriter {
         native::clipboard_probe()
     }
     fn write(&self, payload: ClipboardPayload) -> PlatformResult<()> {
+        crate::private_files::revoke_clipboard();
+        crate::native_clipboard::revoke_private_owners()
+            .map_err(|_| clipboard_failure(Capability::Write))?;
+        let (payload, mut authorization) = match payload {
+            ClipboardPayload::Private {
+                payload,
+                authorization,
+            } => (*payload, Some(authorization)),
+            payload => (payload, None),
+        };
+        if authorization
+            .as_ref()
+            .is_some_and(|authorization| !authorization.is_current())
+        {
+            return Err(clipboard_failure(Capability::Write));
+        }
+        #[cfg(target_os = "windows")]
+        let mut private: Option<crate::private_files::BoundExport> = None;
         let payload = match payload {
+            ClipboardPayload::Private { .. } => return Err(clipboard_failure(Capability::Write)),
+            ClipboardPayload::ProtectedFiles {
+                files,
+                authorization: permission,
+            } => {
+                if !permission.is_current() {
+                    return Err(clipboard_failure(Capability::Write));
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let lease = permission
+                        .native_lease()
+                        .ok_or_else(|| clipboard_failure(Capability::Write))?;
+                    authorization = Some(permission);
+                    crate::native_clipboard::Payload::LeasedFiles {
+                        files: files
+                            .into_iter()
+                            .map(|file| crate::native_clipboard::NativeFile {
+                                name: file.name,
+                                bytes: file.bytes,
+                            })
+                            .collect(),
+                        lease,
+                    }
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let exports =
+                        crate::private_files::BoundExport::readonly(files, permission.clone())
+                            .map_err(|_| clipboard_failure(Capability::Write))?;
+                    let paths = exports
+                        .paths()
+                        .map_err(|_| clipboard_failure(Capability::Write))?;
+                    private = Some(exports);
+                    authorization = Some(permission);
+                    crate::native_clipboard::Payload::Files(paths)
+                }
+            }
             ClipboardPayload::Text(value) => crate::native_clipboard::Payload::Text(value),
             ClipboardPayload::Html { html, text } => {
                 crate::native_clipboard::Payload::Html { html, text }
@@ -77,7 +133,35 @@ impl ClipboardWriter for StandaloneClipboardWriter {
                 crate::native_clipboard::Payload::Image(bytes)
             }
         };
-        crate::native_clipboard::write(payload).map_err(|_| clipboard_failure(Capability::Write))
+        if authorization
+            .as_ref()
+            .is_some_and(|authorization| !authorization.is_current())
+        {
+            return Err(clipboard_failure(Capability::Write));
+        }
+        if authorization.is_some() {
+            crate::native_clipboard::write_private(
+                payload,
+                authorization
+                    .as_ref()
+                    .and_then(ClipboardAuthorization::native_lease),
+            )
+        } else {
+            crate::native_clipboard::write(payload)
+        }
+        .map_err(|_| clipboard_failure(Capability::Write))?;
+        #[cfg(target_os = "windows")]
+        if let Some(exports) = private {
+            exports.retain();
+        }
+        if authorization
+            .as_ref()
+            .is_some_and(|authorization| !authorization.is_current())
+        {
+            revoke_private_exports()?;
+            return Err(clipboard_failure(Capability::Write));
+        }
+        Ok(())
     }
 }
 pub fn standalone_clipboard_service() -> ClipboardService<NativeClipboard, StandaloneClipboardWriter>
@@ -140,4 +224,43 @@ mod tests {
             Some(UnsupportedReason::UnsupportedRepresentation)
         );
     }
+}
+
+/// The unique native owner calls this synchronously before acknowledging a privacy epoch change.
+pub fn revoke_private_exports() -> PlatformResult<()> {
+    crate::private_files::revoke();
+    crate::native_clipboard::revoke_private_owners()
+        .map_err(|_| PlatformError::failed(Capability::Write))
+}
+
+/// Native-only export handles; paths never belong to a WebView or external Surface response.
+pub struct PrivateFileExport(crate::private_files::BoundExport);
+impl PrivateFileExport {
+    pub fn paths(&self) -> PlatformResult<Vec<String>> {
+        self.0
+            .paths()
+            .map_err(|_| clipboard_failure(Capability::Write))
+    }
+    pub fn is_current(&self) -> bool {
+        self.0.paths().is_ok()
+    }
+    pub fn retain(self) {
+        self.0.retain();
+    }
+}
+pub fn private_file_export(
+    export: dzc_core::ports::AuthorizedFileExport,
+) -> PlatformResult<PrivateFileExport> {
+    crate::private_files::BoundExport::new(export.files, export.authorization)
+        .map(PrivateFileExport)
+        .map_err(|_| clipboard_failure(Capability::Write))
+}
+
+pub fn prepare_private_files(
+    files: Vec<ClipboardFile>,
+    authorization: ClipboardAuthorization,
+) -> PlatformResult<PrivateFileExport> {
+    crate::private_files::BoundExport::readonly(files, authorization)
+        .map(PrivateFileExport)
+        .map_err(|_| clipboard_failure(Capability::Write))
 }
