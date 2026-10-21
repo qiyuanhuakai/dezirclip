@@ -36,6 +36,30 @@ def save(path, value):
     Path(path).write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def run_logged(root, label, command, env, payload=None, timeout=35, cases=None):
+    """Retain partial output and the attempted command even when run times out."""
+    root = Path(root)
+    record = {"label": label, "command": command, "timeout_seconds": timeout}
+    try:
+        result = subprocess.run(command, env=env, input=payload, capture_output=True, timeout=timeout)
+        stdout, stderr = result.stdout, result.stderr
+        record.update(status="completed", exit_code=result.returncode)
+    except subprocess.TimeoutExpired as error:
+        stdout, stderr = error.stdout, error.stderr
+        record.update(status="timeout", exit_code=None, error_type=type(error).__name__)
+        raise
+    finally:
+        if "stdout" in locals():
+            def output_bytes(value):
+                return value.encode("utf-8") if isinstance(value, str) else value or b""
+            (root / (label + ".stdout.log")).write_bytes(output_bytes(stdout))
+            (root / (label + ".stderr.log")).write_bytes(output_bytes(stderr))
+            save(root / (label + ".result.json"), record)
+            if cases is not None:
+                cases.append(record)
+    return result
+
+
 def checked_file(value):
     path = Path(value).resolve(strict=True)
     if not path.is_file():
@@ -82,10 +106,7 @@ def inside():
     compositor_log = (root / "compositor.log").open("wb")
 
     def run(label, command, env, payload=None, timeout=35):
-        result = subprocess.run(command, env=env, input=payload, capture_output=True, timeout=timeout)
-        (root / (label + ".stdout.log")).write_bytes(result.stdout)
-        (root / (label + ".stderr.log")).write_bytes(result.stderr)
-        report["cases"].append({"label": label, "command": command, "exit_code": result.returncode})
+        result = run_logged(root, label, command, env, payload, timeout, report["cases"])
         if result.returncode:
             raise RuntimeError(label + " failed; raw logs retained")
         return result.stdout
@@ -246,9 +267,7 @@ def main():
     command += ["--chdir", "/fixture", "--", "/usr/bin/python3", "/fixture/controller.py", "--inside"]
     save(output / "command.json", command)
     try:
-        result = subprocess.run(command, capture_output=True, timeout=240)
-        (output / "outer.stdout.log").write_bytes(result.stdout)
-        (output / "outer.stderr.log").write_bytes(result.stderr)
+        result = run_logged(output, "outer", command, None, timeout=240)
         code = result.returncode
     except BaseException as error:
         save(output / "outer-failure.json", {"error": repr(error)})
