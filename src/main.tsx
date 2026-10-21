@@ -2,7 +2,9 @@ import React, { Suspense, lazy } from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import "./styles/components/index.css";
+import "./styles/components/privacy-native-copy.css";
 import { applyBootAppearance } from "./shared/lib/themeRuntime";
+import { installPrivacyNativeCopyGuard } from "./shared/lib/privacyNativeCopy";
 
 const App = lazy(() => import("./App"));
 const CompactPreviewWindow = lazy(() => import("./features/clipboard/components/CompactPreviewWindow"));
@@ -13,6 +15,7 @@ const RegionSelectWindow = lazy(() => import("./features/clipboard/components/Re
 // paint is already in the user's theme rather than the base stylesheet. The
 // stylesheet itself is still fetched in parallel and not awaited.
 applyBootAppearance();
+installPrivacyNativeCopyGuard();
 
 const params = new URLSearchParams(window.location.search);
 const isCompactPreview = params.get("window") === "compact-preview";

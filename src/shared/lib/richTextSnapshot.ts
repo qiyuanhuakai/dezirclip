@@ -1,4 +1,4 @@
-import { toTauriLocalImageSrc } from "./localImageSrc";
+import { isRamImageSource } from "./privacyRuntime";
 import { extractRichImageFallback } from "./richPreview";
 import {
   DEFAULT_RICH_TEXT_SNAPSHOT_CACHE,
@@ -7,6 +7,7 @@ import {
 
 const SNAPSHOT_CACHE_VERSION = "v4";
 const snapshotCache = new Map<string, string>();
+export const clearRichTextSnapshots = () => { snapshotCache.clear(); };
 
 /**
  * Live limit, owned here because the Map is. `setRichTextSnapshotCacheLimit`
@@ -121,27 +122,12 @@ const normalizeRichHtml = (html: string): {
     if (el.tagName.toLowerCase() === "img") {
       imageStats.total += 1;
       const src = el.getAttribute("src");
-      const normalizedSrc = src?.startsWith("//") ? `https:${src}` : src;
-      if (normalizedSrc && normalizedSrc !== src) {
-        el.setAttribute("src", normalizedSrc);
-      }
-      const mapped = normalizedSrc ? toTauriLocalImageSrc(normalizedSrc) : null;
-      if (mapped) {
-        el.setAttribute("src", mapped);
-        imageStats.local += 1;
-      } else if (normalizedSrc && /^data:image\//i.test(normalizedSrc)) {
+      el.removeAttribute("srcset");
+      if (src && isRamImageSource(src)) {
         imageStats.data += 1;
-      } else if (
-        normalizedSrc &&
-        (/^https?:\/\/asset\.localhost\//i.test(normalizedSrc) || /^asset:/i.test(normalizedSrc))
-      ) {
-        imageStats.local += 1;
-      } else if (normalizedSrc && /^https?:\/\//i.test(normalizedSrc)) {
-        // Remote images often fail inside SVG foreignObject snapshots.
-        imageStats.remote += 1;
       } else {
-        // blob:, cid:, relative paths, empty src, etc.
         imageStats.unsupported += 1;
+        el.remove();
       }
     }
   });

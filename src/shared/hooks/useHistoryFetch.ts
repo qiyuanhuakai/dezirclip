@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
 import { HISTORY_SEARCH_LIMIT } from "../../features/app/constants/pagination";
@@ -39,6 +39,10 @@ export const useHistoryFetch = ({
   const lastRequestedOffsetRef = useRef<number | null>(null);
   const currentOffsetRef = useRef(currentOffset);
   const historyLengthRef = useRef(historyLength);
+  useEffect(() => subscribePrivacyInvalidation(() => {
+    fetchSeqRef.current += 1;
+    lastRequestedOffsetRef.current = null;
+  }), []);
 
   useEffect(() => {
     currentOffsetRef.current = currentOffset;
@@ -70,7 +74,7 @@ export const useHistoryFetch = ({
           }
 
           try {
-            data = await invoke<ClipboardEntry[]>("search_clipboard_history", {
+            data = await invokePrivacyBound<ClipboardEntry[]>("search_clipboard_history", {
               searchTerm: term,
               limit: HISTORY_SEARCH_LIMIT
             });
@@ -86,7 +90,7 @@ export const useHistoryFetch = ({
           setHasMore(false);
         } else {
           const requestedLimit = pageSize + 1; // Use standard page size for DB limit
-          const rawData = await invoke<ClipboardEntry[]>("get_clipboard_history", {
+          const rawData = await invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
             limit: requestedLimit,
             offset: baseOffset,
             content_type: typeFilter || undefined
@@ -123,6 +127,7 @@ export const useHistoryFetch = ({
           }
         }
       } catch (err) {
+        if (seq !== fetchSeqRef.current) return;
         console.error("无法获取历史记录", err);
         setHasMore(false);
       }

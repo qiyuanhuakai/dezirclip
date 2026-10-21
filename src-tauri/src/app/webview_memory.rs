@@ -13,6 +13,10 @@ pub fn memory_target_for_visibility(visible: bool) -> WebviewMemoryTarget {
 }
 
 pub fn lower_window_memory(window: &tauri::WebviewWindow, reason: &'static str) {
+    use tauri::Emitter;
+    if window.label() == "main" {
+        let _ = window.emit_to("main", "privacy-view-hidden", ());
+    }
     apply_memory_target(window, memory_target_for_visibility(false), reason);
 }
 

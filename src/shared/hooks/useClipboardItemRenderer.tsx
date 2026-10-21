@@ -4,6 +4,7 @@ import type { DragControls } from "framer-motion";
 import ClipboardItemRenderer from "../../features/clipboard/components/ClipboardItemRenderer";
 import type { ClipboardEntry } from "../types";
 import type { Locale } from "../types";
+import { isSensitiveEntry } from "../lib/privacyRuntime";
 
 interface UseClipboardItemRendererOptions {
   privacyProtection: boolean;
@@ -24,16 +25,19 @@ interface UseClipboardItemRendererOptions {
     content: string,
     contentType: string,
     pasteWithFormat?: boolean,
-    pasteImageAsBase64?: boolean
+    pasteImageAsBase64?: boolean,
+    expectedPrivacyEpoch?: number,
+    derivedFromId?: number,
+    hostInstanceId?: string
   ) => Promise<void>;
   setSelectedIndex: Dispatch<SetStateAction<number>>;
   setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
-  openContent: (item: ClipboardEntry) => void;
-  togglePin: (event: MouseEvent, id: number, isPinned: boolean) => void;
-  deleteEntry: (event: MouseEvent, id: number) => void;
+  openContent: (item: ClipboardEntry, expectedPrivacyEpoch?: number) => void;
+  togglePin: (event: MouseEvent, id: number, isPinned: boolean, hostInstanceId?: string) => void;
+  deleteEntry: (event: MouseEvent, id: number, hostInstanceId?: string) => void;
   setEditingTagsId: Dispatch<SetStateAction<number | null>>;
   setTagInput: Dispatch<SetStateAction<string>>;
-  handleUpdateTags: (id: number, tags: string[]) => void;
+  handleUpdateTags: (id: number, tags: string[], hostInstanceId?: string) => void;
   onQRCode: (item: ClipboardEntry) => void;
   onTransformError: (item: ClipboardEntry, kind: string, message: string) => void;
   onTransformSuccess: (item: ClipboardEntry, kind: string) => void;
@@ -47,7 +51,6 @@ type RenderItemContent = (
 ) => ReactNode;
 
 export const useClipboardItemRenderer = ({
-  privacyProtection,
   revealedIds,
   isKeyboardMode,
   selectedIndex,
@@ -76,8 +79,7 @@ export const useClipboardItemRenderer = ({
   const renderItemContent = useCallback(
     (item: ClipboardEntry, index: number, dragControls?: DragControls, disableLayout?: boolean) => {
       const isSensitiveHidden =
-        privacyProtection &&
-        item.tags?.some(tag => ["sensitive", "密码", "password"].includes(tag.toLowerCase())) &&
+        isSensitiveEntry(item) &&
         !revealedIds.has(item.id);
       const isEditingTags = editingTagsId === item.id;
 
@@ -115,7 +117,6 @@ export const useClipboardItemRenderer = ({
       );
     },
     [
-      privacyProtection,
       revealedIds,
       isKeyboardMode,
       selectedIndex,

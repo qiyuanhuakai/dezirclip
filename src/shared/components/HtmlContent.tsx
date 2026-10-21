@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { toTauriLocalImageSrc } from "../lib/localImageSrc";
+import { isRamImageSource } from "../lib/privacyRuntime";
 
 const pickFirstSrcFromSrcset = (srcset?: string | null): string | null => {
   if (!srcset) return null;
@@ -97,28 +97,13 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
       }
     });
 
-    // Handle local file images (including encoded file:// paths)
     if (el.tagName.toLowerCase() === 'img') {
       const resolvedSrc = resolveImgSource(el);
-      if (resolvedSrc) {
-        if (el.getAttribute("src") !== resolvedSrc) {
-          el.setAttribute("src", resolvedSrc);
-        }
-        const normalizedSrc = resolvedSrc.startsWith("//") ? `https:${resolvedSrc}` : resolvedSrc;
-        if (normalizedSrc !== resolvedSrc) {
-          el.setAttribute("src", normalizedSrc);
-        }
-
-        const mappedSrc = toTauriLocalImageSrc(normalizedSrc);
-        if (mappedSrc) {
-          el.setAttribute('src', mappedSrc);
-          (el as HTMLElement).style.maxWidth = '100%';
-          (el as HTMLElement).style.height = 'auto';
-        } else if (/^https?:\/\//i.test(normalizedSrc)) {
-          // Some hosts reject unknown referrers; no-referrer is more broadly accepted.
-          el.setAttribute("referrerpolicy", "no-referrer");
-        }
-      }
+      el.removeAttribute("srcset");
+      if (!resolvedSrc || !isRamImageSource(resolvedSrc)) { el.remove(); return; }
+      el.setAttribute("src", resolvedSrc);
+      (el as HTMLElement).style.maxWidth = '100%';
+      (el as HTMLElement).style.height = 'auto';
     }
   });
 

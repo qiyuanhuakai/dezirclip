@@ -3,11 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ClipboardEntry } from '../../../shared/types';
 import type { TagInfo, TagItemsPage, TagSort } from '../types';
+import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
+import { invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 
 const EMPTY_PAGE: TagItemsPage = { items: [], total: 0, has_more: false, next_offset: null };
 const PAGE_SIZE = 60;
 
 export function useTagLibrary() {
+    const privacy = usePrivacySession();
     const [tags, setTags] = useState<TagInfo[]>([]);
     const [colors, setColors] = useState<Record<string, string>>({});
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -45,6 +48,11 @@ export function useTagLibrary() {
         setError(false);
         setLoadingMore(false);
     }, [publishPage]);
+    useEffect(() => subscribePrivacyInvalidation(() => {
+        invalidatePage();
+        metadataGeneration.current += 1;
+        setTags([]);
+    }), [invalidatePage]);
 
     const selectTag = useCallback((name: string | null) => {
         if (name === selected.current) return;
@@ -95,10 +103,11 @@ export function useTagLibrary() {
 
     useEffect(() => {
         const request = ++metadataGeneration.current;
+        if (privacy.phase !== 'ready') { setMetadataLoading(false); return; }
         const epoch = selectionEpoch.current;
         setMetadataLoading(true);
         void Promise.all([
-            invoke<Record<string, number>>('get_all_tags_info'),
+            invokePrivacyBound<Record<string, number>>('get_all_tags_info'),
             invoke<Record<string, string>>('get_tag_colors'),
         ]).then(([tagMap, nextColors]) => {
             if (!mounted.current || request !== metadataGeneration.current) return;
@@ -115,7 +124,7 @@ export function useTagLibrary() {
         }).finally(() => {
             if (mounted.current && request === metadataGeneration.current) setMetadataLoading(false);
         });
-    }, [revision, metadataRevision, selectTag]);
+    }, [revision, metadataRevision, selectTag, privacy.phase, privacy.generation]);
 
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedQuery(query), 180);
@@ -127,13 +136,13 @@ export function useTagLibrary() {
         publishPage(EMPTY_PAGE);
         setError(false);
         setLoadingMore(false);
-        if (!selectedTag) {
+        if (!selectedTag || privacy.phase !== 'ready') {
             setLoading(false);
             return;
         }
         setLoading(true);
         if (query !== debouncedQuery) return;
-        void invoke<TagItemsPage>('get_tag_items_page', {
+        void invokePrivacyBound<TagItemsPage>('get_tag_items_page', {
             tag: selectedTag, query: debouncedQuery, sortBy, limit: PAGE_SIZE, offset: 0,
         }).then(next => {
             if (mounted.current && request === generation.current) publishPage(next);
@@ -142,7 +151,7 @@ export function useTagLibrary() {
         }).finally(() => {
             if (mounted.current && request === generation.current) setLoading(false);
         });
-    }, [selectedTag, query, debouncedQuery, sortBy, revision, publishPage]);
+    }, [selectedTag, query, debouncedQuery, sortBy, revision, publishPage, privacy.phase, privacy.generation]);
 
     const setQuery = useCallback((value: string) => {
         invalidatePage();
@@ -163,7 +172,7 @@ export function useTagLibrary() {
         if (pending.current.has(key)) return;
         pending.current.add(key);
         setLoadingMore(true);
-        void invoke<TagItemsPage>('get_tag_items_page', {
+        void invokePrivacyBound<TagItemsPage>('get_tag_items_page', {
             tag: active.selectedTag, query: active.debouncedQuery, sortBy: active.sortBy, limit: PAGE_SIZE, offset: current.next_offset,
         }).then(next => {
             if (!mounted.current || request !== generation.current) return;

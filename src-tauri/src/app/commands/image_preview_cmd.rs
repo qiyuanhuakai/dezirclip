@@ -236,13 +236,8 @@ fn load_preview(path: &Path) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_image_preview(path: String) -> Result<String, String> {
-    if path.is_empty() || path.len() > 32_768 {
-        return Err("Invalid image preview path".to_string());
-    }
-    tauri::async_runtime::spawn_blocking(move || load_preview(Path::new(&path)))
-        .await
-        .map_err(|err| format!("Image preview worker failed: {err}"))?
+pub async fn get_image_preview(_path: String) -> Result<String, String> {
+    Err("PrivacyResourceIdRequired".into())
 }
 
 #[cfg(test)]

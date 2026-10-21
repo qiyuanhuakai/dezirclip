@@ -66,7 +66,10 @@ fn captured_entry_summary(
     } else {
         None
     };
-    let mut entry = entry.ok_or_else(|| AppError::Validation("CapturedEntryUnavailable".into()))?;
+    let entry = entry.ok_or_else(|| AppError::Validation("CapturedEntryUnavailable".into()))?;
+    let mut guarded=vec![entry];
+    repository.entries_for_gui(&mut guarded,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    let mut entry=guarded.pop().ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))?;
     normalize_entries_for_ui(std::slice::from_mut(&mut entry));
     Ok(crate::services::clipboard::summarize_captured_entry(entry))
 }
@@ -126,6 +129,7 @@ pub async fn get_clipboard_history(
         history.truncate(limit as usize);
     }
 
+    state.history_service().entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
     Ok(history)
@@ -160,6 +164,7 @@ pub async fn search_clipboard_history(
         history.truncate(limit as usize);
     }
 
+    state.history_service().entries_for_gui(&mut history,false,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
     Ok(history)
@@ -208,6 +213,7 @@ pub async fn get_tag_items(
         .get_entries_by_tag(&tag)
         .map_err(AppError::from)?;
 
+    state.history_service().entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     for item in &mut history {
         if is_text_like_content_type(&item.content_type) {
             item.content =
@@ -229,13 +235,15 @@ pub async fn get_tag_items_page(
 ) -> AppResult<dzc_core::api::TagItemsPage> {
     let repository = state.history_service();
     tauri::async_runtime::spawn_blocking(move || {
-        repository.tag_page(
+        let mut page=repository.tag_page(
             &tag,
             query.as_deref().unwrap_or(""),
             sort_by.as_deref().unwrap_or("time"),
             limit.unwrap_or(60),
             offset.unwrap_or(0),
-        )
+        )?;
+        repository.entries_for_gui(&mut page.items,query.as_deref().unwrap_or("").is_empty(),chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
+        Ok::<_,dzc_core::api::CoreError>(page)
     })
     .await
     .map_err(|error| AppError::Internal(error.to_string()))?
@@ -245,7 +253,12 @@ pub async fn get_tag_items_page(
 #[tauri::command]
 pub async fn get_tag_item_detail(state: State<'_, DbState>, id: i64) -> AppResult<ClipboardEntry> {
     let repository = state.history_service();
-    tauri::async_runtime::spawn_blocking(move || repository.get_entry_by_id(id))
+    tauri::async_runtime::spawn_blocking(move || {
+        let entry=repository.get_entry_by_id(id)?;
+        let mut entries=entry.into_iter().collect();
+        repository.entries_for_gui(&mut entries,true,chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
+        Ok::<_,dzc_core::api::CoreError>(entries.pop())
+    })
         .await
         .map_err(|error| AppError::Internal(error.to_string()))?
         .map_err(AppError::from)?
@@ -429,18 +442,13 @@ pub async fn get_clipboard_content(
     session: State<'_, SessionHistory>,
     id: i64,
 ) -> AppResult<String> {
-    {
-        let session_items = session.inner().0.lock().unwrap();
-        if let Some(item) = session_items.iter().find(|i| i.id == id) {
-            return Ok(item.content.clone());
-        }
-    }
-
-    state
-        .history_service()
-        .get_entry_content(id)
-        .map_err(AppError::from)?
-        .ok_or_else(|| AppError::Validation("Entry not found".to_string()))
+    let history=state.history_service();
+    let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::InteractiveRead,dzc_core::api::SensitiveAccess::Denied,None,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    let entry=if id<0 {
+        let entry=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
+        history.session_entry_for_preview_authorized(&entry,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?
+    } else { history.get_entry_for_preview_authorized(id,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))? };
+    Ok(entry.content)
 }
 
 #[tauri::command]
@@ -459,7 +467,7 @@ pub async fn get_db_count(state: State<'_, DbState>) -> AppResult<i64> {
 #[cfg(test)]
 mod capture_summary_tests {
     use super::*;
-    use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+    use crate::infrastructure::repository::clipboard_repo::{SqliteClipboardRepository,ClipboardRepository};
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
 
@@ -513,7 +521,7 @@ mod capture_summary_tests {
     }
 
     #[test]
-    fn persistent_image_summary_uses_the_committed_attachment_path() {
+    fn persistent_image_summary_returns_bounded_ram_pixels_without_attachment_paths() {
         let directory = std::env::temp_dir().join(format!(
             "dezirclip-capture-summary-{}",
             uuid::Uuid::new_v4()
@@ -524,7 +532,11 @@ mod capture_summary_tests {
         let mut image = entry(0);
         image.content_type = "image".into();
         image.html_content = None;
-        image.content = "data:image/png;base64,b3RoZXI=".into();
+        let pixels=image::RgbaImage::from_pixel(2,2,image::Rgba([3,4,5,255]));
+        let mut encoded=std::io::Cursor::new(Vec::new());
+        pixels.write_to(&mut encoded,image::ImageFormat::Png).unwrap();
+        use base64::Engine;
+        image.content = format!("data:image/png;base64,{}",base64::engine::general_purpose::STANDARD.encode(encoded.get_ref()));
         let id = repository
             .save_with_conn(&connection.lock().unwrap(), &image, Some(&directory))
             .unwrap();
@@ -532,10 +544,12 @@ mod capture_summary_tests {
         let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
         let summary = captured_entry_summary(&history, &session, id).unwrap();
         assert_eq!(summary.id, id);
-        assert!(summary.is_external);
-        assert!(!summary.content.starts_with("data:"));
-        assert!(std::path::Path::new(&summary.content).starts_with(directory.join("attachments")));
-        assert_eq!(std::fs::read(&summary.content).unwrap(), b"other");
+        assert!(!summary.is_external);
+        assert!(summary.content.starts_with("data:image/png;base64,"));
+        assert!(!summary.content.contains("attachments"));
+        let stored=repository.get_entry_by_id(id).unwrap().unwrap();
+        assert!(std::path::Path::new(&stored.content).starts_with(directory.join("attachments")));
+        assert_eq!(std::fs::read(stored.content).unwrap(),*encoded.get_ref());
         assert!(image.content.starts_with("data:"));
         drop(repository);
         drop(connection);

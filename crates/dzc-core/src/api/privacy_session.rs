@@ -2,6 +2,7 @@
 use super::{
     ClipboardEntry, HistoryQuery, HistoryService, SearchRequest, SearchResult, SummaryQuery,
 };
+use rusqlite::OptionalExtension;
 use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -112,6 +113,41 @@ impl PrivacyReadPermit {
     }
     fn allows_body(&self) -> bool {
         self.intent != PrivacyAccessIntent::RestrictedSummary
+    }
+}
+
+/// Native child lifecycle check only. This value grants no history read or decryption permission.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeReadLease {
+    database: String,
+    state_id: String,
+    epoch: u64,
+}
+impl NativeReadLease {
+    pub fn is_current(&self) -> bool {
+        let Ok(conn) = Connection::open_with_flags(
+            &self.database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) else {
+            return false;
+        };
+        if conn
+            .busy_timeout(std::time::Duration::from_millis(250))
+            .is_err()
+        {
+            return false;
+        }
+        let Ok(state) = read_state(&conn, chrono::Utc::now().timestamp_millis()) else {
+            return false;
+        };
+        !state.snapshot.session.expires_at_ms.is_some_and(|end| state.enabled && end <= chrono::Utc::now().timestamp_millis())
+            && state.state_id.to_string() == self.state_id
+            && state.snapshot.privacy_epoch == self.epoch
+    }
+    pub fn authorization(&self) -> crate::ports::ClipboardAuthorization {
+        let lease = self.clone();
+        crate::ports::ClipboardAuthorization::new(move || lease.is_current())
     }
 }
 
@@ -254,6 +290,43 @@ impl PrivacySessionService {
         drop(conn);
         (self.invalidate_epoch)(result.privacy_epoch);
         Ok(result)
+    }
+
+    pub(crate) fn native_read_lease(
+        &self,
+        permit: &PrivacyReadPermit,
+    ) -> PrivacyResult<Option<NativeReadLease>> {
+        let conn = self.connection.lock().map_err(unavailable)?;
+        let database = conn
+            .path()
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned);
+        Ok(database.map(|database| NativeReadLease {
+            database,
+            state_id: permit.ticket.state_id.to_string(),
+            epoch: permit.epoch(),
+        }))
+    }
+    pub fn hotkey(&self) -> PrivacyResult<String> {
+        let conn = self.connection.lock().map_err(unavailable)?;
+        conn.query_row(
+            "SELECT value FROM settings WHERE key='app.privacy_session_hotkey'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map(|value| value.unwrap_or_default())
+        .map_err(unavailable)
+    }
+    /// Only the authenticated native owner calls this after successfully registering the accelerator.
+    pub fn set_registered_hotkey(&self, hotkey: &str) -> PrivacyResult<()> {
+        if hotkey.len() > 128 || hotkey.chars().any(char::is_control) {
+            return Err(PrivacyError::PrivacyStateUnavailable);
+        }
+        let conn = self.connection.lock().map_err(unavailable)?;
+        crate::database::ensure_writable(&conn).map_err(unavailable)?;
+        conn.execute("INSERT INTO settings(key,value) VALUES('app.privacy_session_hotkey',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[hotkey]).map_err(unavailable)?;
+        Ok(())
     }
 
     pub fn toggle(&self, now_ms: i64) -> PrivacyResult<RuntimeSnapshot> {
@@ -422,6 +495,63 @@ impl HistoryService {
         let result = self.query(&restricted).map_err(unavailable)?;
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
+    }
+
+    /// GUI placeholders disclose identity and kind, never protected body, OCR or resource URLs.
+    pub fn entries_for_gui(
+        &self,
+        entries: &mut Vec<ClipboardEntry>,
+        include_protected_metadata: bool,
+        now_ms: i64,
+    ) -> PrivacyResult<()> {
+        let permit = self.privacy().authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            now_ms,
+        )?;
+        let mut safe = Vec::with_capacity(entries.len());
+        for mut entry in entries.drain(..) {
+            let protected = if entry.id > 0 {
+                self.repository
+                    .entry_is_protected(entry.id)
+                    .map_err(unavailable)?
+            } else {
+                !session_entry_visible(&entry)
+            };
+            if protected {
+                if !include_protected_metadata {
+                    continue;
+                }
+                entry.content.clear();
+                entry.preview.clear();
+                entry.html_content = None;
+                entry.ocr_text = None;
+                entry.source_app_path = None;
+                entry.is_external = false;
+                entry.file_preview_exists = false;
+                if !crate::database::has_sensitive_tag(&entry.tags) {
+                    entry.tags.push("sensitive".into());
+                }
+            }
+            if !protected {
+                entry = match super::clipboard_payload::preview_entry(entry.clone(), Some(384)) {
+                    Ok(entry) => entry,
+                    Err(_) => {
+                        entry.content.clear();
+                        entry.html_content = None;
+                        entry.preview.clear();
+                        entry.is_external = false;
+                        entry.source_app_path = None;
+                        entry
+                    }
+                };
+            }
+            safe.push(entry);
+        }
+        self.privacy().check_read(&permit, now_ms)?;
+        *entries = safe;
+        Ok(())
     }
 
     pub fn authorize_session_entry(

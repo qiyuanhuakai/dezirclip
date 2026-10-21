@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ClipboardEntry } from "../types";
+import { entryIdentityArgs, entryInstanceArgs, matchesEntryIdentity } from "../lib/historyIdentity";
 import type { VirtualClipboardListHandle } from "../../features/clipboard/types";
 
 interface UseClipboardActionsOptions {
@@ -34,7 +35,9 @@ export const useClipboardActions = ({
       contentType: string,
       pasteWithFormat = false,
       pasteImageAsBase64 = false,
-      expectedPrivacyEpoch?: number
+      expectedPrivacyEpoch?: number,
+      derivedFromId?: number,
+      hostInstanceId?: string
     ) => {
       try {
         if (pending || failed) { pushToast(t("platform_capabilities_unavailable"), 3000); return; }
@@ -52,6 +55,8 @@ export const useClipboardActions = ({
           pasteWithFormat,
           pasteImageAsBase64,
           expectedPrivacyEpoch,
+          derivedFromId,
+          ...entryInstanceArgs(hostInstanceId),
           moveToTop: !manualCopy && moveToTopAfterPaste
         });
 
@@ -59,7 +64,7 @@ export const useClipboardActions = ({
           const now = Date.now();
           setHistory((prev) =>
             prev.map((item) =>
-              item.id === id ? { ...item, timestamp: now } : item
+              matchesEntryIdentity(item, id, hostInstanceId) ? { ...item, timestamp: now } : item
             )
           );
         }
@@ -75,12 +80,13 @@ export const useClipboardActions = ({
   );
 
   const openContent = useCallback(
-    async (item: ClipboardEntry) => {
+    async (item: ClipboardEntry, expectedPrivacyEpoch?: number) => {
       try {
         await invoke("open_content", {
-          id: item.id,
+          ...entryIdentityArgs(item),
           content: item.content,
-          contentType: item.content_type
+          contentType: item.content_type,
+          expectedPrivacyEpoch
         });
       } catch (err) {
         const errorMsg = t("open_failed") + (err?.toString() || "");
@@ -91,11 +97,11 @@ export const useClipboardActions = ({
   );
 
   const deleteEntry = useCallback(
-    async (e: ReactMouseEvent, id: number) => {
+    async (e: ReactMouseEvent, id: number, hostInstanceId?: string) => {
       e.stopPropagation();
       try {
-        await invoke("delete_clipboard_entry", { id });
-        setHistory((prev) => prev.filter((item) => item.id !== id));
+        await invoke("delete_clipboard_entry", { id, ...entryInstanceArgs(hostInstanceId) });
+        setHistory((prev) => prev.filter((item) => !matchesEntryIdentity(item, id, hostInstanceId)));
       } catch (err) {
         const errorMsg = "删除失败: " + (err?.toString() || "");
         pushToast(errorMsg, 3000);
@@ -105,14 +111,14 @@ export const useClipboardActions = ({
   );
 
   const togglePin = useCallback(
-    async (e: ReactMouseEvent, id: number, currentPinned: boolean) => {
+    async (e: ReactMouseEvent, id: number, currentPinned: boolean, hostInstanceId?: string) => {
       e.stopPropagation();
       try {
-        await invoke("toggle_clipboard_pin", { id, isPinned: !currentPinned });
+        await invoke("toggle_clipboard_pin", { id, isPinned: !currentPinned, ...entryInstanceArgs(hostInstanceId) });
         setHistory((prev) =>
           prev
             .map((item) =>
-              item.id === id ? { ...item, is_pinned: !currentPinned } : item
+              matchesEntryIdentity(item, id, hostInstanceId) ? { ...item, is_pinned: !currentPinned } : item
             )
             .sort((a, b) => {
               if (a.is_pinned === b.is_pinned) return b.timestamp - a.timestamp;
@@ -129,11 +135,11 @@ export const useClipboardActions = ({
   );
 
   const handleUpdateTags = useCallback(
-    async (id: number, newTags: string[]) => {
+    async (id: number, newTags: string[], hostInstanceId?: string) => {
       try {
-        const newId = await invoke<number>("update_tags", { id, tags: newTags });
+        const newId = await invoke<number>("update_tags", { id, tags: newTags, ...entryInstanceArgs(hostInstanceId) });
         setHistory((prev) =>
-          prev.map((item) => (item.id === id ? { ...item, id: newId, tags: newTags } : item))
+          prev.map((item) => (matchesEntryIdentity(item, id, hostInstanceId) ? { ...item, id: newId, tags: newTags } : item))
         );
 
         setTimeout(() => {

@@ -173,12 +173,12 @@ impl CaptureStore for SqliteCaptureStore<'_> {
 
     fn prepare(&self, mut entry: ClipboardEntry) -> Result<PreparedCapture, CaptureFailure> {
         let privacy_ticket = self.capture_ticket(chrono::Utc::now().timestamp_millis())?;
-        let attachments = entry
+        let attachments = if crate::database::has_sensitive_tag(&entry.tags) { None } else { entry
             .html_content
             .as_deref()
             .map(|html| plan_html_attachments(html, self.directory))
             .transpose()
-            .map_err(|error| failure(CaptureStage::Prepare, error))?;
+            .map_err(|error| failure(CaptureStage::Prepare, error))? };
         if let Some(plan) = &attachments {
             entry.html_content = Some(plan.html().to_string());
         }
@@ -449,14 +449,9 @@ mod tests {
         let mut events = Events::default();
         assert!(matches!(
             authorized_frame(&context, rich_frame(), &store, &mut events),
-            CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected)
+            CaptureOutcome::Failed(CaptureFailure { code, .. }) if code == "AttachmentPersistenceRejected"
         ));
-        assert_eq!(
-            events.0,
-            vec![CaptureEvent::Rejected(
-                CaptureRejection::SensitivePersistenceRejected
-            )]
-        );
+        assert!(matches!(events.0.as_slice(),[CaptureEvent::Failed(CaptureFailure { code, .. })] if code=="AttachmentPersistenceRejected"));
         assert!(!directory.join("attachments").exists());
         let conn = state.conn.lock().unwrap();
         assert_eq!(
