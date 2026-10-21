@@ -102,6 +102,20 @@ fn payload(
 }
 
 impl HistoryService {
+    /// Trusted background OCR retains the pre-read capture ticket across queueing and recognition.
+    /// The internal read permit is not returned to the caller or exposed as a client read grant.
+    pub fn image_bytes_for_capture_authorized(
+        &self,
+        id: i64,
+        ticket: &super::CaptureTicket,
+        now_ms: i64,
+    ) -> PrivacyResult<Option<Vec<u8>>> {
+        let permit = self.privacy().capture_ocr_permit(ticket, now_ms)?;
+        let bytes = self.image_bytes_authorized(id, &permit, now_ms)?;
+        self.privacy().check_capture(ticket, now_ms)?;
+        Ok(bytes)
+    }
+
     /// Native OCR consumes decoded image bytes through the same selected-copy authorization.
     pub fn image_bytes_authorized(
         &self,
@@ -441,6 +455,14 @@ mod tests {
                 image.tags.push("sensitive".into());
             }
             let id = history.save(&image, None).unwrap();
+            let capture = history.privacy().capture_ticket(1).unwrap();
+            assert_eq!(
+                history
+                    .image_bytes_for_capture_authorized(id, &capture, 1)
+                    .unwrap()
+                    .unwrap(),
+                *png.get_ref()
+            );
             let denied = history
                 .privacy()
                 .authorize_read(
@@ -486,6 +508,12 @@ mod tests {
                 .privacy()
                 .set_session(PrivacySessionCommand::Off, 3)
                 .unwrap();
+            assert_eq!(
+                history
+                    .image_bytes_for_capture_authorized(id, &capture, 3)
+                    .unwrap_err(),
+                PrivacyError::PrivacyEpochChanged
+            );
         }
     }
     #[test]
