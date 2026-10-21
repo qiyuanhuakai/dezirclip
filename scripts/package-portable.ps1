@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 $sourcePath = [System.IO.Path]::GetFullPath($TargetDirectory)
 $outputPath = [System.IO.Path]::GetFullPath($OutputDirectory)
-$productPaths = @('dezirclip.exe', 'dzc.exe') | ForEach-Object {
+$productPaths = @('dezirclip.exe', 'dzc.exe', 'dzc-service.exe') | ForEach-Object {
     $productPath = Join-Path $sourcePath $_
     if (-not (Test-Path -LiteralPath $productPath -PathType Leaf)) {
         throw "Missing product executable: $productPath"

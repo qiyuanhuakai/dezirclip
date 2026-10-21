@@ -1,6 +1,8 @@
-//! Stable value types only. This crate provides no transport, process or IPC runtime.
+//! Stable value types and the optional, schema-validated local wire protocol.
 pub mod build_info;
 pub mod history;
+#[cfg(feature = "wire")]
+pub mod wire;
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };

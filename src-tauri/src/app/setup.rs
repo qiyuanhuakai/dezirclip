@@ -502,7 +502,7 @@ fn setup_state(
 
     app.manage(SessionHistory(std::sync::Mutex::new(
         std::collections::VecDeque::new(),
-    )));
+    ).into()));
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));
     app.manage(PasteQueue::default());
     app.manage(SearchHistory::default());

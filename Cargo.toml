@@ -1,5 +1,5 @@
 [workspace]
-members = ["src-tauri", "crates/dzc-core", "crates/dzc-platform", "crates/dzc-protocol"]
+members = ["src-tauri", "crates/dzc-core", "crates/dzc-platform", "crates/dzc-protocol", "crates/dzc-host", "crates/dzc-service"]
 default-members = ["src-tauri"]
 resolver = "2"
 
@@ -12,6 +12,8 @@ authors = ["qiyuanhuakai"]
 dzc-core = { path = "crates/dzc-core" }
 dzc-platform = { path = "crates/dzc-platform" }
 dzc-protocol = { path = "crates/dzc-protocol" }
+dzc-host = { path = "crates/dzc-host" }
+dzc-service = { path = "crates/dzc-service" }
 tauri-build = { version = "2", features = [] }
 serde_json = "1"
 tauri = { version = "2.11", features = ["tray-icon", "image-png"] }

@@ -1,0 +1,2405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Permission": {
+      "type": "string",
+      "enum": [
+        "history_read",
+        "history_body",
+        "clipboard_copy",
+        "clipboard_paste",
+        "privacy_write",
+        "service_manage",
+        "surface_control",
+        "desktop_history"
+      ]
+    },
+    "HostMode": {
+      "type": "string",
+      "enum": [
+        "embedded",
+        "service"
+      ]
+    },
+    "CapabilityReport": {
+      "type": "object",
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Permission"
+          },
+          "maxItems": 16
+        },
+        "platform": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "methods",
+        "permissions",
+        "platform"
+      ],
+      "additionalProperties": true
+    },
+    "ServiceStatus": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/HostMode"
+        },
+        "capture_owner": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "privacy": {
+          "$ref": "#/$defs/PrivacyState"
+        },
+        "capture_unavailable_reason": {
+          "type": "string",
+          "enum": [
+            "native_listener_unavailable",
+            "capture_ownership_unavailable",
+            "disabled_by_request"
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "capture_owner",
+        "state",
+        "privacy"
+      ],
+      "additionalProperties": true
+    },
+    "ClipboardCopyParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "maximum": -1
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "required": [
+              "service_instance_id"
+            ]
+          }
+        }
+      ]
+    },
+    "OperationResult": {
+      "type": "object",
+      "properties": {
+        "performed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "performed"
+      ],
+      "additionalProperties": true
+    },
+    "SurfaceActionParams": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "entry_id": {
+                "maximum": -1
+              }
+            },
+            "required": [
+              "entry_id"
+            ]
+          },
+          "then": {
+            "required": [
+              "service_instance_id"
+            ]
+          }
+        }
+      ]
+    },
+    "DesktopPageParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 150,
+          "x-rust-type": "u16"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "x-rust-type": "u32"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 16384
+        }
+      },
+      "required": [
+        "limit",
+        "offset"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopEntryParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "thumbnail_dimension": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "content_type": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "html_content": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "source_app": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "preview": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "is_pinned": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "use_count": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i64"
+        },
+        "is_external": {
+          "type": "boolean"
+        },
+        "pinned_order": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "file_preview_exists": {
+          "type": "boolean"
+        },
+        "content_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 128
+        },
+        "ocr_text": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "ocr_status": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id",
+        "content_type",
+        "content",
+        "source_app",
+        "timestamp",
+        "preview",
+        "is_pinned",
+        "tags",
+        "use_count",
+        "is_external",
+        "pinned_order",
+        "file_preview_exists",
+        "content_kinds"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopEntries": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DesktopEntry"
+          },
+          "maxItems": 150
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "BodySnapshot": {
+      "type": "object",
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "total_bytes",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "SnapshotReadParams": {
+      "type": "object",
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "offset",
+        "expected_epoch",
+        "service_instance_id"
+      ],
+      "additionalProperties": true
+    },
+    "SnapshotChunk": {
+      "type": "object",
+      "properties": {
+        "data_base64": {
+          "type": "string",
+          "maxLength": 262144,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "data_base64",
+        "offset",
+        "next_offset",
+        "finished",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "PrivacyHotkey": {
+      "type": "object",
+      "properties": {
+        "hotkey": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "hotkey"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureBeginParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureBeginResult": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureWriteParams": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "data_base64": {
+          "type": "string",
+          "maxLength": 262144,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        }
+      },
+      "required": [
+        "capture_id",
+        "offset",
+        "data_base64"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureFinishParams": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "source_app": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "inherited_protection": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "capture_id",
+        "source_app",
+        "inherited_protection"
+      ],
+      "additionalProperties": true
+    },
+    "GeneratedBody": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "html",
+            "image"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "html": {
+          "type": "string",
+          "maxLength": 33554432
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopMutationParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "pin",
+            "tags",
+            "edit",
+            "delete"
+          ]
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "maxItems": 128
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 524288
+        },
+        "confirm_persistence": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal",
+        "action"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopMutationResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "performed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "performed"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopCopyParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "paste": {
+          "type": "boolean"
+        },
+        "with_format": {
+          "type": "boolean"
+        },
+        "derived_text": {
+          "type": "string",
+          "maxLength": 524288
+        },
+        "image_as_base64": {
+          "type": "boolean"
+        },
+        "delete_after_use": {
+          "type": "boolean"
+        },
+        "move_to_top": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal",
+        "paste"
+      ],
+      "additionalProperties": true
+    },
+    "ProtocolVersion": {
+      "type": "object",
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "x-rust-type": "u16"
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "x-rust-type": "u16"
+        }
+      },
+      "required": [
+        "major",
+        "minor"
+      ],
+      "additionalProperties": true
+    },
+    "ClientRole": {
+      "type": "string",
+      "enum": [
+        "desktop",
+        "surface",
+        "cli",
+        "mcp"
+      ]
+    },
+    "Method": {
+      "type": "string",
+      "enum": [
+        "hello",
+        "capabilities",
+        "health",
+        "history.list",
+        "history.get",
+        "history.search",
+        "clipboard.copy",
+        "privacy.get",
+        "privacy.set",
+        "events.subscribe",
+        "service.status",
+        "service.stop",
+        "service.handoff",
+        "surface.capabilities",
+        "surface.history.list",
+        "surface.history.search",
+        "surface.activate",
+        "surface.dismiss",
+        "surface.copy",
+        "surface.paste",
+        "service.grant",
+        "service.revoke",
+        "privacy.toggle",
+        "privacy.hotkey.get",
+        "privacy.hotkey.set",
+        "desktop.history.page",
+        "desktop.history.get",
+        "desktop.snapshot.read",
+        "desktop.capture.begin",
+        "desktop.capture.write",
+        "desktop.capture.finish",
+        "desktop.history.summary",
+        "desktop.history.mutate",
+        "desktop.clipboard.copy",
+        "desktop.privacy.rules",
+        "desktop.privacy.decision",
+        "desktop.privacy.feedback",
+        "desktop.privacy.remove_rule"
+      ]
+    },
+    "WireErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "invalid_frame",
+        "frame_too_large",
+        "protocol_mismatch",
+        "handshake_required",
+        "unsupported_capability",
+        "permission_denied",
+        "unavailable",
+        "not_found",
+        "busy",
+        "privacy_blocked",
+        "internal",
+        "deadline_exceeded",
+        "privacy_state_unavailable",
+        "privacy_epoch_changed",
+        "privacy_session_active",
+        "sensitive_access_denied",
+        "manual_persistence_confirmation_required",
+        "privacy_duration_invalid"
+      ]
+    },
+    "WireError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/WireErrorCode"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "additionalProperties": true
+    },
+    "HelloParams": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "client_version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "client_role": {
+          "$ref": "#/$defs/ClientRole"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "required_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "client_version",
+        "client_role",
+        "capabilities",
+        "required_capabilities"
+      ],
+      "additionalProperties": true
+    },
+    "HelloResult": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "protocol_version": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "core_version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Permission"
+          },
+          "maxItems": 16
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "max_frame_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "session_id",
+        "protocol_version",
+        "core_version",
+        "permissions",
+        "state",
+        "max_frame_bytes"
+      ],
+      "additionalProperties": true
+    },
+    "Request": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "method": {
+          "$ref": "#/$defs/Method"
+        },
+        "params": {}
+      },
+      "required": [
+        "request_id",
+        "method",
+        "params"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "hello"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HelloParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "capabilities"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "health"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistoryPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EntryIdParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "history.search"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistorySearchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "clipboard.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/PrivacySetParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "events.subscribe"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SubscribeParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.status"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.stop"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.handoff"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.capabilities"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistoryPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.search"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/HistorySearchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.activate"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SurfaceActionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.dismiss"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SurfaceActionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.paste"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ClipboardCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.grant"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/GrantIssueParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.revoke"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/GrantRevokeParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.toggle"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.hotkey.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.hotkey.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/PrivacyHotkey"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.page"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.snapshot.read"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SnapshotReadParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.capture.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/CaptureBeginParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.capture.write"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/CaptureWriteParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.capture.finish"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/CaptureFinishParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.summary"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.mutate"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopMutationParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.clipboard.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.rules"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopPolicyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.decision"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "id"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.feedback"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "id",
+                      "action"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.remove_rule"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "rule_id"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Response": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "result": {
+          "type": "object"
+        },
+        "error": {
+          "$ref": "#/$defs/WireError"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "additionalProperties": true,
+      "oneOf": [
+        {
+          "required": [
+            "result"
+          ],
+          "not": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "required": [
+            "error"
+          ],
+          "not": {
+            "required": [
+              "result"
+            ]
+          }
+        }
+      ]
+    },
+    "EmptyParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "GrantIssueParams": {
+      "type": "object",
+      "properties": {
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "history_read",
+              "clipboard_copy",
+              "clipboard_paste",
+              "surface_control",
+              "history_body"
+            ]
+          },
+          "maxItems": 4
+        },
+        "lifetime_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000,
+          "x-rust-type": "u64"
+        },
+        "role": {
+          "$ref": "#/$defs/ClientRole"
+        }
+      },
+      "required": [
+        "permissions",
+        "lifetime_ms",
+        "role"
+      ],
+      "additionalProperties": true
+    },
+    "GrantResult": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "expires_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        }
+      },
+      "required": [
+        "grant",
+        "expires_at_ms"
+      ],
+      "additionalProperties": true
+    },
+    "GrantRevokeParams": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "grant"
+      ],
+      "additionalProperties": true
+    },
+    "EventKind": {
+      "type": "string",
+      "enum": [
+        "EntryAdded",
+        "EntryUpdated",
+        "EntryDeleted",
+        "HistoryReset",
+        "PrivacyStateChanged",
+        "CapabilitiesChanged",
+        "ServiceStateChanged"
+      ]
+    },
+    "RuntimeState": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "history_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "privacy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "event_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "history_revision",
+        "privacy_epoch",
+        "event_sequence"
+      ],
+      "additionalProperties": true
+    },
+    "EventData": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "Event": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/EventKind"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "data": {
+          "$ref": "#/$defs/EventData"
+        }
+      },
+      "required": [
+        "event",
+        "state",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "SubscribeParams": {
+      "type": "object",
+      "properties": {
+        "after_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "x-rust-type": "u16"
+        }
+      },
+      "required": [
+        "after_sequence"
+      ],
+      "additionalProperties": true
+    },
+    "EventsResult": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "maxItems": 256
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "resync_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "state",
+        "resync_required"
+      ],
+      "additionalProperties": true
+    },
+    "HistoryPageParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "x-rust-type": "u16"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "x-rust-type": "u32"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tag": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "limit",
+        "offset"
+      ],
+      "additionalProperties": true
+    },
+    "SearchMode": {
+      "type": "string",
+      "enum": [
+        "contains",
+        "fuzzy",
+        "regex",
+        "fts5"
+      ]
+    },
+    "HistorySearchParams": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "mode": {
+          "$ref": "#/$defs/SearchMode"
+        },
+        "page": {
+          "$ref": "#/$defs/HistoryPageParams"
+        }
+      },
+      "required": [
+        "query",
+        "mode",
+        "page"
+      ],
+      "additionalProperties": true
+    },
+    "EntryIdParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "maximum": -1
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "required": [
+              "service_instance_id"
+            ]
+          }
+        }
+      ]
+    },
+    "EntrySummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "preview": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "source_app": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "privacy_visibility": {
+          "type": "string",
+          "enum": [
+            "ordinary",
+            "masked"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "tags",
+        "pinned",
+        "timestamp",
+        "source_app",
+        "privacy_visibility"
+      ],
+      "additionalProperties": true
+    },
+    "HistoryResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntrySummary"
+          },
+          "maxItems": 200
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "EntryResult": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "$ref": "#/$defs/EntrySummary"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entry",
+        "truncated"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopPolicyParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "not_sensitive",
+            "exact_exception",
+            "ignore_source",
+            "protect_source"
+          ]
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": true
+    },
+    "PolicyRuleValue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "exact_exception",
+            "ignore_source",
+            "protect_source"
+          ]
+        },
+        "source_app": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 16384
+        },
+        "created_at_ms": {
+          "type": "integer",
+          "x-rust-type": "i64",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "source_app",
+        "created_at_ms"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopPolicyRules": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyRuleValue"
+          },
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "rules"
+      ],
+      "additionalProperties": true
+    },
+    "PolicyEvidenceValue": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "level": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "rule_id": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "source",
+        "level",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopPolicyDecision": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "encrypt",
+            "skip",
+            "session_only"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyEvidenceValue"
+          },
+          "maxItems": 512
+        },
+        "scan_status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete",
+            "disabled",
+            "not_applicable"
+          ]
+        },
+        "scanned_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "action",
+        "reason",
+        "evidence",
+        "scan_status",
+        "scanned_bytes",
+        "total_bytes"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopRuntimeValue": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "privacy": {
+          "$ref": "#/$defs/PrivacyState"
+        }
+      },
+      "required": [
+        "state",
+        "privacy"
+      ],
+      "additionalProperties": true
+    },
+    "PrivacyState": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "privacy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "expires_at_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "Option<i64>"
+        }
+      },
+      "required": [
+        "active",
+        "privacy_epoch",
+        "expires_at_ms"
+      ],
+      "additionalProperties": true
+    },
+    "PrivacySetParams": {
+      "type": "object",
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "active"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

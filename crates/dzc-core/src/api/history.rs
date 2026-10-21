@@ -270,6 +270,9 @@ impl HistoryService {
     pub fn increment_use_count(&self, id: i64) -> CoreResult<()> {
         self.repository.increment_use_count(id).map_err(Into::into)
     }
+    pub fn touch_entry(&self,id:i64,timestamp:i64)->CoreResult<()> {
+        self.repository.touch_entry(id,timestamp).map_err(Into::into)
+    }
     pub fn ensure_export_destination(&self, target: &Path) -> CoreResult<()> {
         self.repository
             .ensure_export_destination(target)

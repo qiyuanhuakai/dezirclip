@@ -19,6 +19,7 @@ modules:
     build-commands:
       - install -Dm755 usr/bin/dezirclip /app/bin/dezirclip
       - if [ -f usr/bin/dzc ]; then install -Dm755 usr/bin/dzc /app/bin/dzc; fi
+      - install -Dm755 usr/bin/dzc-service /app/bin/dzc-service
       - if [ -d usr/lib ]; then mkdir -p /app/lib && cp -a usr/lib/. /app/lib/; fi
       - if [ -d usr/share ]; then mkdir -p /app/share && cp -a usr/share/. /app/share/; fi
     sources:

@@ -46,7 +46,7 @@ pub struct PasteQueueState {
 #[derive(Default)]
 pub struct PasteQueue(pub Mutex<PasteQueueState>);
 
-pub struct SessionHistory(pub Mutex<VecDeque<ClipboardEntry>>);
+pub struct SessionHistory(pub std::sync::Arc<Mutex<VecDeque<ClipboardEntry>>>);
 
 pub struct AppDataDir(pub Mutex<std::path::PathBuf>);
 

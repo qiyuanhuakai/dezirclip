@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/clipboard.schema.json",
+  "$defs": {
+    "ClipboardCopyParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "maximum": -1
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "required": [
+              "service_instance_id"
+            ]
+          }
+        }
+      ]
+    },
+    "OperationResult": {
+      "type": "object",
+      "properties": {
+        "performed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "performed"
+      ],
+      "additionalProperties": true
+    },
+    "SurfaceActionParams": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "entry_id": {
+                "maximum": -1
+              }
+            },
+            "required": [
+              "entry_id"
+            ]
+          },
+          "then": {
+            "required": [
+              "service_instance_id"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

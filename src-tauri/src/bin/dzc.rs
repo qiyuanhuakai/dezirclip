@@ -38,6 +38,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Explicitly manage the optional per-user Host service.
+    Service(cli::service::ServiceArgs),
+    /// Start, stop or query the shared privacy session without a GUI.
+    Privacy(cli::service::PrivacyArgs),
     /// Report this executable's build identity without opening history or native adapters.
     BuildInfo { #[arg(long)] json: bool },
     /// Report this embedded client's probed native capabilities.
@@ -81,7 +85,7 @@ enum Commands {
     /// Browse and manage history in the terminal.
     Tui(BrowseCliArgs),
     /// Serve bounded, read-only local history tools over MCP stdio.
-    Mcp,
+    Mcp { #[arg(long)] host:bool },
     /// Validate an importable local CSS theme without opening history or applying it.
     Theme(ThemeCliArgs),
     /// Print Bash Ctrl-G integration for loading with eval.
@@ -297,6 +301,9 @@ struct AddCliArgs {
     /// Override the inferred content type (`text`, `html`, `image`, ...).
     #[arg(long = "type")]
     kind: Option<String>,
+    /// Confirm this manual entry should persist even while the privacy session is active.
+    #[arg(long)]
+    confirm_persistence: bool,
 }
 
 /// CLI args for `delete`. Requires `--yes` to confirm; the bin never
@@ -328,6 +335,9 @@ struct EditCliArgs {
     /// Suppress the confirmation line; emit only an exit code.
     #[arg(long, short)]
     quiet: bool,
+    /// Confirm this manual edit should persist during an active privacy session.
+    #[arg(long)]
+    confirm_persistence:bool,
 }
 
 /// CLI args for `clear`. `--yes` is mandatory: the CLI never prompts.
@@ -625,7 +635,7 @@ fn main() {
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
         Commands::BuildInfo { json } => {
-            let info = dezirclip::protocol::build_info::BuildInfo::current(
+            let info = dezirclip::protocol::build_info::BuildInfo::current_with_host(
                 dezirclip::protocol::build_info::Component::Cli, dezirclip::api::DATABASE_SCHEMA_VERSION);
             if json { println!("{}", serde_json::to_string_pretty(&info).map_err(|error| error.to_string())?); }
             else { println!("dzc {} · build {} · {} · protocol {}.{} · schema {}", info.component_version,
@@ -634,7 +644,9 @@ fn run(args: Cli) -> Result<(), String> {
             return Ok(());
         }
         Commands::Capabilities { json } => return run_capabilities(json),
-        Commands::Mcp => return cli::mcp::serve(|| open_repos().map(|(repo, _)| repo)),
+        Commands::Service(args) => return cli::service::run(args),
+        Commands::Privacy(args) => return cli::service::privacy(args),
+        Commands::Mcp {host} => return if host {cli::mcp::serve_host()}else{cli::mcp::serve(|| open_repos().map(|(repo, _)| repo))},
         Commands::Theme(args) => return run_theme(args),
         Commands::Bash => return cli::shell::run(cli::shell::Shell::Bash, None),
         Commands::Zsh => return cli::shell::run(cli::shell::Shell::Zsh, None),
@@ -651,6 +663,8 @@ fn run(args: Cli) -> Result<(), String> {
     };
     let (clip_repo, tag_repo) = open_repos()?;
     match command {
+        Commands::Service(args) => cli::service::run(args),
+        Commands::Privacy(args) => cli::service::privacy(args),
         Commands::Pick(args) => {
             let options = args.options.options()?;
             let selected = if let Some(backend) = args.backend {
@@ -673,7 +687,7 @@ fn run(args: Cli) -> Result<(), String> {
         }
         Commands::BuildInfo { .. }
         | Commands::Capabilities { .. }
-        | Commands::Mcp
+        | Commands::Mcp {..}
         | Commands::Theme(_)
         | Commands::Bash
         | Commands::Zsh
@@ -771,7 +785,7 @@ fn run(args: Cli) -> Result<(), String> {
         }
         Commands::Add(a) => {
             let add_args = parse_add_source(&a.content, a.kind.as_deref());
-            let id = cli::add::run(&add_args, clip_repo.as_ref())?;
+            let id = cli::add::run_with_confirmation(&add_args, clip_repo.as_ref(), a.confirm_persistence)?;
             println!("Added: id={id}");
             Ok(())
         }
@@ -794,12 +808,13 @@ fn run(args: Cli) -> Result<(), String> {
         Commands::Pin(a) => report_pin(&a, true, clip_repo.as_ref()),
         Commands::Unpin(a) => report_pin(&a, false, clip_repo.as_ref()),
         Commands::Edit(a) => {
-            let id = cli::edit::run(
+            let id = cli::edit::run_with_confirmation(
                 &cli::edit::EditArgs {
                     id: a.id.clone(),
                     source: parse_add_source(&a.content, None),
                 },
                 clip_repo.as_ref(),
+                a.confirm_persistence,
             )?;
             if !a.quiet {
                 println!("Edited: id={id}");

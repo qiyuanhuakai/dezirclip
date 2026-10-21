@@ -11,6 +11,8 @@
 //! * `--quiet`:       no stdout on success (still returns Ok/Err)
 
 pub mod add;
+mod access;
+mod host_access;
 pub mod clear;
 pub mod count;
 pub mod delete;
@@ -26,6 +28,7 @@ pub mod pick;
 pub mod pin;
 pub mod search;
 pub mod shell;
+pub mod service;
 pub mod stats;
 pub mod tag;
 pub mod tui;

@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/history.schema.json",
+  "$defs": {
+    "HistoryPageParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "x-rust-type": "u16"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "x-rust-type": "u32"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tag": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "limit",
+        "offset"
+      ],
+      "additionalProperties": true
+    },
+    "SearchMode": {
+      "type": "string",
+      "enum": [
+        "contains",
+        "fuzzy",
+        "regex",
+        "fts5"
+      ]
+    },
+    "HistorySearchParams": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "mode": {
+          "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/SearchMode"
+        },
+        "page": {
+          "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/HistoryPageParams"
+        }
+      },
+      "required": [
+        "query",
+        "mode",
+        "page"
+      ],
+      "additionalProperties": true
+    },
+    "EntryIdParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "maximum": -1
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "required": [
+              "service_instance_id"
+            ]
+          }
+        }
+      ]
+    },
+    "EntrySummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "preview": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "source_app": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "privacy_visibility": {
+          "type": "string",
+          "enum": [
+            "ordinary",
+            "masked"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "tags",
+        "pinned",
+        "timestamp",
+        "source_app",
+        "privacy_visibility"
+      ],
+      "additionalProperties": true
+    },
+    "HistoryResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/EntrySummary"
+          },
+          "maxItems": 200
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "EntryResult": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "$ref": "https://dezirclip.local/protocol/v1/history.schema.json#/$defs/EntrySummary"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entry",
+        "truncated"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

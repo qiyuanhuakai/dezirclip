@@ -46,23 +46,29 @@ if (-not $owned -and (Get-FileHash -LiteralPath $OldInstaller -Algorithm SHA256)
     throw 'The old installer is not the verified published v0.1.20 x64 artifact.'
 }
 function Assert-NsisCompilerInputManifest($Manifest) {
-    if ($Manifest.schemaVersion -ne 3 -or $Manifest.nsisInputLayout -ne 'single-cargo-binary-v1') { throw 'Candidate NSIS input layout is invalid.' }
+    if ($Manifest.schemaVersion -ne 4 -or $Manifest.nsisInputLayout -ne 'cargo-cli-and-service-v1') { throw 'Candidate NSIS input layout is invalid.' }
     $inputs = @($Manifest.nsisInputs)
     if ($inputs.Count -ne 1) { throw 'Candidate must retain exactly one Cargo CLI compiler input.' }
     $cargo = @($Manifest.sidecarPreparation.binaryPaths | Where-Object { $_.role -eq 'cargo-host-default' })
     if ($cargo.Count -ne 1 -or $cargo[0].sha256 -ne $Manifest.sidecarSha256 -or $Manifest.sidecarSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Candidate lacks a unique proven Cargo host CLI.' }
     $input = $inputs[0]
     if ($input.role -ne 'cargo-binary' -or $input.destination -ne 'dzc.exe' -or $input.sha256 -ne $Manifest.sidecarSha256 -or [System.IO.Path]::GetFullPath($input.source) -ine [System.IO.Path]::GetFullPath($cargo[0].path)) { throw 'Candidate compiler input differs from the exact proven Cargo CLI.' }
+    $service = @($Manifest.sidecarPreparation.serviceHelper.binaryPaths | Where-Object { $_.role -eq 'cargo-host-default' })
+    $serviceInputs = @($Manifest.serviceInputs)
+    if ($service.Count -ne 1 -or $serviceInputs.Count -ne 1 -or $Manifest.serviceSha256 -notmatch '^[a-fA-F0-9]{64}$' -or $service[0].sha256 -ne $Manifest.serviceSha256) { throw 'Candidate lacks a unique proven Cargo service.' }
+    $input = $serviceInputs[0]
+    if ($input.role -ne 'cargo-binary' -or $input.destination -ne 'dzc-service.exe' -or $input.sha256 -ne $Manifest.serviceSha256 -or [System.IO.Path]::GetFullPath($input.source) -ine [System.IO.Path]::GetFullPath($service[0].path)) { throw 'Service compiler input differs from its standalone helper.' }
 }
 function Read-CandidateManifest([string]$Installer) {
     $Installer = Resolve-RunnerFixturePath $Installer -RequireFile
     $manifestPath = Resolve-RunnerFixturePath ($Installer + '.manifest.json') -RequireFile
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 3 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
+    if ($manifest.schemaVersion -ne 4 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
     if ($manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -ne 'debug' -or $manifest.updaterArtifacts -ne $false -or $manifest.sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Candidate build provenance is invalid.' }
     if ($manifest.sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($manifest.version) + '(?:\s|$)')) { throw 'Candidate manifest CLI version is invalid.' }
     if ($manifest.buildInfo.component_version -ne $manifest.version -or $manifest.buildInfo.source_revision -ne $manifest.sourceCommit -or $manifest.buildInfo.build_id -ne ($manifest.version + '@' + $manifest.sourceCommit)) { throw 'Candidate build identity differs from its source/version set.' }
-    if ($manifest.buildInfo.metadata_version -ne 1 -or $manifest.buildInfo.component -ne 'cli' -or $manifest.buildInfo.target -ne $manifest.target -or @($manifest.buildInfo.linked_components).Count -ne 3) { throw 'Candidate component metadata is incomplete.' }
+    if ($manifest.buildInfo.metadata_version -ne 1 -or $manifest.buildInfo.component -ne 'cli' -or $manifest.buildInfo.target -ne $manifest.target -or @($manifest.buildInfo.linked_components).Count -ne 4) { throw 'Candidate component metadata is incomplete.' }
+    if ($manifest.serviceBuildInfo.component -ne 'service' -or $manifest.serviceBuildInfo.build_id -ne $manifest.buildInfo.build_id -or @($manifest.serviceBuildInfo.linked_components).Count -ne 5) { throw 'Candidate service component metadata is incomplete.' }
     if ($manifest.applicationPatch -ne 'tauri-nsis-bundle-token-v1' -or $manifest.applicationPatchOffset -lt 64 -or $manifest.sidecarSource -ne 'standalone-no-default-features' -or $manifest.packaging -ne 'shared-before-build-and-before-bundle') { throw 'Candidate packaging provenance is invalid.' }
     if ($manifest.sidecarPreparation.phase -ne 'bundle' -or $manifest.sidecarPreparation.sha256 -ne $manifest.sidecarSha256 -or $manifest.sidecarPreparation.portable -ne $false -or $manifest.sidecarPreparation.profile -ne 'debug') { throw 'Candidate lacks shared beforeBundle sidecar evidence.' }
     if ($manifest.applicationPatchOffset -isnot [int] -and $manifest.applicationPatchOffset -isnot [long]) { throw 'Candidate patch offset must be an integer.' }
@@ -188,13 +194,15 @@ function Get-InstalledApplicationProof([string]$Path, $Manifest) {
 function Assert-InstalledCandidate($Manifest, [string]$Label) {
     $application = Join-Path $installDirectory 'dezirclip.exe'
     $sidecar = Join-Path $installDirectory 'dzc.exe'
+    $service = Join-Path $installDirectory 'dzc-service.exe'
     $actual = @{
         version = $Manifest.version
         applicationSha256 = (Get-FileHash -LiteralPath $application -Algorithm SHA256).Hash
         sidecarSha256 = (Get-FileHash -LiteralPath $sidecar -Algorithm SHA256).Hash
+        serviceSha256 = (Get-FileHash -LiteralPath $service -Algorithm SHA256).Hash
     }
     $actual | ConvertTo-Json | Set-Content (Join-Path $fixtureRoot ($Label + '-installed.json'))
-    if ($actual.applicationSha256 -ne $Manifest.applicationSha256 -or $actual.sidecarSha256 -ne $Manifest.sidecarSha256) { throw 'Installed GUI or CLI differs from the candidate build.' }
+    if ($actual.applicationSha256 -ne $Manifest.applicationSha256 -or $actual.sidecarSha256 -ne $Manifest.sidecarSha256 -or $actual.serviceSha256 -ne $Manifest.serviceSha256) { throw 'Installed GUI, CLI or service differs from the candidate build.' }
     $proof = Get-InstalledApplicationProof $application $Manifest
     $actual.applicationRawSha256 = $proof.rawSha256
     $actual.applicationPatchOffset = $proof.patchOffset
@@ -205,6 +213,9 @@ function Assert-InstalledCandidate($Manifest, [string]$Label) {
     $buildInfo = & $sidecar build-info --json | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0 -or $buildInfo.component -ne 'cli' -or $buildInfo.build_id -ne $Manifest.buildInfo.build_id -or $buildInfo.component_version -ne $Manifest.version -or $buildInfo.source_revision -ne $Manifest.buildInfo.source_revision -or $buildInfo.source_state -ne $Manifest.buildInfo.source_state -or $buildInfo.metadata_version -ne $Manifest.buildInfo.metadata_version -or $buildInfo.database_schema_version -ne $Manifest.buildInfo.database_schema_version -or $buildInfo.protocol_version.major -ne $Manifest.buildInfo.protocol_version.major -or $buildInfo.protocol_version.minor -ne $Manifest.buildInfo.protocol_version.minor -or $buildInfo.target -ne $Manifest.buildInfo.target -or (ConvertTo-Json -InputObject @($buildInfo.linked_components) -Depth 5 -Compress) -ne (ConvertTo-Json -InputObject @($Manifest.buildInfo.linked_components) -Depth 5 -Compress)) { throw 'Installed CLI has a different component build identity.' }
     $buildInfo | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $fixtureRoot ($Label + '-cli-build-info.json'))
+    $serviceInfo = & $service --build-info | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or (ConvertTo-Json $serviceInfo -Depth 6 -Compress) -ne (ConvertTo-Json $Manifest.serviceBuildInfo -Depth 6 -Compress)) { throw 'Installed service identity differs from its build receipt.' }
+    $serviceInfo | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $fixtureRoot ($Label + '-service-build-info.json'))
 }
 function Assert-CliHistory([string]$Text, [Nullable[long]]$ExpectedId, [string]$Label) {
     $output = & (Join-Path $installDirectory 'dzc.exe') search $Text --json
@@ -324,7 +335,7 @@ function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCaptu
     }
 }
 function Assert-Uninstalled {
-    foreach ($name in @('dezirclip.exe', 'dzc.exe')) {
+    foreach ($name in @('dezirclip.exe', 'dzc.exe', 'dzc-service.exe')) {
         if (Test-Path -LiteralPath (Join-Path $installDirectory $name)) { throw "Uninstall left $name installed." }
     }
     @{ applicationMissing = $true; sidecarMissing = $true } | ConvertTo-Json | Set-Content (Join-Path $fixtureRoot 'uninstalled-files.json')

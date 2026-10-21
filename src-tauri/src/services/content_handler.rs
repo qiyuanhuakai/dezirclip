@@ -20,7 +20,12 @@ pub async fn open_content(
     content: String,
     content_type: String,
     expected_privacy_epoch: Option<u64>,
+    expected_host_instance_id:Option<String>,
 ) -> Result<(), AppError> {
+    if id<0 {
+        app_handle.state::<crate::app::ipc_host::DesktopHost>().check_instance(id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
+        return Err(AppError::Validation("SessionExternalOpenUnavailable".into()));
+    }
     use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
     let history = state.history_service();
     let now = || chrono::Utc::now().timestamp_millis();

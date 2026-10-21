@@ -3,7 +3,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 interface SettingsFooterProps {
     t: (key: string) => string;
-    appVersion: string;
     onResetSettings: () => void;
     /**
      * Wide layout folds the footer onto one line. Stacked, it is two centred
@@ -17,7 +16,6 @@ const REPO_URL = "https://github.com/qiyuanhuakai/dezirclip";
 
 const SettingsFooter = ({
     t,
-    appVersion,
     onResetSettings,
     compact = false,
 }: SettingsFooterProps) => (
@@ -50,7 +48,7 @@ const SettingsFooter = ({
 
         <div className="settings-footer-meta">
             <div className="settings-footer-version">
-                DezirClip {appVersion ? `v${appVersion}` : "v0.2.0"}
+                DezirClip
             </div>
             <div className="settings-footer-links">
                 <button type="button" className="settings-footer-link" onClick={() => openUrl(REPO_URL)}>

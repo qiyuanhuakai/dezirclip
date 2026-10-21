@@ -29,7 +29,9 @@ GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`�
 }
 ```
 
-旧源固定为 `802808b06e6b795064c5065d1d880bae9b193b9a`。凭据还应保留归档核对、允许的构建隔离改动、前端锁文件与构建、构建命令及源码文件哈希。工具验证实际二进制与凭据一致，并拒绝两端 profile、Rust 1.91.1 或 target 不一致。正式两端使用同一个候选 CLI 执行 `clipboard write - --mime ...`；写入命令不初始化或迁移历史数据库。
+默认旧源仍为 `802808b06e6b795064c5065d1d880bae9b193b9a`，监听原有 `clipboard-updated`。alpha.2 与已发布 alpha.1 比较时，须显式传入 `--baseline-revision 90ba9960744b6cd57caaaf597f68533a7e41be45`，并提供这个实际提交的独立 release 构建凭据；此时基线和候选均监听 `clipboard-captured`，两端都严格要求事件只有 ID。基线参数只接受这两个完整冻结提交，不能传分支、短 SHA 或任意选择较慢版本。原 alpha.1 工具快照和所有历史报告保持原样，不重新标注版本。
+
+凭据还应保留归档核对、允许的构建隔离改动、前端锁文件与构建、构建命令及源码文件哈希。工具验证实际二进制与凭据一致，并拒绝两端 profile、Rust 1.91.1 或 target 不一致。正式两端使用同一个候选 CLI 执行 `clipboard write - --mime ...`；写入命令不初始化或迁移历史数据库。
 
 ## 先做功能检查
 

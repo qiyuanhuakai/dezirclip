@@ -123,6 +123,14 @@ pub struct ImageData {
     pub bytes: Vec<u8>,
 }
 
+pub(super) fn normalize_zero_alpha(pixels: &mut [u8]) {
+    if pixels.chunks_exact(4).all(|pixel| pixel[3] == 0) {
+        for alpha in pixels.iter_mut().skip(3).step_by(4) {
+            *alpha = 255;
+        }
+    }
+}
+
 /// Try to get image from Windows clipboard using native API
 pub unsafe fn get_clipboard_image() -> Option<ImageData> {
     // Try to open clipboard
@@ -269,7 +277,6 @@ pub unsafe fn get_clipboard_image() -> Option<ImageData> {
 
         if bit_count == 32 {
             // 32-bit BGRA
-            let mut alpha_non_zero = 0usize;
             for y in 0..height {
                 // DIB is bottom-up, so flip vertically
                 let src_y = if header.bi_height > 0 {
@@ -289,19 +296,12 @@ pub unsafe fn get_clipboard_image() -> Option<ImageData> {
                     rgba_data[dst_pixel + 2] = *src_pixel; // B
                     let alpha = *src_pixel.add(3);
                     rgba_data[dst_pixel + 3] = alpha; // A
-                    if alpha != 0 {
-                        alpha_non_zero += 1;
-                    }
                 }
             }
 
             // Some producers (notably Office clipboard formats) put valid RGB data
             // with an all-zero alpha channel. Force opaque alpha in that case.
-            if alpha_non_zero == 0 {
-                for i in (3..rgba_data.len()).step_by(4) {
-                    rgba_data[i] = 255;
-                }
-            }
+            normalize_zero_alpha(&mut rgba_data);
         } else if bit_count == 24 {
             // 24-bit BGR
             for y in 0..height {

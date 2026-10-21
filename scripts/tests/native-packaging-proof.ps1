@@ -124,20 +124,22 @@ try {
         Assert-Rejected { Get-NsisCompilerInputs $script $rawPath $cargo ('0' * 64) }
     }
     $compilerManifest = [pscustomobject]@{
-        schemaVersion = 3; nsisInputLayout = 'single-cargo-binary-v1'; sidecarSha256 = $sidecarDigest
+        schemaVersion = 4; nsisInputLayout = 'cargo-cli-and-service-v1'; sidecarSha256 = $sidecarDigest
+        serviceSha256 = $sidecarDigest
+        serviceInputs = @([pscustomobject]@{source=$cargo;destination='dzc-service.exe';sha256=$sidecarDigest;role='cargo-binary'})
         nsisInputs = @(Get-NsisCompilerInputs $script $rawPath $cargo $sidecarDigest)
         sidecarPreparation = [pscustomobject]@{ binaryPaths = @(
             [pscustomobject]@{ role = 'cargo-target'; path = (Join-Path $OutputDirectory 'explicit-target.bin'); sha256 = $sidecarDigest },
             [pscustomobject]@{ role = 'external-bin'; path = $staged; sha256 = $sidecarDigest },
             [pscustomobject]@{ role = 'cargo-host-default'; path = $cargo; sha256 = $sidecarDigest }
-        ) }
+        ); serviceHelper = [pscustomobject]@{binaryPaths=@([pscustomobject]@{role='cargo-host-default';path=$cargo;sha256=$sidecarDigest})} }
     }
-    Check 'schema3 consumer accepts only the unique proven Cargo compiler input' {
+    Check 'schema4 consumer accepts only unique proven CLI and service compiler inputs' {
         Assert-NsisCompilerInputManifest $compilerManifest
     }
     Check 'consumer rejects old schema and duplicate or mismatched compiler records' {
         $original = $compilerManifest | ConvertTo-Json -Depth 8
-        foreach ($change in @('old-schema', 'two-inputs', 'staged-source', 'wrong-sha', 'wrong-role', 'duplicate-cargo-proof')) {
+        foreach ($change in @('old-schema', 'two-inputs', 'staged-source', 'wrong-sha', 'wrong-role', 'duplicate-cargo-proof', 'missing-service', 'duplicate-service', 'wrong-service-sha')) {
             $changed = $original | ConvertFrom-Json
             switch ($change) {
                 'old-schema' { $changed.schemaVersion = 2 }
@@ -146,6 +148,9 @@ try {
                 'wrong-sha' { $changed.nsisInputs[0].sha256 = '0' * 64 }
                 'wrong-role' { $changed.nsisInputs[0].role = 'external-bin' }
                 'duplicate-cargo-proof' { $changed.sidecarPreparation.binaryPaths += $changed.sidecarPreparation.binaryPaths[-1] }
+                'missing-service' { $changed.serviceInputs = @() }
+                'duplicate-service' { $changed.serviceInputs = @($changed.serviceInputs[0],$changed.serviceInputs[0]) }
+                'wrong-service-sha' { $changed.serviceInputs[0].sha256 = '0' * 64 }
             }
             Assert-Rejected { Assert-NsisCompilerInputManifest $changed }
         }

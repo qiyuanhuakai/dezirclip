@@ -3,7 +3,7 @@ use dzc_core::capture::{
     CaptureData, CaptureFailure, CaptureReadMetadata, CaptureReadRequest, CaptureReader,
     CaptureSkip, CaptureStage,
 };
-use std::hash::{Hash, Hasher};
+use super::echo::fingerprint;
 
 #[derive(Default)]
 pub struct NativeCaptureReader {
@@ -15,12 +15,6 @@ pub struct NativeCaptureReader {
     wayland_selection: Option<crate::wayland::SelectionSnapshot>,
     #[cfg(target_os = "linux")]
     wayland_preflight_empty: bool,
-}
-
-fn fingerprint(value: impl Hash) -> u64 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    value.hash(&mut hasher);
-    hasher.finish()
 }
 
 fn files() -> Option<Vec<String>> {

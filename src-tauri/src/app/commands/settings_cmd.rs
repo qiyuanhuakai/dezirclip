@@ -391,7 +391,7 @@ pub fn set_delete_after_paste(
 }
 
 #[tauri::command]
-pub fn set_privacy_protection(
+pub async fn set_privacy_protection(
     app: AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
     db_state: State<'_, DbState>,
@@ -399,27 +399,31 @@ pub fn set_privacy_protection(
 ) -> AppResult<()> {
     save_bool_setting(&db_state, "app.privacy_protection", enabled)?;
     state.privacy_protection.store(enabled, Ordering::Relaxed);
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     let _ = app.emit("clipboard-changed", ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_privacy_protection_kinds(
+pub async fn set_privacy_protection_kinds(
+    app:AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
     db_state: State<'_, DbState>,
     kinds: Vec<String>,
 ) -> AppResult<()> {
-    let mut guard = state.privacy_protection_kinds.lock().unwrap();
-    *guard = kinds.clone();
     let serialized = kinds.join(",");
     db_state
         .settings_repo
         .set("app.privacy_protection_kinds", &serialized)
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    *state.privacy_protection_kinds.lock().unwrap()=kinds;
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn set_privacy_protection_custom_rules(
+pub async fn set_privacy_protection_custom_rules(
+    app:AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
     db_state: State<'_, DbState>,
     rules: String,
@@ -429,12 +433,13 @@ pub fn set_privacy_protection_custom_rules(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>();
-    let mut guard = state.privacy_protection_custom_rules.lock().unwrap();
-    *guard = list;
     db_state
         .settings_repo
         .set("app.privacy_protection_custom_rules", &rules)
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    *state.privacy_protection_custom_rules.lock().unwrap()=list;
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
+    Ok(())
 }
 
 #[tauri::command]

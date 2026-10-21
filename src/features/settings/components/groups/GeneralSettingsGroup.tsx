@@ -4,7 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import WaylandCapabilitiesSection from "./WaylandCapabilitiesSection";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
-import UpdateSettingsSection from "./UpdateSettingsSection";
 
 interface LabelWithHintProps {
     label: string;
@@ -118,7 +117,6 @@ const GeneralSettingsGroup = ({
         </div>
         {!collapsed && (
             <div className="group-content">
-                <UpdateSettingsSection t={t} />
                 <WaylandCapabilitiesSection t={t} />
                 <div className="setting-item">
                     <div className="item-label-group">

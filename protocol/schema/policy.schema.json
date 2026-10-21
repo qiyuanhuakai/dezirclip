@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/policy.schema.json",
+  "$defs": {
+    "DesktopPolicyParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "not_sensitive",
+            "exact_exception",
+            "ignore_source",
+            "protect_source"
+          ]
+        },
+        "rule_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": true
+    },
+    "PolicyRuleValue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "exact_exception",
+            "ignore_source",
+            "protect_source"
+          ]
+        },
+        "source_app": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 16384
+        },
+        "created_at_ms": {
+          "type": "integer",
+          "x-rust-type": "i64",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "source_app",
+        "created_at_ms"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopPolicyRules": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/PolicyRuleValue"
+          },
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "rules"
+      ],
+      "additionalProperties": true
+    },
+    "PolicyEvidenceValue": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "level": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "rule_id": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "source",
+        "level",
+        "reason"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopPolicyDecision": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "encrypt",
+            "skip",
+            "session_only"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/PolicyEvidenceValue"
+          },
+          "maxItems": 512
+        },
+        "scan_status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete",
+            "disabled",
+            "not_applicable"
+          ]
+        },
+        "scanned_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "action",
+        "reason",
+        "evidence",
+        "scan_status",
+        "scanned_bytes",
+        "total_bytes"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopRuntimeValue": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        },
+        "privacy": {
+          "$ref": "https://dezirclip.local/protocol/v1/privacy.schema.json#/$defs/PrivacyState"
+        }
+      },
+      "required": [
+        "state",
+        "privacy"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
