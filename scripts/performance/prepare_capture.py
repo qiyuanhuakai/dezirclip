@@ -229,6 +229,7 @@ native-provider=[]
 engine=["native-provider"]
 legacy-layout=[]
 privacy-runtime=[]
+privacy-policy=["privacy-runtime"]
 
 [[bin]]
 name="capture-perf-{variant}"
@@ -259,7 +260,7 @@ def capture_contract(package, source):
         return 1
     manifest = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))
     version = manifest.get("package", {}).get("metadata", {}).get("dzc", {}).get("capture-contract", 1)
-    if type(version) is not int or version not in (1, 2):
+    if type(version) is not int or version not in (1, 2, 3):
         raise ValueError("Unsupported Core capture contract")
     return version
 
@@ -315,8 +316,10 @@ def prepare(args):
                 ("engine", "dzc-core", candidate / "crates/dzc-core", candidate / "crates/dzc-platform", candidate / "Cargo.lock", ["engine"])]
     for variant, package, package_source, native, lock, features in variants:
         contract = capture_contract(package, package_source)
-        if variant == "engine" and contract == 2:
+        if variant == "engine" and contract >= 2:
             features = [*features, "privacy-runtime"]
+        if variant == "engine" and contract >= 3:
+            features = [*features, "privacy-policy"]
         manifest, bridge = write_adapter(output, variant, package, package_source, native, lock)
         if bridge:
             features = [*features, "legacy-layout"]

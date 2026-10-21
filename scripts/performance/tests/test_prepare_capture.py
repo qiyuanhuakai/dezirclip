@@ -35,6 +35,7 @@ def messages(*items):
 
 class PreparationTests(unittest.TestCase):
     def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False, privacy_contract=False):
+        contract = 2 if privacy_contract is True else privacy_contract or 1
         temporary = tempfile.TemporaryDirectory(prefix="dzc-prepare-artifact-test-")
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name).resolve()
@@ -44,7 +45,7 @@ class PreparationTests(unittest.TestCase):
         (core / "Cargo.toml").write_text('[package]\nname="dzc-core"\nversion="0.0.0"\n[features]\nlegacy-bridge=[]\n[dependencies]\nrusqlite.workspace=true\n')
         if privacy_contract:
             with (core / "Cargo.toml").open("a") as stream:
-                stream.write('\n[package.metadata.dzc]\ncapture-contract=2\n')
+                stream.write(f'\n[package.metadata.dzc]\ncapture-contract={contract}\n')
         (root / "Cargo.toml").write_text('[workspace]\nmembers=["crates/dzc-core"]\n[workspace.dependencies]\nrusqlite={git="' + SQLITE_GIT + '",rev="' + SQLITE_REV + '",features=["bundled","functions"]}\n')
         (root / "Cargo.lock").write_text(lock)
         # This conflicting config and environment must not redirect a native
@@ -135,9 +136,12 @@ class PreparationTests(unittest.TestCase):
             else:
                 self.assertEqual(dependency, {"git": SQLITE_GIT, "rev": SQLITE_REV, "features": ["bundled", "functions"]})
             self.assertEqual(record["role"], "baseline" if variant == "legacy" else "candidate")
-            self.assertEqual(record["capture_contract"], 2 if privacy_contract and variant != "legacy" else 1)
+            self.assertEqual(record["capture_contract"], contract if privacy_contract and variant != "legacy" else 1)
             if privacy_contract and variant == "engine":
-                self.assertEqual(record["features"], ["engine", "privacy-runtime", "legacy-layout"])
+                expected_features = ["engine", "privacy-runtime"]
+                if contract >= 3:
+                    expected_features.append("privacy-policy")
+                self.assertEqual(record["features"], [*expected_features, "legacy-layout"])
             elif variant != "engine":
                 self.assertNotIn("privacy-runtime", record["features"])
             if variant == "legacy" and workspace_baseline:
@@ -174,6 +178,9 @@ class PreparationTests(unittest.TestCase):
     def test_new_engine_contract_selects_and_records_real_privacy_delegation(self):
         self.prepare(privacy_contract=True)
 
+    def test_policy_contract_selects_and_records_both_source_and_content_delegation(self):
+        self.prepare(privacy_contract=3)
+
 
 class CaptureContractTests(unittest.TestCase):
     def test_only_explicit_supported_integer_contracts_select_the_adapter(self):
@@ -182,7 +189,7 @@ class CaptureContractTests(unittest.TestCase):
             manifest = source / "Cargo.toml"
             manifest.write_text('[package]\nname="dzc-core"\n')
             self.assertEqual(PREPARE.capture_contract("dzc-core", source), 1)
-            for value, expected in [("1", 1), ("2", 2), ("3", None), ("0", None), ("true", None), ('"2"', None)]:
+            for value, expected in [("1", 1), ("2", 2), ("3", 3), ("4", None), ("0", None), ("true", None), ('"2"', None), ('"3"', None)]:
                 with self.subTest(value=value):
                     manifest.write_text('[package.metadata.dzc]\ncapture-contract=' + value + '\n')
                     if expected is None:
