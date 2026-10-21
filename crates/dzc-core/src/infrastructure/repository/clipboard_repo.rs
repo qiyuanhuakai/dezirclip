@@ -299,6 +299,59 @@ impl SqliteClipboardRepository {
         }
         Ok(id)
     }
+    pub(crate) fn update_entry_metadata_authorized(
+        &self,
+        id: i64,
+        pinned: Option<bool>,
+        tags: Option<Vec<String>>,
+        permit: &crate::api::PrivacyReadPermit,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        permit.require_interactive().map_err(|error| error.to_string())?;
+        if id <= 0 || (pinned.is_none() && tags.is_none()) {
+            return Err("EntryMetadataMutationRequired".into());
+        }
+        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable")?;
+        super::protection::atomic_with_cleanup(&conn, |conn| {
+            crate::database::ensure_writable(conn)?;
+            crate::api::privacy_session::check_read_with_conn(conn, permit, now_ms)
+                .map_err(|error| error.to_string())?;
+            let protected: bool = conn.query_row(
+                "SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",
+                [id], |row| row.get(0),
+            ).optional().map_err(|_| "ClipboardRecordUnavailable")?
+                .ok_or("ClipboardRecordUnavailable")?;
+            let mut cleanup = None;
+            if let Some(tags) = tags {
+                let mut seen = std::collections::HashSet::new();
+                let cleaned: Vec<String> = tags.into_iter().filter_map(|tag| {
+                    let value = tag.trim();
+                    (!value.is_empty() && seen.insert(value.to_owned())).then(|| value.to_owned())
+                }).collect();
+                if protected && !has_sensitive_tag(&cleaned) {
+                    return Err("SensitiveAccessDenied".into());
+                }
+                if has_sensitive_tag(&cleaned) {
+                    let directory = conn.path().filter(|path| !path.is_empty())
+                        .and_then(|path| std::path::Path::new(path).parent());
+                    cleanup = Some(super::sensitive_tags::AttachmentCleanup::for_entries(
+                        conn, directory, &std::collections::HashSet::from([id]),
+                    )?);
+                    self.encrypt_entry_with_conn(conn, id)?;
+                }
+                self.sync_entry_tags_with_conn(conn, id, &cleaned)?;
+                conn.execute("UPDATE clipboard_history SET tags=?1 WHERE id=?2",
+                    params![serde_json::to_string(&cleaned).map_err(|_| "SensitivePersistenceRejected")?, id],
+                ).map_err(|error| error.to_string())?;
+            }
+            if let Some(pinned) = pinned {
+                self.toggle_pin_with_conn(conn, id, pinned)?;
+            }
+            self.invalidate_caches();
+            Ok(((), cleanup))
+        })
+    }
+
     pub(crate) fn persist_session_metadata_authorized(
         &self,
         original: &ClipboardEntry,

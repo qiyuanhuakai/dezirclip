@@ -1004,3 +1004,108 @@ fn session_metadata_persistence_preserves_untagged_encrypted_fields() {
     ));
     assert!(!visible(&repo, id));
 }
+
+#[test]
+fn persisted_metadata_keeps_body_permission_denied_and_rejects_unprotection() {
+    let repo = memory();
+    let mut item = entry("persistedmetadatasecret");
+    item.tags = vec!["sensitive".into()];
+    let id = repo.save(&item, None).unwrap();
+    let denied = repo
+        .privacy_service()
+        .authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            1,
+        )
+        .unwrap();
+    let before_body = raw(&repo, id).0;
+    repo.update_entry_metadata_authorized(id, Some(true), None, &denied, 1)
+        .unwrap();
+    assert_eq!(raw(&repo, id).0, before_body);
+    repo.update_entry_metadata_authorized(
+        id,
+        None,
+        Some(vec!["sensitive".into(), "work".into()]),
+        &denied,
+        1,
+    )
+    .unwrap();
+    assert!(!visible(&repo, id));
+    assert_eq!(
+        repo.policy_entry_authorized(id, &denied, 1).unwrap_err(),
+        "SensitiveAccessDenied"
+    );
+    let before = snapshot(&repo);
+    assert_eq!(
+        repo.update_entry_metadata_authorized(
+            id,
+            Some(false),
+            Some(vec!["work".into()]),
+            &denied,
+            1,
+        )
+        .unwrap_err(),
+        "SensitiveAccessDenied"
+    );
+    assert_eq!(snapshot(&repo), before);
+    let plain = repo
+        .save(&entry("newlyprotectedmetadatatoken"), None)
+        .unwrap();
+    repo.update_entry_metadata_authorized(
+        plain,
+        None,
+        Some(vec![" sensitive ".into()]),
+        &denied,
+        1,
+    )
+    .unwrap();
+    assert!(!visible(&repo, plain));
+    assert_ne!(raw(&repo, plain).0, "newlyprotectedmetadatatoken");
+}
+
+#[test]
+fn persisted_metadata_sql_failure_and_epoch_change_preserve_original_state() {
+    let repo = memory();
+    let id = repo.save(&entry("metadata original"), None).unwrap();
+    let denied = repo
+        .privacy_service()
+        .authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            1,
+        )
+        .unwrap();
+    repo.conn.lock().unwrap().execute_batch(
+        "CREATE TRIGGER fail_metadata_tags BEFORE INSERT ON entry_tags BEGIN SELECT RAISE(ABORT,'synthetic metadata failure'); END;",
+    ).unwrap();
+    let before = snapshot(&repo);
+    assert!(repo
+        .update_entry_metadata_authorized(
+            id,
+            Some(true),
+            Some(vec!["sensitive".into()]),
+            &denied,
+            1,
+        )
+        .is_err());
+    assert_eq!(snapshot(&repo), before);
+    assert!(visible(&repo, id));
+    repo.conn
+        .lock()
+        .unwrap()
+        .execute_batch("DROP TRIGGER fail_metadata_tags")
+        .unwrap();
+    repo.privacy_service()
+        .set_session(PrivacySessionCommand::On { duration_ms: None }, 1)
+        .unwrap();
+    let after = snapshot(&repo);
+    assert_eq!(
+        repo.update_entry_metadata_authorized(id, Some(true), None, &denied, 1,)
+            .unwrap_err(),
+        "PrivacyEpochChanged"
+    );
+    assert_eq!(snapshot(&repo), after);
+}
