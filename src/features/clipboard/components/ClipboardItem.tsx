@@ -1572,7 +1572,7 @@ const ClipboardItem = ({
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div className="item-actions">
-                        {onEdit && (item.content_type === "text" || item.content_type === "code") && (
+                        {onEdit && !isSensitiveHidden && (item.content_type === "text" || item.content_type === "code") && (
                             <button className="btn-icon" title={t('common_edit')} onClick={(event) => {
                                 event.stopPropagation();
                                 onEdit();

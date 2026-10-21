@@ -18,7 +18,7 @@ interface TagHistoryRowProps {
     t: (key: string) => string;
     tagColors: Record<string, string>;
     onSelect: (id: number) => void;
-    onEdit: (item: ClipboardEntry) => void;
+    onEdit: (item: ClipboardEntry, revealedDetail?: ClipboardEntry) => void;
     onDelete: (item: ClipboardEntry) => void;
     onQRCode: (item: ClipboardEntry) => void;
     onError: () => void;
@@ -61,7 +61,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             fullItem.current = request;
         }
         return fullItem.current;
-    }, [item.id]);
+    }, [item.id, item.host_instance_id]);
 
     useEffect(() => {
         mounted.current = true;
@@ -165,7 +165,11 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
                 if (next && !item.tags.includes(next)) void changeTags([...item.tags, next]);
             }}
             onTagDelete={tag => { void changeTags(item.tags.filter(current => current !== tag)); }}
-            loadFullItem={loadFullItem} onEdit={() => { if (!managing.current) onEdit(item); }}
+            loadFullItem={loadFullItem} onEdit={() => {
+                if (managing.current) return;
+                if (!beginPrivacyAccess() || (sensitive && !detail)) { onError(); return; }
+                onEdit(item, detail ?? undefined);
+            }}
             onQRCode={() => {
                 if (sensitive && !detail) { onError(); return; }
                 const access = beginPrivacyAccess();
