@@ -501,44 +501,8 @@ mod tests {
 
     // 辅助函数：创建一个内存中的临时测试数据库
     fn setup_test_db() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        // 调用你的 init_db 逻辑（手动执行部分关键建表语句）
-        conn.execute(
-            "CREATE TABLE clipboard_history (
-                id INTEGER PRIMARY KEY,
-                content_type TEXT NOT NULL,
-                content TEXT NOT NULL,
-                html_content TEXT,
-                source_app TEXT NOT NULL,
-                source_app_path TEXT,
-                timestamp INTEGER NOT NULL,
-                preview TEXT NOT NULL,
-                is_pinned INTEGER NOT NULL DEFAULT 0,
-                content_hash INTEGER NOT NULL DEFAULT 0,
-                tags TEXT NOT NULL DEFAULT '[]',
-                use_count INTEGER NOT NULL DEFAULT 0,
-                is_external INTEGER NOT NULL DEFAULT 0,
-                pinned_order INTEGER NOT NULL DEFAULT 0,
-                ocr_text TEXT,
-                ocr_status TEXT NOT NULL DEFAULT 'pending'
-            )",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "CREATE TABLE entry_tags (
-                entry_id INTEGER NOT NULL,
-                tag TEXT NOT NULL,
-                PRIMARY KEY (entry_id, tag)
-            )",
-            [],
-        )
-        .unwrap();
+        let mut conn=Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut conn).unwrap();
         conn
     }
 

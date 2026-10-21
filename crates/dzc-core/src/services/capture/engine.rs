@@ -55,7 +55,8 @@ impl CaptureEngine {
                 return Err(outcome);
             }
         };
-        let mut frame = Self::read(context, reader, events)?;
+        let policy=store.privacy_source(&context.source).map_err(|error|{let outcome=failure(error);emit_outcome(&outcome,events);outcome})?;
+        let mut frame = Self::read_with_source(context, reader, events, Some(policy))?;
         frame.metadata.privacy_ticket = ticket;
         if let Err(error) =
             store.check_capture(ticket.as_ref(), chrono::Utc::now().timestamp_millis())
@@ -100,6 +101,9 @@ impl CaptureEngine {
         reader: &mut dyn CaptureReader,
         events: &mut dyn EventSink,
     ) -> Result<CaptureFrame, CaptureOutcome> {
+        Self::read_with_source(context,reader,events,None)
+    }
+    fn read_with_source(context:&CaptureContext<'_>,reader:&mut dyn CaptureReader,events:&mut dyn EventSink,source_policy:Option<PrivacyDecision>)->Result<CaptureFrame,CaptureOutcome>{
         if context.paused {
             let reason = CaptureSkip::Paused;
             events.emit(CaptureEvent::Skipped(reason));
@@ -116,7 +120,7 @@ impl CaptureEngine {
             events.emit(CaptureEvent::Skipped(CaptureSkip::ExplicitPrivacyHint));
             return Err(CaptureOutcome::Skipped(CaptureSkip::ExplicitPrivacyHint));
         }
-        if let Some(reason) = policy_skip(&source_decision(context)) {
+        if let Some(reason) = source_policy.as_ref().and_then(policy_skip).or_else(||policy_skip(&source_decision(context))) {
             events.emit(CaptureEvent::Skipped(reason));
             return Err(CaptureOutcome::Skipped(reason));
         }
@@ -195,6 +199,7 @@ fn failure(error: CaptureFailure) -> CaptureOutcome {
     match error.code.as_str() {
         "PrivacySessionActive" => CaptureOutcome::Skipped(CaptureSkip::PrivacySession),
         "PrivacyEpochChanged" => CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged),
+        "PrivacySourceExcluded" => CaptureOutcome::Skipped(CaptureSkip::ExcludedSource),
         "SensitivePersistenceRejected" => {
             CaptureOutcome::Rejected(CaptureRejection::SensitivePersistenceRejected)
         }
@@ -236,11 +241,14 @@ fn process(
     }
     let hints_checked = frame.metadata.privacy_hints_checked;
     let read_image_hash = frame.metadata.image_content_hash;
+    let source_policy=match store.privacy_source(&context.source){Ok(policy)=>policy,Err(error)=>return failure(error)};
+    if let Some(reason)=policy_skip(&source_policy){return CaptureOutcome::Skipped(reason);}
     let initial_decision = source_decision(context);
     if let Some(reason) = policy_skip(&initial_decision) {
         return CaptureOutcome::Skipped(reason);
     }
     let mut evidence = initial_decision.evidence;
+    evidence.extend(source_policy.evidence);
     if hints_checked {
         evidence.retain(|item| item.reason != PrivacyReason::PrivacyHintsUnavailable);
     }
@@ -255,18 +263,12 @@ fn process(
     if context.sequential_echo.as_deref() == Some(&entry.content) {
         return CaptureOutcome::Skipped(CaptureSkip::SequentialEcho);
     }
-    if context.settings.privacy_protection && is_text_type(&entry.content_type) {
-        let scan = crate::privacy::scan_content(
-            &entry.content,
-            &context.settings.privacy_kinds,
-            &context.settings.privacy_custom_rules,
-            crate::privacy::ScanBudget::default(),
-        );
-        evidence.extend(scan.evidence);
-        if PrivacyPolicy.decide(evidence.clone()).action == PrivacyAction::Encrypt {
-            entry.tags.push("sensitive".into());
-        }
+    match store.assess_privacy_entry(&entry) {
+        Ok(Some(report))=>evidence.extend(report.decision.evidence.into_iter().filter(|item|!hints_checked || item.reason!=PrivacyReason::PrivacyHintsUnavailable)),
+        Ok(None)=>if context.settings.privacy_protection && is_text_type(&entry.content_type){let scan=crate::privacy::scan_content(&entry.content,&context.settings.privacy_kinds,&context.settings.privacy_custom_rules,crate::privacy::ScanBudget::default());evidence.extend(scan.evidence);},
+        Err(error)=>return failure(error),
     }
+    if PrivacyPolicy.decide(evidence.clone()).action==PrivacyAction::Encrypt && !has_sensitive_tag(&entry.tags){entry.tags.push("sensitive".into());}
     if !context.settings.persistent {
         evidence.push(PrivacyEvidence::new(
             EvidenceSource::UserControl,
@@ -282,6 +284,10 @@ fn process(
             Err(error) => return failure(error),
         }
     } else {
+        if has_sensitive_tag(&entry.tags) {
+            let resources=match crate::infrastructure::protected_resources::normalize(&entry.content_type,&entry.content,entry.html_content.as_deref(),entry.is_external){Ok(resources)=>resources,Err(code)=>return failure(CaptureFailure{stage:CaptureStage::Prepare,code})};
+            entry.content=resources.content;entry.html_content=resources.html;entry.is_external=false;
+        }
         if let Some(html) = &entry.html_content {
             entry.html_content = Some(match content::embed_local_images(html) {
                 Ok(html) => html,

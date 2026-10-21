@@ -239,13 +239,84 @@ impl SqliteClipboardRepository {
         }))
     }
 
-    pub(crate) fn save_manual(&self, entry: &ClipboardEntry, directory: Option<&std::path::Path>, intent: crate::api::ManualPersistenceIntent, now_ms: i64) -> Result<i64, String> {
-        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable".to_string())?;
-        let tx = rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate).map_err(|_| "PrivacyStateUnavailable".to_string())?;
-        crate::api::privacy_session::check_manual_with_conn(&tx, intent, now_ms).map_err(|error| error.to_string())?;
-        let id = self.save_with_conn(&tx, entry, directory)?;
+    pub(crate) fn save_manual(
+        &self,
+        entry: &ClipboardEntry,
+        directory: Option<&std::path::Path>,
+        intent: crate::api::ManualPersistenceIntent,
+        now_ms: i64,
+    ) -> Result<i64, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "PrivacyStateUnavailable".to_string())?;
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|_| "PrivacyStateUnavailable".to_string())?;
+        crate::api::privacy_session::check_manual_with_conn(&tx, intent, now_ms)
+            .map_err(|error| error.to_string())?;
+        let (entry, decision) = super::privacy_policy::prepare_entry_policy(&tx, entry, true)?;
+        let mut cleanup = super::privacy_policy::transition_cleanup(&tx, &entry)?;
+        let id = self.save_entry_with_policy(&tx, &entry, directory, None, true, &decision)?;
+        if let Some(cleanup) = &mut cleanup {
+            cleanup.protect_surviving_references(&tx)?;
+        }
         tx.commit().map_err(|error| error.to_string())?;
+        if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
+            return Err("ProtectedAttachmentCleanupIncomplete".into());
+        }
         Ok(id)
+    }
+
+    pub(crate) fn save_manual_authorized(
+        &self,
+        entry: &ClipboardEntry,
+        directory: Option<&std::path::Path>,
+        intent: crate::api::ManualPersistenceIntent,
+        permit: &crate::api::PrivacyReadPermit,
+        now_ms: i64,
+    ) -> Result<i64, String> {
+        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable")?;
+        let tx =
+            rusqlite::Transaction::new_unchecked(&conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|_| "PrivacyStateUnavailable")?;
+        crate::api::privacy_session::check_read_with_conn(&tx, permit, now_ms)
+            .map_err(|error| error.to_string())?;
+        crate::api::privacy_session::check_manual_with_conn(&tx, intent, now_ms)
+            .map_err(|error| error.to_string())?;
+        if entry.id > 0 {
+            super::privacy_policy::require_mutation_access(&tx, entry.id, permit)?;
+        }
+        let (entry, decision) = super::privacy_policy::prepare_entry_policy(&tx, entry, true)?;
+        let mut cleanup = super::privacy_policy::transition_cleanup(&tx, &entry)?;
+        let id = self.save_entry_with_policy(&tx, &entry, directory, None, true, &decision)?;
+        if let Some(cleanup) = &mut cleanup {
+            cleanup.protect_surviving_references(&tx)?;
+        }
+        tx.commit().map_err(|_| "SensitivePersistenceRejected")?;
+        if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
+            return Err("ProtectedAttachmentCleanupIncomplete".into());
+        }
+        Ok(id)
+    }
+    pub(crate) fn update_manual_authorized(
+        &self,
+        id: i64,
+        content: &str,
+        preview: &str,
+        intent: crate::api::ManualPersistenceIntent,
+        permit: &crate::api::PrivacyReadPermit,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable")?;
+        super::protection::atomic_with_cleanup(&conn, |conn| {
+            crate::api::privacy_session::check_read_with_conn(conn, permit, now_ms)
+                .map_err(|error| error.to_string())?;
+            crate::api::privacy_session::check_manual_with_conn(conn, intent, now_ms)
+                .map_err(|error| error.to_string())?;
+            super::privacy_policy::require_mutation_access(conn, id, permit)?;
+            self.update_content_with_conn(conn, id, content, preview)
+        })
     }
 
     pub(crate) fn capture_store<'a>(&'a self,directory:&'a std::path::Path)->impl crate::capture::CaptureStore+'a {
@@ -577,12 +648,40 @@ impl SqliteClipboardRepository {
         image_hash: Option<i64>,
     ) -> Result<i64, String> {
         crate::database::ensure_writable(conn)?;
-        super::protection::atomic(conn, |conn| self.save_entry_with_conn(conn, entry, data_dir, image_hash, true))
+        super::protection::atomic_with_cleanup(conn, |conn| {
+            crate::api::privacy_session::check_manual_with_conn(
+                conn,
+                crate::api::ManualPersistenceIntent::Ordinary,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .map_err(|error| error.to_string())?;
+            let (entry, decision) = super::privacy_policy::prepare_entry_policy(conn, entry, true)?;
+            let cleanup = super::privacy_policy::transition_cleanup(conn, &entry)?;
+            let id =
+                self.save_entry_with_policy(conn, &entry, data_dir, image_hash, true, &decision)?;
+            Ok((id, cleanup))
+        })
     }
 
-    pub(super) fn save_restored_with_conn(&self, conn: &Connection, entry: &ClipboardEntry) -> Result<i64, String> {
+    pub(super) fn save_restored_with_conn(
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+    ) -> Result<i64, String> {
         crate::database::ensure_writable(conn)?;
-        super::protection::atomic(conn, |conn| self.save_entry_with_conn(conn, entry, None, None, false))
+        super::protection::atomic_with_cleanup(conn, |conn| {
+            crate::api::privacy_session::check_manual_with_conn(
+                conn,
+                crate::api::ManualPersistenceIntent::Ordinary,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .map_err(|error| error.to_string())?;
+            let (entry, decision) =
+                super::privacy_policy::prepare_entry_policy(conn, entry, false)?;
+            let cleanup = super::privacy_policy::transition_cleanup(conn, &entry)?;
+            let id = self.save_entry_with_policy(conn, &entry, None, None, false, &decision)?;
+            Ok((id, cleanup))
+        })
     }
 
     /// Captured HTML assets are materialized only after protection checks and SQL succeed.
@@ -598,48 +697,99 @@ impl SqliteClipboardRepository {
     }
 
     pub(crate) fn save_automatic_capture_with_conn(
-        &self, conn: &Connection, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>,
-        image_hash: Option<i64>, attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
-        ticket: &crate::api::CaptureTicket, now_ms: i64,
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>,
+        attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+        ticket: &crate::api::CaptureTicket,
+        now_ms: i64,
     ) -> Result<i64, String> {
-        self.save_capture_guarded(conn, entry, data_dir, image_hash, attachments, Some((ticket, now_ms)))
+        self.save_capture_guarded(
+            conn,
+            entry,
+            data_dir,
+            image_hash,
+            attachments,
+            Some((ticket, now_ms)),
+        )
     }
 
     fn save_capture_guarded(
-        &self, conn: &Connection, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>,
-        image_hash: Option<i64>, attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>,
+        attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
         privacy: Option<(&crate::api::CaptureTicket, i64)>,
     ) -> Result<i64, String> {
         crate::database::ensure_writable(conn)?;
         // The receipt must live until the outermost commit, so captures own this transaction.
-        if !conn.is_autocommit() || attachments.is_some_and(|plan| entry.html_content.as_deref() != Some(plan.html())) {
+        if !conn.is_autocommit()
+            || attachments.is_some_and(|plan| entry.html_content.as_deref() != Some(plan.html()))
+        {
             return Err("AttachmentPersistenceRejected".to_string());
         }
-        let transaction = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
-            .map_err(|error| error.to_string())?;
+        let transaction =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|error| error.to_string())?;
         if let Some((ticket, now_ms)) = privacy {
             crate::api::privacy_session::check_capture_with_conn(&transaction, ticket, now_ms)
                 .map_err(|error| error.to_string())?;
         }
+        let (mut entry, decision) =
+            super::privacy_policy::prepare_entry_policy(&transaction, entry, true)?;
         let sensitive = has_sensitive_tag(&entry.tags);
-        let mut entry = entry.clone();
+        let mut cleanup = super::privacy_policy::transition_cleanup(&transaction, &entry)?;
         if sensitive {
-            if let Some(plan) = attachments { entry.html_content = Some(plan.inline_html()?); }
+            if let Some(plan) = attachments {
+                entry.html_content = Some(plan.inline_html()?);
+            }
         }
-        let id = self.save_entry_with_conn(&transaction, &entry, data_dir, image_hash, true)?;
-        let created = if sensitive { None } else { attachments.map(|plan| plan.materialize()).transpose()? };
+        if privacy.is_none() {
+            crate::api::privacy_session::check_manual_with_conn(
+                &transaction,
+                crate::api::ManualPersistenceIntent::Ordinary,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        let id = self.save_entry_with_policy(
+            &transaction,
+            &entry,
+            data_dir,
+            image_hash,
+            true,
+            &decision,
+        )?;
+        let created = if sensitive {
+            None
+        } else {
+            attachments.map(|plan| plan.materialize()).transpose()?
+        };
+        if let Some(cleanup) = &mut cleanup {
+            cleanup.protect_surviving_references(&transaction)?;
+        }
         transaction.commit().map_err(|error| error.to_string())?;
-        if let Some(created) = created { created.keep(); }
+        if let Some(created) = created {
+            created.keep();
+        }
+        if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
+            return Err("ProtectedAttachmentCleanupIncomplete".into());
+        }
         Ok(id)
     }
 
-    fn save_entry_with_conn(
+    fn save_entry_with_policy(
         &self,
         conn: &Connection,
         entry: &ClipboardEntry,
         data_dir: Option<&std::path::Path>,
         image_hash: Option<i64>,
         inherit_missing_ocr: bool,
+        privacy_decision: &crate::privacy::PrivacyDecision,
     ) -> Result<i64, String> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut cleaned_tags: Vec<String> = Vec::new();
@@ -657,8 +807,15 @@ impl SqliteClipboardRepository {
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&cleaned_tags);
         let resources = if should_encrypt {
-            Some(crate::infrastructure::protected_resources::normalize(&entry.content_type, &entry.content, entry.html_content.as_deref(), entry.is_external)?)
-        } else { None };
+            Some(crate::infrastructure::protected_resources::normalize(
+                &entry.content_type,
+                &entry.content,
+                entry.html_content.as_deref(),
+                entry.is_external,
+            )?)
+        } else {
+            None
+        };
         let mut was_visible = false;
         let mut ocr_to_store = entry.ocr_text.clone();
         if entry.id > 0 {
@@ -679,8 +836,14 @@ impl SqliteClipboardRepository {
                 ],
             );
             {
-                let existing_ocr = stored_ocr.as_deref().map(encryption::decode_for_mutation).transpose().map_err(|error| error.to_string())?;
-                if inherit_missing_ocr && ocr_to_store.is_none() { ocr_to_store = existing_ocr; }
+                let existing_ocr = stored_ocr
+                    .as_deref()
+                    .map(encryption::decode_for_mutation)
+                    .transpose()
+                    .map_err(|error| error.to_string())?;
+                if inherit_missing_ocr && ocr_to_store.is_none() {
+                    ocr_to_store = existing_ocr;
+                }
                 let mut protected = false;
                 for value in [
                     Some(content.as_str()),
@@ -707,15 +870,28 @@ impl SqliteClipboardRepository {
             }
         }
         let ocr_text = if should_encrypt {
-            ocr_to_store.as_deref().map(|value| (self.encrypt_text)(value).map(EncryptedPayload::into_string)).transpose().map_err(|error| error.to_string())?
-        } else { ocr_to_store };
+            ocr_to_store
+                .as_deref()
+                .map(|value| (self.encrypt_text)(value).map(EncryptedPayload::into_string))
+                .transpose()
+                .map_err(|error| error.to_string())?
+        } else {
+            ocr_to_store
+        };
         // Prepare all protected values before a file or database write can occur.
         let protected = if should_encrypt {
-            Some(self.prepare_sensitive_fields(
-                &resources.as_ref().expect("protected resources prepared").content,
-                &entry.preview,
-                resources.as_ref().and_then(|resources| resources.html.as_deref()),
-            )?)
+            Some(
+                self.prepare_sensitive_fields(
+                    &resources
+                        .as_ref()
+                        .expect("protected resources prepared")
+                        .content,
+                    &entry.preview,
+                    resources
+                        .as_ref()
+                        .and_then(|resources| resources.html.as_deref()),
+                )?,
+            )
         } else {
             None
         };
@@ -812,6 +988,7 @@ impl SqliteClipboardRepository {
             )
             .map_err(|e| e.to_string())?;
             self.sync_entry_tags_with_conn(conn, entry.id, &cleaned_tags)?;
+            super::privacy_policy::record_exception_use(conn, entry.id, privacy_decision)?;
             self.invalidate_caches();
             Ok(entry.id)
         } else {
@@ -838,6 +1015,7 @@ impl SqliteClipboardRepository {
 
             let new_id = conn.last_insert_rowid();
             self.sync_entry_tags_with_conn(conn, new_id, &cleaned_tags)?;
+            super::privacy_policy::record_exception_use(conn, new_id, privacy_decision)?;
             self.invalidate_caches();
             Ok(new_id)
         }
@@ -1139,11 +1317,22 @@ impl SqliteClipboardRepository {
         }
     }
 
-    pub(crate) fn update_content_authorized(&self,id:i64,content:&str,preview:&str,ticket:&crate::api::CaptureTicket,now_ms:i64)->Result<(),String> {
-        let conn=self.conn.lock().map_err(|_|"PrivacyStateUnavailable".to_owned())?;
-        super::protection::atomic(&conn,|conn| {
-            crate::api::privacy_session::check_capture_with_conn(conn,ticket,now_ms).map_err(|error|error.to_string())?;
-            self.update_content_with_conn(conn,id,content,preview)
+    pub(crate) fn update_content_authorized(
+        &self,
+        id: i64,
+        content: &str,
+        preview: &str,
+        ticket: &crate::api::CaptureTicket,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "PrivacyStateUnavailable".to_owned())?;
+        super::protection::atomic_with_cleanup(&conn, |conn| {
+            crate::api::privacy_session::check_capture_with_conn(conn, ticket, now_ms)
+                .map_err(|error| error.to_string())?;
+            self.update_content_with_conn(conn, id, content, preview)
         })
     }
 
@@ -1154,7 +1343,15 @@ impl SqliteClipboardRepository {
         content: &str,
         preview: &str,
     ) -> Result<(), String> {
-        super::protection::atomic(conn, |conn| self.update_content_with_conn(conn, id, content, preview))
+        super::protection::atomic_with_cleanup(conn, |conn| {
+            crate::api::privacy_session::check_manual_with_conn(
+                conn,
+                crate::api::ManualPersistenceIntent::Ordinary,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .map_err(|error| error.to_string())?;
+            self.update_content_with_conn(conn, id, content, preview)
+        })
     }
 
     fn update_content_with_conn(
@@ -1163,95 +1360,85 @@ impl SqliteClipboardRepository {
         id: i64,
         content: &str,
         preview: &str,
-    ) -> Result<(), String> {
-        let (old_content_raw, content_type, tags_json, old_preview_raw, old_html_raw, old_ocr_raw, external) = conn
-            .query_row(
-                "SELECT content, content_type, tags, preview, html_content, ocr_text, is_external FROM clipboard_history WHERE id = ?",
-                params![id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?,
-                        row.get::<_, Option<String>>(4)?,
-                        row.get::<_, Option<String>>(5)?,
-                        row.get::<_, bool>(6)?,
-                    ))
-                },
-            )
-            .map_err(|e| e.to_string())?;
-
-        let old_content =
-            encryption::decode_for_mutation(&old_content_raw).map_err(|error| error.to_string())?;
-        encryption::decode_for_mutation(&old_preview_raw).map_err(|error| error.to_string())?;
-        let old_html = old_html_raw.as_deref().map(encryption::decode_for_mutation).transpose().map_err(|error| error.to_string())?;
-        let old_ocr = old_ocr_raw.as_deref().map(encryption::decode_for_mutation).transpose().map_err(|error| error.to_string())?;
-        if old_content == content {
-            return Ok(());
+    ) -> Result<((), Option<super::sensitive_tags::AttachmentCleanup>), String> {
+        let mut entry = super::privacy_policy::strict_entry(self, conn, id)?;
+        // Validate the complete previous resource before replacing any protected field.
+        let stored_protected:bool=conn.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[id],|row|row.get(0)).map_err(|_|"ClipboardRecordUnavailable")?;
+        if stored_protected {
+            crate::infrastructure::protected_resources::normalize(
+                &entry.content_type,
+                &entry.content,
+                entry.html_content.as_deref(),
+                entry.is_external,
+            )?;
         }
+        entry.content = content.to_owned();
+        entry.preview = preview.to_owned();
+        entry.html_content = None;
+        if entry.content_type == "rich_text" {
+            entry.content_type = "text".into();
+        }
+        let cleanup = self.replace_entry_fields_with_conn(conn, &entry, true)?;
+        Ok(((), cleanup))
+    }
 
-        let tags: Vec<String> = serde_json::from_str(&tags_json)
-            .map_err(|_| EncryptionError::SensitivePersistenceRejected.to_string())?;
-        let should_encrypt = has_sensitive_tag(&tags)
-            || [Some(old_content_raw.as_str()), Some(old_preview_raw.as_str()), old_html_raw.as_deref(), old_ocr_raw.as_deref()].into_iter().flatten()
-                .any(|value| matches!(encryption::decode_stored_text(value), encryption::StoredText::Decrypted(_)));
-
-        let was_visible = super::migrations::search_visible(
-            Some(&tags_json),
-            [
-                Some(&old_content_raw),
-                Some(&old_preview_raw),
-                old_html_raw.as_deref(),
-                old_ocr_raw.as_deref(),
-            ],
-        );
-        let protected_ocr = if should_encrypt {
-            crate::infrastructure::protected_resources::normalize(&content_type, &old_content, old_html.as_deref(), external)?;
-            old_ocr.as_deref().map(|value| (self.encrypt_text)(value).map(EncryptedPayload::into_string)).transpose().map_err(|error| error.to_string())?
-        } else { old_ocr };
-        if should_encrypt && was_visible {
+    fn replace_entry_fields_with_conn(
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        changed_content: bool,
+    ) -> Result<Option<super::sensitive_tags::AttachmentCleanup>, String> {
+        let (entry, decision) = super::privacy_policy::apply_to_entry(conn, entry)?;
+        let cleanup = super::privacy_policy::transition_cleanup(conn, &entry)?;
+        let should_encrypt = has_sensitive_tag(&entry.tags);
+        let resources = if should_encrypt {
+            Some(crate::infrastructure::protected_resources::normalize(
+                &entry.content_type,
+                &entry.content,
+                entry.html_content.as_deref(),
+                entry.is_external,
+            )?)
+        } else {
+            None
+        };
+        let (content, preview, html) = if let Some(resources) = &resources {
+            self.prepare_sensitive_fields(
+                &resources.content,
+                &entry.preview,
+                resources.html.as_deref(),
+            )?
+        } else {
+            (
+                entry.content.clone(),
+                entry.preview.clone(),
+                entry.html_content.clone(),
+            )
+        };
+        let ocr = if should_encrypt {
+            entry
+                .ocr_text
+                .as_deref()
+                .map(|value| (self.encrypt_text)(value).map(EncryptedPayload::into_string))
+                .transpose()
+                .map_err(|error| error.to_string())?
+        } else {
+            entry.ocr_text.clone()
+        };
+        let visible:bool=conn.query_row("SELECT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[entry.id],|row|row.get(0)).optional().map_err(|_|"ClipboardRecordUnavailable")?.ok_or("ClipboardRecordUnavailable")?;
+        if should_encrypt && visible {
             (self.prepare_search)(conn)?;
         }
-        if is_text_type(&content_type) {
-            let hash = calc_text_hash(content) as i64;
-            let new_type = if content_type == "rich_text" {
-                "text"
-            } else {
-                &content_type
-            };
-            if should_encrypt {
-                let (encrypted_content, encrypted_preview, _) =
-                    self.prepare_sensitive_fields(content, preview, None)?;
-                conn.execute(
-                    "UPDATE clipboard_history SET content = ?, preview = ?, content_hash = ?, html_content = NULL, content_type = ?, ocr_text = ? WHERE id = ?",
-                    params![encrypted_content, encrypted_preview, hash, new_type, protected_ocr, id],
-                ).map_err(|e| e.to_string())?;
-            } else {
-                conn.execute(
-                    "UPDATE clipboard_history SET content = ?, preview = ?, content_hash = ?, html_content = NULL, content_type = ?, ocr_text = ? WHERE id = ?",
-                    params![content, preview, hash, new_type, protected_ocr, id],
-                ).map_err(|e| e.to_string())?;
-            }
-            self.invalidate_caches();
-            return Ok(());
+        let new_hash = (changed_content && is_text_type(&entry.content_type))
+            .then(|| calc_text_hash(&entry.content) as i64);
+        let changed=conn.execute("UPDATE clipboard_history SET content_type=?1,content=?2,preview=?3,html_content=?4,ocr_text=?5,ocr_status=?6,is_external=?7,content_hash=COALESCE(?8,content_hash),tags=?9 WHERE id=?10",
+            params![entry.content_type,content,preview,html,ocr,entry.ocr_status,entry.is_external && !should_encrypt,new_hash,serde_json::to_string(&entry.tags).map_err(|_|"SensitivePersistenceRejected")?,entry.id]).map_err(|error|error.to_string())?;
+        if changed != 1 {
+            return Err("ClipboardRecordUnavailable".into());
         }
-        if should_encrypt {
-            let resources = crate::infrastructure::protected_resources::normalize(&content_type, content, None, external)?;
-            let (encrypted_content, encrypted_preview, _) =
-                self.prepare_sensitive_fields(&resources.content, preview, None)?;
-            conn.execute(
-                "UPDATE clipboard_history SET content = ?, preview = ?, html_content = NULL, ocr_text = ?, is_external = 0 WHERE id = ?",
-                params![encrypted_content, encrypted_preview, protected_ocr, id],
-            ).map_err(|e| e.to_string())?;
-        } else {
-            conn.execute(
-                "UPDATE clipboard_history SET content = ?, preview = ?, html_content = NULL, ocr_text = ? WHERE id = ?",
-                params![content, preview, protected_ocr, id],
-            ).map_err(|e| e.to_string())?;
-        }
+        self.sync_entry_tags_with_conn(conn, entry.id, &entry.tags)?;
+        super::privacy_policy::record_exception_use(conn, entry.id, &decision)?;
         self.invalidate_caches();
-        Ok(())
+        Ok(cleanup)
     }
 
     pub fn get_entry_content_full_with_conn(
@@ -1309,22 +1496,39 @@ impl SqliteClipboardRepository {
         }
     }
 
-    pub fn update_ocr_authorized_with_conn(&self, conn:&Connection,id:i64,text:&str,status:&str,ticket:&crate::api::CaptureTicket,now_ms:i64)->Result<usize,String> {
-        super::protection::atomic(conn,|conn| {
-            crate::api::privacy_session::check_capture_with_conn(conn,ticket,now_ms).map_err(|error|error.to_string())?;
-            let protected:bool=conn.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[id],|row|row.get(0)).optional().map_err(|error|error.to_string())?.ok_or("ClipboardRecordUnavailable")?;
-            let value=if protected {
-                self.encrypt_entry_with_conn_inner(conn,id)?;
-                (self.encrypt_text)(text).map(EncryptedPayload::into_string).map_err(|error|error.to_string())?
-            } else { text.to_owned() };
-            let rows=conn.execute("UPDATE clipboard_history SET ocr_text=?1,ocr_status=?2 WHERE id=?3",params![value,status,id]).map_err(|error|error.to_string())?;
-            self.invalidate_caches();Ok(rows)
+    pub fn update_ocr_authorized_with_conn(
+        &self,
+        conn: &Connection,
+        id: i64,
+        text: &str,
+        status: &str,
+        ticket: &crate::api::CaptureTicket,
+        now_ms: i64,
+    ) -> Result<usize, String> {
+        super::protection::atomic_with_cleanup(conn, |conn| {
+            crate::api::privacy_session::check_capture_with_conn(conn, ticket, now_ms)
+                .map_err(|error| error.to_string())?;
+            let mut entry = super::privacy_policy::strict_entry(self, conn, id)?;
+            entry.ocr_text = Some(text.to_owned());
+            entry.ocr_status = Some(status.to_owned());
+            let cleanup = self.replace_entry_fields_with_conn(conn, &entry, false)?;
+            Ok((1, cleanup))
         })
     }
 
-    pub(crate) fn update_ocr_authorized(&self,id:i64,text:&str,status:&str,ticket:&crate::api::CaptureTicket,now_ms:i64)->Result<usize,String> {
-        let conn=self.conn.lock().map_err(|_|"PrivacyStateUnavailable".to_owned())?;
-        self.update_ocr_authorized_with_conn(&conn,id,text,status,ticket,now_ms)
+    pub(crate) fn update_ocr_authorized(
+        &self,
+        id: i64,
+        text: &str,
+        status: &str,
+        ticket: &crate::api::CaptureTicket,
+        now_ms: i64,
+    ) -> Result<usize, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| "PrivacyStateUnavailable".to_owned())?;
+        self.update_ocr_authorized_with_conn(&conn, id, text, status, ticket, now_ms)
     }
 
     pub fn update_ocr_text_with_conn(
@@ -1355,16 +1559,37 @@ impl SqliteClipboardRepository {
             };
             let tags: Vec<String> = serde_json::from_str(&tags)
                 .map_err(|_| EncryptionError::SensitivePersistenceRejected.to_string())?;
-            if has_sensitive_tag(&tags) || fields.iter().flatten().any(|value|
-                !matches!(encryption::decode_stored_text(value), encryption::StoredText::Plain(_)))
+            if has_sensitive_tag(&tags)
+                || fields.iter().flatten().any(|value| {
+                    !matches!(
+                        encryption::decode_stored_text(value),
+                        encryption::StoredText::Plain(_)
+                    )
+                })
             {
                 return Err(EncryptionError::SensitivePersistenceRejected.to_string());
             }
+            crate::api::privacy_session::check_manual_with_conn(
+                conn,
+                crate::api::ManualPersistenceIntent::Ordinary,
+                chrono::Utc::now().timestamp_millis(),
+            )
+            .map_err(|error| error.to_string())?;
+            let mut candidate = super::privacy_policy::strict_entry(self, conn, id)?;
+            candidate.ocr_text = Some(ocr_text.to_owned());
+            candidate.ocr_status = Some(ocr_status.to_owned());
+            let (candidate, decision) = super::privacy_policy::apply_to_entry(conn, &candidate)?;
+            if has_sensitive_tag(&candidate.tags) {
+                return Err(EncryptionError::SensitivePersistenceRejected.to_string());
+            }
             before_write();
-            let rows = conn.execute(
-                "UPDATE clipboard_history SET ocr_text=?1, ocr_status=?2 WHERE id=?3",
-                params![ocr_text, ocr_status, id],
-            ).map_err(|error| error.to_string())?;
+            let rows = conn
+                .execute(
+                    "UPDATE clipboard_history SET ocr_text=?1, ocr_status=?2 WHERE id=?3",
+                    params![ocr_text, ocr_status, id],
+                )
+                .map_err(|error| error.to_string())?;
+            super::privacy_policy::record_exception_use(conn, id, &decision)?;
             self.invalidate_caches();
             Ok(rows)
         })
@@ -2107,7 +2332,7 @@ mod tests {
         entry.id = other.last_insert_rowid();
         other.execute("UPDATE clipboard_history SET tags='[\"sensitive\"]' WHERE id=?1", [entry.id]).unwrap();
         assert_eq!(repo.save_capture_with_conn(&connection.lock().unwrap(), &entry, Some(&directory), None, Some(&plan)).unwrap_err(),
-            EncryptionError::SensitivePersistenceRejected.to_string());
+            "AttachmentPersistenceRejected".to_owned());
         assert!(!directory.join("attachments").exists());
         let state: (String, String) = other.query_row("SELECT tags,content FROM clipboard_history WHERE id=?1", [entry.id], |row| Ok((row.get(0)?,row.get(1)?))).unwrap();
         assert_eq!(state, ("[\"sensitive\"]".to_string(), "ordinary".to_string()));
