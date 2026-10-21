@@ -521,6 +521,12 @@ mod tests {
     }
 
     impl CaptureStore for Store {
+        fn privacy_source(&self,_source:&CaptureSource)->Result<PrivacyDecision,CaptureFailure> {
+            Ok(PrivacyPolicy.decide(Vec::new()))
+        }
+        fn assess_privacy_entry(&self,_entry:&crate::api::ClipboardEntry)->Result<Option<crate::api::PrivacyDecisionReport>,CaptureFailure> {
+            Ok(None)
+        }
         fn prepare(
             &self,
             entry: crate::domain::models::ClipboardEntry,

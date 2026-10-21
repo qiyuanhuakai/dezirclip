@@ -39,8 +39,10 @@ pub struct CaptureCommit {
 
 /// Capture-specific storage operations. A commit must recheck current protection.
 pub trait CaptureStore {
-    fn privacy_source(&self,_source:&CaptureSource)->Result<crate::privacy::PrivacyDecision,CaptureFailure>{Ok(crate::privacy::PrivacyPolicy.decide(Vec::new()))}
-    fn assess_privacy_entry(&self,_entry:&ClipboardEntry)->Result<Option<crate::api::PrivacyDecisionReport>,CaptureFailure>{Ok(None)}
+    /// Adapters must explicitly preserve the authoritative source policy.
+    fn privacy_source(&self,source:&CaptureSource)->Result<crate::privacy::PrivacyDecision,CaptureFailure>;
+    /// A database adapter returns its actual policy report; None is an explicit in-memory policy.
+    fn assess_privacy_entry(&self,entry:&ClipboardEntry)->Result<Option<crate::api::PrivacyDecisionReport>,CaptureFailure>;
 
     fn capture_ticket(
         &self,
