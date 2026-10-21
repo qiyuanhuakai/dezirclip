@@ -84,12 +84,118 @@ impl ClipboardWriter for StandaloneClipboardWriter {
         native::clipboard_probe()
     }
     fn write(&self, payload: ClipboardPayload) -> PlatformResult<()> {
-        crate::native_clipboard::write(native_payload(payload)?)
-            .map_err(|_| clipboard_failure(Capability::Write))
+        crate::private_files::revoke_clipboard()
+            .map_err(|_| clipboard_failure(Capability::Write))?;
+        crate::native_clipboard::revoke_private_owners()
+            .map_err(|_| clipboard_failure(Capability::Write))?;
+        let (payload, mut authorization) = match payload {
+            ClipboardPayload::Private {
+                payload,
+                authorization,
+            } => (*payload, Some(authorization)),
+            payload => (payload, None),
+        };
+        if authorization
+            .as_ref()
+            .is_some_and(|authorization| !authorization.is_current())
+        {
+            return Err(clipboard_failure(Capability::Write));
+        }
+        #[cfg(target_os = "windows")]
+        let mut private: Option<crate::private_files::BoundExport> = None;
+        let payload = match payload {
+            ClipboardPayload::Private { .. } => return Err(clipboard_failure(Capability::Write)),
+            ClipboardPayload::ProtectedFiles {
+                files,
+                authorization: permission,
+            } => {
+                if !permission.is_current() {
+                    return Err(clipboard_failure(Capability::Write));
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let lease = permission
+                        .native_lease()
+                        .ok_or_else(|| clipboard_failure(Capability::Write))?;
+                    authorization = Some(permission);
+                    crate::native_clipboard::Payload::LeasedFiles {
+                        files: files
+                            .into_iter()
+                            .map(|file| crate::native_clipboard::NativeFile {
+                                name: file.name,
+                                bytes: file.bytes,
+                            })
+                            .collect(),
+                        lease,
+                    }
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let exports =
+                        crate::private_files::BoundExport::readonly(files, permission.clone())
+                            .map_err(|_| clipboard_failure(Capability::Write))?;
+                    let paths = exports
+                        .paths()
+                        .map_err(|_| clipboard_failure(Capability::Write))?;
+                    private = Some(exports);
+                    authorization = Some(permission);
+                    crate::native_clipboard::Payload::Files(paths)
+                }
+            }
+            ClipboardPayload::Text(value) => crate::native_clipboard::Payload::Text(value),
+            ClipboardPayload::Html { html, text } => {
+                crate::native_clipboard::Payload::Html { html, text }
+            }
+            ClipboardPayload::Files(paths) => crate::native_clipboard::Payload::Files(paths),
+            ClipboardPayload::Image { bytes, mime } => {
+                if !matches!(
+                    mime.as_str(),
+                    "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/bmp"
+                ) {
+                    return Err(PlatformError::unsupported(
+                        Capability::Write,
+                        UnsupportedReason::UnsupportedRepresentation,
+                    ));
+                }
+                crate::native_clipboard::Payload::Image(bytes)
+            }
+        };
+        if authorization
+            .as_ref()
+            .is_some_and(|authorization| !authorization.is_current())
+        {
+            return Err(clipboard_failure(Capability::Write));
+        }
+        if authorization.is_some() {
+            crate::native_clipboard::write_private(
+                payload,
+                authorization
+                    .as_ref()
+                    .and_then(ClipboardAuthorization::native_lease),
+            )
+        } else {
+            crate::native_clipboard::write(payload)
+        }
+        .map_err(|_| clipboard_failure(Capability::Write))?;
+        #[cfg(target_os = "windows")]
+        if let Some(exports) = private {
+            exports.retain();
+        }
+        if authorization
+            .as_ref()
+            .is_some_and(|authorization| !authorization.is_current())
+        {
+            revoke_private_exports()?;
+            return Err(clipboard_failure(Capability::Write));
+        }
+        Ok(())
     }
 }
 fn native_payload(payload: ClipboardPayload) -> PlatformResult<crate::native_clipboard::Payload> {
     Ok(match payload {
+        ClipboardPayload::Private { .. } | ClipboardPayload::ProtectedFiles { .. } => {
+            return Err(clipboard_failure(Capability::Write));
+        }
         ClipboardPayload::Text(value) => crate::native_clipboard::Payload::Text(value),
         ClipboardPayload::Html { html, text } => {
             crate::native_clipboard::Payload::Html { html, text }
@@ -109,25 +215,118 @@ fn native_payload(payload: ClipboardPayload) -> PlatformResult<crate::native_cli
         }
     })
 }
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct EmbeddedClipboardWriter {
     owner: std::sync::Arc<std::sync::Mutex<crate::native_clipboard::EmbeddedOwner>>,
+    private_files: std::sync::Arc<std::sync::Mutex<Option<PrivateFileExport>>>,
+}
+impl Default for EmbeddedClipboardWriter {
+    fn default() -> Self {
+        Self {
+            owner: crate::native_clipboard::EmbeddedOwner::shared(),
+            private_files: Default::default(),
+        }
+    }
 }
 impl EmbeddedClipboardWriter {
     /// Explicit copy of an already recorded item. Generated text uses write().
     pub fn write_suppressing_recapture(&self, payload: ClipboardPayload) -> PlatformResult<()> {
-        self.owner
+        self.write_with_intent(payload, true)
+    }
+    fn write_with_intent(&self, payload: ClipboardPayload, suppress: bool) -> PlatformResult<()> {
+        let mut owner = self
+            .owner
             .lock()
-            .map_err(|_| PlatformError::failed(Capability::Write))?
-            .write_with_intent(native_payload(payload)?, true)
-            .map_err(|_| clipboard_failure(Capability::Write))
+            .map_err(|_| PlatformError::failed(Capability::Write))?;
+        let mut export_slot = self
+            .private_files
+            .lock()
+            .map_err(|_| PlatformError::failed(Capability::Write))?;
+        let (payload, authorization) = match payload {
+            ClipboardPayload::Private {
+                payload,
+                authorization,
+            } => (*payload, Some(authorization)),
+            value => (value, None),
+        };
+        if authorization
+            .as_ref()
+            .is_some_and(|auth| !auth.is_current())
+        {
+            return Err(clipboard_failure(Capability::Write));
+        }
+        let mut export = None;
+        let (payload, authorization) = match payload {
+            ClipboardPayload::Private { .. } => return Err(clipboard_failure(Capability::Write)),
+            ClipboardPayload::ProtectedFiles {
+                files,
+                authorization: permission,
+            } => {
+                // The in-process owner retains these handles. It never spawns the current executable.
+                let files = prepare_private_files(files, permission.clone())?;
+                let paths = files.paths()?;
+                export = Some(files);
+                (
+                    crate::native_clipboard::Payload::Files(paths),
+                    Some(permission),
+                )
+            }
+            ordinary => (native_payload(ordinary)?, authorization),
+        };
+        let payload = if let Some(auth) = &authorization {
+            if !auth.is_current() {
+                return Err(clipboard_failure(Capability::Write));
+            }
+            let payload = crate::native_clipboard::Payload::Private(Box::new(payload));
+            #[cfg(target_os = "linux")]
+            let payload = crate::native_clipboard::Payload::Leased {
+                payload: Box::new(payload),
+                lease: auth
+                    .native_lease()
+                    .ok_or_else(|| clipboard_failure(Capability::Write))?,
+            };
+            payload
+        } else {
+            payload
+        };
+        owner
+            .write_with_intent(payload, suppress)
+            .map_err(|_| clipboard_failure(Capability::Write))?;
+        if let Some(previous) = export_slot.as_mut() {
+            previous.close()?;
+        }
+        *export_slot = export;
+        if authorization
+            .as_ref()
+            .is_some_and(|auth| !auth.is_current())
+        {
+            // Do not recursively acquire the global owner registry while holding this owner.
+            owner
+                .revoke_private()
+                .map_err(|_| PlatformError::failed(Capability::Write))?;
+            if let Some(export) = export_slot.as_mut() {
+                export.close()?;
+            }
+            *export_slot = None;
+            return Err(clipboard_failure(Capability::Write));
+        }
+        Ok(())
     }
     pub fn stop(&self) -> PlatformResult<()> {
         self.owner
             .lock()
             .map_err(|_| PlatformError::failed(Capability::Write))?
             .stop()
-            .map_err(|_| PlatformError::failed(Capability::Write))
+            .map_err(|_| PlatformError::failed(Capability::Write))?;
+        let mut files = self
+            .private_files
+            .lock()
+            .map_err(|_| PlatformError::failed(Capability::Write))?;
+        if let Some(export) = files.as_mut() {
+            export.close()?;
+        }
+        *files = None;
+        Ok(())
     }
 }
 impl ClipboardWriter for EmbeddedClipboardWriter {
@@ -135,15 +334,17 @@ impl ClipboardWriter for EmbeddedClipboardWriter {
         native::clipboard_probe()
     }
     fn write(&self, payload: ClipboardPayload) -> PlatformResult<()> {
-        self.owner
-            .lock()
-            .map_err(|_| PlatformError::failed(Capability::Write))?
-            .write(native_payload(payload)?)
-            .map_err(|_| clipboard_failure(Capability::Write))
+        self.write_with_intent(payload, false)
     }
 }
+
 pub fn embedded_clipboard_service() -> ClipboardService<NativeClipboard, EmbeddedClipboardWriter> {
     ClipboardService::new(NativeClipboard, EmbeddedClipboardWriter::default())
+}
+/// Long-lived GUI callers retain one in-process owner; service Hosts own their separate instance.
+pub fn shared_embedded_clipboard_writer() -> &'static EmbeddedClipboardWriter {
+    static WRITER: std::sync::OnceLock<EmbeddedClipboardWriter> = std::sync::OnceLock::new();
+    WRITER.get_or_init(EmbeddedClipboardWriter::default)
 }
 pub fn standalone_clipboard_service() -> ClipboardService<NativeClipboard, StandaloneClipboardWriter>
 {
@@ -280,6 +481,23 @@ mod tests {
         );
         assert!(std::env::var_os("DISPLAY").is_none());
         let report = session_capabilities();
+        let negotiated = report
+            .wayland
+            .as_ref()
+            .unwrap()
+            .connection
+            .as_ref()
+            .unwrap();
+        eprintln!(
+            "synthetic_wayland_negotiation={}",
+            serde_json::to_string(negotiated).unwrap()
+        );
+        if let Ok(expected) = std::env::var("DEZIRCLIP_EXPECT_WAYLAND_PROTOCOL") {
+            assert_eq!(
+                serde_json::to_value(&negotiated.protocol).unwrap(),
+                serde_json::Value::String(expected)
+            );
+        }
         assert!(
             report.native_wayland
                 && report.platform.read.is_available()
@@ -498,9 +716,10 @@ mod tests {
             native: Default::default(),
             body_reads: 0,
         };
-        assert!(
-            matches!(CaptureEngine::capture(&context, &mut denied, &store, &mut ()), CaptureOutcome::Skipped(CaptureSkip::PrivacySession))
-        );
+        assert!(matches!(
+            CaptureEngine::capture(&context, &mut denied, &store, &mut ()),
+            CaptureOutcome::Skipped(CaptureSkip::PrivacySession)
+        ));
         assert_eq!(denied.body_reads, 0);
         history
             .privacy()
@@ -524,9 +743,10 @@ mod tests {
             .privacy()
             .set_session(PrivacySessionCommand::Off, now())
             .unwrap();
-        assert!(
-            matches!(CaptureEngine::capture_frame(&context, frame, &store, &mut ()), CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged))
-        );
+        assert!(matches!(
+            CaptureEngine::capture_frame(&context, frame, &store, &mut ()),
+            CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged)
+        ));
         assert_eq!(
             history
                 .query(&HistoryQuery {
@@ -538,5 +758,391 @@ mod tests {
             3
         );
         writer.stop().unwrap();
+        private_wayland_payloads_share_hints_and_revoke(&runtime);
     }
+
+    #[cfg(target_os = "linux")]
+    fn private_wayland_payloads_share_hints_and_revoke(runtime: &std::path::Path) {
+        use dzc_core::api::{
+            ClipboardEntry, HistoryService, PrivacyAccessIntent, PrivacySessionCommand,
+            SensitiveAccess,
+        };
+        let history = HistoryService::open(&runtime.join("private-copy-history.db")).unwrap();
+        let now = || chrono_time();
+        fn chrono_time() -> i64 {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64
+        }
+        let authorize = || {
+            let epoch = history.privacy().status(now()).unwrap().privacy_epoch;
+            let permit = history
+                .privacy()
+                .authorize_read(
+                    PrivacyAccessIntent::SelectedCopy,
+                    SensitiveAccess::ExplicitUserAction,
+                    Some(epoch),
+                    now(),
+                )
+                .unwrap();
+            let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
+                "id":-42,"content_type":"text","content":"private synthetic copy", "preview":"private",
+                "source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]
+            })).unwrap();
+            match history
+                .session_clipboard_payload_authorized(&entry, &permit, now())
+                .unwrap()
+            {
+                ClipboardPayload::Private { authorization, .. } => authorization,
+                _ => panic!("sensitive session copy must retain Core authorization"),
+            }
+        };
+        let writer = EmbeddedClipboardWriter::default();
+        let image = image::RgbaImage::from_raw(1, 1, vec![7, 8, 9, 255]).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+        for (payload, mime, expected) in [
+            (
+                ClipboardPayload::Text("private synthetic text".into()),
+                "text/plain",
+                b"private synthetic text".to_vec(),
+            ),
+            (
+                ClipboardPayload::Html {
+                    html: "<b>private synthetic HTML</b>".into(),
+                    text: "private synthetic HTML".into(),
+                },
+                "text/html",
+                b"<b>private synthetic HTML</b>".to_vec(),
+            ),
+            (
+                ClipboardPayload::Image {
+                    bytes: png.get_ref().clone(),
+                    mime: "image/png".into(),
+                },
+                "image/png",
+                png.into_inner(),
+            ),
+        ] {
+            writer
+                .write_suppressing_recapture(ClipboardPayload::Private {
+                    payload: Box::new(payload),
+                    authorization: authorize(),
+                })
+                .unwrap();
+            let offer = crate::wayland::WaylandClipboardBackend::snapshot().unwrap();
+            assert_eq!(offer.password_hint().unwrap(), Some(true));
+            assert_eq!(
+                offer
+                    .receive(mime, crate::wayland::MAX_TRANSFER_BYTES)
+                    .unwrap(),
+                expected
+            );
+            assert_eq!(
+                NativePrivacyHintProvider.read_privacy_hints().unwrap(),
+                vec![PrivacyHint::Sensitive]
+            );
+            let mut reader = crate::capture::NativeCaptureReader::default();
+            use dzc_core::capture::CaptureReader;
+            assert_eq!(
+                reader.preflight_privacy().unwrap().hints,
+                vec![PrivacyHint::Sensitive]
+            );
+        }
+        writer
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "synthetic.txt".into(),
+                    bytes: b"private synthetic file".to_vec(),
+                }],
+                authorization: authorize(),
+            })
+            .unwrap();
+        let offer = crate::wayland::WaylandClipboardBackend::snapshot().unwrap();
+        assert_eq!(offer.password_hint().unwrap(), Some(true));
+        let uris = String::from_utf8(offer.receive("text/uri-list", 4096).unwrap()).unwrap();
+        let path = urlencoding::decode(uris.trim().strip_prefix("file://").unwrap())
+            .unwrap()
+            .into_owned();
+        assert_eq!(std::fs::read(&path).unwrap(), b"private synthetic file");
+        assert!(path.starts_with("/proc/"));
+        assert!(!path.starts_with(&format!("/proc/{}/fd/", std::process::id())));
+        revoke_private_exports().unwrap();
+        assert!(!std::path::Path::new(&path).exists());
+        assert!(NativeClipboard.formats().unwrap().is_empty());
+        writer
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "synthetic.txt".into(),
+                    bytes: b"different private file B".to_vec(),
+                }],
+                authorization: authorize(),
+            })
+            .unwrap();
+        let replacement = crate::wayland::WaylandClipboardBackend::snapshot().unwrap();
+        let uris = String::from_utf8(replacement.receive("text/uri-list", 4096).unwrap()).unwrap();
+        let replacement_path = urlencoding::decode(uris.trim().strip_prefix("file://").unwrap())
+            .unwrap()
+            .into_owned();
+        assert_ne!(path, replacement_path);
+        assert_eq!(
+            std::fs::read(&replacement_path).unwrap(),
+            b"different private file B"
+        );
+        assert!(
+            std::fs::read(&path).is_err(),
+            "revoked A must never resolve to replacement B"
+        );
+        revoke_private_exports().unwrap();
+        assert!(!std::path::Path::new(&replacement_path).exists());
+        // Revocation releases private ownership without permanently disabling the Host writer.
+        writer
+            .write(ClipboardPayload::Text("ordinary synthetic remains".into()))
+            .unwrap();
+        revoke_private_exports().unwrap();
+        assert_eq!(
+            NativeClipboard.read_representation("text/plain").unwrap(),
+            b"ordinary synthetic remains"
+        );
+        scoped_private_writers_close_only_their_own_exports(authorize);
+        let authorization = authorize();
+        writer
+            .write(ClipboardPayload::Private {
+                payload: Box::new(ClipboardPayload::Text("revoked synthetic body".into())),
+                authorization: authorization.clone(),
+            })
+            .unwrap();
+        let stale = crate::wayland::WaylandClipboardBackend::snapshot().unwrap();
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, now())
+            .unwrap();
+        // A sender that refuses supply closes the pipe: the receiver may observe empty EOF.
+        if let Ok(bytes) = stale.receive("text/plain", 4096) {
+            assert!(bytes.is_empty());
+        }
+        revoke_private_exports().unwrap();
+        assert!(writer
+            .write(ClipboardPayload::Private {
+                payload: Box::new(ClipboardPayload::Text("must not become ordinary".into())),
+                authorization
+            })
+            .is_err());
+        writer.stop().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn isolated_x11_private_owner_retains_files_and_releases_only_its_selection() {
+        if std::env::var("DEZIRCLIP_RUN_LINUX_CLIPBOARD_SMOKE_TESTS").as_deref() != Ok("1") {
+            return;
+        }
+        assert!(!crate::wayland::requested());
+        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+        assert!(
+            runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
+        );
+        use dzc_core::api::{ClipboardEntry, HistoryService, PrivacyAccessIntent, SensitiveAccess};
+        let history = HistoryService::open(&runtime.join("private-x11-history.db")).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+        let permit = history
+            .privacy()
+            .authorize_read(
+                PrivacyAccessIntent::SelectedCopy,
+                SensitiveAccess::ExplicitUserAction,
+                None,
+                now,
+            )
+            .unwrap();
+        let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
+            "id":-42,"content_type":"text","content":"private synthetic X11", "preview":"private",
+            "source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]
+        }))
+        .unwrap();
+        let payload = history
+            .session_clipboard_payload_authorized(&entry, &permit, now)
+            .unwrap();
+        let authorization = match &payload {
+            ClipboardPayload::Private { authorization, .. } => authorization.clone(),
+            _ => panic!("protected copy required"),
+        };
+        let scoped_authorization = authorization.clone();
+        let writer = EmbeddedClipboardWriter::default();
+        writer.write_suppressing_recapture(payload).unwrap();
+        assert_eq!(
+            NativeClipboard.read_representation("text/plain").unwrap(),
+            b"private synthetic X11"
+        );
+        assert_eq!(
+            NativePrivacyHintProvider.read_privacy_hints().unwrap(),
+            vec![PrivacyHint::Sensitive]
+        );
+        writer
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "synthetic.txt".into(),
+                    bytes: b"private X11 file".to_vec(),
+                }],
+                authorization: authorization.clone(),
+            })
+            .unwrap();
+        assert_eq!(
+            NativePrivacyHintProvider.read_privacy_hints().unwrap(),
+            vec![PrivacyHint::Sensitive]
+        );
+        let uris = String::from_utf8(
+            NativeClipboard
+                .read_representation("text/uri-list")
+                .unwrap(),
+        )
+        .unwrap();
+        let path = urlencoding::decode(uris.trim().strip_prefix("file://").unwrap())
+            .unwrap()
+            .into_owned();
+        assert_eq!(std::fs::read(&path).unwrap(), b"private X11 file");
+        revoke_private_exports().unwrap();
+        assert!(!std::path::Path::new(&path).exists());
+        writer
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "synthetic.txt".into(),
+                    bytes: b"different private X11 file B".to_vec(),
+                }],
+                authorization,
+            })
+            .unwrap();
+        let uris = String::from_utf8(
+            NativeClipboard
+                .read_representation("text/uri-list")
+                .unwrap(),
+        )
+        .unwrap();
+        let replacement_path = urlencoding::decode(uris.trim().strip_prefix("file://").unwrap())
+            .unwrap()
+            .into_owned();
+        assert_ne!(path, replacement_path);
+        assert_eq!(
+            std::fs::read(&replacement_path).unwrap(),
+            b"different private X11 file B"
+        );
+        assert!(
+            std::fs::read(&path).is_err(),
+            "revoked X11 A must never resolve to replacement B"
+        );
+        revoke_private_exports().unwrap();
+        assert!(!std::path::Path::new(&replacement_path).exists());
+        writer
+            .write(ClipboardPayload::Text("ordinary X11 remains".into()))
+            .unwrap();
+        revoke_private_exports().unwrap();
+        assert_eq!(
+            NativeClipboard.read_representation("text/plain").unwrap(),
+            b"ordinary X11 remains"
+        );
+        scoped_private_writers_close_only_their_own_exports(|| scoped_authorization.clone());
+        writer.stop().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn scoped_private_writers_close_only_their_own_exports(
+        authorize: impl Fn() -> ClipboardAuthorization,
+    ) {
+        let first = EmbeddedClipboardWriter::default();
+        let second = EmbeddedClipboardWriter::default();
+        let file_path = || {
+            let uris = String::from_utf8(
+                NativeClipboard
+                    .read_representation("text/uri-list")
+                    .unwrap(),
+            )
+            .unwrap();
+            urlencoding::decode(uris.trim().strip_prefix("file://").unwrap())
+                .unwrap()
+                .into_owned()
+        };
+        first
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "first.txt".into(),
+                    bytes: b"scoped first".to_vec(),
+                }],
+                authorization: authorize(),
+            })
+            .unwrap();
+        let first_path = file_path();
+        second
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "second.txt".into(),
+                    bytes: b"scoped second".to_vec(),
+                }],
+                authorization: authorize(),
+            })
+            .unwrap();
+        let second_path = file_path();
+        first.stop().unwrap();
+        assert!(std::fs::read(&first_path).is_err());
+        assert_eq!(std::fs::read(&second_path).unwrap(), b"scoped second");
+        assert_eq!(file_path(), second_path);
+        second.stop().unwrap();
+        assert!(std::fs::read(&second_path).is_err());
+    }
+}
+
+/// The unique native owner calls this synchronously before acknowledging a privacy epoch change.
+pub fn revoke_private_exports() -> PlatformResult<()> {
+    crate::private_files::revoke().map_err(|_| PlatformError::failed(Capability::Write))?;
+    crate::native_clipboard::revoke_private_owners()
+        .map_err(|_| PlatformError::failed(Capability::Write))
+}
+
+/// Native-only export handles; paths never belong to a WebView or external Surface response.
+pub struct PrivateFileExport(crate::private_files::BoundExport);
+impl PrivateFileExport {
+    pub fn close(&mut self) -> PlatformResult<()> {
+        self.0
+            .close()
+            .map_err(|_| PlatformError::failed(Capability::Write))
+    }
+    pub fn paths(&self) -> PlatformResult<Vec<String>> {
+        self.0
+            .paths()
+            .map_err(|_| clipboard_failure(Capability::Write))
+    }
+    pub fn is_current(&self) -> bool {
+        self.0.paths().is_ok()
+    }
+    pub fn modified(&self, index: usize) -> PlatformResult<std::time::SystemTime> {
+        self.0
+            .modified(index)
+            .map_err(|_| clipboard_failure(Capability::Write))
+    }
+    pub fn read(&self, index: usize) -> PlatformResult<Vec<u8>> {
+        self.0
+            .read(index)
+            .map_err(|_| clipboard_failure(Capability::Write))
+    }
+    pub fn retain(self) {
+        self.0.retain();
+    }
+}
+pub fn private_file_export(
+    export: dzc_core::ports::AuthorizedFileExport,
+) -> PlatformResult<PrivateFileExport> {
+    crate::private_files::BoundExport::new(export.files, export.authorization)
+        .map(PrivateFileExport)
+        .map_err(|_| clipboard_failure(Capability::Write))
+}
+
+pub fn prepare_private_files(
+    files: Vec<ClipboardFile>,
+    authorization: ClipboardAuthorization,
+) -> PlatformResult<PrivateFileExport> {
+    crate::private_files::BoundExport::readonly(files, authorization)
+        .map(PrivateFileExport)
+        .map_err(|_| clipboard_failure(Capability::Write))
 }

@@ -30,3 +30,5 @@ pub fn install_default_key_provider() {
 pub fn set_diagnostic_sink(sink: fn(&str)) {
     encryption::set_diagnostic_sink(sink);
 }
+
+mod private_files;

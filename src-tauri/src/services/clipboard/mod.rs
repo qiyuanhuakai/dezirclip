@@ -152,6 +152,8 @@ struct CapturedEntryId {
 }
 
 fn distribute(app: &AppHandle, capture: StoredCapture) {
+    let Some(ticket)=capture.privacy_ticket else { return; };
+    if app.state::<DbState>().history_service().privacy().check_capture(&ticket,timestamp()).is_err() { return; }
     let settings = app.state::<SettingsState>();
     let entry = &capture.entry;
     if let Some(id) = capture
@@ -160,7 +162,7 @@ fn distribute(app: &AppHandle, capture: StoredCapture) {
     {
         if let Some(bytes) = crate::services::clipboard_ops::resolve_image_bytes(&entry.content) {
             tauri::async_runtime::spawn(
-                crate::services::clipboard_ops::trigger_ocr_for_image_item(id, bytes, app.clone()),
+                crate::services::clipboard_ops::trigger_ocr_for_image_item(id, bytes, ticket, app.clone()),
             );
         }
     }
@@ -340,7 +342,16 @@ pub fn process_new_entry(
     source_snapshot: Option<ActiveAppInfo>,
     ticket: Option<dzc_core::api::CaptureTicket>,
 ) -> Result<bool, String> {
-    let Some(frame) = generated_frame(data, ticket) else { return Ok(false); };
+    process_new_entry_with_protection(app, data, source_override, source_snapshot, ticket, false)
+}
+
+pub fn process_new_entry_with_protection(
+    app: &AppHandle, data: ClipboardData, source_override: Option<String>,
+    source_snapshot: Option<ActiveAppInfo>, ticket: Option<dzc_core::api::CaptureTicket>,
+    inherited_protection: bool,
+) -> Result<bool, String> {
+    let Some(mut frame) = generated_frame(data, ticket) else { return Ok(false); };
+    frame.metadata.inherited_protection = inherited_protection;
     process(CaptureTask {
         app: app.clone(),
         frame,

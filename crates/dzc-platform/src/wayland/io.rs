@@ -4,7 +4,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::time::Instant;
 
-pub(super) fn check_cancel(cancel: Option<&UnixStream>) -> Result<(), WaylandError> {
+pub(crate) fn check_cancel(cancel: Option<&UnixStream>) -> Result<(), WaylandError> {
     if let Some(cancel) = cancel {
         let mut fd = libc::pollfd {
             fd: cancel.as_raw_fd(),
@@ -115,6 +115,16 @@ pub(super) fn send(
     cancel: Option<&UnixStream>,
     deadline: Instant,
 ) -> Result<(), WaylandError> {
+    send_authorized(fd, bytes, cancel, deadline, &[])
+}
+
+pub(super) fn send_authorized(
+    fd: OwnedFd,
+    bytes: &[u8],
+    cancel: Option<&UnixStream>,
+    deadline: Instant,
+    leases: &[dzc_core::api::NativeReadLease],
+) -> Result<(), WaylandError> {
     // The compositor gives us an owned pipe endpoint. Preserve its status flags.
     let flags = unsafe { libc::fcntl(fd.as_raw_fd(), libc::F_GETFL) };
     if flags < 0
@@ -126,6 +136,9 @@ pub(super) fn send(
     let mut offset = 0;
     while offset < bytes.len() {
         check_cancel(cancel)?;
+        if leases.iter().any(|lease| !lease.is_current()) {
+            return Err(WaylandError::PermissionDenied);
+        }
         match output.write(&bytes[offset..]) {
             Ok(0) => return Err(WaylandError::TransferFailed),
             Ok(count) => offset += count,
@@ -180,5 +193,86 @@ mod tests {
             ),
             Err(WaylandError::Cancelled)
         );
+    }
+    #[test]
+    fn privacy_epoch_change_stops_a_transfer_between_pipe_chunks() {
+        use dzc_core::api::{
+            ClipboardEntry, HistoryService, PrivacyAccessIntent, PrivacySessionCommand,
+            SensitiveAccess,
+        };
+        use dzc_core::ports::ClipboardPayload;
+        let root = std::env::temp_dir().join(format!("dzc-private-pipe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let history = HistoryService::open(&root.join("synthetic.db")).unwrap();
+        let now = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64
+        };
+        let permit = history
+            .privacy()
+            .authorize_read(
+                PrivacyAccessIntent::SelectedCopy,
+                SensitiveAccess::ExplicitUserAction,
+                None,
+                now(),
+            )
+            .unwrap();
+        let entry:ClipboardEntry=serde_json::from_value(serde_json::json!({"id":-1,"content_type":"text","content":"private synthetic pipe","preview":"private","source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
+        let ClipboardPayload::Private { authorization, .. } = history
+            .session_clipboard_payload_authorized(&entry, &permit, now())
+            .unwrap()
+        else {
+            panic!("Core authorization required")
+        };
+        let lease = authorization.native_lease().unwrap();
+        let (read, write) = pipe().unwrap();
+        let size = 1024 * 1024;
+        let sender = std::thread::spawn(move || {
+            send_authorized(
+                write,
+                &vec![b'x'; size],
+                None,
+                Instant::now() + Duration::from_secs(3),
+                &[lease],
+            )
+        });
+        let mut input = std::fs::File::from(read);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut first = [0u8; 1];
+        loop {
+            match input.read(&mut first) {
+                Ok(1) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    wait(input.as_raw_fd(), libc::POLLIN, None, deadline).unwrap()
+                }
+                other => panic!("expected the first authorized chunk, got {other:?}"),
+            }
+        }
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, now())
+            .unwrap();
+        let mut received = 1;
+        let mut bytes = [0u8; 16384];
+        loop {
+            match input.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(count) => received += count,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    wait(input.as_raw_fd(), libc::POLLIN, None, deadline).unwrap()
+                }
+                other => panic!("unexpected synthetic pipe result {other:?}"),
+            }
+        }
+        assert_eq!(sender.join().unwrap(), Err(WaylandError::PermissionDenied));
+        assert!(
+            received < size,
+            "revoked transfers must not deliver the remaining chunks"
+        );
+        drop(authorization);
+        drop(history);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

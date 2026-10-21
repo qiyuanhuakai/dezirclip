@@ -12,7 +12,7 @@ pub struct TagItemsPage {
     pub next_offset: Option<usize>,
 }
 
-pub(super) const TAG_MATCH_FILTER: &str = "FROM entry_tags et JOIN clipboard_history ch ON ch.id=et.entry_id WHERE et.tag=?1 AND (?2='' OR dc_tag_matches(ch.content,ch.preview,ch.source_app,COALESCE(ch.ocr_text,''),?2))";
+pub(super) const TAG_MATCH_FILTER: &str = "FROM entry_tags et JOIN clipboard_history ch ON ch.id=et.entry_id WHERE et.tag=?1 AND (?2='' OR dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text)) AND (?2='' OR dc_tag_matches(ch.content,ch.preview,ch.source_app,COALESCE(ch.ocr_text,''),?2))";
 
 pub(super) fn register_tag_matcher(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.create_scalar_function("dc_tag_matches", 5, FunctionFlags::SQLITE_UTF8, |context| {

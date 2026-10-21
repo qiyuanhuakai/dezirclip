@@ -34,7 +34,8 @@ export const useClipboardActions = ({
       contentType: string,
       pasteWithFormat = false,
       pasteImageAsBase64 = false,
-      expectedPrivacyEpoch?: number
+      expectedPrivacyEpoch?: number,
+      derivedFromId?: number
     ) => {
       try {
         if (pending || failed) { pushToast(t("platform_capabilities_unavailable"), 3000); return; }
@@ -52,6 +53,7 @@ export const useClipboardActions = ({
           pasteWithFormat,
           pasteImageAsBase64,
           expectedPrivacyEpoch,
+          derivedFromId,
           moveToTop: !manualCopy && moveToTopAfterPaste
         });
 
@@ -75,12 +77,13 @@ export const useClipboardActions = ({
   );
 
   const openContent = useCallback(
-    async (item: ClipboardEntry) => {
+    async (item: ClipboardEntry, expectedPrivacyEpoch?: number) => {
       try {
         await invoke("open_content", {
           id: item.id,
           content: item.content,
-          contentType: item.content_type
+          contentType: item.content_type,
+          expectedPrivacyEpoch
         });
       } catch (err) {
         const errorMsg = t("open_failed") + (err?.toString() || "");

@@ -2,6 +2,7 @@
 use super::{
     ClipboardEntry, HistoryQuery, HistoryService, SearchRequest, SearchResult, SummaryQuery,
 };
+use rusqlite::OptionalExtension;
 use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -93,6 +94,7 @@ pub enum SensitiveAccess {
 
 #[derive(Debug, Clone)]
 pub struct PrivacyReadPermit {
+    intent: PrivacyAccessIntent,
     ticket: CaptureTicket,
     sensitive: bool,
 }
@@ -102,6 +104,50 @@ impl PrivacyReadPermit {
     }
     pub fn includes_sensitive(&self) -> bool {
         self.sensitive
+    }
+    pub(super) fn require_copy(&self) -> PrivacyResult<()> {
+        if self.intent != PrivacyAccessIntent::SelectedCopy {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
+        Ok(())
+    }
+    fn allows_body(&self) -> bool {
+        self.intent != PrivacyAccessIntent::RestrictedSummary
+    }
+}
+
+/// Native child lifecycle check only. This value grants no history read or decryption permission.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeReadLease {
+    database: String,
+    state_id: String,
+    epoch: u64,
+}
+impl NativeReadLease {
+    pub fn is_current(&self) -> bool {
+        let Ok(conn) = Connection::open_with_flags(
+            &self.database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) else {
+            return false;
+        };
+        if conn
+            .busy_timeout(std::time::Duration::from_millis(250))
+            .is_err()
+        {
+            return false;
+        }
+        let Ok(state) = read_state(&conn, chrono::Utc::now().timestamp_millis()) else {
+            return false;
+        };
+        !state.snapshot.session.expires_at_ms.is_some_and(|end| state.enabled && end <= chrono::Utc::now().timestamp_millis())
+            && state.state_id.to_string() == self.state_id
+            && state.snapshot.privacy_epoch == self.epoch
+    }
+    pub fn authorization(&self) -> crate::ports::ClipboardAuthorization {
+        let lease = self.clone();
+        crate::ports::ClipboardAuthorization::new(move || lease.is_current())
     }
 }
 
@@ -246,6 +292,58 @@ impl PrivacySessionService {
         Ok(result)
     }
 
+    pub(crate) fn native_read_lease(
+        &self,
+        permit: &PrivacyReadPermit,
+    ) -> PrivacyResult<Option<NativeReadLease>> {
+        let conn = self.connection.lock().map_err(unavailable)?;
+        let database = conn
+            .path()
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned);
+        Ok(database.map(|database| NativeReadLease {
+            database,
+            state_id: permit.ticket.state_id.to_string(),
+            epoch: permit.epoch(),
+        }))
+    }
+    pub fn hotkey(&self) -> PrivacyResult<String> {
+        let conn = self.connection.lock().map_err(unavailable)?;
+        conn.query_row(
+            "SELECT value FROM settings WHERE key='app.privacy_session_hotkey'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map(|value| value.unwrap_or_default())
+        .map_err(unavailable)
+    }
+    /// Only the authenticated native owner calls this after successfully registering the accelerator.
+    pub fn set_registered_hotkey(&self, hotkey: &str) -> PrivacyResult<()> {
+        if hotkey.len() > 128 || hotkey.chars().any(char::is_control) {
+            return Err(PrivacyError::PrivacyStateUnavailable);
+        }
+        let conn = self.connection.lock().map_err(unavailable)?;
+        crate::database::ensure_writable(&conn).map_err(unavailable)?;
+        conn.execute("INSERT INTO settings(key,value) VALUES('app.privacy_session_hotkey',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[hotkey]).map_err(unavailable)?;
+        Ok(())
+    }
+
+    pub fn toggle(&self, now_ms: i64) -> PrivacyResult<RuntimeSnapshot> {
+        let mut conn = self.connection.lock().map_err(unavailable)?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(unavailable)?;
+        let state = read_state(&tx, now_ms)?;
+        tx.execute("UPDATE privacy_runtime_state SET session_enabled=?1,session_expires_at_ms=NULL,privacy_epoch=privacy_epoch+1 WHERE singleton=1",
+            [!state.snapshot.session.active]).map_err(unavailable)?;
+        let result = read_state(&tx, now_ms)?.snapshot;
+        tx.commit().map_err(unavailable)?;
+        drop(conn);
+        (self.invalidate_epoch)(result.privacy_epoch);
+        Ok(result)
+    }
+
     pub fn capture_ticket(&self, now_ms: i64) -> PrivacyResult<CaptureTicket> {
         self.status(now_ms)?;
         let conn = self.connection.lock().map_err(unavailable)?;
@@ -289,6 +387,7 @@ impl PrivacySessionService {
             (_, SensitiveAccess::Denied) => false,
         };
         Ok(PrivacyReadPermit {
+            intent,
             ticket: CaptureTicket {
                 state_id: state.state_id,
                 epoch: state.snapshot.privacy_epoch,
@@ -384,6 +483,9 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<Vec<ClipboardEntry>> {
+        if !permit.allows_body() {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
         if !(1..=1000).contains(&query.limit) || query.offset < 0 {
             return Err(PrivacyError::SensitiveAccessDenied);
         }
@@ -395,12 +497,72 @@ impl HistoryService {
         Ok(result)
     }
 
+    /// GUI placeholders disclose identity and kind, never protected body, OCR or resource URLs.
+    pub fn entries_for_gui(
+        &self,
+        entries: &mut Vec<ClipboardEntry>,
+        include_protected_metadata: bool,
+        now_ms: i64,
+    ) -> PrivacyResult<()> {
+        let permit = self.privacy().authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            now_ms,
+        )?;
+        let mut safe = Vec::with_capacity(entries.len());
+        for mut entry in entries.drain(..) {
+            let protected = if entry.id > 0 {
+                self.repository
+                    .entry_is_protected(entry.id)
+                    .map_err(unavailable)?
+            } else {
+                !session_entry_visible(&entry)
+            };
+            if protected {
+                if !include_protected_metadata {
+                    continue;
+                }
+                entry.content.clear();
+                entry.preview.clear();
+                entry.html_content = None;
+                entry.ocr_text = None;
+                entry.source_app_path = None;
+                entry.is_external = false;
+                entry.file_preview_exists = false;
+                if !crate::database::has_sensitive_tag(&entry.tags) {
+                    entry.tags.push("sensitive".into());
+                }
+            }
+            if !protected {
+                entry = match super::clipboard_payload::preview_entry(entry.clone(), Some(384)) {
+                    Ok(entry) => entry,
+                    Err(_) => {
+                        entry.content.clear();
+                        entry.html_content = None;
+                        entry.preview.clear();
+                        entry.is_external = false;
+                        entry.source_app_path = None;
+                        entry
+                    }
+                };
+            }
+            safe.push(entry);
+        }
+        self.privacy().check_read(&permit, now_ms)?;
+        *entries = safe;
+        Ok(())
+    }
+
     pub fn authorize_session_entry(
         &self,
         entry: &ClipboardEntry,
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<ClipboardEntry> {
+        if !permit.allows_body() {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
         self.privacy().check_read(permit, now_ms)?;
         if entry.id >= 0 || (!permit.includes_sensitive() && !session_entry_visible(entry)) {
             return Err(PrivacyError::SensitiveAccessDenied);
@@ -461,6 +623,72 @@ impl HistoryService {
         Ok(result)
     }
 
+    /// Uses the same matcher and SQLite trigram tokenizer as persistent history, only in RAM.
+    pub fn search_summaries_for_session_authorized(
+        &self,
+        entries: &[ClipboardEntry],
+        request: &SearchRequest,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<SearchResult> {
+        request.validate().map_err(unavailable)?;
+        self.privacy().check_read(permit, now_ms)?;
+        let eligible: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.id < 0 && session_entry_visible(entry))
+            .collect();
+        let mut matches = std::collections::HashSet::new();
+        if request.mode == super::SummarySearchMode::Fts5 {
+            let conn = rusqlite::Connection::open_in_memory().map_err(unavailable)?;
+            conn.execute_batch("CREATE VIRTUAL TABLE session_fts USING fts5(content,preview,source_app,content_kinds,ocr_text,tokenize='trigram')").map_err(unavailable)?;
+            for entry in &eligible {
+                conn.execute("INSERT INTO session_fts(rowid,content,preview,source_app,content_kinds,ocr_text) VALUES(?1,?2,?3,?4,?5,?6)", rusqlite::params![entry.id,entry.content,entry.preview,entry.source_app,serde_json::to_string(&entry.content_kinds).map_err(unavailable)?,entry.ocr_text]).map_err(unavailable)?;
+            }
+            let mut statement = conn
+                .prepare("SELECT rowid FROM session_fts WHERE session_fts MATCH ?1")
+                .map_err(unavailable)?;
+            let rows = statement
+                .query_map(
+                    [crate::services::search::escape_fts5_term(&request.query)],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(unavailable)?;
+            for id in rows {
+                matches.insert(id.map_err(unavailable)?);
+            }
+        } else {
+            let regex = if request.mode == super::SummarySearchMode::Regex {
+                Some(regex::Regex::new(&request.query).map_err(unavailable)?)
+            } else {
+                None
+            };
+            let mode = if request.mode == super::SummarySearchMode::Fuzzy {
+                "fuzzy"
+            } else {
+                "contains"
+            };
+            for entry in &eligible {
+                if crate::infrastructure::repository::cli_query::matches_fields(
+                    &request.query,
+                    mode,
+                    regex.as_ref(),
+                    &entry.content,
+                    &entry.source_app,
+                    &serde_json::to_string(&entry.tags).map_err(unavailable)?,
+                    entry.ocr_text.as_deref().unwrap_or(""),
+                ) {
+                    matches.insert(entry.id);
+                }
+            }
+        }
+        let selected: Vec<_> = eligible
+            .into_iter()
+            .filter(|entry| matches.contains(&entry.id))
+            .cloned()
+            .collect();
+        self.summaries_for_session_authorized(&selected, &request.page, permit, now_ms)
+    }
+
     /// Host callers obtain a fresh permission for each request, never from a client role string.
     pub fn get_entry_authorized(
         &self,
@@ -468,6 +696,9 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<Option<ClipboardEntry>> {
+        if !permit.allows_body() {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
         let privacy = self.privacy();
         privacy.check_read(permit, now_ms)?;
         let entries = self
@@ -784,7 +1015,7 @@ mod tests {
         let permit = history
             .privacy()
             .authorize_read(
-                PrivacyAccessIntent::RestrictedSummary,
+                PrivacyAccessIntent::AutomationRead,
                 SensitiveAccess::Denied,
                 None,
                 1,
@@ -829,5 +1060,58 @@ mod tests {
                 .unwrap_err(),
             PrivacyError::PrivacyEpochChanged
         );
+    }
+    #[test]
+    fn restricted_summary_permit_cannot_be_reused_to_read_complete_bodies() {
+        let history = memory();
+        let permit = history
+            .privacy()
+            .authorize_read(
+                PrivacyAccessIntent::RestrictedSummary,
+                SensitiveAccess::Denied,
+                None,
+                1,
+            )
+            .unwrap();
+        assert_eq!(
+            history.get_entry_authorized(1, &permit, 1).unwrap_err(),
+            PrivacyError::SensitiveAccessDenied
+        );
+        assert_eq!(
+            history
+                .query_authorized(
+                    &HistoryQuery {
+                        limit: 1,
+                        ..Default::default()
+                    },
+                    &permit,
+                    1
+                )
+                .unwrap_err(),
+            PrivacyError::SensitiveAccessDenied
+        );
+        assert!(history
+            .summaries_authorized(&SummaryQuery::default(), &permit, 1)
+            .is_ok());
+    }
+    #[test]
+    fn concurrent_toggle_requests_are_serialized_in_the_shared_database() {
+        let directory = std::env::temp_dir().join(format!("dzc-toggle-{}", uuid::Uuid::new_v4()));
+        let path = directory.join("synthetic.db");
+        let first = HistoryService::open(&path).unwrap();
+        let other = HistoryService::open(&path).unwrap();
+        let first_service = first.privacy();
+        let other_service = other.privacy();
+        std::thread::scope(|scope| {
+            let a = scope.spawn(|| first_service.toggle(1).unwrap());
+            let b = scope.spawn(|| other_service.toggle(1).unwrap());
+            a.join().unwrap();
+            b.join().unwrap();
+        });
+        let snapshot = first.runtime_snapshot(1).unwrap();
+        assert!(!snapshot.session.active);
+        assert_eq!(snapshot.privacy_epoch, 2);
+        drop((first_service, other_service, first, other));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

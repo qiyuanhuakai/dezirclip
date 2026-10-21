@@ -34,6 +34,10 @@ CLI、直接链接的 Core 客户端和 GUI 根据运行时会话选择同一原
 
 `runtime::EmbeddedClipboardWriter` 持有进程内 selection owner，供已有 Host/Service 注入 Core ClipboardService；`stop()` 成功确认其 owner 退出，后续 write 被拒绝。它不运行 current_exe 的隐藏子命令。独立 dzc 命令仍通过其明确的 clipboard-owner 子进程保留 selection；正文只经 stdin 传输，不进入 argv。默认 `write()` 保留监听入库；已有历史记录的复制显式使用 `write_suppressing_recapture()`，GUI 则传播既有 `mark_as_self_copy` 意图。只有该意图才加私有进程 MIME，避免普通历史复制重复；生成文本/OCR 不会被无条件过滤，仍经过 Core 隐私 ticket 和 epoch 检查。标记不能当隐私许可。新 owner 协商失败保留原 owner；显式停止不以 Drop 代替确认。
 
+受保护的文本、HTML、图像与文件复制保留 Core 原始许可，在同一个 Wayland offer 中附带 KDE secret。许可不会编码为 MIME 正文；每次发送及每段 pipe 写入前重新检查数据库身份与隐私 epoch。隐私撤销同步停止并 join 本进程持有的私有 owner，未确认退出必须报错并保留 handle；不按名称寻找或终止其他进程。GUI 的受保护复制使用长期保留的进程内 writer，不把图形程序当作 dzc 子命令启动。服务显式持有自己的 writer，独立 CLI 继续使用其专用子进程。
+
+受保护文件只导出 kernel-owned 文件句柄，owner 保留句柄至撤销、替换或停止。Wayland 私有 owner 与 X11 文件 owner 在每次供数前检查许可，另以100ms边界检查撤销/最多五分钟存活期；普通监听和普通 owner 不因此增加轮询。X11 文件使用受限的 URI/KDE secret/TARGETS owner，避免通用库 canonicalize memfd URI。X11 的文本、HTML 与图像仍使用原生库提供同 offer secret，由 Host 同步撤销其进程内 owner。已获得文件句柄的外部读取者可以完成现有读取，撤销阻止新的打开；不能宣称撤回其他应用已读取的字节。
+
 捕获读取器在正文前读取同一 offer 的 KDE hint，交给 Core 隐私预检；明确 secret 直接跳过。Windows/X11 使用各自受限预检，X11 缺少足够 selection 跟踪证据时不会把空结果当作完整检查。GUI 历史项在 Wayland 中执行手动复制，保留当前搜索和记录，不自动粘贴或按“粘贴后删除”修改历史。
 
 全局快捷键、自动粘贴、快速粘贴浮层、跨应用焦点恢复、全局定位/贴边、置顶、透明调整与截图目前没有获授权的原生适配器；GUI 禁用对应设置并说明原因，后端也在任何 X11/xdotool 操作之前拒绝。现有设置值不改写，重新在 Windows/X11 打开时仍可使用。Portal 探测只查询已运行服务的接口版本，不激活服务、不创建授权会话；接口存在不等于用户已授权，也不使上述能力变为 available。
