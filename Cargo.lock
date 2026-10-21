@@ -1574,6 +1574,7 @@ dependencies = [
 name = "dzc-host"
 version = "0.2.0-alpha.1"
 dependencies = [
+ "base64 0.22.1",
  "dirs 5.0.1",
  "dzc-core",
  "dzc-platform",
@@ -1610,6 +1611,7 @@ dependencies = [
  "wayland-protocols",
  "wayland-protocols-wlr",
  "windows 0.62.2",
+ "windows-core 0.62.2",
  "x11-clipboard",
  "x11rb",
 ]

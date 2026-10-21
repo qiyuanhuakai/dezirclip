@@ -28,7 +28,7 @@ pub fn resolve(
                 .map_err(|e| format!("get: invalid id '{id}': {e}"))?,
         )
     };
-    repo.query(&HistoryQuery {
+    super::access::query(repo, &HistoryQuery {
         limit: 1,
         id: numeric,
         latest,

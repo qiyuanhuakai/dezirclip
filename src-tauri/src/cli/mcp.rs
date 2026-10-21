@@ -1,7 +1,7 @@
-//! Bounded, read-only MCP over stdio through the shared AutomationHistory service.
+//! Bounded, read-only MCP over stdio with a fresh Core ordinary-data permit per query.
 
 use crate::domain::models::ClipboardEntry;
-use crate::api::{AutomationHistory, HistoryQuery, HistoryService};
+use crate::api::{HistoryQuery, HistoryService};
 use serde_json::{json, Map, Value};
 use std::io::{BufRead, Read, Write};
 use std::sync::Arc;
@@ -17,6 +17,9 @@ where
 {
     serve_with_io(std::io::stdin().lock(), std::io::stdout().lock(), open_repo)
 }
+pub fn serve_host()->Result<(),String> {
+    serve_with_mode(std::io::stdin().lock(),std::io::stdout().lock(),||Err("Host mode does not open history".into()),true)
+}
 
 /// Keep framing independent of real stdio so limits and privacy can be tested
 /// without opening a user's history or communicating with another process.
@@ -26,7 +29,11 @@ where
     W: Write,
     F: FnMut() -> Result<Arc<HistoryService>, String>,
 {
+    serve_with_mode(&mut source,&mut destination,open_repo,false)
+}
+fn serve_with_mode<R:BufRead,W:Write,F:FnMut()->Result<Arc<HistoryService>,String>>(mut source:R,mut destination:W,open_repo:F,host:bool)->Result<(),String> {
     let mut server = Server::new(open_repo);
+    server.host=host;
     loop {
         let mut line = Vec::new();
         let count = (&mut source)
@@ -70,9 +77,10 @@ struct RpcError(i64, &'static str);
 
 struct Server<F> {
     open_repo: F,
-    repo: Option<Arc<AutomationHistory>>,
+    repo: Option<Arc<HistoryService>>,
     initialized: bool,
     ready: bool,
+    host: bool,
 }
 
 impl<F> Server<F>
@@ -85,6 +93,7 @@ where
             repo: None,
             initialized: false,
             ready: false,
+            host: false,
         }
     }
 
@@ -216,15 +225,18 @@ where
         }
     }
 
-    fn repository(&mut self) -> Result<&AutomationHistory, String> {
+    fn repository(&mut self) -> Result<&HistoryService, String> {
         if self.repo.is_none() {
-            self.repo = Some(Arc::new((self.open_repo)().map_err(|_| {
+            self.repo = Some((self.open_repo)().map_err(|_| {
                 "Could not open clipboard history; check database access".to_string()
-            })?.automation()));
+            })?);
         }
         self.repo
             .as_deref()
             .ok_or_else(|| "Clipboard history is unavailable".to_string())
+    }
+    fn query(&mut self,query:&HistoryQuery<'_>)->Result<Vec<ClipboardEntry>,String> {
+        if self.host {super::host_access::query(query)}else{super::access::query(self.repository()?,query)}
     }
 
     fn call_tool(&mut self, name: &str, args: &Map<String, Value>) -> Result<Value, String> {
@@ -246,7 +258,7 @@ where
                 1,
                 MAX_CONTENT_CHARS,
             )? as usize;
-            let entry = self.repository()?.query(&HistoryQuery {limit:1,id:Some(id),..Default::default()})
+            let entry = self.query(&HistoryQuery {limit:1,id:Some(id),exclude_sensitive:true,..Default::default()})
                 .map_err(|_| "This entry is unavailable to the MCP adapter".to_string())?
                 .pop().ok_or_else(|| "This entry is unavailable to the MCP adapter".to_string())?;
             let mut data = metadata(&entry)?;
@@ -271,9 +283,7 @@ where
         } else {
             None
         };
-        let entries = self
-            .repository()?
-            .query(&HistoryQuery {
+        let entries = self.query(&HistoryQuery {
                 limit: limit as i32,
                 offset: offset as i32,
                 metadata: true,

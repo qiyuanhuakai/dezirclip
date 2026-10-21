@@ -13,7 +13,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{Emitter, Manager, State};
 use urlencoding::decode;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
@@ -115,6 +115,7 @@ pub fn copy_image_bytes_to_system_clipboard(bytes: Vec<u8>) -> AppResult<()> {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+    owned_clipboard_writer()?.release_private_selection().map_err(|error|AppError::Internal(error.to_string()))?;
     let hashes = copy_image_bytes_to_clipboard(bytes, current_time)?;
     crate::LAST_APP_SET_HASH.store(hashes.0, Ordering::SeqCst);
     crate::LAST_APP_SET_HASH_ALT.store(hashes.1, Ordering::SeqCst);
@@ -137,15 +138,30 @@ pub async fn copy_to_clipboard(
     paste_image_as_base64: Option<bool>,
     expected_privacy_epoch: Option<u64>,
     derived_from_id: Option<i64>,
+    expected_host_instance_id:Option<String>,
 ) -> AppResult<()> {
     if paste && dzc_platform::runtime::is_native_wayland() {
         return Err(AppError::Validation("wayland_interaction_unavailable".into()));
+    }
+    let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>();
+    let source_id=if id!=0 {id}else{derived_from_id.unwrap_or(0)};
+    bridge.check_instance(source_id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
+    if bridge.embedded().map_err(AppError::Validation)?.is_none() && source_id!=0 {
+        if paste {handle_window_focus_for_paste(&app_handle).await?;}
+        let epoch=expected_privacy_epoch.unwrap_or(state.history_service().runtime_snapshot(Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch);
+        let _:dzc_host::wire::OperationResult=bridge.call(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams {
+            id:source_id,service_instance_id:bridge.instance().map_err(AppError::Validation)?,expected_epoch:epoch,reveal:expected_privacy_epoch.is_some(),paste,
+            with_format:paste_with_format,derived_text:derived_from_id.filter(|_|id==0).map(|_|content.clone()),image_as_base64:paste_image_as_base64,
+            delete_after_use:Some(delete_after_use),move_to_top,
+        },"OperationResult").await.map_err(AppError::Validation)?;
+        if paste {play_paste_sound_if_enabled(&app_handle);}
+        return Ok(());
     }
     let operation_permission=if let Some(epoch)=expected_privacy_epoch {
         Some(state.history_service().privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
     } else {None};
     let generated_ticket = if paste_image_as_base64.unwrap_or(false) || derived_from_id.is_some() {
-        crate::services::clipboard::generated_capture_ticket(&app_handle)?
+        crate::services::clipboard::generated_capture_ticket(&app_handle).await?
     } else { None };
 
     println!(
@@ -227,7 +243,7 @@ pub async fn copy_to_clipboard(
             None,
             generated_ticket,
             private_payload.is_some(),
-        )?;
+        ).await?;
     }
 
     // 3. Copy to system clipboard. For self-insert paths we force mark_as_self_copy=true
@@ -244,7 +260,7 @@ pub async fn copy_to_clipboard(
         if let dzc_core::ports::ClipboardPayload::Private{payload:inner,..}=&mut payload {
             if self_insert_label.is_some() || !paste_with_format.unwrap_or(effective_content_type=="rich_text" && html_content.is_some()) && matches!(inner.as_ref(),dzc_core::ports::ClipboardPayload::Html{..}) { **inner=dzc_core::ports::ClipboardPayload::Text(content.clone()); }
         }
-        dzc_platform::runtime::shared_embedded_clipboard_writer().write_suppressing_recapture(payload).map_err(|error|AppError::Internal(error.to_string()))?;
+        bridge.writer().map_err(AppError::Validation)?.write_suppressing_recapture(payload).map_err(|error|AppError::Internal(error.to_string()))?;
     } else {
     write_content_to_system_clipboard(
         &content,
@@ -414,11 +430,11 @@ pub(crate) fn write_content_to_system_clipboard(
 ) -> AppResult<()> {
     let (content_hash, current_time) = calculate_content_hash(content);
 
-    let clipboard_hashes = if dzc_platform::runtime::is_native_wayland() {
+    let clipboard_hashes = if cfg!(target_os="linux") {
         write_native_wayland_content(content, &options)?;
         (content_hash.max(1), 0)
     } else {
-        dzc_platform::runtime::shared_embedded_clipboard_writer()
+        owned_clipboard_writer()?
             .release_private_selection().map_err(|error| AppError::Internal(error.to_string()))?;
         match options.content_type {
         "image" | "video" | "file" => {
@@ -477,9 +493,19 @@ fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'
         }
         _ => Payload::Text(content.to_string()),
     };
-    let writer = dzc_platform::runtime::shared_embedded_clipboard_writer();
+    let writer = owned_clipboard_writer()?;
     if options.mark_as_self_copy { writer.write_suppressing_recapture(payload) } else { writer.write(payload) }
         .map_err(|error| AppError::Internal(error.to_string()))
+}
+
+fn owned_clipboard_writer()->AppResult<dzc_platform::runtime::EmbeddedClipboardWriter> {
+    if let Some(app)=crate::global_state::GLOBAL_APP_HANDLE.get() {
+        return app.state::<crate::app::ipc_host::DesktopHost>().writer().map_err(AppError::Validation);
+    }
+    #[cfg(test)]
+    return Ok(dzc_platform::runtime::shared_embedded_clipboard_writer().clone());
+    #[cfg(not(test))]
+    Err(AppError::Validation("ClipboardHostUnavailable".into()))
 }
 
 fn copy_file_like_content(
@@ -793,14 +819,9 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
 
     #[cfg(target_os = "linux")]
     {
-        crate::infrastructure::linux_api::clipboard::set_clipboard_image_with_formats(
-            crate::infrastructure::linux_api::clipboard::ImageData {
-                width: width as usize,
-                height: height as usize,
-                bytes: rgba.into_raw(),
-            },
-        )
-        .map_err(AppError::from)?;
+        use dzc_core::ports::ClipboardWriter;
+        owned_clipboard_writer()?.write_suppressing_recapture(dzc_core::ports::ClipboardPayload::Image{bytes,mime:if is_gif{"image/gif"}else{"image/png"}.into()})
+            .map_err(|error|AppError::Internal(error.to_string()))?;
     }
 
     Ok((primary_hash, secondary_hash))
@@ -1463,6 +1484,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
         };
 
         let history = crate::app::commands::history_cmd::get_clipboard_history(
+            app_handle_clone.clone(),
             app_handle_clone.state::<DbState>(),
             app_handle_clone.state::<SessionHistory>(),
             1,
@@ -1487,135 +1509,9 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
                     None,
                     None,
                     None,
+                    item.host_instance_id.clone(),
                 )
                 .await;
-            }
-        }
-    });
-}
-
-#[cfg_attr(
-    not(target_os = "windows"),
-    allow(
-        unused_variables,
-        reason = "Linux OCR is stubbed; bytes only consumed on Windows"
-    )
-)]
-pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, ticket: dzc_core::api::CaptureTicket, app: AppHandle) {
-    let db_state = app.state::<DbState>();
-    {
-        let conn = match db_state.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                crate::error!("[ocr-trigger] DB lock failed for id={}: {}", item_id, e);
-                return;
-            }
-        };
-        if let Err(e) = db_state
-            .repo
-            .update_ocr_authorized_with_conn(&conn, item_id, "", "processing", &ticket, chrono::Utc::now().timestamp_millis())
-        {
-            crate::error!(
-                "[ocr-trigger] Failed to set processing status for id={}: {}",
-                item_id,
-                e
-            );
-            return;
-        }
-    }
-
-    tauri::async_runtime::spawn(async move {
-        let result: Result<String, String> = async {
-            #[cfg(target_os = "linux")]
-            {
-                let service = crate::services::ocr::OcrService::new()
-                    .map_err(|e| format!("OCR engine init failed: {e}"))?;
-                // recognize() is sync and invokes the tesseract binary; off-load it
-                // to a blocking task so we do not stall the async runtime.
-                let png_owned = png_bytes;
-                tokio::task::spawn_blocking(move || service.recognize(&png_owned))
-                    .await
-                    .map_err(|e| format!("OCR blocking task failed: {e}"))?
-                    .map_err(|e| format!("OCR recognition failed: {e}"))
-            }
-            #[cfg(target_os = "windows")]
-            {
-                let service = crate::services::ocr::OcrService::new()
-                    .map_err(|e| format!("OCR engine init failed: {e}"))?;
-                service
-                    .recognize(&png_bytes)
-                    .map_err(|e| format!("OCR recognition failed: {e}"))
-            }
-        }
-        .await;
-
-        let db_state = app.state::<DbState>();
-        let conn = match db_state.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                crate::error!(
-                    "[ocr-trigger] DB lock failed on completion for id={}: {}",
-                    item_id,
-                    e
-                );
-                return;
-            }
-        };
-
-        match result {
-            Ok(text) => {
-                if let Err(e) = db_state
-                    .repo
-                    .update_ocr_authorized_with_conn(&conn, item_id, &text, "done", &ticket, chrono::Utc::now().timestamp_millis())
-                {
-                    crate::error!(
-                        "[ocr-trigger] Failed to persist OCR text for id={}: {}",
-                        item_id,
-                        e
-                    );
-                    return;
-                }
-                drop(conn);
-                let _ = app.emit(
-                    "ocr:complete",
-                    crate::app::commands::ocr_cmd::OcrResult {
-                        item_id,
-                        text: String::new(),
-                        confidence: None,
-                        status: "done".to_string(),
-                    },
-                );
-            }
-            Err(e) => {
-                let msg = e;
-                let status = if msg.contains("not supported") {
-                    "unsupported"
-                } else {
-                    "failed"
-                };
-                if let Err(e2) = db_state
-                    .repo
-                    .update_ocr_authorized_with_conn(&conn, item_id, "", status, &ticket, chrono::Utc::now().timestamp_millis())
-                {
-                    crate::error!(
-                        "[ocr-trigger] Failed to set {} status for id={}: {}",
-                        status,
-                        item_id,
-                        e2
-                    );
-                    return;
-                }
-                drop(conn);
-                crate::error!("[ocr-trigger] OCR failed for id={}: {}", item_id, msg);
-                let _ = app.emit(
-                    "ocr:complete",
-                    crate::app::commands::ocr_cmd::OcrResult {
-                        item_id,
-                        text: String::new(),
-                        confidence: None,
-                        status: status.to_string(),
-                    },
-                );
             }
         }
     });

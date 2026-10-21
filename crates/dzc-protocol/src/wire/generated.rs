@@ -20,6 +20,8 @@ pub enum Permission {
     ServiceManage,
     #[serde(rename = "surface_control")]
     SurfaceControl,
+    #[serde(rename = "desktop_history")]
+    DesktopHistory,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -48,6 +50,8 @@ pub struct ServiceStatus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClipboardCopyParams {
     pub id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_instance_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -59,6 +63,162 @@ pub struct OperationResult {
 pub struct SurfaceActionParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_instance_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopPageParams {
+    pub limit: u16,
+    pub offset: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopEntryParams {
+    pub id: i64,
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub reveal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_dimension: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopEntry {
+    pub id: i64,
+    pub content_type: String,
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html_content: Option<String>,
+    pub source_app: String,
+    pub timestamp: i64,
+    pub preview: String,
+    pub is_pinned: bool,
+    pub tags: Vec<String>,
+    pub use_count: i64,
+    pub is_external: bool,
+    pub pinned_order: i64,
+    pub file_preview_exists: bool,
+    pub content_kinds: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ocr_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ocr_status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopEntries {
+    pub entries: Vec<DesktopEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BodySnapshot {
+    pub snapshot_id: String,
+    pub total_bytes: u32,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SnapshotReadParams {
+    pub snapshot_id: String,
+    pub offset: u32,
+    pub expected_epoch: u64,
+    pub service_instance_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SnapshotChunk {
+    pub data_base64: String,
+    pub offset: u32,
+    pub next_offset: u32,
+    pub finished: bool,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PrivacyHotkey {
+    pub hotkey: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureBeginParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureBeginResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_id: Option<String>,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureWriteParams {
+    pub capture_id: String,
+    pub offset: u32,
+    pub data_base64: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaptureFinishParams {
+    pub capture_id: String,
+    pub source_app: String,
+    pub inherited_protection: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GeneratedBody {
+    pub kind: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopMutationParams {
+    pub id: i64,
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub reveal: bool,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm_persistence: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopMutationResult {
+    pub id: i64,
+    pub performed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopCopyParams {
+    pub id: i64,
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub reveal: bool,
+    pub paste: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub with_format: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub derived_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_as_base64: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delete_after_use: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_to_top: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,6 +285,38 @@ pub enum Method {
     ServiceGrant,
     #[serde(rename = "service.revoke")]
     ServiceRevoke,
+    #[serde(rename = "privacy.toggle")]
+    PrivacyToggle,
+    #[serde(rename = "privacy.hotkey.get")]
+    PrivacyHotkeyGet,
+    #[serde(rename = "privacy.hotkey.set")]
+    PrivacyHotkeySet,
+    #[serde(rename = "desktop.history.page")]
+    DesktopHistoryPage,
+    #[serde(rename = "desktop.history.get")]
+    DesktopHistoryGet,
+    #[serde(rename = "desktop.snapshot.read")]
+    DesktopSnapshotRead,
+    #[serde(rename = "desktop.capture.begin")]
+    DesktopCaptureBegin,
+    #[serde(rename = "desktop.capture.write")]
+    DesktopCaptureWrite,
+    #[serde(rename = "desktop.capture.finish")]
+    DesktopCaptureFinish,
+    #[serde(rename = "desktop.history.summary")]
+    DesktopHistorySummary,
+    #[serde(rename = "desktop.history.mutate")]
+    DesktopHistoryMutate,
+    #[serde(rename = "desktop.clipboard.copy")]
+    DesktopClipboardCopy,
+    #[serde(rename = "desktop.privacy.rules")]
+    DesktopPrivacyRules,
+    #[serde(rename = "desktop.privacy.decision")]
+    DesktopPrivacyDecision,
+    #[serde(rename = "desktop.privacy.feedback")]
+    DesktopPrivacyFeedback,
+    #[serde(rename = "desktop.privacy.remove_rule")]
+    DesktopPrivacyRemoveRule,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -155,6 +347,18 @@ pub enum WireErrorCode {
     Internal,
     #[serde(rename = "deadline_exceeded")]
     DeadlineExceeded,
+    #[serde(rename = "privacy_state_unavailable")]
+    PrivacyStateUnavailable,
+    #[serde(rename = "privacy_epoch_changed")]
+    PrivacyEpochChanged,
+    #[serde(rename = "privacy_session_active")]
+    PrivacySessionActive,
+    #[serde(rename = "sensitive_access_denied")]
+    SensitiveAccessDenied,
+    #[serde(rename = "manual_persistence_confirmation_required")]
+    ManualPersistenceConfirmationRequired,
+    #[serde(rename = "privacy_duration_invalid")]
+    PrivacyDurationInvalid,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -312,6 +516,8 @@ pub struct HistorySearchParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntryIdParams {
     pub id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_instance_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -338,6 +544,56 @@ pub struct EntryResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopPolicyParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PolicyRuleValue {
+    pub id: String,
+    pub kind: String,
+    pub source_app: Option<String>,
+    pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopPolicyRules {
+    pub rules: Vec<PolicyRuleValue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PolicyEvidenceValue {
+    pub source: String,
+    pub level: String,
+    pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopPolicyDecision {
+    pub action: String,
+    pub reason: String,
+    pub evidence: Vec<PolicyEvidenceValue>,
+    pub scan_status: String,
+    pub scanned_bytes: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopRuntimeValue {
+    pub state: RuntimeState,
+    pub privacy: PrivacyState,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

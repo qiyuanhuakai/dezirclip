@@ -66,6 +66,9 @@ pub fn set_paste_queue(
     state: State<'_, PasteQueue>,
     item_ids: Vec<i64>,
 ) -> AppResult<()> {
+    if item_ids.iter().any(|id|*id<=0) {
+        return Err(crate::error::AppError::Validation("SessionQueueUnavailable".into()));
+    }
     if item_ids.is_empty() {
         {
             let mut queue = state.inner().0.lock().unwrap();
@@ -125,6 +128,31 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
     };
 
     if let Some(id) = id_opt {
+        if id<=0 {
+            let _=app_handle.emit("paste-queue-unavailable","SessionQueueUnavailable");
+            return;
+        }
+        let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>();
+        match bridge.embedded() {
+            Err(_)=>{let _=app_handle.emit("paste-queue-unavailable","ClipboardHostUnavailable");return;},
+            Ok(None)=>{
+                let bridge=bridge.inner().clone();let app=app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let result=async {
+                        let privacy:dzc_host::wire::PrivacyState=bridge.call(dzc_host::wire::Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await?;
+                        bridge.call::<dzc_host::wire::OperationResult>(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams{
+                            id,service_instance_id:bridge.instance()?,expected_epoch:privacy.privacy_epoch,reveal:false,paste:true,
+                            derived_text:None,image_as_base64:None,with_format:Some(true),delete_after_use:Some(false),move_to_top:Some(false)},"OperationResult").await
+                    }.await;
+                    if result.is_ok() {
+                        let queue=app.state::<PasteQueue>();
+                        if pop_front_if_matches(&queue,id) {emit_queue_finished(&app,&queue);}
+                    }else {let _=app.emit("paste-queue-unavailable","ClipboardHostUnavailable");}
+                });
+                return;
+            },
+            Ok(Some(_))=>(),
+        }
         // 2. Get Content (DB Lock acquired here, safe because Queue lock is released)
         let content_opt = if id < 0 {
             let s = session.inner().0.lock().unwrap();

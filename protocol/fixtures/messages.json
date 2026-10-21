@@ -435,5 +435,194 @@
     "schema": "EmptyParams",
     "raw_hex": "7b2276616c7565223a22ff227d",
     "valid": false
+  },
+  {
+    "name": "desktop-session-feedback",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-session-feedback",
+      "method": "desktop.privacy.feedback",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "id": -7,
+        "action": "exact_exception"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "desktop-policy-missing-id",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-policy-missing-id",
+      "method": "desktop.privacy.feedback",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "action": "not_sensitive"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "desktop-policy-missing-rule",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-policy-missing-rule",
+      "method": "desktop.privacy.remove_rule",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "desktop-policy-invalid-action",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-policy-invalid-action",
+      "method": "desktop.privacy.feedback",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "id": 1,
+        "action": "reveal_all"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "desktop-session-edit",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-session-edit",
+      "method": "desktop.history.mutate",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "id": -7,
+        "action": "edit",
+        "reveal": false,
+        "content": "synthetic edit"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "session-copy-requires-origin",
+    "schema": "Request",
+    "value": {
+      "request_id": "session-copy-requires-origin",
+      "method": "surface.copy",
+      "params": {
+        "id": -7
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "session-copy-origin",
+    "schema": "Request",
+    "value": {
+      "request_id": "session-copy-origin",
+      "method": "surface.copy",
+      "params": {
+        "id": -7,
+        "service_instance_id": "fixture-host"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "session-body-requires-origin",
+    "schema": "Request",
+    "value": {
+      "request_id": "session-body-requires-origin",
+      "method": "history.get",
+      "params": {
+        "id": -7
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "public-privacy_state_unavailable",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_state_unavailable",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_state_unavailable",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-privacy_epoch_changed",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_epoch_changed",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_epoch_changed",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-privacy_session_active",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_session_active",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_session_active",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-sensitive_access_denied",
+    "schema": "WireError",
+    "value": {
+      "code": "sensitive_access_denied",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "sensitive_access_denied",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-manual_persistence_confirmation_required",
+    "schema": "WireError",
+    "value": {
+      "code": "manual_persistence_confirmation_required",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "manual_persistence_confirmation_required",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-privacy_duration_invalid",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_duration_invalid",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_duration_invalid",
+      "message": "Local request failed"
+    },
+    "valid": true
   }
 ]

@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 dzc-core.workspace = true
-dzc-platform = { workspace = true, features = ["ipc"] }
+dzc-platform = { workspace = true, features = ["ipc", "native-ocr"] }
 dzc-protocol = { workspace = true, features = ["wire"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -16,3 +16,4 @@ tokio = { workspace = true, features = ["net", "io-util", "rt", "sync", "time", 
 rand.workspace = true
 uuid.workspace = true
 dirs.workspace = true
+base64.workspace = true

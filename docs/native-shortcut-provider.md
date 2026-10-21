@@ -1,0 +1,19 @@
+# Native shortcut provider
+
+`dzc_platform::shortcut::NativeShortcutProvider` implements Core's existing `ShortcutProvider` and returns caller-owned `ShortcutRegistration` handles. It has no Tauri dependency, database access, IPC listener or process-global callback. Host remains responsible for unique ownership, settings transactions and deciding when an action may run.
+
+`normalize_shortcut()` validates and canonicalizes a supported chord without registering it. Ctrl/Control, Alt, Shift and Super/Win/Meta modifiers are supported with letters, digits, F1–F24 and common navigation keys. Duplicate modifiers, multiple keys, control characters and unknown keys are rejected. Empty settings are a Host-level disable operation. Windows F12 is reserved by the native debugger contract and is rejected when registering.
+
+- Windows uses a private worker message queue and `RegisterHotKey` with `MOD_NOREPEAT`. The same worker unregisters its hotkey before exit. Cancellation posts only to that worker's queue; it does not replace a GUI/global-hotkey callback.
+- X11 negotiates XKB detectable autorepeat and XKB grab state, resolves the actual modifier map and group-one base symbol, then checks every `GrabKey` request. Caps/Num/Scroll lock combinations are registered explicitly. Held keys are not activated again until release; a key-release event never activates the shortcut. Other groups, ambiguous modifier maps and an already-held target key are rejected. A keyboard mapping change ends the registration rather than silently rebinding it. The worker blocks on its native connection and private cancellation socket, without idle polling.
+- Native Wayland returns Unsupported before any X11 connection or global grab, including when DISPLAY is also present. No portal grant is inferred or requested.
+
+Linux also honors `DEZIRCLIP_DISABLE_LINUX_SERVICES=global_shortcut` (or `all`), with the existing `TIEZ_DISABLE_LINUX_SERVICES` alias. Capability probing and registration both report DisabledByConfiguration without connecting to a display.
+
+Registration returns only after native success; callbacks remain disarmed until the caller receives success. Failed startup closes the callback gate and attempts cancellation. If exit is not confirmed, the provider retains the worker in a failed-startup collection; Host must call `drain_failed_registrations()` successfully before releasing its shortcut ownership lease. This is distinct from a successful registration, which remains owned by its returned handle.
+
+`unregister()` first disarms future callbacks, requests cancellation, then waits up to five seconds for native cleanup and join. A timeout retains the handle for retry. A callback already running must finish before join can succeed. Drop makes a best-effort stop and is not proof of handoff; Host must explicitly confirm release. Capability `active` tracks actual owned native registrations and is cleared on worker exit, including panic/disconnect. Native or cleanup failures use the existing `GlobalShortcut` PlatformError shape and never include clipboard data.
+
+Validation uses std-only inline tests for normalization, failed startup, callback disarming and stop-timeout retry. A marked private bubblewrap/Xvfb session additionally checks actual GrabKey conflict, XTest key press/held-repeat/release behavior, unregister and re-registration. The Wayland negative case supplies an invalid DISPLAY and confirms no X11 fallback. Windows compile/unit checks do not constitute a real Windows keyboard-injection test; native Windows action delivery must be checked in the disposable runner or a dedicated test desktop, not the user's session.
+
+The native contracts follow [RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey), [Xlib keyboard grabs](https://www.x.org/releases/current/doc/libX11/libX11/libX11.html) and the [XKB protocol](https://www.x.org/releases/current/doc/kbproto/xkbproto.html).

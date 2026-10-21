@@ -76,12 +76,36 @@
             "const": 0
           },
           "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
         }
       },
       "required": [
         "id"
       ],
-      "additionalProperties": true
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "maximum": -1
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "required": [
+              "service_instance_id"
+            ]
+          }
+        }
+      ]
     },
     "EntrySummary": {
       "type": "object",

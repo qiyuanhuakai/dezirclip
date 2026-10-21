@@ -15,6 +15,7 @@ const (
     PermissionPrivacyWrite Permission = "privacy_write"
     PermissionServiceManage Permission = "service_manage"
     PermissionSurfaceControl Permission = "surface_control"
+    PermissionDesktopHistory Permission = "desktop_history"
 )
 
 type HostMode string
@@ -38,6 +39,7 @@ type ServiceStatus struct {
 
 type ClipboardCopyParams struct {
     Id int64 `json:"id"`
+    ServiceInstanceId *string `json:"service_instance_id,omitempty"`
 }
 
 type OperationResult struct {
@@ -46,6 +48,128 @@ type OperationResult struct {
 
 type SurfaceActionParams struct {
     EntryId *int64 `json:"entry_id,omitempty"`
+    ServiceInstanceId *string `json:"service_instance_id,omitempty"`
+}
+
+type DesktopPageParams struct {
+    Limit uint16 `json:"limit"`
+    Offset uint32 `json:"offset"`
+    Kind *string `json:"kind,omitempty"`
+    Query *string `json:"query,omitempty"`
+}
+
+type DesktopEntryParams struct {
+    Id int64 `json:"id"`
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Reveal bool `json:"reveal"`
+    ThumbnailDimension *uint32 `json:"thumbnail_dimension,omitempty"`
+}
+
+type DesktopEntry struct {
+    Id int64 `json:"id"`
+    ContentType string `json:"content_type"`
+    Content string `json:"content"`
+    HtmlContent *string `json:"html_content,omitempty"`
+    SourceApp string `json:"source_app"`
+    Timestamp int64 `json:"timestamp"`
+    Preview string `json:"preview"`
+    IsPinned bool `json:"is_pinned"`
+    Tags []string `json:"tags"`
+    UseCount int64 `json:"use_count"`
+    IsExternal bool `json:"is_external"`
+    PinnedOrder int64 `json:"pinned_order"`
+    FilePreviewExists bool `json:"file_preview_exists"`
+    ContentKinds []string `json:"content_kinds"`
+    OcrText *string `json:"ocr_text,omitempty"`
+    OcrStatus *string `json:"ocr_status,omitempty"`
+}
+
+type DesktopEntries struct {
+    Entries []DesktopEntry `json:"entries"`
+}
+
+type BodySnapshot struct {
+    SnapshotId string `json:"snapshot_id"`
+    TotalBytes uint32 `json:"total_bytes"`
+    State RuntimeState `json:"state"`
+}
+
+type SnapshotReadParams struct {
+    SnapshotId string `json:"snapshot_id"`
+    Offset uint32 `json:"offset"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    ServiceInstanceId string `json:"service_instance_id"`
+}
+
+type SnapshotChunk struct {
+    DataBase64 string `json:"data_base64"`
+    Offset uint32 `json:"offset"`
+    NextOffset uint32 `json:"next_offset"`
+    Finished bool `json:"finished"`
+    State RuntimeState `json:"state"`
+}
+
+type PrivacyHotkey struct {
+    Hotkey string `json:"hotkey"`
+}
+
+type CaptureBeginParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+}
+
+type CaptureBeginResult struct {
+    CaptureId *string `json:"capture_id,omitempty"`
+    State RuntimeState `json:"state"`
+}
+
+type CaptureWriteParams struct {
+    CaptureId string `json:"capture_id"`
+    Offset uint32 `json:"offset"`
+    DataBase64 string `json:"data_base64"`
+}
+
+type CaptureFinishParams struct {
+    CaptureId string `json:"capture_id"`
+    SourceApp string `json:"source_app"`
+    InheritedProtection bool `json:"inherited_protection"`
+}
+
+type GeneratedBody struct {
+    Kind string `json:"kind"`
+    Text string `json:"text"`
+    Html *string `json:"html,omitempty"`
+}
+
+type DesktopMutationParams struct {
+    Id int64 `json:"id"`
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Reveal bool `json:"reveal"`
+    Action string `json:"action"`
+    Pinned *bool `json:"pinned,omitempty"`
+    Tags *[]string `json:"tags,omitempty"`
+    Content *string `json:"content,omitempty"`
+    ConfirmPersistence *bool `json:"confirm_persistence,omitempty"`
+}
+
+type DesktopMutationResult struct {
+    Id int64 `json:"id"`
+    Performed bool `json:"performed"`
+}
+
+type DesktopCopyParams struct {
+    Id int64 `json:"id"`
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Reveal bool `json:"reveal"`
+    Paste bool `json:"paste"`
+    WithFormat *bool `json:"with_format,omitempty"`
+    DerivedText *string `json:"derived_text,omitempty"`
+    ImageAsBase64 *bool `json:"image_as_base64,omitempty"`
+    DeleteAfterUse *bool `json:"delete_after_use,omitempty"`
+    MoveToTop *bool `json:"move_to_top,omitempty"`
 }
 
 type ProtocolVersion struct {
@@ -85,6 +209,22 @@ const (
     MethodSurfacePaste Method = "surface.paste"
     MethodServiceGrant Method = "service.grant"
     MethodServiceRevoke Method = "service.revoke"
+    MethodPrivacyToggle Method = "privacy.toggle"
+    MethodPrivacyHotkeyGet Method = "privacy.hotkey.get"
+    MethodPrivacyHotkeySet Method = "privacy.hotkey.set"
+    MethodDesktopHistoryPage Method = "desktop.history.page"
+    MethodDesktopHistoryGet Method = "desktop.history.get"
+    MethodDesktopSnapshotRead Method = "desktop.snapshot.read"
+    MethodDesktopCaptureBegin Method = "desktop.capture.begin"
+    MethodDesktopCaptureWrite Method = "desktop.capture.write"
+    MethodDesktopCaptureFinish Method = "desktop.capture.finish"
+    MethodDesktopHistorySummary Method = "desktop.history.summary"
+    MethodDesktopHistoryMutate Method = "desktop.history.mutate"
+    MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
+    MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
+    MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"
+    MethodDesktopPrivacyFeedback Method = "desktop.privacy.feedback"
+    MethodDesktopPrivacyRemoveRule Method = "desktop.privacy.remove_rule"
 )
 
 type WireErrorCode string
@@ -102,6 +242,12 @@ const (
     WireErrorCodePrivacyBlocked WireErrorCode = "privacy_blocked"
     WireErrorCodeInternal WireErrorCode = "internal"
     WireErrorCodeDeadlineExceeded WireErrorCode = "deadline_exceeded"
+    WireErrorCodePrivacyStateUnavailable WireErrorCode = "privacy_state_unavailable"
+    WireErrorCodePrivacyEpochChanged WireErrorCode = "privacy_epoch_changed"
+    WireErrorCodePrivacySessionActive WireErrorCode = "privacy_session_active"
+    WireErrorCodeSensitiveAccessDenied WireErrorCode = "sensitive_access_denied"
+    WireErrorCodeManualPersistenceConfirmationRequired WireErrorCode = "manual_persistence_confirmation_required"
+    WireErrorCodePrivacyDurationInvalid WireErrorCode = "privacy_duration_invalid"
 )
 
 type WireError struct {
@@ -221,6 +367,7 @@ type HistorySearchParams struct {
 
 type EntryIdParams struct {
     Id int64 `json:"id"`
+    ServiceInstanceId *string `json:"service_instance_id,omitempty"`
 }
 
 type EntrySummary struct {
@@ -242,6 +389,46 @@ type EntryResult struct {
     Entry EntrySummary `json:"entry"`
     Text *string `json:"text,omitempty"`
     Truncated bool `json:"truncated"`
+}
+
+type DesktopPolicyParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id *int64 `json:"id,omitempty"`
+    Action *string `json:"action,omitempty"`
+    RuleId *string `json:"rule_id,omitempty"`
+}
+
+type PolicyRuleValue struct {
+    Id string `json:"id"`
+    Kind string `json:"kind"`
+    SourceApp *string `json:"source_app"`
+    CreatedAtMs int64 `json:"created_at_ms"`
+}
+
+type DesktopPolicyRules struct {
+    Rules []PolicyRuleValue `json:"rules"`
+}
+
+type PolicyEvidenceValue struct {
+    Source string `json:"source"`
+    Level string `json:"level"`
+    Reason string `json:"reason"`
+    RuleId *string `json:"rule_id,omitempty"`
+}
+
+type DesktopPolicyDecision struct {
+    Action string `json:"action"`
+    Reason string `json:"reason"`
+    Evidence []PolicyEvidenceValue `json:"evidence"`
+    ScanStatus string `json:"scan_status"`
+    ScannedBytes uint64 `json:"scanned_bytes"`
+    TotalBytes uint64 `json:"total_bytes"`
+}
+
+type DesktopRuntimeValue struct {
+    State RuntimeState `json:"state"`
+    Privacy PrivacyState `json:"privacy"`
 }
 
 type PrivacyState struct {

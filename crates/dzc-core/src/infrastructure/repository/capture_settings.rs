@@ -3,6 +3,15 @@ use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
 use std::collections::HashMap;
 
 impl SqliteClipboardRepository {
+    pub(crate) fn reserved_shortcuts(&self) -> CoreResult<Vec<String>> {
+        let connection = self.conn.lock().map_err(|_| CoreError::from("ShortcutSettingsUnavailable".to_owned()))?;
+        let mut query = connection.prepare("SELECT value FROM settings WHERE key IN ('app.hotkey','app.quick_paste_hotkey','app.sequential_hotkey','app.rich_paste_hotkey','app.search_hotkey','app.screenshot_hotkey','app.screenshot_full_hotkey')")
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        let values = query.query_map([], |row| row.get::<_,String>(0)).map_err(|error| CoreError::from(error.to_string()))?
+            .collect::<Result<Vec<_>,_>>().map_err(|error| CoreError::from(error.to_string()))?;
+        if values.iter().any(|value| value.len() > 128 || value.chars().any(char::is_control)) { return Err(CoreError::validation("ShortcutSettingsInvalid")); }
+        Ok(values.into_iter().filter(|value| !value.is_empty()).collect())
+    }
     pub(crate) fn capture_settings_snapshot(&self) -> CoreResult<CaptureSettings> {
         let connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
         let mut query = connection.prepare("SELECT key,value FROM settings WHERE key IN ('app.persistent','app.deduplicate','app.capture_files','app.capture_rich_text','app.privacy_protection','app.privacy_protection_kinds','app.privacy_protection_custom_rules','app.excluded_source_apps','app.ocr_enabled')").map_err(|error| CoreError::from(error.to_string()))?;
@@ -41,5 +50,16 @@ mod tests {
         assert!(!initial.persistent);
         repository.conn.lock().unwrap().execute("INSERT INTO settings(key,value) VALUES('app.privacy_protection','not-a-boolean')",[]).unwrap();
         assert!(repository.capture_settings_snapshot().is_err());
+    }
+    #[test]
+    fn shortcut_conflicts_read_only_the_existing_accelerator_keys() {
+        let mut connection=rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        connection.execute("INSERT INTO settings(key,value) VALUES('app.sequential_hotkey','Alt+V'),('app.hotkey','Ctrl+Shift+V'),('app.private_credential','not-an-accelerator')",[]).unwrap();
+        let repository=SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
+        let mut values=repository.reserved_shortcuts().unwrap();values.sort();
+        assert_eq!(values,vec!["Alt+V","Ctrl+Shift+V"]);
+        repository.conn.lock().unwrap().execute("UPDATE settings SET value=char(10) WHERE key='app.hotkey'",[]).unwrap();
+        assert!(repository.reserved_shortcuts().is_err());
     }
 }

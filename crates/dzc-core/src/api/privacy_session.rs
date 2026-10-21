@@ -590,6 +590,28 @@ impl HistoryService {
         Ok(())
     }
 
+    /// Bounded Desktop list projection. The original five fields are checked
+    /// before discarding bodies; this does not decode resources or grant reveal.
+    pub fn entries_metadata_for_gui(&self,entries:&[ClipboardEntry],include_protected_metadata:bool,now_ms:i64)->PrivacyResult<Vec<ClipboardEntry>> {
+        let permit=self.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead,SensitiveAccess::Denied,None,now_ms)?;
+        let mut result=Vec::with_capacity(entries.len());
+        for entry in entries {
+            let protected=if entry.id>0 {self.repository.entry_is_protected(entry.id).map_err(unavailable)?}else{!session_entry_visible(entry)};
+            if protected && !include_protected_metadata {continue;}
+            let mut tags:Vec<_>=entry.tags.iter().take(128).map(|tag|tag.chars().take(80).collect::<String>()).collect();
+            if protected && !crate::database::has_sensitive_tag(&tags) {if tags.len()==128 {tags.pop();}tags.push("sensitive".into());}
+            let preview=if protected {String::new()} else if matches!(entry.content_type.as_str(),"file"|"files"|"video") {
+                entry.preview.rsplit(['/', '\\']).next().unwrap_or_default().chars().take(500).collect()
+            }else{entry.preview.chars().take(500).collect()};
+            result.push(ClipboardEntry {id:entry.id,content_type:entry.content_type.chars().take(128).collect(),content:String::new(),html_content:None,
+                source_app:entry.source_app.chars().take(256).collect(),source_app_path:None,timestamp:entry.timestamp,preview,is_pinned:entry.is_pinned,tags,
+                use_count:entry.use_count,is_external:false,pinned_order:entry.pinned_order,file_preview_exists:!protected && entry.file_preview_exists,
+                content_kinds:entry.content_kinds.iter().take(16).map(|kind|kind.chars().take(128).collect()).collect(),ocr_text:None,ocr_status:entry.ocr_status.as_ref().map(|status|status.chars().take(128).collect())});
+        }
+        self.privacy().check_read(&permit,chrono::Utc::now().timestamp_millis())?;
+        Ok(result)
+    }
+
     pub fn authorize_session_entry(
         &self,
         entry: &ClipboardEntry,
@@ -782,6 +804,25 @@ mod tests {
 
     fn memory() -> HistoryService {
         HistoryService::open(Path::new(":memory:")).unwrap()
+    }
+
+    #[test]
+    fn gui_metadata_checks_original_protection_and_projects_without_resource_or_body_io() {
+        let history=memory();
+        let row=|id,kind:&str,content:&str,preview:&str|serde_json::from_value::<ClipboardEntry>(serde_json::json!({"id":id,"content_type":kind,"content":content,"preview":preview,
+            "source_app":"s".repeat(1000),"source_app_path":"/private/process","timestamp":1,"is_pinned":false,"tags":[]})).unwrap();
+        let ordinary=row(-1,"image","/does-not-exist/image.png",&"p".repeat(1000));
+        let malformed=row(-2,"text","linux:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","must not escape");
+        let file=row(-3,"file","/private/body.txt","C:\\private\\body.txt");
+        let rows=history.entries_metadata_for_gui(&[ordinary,malformed,file],true,1).unwrap();
+        assert_eq!(rows.len(),3);
+        assert_eq!(rows[0].preview.len(),500);
+        assert_eq!(rows[0].source_app.len(),256);
+        assert!(rows.iter().all(|row|row.content.is_empty() && row.html_content.is_none() && row.ocr_text.is_none() && row.source_app_path.is_none()));
+        assert!(rows[1].preview.is_empty());
+        assert!(rows[1].tags.iter().any(|tag|tag=="sensitive"));
+        assert_eq!(rows[2].preview,"body.txt");
+        assert!(history.entries_metadata_for_gui(&[row(-4,"text","linux:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==","hidden")],false,1).unwrap().is_empty());
     }
 
     #[test]

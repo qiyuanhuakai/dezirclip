@@ -138,7 +138,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(app::updater::UpdaterState::default())
+        .manage(app::updater::UpdaterState::with_host(std::sync::Arc::new(app::ipc_host::DesktopUpdateHost)))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -169,6 +169,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app::commands::privacy_cmd::get_clipboard_host_status,
             app::window_manager::toggle_window_cmd,
             app::window_manager::hide_window_cmd,
             app::window_manager::activate_window_focus,
@@ -188,6 +189,7 @@ fn main() {
             app::commands::get_privacy_status,
             app::commands::set_privacy_session,
             app::commands::toggle_privacy_session,
+            app::commands::set_privacy_session_hotkey,
             app::commands::get_privacy_entry,
             app::commands::get_history_resource_preview,
             app::commands::get_clipboard_history,
@@ -333,13 +335,18 @@ fn main() {
     match app {
         Ok(app) => {
             info!(">>> [STARTUP] Tauri app built successfully.");
-            app.run(|_app_handle, event| {
+            app.run(|app_handle, event| {
                 if let tauri::RunEvent::ExitRequested { api, .. } = event {
                     if crate::app::app_exit::should_prevent_current_exit_requested() {
                         crate::info!(
                             "[app-exit] Prevented runtime exit after managed webview teardown"
                         );
                         api.prevent_exit();
+                    } else {
+                        use tauri::Manager;
+                        if let Some(host)=app_handle.try_state::<crate::app::ipc_host::DesktopHost>() {
+                            if host.shutdown().is_err() {api.prevent_exit();crate::warn!("[host] ClipboardStopUnconfirmed");}
+                        }
                     }
                 }
             });

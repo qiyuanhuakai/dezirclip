@@ -12,7 +12,6 @@ pub mod protection;
 
 mod desktop_search;
 mod capture_settings;
-
 pub(crate) mod privacy_policy;
 #[cfg(test)]
 mod privacy_policy_tests;

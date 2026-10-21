@@ -57,7 +57,23 @@
         "surface.copy",
         "surface.paste",
         "service.grant",
-        "service.revoke"
+        "service.revoke",
+        "privacy.toggle",
+        "privacy.hotkey.get",
+        "privacy.hotkey.set",
+        "desktop.history.page",
+        "desktop.history.get",
+        "desktop.snapshot.read",
+        "desktop.capture.begin",
+        "desktop.capture.write",
+        "desktop.capture.finish",
+        "desktop.history.summary",
+        "desktop.history.mutate",
+        "desktop.clipboard.copy",
+        "desktop.privacy.rules",
+        "desktop.privacy.decision",
+        "desktop.privacy.feedback",
+        "desktop.privacy.remove_rule"
       ]
     },
     "WireErrorCode": {
@@ -75,7 +91,13 @@
         "busy",
         "privacy_blocked",
         "internal",
-        "deadline_exceeded"
+        "deadline_exceeded",
+        "privacy_state_unavailable",
+        "privacy_epoch_changed",
+        "privacy_session_active",
+        "sensitive_access_denied",
+        "manual_persistence_confirmation_required",
+        "privacy_duration_invalid"
       ]
     },
     "WireError": {
@@ -634,6 +656,344 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/GrantRevokeParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.toggle"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.hotkey.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "privacy.hotkey.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/PrivacyHotkey"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.page"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.snapshot.read"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/SnapshotReadParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.capture.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/CaptureBeginParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.capture.write"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/CaptureWriteParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.capture.finish"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/CaptureFinishParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.summary"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.mutate"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopMutationParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.clipboard.copy"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.rules"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.decision"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "id"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.feedback"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "id",
+                      "action"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.privacy.remove_rule"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "allOf": [
+                  {
+                    "$ref": "https://dezirclip.local/protocol/v1/policy.schema.json#/$defs/DesktopPolicyParams"
+                  },
+                  {
+                    "required": [
+                      "rule_id"
+                    ]
+                  }
+                ]
               }
             }
           }

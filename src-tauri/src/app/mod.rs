@@ -10,3 +10,4 @@ pub mod webview_memory;
 pub mod window_manager;
 pub mod updater;
 pub mod build_info;
+pub mod ipc_host;

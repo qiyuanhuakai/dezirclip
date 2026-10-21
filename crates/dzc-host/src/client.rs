@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{io, time::Duration};
 
 /// Requests on one connection are correlated and serialized by ownership.
-pub struct Client { stream: Stream, next: u64, pub hello: HelloResult, pub peer: ipc::PeerIdentity }
+pub struct Client { stream: Option<Stream>, next: u64, pub hello: HelloResult, pub peer: ipc::PeerIdentity }
 impl Client {
     pub async fn connect(endpoint: &Endpoint, role: ClientRole, grant: Option<String>) -> io::Result<Self> {
         let mut stream = endpoint.connect(Duration::from_secs(3)).await?;
@@ -15,7 +15,7 @@ impl Client {
         let value = exchange(&mut stream, request, "HelloResult").await?;
         let hello: HelloResult = serde_json::from_value(value)?;
         if hello.protocol_version.major != wire::VERSION.major { return Err(io::Error::new(io::ErrorKind::InvalidData, "ProtocolMismatch")); }
-        Ok(Self { stream, next: 2, hello, peer })
+        Ok(Self { stream: Some(stream), next: 2, hello, peer })
     }
     pub async fn control(endpoint: &Endpoint, role: ClientRole) -> io::Result<Self> {
         // This is an explicit trusted local-client operation, never an automatic
@@ -28,7 +28,48 @@ impl Client {
     pub async fn call<T: DeserializeOwned>(&mut self, method: Method, parameters: impl Serialize, schema: &str) -> io::Result<T> {
         self.next = self.next.checked_add(1).ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
         let request = Request { request_id: self.next.to_string(), method, params: serde_json::to_value(parameters)? };
-        serde_json::from_value(exchange(&mut self.stream, request, schema).await?).map_err(io::Error::other)
+        let mut stream = self.stream.take().ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "LocalConnectionClosed"))?;
+        let result = exchange(&mut stream, request, schema).await;
+        if result.as_ref().is_ok() || result.as_ref().is_err_and(|error| error.kind() == io::ErrorKind::PermissionDenied) { self.stream = Some(stream); }
+        match result.and_then(|value| serde_json::from_value(value).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))) {
+            Ok(value) => Ok(value),
+            Err(error) => { if error.kind() != io::ErrorKind::PermissionDenied { self.stream.take(); } Err(error) },
+        }
+    }
+
+    /// One logical Desktop result is reconstructed on this same authenticated
+    /// connection; every bounded chunk is checked against its original instance
+    /// and epoch. A transport failure poisons the connection rather than reusing
+    /// a partly consumed frame for a later request.
+    pub async fn read_snapshot<T: DeserializeOwned>(&mut self, snapshot: BodySnapshot, schema: &str) -> io::Result<T> {
+        let result=self.read_snapshot_inner(snapshot,schema).await;
+        if result.is_err() {self.stream.take();}
+        result
+    }
+    async fn read_snapshot_inner<T: DeserializeOwned>(&mut self, snapshot: BodySnapshot, schema: &str) -> io::Result<T> {
+        use base64::Engine;
+        if snapshot.total_bytes > 32 * 1024 * 1024 || snapshot.state.service_instance_id != self.hello.state.service_instance_id {
+            return Err(io::Error::from(io::ErrorKind::InvalidData));
+        }
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut bytes = Vec::with_capacity(snapshot.total_bytes as usize);
+        loop {
+            let chunk: SnapshotChunk = tokio::time::timeout_at(deadline, self.call(Method::DesktopSnapshotRead, SnapshotReadParams {
+                snapshot_id: snapshot.snapshot_id.clone(), offset: bytes.len() as u32, expected_epoch: snapshot.state.privacy_epoch,
+                service_instance_id: snapshot.state.service_instance_id.clone(),
+            }, "SnapshotChunk")).await.map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
+            let invalid = || io::Error::new(io::ErrorKind::InvalidData, "InvalidSnapshotChunk");
+            let decoded = base64::engine::general_purpose::STANDARD.decode(&chunk.data_base64).map_err(|_| invalid())?;
+            if chunk.state.service_instance_id != snapshot.state.service_instance_id || chunk.state.privacy_epoch != snapshot.state.privacy_epoch
+                || chunk.offset as usize != bytes.len() || chunk.next_offset as usize != bytes.len().saturating_add(decoded.len())
+                || chunk.next_offset > snapshot.total_bytes || chunk.finished != (chunk.next_offset == snapshot.total_bytes)
+                || (!chunk.finished && decoded.is_empty()) { self.stream.take(); return Err(invalid()); }
+            bytes.extend(decoded);
+            if chunk.finished { break; }
+        }
+        let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+        wire::validate(schema, &value).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+        serde_json::from_value(value).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))
     }
 }
 async fn exchange(stream: &mut Stream, request: Request, schema: &str) -> io::Result<serde_json::Value> {

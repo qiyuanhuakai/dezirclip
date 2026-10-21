@@ -55,7 +55,7 @@ pub const UNLIMITED: i32 = i32::MAX;
 /// needed for a CLI surface).
 pub fn run(args: &ListArgs, repo: &HistoryService) -> Result<(), String> {
     let limit = checked_limit(args.limit)?;
-    let entries = repo.query(&HistoryQuery {
+    let entries = super::access::query(repo, &HistoryQuery {
         limit,
         offset: args.offset,
         kind: args.kind.as_deref(),

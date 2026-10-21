@@ -36,11 +36,12 @@ fn parse_id(raw: &str) -> Result<i64, String> {
 
 /// Run the `edit` subcommand. Returns the id that was rewritten.
 pub fn run(args: &EditArgs, repo: &HistoryService) -> Result<i64, String> {
+    run_with_confirmation(args,repo,false)
+}
+pub fn run_with_confirmation(args:&EditArgs,repo:&HistoryService,confirmed:bool)->Result<i64,String> {
     let id = parse_id(&args.id)?;
-    let exists = repo
-        .get_entry_by_id(id)
-        .map_err(|e| format!("edit: repo failed: {e}"))?
-        .is_some();
+    let permit=repo.privacy().authorize_read(crate::api::PrivacyAccessIntent::InteractiveRead,crate::api::SensitiveAccess::Denied,None,super::access::now()).map_err(|error|error.to_string())?;
+    let exists = super::access::query(repo, &crate::api::HistoryQuery {limit:1,id:Some(id),..Default::default()})?.pop().is_some();
     if !exists {
         return Err(format!("edit: no entry with id={id}"));
     }
@@ -50,7 +51,7 @@ pub fn run(args: &EditArgs, repo: &HistoryService) -> Result<i64, String> {
         return Err("edit: empty content (refusing to write)".to_string());
     }
 
-    repo.update_entry_content(id, &content, &preview_of(&content))
+    repo.update_manual_authorized(id, &content, &preview_of(&content),if confirmed {crate::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}else{crate::api::ManualPersistenceIntent::Ordinary}, &permit, super::access::now())
         .map_err(|e| format!("edit: repo failed: {e}"))?;
     Ok(id)
 }
