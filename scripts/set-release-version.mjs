@@ -39,14 +39,25 @@ const replaceTomlPackageVersion = (path) => {
   writeFileSync(path, content);
 };
 
-for (const path of jsonTargets) {
-  replaceJsonVersion(path);
-}
-for (const path of tomlTargets) {
-  replaceTomlPackageVersion(path);
-}
-const lock = readFileSync(lockTarget, "utf8").replace(
-  /(^\[\[package\]\]\r?\nname = "(?:dezirclip|dzc-core|dzc-platform|dzc-protocol)"\r?\nversion = )"[^"]+"/gm,
-  `$1"${version}"`,
-);
+const workspaceToml = readFileSync("Cargo.toml", "utf8");
+const members = workspaceToml.match(/^members\s*=\s*\[([^\]]+)\]/m)?.[1].match(/"[^"]+"/g)?.map((value) => value.slice(1, -1));
+if (!members?.length) throw new Error("Workspace package inventory is missing");
+const names = members.map((member) => {
+  if (!/^[a-zA-Z0-9_/-]+$/.test(member)) throw new Error("Unsupported workspace member path");
+  const source = readFileSync(`${member}/Cargo.toml`, "utf8");
+  const name = source.match(/^name\s*=\s*"([a-z0-9-]+)"/m)?.[1];
+  if (!name || !/^version\.workspace\s*=\s*true/m.test(source)) throw new Error("Workspace member does not inherit its release version");
+  return name;
+});
+const seen = new Set();
+const lock = readFileSync(lockTarget, "utf8").split(/(?=^\[\[package\]\])/m).map((block) => {
+  const name = block.match(/^name\s*=\s*"([a-z0-9-]+)"/m)?.[1];
+  if (!names.includes(name) || /^source\s*=/m.test(block)) return block;
+  if (seen.has(name)) throw new Error("Duplicate local workspace package in Cargo.lock");
+  seen.add(name);
+  return block.replace(/(^version\s*=\s*)"[^"]+"/m, `$1"${version}"`);
+}).join("");
+if (names.some((name) => !seen.has(name))) throw new Error("Local workspace package missing from Cargo.lock");
+for (const path of jsonTargets) replaceJsonVersion(path);
+for (const path of tomlTargets) replaceTomlPackageVersion(path);
 writeFileSync(lockTarget, lock);

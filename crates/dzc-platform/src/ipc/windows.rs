@@ -4,7 +4,7 @@ use tokio::{io::{AsyncRead, AsyncWrite, ReadBuf}, net::windows::named_pipe::{Cli
 use windows::{core::{PCWSTR, PWSTR}, Win32::{
     Foundation::{CloseHandle, LocalFree, HANDLE, HLOCAL},
     Security::{Authorization::{ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1}, GetTokenInformation, RevertToSelf, TokenSessionId, TokenUser, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER},
-    System::{Pipes::{GetNamedPipeServerProcessId, ImpersonateNamedPipeClient}, Threading::{GetCurrentProcess, GetCurrentThread, OpenProcess, OpenProcessToken, OpenThreadToken, PROCESS_QUERY_LIMITED_INFORMATION}},
+    System::{Pipes::{GetNamedPipeClientProcessId, GetNamedPipeServerProcessId, ImpersonateNamedPipeClient}, Threading::{GetCurrentProcess, GetCurrentThread, OpenProcess, OpenProcessToken, OpenThreadToken, PROCESS_QUERY_LIMITED_INFORMATION}},
 }};
 
 fn native_error(error: windows::core::Error) -> io::Error { io::Error::new(io::ErrorKind::PermissionDenied, error) }
@@ -51,15 +51,17 @@ fn same_user_session(expected: &PeerIdentity, peer: &PeerIdentity) -> io::Result
 }
 
 #[derive(Debug, Clone)]
-pub struct Endpoint { address: PathBuf, identity: PeerIdentity }
+pub struct Endpoint { address: PathBuf, control: PathBuf, identity: PeerIdentity }
 impl Endpoint {
     pub fn for_current_session(data_directory: &Path) -> io::Result<Self> {
         let identity = current_identity()?;
         let address = PathBuf::from(format!(r"\\.\pipe\dezirclip-{}-{}-{}", identity.user, identity.session, namespace(data_directory, &identity)));
-        Ok(Self { address, identity })
+        let control = data_directory.join(format!("host-control-{}.json", namespace(data_directory, &identity)));
+        Ok(Self { address, control, identity })
     }
     pub fn in_directory(directory: &Path) -> io::Result<Self> { Self::for_current_session(directory) }
     pub fn address(&self) -> &Path { &self.address }
+    pub fn control_path(&self) -> PathBuf { self.control.clone() }
     pub async fn connect(&self, timeout: Duration) -> io::Result<Stream> {
         let deadline = tokio::time::Instant::now() + timeout;
         let pipe = loop {
@@ -118,8 +120,11 @@ impl Stream {
         let mut token = HANDLE::default();
         unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, true, &mut token).map_err(native_error)?; }
         let token = OwnedHandle(token);
-        let peer = token_identity(token.0)?;
+        let mut peer = token_identity(token.0)?;
         same_user_session(&self.identity, &peer)?;
+        let mut pid = 0;
+        unsafe { GetNamedPipeClientProcessId(HANDLE(pipe.as_raw_handle()), &mut pid).map_err(native_error)?; }
+        peer.pid = Some(pid);
         Ok(peer)
     }
 }

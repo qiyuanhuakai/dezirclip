@@ -4,7 +4,7 @@ use crate::{ProtocolVersion, PROTOCOL_VERSION};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Component { Desktop, Cli }
+pub enum Component { Desktop, Cli, Service }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComponentVersion {
@@ -33,7 +33,7 @@ impl BuildInfo {
         let revision = env!("DZC_SOURCE_REVISION");
         let version = env!("CARGO_PKG_VERSION");
         let revision = (revision != "unknown").then(|| revision.to_owned());
-        Self {
+        let mut info = Self {
             metadata_version: 1, component, component_version: version.to_owned(),
             build_id: revision.as_ref().map(|revision| format!("{version}@{revision}")),
             source_revision: revision, source_state: env!("DZC_SOURCE_STATE").into(),
@@ -41,7 +41,21 @@ impl BuildInfo {
             protocol_version: PROTOCOL_VERSION, database_schema_version,
             linked_components: ["dzc-core", "dzc-platform", "dzc-protocol"].into_iter()
                 .map(|name| ComponentVersion { component: name.into(), version: version.into() }).collect(),
+        };
+        if component == Component::Service {
+            info.linked_components.extend(["dzc-host", "dzc-service"].map(|name| ComponentVersion { component: name.into(), version: version.into() }));
         }
+        info
+    }
+
+    /// Linked clients call this only when their binary actually uses dzc-host.
+    /// A linked helper library is distinct from an installed/running service.
+    pub fn current_with_host(component: Component, database_schema_version: i32) -> Self {
+        let mut info = Self::current(component, database_schema_version);
+        if !info.linked_components.iter().any(|item| item.component == "dzc-host") {
+            info.linked_components.push(ComponentVersion { component: "dzc-host".into(), version: info.component_version.clone() });
+        }
+        info
     }
 
     /// A matching identifier from modified/unknown source never proves a build set.
@@ -52,11 +66,18 @@ impl BuildInfo {
             && info.source_revision.as_ref().is_some_and(|revision| revision.len() == 40
                 && revision.bytes().all(|byte| byte.is_ascii_hexdigit())
                 && info.build_id.as_deref() == Some(format!("{}@{revision}", info.component_version).as_str()));
-        verified(self) && verified(peer) && self.build_id == peer.build_id
+        let inventory = |info: &Self| {
+            let mut names = std::collections::HashSet::new();
+            info.linked_components.iter().all(|item| names.insert(item.component.as_str()) && item.version == info.component_version)
+                && ["dzc-core", "dzc-platform", "dzc-protocol"].iter().all(|name| names.contains(name))
+                && (info.component != Component::Service || ["dzc-host", "dzc-service"].iter().all(|name| names.contains(name)))
+        };
+        verified(self) && verified(peer) && inventory(self) && inventory(peer) && self.build_id == peer.build_id
             && self.component_version == peer.component_version
             && self.protocol_version == peer.protocol_version
             && self.database_schema_version == peer.database_schema_version
-            && self.linked_components == peer.linked_components
+            && self.linked_components.iter().all(|item| item.version == self.component_version)
+            && peer.linked_components.iter().all(|item| item.version == peer.component_version)
     }
 }
 

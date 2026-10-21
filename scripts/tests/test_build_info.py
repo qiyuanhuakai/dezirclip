@@ -136,7 +136,7 @@ class CliBuildInfoTests(unittest.TestCase):
             self.assertEqual(info["component"], "cli")
             self.assertEqual(info["component_version"], version)
             self.assertEqual(info["protocol_version"], {"major": 1, "minor": 0})
-            self.assertEqual({row["component"] for row in info["linked_components"]}, {"dzc-core", "dzc-platform", "dzc-protocol"})
+            self.assertEqual({row["component"] for row in info["linked_components"]}, {"dzc-core", "dzc-platform", "dzc-protocol", "dzc-host"})
             if info["source_revision"] is None:
                 self.assertIsNone(info["build_id"])
                 self.assertEqual(info["source_state"], "unknown")

@@ -38,6 +38,7 @@ impl Endpoint {
         Ok(Self { path, identity: current_identity()? })
     }
     pub fn address(&self) -> &Path { &self.path }
+    pub fn control_path(&self) -> PathBuf { self.path.with_extension("control.json") }
     pub async fn connect(&self, timeout: Duration) -> io::Result<Stream> {
         let stream = tokio::time::timeout(timeout, UnixStream::connect(&self.path)).await.map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
         let peer = stream.peer_cred()?;

@@ -20,6 +20,7 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
   const targetDirectory = join(directory, "custom cargo target");
   const extension = target.includes("windows") ? ".exe" : "";
   const source = join(targetDirectory, target, profile, `dzc${extension}`);
+  const serviceSource = join(targetDirectory, target, profile, `dzc-service${extension}`);
   const hostDefault = join(targetDirectory, profile, `dzc${host.includes("windows") ? ".exe" : ""}`);
   const cache = join(targetDirectory, "cached-desktop.bin");
   mkdirSync(dirname(hostDefault), { recursive: true });
@@ -36,22 +37,24 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
       assert.deepEqual(args, ["--print", "host-tuple"]);
       return host + "\n";
     }
-    if (command === source) {
-      assert.deepEqual(args, ["build-info", "--json"]);
-      return JSON.stringify({ component: "cli", component_version: "0.2.0-alpha.1", target,
+    if (command === source || command === serviceSource) {
+      assert.deepEqual(args, command === source ? ["build-info", "--json"] : ["--build-info"]);
+      return JSON.stringify({ component: command === source ? "cli" : "service", component_version: "0.2.0-alpha.1", target,
+        linked_components: ["dzc-host", "dzc-service"].map((component) => ({component,version:"0.2.0-alpha.1"})),
         source_revision: "a".repeat(40), build_id: "0.2.0-alpha.1@" + "a".repeat(40), source_state: "verified_checkout" });
     }
     if (command === "git") return "a".repeat(40);
     assert.equal(command, "cargo");
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
-    assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--locked", "--no-default-features", "--target", target,
+    assert(["dzc", "dzc-service"].includes(args[4]));
+    assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", args[4], "--locked", "--no-default-features", "--target", target,
       ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : [])]);
     if (!omitOutput) {
       mkdirSync(dirname(source), { recursive: true });
-      writeFileSync(source, payload);
+      writeFileSync(args[4] === "dzc" ? source : serviceSource, args[4] === "dzc" ? payload : Buffer.from("service:"+payload.toString()));
     }
   };
-  return { directory, targetDirectory, source, hostDefault, cache, payload, calls, run, host, target };
+  return { directory, targetDirectory, source, serviceSource, hostDefault, cache, payload, calls, run, host, target };
 }
 
 for (const parameters of [
@@ -74,9 +77,15 @@ for (const parameters of [
     const staged = proof.binaryPaths.find((item) => item.role === "external-bin").path;
     assert.deepEqual(JSON.parse(readFileSync(staged + ".proof.json", "utf8")), proof);
     assert.equal(proof.cargoLockSha256, hash(readFileSync(join(f.directory, "Cargo.lock"))));
-    assert.equal(f.calls.length, 4, "one native metadata query follows the build");
+    assert.equal(f.calls.length, 6, "each standalone helper has its own native build identity query");
     assert.equal(proof.buildInfoVerification, "executed_native_cli");
     assert.equal(proof.buildInfo.component, "cli");
+    assert.equal(proof.serviceHelper.buildInfo.component, "service");
+    assert.equal(proof.serviceHelper.binaryPaths.length, 3);
+    for (const item of proof.serviceHelper.binaryPaths) {
+      assert.equal(hash(readFileSync(item.path)), proof.serviceHelper.sha256);
+      assert.deepEqual(readFileSync(item.path), Buffer.from("service:"+f.payload.toString()));
+    }
   });
 }
 
@@ -255,8 +264,8 @@ for (const parameters of [
       return { name, main: name === main };
     });
     assert.deepEqual(binaries.filter((item) => item.main).map((item) => item.name), ["dezirclip"]);
-    assert.deepEqual(binaries.filter((item) => !item.main).map((item) => item.name), ["dzc"]);
-    assert.deepEqual(readdirSync(join(root, "src-tauri/src/bin")), ["dzc.rs"]);
+    assert.deepEqual(binaries.filter((item) => !item.main).map((item) => item.name), ["dzc", "dzc-service"]);
+    assert.deepEqual(readdirSync(join(root, "src-tauri/src/bin")).sort(), ["dzc-service.rs", "dzc.rs"]);
 
     const f = fixture(t, parameters);
     const proof = prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: { TAURI_ENV_TARGET_TRIPLE: f.target } });
@@ -273,6 +282,9 @@ for (const parameters of [
     const bundledCli = cargoFiles.find((item) => item.name === `dzc${extension}`);
     assert.deepEqual(readFileSync(bundledCli.path), f.payload, "the native/cross Cargo bundle input must use the prepared standalone bytes");
     assert.equal(hash(readFileSync(bundledCli.path)), proof.sha256);
+    const bundledService = cargoFiles.find((item) => item.name === `dzc-service${extension}`);
+    assert.equal(destinations.filter((name) => name === bundledService.name).length, 1);
+    assert.equal(hash(readFileSync(bundledService.path)), proof.serviceHelper.sha256);
     assert.deepEqual(readFileSync(cargoFiles.find((item) => item.name === `dezirclip${extension}`).path), mainPayload);
     assert.deepEqual(readFileSync(proof.binaryPaths.find((item) => item.role === "external-bin").path), f.payload, "the diagnostic staging copy retains the same bytes without a second bundle registration");
   });

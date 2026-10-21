@@ -55,7 +55,9 @@
         "surface.activate",
         "surface.dismiss",
         "surface.copy",
-        "surface.paste"
+        "surface.paste",
+        "service.grant",
+        "service.revoke"
       ]
     },
     "WireErrorCode": {
@@ -597,6 +599,44 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.grant"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/GrantIssueParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "service.revoke"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/GrantRevokeParams"
+              }
+            }
+          }
         }
       ]
     },
@@ -646,6 +686,73 @@
       "type": "object",
       "properties": {},
       "required": [],
+      "additionalProperties": true
+    },
+    "GrantIssueParams": {
+      "type": "object",
+      "properties": {
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "history_read",
+              "clipboard_copy",
+              "clipboard_paste",
+              "surface_control",
+              "history_body"
+            ]
+          },
+          "maxItems": 4
+        },
+        "lifetime_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400000,
+          "x-rust-type": "u64"
+        },
+        "role": {
+          "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/ClientRole"
+        }
+      },
+      "required": [
+        "permissions",
+        "lifetime_ms",
+        "role"
+      ],
+      "additionalProperties": true
+    },
+    "GrantResult": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "expires_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        }
+      },
+      "required": [
+        "grant",
+        "expires_at_ms"
+      ],
+      "additionalProperties": true
+    },
+    "GrantRevokeParams": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "grant"
+      ],
       "additionalProperties": true
     }
   },

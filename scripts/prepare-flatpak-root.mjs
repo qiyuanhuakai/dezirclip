@@ -27,6 +27,11 @@ execFileSync("dpkg-deb", ["-x", join(debDir, debFile), buildRoot], {
   cwd: repoRoot,
   stdio: "inherit",
 });
+for (const binary of ["dezirclip", "dzc", "dzc-service"]) {
+  if (!existsSync(join(buildRoot, "usr", "bin", binary))) {
+    throw new Error(`Missing Flatpak executable: ${binary}`);
+  }
+}
 
 // Keep a stable Flatpak resource location regardless of the Debian bundle's
 // internal resource directory. The manifest copies usr/share into /app/share.

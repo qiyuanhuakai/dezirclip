@@ -83,6 +83,8 @@ const (
     MethodSurfaceDismiss Method = "surface.dismiss"
     MethodSurfaceCopy Method = "surface.copy"
     MethodSurfacePaste Method = "surface.paste"
+    MethodServiceGrant Method = "service.grant"
+    MethodServiceRevoke Method = "service.revoke"
 )
 
 type WireErrorCode string
@@ -138,6 +140,21 @@ type Response struct {
 }
 
 type EmptyParams struct {
+}
+
+type GrantIssueParams struct {
+    Permissions []string `json:"permissions"`
+    LifetimeMs uint64 `json:"lifetime_ms"`
+    Role ClientRole `json:"role"`
+}
+
+type GrantResult struct {
+    Grant string `json:"grant"`
+    ExpiresAtMs int64 `json:"expires_at_ms"`
+}
+
+type GrantRevokeParams struct {
+    Grant string `json:"grant"`
 }
 
 type EventKind string

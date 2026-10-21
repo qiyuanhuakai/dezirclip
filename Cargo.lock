@@ -1258,7 +1258,9 @@ dependencies = [
  "dirs 5.0.1",
  "dotenvy",
  "dzc-core",
+ "dzc-host",
  "dzc-platform",
+ "dzc-service",
  "font-kit",
  "hex",
  "image",
@@ -1569,6 +1571,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dzc-host"
+version = "0.2.0-alpha.1"
+dependencies = [
+ "dirs 5.0.1",
+ "dzc-core",
+ "dzc-platform",
+ "dzc-protocol",
+ "rand 0.8.6",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "dzc-platform"
 version = "0.2.0-alpha.1"
 dependencies = [
@@ -1585,8 +1602,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "tokio",
  "socket2",
+ "tokio",
  "urlencoding",
  "uuid",
  "wayland-client",
@@ -1604,6 +1621,20 @@ dependencies = [
  "jsonschema",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "dzc-service"
+version = "0.2.0-alpha.1"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "dzc-core",
+ "dzc-host",
+ "dzc-platform",
+ "dzc-protocol",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

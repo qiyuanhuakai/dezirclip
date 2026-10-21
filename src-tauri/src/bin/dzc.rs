@@ -38,6 +38,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Explicitly manage the optional per-user Host service.
+    Service(cli::service::ServiceArgs),
+    /// Start, stop or query the shared privacy session without a GUI.
+    Privacy(cli::service::PrivacyArgs),
     /// Report this executable's build identity without opening history or native adapters.
     BuildInfo { #[arg(long)] json: bool },
     /// Report this embedded client's probed native capabilities.
@@ -625,7 +629,7 @@ fn main() {
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
         Commands::BuildInfo { json } => {
-            let info = dezirclip::protocol::build_info::BuildInfo::current(
+            let info = dezirclip::protocol::build_info::BuildInfo::current_with_host(
                 dezirclip::protocol::build_info::Component::Cli, dezirclip::api::DATABASE_SCHEMA_VERSION);
             if json { println!("{}", serde_json::to_string_pretty(&info).map_err(|error| error.to_string())?); }
             else { println!("dzc {} · build {} · {} · protocol {}.{} · schema {}", info.component_version,
@@ -634,6 +638,8 @@ fn run(args: Cli) -> Result<(), String> {
             return Ok(());
         }
         Commands::Capabilities { json } => return run_capabilities(json),
+        Commands::Service(args) => return cli::service::run(args),
+        Commands::Privacy(args) => return cli::service::privacy(args),
         Commands::Mcp => return cli::mcp::serve(|| open_repos().map(|(repo, _)| repo)),
         Commands::Theme(args) => return run_theme(args),
         Commands::Bash => return cli::shell::run(cli::shell::Shell::Bash, None),
@@ -651,6 +657,8 @@ fn run(args: Cli) -> Result<(), String> {
     };
     let (clip_repo, tag_repo) = open_repos()?;
     match command {
+        Commands::Service(args) => cli::service::run(args),
+        Commands::Privacy(args) => cli::service::privacy(args),
         Commands::Pick(args) => {
             let options = args.options.options()?;
             let selected = if let Some(backend) = args.backend {

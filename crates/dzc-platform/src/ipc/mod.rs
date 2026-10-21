@@ -10,6 +10,12 @@ pub use linux::{current_identity, Endpoint, Listener, Stream};
 mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::{current_identity, Endpoint, Listener, Stream};
+mod ownership;
+pub use ownership::CaptureLease;
+mod private_file;
+pub use private_file::{read_private, write_private};
+mod process;
+pub use process::{spawn_background, inspect_helper, ProcessExit, BackgroundChild};
 
 /// Produced only after an operating-system identity check, never deserialized.
 #[derive(Debug, Clone, PartialEq, Eq)]

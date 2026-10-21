@@ -11,3 +11,4 @@ pub mod custom_themes;
 pub mod protection;
 
 mod desktop_search;
+mod capture_settings;

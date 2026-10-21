@@ -185,7 +185,7 @@ class PackageTests(unittest.TestCase):
         script = self.prepare_resource_fixture("package-portable.ps1")
         binaries = self.root / "portable-binaries"
         binaries.mkdir()
-        for name in ("dezirclip.exe", "dzc.exe"):
+        for name in ("dezirclip.exe", "dzc.exe", "dzc-service.exe"):
             (binaries / name).write_bytes(executable_header("windows-x86_64"))
         output = self.root / "portable-output"
         command = [shutil.which("powershell") or shutil.which("pwsh"), "-NoProfile", "-ExecutionPolicy", "Bypass",
@@ -195,7 +195,7 @@ class PackageTests(unittest.TestCase):
         original = archive.read_bytes()
         with zipfile.ZipFile(archive) as package_file:
             names = set(package_file.namelist())
-            self.assertTrue({"dezirclip.exe", "dzc.exe", "skills/dzc-cli/SKILL.md", "skills/dezirclip-theme/SKILL.md",
+            self.assertTrue({"dezirclip.exe", "dzc.exe", "dzc-service.exe", "skills/dzc-cli/SKILL.md", "skills/dezirclip-theme/SKILL.md",
                              "skills/dezirclip-theme/assets/forest.theme.json"} <= names)
             self.assertFalse(any("__pycache__" in name or "/.private" in name for name in names))
         (self.repo / "skills" / "dezirclip-theme" / "assets" / "forest.theme.json").unlink()
@@ -217,6 +217,10 @@ class PackageTests(unittest.TestCase):
         desktop = deb_root / "usr" / "share" / "applications" / "DezirClip.desktop"
         desktop.parent.mkdir(parents=True)
         desktop.write_text("[Desktop Entry]\nExec=old\nIcon=old\n", encoding="utf-8")
+        binaries = deb_root / "usr" / "bin"
+        binaries.mkdir(parents=True)
+        for name in ("dezirclip", "dzc", "dzc-service"):
+            (binaries / name).write_bytes((name + " fixture").encode())
         deb_directory = self.repo / "target" / "release" / "bundle" / "deb"
         deb_directory.mkdir(parents=True)
         subprocess.run(["dpkg-deb", "--build", str(deb_root), str(deb_directory / "fixture.deb")], check=True, capture_output=True, timeout=30)
@@ -225,6 +229,7 @@ class PackageTests(unittest.TestCase):
         for name in ("dzc-cli/SKILL.md", "dezirclip-theme/SKILL.md", "dezirclip-theme/assets/forest.theme.json"):
             self.assertEqual((resources / name).read_bytes(), (self.repo / "skills" / name).read_bytes())
         self.assertFalse((resources / "dezirclip-theme" / "scripts" / "__pycache__").exists())
+        self.assertEqual((resources.parents[2] / "bin" / "dzc-service").read_bytes(), b"dzc-service fixture")
 
     def test_checksum_rejects_tampering_wrong_filename_and_missing_sidecar(self):
         archive = package.package("linux-x86_64", self.binary("linux-x86_64"), "1.2.3",

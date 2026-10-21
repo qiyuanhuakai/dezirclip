@@ -40,11 +40,11 @@ class WorkspaceDistributionTests(unittest.TestCase):
             directory = Path(temporary)
             for name in ["Cargo.toml", "Cargo.lock", "package.json", "src-tauri/tauri.conf.json",
                          "src-tauri/Cargo.toml", "crates/dzc-core/Cargo.toml", "crates/dzc-platform/Cargo.toml", "crates/dzc-protocol/Cargo.toml",
-                         "scripts/set-release-version.mjs"]:
+                         "crates/dzc-host/Cargo.toml", "crates/dzc-service/Cargo.toml", "scripts/set-release-version.mjs"]:
                 target = directory / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / name, target)
-            version = "0.2.0-alpha.1"
+            version = "0.2.0-alpha.99"
             subprocess.run(["node", "scripts/set-release-version.mjs", "v" + version], cwd=directory,
                            check=True, capture_output=True)
             workspace = tomllib.loads((directory / "Cargo.toml").read_text(encoding="utf-8"))
@@ -54,8 +54,8 @@ class WorkspaceDistributionTests(unittest.TestCase):
                 self.assertEqual(package["version"], {"workspace": True})
             locked = tomllib.loads((directory / "Cargo.lock").read_text(encoding="utf-8"))["package"]
             local = {package["name"]: package["version"] for package in locked
-                     if package["name"] in {"dezirclip", "dzc-core", "dzc-platform", "dzc-protocol"}}
-            self.assertEqual(local, {name: version for name in ["dezirclip", "dzc-core", "dzc-platform", "dzc-protocol"]})
+                     if package["name"] in {"dezirclip", "dzc-core", "dzc-platform", "dzc-protocol", "dzc-host", "dzc-service"}}
+            self.assertEqual(local, {name: version for name in ["dezirclip", "dzc-core", "dzc-platform", "dzc-protocol", "dzc-host", "dzc-service"]})
             self.assertEqual(json.loads((directory / "src-tauri/tauri.conf.json").read_text())["version"], version)
             self.assertEqual(json.loads((directory / "package.json").read_text())["version"], version)
 

@@ -195,6 +195,7 @@ jobs:
           import subprocess
           fixture = Path("target/debug/examples") / ("ipc_protocol_fixture.exe" if os.name == "nt" else "ipc_protocol_fixture")
           subprocess.run(["python", "scripts/test-local-ipc.py", "--rust-fixture", str(fixture), "--go", shutil.which("go")], check=True)
+          subprocess.run(["python", "scripts/test-capture-lease.py", "--fixture", str(fixture)], check=True)
 
       - name: Test Tauri crate
         if: matrix.can_test
@@ -208,6 +209,17 @@ jobs:
       - name: Build Tauri crate
         working-directory: src-tauri
         run: cargo build ${{ matrix.cargo_args }}
+
+      - name: Verify optional local service without native capture
+        if: matrix.can_test
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          subprocess.run(["cargo", "build", "--locked", "--no-default-features", "--bin", "dzc", "--bin", "dzc-service"], check=True)
+          binary = Path("target/debug") / ("dzc.exe" if os.name == "nt" else "dzc")
+          subprocess.run(["python", "scripts/test-local-host.py", "--cli", str(binary)], check=True)
 
       - name: Check backend without replacing the built CLI
         shell: python

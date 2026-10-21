@@ -4,6 +4,16 @@ use dzc_protocol::wire::{self, HelloResult, Method, Permission, ProtocolVersion,
 use std::{io::{self, Write}, path::Path, time::Duration};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if matches!(std::env::args().nth(1).as_deref(), Some("--capture-lease-fixture" | "--capture-lease-check")) {
+        let _lease = match dzc_platform::ipc::CaptureLease::acquire() {
+            Ok(lease) => lease,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => { eprintln!("capture-lease-busy"); std::process::exit(3); },
+            Err(error) => return Err(error.into()),
+        };
+        println!("capture-lease-acquired"); io::stdout().flush()?;
+        if std::env::args().nth(1).as_deref() == Some("--capture-lease-fixture") { let _ = io::stdin().read_line(&mut String::new())?; }
+        return Ok(());
+    }
     if std::env::args().nth(1).as_deref() == Some("--identity-client") {
         return identity_client();
     }

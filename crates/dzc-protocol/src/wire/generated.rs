@@ -121,6 +121,10 @@ pub enum Method {
     SurfaceCopy,
     #[serde(rename = "surface.paste")]
     SurfacePaste,
+    #[serde(rename = "service.grant")]
+    ServiceGrant,
+    #[serde(rename = "service.revoke")]
+    ServiceRevoke,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -198,6 +202,24 @@ pub struct Response {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmptyParams {
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GrantIssueParams {
+    pub permissions: Vec<String>,
+    pub lifetime_ms: u64,
+    pub role: ClientRole,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GrantResult {
+    pub grant: String,
+    pub expires_at_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GrantRevokeParams {
+    pub grant: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
