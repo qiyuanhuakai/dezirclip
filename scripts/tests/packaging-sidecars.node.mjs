@@ -144,6 +144,7 @@ test("invalid hook settings fail closed before building", () => {
 
 test("packaging entry points use the shared hook and portable CLI feature", () => {
   const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  config.version = JSON.parse(readFileSync(join(f.directory, "package.json"), "utf8")).version;
   const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.equal(config.build.beforeBuildCommand, "pnpm run build && pnpm run tauri:prepare-sidecars --phase build");
   assert.equal(config.build.beforeBundleCommand, "pnpm run tauri:prepare-sidecars --phase bundle");
