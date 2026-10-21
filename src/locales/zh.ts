@@ -10,6 +10,7 @@ export const zh = {
         ...privacyStatusZh,
         privacy_session_title: "隐私会话",
         privacy_sensitive_hidden: "受保护的内容，主动查看后才会读取。",
+        privacy_reveal_first: "请先主动查看此记录，再执行此操作。",
         privacy_session_hint: "开启后暂停自动记录、附件和文字识别；系统剪贴板和已有历史保留。状态由当前捕获主机确认，持续会话在重启后仍生效。",
         privacy_session_inactive: "隐私会话未开启",
         privacy_session_until: "保护至",

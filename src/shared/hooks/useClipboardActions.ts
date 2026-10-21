@@ -30,7 +30,8 @@ export const useClipboardActions = ({
       content: string,
       contentType: string,
       pasteWithFormat = false,
-      pasteImageAsBase64 = false
+      pasteImageAsBase64 = false,
+      expectedPrivacyEpoch?: number
     ) => {
       try {
         if (document.activeElement instanceof HTMLElement) {
@@ -45,7 +46,8 @@ export const useClipboardActions = ({
           deleteAfterUse: deleteAfterPaste,
           pasteWithFormat,
           pasteImageAsBase64,
-          moveToTop: moveToTopAfterPaste
+          moveToTop: moveToTopAfterPaste,
+          expectedPrivacyEpoch
         });
 
         if (moveToTopAfterPaste && !deleteAfterPaste) {
@@ -67,12 +69,13 @@ export const useClipboardActions = ({
   );
 
   const openContent = useCallback(
-    async (item: ClipboardEntry) => {
+    async (item: ClipboardEntry, expectedPrivacyEpoch?: number) => {
       try {
         await invoke("open_content", {
           id: item.id,
           content: item.content,
-          contentType: item.content_type
+          contentType: item.content_type,
+          expectedPrivacyEpoch
         });
       } catch (err) {
         const errorMsg = t("open_failed") + (err?.toString() || "");

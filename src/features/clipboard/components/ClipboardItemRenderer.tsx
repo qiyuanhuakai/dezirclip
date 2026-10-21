@@ -3,7 +3,7 @@ import type { Dispatch, MouseEvent, SetStateAction } from "react";
 import type { DragControls } from "framer-motion";
 import ClipboardItem, { hideCompactPreviewGlobal } from "./ClipboardItem";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
-import { beginPrivacyAccess, getPrivacyEntry, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { beginPrivacyAccess, getPrivacyEntry, invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
 
@@ -47,10 +47,11 @@ export interface ClipboardItemRendererProps {
         content: string,
         contentType: string,
         pasteWithFormat?: boolean,
-        pasteImageAsBase64?: boolean
+        pasteImageAsBase64?: boolean,
+        expectedPrivacyEpoch?: number
     ) => Promise<void>;
     setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
-    openContent: (item: ClipboardEntry) => void;
+    openContent: (item: ClipboardEntry, expectedPrivacyEpoch?: number) => void;
     togglePin: (event: MouseEvent, id: number, isPinned: boolean) => void;
     deleteEntry: (event: MouseEvent, id: number) => void;
     setEditingTagsId: Dispatch<SetStateAction<number | null>>;
@@ -92,13 +93,14 @@ const ClipboardItemRenderer = ({
     onTransformSuccess
 }: ClipboardItemRendererProps) => {
     const [detail, setDetail] = useState<ClipboardEntry | null>(null);
+    const [resourcePreview, setResourcePreview] = useState<ClipboardEntry | null>(null);
     const mounted = useRef(false);
     const currentItem = useRef(item);
     currentItem.current = item;
     const sensitive = isSensitiveEntry(item);
     useEffect(() => {
         mounted.current = true;
-        const stop = subscribePrivacyInvalidation(() => { setDetail(null); });
+        const stop = subscribePrivacyInvalidation(() => { setDetail(null); setResourcePreview(null); });
         return () => { mounted.current = false; stop(); };
     }, []);
     useEffect(() => {
@@ -109,6 +111,16 @@ const ClipboardItemRenderer = ({
         });
     }, [item, setRevealedIds]);
     const loadFullItem = useCallback(() => getPrivacyEntry(item.id), [item.id]);
+    useEffect(() => {
+        let disposed = false;
+        setResourcePreview(null);
+        const access = beginPrivacyAccess();
+        if (access && !sensitive && !compactMode && item.content_type === "rich_text" && !item.html_content) {
+            void invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id: item.id, expectedEpoch: access.epoch, maxDimension: 480 })
+                .then(value => { if (!disposed && access.isCurrent()) setResourcePreview(value); }).catch(() => undefined);
+        }
+        return () => { disposed = true; };
+    }, [item, compactMode, sensitive]);
     const itemId = item.id;
     const itemContent = item.content;
     const itemContentType = item.content_type;
@@ -121,9 +133,13 @@ const ClipboardItemRenderer = ({
 
     const onCopy = useCallback(
         (withFormat?: boolean, pasteImageAsBase64?: boolean) => {
-            copyToClipboard(itemId, itemContent, itemContentType, withFormat, pasteImageAsBase64);
+            const access = beginPrivacyAccess();
+            if (!access || (sensitive && (!isRevealed || !detail))) {
+                onTransformError(item, "privacy_read", t("privacy_reveal_first")); return;
+            }
+            copyToClipboard(itemId, itemContent, itemContentType, withFormat, pasteImageAsBase64, sensitive ? access.epoch : undefined);
         },
-        [copyToClipboard, itemId, itemContent, itemContentType]
+        [copyToClipboard, itemId, itemContent, itemContentType, sensitive, isRevealed, detail, item, onTransformError, t]
     );
 
     const onToggleReveal = useCallback(
@@ -150,9 +166,13 @@ const ClipboardItemRenderer = ({
     const onOpen = useCallback(
         (e: MouseEvent) => {
             e.stopPropagation();
-            openContent(detail ?? item);
+            const access = beginPrivacyAccess();
+            if (!access || (sensitive && (!isRevealed || !detail))) {
+                onTransformError(item, "privacy_read", t("privacy_reveal_first")); return;
+            }
+            openContent(detail ?? item, sensitive ? access.epoch : undefined);
         },
-        [openContent, item, detail]
+        [openContent, item, detail, sensitive, isRevealed, onTransformError, t]
     );
 
     const onTogglePin = useCallback(
@@ -199,12 +219,13 @@ const ClipboardItemRenderer = ({
     );
 
     const onQRCodeForItem = useCallback(() => {
+        if (sensitive && (!isRevealed || !detail)) { onTransformError(item, "privacy_read", t("privacy_reveal_first")); return; }
         const access = beginPrivacyAccess();
         if (!access) return;
         void loadFullItem().then(value => {
             if (mounted.current && access.isCurrent()) onQRCode(value);
         }).catch(() => { if (mounted.current) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
-    }, [onQRCode, item, loadFullItem, onTransformError, t]);
+    }, [onQRCode, item, loadFullItem, onTransformError, t, sensitive, isRevealed, detail]);
 
     const onTransformItemError = useCallback(
         (kind: string, message: string) => {
@@ -223,7 +244,7 @@ const ClipboardItemRenderer = ({
     return (
         <ClipboardItem
             id={`clipboard-item-${itemId}`}
-            item={isRevealed && detail ? detail : sensitive ? concealSensitiveEntry(item) : item}
+            item={isRevealed && detail ? detail : sensitive ? concealSensitiveEntry(item) : resourcePreview ?? item}
             isSelected={isSelected}
             windowPinned={windowPinned}
             isSensitiveHidden={isSensitiveHidden || (sensitive && !detail)}

@@ -8,7 +8,7 @@ import {
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { getConciseTime } from "../../../shared/lib/utils";
 import type { Locale } from "../../../shared/types";
-import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
+import { isRamImageSource } from "../../../shared/lib/privacyRuntime";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
@@ -35,7 +35,7 @@ type PreviewPayload = {
     clipboardItemFontSize?: number;
     clipboardTagFontSize?: number;
 };
-type PreviewRequest = Omit<PreviewPayload, "contentType" | "content" | "preview" | "htmlContent" | "sourceApp" | "timestamp"> & { id: number };
+type PreviewRequest = Omit<PreviewPayload, "contentType" | "content" | "preview" | "htmlContent" | "sourceApp" | "timestamp"> & { id: number; allowSensitive?: boolean };
 
 import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
@@ -175,7 +175,8 @@ const CompactPreviewWindow = () => {
             void (async () => {
                 const access = beginPrivacyAccess();
                 if (!access || access.epoch !== request.privacyEpoch || disposed) return;
-                const entry = await invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: request.id, expectedEpoch: request.privacyEpoch });
+                const entry = await invokePrivacyBound<ClipboardEntry>(request.allowSensitive === true ? "get_privacy_entry" : "get_history_resource_preview",
+                    { id: request.id, expectedEpoch: request.privacyEpoch, maxDimension: 560 });
                 if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
                 const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
                     preview: entry.preview, htmlContent: entry.html_content, sourceApp: entry.source_app, timestamp: entry.timestamp };
@@ -332,9 +333,7 @@ const CompactPreviewWindow = () => {
     const content = useMemo(() => {
         if (!payload) return null;
         if (payload.contentType === "image") {
-            const src = payload.content.startsWith("data:")
-                ? payload.content
-                : (toTauriLocalImageSrc(payload.content) || payload.content);
+            const src = isRamImageSource(payload.content) ? payload.content : undefined;
             return (
                 <img
                     src={src}
@@ -352,9 +351,7 @@ const CompactPreviewWindow = () => {
             );
         }
         if (payload.contentType === "video") {
-            const src = payload.content.startsWith("data:")
-                ? payload.content
-                : (toTauriLocalImageSrc(payload.content) || payload.content);
+            const src = /^data:video\/(mp4|webm);base64,[A-Za-z0-9+/=]+$/.test(payload.content) ? payload.content : undefined;
             return (
                 <video
                     src={src}

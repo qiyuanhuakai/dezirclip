@@ -1,67 +1,43 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-
-const previewPath = (content: string | null): string | null => {
-  if (!content) return null;
-  let path = content.trim();
-  if (/^file:/i.test(path)) {
-    try {
-      const url = new URL(path);
-      path = decodeURIComponent(url.pathname);
-      if (url.hostname && url.hostname !== "localhost") {
-        path = `//${url.hostname}${path}`;
-      } else if (/^\/[a-zA-Z]:\//.test(path)) {
-        path = path.slice(1);
-      }
-    } catch {
-      return null;
-    }
-  }
-  return /^(?:[a-zA-Z]:[\\/]|\/|\\\\)/.test(path) && /\.(?:png|jpe?g|bmp)$/i.test(path)
-    ? path
-    : null;
-};
+import type { ClipboardEntry } from "../types";
+import { usePrivacySession } from "./usePrivacySession";
+import { invokePrivacyBound } from "../lib/privacySession";
+import { isRamImageSource } from "../lib/privacyRuntime";
 
 interface PreviewResult {
-  path: string;
+  id: number;
   revision: number;
+  generation: number;
   src: string | null;
 }
 
-export const useImagePreview = (content: string | null, revision: number) => {
-  const path = previewPath(content);
+export const useImagePreview = (id: number, content: string | null, revision: number, enabled: boolean) => {
+  const privacy = usePrivacySession();
   const [result, setResult] = useState<PreviewResult | null>(null);
-
+  const inline = enabled && privacy.phase === "ready" && content && isRamImageSource(content) ? content : null;
+  const epoch = privacy.snapshot?.privacy_epoch;
+  const needsRead = enabled && !inline && id !== 0 && privacy.phase === "ready" && epoch !== undefined;
   useEffect(() => {
-    if (!path) {
-      setResult(null);
-      return;
-    }
     let cancelled = false;
-    invoke<string>("get_image_preview", { path })
-      .then((src) => {
-        if (!cancelled) {
-          setResult({
-            path,
-            revision,
-            src: src.startsWith("data:image/png;base64,") ? src : null
-          });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setResult({ path, revision, src: null });
-      });
+    setResult(null);
+    if (needsRead) {
+      void invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id, expectedEpoch: epoch, maxDimension: 480 })
+        .then(entry => {
+          if (!cancelled) setResult({ id, revision, generation: privacy.generation,
+            src: isRamImageSource(entry.content) ? entry.content : null });
+        }).catch(() => {
+          if (!cancelled) setResult({ id, revision, generation: privacy.generation, src: null });
+        });
+    }
     return () => {
       cancelled = true;
     };
-  }, [path, revision]);
+  }, [id, revision, needsRead, epoch, privacy.generation]);
 
-  const current = result !== null && result.path === path && result.revision === revision;
+  const current = enabled && privacy.phase === "ready" && result?.id === id
+    && result.revision === revision && result.generation === privacy.generation;
   return {
-    src: current ? result.src : null,
-    pending: path !== null && !current,
-    fallback: () => {
-      if (path) setResult({ path, revision, src: null });
-    }
+    src: inline || (current ? result.src : null),
+    pending: needsRead && !current,
   };
 };

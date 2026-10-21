@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { concealSensitiveEntry, createPrivacyFence, isSensitiveEntry, parsePrivacySnapshot } from "./privacyRuntime";
+import { concealSensitiveEntry, createPrivacyFence, isRamImageSource, isSensitiveEntry, parsePrivacySnapshot } from "./privacyRuntime";
 
 const snapshot = () => ({ history_revision: 3, privacy_epoch: 7, session: { active: true, expires_at_ms: null } });
 describe("privacy runtime boundary", () => {
+  it("only accepts RAM image representations rather than reusable file addresses", () => {
+    expect(isRamImageSource("data:image/png;base64,AAAA")).toBe(true);
+    for (const source of ["/private/image.png", "C:\\private\\image.png", "file:///tmp/image.png", "asset://private/image.png",
+      "http://asset.localhost/image.png", "https://example.org/image.png", "data:image/svg+xml;base64,AAAA", "data:image/png;base64,<bad>"])
+      expect(isRamImageSource(source)).toBe(false);
+  });
   it("accepts validated counters and future optional fields without changing known fields", () => {
     expect(parsePrivacySnapshot({ ...snapshot(), future: "optional" })).toEqual(snapshot());
     expect(parsePrivacySnapshot({ ...snapshot(), session: { active: true, expires_at_ms: 12345 } }).session.expires_at_ms).toBe(12345);

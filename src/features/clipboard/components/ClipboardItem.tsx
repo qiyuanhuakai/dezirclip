@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -30,7 +30,7 @@ import type { ClipboardItemProps } from "../types";
 import type { ClipboardEntry } from "../../../shared/types";
 import { getConciseTime, getTagColor } from "../../../shared/lib/utils";
 import HtmlContent from "../../../shared/components/HtmlContent";
-import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
+import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { useImagePreview } from "../../../shared/hooks/useImagePreview";
 import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
@@ -760,10 +760,8 @@ const ClipboardItem = ({
         setContextMenuState(null);
     }), []);
     const imagePreview = useImagePreview(
-        item.content_type === "image" && !(item.is_external && item.file_preview_exists === false)
-            ? item.content
-            : null,
-        item.timestamp
+        item.id, item.content, item.timestamp,
+        item.content_type === "image" && !isSensitiveHidden && !(item.is_external && item.file_preview_exists === false)
     );
     const isComposing = useRef(false);
     const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
@@ -933,6 +931,7 @@ const ClipboardItem = ({
             await previewWindow.emit("compact-preview-update", {
                 id: item.id,
                 privacyEpoch: access.epoch,
+                allowSensitive: isSensitiveEntry(item) && isRevealed,
                 language,
                 theme,
                 colorMode,
@@ -974,6 +973,7 @@ const ClipboardItem = ({
                     await previewWindow.emit("compact-preview-update", {
                         id: item.id,
                         privacyEpoch: access.epoch,
+                        allowSensitive: isSensitiveEntry(item) && isRevealed,
                         language,
                         theme,
                         richTextSnapshotPreview,
@@ -1117,25 +1117,32 @@ const ClipboardItem = ({
 
     const handleOcr = useCallback(() => {
         if (ocrRunning || item.content_type !== "image") return;
+        const access = beginPrivacyAccess();
+        if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
         setOcrRunning(true);
         setOcrStatus("processing");
-        invoke("recognize_clipboard_image", { itemId: item.id })
+        invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedPrivacyEpoch: access.epoch })
             .then((result: unknown) => {
+                if (!access.isCurrent() || ocrItemIdRef.current !== item.id) return;
                 const res = result as { text: string; status: string };
                 setOcrText(res.text || null);
                 setOcrStatus(res.status);
             })
             .catch((err) => {
+                if (!access.isCurrent() || ocrItemIdRef.current !== item.id) return;
                 const msg = err instanceof Error ? err.message : String(err);
                 setOcrStatus("failed");
                 setContextMenuState(null);
                 console.error("OCR failed:", msg);
             })
             .finally(() => setOcrRunning(false));
-    }, [item.id, item.content_type, ocrRunning]);
+    }, [item.id, item.content_type, ocrRunning, isSensitiveHidden, onTransformItemError, t]);
 
     const handleTransform = useCallback((kind: string) => {
+        const access = beginPrivacyAccess();
+        if (!access || isSensitiveHidden) { onTransformItemError?.(kind, t("privacy_reveal_first")); return; }
         const proceed = (text: string) => {
+            if (!access.isCurrent()) return;
             invoke("copy_to_clipboard", {
                 content: text,
                 contentType: "text",
@@ -1144,7 +1151,8 @@ const ClipboardItem = ({
                 deleteAfterUse: false,
                 pasteWithFormat: false,
                 moveToTop: false,
-                pasteImageAsBase64: false
+                pasteImageAsBase64: false,
+                expectedPrivacyEpoch: access.epoch
             })
                 .then(() => onTransformItemSuccess?.(kind))
                 .catch((err) => {
@@ -1155,6 +1163,7 @@ const ClipboardItem = ({
         onTransformItem?.(kind);
         const transform = (entry: ClipboardEntry) => invoke<string>("transform_text", { text: entry.content, kind })
             .then((result) => {
+                if (!access.isCurrent()) return;
                 if (result) {
                     proceed(result);
                 } else {
@@ -1172,10 +1181,12 @@ const ClipboardItem = ({
         } else {
             void transform(item);
         }
-    }, [item, loadFullItem, onTransformItem, onTransformItemError, onTransformItemSuccess]);
+    }, [item, loadFullItem, onTransformItem, onTransformItemError, onTransformItemSuccess, isSensitiveHidden, t]);
 
     const handleImageBase64Copy = useCallback(async () => {
         if (item.content_type !== "image") return;
+        const access = beginPrivacyAccess();
+        if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
         try {
             await invoke("copy_to_clipboard", {
                 content: item.content,
@@ -1185,17 +1196,20 @@ const ClipboardItem = ({
                 deleteAfterUse: false,
                 pasteWithFormat: false,
                 moveToTop: false,
-                pasteImageAsBase64: true
+                pasteImageAsBase64: true,
+                expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined
             });
             onTransformItemSuccess?.("image_base64");
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             onTransformItemError?.("image_base64", msg);
         }
-    }, [item.content, item.content_type, item.id, onTransformItemError, onTransformItemSuccess]);
+    }, [item, onTransformItemError, onTransformItemSuccess, isSensitiveHidden, t]);
 
     const handlePasteOcr = useCallback(async () => {
         if (!ocrText) return;
+        const access = beginPrivacyAccess();
+        if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
         try {
             await invoke("copy_to_clipboard", {
                 content: ocrText,
@@ -1206,13 +1220,14 @@ const ClipboardItem = ({
                 pasteWithFormat: false,
                 moveToTop: false,
                 pasteImageAsBase64: false,
+                expectedPrivacyEpoch: access.epoch,
             });
             onTransformItemSuccess?.("paste_ocr");
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             onTransformItemError?.("paste_ocr", msg);
         }
-    }, [ocrText, onTransformItemError, onTransformItemSuccess]);
+    }, [ocrText, onTransformItemError, onTransformItemSuccess, isSensitiveHidden, t]);
 
     const handleShare = useCallback(async () => {
         if (shareInFlightRef.current) {
@@ -1221,7 +1236,10 @@ const ClipboardItem = ({
         }
         shareInFlightRef.current = true;
         try {
+            const access = beginPrivacyAccess();
+            if (!access || isSensitiveHidden) { onTransformItemError?.("privacy_read", t("privacy_reveal_first")); return; }
             const content = loadFullItem ? (await loadFullItem()).content : item.content;
+            if (!access.isCurrent()) return;
             if (navigator.share) {
                 await navigator.share({ text: content });
                 return;
@@ -1233,7 +1251,7 @@ const ClipboardItem = ({
         } finally {
             shareInFlightRef.current = false;
         }
-    }, [item.content, loadFullItem, onTransformItemError, t]);
+    }, [item.content, loadFullItem, onTransformItemError, t, isSensitiveHidden]);
 
     const handleContextMenuAction = useCallback((action: string) => {
         switch (action) {
@@ -1606,7 +1624,7 @@ const ClipboardItem = ({
             )}
             <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${isSensitiveHidden ? 'privacy-concealed' : ''}`}>
                 {isSensitiveHidden ? <div className="privacy-hidden-content">{t("privacy_sensitive_hidden")}</div>
-                    : item.content_type === "file" && !item.content && isRevealed ? <div className="privacy-file-metadata">{item.preview}</div>
+                    : item.content_type === "file" && !item.content ? <div className="privacy-file-metadata">{item.preview}</div>
                     : item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
                         {item.is_external && item.file_preview_exists === false ? (
@@ -1616,25 +1634,14 @@ const ClipboardItem = ({
                             </div>
                         ) : imagePreview.pending ? (
                             <div className="image-preview image-preview-pending" aria-hidden="true" />
-                        ) : item.content ? (
+                        ) : imagePreview.src ? (
                             <img
-                                src={
-                                    imagePreview.src || (item.content.startsWith("data:")
-                                        ? item.content
-                                        : (
-                                            toTauriLocalImageSrc(item.content) ||
-                                            (item.is_external ? convertFileSrc(item.content) : item.content)
-                                        ))
-                                }
+                                src={imagePreview.src}
                                 alt={t('image_preview')}
                                 className="image-preview"
                                 loading="lazy"
                                 style={isSensitiveHidden ? { filter: 'blur(8px)' } : {}}
                                 onError={(e) => {
-                                    if (imagePreview.src) {
-                                        imagePreview.fallback();
-                                        return;
-                                    }
                                     // Fallback for load errors even if backend said it exists (e.g. deleted after fetch)
                                     e.currentTarget.style.display = 'none';
                                     e.currentTarget.parentElement?.classList.add('image-load-error');
@@ -1650,10 +1657,8 @@ const ClipboardItem = ({
                 ) : item.content_type === "video" ? (
                     <div className="video-thumbnail-card">
                         <div className="video-thumbnail-wrapper">
-                            {item.content && <video
-                                src={item.content.startsWith("data:")
-                                    ? item.content
-                                    : (toTauriLocalImageSrc(item.content) || item.content)}
+                            {/^data:video\/(mp4|webm);base64,[A-Za-z0-9+/=]+$/.test(item.content) && <video
+                                src={item.content}
                                 preload="metadata"
                                 muted
                                 playsInline
@@ -1665,7 +1670,7 @@ const ClipboardItem = ({
                             </div>
                         </div>
                         <div className="video-info-wrapper">
-                            <div className="video-name">{item.content.split(/[\\/]/).pop()}</div>
+                            <div className="video-name">{item.preview || item.content.split(/[\\/]/).pop()}</div>
                         </div>
                     </div>
                 ) : item.content_type === "file" ? (

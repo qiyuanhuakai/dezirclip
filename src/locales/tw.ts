@@ -1,5 +1,6 @@
 export const tw = {
         privacy_session_title: "隱私工作階段",
+        privacy_reveal_first: "請先主動檢視此記錄，再執行此操作。",
         privacy_sensitive_hidden: "受保護的內容，主動查看後才會讀取。",
         privacy_session_hint: "開啟後暫停自動記錄、附件與文字辨識；系統剪貼簿及既有歷史保留。狀態由目前擷取主機確認，持續工作階段在重新啟動後仍生效。",
         privacy_session_active: "隱私工作階段已開啟 · 自動記錄已暫停",

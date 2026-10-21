@@ -27,6 +27,9 @@ export function parsePrivacySnapshot(value: unknown): PrivacyRuntimeSnapshot {
 export const isSensitiveEntry = (entry: Pick<ClipboardEntry, "tags">): boolean =>
   !entry.tags || entry.tags.some(tag => ["sensitive", "password", "密码"].includes(tag.trim().toLowerCase()));
 
+export const isRamImageSource = (source: string): boolean =>
+  /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(source);
+
 export const concealSensitiveEntry = (entry: ClipboardEntry): ClipboardEntry => ({
   ...entry, content: "", preview: "••••••", html_content: undefined, ocr_text: null,
   ocr_status: null, file_preview_exists: false,

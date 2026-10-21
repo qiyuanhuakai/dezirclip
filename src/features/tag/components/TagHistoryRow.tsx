@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import ClipboardItem, { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
-import { beginPrivacyAccess, getPrivacyEntry, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { beginPrivacyAccess, getPrivacyEntry, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { concealSensitiveEntry, isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
 
@@ -74,17 +74,21 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         let disposed = false;
         fullItem.current = null;
         setDetail(null);
-        if (!sensitive && !item.content && (['image', 'file', 'video'].includes(item.content_type)
-            || (!compactMode && item.content_type === 'rich_text'))) {
-            void loadFullItem().then(next => { if (!disposed) setDetail(next); }).catch(() => { if (!disposed) onError(); });
+        if (!sensitive && !compactMode && item.content_type === 'rich_text' && !item.html_content) {
+            const access = beginPrivacyAccess();
+            if (access) void invokePrivacyBound<ClipboardEntry>('get_history_resource_preview', { id: item.id, expectedEpoch: access.epoch, maxDimension: 480 })
+                .then(next => { if (!disposed && access.isCurrent()) setDetail(next); }).catch(() => { if (!disposed) onError(); });
         }
         return () => { disposed = true; };
     }, [item, compactMode, loadFullItem, onError, sensitive]);
 
     const copy = (pasteWithFormat = false, pasteImageAsBase64 = false) => {
         if (managing.current) return;
+        const access = beginPrivacyAccess();
+        if (!access || (sensitive && !detail)) { onError(); return; }
         void invoke('copy_to_clipboard', { id: item.id, content: '', contentType: item.content_type,
-            paste: true, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64 })
+            paste: true, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64,
+            expectedPrivacyEpoch: sensitive ? access.epoch : undefined })
             .then(onChanged).catch(onError);
     };
     const changeTags = async (tags: string[]) => {
@@ -129,7 +133,12 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
                 const access = beginPrivacyAccess();
                 if (access) void loadFullItem().then(next => { if (mounted.current && access.isCurrent()) setDetail(next); }).catch(onError);
             }}
-            onOpen={event => { event.stopPropagation(); if (!managing.current) void invoke('open_content', { id: item.id, content: '', contentType: item.content_type }).catch(onError); }}
+            onOpen={event => {
+                event.stopPropagation(); const access = beginPrivacyAccess();
+                if (!access || (sensitive && !detail)) { onError(); return; }
+                if (!managing.current) void invoke('open_content', { id: item.id, content: '', contentType: item.content_type,
+                    expectedPrivacyEpoch: sensitive ? access.epoch : undefined }).catch(onError);
+            }}
             onTogglePin={event => { event.stopPropagation(); if (!managing.current) void invoke('toggle_clipboard_pin', { id: item.id, isPinned: !item.is_pinned }).then(onChanged).catch(onError); }}
             onDelete={event => { event.stopPropagation(); if (!managing.current) onDelete(item); }}
             onToggleTagEditor={event => { event.stopPropagation(); if (!tagBusy && !managing.current) setEditingTags(current => !current); }}
@@ -141,6 +150,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             onTagDelete={tag => { void changeTags(item.tags.filter(current => current !== tag)); }}
             loadFullItem={loadFullItem} onEdit={() => { if (!managing.current) onEdit(item); }}
             onQRCode={() => {
+                if (sensitive && !detail) { onError(); return; }
                 const access = beginPrivacyAccess();
                 if (access && !managing.current) void loadFullItem().then(next => { if (mounted.current && access.isCurrent() && !managing.current) onQRCode(next); }).catch(onError);
             }}

@@ -1,6 +1,7 @@
 export const en = {
         privacy_session_title: "Privacy session",
         privacy_sensitive_hidden: "Protected content. Read only when you choose to reveal it.",
+        privacy_reveal_first: "Reveal this record before using its protected content.",
         privacy_session_hint: "Pause automatic history, attachments and OCR while keeping the system clipboard and existing history. The capture host confirms shared state; an indefinite session survives restart.",
         privacy_session_active: "Privacy session on · automatic history paused",
         privacy_session_inactive: "Privacy session off",

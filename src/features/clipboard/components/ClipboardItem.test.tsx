@@ -38,6 +38,11 @@ vi.mock("../../../shared/components/HtmlContent", () => ({
   default: ({ fallbackText }: { fallbackText: string }) => <span>{fallbackText}</span>,
 }));
 
+vi.mock("../../../shared/hooks/usePrivacySession", () => ({
+  usePrivacySession: () => ({ phase: "ready", snapshot: { history_revision: 0, privacy_epoch: 0,
+    session: { active: false, expires_at_ms: null } }, pending: false, generation: 0 }),
+}));
+
 vi.mock("../../../shared/lib/localImageSrc", () => ({
   toTauriLocalImageSrc: () => null,
 }));
