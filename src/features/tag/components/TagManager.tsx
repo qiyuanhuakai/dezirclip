@@ -6,6 +6,7 @@ import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edi
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
 import { getPrivacyEntry, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
 import { useTagLibrary } from '../hooks/useTagLibrary';
 import { TagDialog } from './TagDialog';
 import { TagHistoryRow } from './TagHistoryRow';
@@ -29,7 +30,7 @@ type Dialog = { kind: 'createTag' }
     | { kind: 'renameTag'; tag: string }
     | { kind: 'removeTag'; tag: string }
     | { kind: 'createItem'; tag: string }
-    | { kind: 'editItem'; id: number }
+    | { kind: 'editItem'; id: number; protectedContent: boolean }
     | { kind: 'deleteSelection'; tag: string; selection: TagBatchSelection; count: number; scope: string }
     | { kind: 'deleteItem'; item: ClipboardEntry };
 
@@ -159,7 +160,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         const request = ++detailSequence.current;
         void getPrivacyEntry(item.id).then(detail => {
             if (!mounted.current || request !== detailSequence.current) return;
-            setDialogError(null); setValue(detail.content); setDialog({ kind: 'editItem', id: item.id });
+            setDialogError(null); setValue(detail.content); setDialog({ kind: 'editItem', id: item.id, protectedContent: isSensitiveEntry(detail) });
         }).catch(() => { if (request === detailSequence.current) notifyError(); });
     }, [notifyError]);
     const deleteItem = useCallback((item: ClipboardEntry) => openDialog({ kind: 'deleteItem', item }), [openDialog]);
@@ -413,7 +414,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         {dialog && <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog} wide={isTextDialog}>
             <form onSubmit={event => { event.preventDefault(); void saveDialog(); }}>
                 {isNameDialog && <label className="tag-manager-field"><span>{t('tag_name')}</span><input className="search-input" autoFocus value={value} maxLength={80} readOnly={busy} onChange={event => setValue(event.target.value)} /></label>}
-                {isTextDialog && <label className="tag-manager-field"><span>{t('input_content_placeholder')}</span><textarea className="modal-textarea" autoFocus value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
+                {isTextDialog && <label className="tag-manager-field" data-privacy-protected={dialog.kind === 'editItem' && dialog.protectedContent ? 'true' : undefined}
+                    onDragStart={event => { if (dialog.kind === 'editItem' && dialog.protectedContent) event.preventDefault(); }}><span>{t('input_content_placeholder')}</span><textarea className="modal-textarea" autoFocus value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
                 {dialog.kind === 'removeTag' && <p className="confirm-dialog-message">{t(destructiveTag ? 'tag_sensitive_delete_hint' : 'tag_remove_hint')}</p>}
                 {dialog.kind === 'deleteItem' && <p className="confirm-dialog-message">{t('confirm_delete_desc')}</p>}
                 {dialog.kind === 'deleteSelection' && <p className="confirm-dialog-message">{t(dialog.selection.mode === 'all' ? 'tag_batch_delete_all_confirm' : 'tag_batch_delete_confirm')

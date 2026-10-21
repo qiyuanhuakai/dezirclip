@@ -1,7 +1,9 @@
-import { forwardRef, useEffect, useCallback } from "react";
+import { forwardRef, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ClipboardEntry } from "../../../shared/types";
 import { useQrCode } from "../hooks/useQrCode";
+import { beginPrivacyAccess } from "../../../shared/lib/privacySession";
+import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 
 interface QrCodeDialogProps {
   entry: ClipboardEntry;
@@ -13,6 +15,8 @@ const MAX_CONTENT_DISPLAY = 60;
 const QrCodeDialog = forwardRef<HTMLDivElement, QrCodeDialogProps>(
   ({ entry, onClose }, ref) => {
     const { dataUrl, loading, error, generate } = useQrCode();
+    const access = useMemo(() => beginPrivacyAccess(), [entry]);
+    const protectedContent = isSensitiveEntry(entry);
 
     useEffect(() => {
       generate(entry.content, 256);
@@ -38,10 +42,12 @@ const QrCodeDialog = forwardRef<HTMLDivElement, QrCodeDialogProps>(
     );
 
     const handleCopySvg = useCallback(async () => {
+      if (!access?.isCurrent()) return;
       try {
         const svg = await invoke<string>("generate_qr_svg", {
           content: entry.content,
         });
+        if (!access.isCurrent()) return;
         await invoke("copy_to_clipboard", {
           content: svg,
           contentType: "text",
@@ -51,11 +57,13 @@ const QrCodeDialog = forwardRef<HTMLDivElement, QrCodeDialogProps>(
           pasteWithFormat: false,
           moveToTop: false,
           pasteImageAsBase64: false,
+          expectedPrivacyEpoch: access.epoch,
+          derivedFromId: protectedContent ? entry.id : undefined,
         });
       } catch {
         // clipboard write failure is non-critical
       }
-    }, [entry.content]);
+    }, [entry, access, protectedContent]);
 
     const truncatedContent =
       entry.content.length > MAX_CONTENT_DISPLAY
@@ -74,6 +82,8 @@ const QrCodeDialog = forwardRef<HTMLDivElement, QrCodeDialogProps>(
           role="dialog"
           aria-modal="true"
           aria-label="二维码"
+          data-privacy-protected={protectedContent ? "true" : undefined}
+          onDragStart={event => { if (protectedContent) event.preventDefault(); }}
         >
           <div className="qr-dialog__title">二维码</div>
 

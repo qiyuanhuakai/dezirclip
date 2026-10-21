@@ -8,7 +8,7 @@ import {
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { getConciseTime } from "../../../shared/lib/utils";
 import type { Locale } from "../../../shared/types";
-import { isRamImageSource } from "../../../shared/lib/privacyRuntime";
+import { isRamImageSource, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
@@ -22,6 +22,7 @@ import type { ClipboardEntry } from "../../../shared/types";
 
 type PreviewPayload = {
     privacyEpoch: number;
+    protectedContent?: boolean;
     contentType: string;
     content: string;
     preview?: string;
@@ -179,6 +180,7 @@ const CompactPreviewWindow = () => {
                     { id: request.id, expectedEpoch: request.privacyEpoch, maxDimension: 560 });
                 if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
                 const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
+                    protectedContent: isSensitiveEntry(entry),
                     preview: entry.preview, htmlContent: entry.html_content, sourceApp: entry.source_app, timestamp: entry.timestamp };
                 setPayload(next);
                 applyTheme(next);
@@ -388,7 +390,6 @@ const CompactPreviewWindow = () => {
                         onError={() => {
                             richPreviewFailureLog("fallback image load error -> switch to snapshot", {
                                 srcLength: (effectiveRichImageFallbackSrc || "").length,
-                                srcSample: (effectiveRichImageFallbackSrc || "").slice(0, 140),
                                 sourceApp: payload.sourceApp || ""
                             });
                             setRichImageFallbackFailed(true);
@@ -423,7 +424,6 @@ const CompactPreviewWindow = () => {
                             }
                             richPreviewFailureLog("snapshot image load error -> fallback to html", {
                                 srcLength: (effectiveRichTextSnapshotSrc || "").length,
-                                srcSample: (effectiveRichTextSnapshotSrc || "").slice(0, 140),
                                 sourceApp: payload.sourceApp || ""
                             });
                             setSnapshotFailed(true);
@@ -488,7 +488,8 @@ const CompactPreviewWindow = () => {
                     </div>
                 </div>
                 <div ref={dividerRef} className="popover-divider" />
-                <div ref={contentRef} className="popover-content">{content}</div>
+                <div ref={contentRef} className="popover-content" data-privacy-protected={payload?.protectedContent ? "true" : undefined}
+                    onDragStart={event => { if (payload?.protectedContent) event.preventDefault(); }}>{content}</div>
             </div>
         </div>
     );

@@ -1644,6 +1644,7 @@ const ClipboardItem = ({
                 </div>
             )}
             <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${isSensitiveHidden ? 'privacy-concealed' : ''}`}
+                data-privacy-protected={isSensitiveEntry(item) ? "true" : undefined}
                 onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}>
                 {isSensitiveHidden ? <div className="privacy-hidden-content">{t("privacy_sensitive_hidden")}</div>
                     : item.content_type === "file" && !item.content ? <div className="privacy-file-metadata">{item.preview}</div>
@@ -1779,6 +1780,8 @@ const ClipboardItem = ({
             {ocrStatus === "done" && ocrText && (
                 <div
                     data-testid="ocr-section"
+                    data-privacy-protected={isSensitiveEntry(item) ? "true" : undefined}
+                    onDragStart={event => { if (isSensitiveEntry(item)) event.preventDefault(); }}
                     className="ocr-text-section"
                     style={{
                         marginTop: '4px',
