@@ -179,7 +179,7 @@ function githubClient(transport) {
   return { releaseByTag, downloadAsset, moveAsset, releaseCommit };
 }
 
-export function publish(version, config, log = console.log, transport = gh) {
+function publication(mode, version, config, log, transport, acceptance) {
   const client = githubClient(transport);
   const parsed = parseVersion(version);
   const tag = `v${parsed.value}`;
@@ -189,10 +189,31 @@ export function publish(version, config, log = console.log, transport = gh) {
     throw new Error('Release tag or prerelease flag differs from the signed version');
   }
   const commit = client.releaseCommit(tag);
+  if (mode === 'promote' && release.draft) throw new Error('Promotion requires an already published release');
+  const signedAssets = [];
   const manifest = makeManifest(parsed.value, release.assets, name => {
-    return client.downloadAsset(release.assets.find(asset => asset.name === name));
+    const asset = release.assets.find(asset => asset.name === name);
+    const bytes = client.downloadAsset(asset);
+    signedAssets.push({ name, id: asset.id, size: asset.size, updated_at: asset.updated_at,
+      sha256: createHash('sha256').update(bytes).digest('hex') });
+    return bytes;
   }, config.plugins.updater.pubkey, release.body ?? '');
-  let channels = client.releaseByTag(channelTag, true);
+  const receipt = { schema_version: 1, version: parsed.value, source_revision: commit,
+    release_id: release.id, signed_assets: signedAssets };
+  if (mode === 'promote') {
+    const assetIdentity = assets => !Array.isArray(assets) || assets.length !== 8 ? null : JSON.stringify(
+      assets.map(asset => ({ name: asset.name, id: asset.id, size: asset.size,
+        updated_at: asset.updated_at, sha256: asset.sha256 })).sort((a, b) => a.name.localeCompare(b.name)));
+    if (acceptance?.status !== 'passed' || acceptance.schema_version !== 1
+        || acceptance.version !== receipt.version || acceptance.source_revision !== commit
+        || acceptance.release_id !== release.id
+        || assetIdentity(acceptance.signed_assets) !== assetIdentity(signedAssets)
+        || ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'].some(
+          gate => typeof acceptance.gates?.[gate] !== 'string' || !/^[a-f0-9]{64}$/.test(acceptance.gates[gate]))) {
+      throw new Error('Promotion requires matching completed public acceptance evidence');
+    }
+  }
+  let channels = mode === 'promote' ? client.releaseByTag(channelTag, true) : null;
   if (channels?.draft) throw new Error('Existing channel release is still a draft; inspect it before retrying');
   const old = channels?.assets.find(asset => asset.name === `${channel}.json`);
   const current = old ? JSON.parse(client.downloadAsset(old).toString('utf8')) : null;
@@ -204,6 +225,7 @@ export function publish(version, config, log = console.log, transport = gh) {
   }
   // Check asset identity again before making the verified release public.
   const latest = client.releaseByTag(tag);
+  if (latest.id !== release.id || client.releaseCommit(tag) !== commit) throw new Error('Release source changed during verification');
   for (const asset of release.assets) {
     if (!latest.assets.some(value => value.id === asset.id && value.size === asset.size
         && value.updated_at === asset.updated_at)) {
@@ -215,6 +237,10 @@ export function publish(version, config, log = console.log, transport = gh) {
       parsed.pre.length ? '--latest=false' : '--latest']);
   }
   if (client.releaseByTag(tag).draft) throw new Error('Release has not been published');
+  if (mode === 'publish-only') {
+    log(`Published ${tag}; updater channels await separate public acceptance.`);
+    return { ...receipt, status: 'awaiting_acceptance' };
+  }
   if (!shouldPromote(current?.version, parsed.value)) {
     log(`Published ${tag}; ${channel} already points to an equal or newer version.`);
     return;
@@ -254,15 +280,25 @@ export function publish(version, config, log = console.log, transport = gh) {
   }
 }
 
+export function publishOnly(version, config, log = console.log, transport = gh) {
+  return publication('publish-only', version, config, log, transport);
+}
+
+export function promote(version, config, acceptance, log = console.log, transport = gh) {
+  return publication('promote', version, config, log, transport, acceptance);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
   preflight(config, pkg);
-  const [mode, version] = process.argv.slice(2);
+  const [mode, version, acceptancePath] = process.argv.slice(2);
   if (mode === 'preflight') {
     parseVersion(version);
     if (!process.env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('Release signing secret is not configured');
     console.log('Updater signing configuration is ready.');
-  } else if (mode === 'publish') publish(version, config);
-  else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish vVERSION');
+  } else if (mode === 'publish-only') publishOnly(version, config);
+  else if (mode === 'promote' && acceptancePath) {
+    promote(version, config, JSON.parse(readFileSync(acceptancePath, 'utf8')));
+  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json');
 }

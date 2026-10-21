@@ -3,7 +3,14 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 import test from 'node:test';
-import { compareVersions, makeManifest, parseVersion, promotionChannel, publish, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
+import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, promote, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
+
+const accepted = receipt => ({ ...receipt, status: 'passed', gates: Object.fromEntries(
+  ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'].map(gate => [gate, 'b'.repeat(64)])) });
+function publish(version, config, log, transport) {
+  const receipt = publishOnly(version, config, log, transport);
+  return promote(version, config, accepted(receipt), log, transport);
+}
 
 // Public test vector from tauri-plugin-updater 2.14.0, updater.rs offline_tests.
 // https://docs.rs/tauri-plugin-updater/2.14.0/src/tauri_plugin_updater/updater.rs.html
@@ -216,22 +223,22 @@ test('a bad artifact signature leaves the product draft and does not create a ch
   assert.deepEqual(fixture.state.mutations, []);
 });
 
-test('an existing draft channel is detected and fails closed before product publication', () => {
+test('an existing draft channel blocks promotion after independent product publication', () => {
   const fixture = publisherFixture({ channel: 'draft' });
   assert.throws(() => publish('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport), /channel release is still a draft/);
-  assert.equal(fixture.state.product.draft, true);
+  assert.equal(fixture.state.product.draft, false);
   assert.equal(fixture.state.channel.draft, true);
-  assert.deepEqual(fixture.state.mutations, []);
+  assert.deepEqual(fixture.state.mutations, ['publish:product']);
 });
 
 for (const failure of ['HTTP 403', 'HTTP 404', 'network unavailable']) {
   test(`optional channel lookup does not turn ${failure} into an absent channel`, () => {
     const error = new Error(failure);
     error.stderr = Buffer.from(`gh: ${failure}`);
-    const fixture = publisherFixture({ listErrorAt: 2, apiError: error });
+    const fixture = publisherFixture({ listErrorAt: 5, apiError: error });
     assert.throws(() => publish('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport), value => value === error);
-    assert.equal(fixture.state.product.draft, true);
-    assert.deepEqual(fixture.state.mutations, []);
+    assert.equal(fixture.state.product.draft, false);
+    assert.deepEqual(fixture.state.mutations, ['publish:product']);
   });
 }
 
@@ -239,8 +246,8 @@ test('a release-ID lookup failure is not treated as an absent optional channel',
   const error = new Error('HTTP 404 while reading an existing release ID');
   const fixture = publisherFixture({ channel: 'published', channelError: error });
   assert.throws(() => publish('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport), value => value === error);
-  assert.equal(fixture.state.product.draft, true);
-  assert.deepEqual(fixture.state.mutations, []);
+  assert.equal(fixture.state.product.draft, false);
+  assert.deepEqual(fixture.state.mutations, ['publish:product']);
 });
 
 test('duplicate matching releases are rejected before publication', () => {
@@ -263,4 +270,44 @@ test('a rejected rename restores the previous channel through draft-compatible m
   assert.equal(fixture.active('preview.json').version, '0.2.0-alpha.0');
   assert.equal(fixture.active('stable.json').version, '0.1.20');
   assert.ok(fixture.state.uploadPaths.every(path => !existsSync(path)));
+});
+
+test('publish-only verifies and publishes without any channel lookup or mutation', () => {
+  const fixture = publisherFixture({ channel: 'published', channelError: new Error('channel unavailable') });
+  const receipt = publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport);
+  assert.equal(receipt.status, 'awaiting_acceptance');
+  assert.equal(receipt.signed_assets.length, 8);
+  assert(receipt.signed_assets.every(asset => /^[a-f0-9]{64}$/.test(asset.sha256)));
+  assert.deepEqual(fixture.state.mutations, ['publish:product']);
+  assert(fixture.state.calls.every(args => !args.includes(`repos/${repository}/releases/20`)));
+});
+
+test('promotion refuses a draft product or incomplete public acceptance before channel writes', () => {
+  const draft = publisherFixture();
+  assert.throws(() => promote('0.2.0-alpha.1', draft.config, {}, () => {}, draft.transport), /already published/);
+  assert.deepEqual(draft.state.mutations, []);
+  for (const change of [
+    receipt => receipt,
+    receipt => ({ ...accepted(receipt), source_revision: 'c'.repeat(40) }),
+    receipt => ({ ...accepted(receipt), gates: { public_assets: 'b'.repeat(64) } }),
+    receipt => ({ ...accepted(receipt), signed_assets: receipt.signed_assets.slice(1) }),
+    receipt => ({ ...accepted(receipt), signed_assets: receipt.signed_assets.map((asset, index) => index ? asset : { ...asset, sha256: '0'.repeat(64) }) }),
+  ]) {
+    const fixture = publisherFixture({ published: true, channel: 'published' });
+    const receipt = publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport);
+    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, change(receipt), () => {}, fixture.transport), /completed public acceptance/);
+    assert.deepEqual(fixture.state.mutations, []);
+  }
+});
+
+test('promotion refuses changed accepted assets and preserves both channels', () => {
+  const fixture = publisherFixture({ published: true, channel: 'published' });
+  const receipt = publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport);
+  const stable = fixture.active('stable.json');
+  const preview = fixture.active('preview.json');
+  fixture.state.product.assets[0].updated_at = '2026-10-21T00:00:00Z';
+  assert.throws(() => promote('0.2.0-alpha.1', fixture.config, accepted(receipt), () => {}, fixture.transport), /completed public acceptance/);
+  assert.deepEqual(fixture.state.mutations, []);
+  assert.deepEqual(fixture.active('stable.json'), stable);
+  assert.deepEqual(fixture.active('preview.json'), preview);
 });

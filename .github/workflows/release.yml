@@ -251,7 +251,7 @@ jobs:
     secrets: inherit
 
   verify-publish-and-promote:
-    name: Verify signed artifacts, publish and advance one channel
+    name: Verify signed artifacts and publish before public acceptance
     needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
     runs-on: ubuntu-24.04
     steps:
@@ -267,4 +267,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: node scripts/updater-release.mjs publish "$GITHUB_REF_NAME"
+        run: node scripts/updater-release.mjs publish-only "$GITHUB_REF_NAME"
