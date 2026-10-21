@@ -30,7 +30,7 @@ assert.equal(path.dirname(input).toLowerCase(), fixtureRoot.toLowerCase(), "Inpu
 assert.match(path.basename(fixtureRoot), /^dezirclip-upgrade-[a-f0-9]{32}$/);
 const configuration = JSON.parse((await readFile(input, "utf8")).replace(/^\uFEFF/, ""));
 assert.equal(fixturePath(configuration.profileDirectory).toLowerCase(), path.join(fixtureRoot, "profile").toLowerCase());
-assert.match(configuration.expectedVersion, /^0\.2\.0-alpha\.[01]$/);
+assert.match(configuration.expectedVersion, /^0\.2\.0-alpha\.[12]$/);
 assert.match(configuration.marker, /^nativeupgradefixturemarker[a-f0-9]{32}$/);
 assert.equal(typeof configuration.acquireOwnership, "boolean");
 assert.equal(typeof configuration.verifyCapture, "boolean");

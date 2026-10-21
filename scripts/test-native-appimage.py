@@ -44,11 +44,14 @@ def configure_headless_fixture(database):
             'scope': 'Existing user settings selected only in a synthetic headless Xvfb profile; product defaults are unchanged.'}
 
 
-def verify_build_set(cli_info, desktop_info, expected_revision):
-    version = '0.2.0-alpha.1'
-    linked = [{'component': name, 'version': version}
-              for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]
-    for role, info in [('cli', cli_info), ('desktop', desktop_info)]:
+def verify_build_set(cli_info, desktop_info, service_info, expected_revision):
+    version = '0.2.0-alpha.2'
+    components = [('cli', cli_info), ('desktop', desktop_info), ('service', service_info)]
+    for role, info in components:
+        names = ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')
+        if role == 'service':
+            names += ('dzc-service',)
+        linked = [{'component': name, 'version': version} for name in names]
         require(isinstance(info, dict), 'Component build metadata must be an object.')
         require(info.get('component') == role and info.get('component_version') == version,
                 'Component role or version differs from the candidate package.')
@@ -61,7 +64,7 @@ def verify_build_set(cli_info, desktop_info, expected_revision):
         require(not expected_revision or revision == expected_revision.lower(),
                 'Component source differs from the frozen acceptance revision.')
         require(type(info.get('metadata_version')) is int and info['metadata_version'] == 1
-                and type(info.get('database_schema_version')) is int and info['database_schema_version'] == 22,
+                and type(info.get('database_schema_version')) is int and info['database_schema_version'] == 24,
                 'Component metadata or database schema version differs.')
         protocol = info.get('protocol_version')
         require(isinstance(protocol, dict) and protocol == {'major': 1, 'minor': 0}
@@ -69,10 +72,11 @@ def verify_build_set(cli_info, desktop_info, expected_revision):
                 'Component protocol version differs.')
         require(info.get('target') == 'x86_64-unknown-linux-gnu' and info.get('linked_components') == linked,
                 'Component target or linked version set differs.')
-    require(cli_info['build_id'] == desktop_info['build_id'],
-            'Actual GUI and bundled CLI belong to different build sets.')
+    require(len({info['build_id'] for _, info in components}) == 1,
+            'Actual GUI, bundled CLI and service belong to different build sets.')
     return {'build_id': cli_info['build_id'], 'source_revision': cli_info['source_revision'],
-            'components': ['desktop', 'cli'], 'verified': True}
+            'components': ['desktop', 'cli', 'service'], 'verified': True,
+            'service_started': False}
 
 
 def digest(path):
@@ -119,8 +123,8 @@ else:
     HELPER = options.helper.resolve(strict=True)
     DRIVER = options.webkit_driver.resolve(strict=True)
     require(digest(SOURCE) == OLD_SHA256, 'The old AppImage must match the pinned official 0.1.20 SHA256.')
-    require(CANDIDATE.name == 'DezirClip_0.2.0-alpha.1_amd64.AppImage',
-            'Only the explicit unpublished alpha.1 fixture is accepted.')
+    require(CANDIDATE.name == 'DezirClip_0.2.0-alpha.2_amd64.AppImage',
+            'Only the explicit alpha.2 candidate is accepted.')
     if options.source_revision:
         require(re.fullmatch('[0-9a-fA-F]{40}', options.source_revision), 'Use a full source commit label.')
     decoded_key = base64.b64decode(PUBLIC_KEY.read_text().strip(), validate=True).splitlines()
@@ -196,12 +200,16 @@ def inside(mode):
         return
     cli = extract(mode)
     version = subprocess.check_output([cli, '--version'], text=True)
-    require('0.2.0-alpha.1' in version, f'Unexpected candidate CLI version: {version}')
+    require(version.strip() == 'dzc 0.2.0-alpha.2', f'Unexpected candidate CLI version: {version}')
     history = subprocess.check_output([cli, 'search', 'nativeappimagefixturemarker', '--metadata', '--json'], text=True)
     require('nativeappimagefixturemarker' in history, 'Candidate CLI did not preserve synthetic old history.')
     (SCENARIO / 'new-history.json').write_text(history)
     cli_info = json.loads(subprocess.check_output([cli, 'build-info', '--json'], text=True))
     (SCENARIO / (mode + '-cli-build-info.json')).write_text(json.dumps(cli_info, indent=2))
+    services = list((SCENARIO / (mode + '-extract')).rglob('dzc-service'))
+    require(len(services) == 1 and services[0].is_file(), 'Expected exactly one bundled service executable.')
+    service_info = json.loads(subprocess.check_output([services[0], '--build-info'], text=True, timeout=15))
+    (SCENARIO / (mode + '-service-build-info.json')).write_text(json.dumps(service_info, indent=2))
     with closing(sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH'])) as connection:
         settings = dict(connection.execute('SELECT key,value FROM settings WHERE key IN (?,?)',
                                           ('app.silent_start', 'app.disable_webview_gpu')))
@@ -249,7 +257,7 @@ def inside(mode):
             require(ready, 'Actual AppImage WebView did not become visible and ready.')
             desktop_info = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("get_build_info").then(done).catch(e=>done({error:String(e)}));', 'args': []})
             (SCENARIO / (mode + '-desktop-build-info.json')).write_text(json.dumps(desktop_info, indent=2))
-            build_set = verify_build_set(cli_info, desktop_info,
+            build_set = verify_build_set(cli_info, desktop_info, service_info,
                                          os.environ.get('DEZIRCLIP_ACCEPTANCE_SOURCE_REVISION', ''))
             (SCENARIO / (mode + '-build-set.json')).write_text(json.dumps(build_set, indent=2))
             support = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1]; window.__TAURI_INTERNALS__.invoke("get_update_support").then(done).catch(e=>done({error:String(e)}));', 'args': []})

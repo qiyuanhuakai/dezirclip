@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('OldToNew', 'LegacyUninstall', 'OwnedUpgrade', 'OwnedExternalEdit')][string]$Scenario = 'OldToNew',
+    [ValidateSet('OldToNew', 'PublishedAlphaToAlpha', 'LegacyUninstall', 'OwnedUpgrade', 'OwnedExternalEdit')][string]$Scenario = 'OldToNew',
     [string]$OldInstaller = (Join-Path $PSScriptRoot 'DezirClip_0.1.20_x64-setup.exe'),
     [string]$NewInstaller,
     [string]$PreviousCandidate
@@ -41,9 +41,31 @@ foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win3
     }
 }
 $owned = $Scenario -in @('OwnedUpgrade', 'OwnedExternalEdit')
+$publishedAlpha = $Scenario -eq 'PublishedAlphaToAlpha'
+$oldDigest = if ($publishedAlpha) { '31D8B88064E1185C9F74B5FDD327902B9BC860E523B9A5AC0D71620EC7ADBB87' } else { 'D20033124C74BEA451301716AFB46623607602BAE37647748AE7D25AB7DD4B8E' }
 if (-not $owned) { $OldInstaller = Resolve-RunnerFixturePath $OldInstaller -RequireFile }
-if (-not $owned -and (Get-FileHash -LiteralPath $OldInstaller -Algorithm SHA256).Hash -ne 'D20033124C74BEA451301716AFB46623607602BAE37647748AE7D25AB7DD4B8E') {
-    throw 'The old installer is not the verified published v0.1.20 x64 artifact.'
+if (-not $owned -and (Get-FileHash -LiteralPath $OldInstaller -Algorithm SHA256).Hash -ne $oldDigest) {
+    throw 'The old installer differs from the explicitly selected pinned published x64 artifact.'
+}
+function Assert-CurrentBuildInfo($Info, [string]$Role, [string]$Version, [string]$Revision) {
+    if ($Role -notin @('desktop', 'cli', 'service') -or $Version -notin @('0.2.0-alpha.1', '0.2.0-alpha.2') -or $Revision -cnotmatch '^[a-f0-9]{40}$') { throw 'Invalid independent build policy inputs.' }
+    if ($null -eq $Info -or $Info.component -cne $Role -or $Info.component_version -cne $Version -or $Info.source_revision -cne $Revision -or $Info.build_id -cne ($Version + '@' + $Revision)) { throw 'Component build identity differs from the independent candidate policy.' }
+    if ($Info.source_state -cnotin @('verified_checkout', 'modified_checkout') -or $Info.target -cne 'x86_64-pc-windows-msvc') { throw 'Component source provenance or target is unavailable.' }
+    foreach ($field in @('metadata_version', 'database_schema_version')) {
+        if ($Info.$field -isnot [int] -and $Info.$field -isnot [long]) { throw 'Build metadata fields must be JSON integers.' }
+    }
+    if ($Info.metadata_version -ne 1 -or $Info.database_schema_version -ne 24) { throw 'Component metadata or database schema differs from alpha.2 policy.' }
+    foreach ($field in @('major', 'minor')) {
+        if ($Info.protocol_version.$field -isnot [int] -and $Info.protocol_version.$field -isnot [long]) { throw 'Protocol fields must be JSON integers.' }
+    }
+    if ($Info.protocol_version.major -ne 1 -or $Info.protocol_version.minor -ne 0) { throw 'Component wire protocol differs from alpha.2 policy.' }
+    $names = @('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')
+    if ($Role -eq 'service') { $names += 'dzc-service' }
+    $linked = @($Info.linked_components)
+    if ($linked.Count -ne $names.Count) { throw 'Actual linked inventory differs from alpha.2 policy.' }
+    for ($index = 0; $index -lt $names.Count; $index++) {
+        if ($linked[$index].component -cne $names[$index] -or $linked[$index].version -cne $Version) { throw 'Actual linked inventory differs from alpha.2 policy.' }
+    }
 }
 function Assert-NsisCompilerInputManifest($Manifest) {
     if ($Manifest.schemaVersion -ne 4 -or $Manifest.nsisInputLayout -ne 'cargo-cli-and-service-v1') { throw 'Candidate NSIS input layout is invalid.' }
@@ -63,12 +85,14 @@ function Read-CandidateManifest([string]$Installer) {
     $Installer = Resolve-RunnerFixturePath $Installer -RequireFile
     $manifestPath = Resolve-RunnerFixturePath ($Installer + '.manifest.json') -RequireFile
     $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-    if ($manifest.schemaVersion -ne 4 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Candidate manifest is invalid.' }
+    if ($manifest.schemaVersion -ne 4 -or $manifest.kind -ne 'dezirclip-native-nsis-fixture' -or $manifest.version -notin @('0.2.0-alpha.1', '0.2.0-alpha.2')) { throw 'Candidate manifest is invalid.' }
     if ($manifest.target -ne 'x86_64-pc-windows-msvc' -or $manifest.profile -ne 'debug' -or $manifest.updaterArtifacts -ne $false -or $manifest.sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Candidate build provenance is invalid.' }
     if ($manifest.sidecarVersion -notmatch ('(?:^|\s)' + [regex]::Escape($manifest.version) + '(?:\s|$)')) { throw 'Candidate manifest CLI version is invalid.' }
     if ($manifest.buildInfo.component_version -ne $manifest.version -or $manifest.buildInfo.source_revision -ne $manifest.sourceCommit -or $manifest.buildInfo.build_id -ne ($manifest.version + '@' + $manifest.sourceCommit)) { throw 'Candidate build identity differs from its source/version set.' }
     if ($manifest.buildInfo.metadata_version -ne 1 -or $manifest.buildInfo.component -ne 'cli' -or $manifest.buildInfo.target -ne $manifest.target -or @($manifest.buildInfo.linked_components).Count -ne 4) { throw 'Candidate component metadata is incomplete.' }
     if ($manifest.serviceBuildInfo.component -ne 'service' -or $manifest.serviceBuildInfo.build_id -ne $manifest.buildInfo.build_id -or @($manifest.serviceBuildInfo.linked_components).Count -ne 5) { throw 'Candidate service component metadata is incomplete.' }
+    Assert-CurrentBuildInfo $manifest.buildInfo 'cli' $manifest.version $manifest.sourceCommit
+    Assert-CurrentBuildInfo $manifest.serviceBuildInfo 'service' $manifest.version $manifest.sourceCommit
     if ($manifest.applicationPatch -ne 'tauri-nsis-bundle-token-v1' -or $manifest.applicationPatchOffset -lt 64 -or $manifest.sidecarSource -ne 'standalone-no-default-features' -or $manifest.packaging -ne 'shared-before-build-and-before-bundle') { throw 'Candidate packaging provenance is invalid.' }
     if ($manifest.sidecarPreparation.phase -ne 'bundle' -or $manifest.sidecarPreparation.sha256 -ne $manifest.sidecarSha256 -or $manifest.sidecarPreparation.portable -ne $false -or $manifest.sidecarPreparation.profile -ne 'debug') { throw 'Candidate lacks shared beforeBundle sidecar evidence.' }
     if ($manifest.applicationPatchOffset -isnot [int] -and $manifest.applicationPatchOffset -isnot [long]) { throw 'Candidate patch offset must be an integer.' }
@@ -82,9 +106,9 @@ function Read-CandidateManifest([string]$Installer) {
     return $manifest
 }
 $candidate = if ($Scenario -ne 'LegacyUninstall') { Read-CandidateManifest $NewInstaller } else { $null }
-if ($candidate -and $candidate.version -ne '0.2.0-alpha.1') { throw 'Current candidate must be the alpha.1 fixture.' }
+if ($candidate -and $candidate.version -ne '0.2.0-alpha.2') { throw 'Current candidate must be the alpha.2 fixture.' }
 $previous = if ($Scenario -eq 'OwnedUpgrade') { Read-CandidateManifest $PreviousCandidate } else { $null }
-if ($previous -and $previous.version -ne '0.2.0-alpha.0') { throw 'Previous candidate must be the alpha.0 fixture.' }
+if ($previous -and $previous.version -ne '0.2.0-alpha.1') { throw 'Previous same-source ownership fixture must be labelled alpha.1; it is not a historical package migration.' }
 $fixtureRoot = Join-Path $env:RUNNER_TEMP ('dezirclip-upgrade-' + [guid]::NewGuid().ToString('N'))
 $fixtureRoot = Resolve-RunnerFixturePath $fixtureRoot
 New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
@@ -346,13 +370,18 @@ try {
     Initialize-SharedProfile
     $initial = if ($Scenario -eq 'OwnedUpgrade') { $PreviousCandidate } elseif ($owned) { $NewInstaller } else { $OldInstaller }
     if ([string]::IsNullOrWhiteSpace($initial) -or -not (Test-Path -LiteralPath $initial -PathType Leaf)) { throw 'Initial installer fixture is missing.' }
-    $initialDigest = if ($previous) { $previous.installerSha256 } elseif ($owned) { $candidate.installerSha256 } else { 'D20033124C74BEA451301716AFB46623607602BAE37647748AE7D25AB7DD4B8E' }
+    $initialDigest = if ($previous) { $previous.installerSha256 } elseif ($owned) { $candidate.installerSha256 } else { $oldDigest }
     Run-Installer -Path $initial -Arguments @('/S', "/D=$installDirectory") -ExpectedSha256 $initialDigest
     foreach ($name in @('dezirclip.exe', 'dzc.exe')) {
         if (-not (Test-Path -LiteralPath (Join-Path $installDirectory $name) -PathType Leaf)) { throw 'Initial installed GUI or sidecar is missing.' }
     }
     & (Join-Path $installDirectory 'dzc.exe') add $marker | Set-Content (Join-Path $fixtureRoot 'old-add.txt')
     if ($LASTEXITCODE -ne 0) { throw 'Initial CLI fixture initialization failed.' }
+    if ($publishedAlpha) {
+        $publishedInfo = & (Join-Path $installDirectory 'dzc.exe') build-info --json | ConvertFrom-Json
+        if ($LASTEXITCODE -ne 0 -or $publishedInfo.component -cne 'cli' -or $publishedInfo.component_version -cne '0.2.0-alpha.1' -or $publishedInfo.source_revision -cne '90ba9960744b6cd57caaaf597f68533a7e41be45' -or $publishedInfo.source_state -cne 'verified_checkout' -or $publishedInfo.database_schema_version -ne 21 -or @($publishedInfo.linked_components).Count -ne 3) { throw 'Published alpha.1 runtime identity or original schema differs from the pinned release.' }
+        $publishedInfo | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $fixtureRoot 'published-alpha1-cli-build-info.json')
+    }
     for ($index = 0; $index -lt $targets.Count; $index++) {
         $target = $targets[$index]
         $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($target[0].Replace('/', '\'))

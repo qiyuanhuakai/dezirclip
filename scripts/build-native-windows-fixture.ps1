@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:OS -ne 'Windows_NT' -or -not $env:RUNNER_TEMP) {
     throw 'Native fixture builds run only in disposable GitHub-hosted Windows jobs.'
 }
-if ($Version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Only unpublished fixture versions are allowed.' }
+if ($Version -notin @('0.2.0-alpha.1', '0.2.0-alpha.2')) { throw 'Only explicit alpha.1/alpha.2 fixture version labels are allowed.' }
 function Assert-NoReparsePoint([string]$Path, [string]$Boundary) {
     $current = $Path
     while ($current.Length -ge $Boundary.Length) {
