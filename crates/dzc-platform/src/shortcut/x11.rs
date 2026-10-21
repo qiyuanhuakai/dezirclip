@@ -55,7 +55,10 @@ fn repeat(conn: &RustConnection) -> PlatformResult<()> {
     Ok(())
 }
 pub(super) fn probe(active: bool) -> CapabilityState {
-    let result = connect().and_then(|(conn, _)| repeat(&conn));
+    let result = connect().and_then(|(conn, _)| {
+        repeat(&conn)?;
+        group_one(&conn)
+    });
     match result {
         Ok(()) => CapabilityState::available("x11-grab-key", active),
         Err(error) => CapabilityState::unsupported(
@@ -66,6 +69,22 @@ pub(super) fn probe(active: bool) -> CapabilityState {
         ),
     }
     .with_probe("xkb_detectable_repeat_roundtrip")
+}
+
+fn group_one(conn: &RustConnection) -> PlatformResult<()> {
+    let state = conn
+        .xkb_get_state(xkb::ID::USE_CORE_KBD.into())
+        .map_err(|_| failed())?
+        .reply()
+        .map_err(|_| failed())?;
+    if state.group != xkb::Group::M1
+        || state.locked_group != xkb::Group::M1
+        || state.base_group != 0
+        || state.latched_group != 0
+    {
+        return Err(unsupported(UnsupportedReason::UnsupportedRepresentation));
+    }
+    Ok(())
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -188,18 +207,7 @@ pub(super) fn run(
 ) -> PlatformResult<()> {
     let (conn, screen) = connect()?;
     repeat(&conn)?;
-    let state = conn
-        .xkb_get_state(xkb::ID::USE_CORE_KBD.into())
-        .map_err(|_| failed())?
-        .reply()
-        .map_err(|_| failed())?;
-    if state.group != xkb::Group::M1
-        || state.locked_group != xkb::Group::M1
-        || state.base_group != 0
-        || state.latched_group != 0
-    {
-        return Err(unsupported(UnsupportedReason::UnsupportedRepresentation));
-    }
+    group_one(&conn)?;
     let mapping = Mapping::read(&conn)?;
     let (keycode, masks) = mapping.binding(&chord)?;
     let held = conn
@@ -334,6 +342,32 @@ mod tests {
             modifiers: vec![8, 0, 8, 0, 0, 0, 0, 0],
         };
         assert!(mapping.binding(&parse("Ctrl+P").unwrap()).is_err());
+    }
+
+    #[test]
+    fn isolated_disabled_shortcuts_never_connect_or_register() {
+        if std::env::var("DEZIRCLIP_RUN_LINUX_SHORTCUT_SMOKE_TESTS").as_deref() != Ok("1")
+            || !crate::wayland::service_disabled("global_shortcut")
+        {
+            return;
+        }
+        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+        assert!(runtime.join("dezirclip-isolated-wayland-fixture").is_file());
+        assert_eq!(std::env::var("DISPLAY").unwrap(), ":65530");
+        let provider = NativeShortcutProvider::default();
+        let result = provider.register(
+            &Shortcut {
+                id: "synthetic".into(),
+                accelerator: "Ctrl+Alt+P".into(),
+            },
+            Box::new(|| panic!("disabled callback cannot arm")),
+        );
+        assert_eq!(
+            result.err(),
+            Some(unsupported(UnsupportedReason::DisabledByConfiguration))
+        );
+        assert!(!provider.capability().is_available());
+        assert!(!provider.capability().active);
     }
 
     #[test]
