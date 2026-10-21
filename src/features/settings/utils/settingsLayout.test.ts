@@ -21,6 +21,7 @@ const COLLAPSED_GROUP_KEYS: readonly SettingsGroupId[] = [
     "default_apps",
     "data",
     "tools",
+    "about",
 ];
 
 const locales = { zh, en, tw } as const;

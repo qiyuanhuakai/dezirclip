@@ -26,7 +26,8 @@ export type SettingsGroupId =
   | "appearance"
   | "default_apps"
   | "data"
-  | "tools";
+  | "tools"
+  | "about";
 
 export interface SettingsGroupMeta {
   readonly id: SettingsGroupId;
@@ -42,6 +43,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroupMeta[] = [
   { id: "default_apps", labelKey: "default_apps" },
   { id: "data", labelKey: "data_management" },
   { id: "tools", labelKey: "tools_settings" },
+  { id: "about", labelKey: "about_settings" },
 ];
 
 export const DEFAULT_SETTINGS_GROUP: SettingsGroupId = "general";

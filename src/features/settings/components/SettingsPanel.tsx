@@ -1,5 +1,4 @@
-import { memo, useState, useEffect } from "react";
-import { getVersion } from "@tauri-apps/api/app";
+import { memo, useState } from "react";
 import { motion } from "framer-motion";
 import type { LabelWithHintProps, SettingsPanelProps } from "./SettingsPanel.types";
 import SettingsGroups from "./SettingsGroups";
@@ -14,7 +13,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
     const layout = useSettingsLayout();
     const [activeGroup, setActiveGroup] = useState<SettingsGroupId>(DEFAULT_SETTINGS_GROUP);
 
-    const [appVersion, setAppVersion] = useState("");
     const [privacyKindsOpen, setPrivacyKindsOpen] = useState(false);
     const [privacyRulesOpen, setPrivacyRulesOpen] = useState(false);
 
@@ -39,15 +37,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             <span className="item-label" style={labelStyle}>{label}</span>
         </div>
     );
-
-    useEffect(() => {
-        getVersion()
-            .then(v => setAppVersion(v))
-            .catch(err => {
-                console.error("Failed to get version:", err);
-                setAppVersion("0.2.0");
-            });
-    }, []);
 
     const groups = (
         <SettingsGroups
@@ -96,7 +85,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
 
             <SettingsFooter
                 t={t}
-                appVersion={appVersion}
                 onResetSettings={handleResetSettings}
                 compact={layout.split}
             />
