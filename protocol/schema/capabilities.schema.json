@@ -11,7 +11,8 @@
         "clipboard_paste",
         "privacy_write",
         "service_manage",
-        "surface_control"
+        "surface_control",
+        "desktop_history"
       ]
     },
     "HostMode": {

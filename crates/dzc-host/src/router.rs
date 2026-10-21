@@ -15,11 +15,19 @@ pub trait HostActions: Send + Sync {
     fn activate(&self, _entry_id: Option<i64>) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
     fn dismiss(&self) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
     fn stop_helpers(&self) -> Result<(), WireErrorCode>;
+    fn revoke_private_exports(&self) -> Result<(), WireErrorCode> {
+        dzc_platform::runtime::revoke_private_exports().map_err(|_| WireErrorCode::Busy)
+    }
+    fn privacy_changed(&self, _snapshot: &api::RuntimeSnapshot) {}
 }
 
 pub trait HostLifecycle: Send + Sync {
     fn stop_capture(&self) -> Result<(), WireErrorCode>;
+    fn release_ownership(&self) -> Result<(), WireErrorCode> { Ok(()) }
+    fn capture_lease(&self) -> Option<Arc<dzc_platform::ipc::CaptureLease>> { None }
+    fn capture_generated(&self, _frame:dzc_core::capture::CaptureFrame, _source:dzc_core::capture::CaptureSource, _timestamp:i64) -> Result<bool,WireErrorCode> {Err(WireErrorCode::Unavailable)}
     fn capture_active(&self) -> bool { false }
+    fn begin_work(&self)->Result<crate::CaptureWork,WireErrorCode> {Err(WireErrorCode::Unavailable)}
 }
 
 pub struct HostOptions {
@@ -34,7 +42,7 @@ pub struct Host {
     pub(crate) directory: PathBuf,
     pub(crate) session: Arc<Mutex<VecDeque<ClipboardEntry>>>,
     pub(crate) grants: GrantAuthority,
-    actions: Arc<dyn HostActions>,
+    pub(crate) actions: Arc<dyn HostActions>,
     mode: HostMode,
     instance: String,
     events: Events,
@@ -43,6 +51,10 @@ pub struct Host {
     pub(crate) lifecycle: Mutex<Option<Arc<dyn HostLifecycle>>>,
     requests: Mutex<()>,
     stopped: AtomicBool,
+    pub(crate) snapshots: crate::desktop::Snapshots,
+    observed_epoch: Mutex<u64>,
+    hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
+    pub(crate) uploads: crate::upload::Uploads,
 }
 
 pub fn now_ms() -> Result<i64, WireErrorCode> {
@@ -61,10 +73,16 @@ fn params<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, WireErrorCo
 
 impl Host {
     pub fn new(options: HostOptions) -> Result<Arc<Self>, WireErrorCode> {
-        options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
-        Ok(Arc::new(Self { history: options.history, directory: options.directory, session: Arc::new(Mutex::new(VecDeque::new())), mode: options.mode, actions: options.actions,
+        Self::with_session(options, Arc::new(Mutex::new(VecDeque::new())))
+    }
+    pub fn with_session(options: HostOptions, session: Arc<Mutex<VecDeque<ClipboardEntry>>>) -> Result<Arc<Self>, WireErrorCode> {
+        let epoch = options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.privacy_epoch;
+        let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
-            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), requests: Mutex::new(()), stopped: AtomicBool::new(false) }))
+            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default() });
+        *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
+        Ok(host)
     }
     pub fn attach_lifecycle(&self, lifecycle: Arc<dyn HostLifecycle>) -> Result<(), WireErrorCode> {
         let mut current = self.lifecycle.lock().map_err(unavailable)?;
@@ -86,10 +104,16 @@ impl Host {
         self.stop()
     }
     fn stop(&self) -> Result<(), WireErrorCode> {
+        if self.stopped.load(Ordering::Acquire) {return Ok(());}
         self.stop_requested.store(true, Ordering::Release);
         self.events.interrupt();
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.stop_capture()?; }
+        if let Some(hotkey) = self.hotkey.lock().map_err(unavailable)?.as_mut() { hotkey.stop()?; }
+        self.actions.revoke_private_exports()?;
+        self.snapshots.clear()?;
+        self.uploads.clear()?;
         self.actions.stop_helpers()?;
+        if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.release_ownership()?; }
         self.stopped.store(true, Ordering::Release);
         Ok(())
     }
@@ -100,7 +124,52 @@ impl Host {
         result("RuntimeState", &state)?;
         Ok(state)
     }
+    /// Observe committed cross-process Core policy changes before acknowledging
+    /// a request. Failed native revocation leaves the old observed epoch so the
+    /// next request retries; no successful ACK or privacy event is published.
+    fn synchronize_privacy(&self) -> Result<(), WireErrorCode> {
+        let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
+        let mut observed = self.observed_epoch.lock().map_err(unavailable)?;
+        if *observed == snapshot.privacy_epoch { return Ok(()); }
+        self.actions.revoke_private_exports()?;
+        self.snapshots.clear()?;
+        self.uploads.clear()?;
+        let state = RuntimeState { service_instance_id: self.instance.clone(), history_revision: snapshot.history_revision,
+            privacy_epoch: snapshot.privacy_epoch, event_sequence: self.events.sequence().map_err(unavailable)? };
+        self.events.push(EventKind::PrivacyStateChanged, state, EventData { entry_id: None, status: None }).map_err(unavailable)?;
+        *observed = snapshot.privacy_epoch;
+        self.actions.privacy_changed(&snapshot);
+        Ok(())
+    }
+    pub fn initialize_privacy_shortcut(&self) -> Result<(), WireErrorCode> {
+        let configured = self.history.privacy().hotkey().map_err(privacy_error)?;
+        if configured.is_empty() { return Ok(()); }
+        self.hotkey.lock().map_err(unavailable)?.as_mut().ok_or(WireErrorCode::Unavailable)?.set(&configured)?;
+        Ok(())
+    }
+    /// In-process generated actions carry the same opaque ticket as IPC uploads.
+    pub fn capture_generated(&self, frame:dzc_core::capture::CaptureFrame, source:dzc_core::capture::CaptureSource, timestamp:i64)->Result<bool,WireErrorCode> {
+        if self.is_stopping() {return Err(WireErrorCode::Busy);}
+        let lifecycle=self.lifecycle.lock().map_err(unavailable)?.clone().ok_or(WireErrorCode::Unavailable)?;
+        lifecycle.capture_generated(frame,source,timestamp)
+    }
+    pub fn begin_work(&self)->Result<crate::CaptureWork,WireErrorCode> {
+        if self.is_stopping() {return Err(WireErrorCode::Busy);}
+        self.lifecycle.lock().map_err(unavailable)?.as_ref().ok_or(WireErrorCode::Unavailable)?.begin_work()
+    }
+    pub(crate) fn try_toggle_privacy(&self) -> Result<bool, WireErrorCode> {
+        let _request = match self.requests.try_lock() {
+            Ok(request) => request,
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(false),
+            Err(_) => return Err(WireErrorCode::Unavailable),
+        };
+        if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        self.history.privacy().toggle(now_ms()?).map_err(privacy_error)?;
+        self.synchronize_privacy()?;
+        Ok(true)
+    }
     pub fn publish(&self, event: EventKind, data: EventData) -> Result<(), WireErrorCode> {
+        self.synchronize_privacy()?;
         result("EventData", &data)?;
         self.events.push(event, self.snapshot()?, data).map_err(unavailable)
     }
@@ -109,6 +178,7 @@ impl Host {
         Ok(PrivacyState { active: snapshot.session.active, expires_at_ms: snapshot.session.expires_at_ms, privacy_epoch: snapshot.privacy_epoch })
     }
     pub fn hello(&self, hello: HelloParams) -> Result<(Session, HelloResult), WireErrorCode> {
+        self.synchronize_privacy()?;
         if hello.protocol_version.major != wire::VERSION.major { return Err(WireErrorCode::ProtocolMismatch); }
         let session = self.grants.accept(&hello)?;
         let available = self.capabilities(&session);
@@ -116,7 +186,7 @@ impl Host {
             && !available.permissions.iter().any(|permission| serde_json::to_value(permission).ok().and_then(|value| value.as_str().map(str::to_owned)).as_ref() == Some(capability))) {
             return Err(WireErrorCode::UnsupportedCapability);
         }
-        let response = HelloResult { session_id: uuid::Uuid::new_v4().to_string(), protocol_version: wire::VERSION,
+        let response = HelloResult { session_id: session.id().into(), protocol_version: wire::VERSION,
             core_version: env!("CARGO_PKG_VERSION").into(), permissions: session.permissions().to_vec(), state: self.snapshot()?, max_frame_bytes: wire::MAX_FRAME_BYTES as u32 };
         result("HelloResult", &response)?;
         Ok((session, response))
@@ -128,7 +198,8 @@ impl Host {
         if can(Permission::HistoryBody) { methods.push("history.get"); }
         if can(Permission::ClipboardCopy) && self.actions.can_copy() { methods.extend(["clipboard.copy", "surface.copy"]); }
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
-        if can(Permission::PrivacyWrite) { methods.push("privacy.set"); }
+        if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
+        if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop { methods.extend(["desktop.history.page", "desktop.history.get", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]); }
         if can(Permission::ServiceManage) {
             methods.extend(["service.stop", "service.grant", "service.revoke"]);
             if service_transition { methods.push("service.handoff"); }
@@ -157,10 +228,12 @@ impl Host {
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
         if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        self.synchronize_privacy()?;
         let request: SubscribeParams = params(parameters)?;
         let mut events = self.events.after(request.after_sequence, Duration::from_millis(u64::from(request.wait_ms.unwrap_or(0))), self.snapshot()?).map_err(unavailable)?;
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
         if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        self.synchronize_privacy()?;
         let latest = self.snapshot()?;
         events.state.history_revision = latest.history_revision;
         events.state.privacy_epoch = latest.privacy_epoch;
@@ -168,6 +241,7 @@ impl Host {
     }
     fn route(&self, session: &Session, request: Request) -> Result<Value, WireErrorCode> {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+        self.synchronize_privacy()?;
         if self.is_stopping() && !matches!(request.method, Method::ServiceStatus | Method::Health | Method::ServiceStop | Method::ServiceHandoff) { return Err(WireErrorCode::Busy); }
         let now = now_ms()?;
         match request.method {
@@ -204,9 +278,30 @@ impl Host {
                 let request: PrivacySetParams = params(request.params)?;
                 if !request.active && request.duration_ms.is_some() { return Err(WireErrorCode::InvalidRequest); }
                 self.history.privacy().set_session(if request.active { PrivacySessionCommand::On { duration_ms: request.duration_ms } } else { PrivacySessionCommand::Off }, now).map_err(privacy_error)?;
-                self.publish(EventKind::PrivacyStateChanged, EventData { entry_id: None, status: None })?;
+                self.synchronize_privacy()?;
                 result("PrivacyState", self.privacy_state()?)
             }
+            Method::PrivacyToggle => {
+                session.require(Permission::PrivacyWrite)?;
+                self.history.privacy().toggle(now).map_err(privacy_error)?;
+                self.synchronize_privacy()?;
+                result("PrivacyState", self.privacy_state()?)
+            }
+            Method::PrivacyHotkeyGet => {
+                session.require(Permission::PrivacyWrite)?;
+                result("PrivacyHotkey", PrivacyHotkey { hotkey: self.history.privacy().hotkey().map_err(privacy_error)? })
+            }
+            Method::PrivacyHotkeySet => {
+                session.require(Permission::PrivacyWrite)?;
+                let request: PrivacyHotkey = params(request.params)?;
+                let hotkey = self.hotkey.lock().map_err(unavailable)?.as_mut().ok_or(WireErrorCode::Unavailable)?.set(&request.hotkey)?;
+                result("PrivacyHotkey", PrivacyHotkey { hotkey })
+            }
+            Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
+            Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
+            Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
+            Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),
             Method::HistoryList | Method::SurfaceHistoryList => {
                 session.require(Permission::HistoryRead)?;
                 let query: HistoryPageParams = params(request.params)?;
@@ -227,6 +322,7 @@ impl Host {
             Method::HistoryGet => {
                 session.require(Permission::HistoryBody)?;
                 let request: EntryIdParams = params(request.params)?;
+                if request.id<0 && request.service_instance_id.as_deref()!=Some(self.instance.as_str()) {return Err(WireErrorCode::PrivacyBlocked);}
                 let permit = self.history.privacy().authorize_read(PrivacyAccessIntent::AutomationRead, SensitiveAccess::Denied, None, now).map_err(privacy_error)?;
                 let entry = self.entry_authorized(request.id, &permit, now)?;
                 // Bodies are bounded ordinary text only; attachments and HTML stay
@@ -244,6 +340,7 @@ impl Host {
                 if !self.actions.can_copy() { return Err(WireErrorCode::Unavailable); }
                 if request.method == Method::SurfacePaste { session.require(Permission::ClipboardPaste)?; if !self.actions.can_paste() { return Err(WireErrorCode::Unavailable); } }
                 let request_body: ClipboardCopyParams = params(request.params)?;
+                if request_body.id<0 && request_body.service_instance_id.as_deref()!=Some(self.instance.as_str()) {return Err(WireErrorCode::PrivacyBlocked);}
                 let permit = self.history.privacy().authorize_read(PrivacyAccessIntent::SelectedCopy, SensitiveAccess::Denied, None, now).map_err(privacy_error)?;
                 let payload = if request_body.id < 0 {
                     let entries = self.session.lock().map_err(unavailable)?;
@@ -259,6 +356,7 @@ impl Host {
                 session.require(Permission::SurfaceControl)?;
                 if !self.actions.can_activate() { return Err(WireErrorCode::Unavailable); }
                 let action: SurfaceActionParams = params(request.params)?;
+                if action.entry_id.is_some_and(|id|id<0) && action.service_instance_id.as_deref()!=Some(self.instance.as_str()) {return Err(WireErrorCode::PrivacyBlocked);}
                 if request.method == Method::SurfaceActivate { self.actions.activate(action.entry_id)?; } else { self.actions.dismiss()?; }
                 result("OperationResult", OperationResult { performed: true })
             }

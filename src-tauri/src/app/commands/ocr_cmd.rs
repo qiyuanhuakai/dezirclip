@@ -68,11 +68,19 @@ pub async fn recognize_clipboard_image(
     item_id: i64,
     app: AppHandle,
     expected_privacy_epoch: Option<u64>,
+    expected_host_instance_id:Option<String>,
 ) -> Result<OcrResult, String> {
+    let bridge=app.state::<crate::app::ipc_host::DesktopHost>();
+    bridge.check_instance(item_id,expected_host_instance_id.as_deref())?;
+    if item_id<0 {return Err("SessionOcrUnavailable".into());}
+    if bridge.embedded()?.is_none() {return Err("RemoteOcrUnavailable".into());}
+    let work=bridge.embedded()?.ok_or("ClipboardHostUnavailable")?.begin_work().map_err(|_|"CaptureWorkUnavailable")?;
     let history = app.state::<DbState>().history_service();
     let now = || chrono::Utc::now().timestamp_millis();
     let (ticket, permit, bytes) = prepare_ocr_image(&history, item_id, expected_privacy_epoch)?;
+    let task_work=work.clone();
     let text = tokio::task::spawn_blocking(move || {
+        let _work=task_work;
         crate::services::ocr::OcrService::new()
             .map_err(|_| "OcrEngineUnavailable".to_owned())?
             .recognize(&bytes)
@@ -93,6 +101,7 @@ pub async fn recognize_clipboard_image(
         confidence: None,
         status: "done".into(),
     };
+    drop(work);
     let _ = app.emit(
         "ocr:complete",
         OcrResult {

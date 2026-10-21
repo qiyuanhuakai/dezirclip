@@ -50,6 +50,10 @@ pub fn main_entry() -> Result<(), String> {
                 if manager.stop().is_err() { return Err("HostCaptureStopUnconfirmed".to_string()); }
                 return Err("HostCaptureUnavailable".to_string());
             }
+            if host.initialize_privacy_shortcut().is_err() {
+                host.shutdown().map_err(|_|"HostCaptureStopUnconfirmed".to_owned())?;
+                return Err("PrivacyShortcutUnavailable".into());
+            }
         }
         let (shutdown, receiver) = tokio::sync::watch::channel(false);
         let signal_host = Arc::downgrade(&host);

@@ -50,6 +50,11 @@ pub const PREVIEW_CHARS: usize = 500;
 
 /// Run the `add` subcommand. Returns the newly-inserted entry id.
 pub fn run(args: &AddArgs, repo: &HistoryService) -> Result<i64, String> {
+    run_with_confirmation(args, repo, false)
+}
+
+/// Only an explicit terminal flag maps to the Core's manual-persistence intent.
+pub fn run_with_confirmation(args: &AddArgs, repo: &HistoryService, confirmed: bool) -> Result<i64, String> {
     let content = read_content(args)?;
     if content.is_empty() {
         return Err("add: empty content (refusing to insert)".to_string());
@@ -82,7 +87,8 @@ pub fn run(args: &AddArgs, repo: &HistoryService) -> Result<i64, String> {
         ocr_status: None,
     };
 
-    repo.save(&entry, None)
+    repo.save_manual(&entry, None, if confirmed {crate::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession}
+        else {crate::api::ManualPersistenceIntent::Ordinary}, super::access::now())
         .map_err(|e| format!("add: save failed: {e}"))
 }
 

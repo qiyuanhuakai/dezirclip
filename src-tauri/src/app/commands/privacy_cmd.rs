@@ -2,68 +2,58 @@
 use crate::app_state::SessionHistory;
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
-use dzc_core::api::{PrivacyAccessIntent, PrivacySessionCommand, RuntimeSnapshot, SensitiveAccess};
-use tauri::{AppHandle, Emitter, Manager};
+use dzc_core::api::{PrivacyAccessIntent, RuntimeSnapshot, SensitiveAccess};
+use crate::app::ipc_host::{DesktopHost,HostedEntry};
+use dzc_host::wire::{Method,PrivacyState,PrivacySetParams,PrivacyHotkey};
+use tauri::{AppHandle, Manager};
 
 fn now() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-fn publish(app: &AppHandle, snapshot: RuntimeSnapshot) -> Result<RuntimeSnapshot, String> {
-    dzc_platform::runtime::revoke_private_exports()
-        .map_err(|_| "PrivateExportRevocationUnconfirmed".to_owned())?;
-    let _ = app.emit("privacy-state-changed", &snapshot);
-    Ok(snapshot)
+#[tauri::command]
+pub async fn get_privacy_status(app: AppHandle) -> Result<RuntimeSnapshot, String> {
+    let bridge=app.state::<DesktopHost>();
+    let privacy:PrivacyState=bridge.call(Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await?;
+    bridge.snapshot_after(privacy)
 }
 
 #[tauri::command]
-pub fn get_privacy_status(app: AppHandle) -> Result<RuntimeSnapshot, String> {
-    app.state::<DbState>()
-        .history_service()
-        .runtime_snapshot(now())
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn set_privacy_session(
+pub async fn set_privacy_session(
     app: AppHandle,
     enabled: bool,
     duration_ms: Option<u64>,
 ) -> Result<RuntimeSnapshot, String> {
-    let command = if enabled {
-        PrivacySessionCommand::On { duration_ms }
-    } else {
-        if duration_ms.is_some() {
-            return Err("PrivacyDurationInvalid".into());
-        }
-        PrivacySessionCommand::Off
-    };
-    let snapshot = app
-        .state::<DbState>()
-        .history_service()
-        .privacy()
-        .set_session(command, now())
-        .map_err(|error| error.to_string())?;
-    publish(&app, snapshot)
+    if !enabled && duration_ms.is_some() {return Err("PrivacyDurationInvalid".into());}
+    let bridge=app.state::<DesktopHost>();
+    let privacy:PrivacyState=bridge.call(Method::PrivacySet,PrivacySetParams{active:enabled,duration_ms},"PrivacyState").await?;
+    bridge.snapshot_after(privacy)
 }
 
 #[tauri::command]
-pub fn toggle_privacy_session(app: AppHandle) -> Result<RuntimeSnapshot, String> {
-    let history = app.state::<DbState>().history_service();
-    let snapshot = history
-        .privacy()
-        .toggle(now())
-        .map_err(|error| error.to_string())?;
-    publish(&app, snapshot)
+pub async fn toggle_privacy_session(app: AppHandle) -> Result<RuntimeSnapshot, String> {
+    let bridge=app.state::<DesktopHost>();
+    let privacy:PrivacyState=bridge.call(Method::PrivacyToggle,serde_json::json!({}),"PrivacyState").await?;
+    bridge.snapshot_after(privacy)
+}
+
+#[tauri::command]
+pub async fn set_privacy_session_hotkey(app:AppHandle,hotkey:String)->Result<String,String> {
+    let result:PrivacyHotkey=app.state::<DesktopHost>().call(Method::PrivacyHotkeySet,PrivacyHotkey{hotkey},"PrivacyHotkey").await?;
+    Ok(result.hotkey)
 }
 
 /// Invoked only by the local GUI's explicit reveal action. IPC roles do not grant this intent.
 #[tauri::command]
-pub fn get_privacy_entry(
+pub async fn get_privacy_entry(
     app: AppHandle,
     id: i64,
     expected_epoch: u64,
-) -> Result<ClipboardEntry, String> {
+    expected_host_instance_id:Option<String>,
+) -> Result<HostedEntry, String> {
+    let bridge=app.state::<DesktopHost>();
+    if let Some(entry)=bridge.entry(id,expected_epoch,true,None,expected_host_instance_id.as_deref()).await? {return Ok(entry);}
+    if id<0 {bridge.check_instance(id,expected_host_instance_id.as_deref())?;}
     let history = app.state::<DbState>().history_service();
     let permit = history
         .privacy()
@@ -97,16 +87,21 @@ pub fn get_privacy_entry(
         .privacy()
         .check_read(&permit, now())
         .map_err(|error| error.to_string())?;
-    Ok(entry)
+    bridge.hosted(entry)
 }
 
 #[tauri::command]
-pub fn get_history_resource_preview(
+pub async fn get_history_resource_preview(
     app: AppHandle,
     id: i64,
     expected_epoch: u64,
     max_dimension: Option<u32>,
-) -> Result<ClipboardEntry, String> {
+    expected_host_instance_id:Option<String>,
+) -> Result<HostedEntry, String> {
+    let bridge=app.state::<DesktopHost>();
+    let maximum = max_dimension.unwrap_or(384).clamp(64, 1024);
+    if let Some(entry)=bridge.entry(id,expected_epoch,false,Some(maximum),expected_host_instance_id.as_deref()).await? {return Ok(entry);}
+    if id<0 {bridge.check_instance(id,expected_host_instance_id.as_deref())?;}
     let history = app.state::<DbState>().history_service();
     let permit = history
         .privacy()
@@ -117,8 +112,7 @@ pub fn get_history_resource_preview(
             now(),
         )
         .map_err(|error| error.to_string())?;
-    let maximum = max_dimension.unwrap_or(384).clamp(64, 1024);
-    if id > 0 {
+    let entry=if id > 0 {
         history
             .get_entry_thumbnail_authorized(id, &permit, now(), maximum)
             .map_err(|error| error.to_string())?
@@ -136,7 +130,8 @@ pub fn get_history_resource_preview(
         history
             .session_entry_thumbnail_authorized(&entry, &permit, now(), maximum)
             .map_err(|error| error.to_string())
-    }
+    }?;
+    bridge.hosted(entry)
 }
 
 #[cfg(all(test, target_os = "windows", not(feature = "portable")))]

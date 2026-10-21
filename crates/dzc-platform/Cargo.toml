@@ -13,6 +13,7 @@ required-features = ["ipc"]
 [features]
 portable = ["dzc-core/portable"]
 ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
+native-ocr = ["dep:windows-core"]
 
 [dependencies]
 dzc-protocol.workspace = true
@@ -42,3 +43,4 @@ dbus = "0.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = ["Win32_System_Pipes", "Win32_Storage_FileSystem"] }
+windows-core = { workspace = true, optional = true }

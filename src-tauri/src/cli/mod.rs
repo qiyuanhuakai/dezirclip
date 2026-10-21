@@ -11,6 +11,8 @@
 //! * `--quiet`:       no stdout on success (still returns Ok/Err)
 
 pub mod add;
+mod access;
+mod host_access;
 pub mod clear;
 pub mod count;
 pub mod delete;

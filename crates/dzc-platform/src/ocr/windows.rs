@@ -1,6 +1,6 @@
 use image::DynamicImage;
 
-use crate::services::ocr::OcrError;
+use super::OcrError;
 
 #[cfg(target_os = "windows")]
 use windows::Globalization::Language;

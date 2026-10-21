@@ -37,10 +37,8 @@ fn parse_id(raw: &str) -> Result<i64, String> {
 /// Run the `edit` subcommand. Returns the id that was rewritten.
 pub fn run(args: &EditArgs, repo: &HistoryService) -> Result<i64, String> {
     let id = parse_id(&args.id)?;
-    let exists = repo
-        .get_entry_by_id(id)
-        .map_err(|e| format!("edit: repo failed: {e}"))?
-        .is_some();
+    let ticket = repo.privacy().capture_ticket(super::access::now()).map_err(|error| error.to_string())?;
+    let exists = super::access::query(repo, &crate::api::HistoryQuery {limit:1,id:Some(id),..Default::default()})?.pop().is_some();
     if !exists {
         return Err(format!("edit: no entry with id={id}"));
     }
@@ -50,7 +48,7 @@ pub fn run(args: &EditArgs, repo: &HistoryService) -> Result<i64, String> {
         return Err("edit: empty content (refusing to write)".to_string());
     }
 
-    repo.update_entry_content(id, &content, &preview_of(&content))
+    repo.update_content_authorized(id, &content, &preview_of(&content), &ticket, super::access::now())
         .map_err(|e| format!("edit: repo failed: {e}"))?;
     Ok(id)
 }

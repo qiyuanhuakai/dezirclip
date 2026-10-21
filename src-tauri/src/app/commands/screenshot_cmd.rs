@@ -274,10 +274,10 @@ pub fn hide_region_select(app: AppHandle) {
 #[tauri::command]
 pub async fn capture_full_screen(app: AppHandle) -> Result<ScreenshotResult, String> {
     super::capability_cmd::require_desktop_interaction()?;
-    let ticket = crate::services::clipboard::generated_capture_ticket(&app)?;
+    let ticket = crate::services::clipboard::generated_capture_ticket(&app).await?;
     let result = screenshot::capture_full_screen(global_cursor(&app)).map_err(|e| e.to_string())?;
+    save_screenshot_to_history(&app, &result, ticket).await?;
     copy_screenshot_to_clipboard(&result)?;
-    save_screenshot_to_history(&app, &result, ticket)?;
     // The region path does not toast: the mask appearing and then disappearing
     // is its own confirmation, and the region hotkey usually fires from another
     // application where the main window is not even on screen to show it. This
@@ -299,12 +299,12 @@ pub async fn capture_region(
     app: AppHandle,
 ) -> Result<ScreenshotResult, String> {
     super::capability_cmd::require_desktop_interaction()?;
-    let ticket = crate::services::clipboard::generated_capture_ticket(&app)?;
+    let ticket = crate::services::clipboard::generated_capture_ticket(&app).await?;
     // The frontend already hid the overlay so it does not appear in the capture.
     crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
     let result = screenshot::capture_region(x, y, width, height).map_err(|e| e.to_string())?;
+    save_screenshot_to_history(&app, &result, ticket).await?;
     copy_screenshot_to_clipboard(&result)?;
-    save_screenshot_to_history(&app, &result, ticket)?;
     release_selector_after_response(&app);
     Ok(result)
 }
@@ -348,7 +348,7 @@ fn screenshot_data_url(result: &ScreenshotResult) -> String {
     )
 }
 
-fn save_screenshot_to_history(app: &AppHandle, result: &ScreenshotResult, ticket: Option<dzc_core::api::CaptureTicket>) -> Result<bool, String> {
+async fn save_screenshot_to_history(app: &AppHandle, result: &ScreenshotResult, ticket: Option<crate::services::clipboard::GeneratedCaptureTicket>) -> Result<bool, String> {
     process_new_entry(
         app,
         ClipboardData::Image {
@@ -357,7 +357,7 @@ fn save_screenshot_to_history(app: &AppHandle, result: &ScreenshotResult, ticket
         Some("DezirClip Screenshot".to_string()),
         None,
         ticket,
-    )
+    ).await
 }
 
 #[cfg(test)]

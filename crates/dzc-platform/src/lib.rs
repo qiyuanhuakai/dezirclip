@@ -8,6 +8,8 @@ pub mod runtime;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod shortcut;
+#[cfg(feature = "native-ocr")]
+pub mod ocr;
 #[cfg(target_os = "linux")]
 pub mod wayland;
 

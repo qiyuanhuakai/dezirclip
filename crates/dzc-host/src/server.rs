@@ -141,6 +141,38 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires the prebuilt Go Host fixture in a private native namespace"]
+    fn same_go_client_reads_real_core_hosts_in_both_modes_and_resynchronizes_a_dropped_window() {
+        let executable=std::path::PathBuf::from(std::env::var_os("DEZIRCLIP_GO_HOST_FIXTURE").expect("prebuilt fixture executable"));
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            for mode in [HostMode::Embedded,HostMode::Service] {
+                let directory=directory();
+                let original=crate::router::tests::synthetic_host();
+                let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"ordinary synthetic Go Host fixture","preview":"synthetic metadata","source_app":"Fixture","timestamp":1,"is_pinned":false,"tags":[]})).unwrap();
+                let id=original.history.save(&entry,None).unwrap();
+                let host=Host::new(crate::HostOptions{mode,history:original.history.clone(),directory:directory.clone(),actions:original.actions.clone()}).unwrap();
+                for _ in 0..300 {host.publish(EventKind::EntryUpdated,EventData{entry_id:Some(id),status:None}).unwrap();}
+                let endpoint=Endpoint::in_directory(&directory).unwrap();
+                let listener=endpoint.bind().unwrap();
+                let (stop,receiver)=watch::channel(false);
+                let server=tokio::spawn(serve_listener(host.clone(),listener,receiver));
+                let executable=executable.clone();
+                let address=endpoint.address().to_string_lossy().into_owned();
+                let mode_name=if mode==HostMode::Embedded {"embedded"}else{"service"};
+                let output=tokio::task::spawn_blocking(move||ipc::inspect_helper(&executable,&[&address,mode_name],Duration::from_secs(15),16_384)).await.unwrap().unwrap();
+                let report:serde_json::Value=serde_json::from_slice(&output).unwrap();
+                assert_eq!(report["mode"],mode_name);
+                assert_eq!(report["entries"],1);
+                assert_eq!(report["resync_required"],true);
+                assert_eq!(report["same_client_reconnect"],true);
+                assert_eq!(report["state"]["service_instance_id"],host.snapshot().unwrap().service_instance_id);
+                host.shutdown().unwrap();stop.send(true).unwrap();server.await.unwrap().unwrap();
+                std::fs::remove_dir_all(directory).unwrap();
+            }
+        });
+    }
+
+    #[test]
     fn concurrent_native_subscriptions_do_not_queue_privacy_revocation_or_stop() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             for operation in [Method::PrivacySet, Method::ServiceRevoke, Method::ServiceStop] {

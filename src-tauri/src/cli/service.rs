@@ -16,6 +16,8 @@ enum ServiceCommand {
     /// Explicitly grant a Surface bounded access. The token is printed once.
     GrantSurface { #[arg(long)] copy: bool, #[arg(long)] paste: bool,
         #[arg(long,default_value_t=3600,value_parser=clap::value_parser!(u64).range(1..=86400))] seconds: u64 },
+    /// Delegate bounded ordinary text reads to `mcp --host`; never mutation or sensitive access.
+    GrantMcp { #[arg(long,default_value_t=3600,value_parser=clap::value_parser!(u64).range(1..=86400))] seconds:u64 },
     /// Revoke a previously issued delegated grant, including live connections.
     Revoke { token: String },
 }
@@ -49,6 +51,11 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
             ServiceCommand::Revoke { token } => {
                 let mut client = Client::control(&controller::endpoint(&database).map_err(|e|e.to_string())?,ClientRole::Cli).await.map_err(|e|e.to_string())?;
                 let _: OperationResult = client.call(Method::ServiceRevoke,serde_json::json!({"grant":token}),"OperationResult").await.map_err(|e|e.to_string())?; Ok(())
+            }
+            ServiceCommand::GrantMcp {seconds}=>{
+                let mut client=Client::control(&controller::endpoint(&database).map_err(|error|error.to_string())?,ClientRole::Cli).await.map_err(|error|error.to_string())?;
+                let grant:GrantResult=client.call(Method::ServiceGrant,serde_json::json!({"role":"mcp","permissions":["history_read","history_body"],"lifetime_ms":seconds*1000}),"GrantResult").await.map_err(|error|error.to_string())?;
+                println!("{}",serde_json::to_string(&grant).map_err(|error|error.to_string())?);Ok(())
             }
         }
     })
