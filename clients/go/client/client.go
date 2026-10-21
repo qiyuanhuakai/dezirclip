@@ -24,9 +24,13 @@ type Client struct { conn net.Conn; mu sync.Mutex; sequence uint64; hello protoc
 func Dial(ctx context.Context, address string, hello protocol.HelloParams) (*Client, error) {
     conn, err := dialLocal(ctx, address)
     if err != nil { return nil, err }
+    return handshake(ctx, conn, hello)
+}
+
+func handshake(ctx context.Context, conn net.Conn, hello protocol.HelloParams) (*Client, error) {
     client := &Client{conn: conn}
-    if err = client.Call(ctx, protocol.MethodHello, hello, "HelloResult", &client.hello); err != nil { conn.Close(); return nil, err }
-    if client.hello.ProtocolVersion.Major != protocol.Version.Major || client.hello.MaxFrameBytes > protocol.MaxFrameBytes { conn.Close(); return nil, ErrProtocol }
+    if err := client.Call(ctx, protocol.MethodHello, hello, "HelloResult", &client.hello); err != nil { conn.Close(); return nil, err }
+    if client.hello.ProtocolVersion.Major != protocol.Version.Major || client.hello.MaxFrameBytes == 0 || client.hello.MaxFrameBytes > protocol.MaxFrameBytes { conn.Close(); return nil, ErrProtocol }
     return client, nil
 }
 
@@ -52,7 +56,9 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     request := protocol.Request{RequestId: id, Method: method, Params: paramBytes}
     raw, err := protocol.Encode("Request", request)
     if err != nil { return err }
-    if err = writeFrame(client.conn, raw); err != nil { client.conn.Close(); return err }
+    limit := client.hello.MaxFrameBytes
+    if limit == 0 { limit = protocol.MaxFrameBytes }
+    if err = writeFrameLimited(client.conn, raw, limit); err != nil { client.conn.Close(); return err }
     raw, err = readFrame(client.conn)
     if err != nil { client.conn.Close(); return err }
     var response protocol.Response
@@ -74,7 +80,11 @@ func readFrame(reader io.Reader) ([]byte, error) {
 }
 
 func writeFrame(writer io.Writer, raw []byte) error {
-    if len(raw) == 0 || len(raw) > protocol.MaxFrameBytes { return ErrProtocol }
+    return writeFrameLimited(writer, raw, protocol.MaxFrameBytes)
+}
+
+func writeFrameLimited(writer io.Writer, raw []byte, limit uint32) error {
+    if limit == 0 || limit > protocol.MaxFrameBytes || len(raw) == 0 || uint64(len(raw)) > uint64(limit) { return ErrProtocol }
     buffer := make([]byte, 4 + len(raw))
     binary.BigEndian.PutUint32(buffer, uint32(len(raw)))
     copy(buffer[4:], raw)

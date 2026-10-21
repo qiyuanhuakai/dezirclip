@@ -4,6 +4,8 @@ import (
     "bytes"
     "context"
     "encoding/json"
+    "fmt"
+    "io"
     "net"
     "testing"
     "time"
@@ -60,3 +62,61 @@ func TestInvalidTypedResultDisconnects(t *testing.T) {
 }
 
 func pointer[T any](value T) *T { return &value }
+
+func TestNegotiatedFrameLimitAfterRealHandshake(t *testing.T) {
+    request := protocol.Request{RequestId: "2", Method: protocol.MethodHealth, Params: json.RawMessage(`{}`)}
+    raw, err := protocol.Encode("Request", request)
+    if err != nil { t.Fatal(err) }
+    for _, limit := range []uint32{1, uint32(len(raw)-1), uint32(len(raw)), protocol.MaxFrameBytes} {
+        t.Run(fmt.Sprint(limit), func(t *testing.T) {
+            local, remote := net.Pipe()
+            defer remote.Close()
+            ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+            defer cancel()
+            observed := make(chan error, 1)
+            go func() {
+                defer remote.Close()
+                incoming, failure := readFrame(remote)
+                if failure != nil { observed <- failure; return }
+                var helloRequest protocol.Request
+                if failure = protocol.Decode("Request", incoming, &helloRequest); failure != nil { observed <- failure; return }
+                result, failure := protocol.Encode("HelloResult", protocol.HelloResult{
+                    SessionId: "synthetic-session", ProtocolVersion: protocol.Version, CoreVersion: "0.2.0-alpha.1",
+                    Permissions: []protocol.Permission{}, State: protocol.RuntimeState{ServiceInstanceId: "synthetic-host"}, MaxFrameBytes: limit,
+                })
+                if failure != nil { observed <- failure; return }
+                response, failure := protocol.Encode("Response", protocol.Response{RequestId: helloRequest.RequestId, Result: pointer(json.RawMessage(result))})
+                if failure != nil { observed <- failure; return }
+                if failure = writeFrame(remote, response); failure != nil { observed <- failure; return }
+                if uint32(len(raw)) > limit {
+                    var single [1]byte
+                    count, failure := remote.Read(single[:])
+                    if count != 0 || failure != io.EOF { observed <- fmt.Errorf("oversized request wrote %d bytes: %v", count, failure); return }
+                    observed <- nil
+                    return
+                }
+                incoming, failure = readFrame(remote)
+                if failure != nil { observed <- failure; return }
+                if !bytes.Equal(incoming, raw) { observed <- fmt.Errorf("negotiated request differs: %s", incoming); return }
+                response, failure = protocol.Encode("Response", protocol.Response{RequestId: "2", Result: pointer(json.RawMessage(`{}`))})
+                if failure == nil { failure = writeFrame(remote, response) }
+                observed <- failure
+            }()
+            client, failure := handshake(ctx, local, protocol.HelloParams{ProtocolVersion: protocol.Version,
+                ClientVersion: "0.2.0-alpha.1", ClientRole: protocol.ClientRoleSurface, Capabilities: []string{}, RequiredCapabilities: []string{}})
+            if failure != nil { t.Fatal(failure) }
+            defer client.Close()
+            if client.Hello().MaxFrameBytes != limit { t.Fatal("negotiated limit was lost") }
+            failure = client.Call(ctx, protocol.MethodHealth, protocol.EmptyParams{}, "EmptyParams", &protocol.EmptyParams{})
+            if uint32(len(raw)) > limit {
+                if failure != ErrProtocol { t.Fatalf("oversized request: %v", failure) }
+            } else if failure != nil { t.Fatal(failure) }
+            select {
+            case failure = <-observed:
+                if failure != nil { t.Fatal(failure) }
+            case <-ctx.Done():
+                t.Fatal("peer did not finish the bounded handshake/frame observation")
+            }
+        })
+    }
+}
