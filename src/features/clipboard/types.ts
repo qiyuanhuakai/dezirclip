@@ -1,6 +1,7 @@
 import type { MouseEvent, ReactNode } from "react";
 import type { DragControls } from "framer-motion";
 import type { ClipboardEntry, Locale } from "../../shared/types";
+import type { PrivacyMetadataIntent } from "../../shared/lib/privacyMetadataIntent";
 
 export interface ClipboardItemProps {
   item: ClipboardEntry;
@@ -20,12 +21,12 @@ export interface ClipboardItemProps {
   onCopy: (withFormat?: boolean, pasteImageAsBase64?: boolean) => void;
   onToggleReveal: (e: MouseEvent) => void;
   onOpen: (e: MouseEvent) => void;
-  onTogglePin: (e: MouseEvent) => void;
+  onTogglePin: (e: MouseEvent, intent?: PrivacyMetadataIntent) => void | Promise<void>;
   onDelete: (e: MouseEvent) => void;
   onToggleTagEditor: (e: MouseEvent) => void;
   onTagInput: (val: string) => void;
-  onTagAdd: () => void;
-  onTagDelete: (tag: string) => void;
+  onTagAdd: (intent?: PrivacyMetadataIntent) => void | Promise<void>;
+  onTagDelete: (tag: string, intent?: PrivacyMetadataIntent) => void | Promise<void>;
   dragControls?: DragControls;
   id?: string;
   disableLayout?: boolean;

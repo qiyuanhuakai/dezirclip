@@ -6,6 +6,22 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ClipboardEntry } from "../types";
 import { entryIdentityArgs, entryInstanceArgs, matchesEntryIdentity } from "../lib/historyIdentity";
 import type { VirtualClipboardListHandle } from "../../features/clipboard/types";
+import { ask } from "@tauri-apps/plugin-dialog";
+import { getPrivacyViewState, refreshPrivacyAfterConfirmation } from "../lib/privacySession";
+import { capturePrivacyMetadataIntent, needsMetadataPersistenceConfirmation, privacyMetadataWriteArgs } from "../lib/privacyMetadataIntent";
+import type { PrivacyMetadataIntent } from "../lib/privacyMetadataIntent";
+
+async function authorizeMetadataWrite(id: number, persists: boolean, t: (key: string) => string, original?: PrivacyMetadataIntent) {
+  const intent = original ?? capturePrivacyMetadataIntent(getPrivacyViewState());
+  if (!intent) throw new Error("PrivacyStateUnavailable");
+  let confirmed = false;
+  if (needsMetadataPersistenceConfirmation(intent, id, persists)) {
+    confirmed = await ask(t("privacy_metadata_persist_confirm"), { title: t("privacy_metadata_persist_title"), kind: "warning" });
+    await refreshPrivacyAfterConfirmation(confirmed ? intent.epoch : undefined);
+    if (!confirmed) return null;
+  }
+  return privacyMetadataWriteArgs(intent, getPrivacyViewState(), confirmed);
+}
 
 interface UseClipboardActionsOptions {
   t: (key: string) => string;
@@ -111,10 +127,12 @@ export const useClipboardActions = ({
   );
 
   const togglePin = useCallback(
-    async (e: ReactMouseEvent, id: number, currentPinned: boolean, hostInstanceId?: string) => {
+    async (e: ReactMouseEvent, id: number, currentPinned: boolean, hostInstanceId?: string, intent?: PrivacyMetadataIntent) => {
       e.stopPropagation();
       try {
-        await invoke("toggle_clipboard_pin", { id, isPinned: !currentPinned, ...entryInstanceArgs(hostInstanceId) });
+        const authorization = await authorizeMetadataWrite(id, !currentPinned, t, intent);
+        if (!authorization) return;
+        await invoke("toggle_clipboard_pin", { id, isPinned: !currentPinned, ...entryInstanceArgs(hostInstanceId), ...authorization });
         setHistory((prev) =>
           prev
             .map((item) =>
@@ -131,13 +149,15 @@ export const useClipboardActions = ({
         pushToast(errorMsg, 3000);
       }
     },
-    [pushToast, setHistory]
+    [pushToast, setHistory, t]
   );
 
   const handleUpdateTags = useCallback(
-    async (id: number, newTags: string[], hostInstanceId?: string) => {
+    async (id: number, newTags: string[], hostInstanceId?: string, intent?: PrivacyMetadataIntent) => {
       try {
-        const newId = await invoke<number>("update_tags", { id, tags: newTags, ...entryInstanceArgs(hostInstanceId) });
+        const authorization = await authorizeMetadataWrite(id, true, t, intent);
+        if (!authorization) return;
+        const newId = await invoke<number>("update_tags", { id, tags: newTags, ...entryInstanceArgs(hostInstanceId), ...authorization });
         setHistory((prev) =>
           prev.map((item) => (matchesEntryIdentity(item, id, hostInstanceId) ? { ...item, id: newId, tags: newTags } : item))
         );
@@ -148,10 +168,10 @@ export const useClipboardActions = ({
           }
         }, 0);
       } catch (err) {
-        console.error("更新标签失败", err);
+        pushToast(t("privacy_action_failed") + ": " + String(err), 3000);
       }
     },
-    [setHistory, virtualListRef]
+    [setHistory, virtualListRef, pushToast, t]
   );
 
   return {

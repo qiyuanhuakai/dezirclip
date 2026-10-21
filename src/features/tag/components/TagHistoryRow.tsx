@@ -2,10 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import ClipboardItem, { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
-import { beginPrivacyAccess, getPrivacyEntry, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { beginPrivacyAccess, getPrivacyEntry, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { concealSensitiveEntry, isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
 import { usePlatformCapabilities } from '../../../shared/hooks/usePlatformCapabilities';
+import { ask } from '@tauri-apps/plugin-dialog';
+import { capturePrivacyMetadataIntent, needsMetadataPersistenceConfirmation, privacyMetadataWriteArgs } from '../../../shared/lib/privacyMetadataIntent';
+import type { PrivacyMetadataIntent } from '../../../shared/lib/privacyMetadataIntent';
+import { matchesEntryIdentity } from '../../../shared/lib/historyIdentity';
 
 interface TagHistoryRowProps {
     item: ClipboardEntry;
@@ -108,11 +112,25 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             expectedPrivacyEpoch: sensitive ? access.epoch : undefined })
             .then(onChanged).catch(onError);
     };
-    const changeTags = async (tags: string[]) => {
+    const authorizeMetadata = async (persists: boolean, original?: PrivacyMetadataIntent) => {
+        const intent = original ?? capturePrivacyMetadataIntent(getPrivacyViewState());
+        if (!intent) throw new Error('PrivacyStateUnavailable');
+        let confirmed = false;
+        if (needsMetadataPersistenceConfirmation(intent, item.id, persists)) {
+            confirmed = await ask(t('privacy_metadata_persist_confirm'), { title: t('privacy_metadata_persist_title'), kind: 'warning' });
+            await refreshPrivacyAfterConfirmation(confirmed ? intent.epoch : undefined);
+            if (!confirmed) return null;
+        }
+        if (managing.current || !matchesEntryIdentity(currentItem.current, item.id, item.host_instance_id)) throw new Error('PrivacyMetadataSuperseded');
+        return privacyMetadataWriteArgs(intent, getPrivacyViewState(), confirmed);
+    };
+    const changeTags = async (tags: string[], intent?: PrivacyMetadataIntent) => {
         if (tagBusy || managing.current) return;
         setTagBusy(true);
         try {
-            await invoke('update_tags', { id: item.id, expectedHostInstanceId: item.host_instance_id, tags });
+            const authorization = await authorizeMetadata(true, intent);
+            if (!authorization) return;
+            await invoke('update_tags', { id: item.id, expectedHostInstanceId: item.host_instance_id, tags, ...authorization });
             if (mounted.current) { setTagInput(''); setEditingTags(false); onChanged(); }
         } catch { if (mounted.current) onError(); }
         finally { if (mounted.current) setTagBusy(false); }
@@ -160,15 +178,24 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
                 if (!managing.current) void invoke('open_content', { id: item.id, expectedHostInstanceId: item.host_instance_id, content: '', contentType: item.content_type,
                     expectedPrivacyEpoch: sensitive ? access.epoch : undefined }).catch(onError);
             }}
-            onTogglePin={event => { event.stopPropagation(); if (!managing.current) void invoke('toggle_clipboard_pin', { id: item.id, expectedHostInstanceId: item.host_instance_id, isPinned: !item.is_pinned }).then(onChanged).catch(onError); }}
+            onTogglePin={async (event, intent) => {
+                event.stopPropagation();
+                if (managing.current) return;
+                try {
+                    const authorization = await authorizeMetadata(!item.is_pinned, intent);
+                    if (!authorization) return;
+                    await invoke('toggle_clipboard_pin', { id: item.id, expectedHostInstanceId: item.host_instance_id, isPinned: !item.is_pinned, ...authorization });
+                    if (mounted.current) onChanged();
+                } catch { if (mounted.current) onError(); }
+            }}
             onDelete={event => { event.stopPropagation(); if (!managing.current) onDelete(item); }}
             onToggleTagEditor={event => { event.stopPropagation(); if (!tagBusy && !managing.current) setEditingTags(current => !current); }}
             onTagInput={setTagInput}
-            onTagAdd={() => {
+            onTagAdd={intent => {
                 const next = tagInput.trim();
-                if (next && !item.tags.includes(next)) void changeTags([...item.tags, next]);
+                if (next && !item.tags.includes(next)) return changeTags([...item.tags, next], intent);
             }}
-            onTagDelete={tag => { void changeTags(item.tags.filter(current => current !== tag)); }}
+            onTagDelete={(tag, intent) => changeTags(item.tags.filter(current => current !== tag), intent)}
             loadFullItem={loadFullItem} onEdit={() => {
                 if (managing.current) return;
                 if (!beginPrivacyAccess() || (sensitive && !detail)) { onError(); return; }

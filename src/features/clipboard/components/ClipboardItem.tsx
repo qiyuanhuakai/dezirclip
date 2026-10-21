@@ -45,6 +45,8 @@ import { resolveContextMenuPoint } from "./contextMenuPosition";
 import { beginPrivacyAccess, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, submitPrivacyFeedback, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { capturePrivacyMetadataIntent } from "../../../shared/lib/privacyMetadataIntent";
+import type { PrivacyMetadataIntent } from "../../../shared/lib/privacyMetadataIntent";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
 const CONTEXT_MENU_OPEN_EVENT = "dezirclip:context-menu-open";
@@ -91,6 +93,8 @@ const loadWebviewWindowModule = async () => import("@tauri-apps/api/webviewWindo
 // the same ask is a wasted cross-process round trip. Scrolling mounts and
 // unmounts rows constantly and every teardown used to re-send `false`.
 let lastIgnoreBlur: boolean | null = null;
+let requestedIgnoreBlur = false;
+let nativeDialogBlurHolds = 0;
 
 // Whether the preview window is believed to be on screen. `null` means unknown,
 // which is what a failed request leaves behind.
@@ -106,6 +110,8 @@ let lastIgnoreBlur: boolean | null = null;
 let lastPreviewVisible: boolean | null = false;
 
 const setIgnoreBlurSafe = (ignore: boolean) => {
+    requestedIgnoreBlur = ignore;
+    ignore = ignore || nativeDialogBlurHolds > 0;
     if (lastIgnoreBlur === ignore) return;
     lastIgnoreBlur = ignore;
     compactPreviewLog("set_ignore_blur", { ignore });
@@ -115,6 +121,22 @@ const setIgnoreBlurSafe = (ignore: boolean) => {
         // backend never acknowledged.
         lastIgnoreBlur = null;
     });
+};
+
+const holdNativeDialogBlur = async (): Promise<() => void> => {
+    nativeDialogBlurHolds += 1;
+    try {
+        await invoke("set_ignore_blur", { ignore: true });
+        lastIgnoreBlur = true;
+    } catch (error) {
+        nativeDialogBlurHolds -= 1;
+        setIgnoreBlurSafe(requestedIgnoreBlur);
+        throw error;
+    }
+    return () => {
+        nativeDialogBlurHolds -= 1;
+        setIgnoreBlurSafe(requestedIgnoreBlur);
+    };
 };
 
 // The main window's own geometry, as opposed to anything about the preview.
@@ -751,6 +773,29 @@ const ClipboardItem = ({
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
     const [contextMenuState, setContextMenuState] = useState<{ x: number; y: number } | null>(null);
     const [privacyFeedbackPending, setPrivacyFeedbackPending] = useState(false);
+    const [metadataActionPending, setMetadataActionPending] = useState(false);
+    const metadataActionRunning = useRef(false);
+    const metadataMounted = useRef(true);
+    useEffect(() => { metadataMounted.current = true; return () => { metadataMounted.current = false; }; }, []);
+    const runMetadataAction = useCallback(async (action: (intent: PrivacyMetadataIntent) => void | Promise<void>) => {
+        if (metadataActionRunning.current) return;
+        const intent = capturePrivacyMetadataIntent(getPrivacyViewState());
+        if (!intent) { onTransformItemError?.("privacy_metadata", t("privacy_action_failed")); return; }
+        metadataActionRunning.current = true;
+        setMetadataActionPending(true);
+        let release: (() => void) | undefined;
+        try {
+            release = await holdNativeDialogBlur();
+            if (!metadataMounted.current) return;
+            await action(intent);
+        } catch {
+            if (metadataMounted.current) onTransformItemError?.("privacy_metadata", t("privacy_action_failed"));
+        } finally {
+            release?.();
+            metadataActionRunning.current = false;
+            if (metadataMounted.current) setMetadataActionPending(false);
+        }
+    }, [onTransformItemError, t]);
     const [transformKinds, setTransformKinds] = useState<TransformKindDto[]>(
         () => transformKindsCache ?? []
     );
@@ -1297,7 +1342,7 @@ const ClipboardItem = ({
                 onDelete(new MouseEvent("contextmenu") as never);
                 break;
             case "pin":
-                onTogglePin(new MouseEvent("contextmenu") as never);
+                void runMetadataAction(intent => onTogglePin(new MouseEvent("contextmenu") as never, intent));
                 break;
             case "share":
                 void handleShare();
@@ -1306,32 +1351,35 @@ const ClipboardItem = ({
                 void handleImageBase64Copy();
                 break;
         }
-    }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin, handleShare, handleImageBase64Copy]);
+    }, [onCopy, onToggleTagEditor, onQRCode, onDelete, onTogglePin, handleShare, handleImageBase64Copy, runMetadataAction]);
     const handlePrivacyFeedback = useCallback(async (action: PrivacyFeedbackAction) => {
         const access = beginPrivacyAccess();
         if (!access || item.id === 0 || privacyFeedbackPending) return;
         setPrivacyFeedbackPending(true);
+        let release: (() => void) | undefined;
         try {
+            release = await holdNativeDialogBlur();
             const decision = await invokePrivacyBound<{ reason: string }>("get_privacy_decision", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch });
             const hint = decision.reason === "scan_incomplete" ? t("privacy_scan_incomplete")
                 : decision.reason === "suspected_sensitive" ? t("privacy_scan_suspected") : "";
             const prompt = t(action === "not_sensitive" ? "privacy_feedback_unprotect_confirm"
                 : action === "exact_exception" ? "privacy_feedback_exact_confirm" : "privacy_feedback_confirm");
             const confirmed = await ask(hint ? `${hint}\n\n${prompt}` : prompt, { title: t("privacy_feedback_title"), kind: "warning" });
-            if (!confirmed) { await invoke("activate_window_focus"); return; }
-            await refreshPrivacyAfterConfirmation(access.epoch);
+            await refreshPrivacyAfterConfirmation(confirmed ? access.epoch : undefined);
+            if (!confirmed) return;
             if (getPrivacyViewState().phase !== "ready" || getPrivacyViewState().snapshot?.privacy_epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
             await submitPrivacyFeedback(item.id, action, item.host_instance_id);
             onTransformItemSuccess?.("privacy_feedback");
         } catch {
             onTransformItemError?.("privacy_feedback", t("privacy_action_failed"));
         } finally {
+            release?.();
             setPrivacyFeedbackPending(false);
         }
     }, [item.id, item.host_instance_id, privacyFeedbackPending, onTransformItemError, onTransformItemSuccess, t]);
 
     useEffect(() => {
-        if (!contextMenuState && !privacyFeedbackPending) return;
+        if (!contextMenuState && !privacyFeedbackPending && !metadataActionPending) return;
         setIgnoreBlurSafe(true);
         const handleClick = () => setContextMenuState(null);
         document.addEventListener("click", handleClick);
@@ -1339,7 +1387,7 @@ const ClipboardItem = ({
             document.removeEventListener("click", handleClick);
             setIgnoreBlurSafe(false);
         };
-    }, [contextMenuState, privacyFeedbackPending]);
+    }, [contextMenuState, privacyFeedbackPending, metadataActionPending]);
 
     useEffect(() => {
         const handleOtherMenuOpen = (e: Event) => {
@@ -1600,7 +1648,8 @@ const ClipboardItem = ({
                         </button>
                         <button
                             className={`btn-icon ${item.is_pinned ? "active" : ""}`}
-                            onClick={onTogglePin}
+                            onClick={event => { event.stopPropagation(); void runMetadataAction(intent => onTogglePin(event, intent)); }}
+                            disabled={metadataActionPending}
                             title={item.is_pinned ? t('unpin') : t('pin')}
                         >
                             {item.is_pinned ? <PinOff size={12} /> : <Pin size={12} />}
@@ -1877,7 +1926,7 @@ const ClipboardItem = ({
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        onTagDelete(tag);
+                                        void runMetadataAction(intent => onTagDelete(tag, intent));
                                     }}
                                     style={{ background: 'none', border: 'none', padding: 0, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', display: 'flex' }}
                                 >
@@ -1917,7 +1966,7 @@ const ClipboardItem = ({
                                 }}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && !isComposing.current) {
-                                        onTagAdd();
+                                        void runMetadataAction(intent => onTagAdd(intent));
                                     }
                                 }}
                                 className="tag-input"
@@ -1937,7 +1986,7 @@ const ClipboardItem = ({
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    onTagAdd();
+                                    void runMetadataAction(intent => onTagAdd(intent));
                                 }}
                                 className="btn-icon"
                                 style={{ padding: '2px', height: '16px', width: '16px' }}
