@@ -114,12 +114,14 @@ impl CaptureManager {
             let repeated = if notifications.repeats_file(frame.metadata) {
                 match CaptureEngine::file_history_exists(&context, &frame, &store) { Ok(exists) => exists, Err(_) => { diagnostic(&host, "CaptureReadFailed"); return; } }
             } else { false };
-            if let Err(reason) = notifications.inspect(frame.metadata, timestamp.max(0) as u64, hooks.own_copy(timestamp), repeated) {
-                if reason == CaptureSkip::OwnClipboard { hooks.clear_own_copy(); }
+            let owner_copy=host.own_copy(timestamp);
+            let own_copy=if owner_copy.primary!=0 {owner_copy}else{hooks.own_copy(timestamp)};
+            if let Err(reason) = notifications.inspect(frame.metadata, timestamp.max(0) as u64, own_copy, repeated) {
+                if reason == CaptureSkip::OwnClipboard { host.clear_copy_echo();hooks.clear_own_copy(); }
                 events.emit(CaptureEvent::Skipped(reason));
                 return;
             }
-            hooks.clear_own_copy();
+            host.clear_copy_echo();hooks.clear_own_copy();
             let bytes = weight(&frame);
             if pending.fetch_update(Ordering::AcqRel, Ordering::Acquire, |previous| previous.checked_add(bytes).filter(|next| *next <= QUEUED_BYTES)).is_err() {
                 diagnostic(&host, "CaptureQueueFull"); return;

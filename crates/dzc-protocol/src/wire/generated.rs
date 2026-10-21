@@ -45,6 +45,8 @@ pub struct ServiceStatus {
     pub capture_owner: bool,
     pub state: RuntimeState,
     pub privacy: PrivacyState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_unavailable_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

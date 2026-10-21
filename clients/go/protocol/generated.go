@@ -35,6 +35,7 @@ type ServiceStatus struct {
     CaptureOwner bool `json:"capture_owner"`
     State RuntimeState `json:"state"`
     Privacy PrivacyState `json:"privacy"`
+    CaptureUnavailableReason *string `json:"capture_unavailable_reason,omitempty"`
 }
 
 type ClipboardCopyParams struct {

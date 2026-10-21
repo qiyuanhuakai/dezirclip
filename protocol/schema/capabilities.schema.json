@@ -65,6 +65,14 @@
         },
         "privacy": {
           "$ref": "https://dezirclip.local/protocol/v1/privacy.schema.json#/$defs/PrivacyState"
+        },
+        "capture_unavailable_reason": {
+          "type": "string",
+          "enum": [
+            "native_listener_unavailable",
+            "capture_ownership_unavailable",
+            "disabled_by_request"
+          ]
         }
       },
       "required": [

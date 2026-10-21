@@ -44,7 +44,8 @@ pub fn main_entry() -> Result<(), String> {
         // cannot have its credentials replaced by a losing startup attempt.
         let listener = endpoint.bind().map_err(|_| "HostAlreadyRunning")?;
         let _credentials = ControlFile::publish(&host, &endpoint).map_err(|_| "HostCredentialsUnavailable")?;
-        if !options.no_capture {
+        if options.no_capture {host.set_capture_diagnostic("disabled_by_request").map_err(|_|"HostInitializationFailed")?;}
+        else {
             let (manager, ready) = CaptureManager::start(&host).map_err(|_| "HostCaptureOwnershipUnavailable")?;
             if ready.is_err() {
                 if manager.stop().is_err() { return Err("HostCaptureStopUnconfirmed".to_string()); }

@@ -55,6 +55,8 @@ pub struct Host {
     observed_epoch: Mutex<u64>,
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
     pub(crate) uploads: crate::upload::Uploads,
+    copy_echo:Mutex<Option<(dzc_platform::capture::ClipboardEcho,i64)>>,
+    capture_diagnostic:Mutex<Option<String>>,
 }
 
 pub fn now_ms() -> Result<i64, WireErrorCode> {
@@ -87,7 +89,7 @@ impl Host {
         let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), requests: Mutex::new(()), stopped: AtomicBool::new(false),
-            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default() });
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
     }
@@ -102,6 +104,10 @@ impl Host {
     pub(crate) fn waiting_subscriptions(&self) -> usize { self.events.waiters() }
     pub fn is_stopping(&self) -> bool { self.stop_requested.load(Ordering::Acquire) }
     pub fn capture_stopped(&self) -> bool { self.stopped.load(Ordering::Acquire) }
+    pub fn set_capture_diagnostic(&self,reason:&str)->Result<(),WireErrorCode> {
+        if !matches!(reason,"native_listener_unavailable"|"capture_ownership_unavailable"|"disabled_by_request") {return Err(WireErrorCode::InvalidRequest);}
+        *self.capture_diagnostic.lock().map_err(unavailable)?=Some(reason.into());Ok(())
+    }
     fn capture_active(&self) -> bool {
         self.capture_owner.load(Ordering::Acquire) && self.lifecycle.lock().ok().and_then(|slot|slot.as_ref().map(|lifecycle|lifecycle.capture_active())).unwrap_or(false)
     }
@@ -180,6 +186,19 @@ impl Host {
         result("EventData", &data)?;
         self.events.push(event, self.snapshot()?, data).map_err(unavailable)
     }
+    pub(crate) fn copy_payload(&self,payload:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode> {
+        let hint=dzc_platform::capture::clipboard_echo(&payload).map_err(|_|WireErrorCode::Unavailable)?;
+        let timestamp=now_ms()?;
+        *self.copy_echo.lock().map_err(unavailable)?=hint.map(|hint|(hint,timestamp));
+        let result=self.actions.copy(payload);
+        if result.is_err() {self.clear_copy_echo();}
+        result
+    }
+    pub(crate) fn own_copy(&self,timestamp:i64)->dzc_core::capture::OwnClipboardCopy {
+        self.copy_echo.lock().ok().and_then(|hint|*hint).map(|(hint,time)|dzc_core::capture::OwnClipboardCopy{
+            primary:hint.primary,alternative:hint.alternative,age_seconds:timestamp.saturating_sub(time).max(0) as u64/1000}).unwrap_or_default()
+    }
+    pub(crate) fn clear_copy_echo(&self) {if let Ok(mut hint)=self.copy_echo.lock(){*hint=None;}}
     fn privacy_state(&self) -> Result<PrivacyState, WireErrorCode> {
         let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
         Ok(PrivacyState { active: snapshot.session.active, expires_at_ms: snapshot.session.expires_at_ms, privacy_epoch: snapshot.privacy_epoch })
@@ -260,7 +279,7 @@ impl Host {
             Method::Capabilities | Method::SurfaceCapabilities => result("CapabilityReport", self.capabilities(session)),
             Method::Health => result("RuntimeState", self.snapshot()?),
             Method::ServiceStatus => result("ServiceStatus", ServiceStatus { mode: self.mode,
-                capture_owner: self.capture_active(), state: self.snapshot()?, privacy: self.privacy_state()? }),
+                capture_owner: self.capture_active(), state: self.snapshot()?, privacy: self.privacy_state()?,capture_unavailable_reason:self.capture_diagnostic.lock().map_err(unavailable)?.clone() }),
             Method::PrivacyGet => result("PrivacyState", self.privacy_state()?),
             Method::ServiceGrant => {
                 session.require(Permission::ServiceManage)?;
@@ -360,7 +379,7 @@ impl Host {
                     self.history.session_clipboard_payload_authorized(entry, &permit, now).map_err(privacy_error)?
                 } else { self.history.clipboard_payload_authorized(request_body.id, &permit, now).map_err(privacy_error)? };
                 self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
-                self.actions.copy(payload)?;
+                self.copy_payload(payload)?;
                 if request.method == Method::SurfacePaste { self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?; self.actions.paste()?; }
                 result("OperationResult", OperationResult { performed: true })
             }
@@ -519,5 +538,32 @@ pub(crate) mod tests {
         lifecycle.0.store(true, Ordering::Release);
         assert_eq!(dispatch(&host, &session, Method::ServiceStop, serde_json::json!({})).result.unwrap()["performed"], true);
         assert!(host.capture_stopped());
+    }
+    #[test]
+    fn explicit_copy_records_the_shared_native_echo_before_write_and_clears_failure() {
+        struct EchoActions {host:Mutex<std::sync::Weak<Host>>,fail:AtomicBool}
+        impl HostActions for EchoActions {
+            fn platform_capabilities(&self)->Value {serde_json::json!({})}
+            fn can_copy(&self)->bool {true}
+            fn copy(&self,payload:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode> {
+                let host=self.host.lock().unwrap().upgrade().unwrap();
+                let expected=dzc_platform::capture::clipboard_echo(&payload).unwrap().unwrap();
+                assert_eq!(host.own_copy(now_ms().unwrap()).primary,expected.primary,"the notification may arrive during the native write");
+                if self.fail.load(Ordering::SeqCst) {Err(WireErrorCode::Unavailable)}else{Ok(())}
+            }
+            fn can_paste(&self)->bool {false}
+            fn paste(&self)->Result<(),WireErrorCode> {Err(WireErrorCode::Unavailable)}
+            fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+        }
+        let original=synthetic_host();
+        let actions=Arc::new(EchoActions{host:Mutex::new(std::sync::Weak::new()),fail:AtomicBool::new(true)});
+        let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
+        *actions.host.lock().unwrap()=Arc::downgrade(&host);
+        let payload=||dzc_core::ports::ClipboardPayload::Text("synthetic selected copy".into());
+        assert_eq!(host.copy_payload(payload()),Err(WireErrorCode::Unavailable));
+        assert_eq!(host.own_copy(now_ms().unwrap()).primary,0);
+        actions.fail.store(false,Ordering::SeqCst);host.copy_payload(payload()).unwrap();
+        assert_ne!(host.own_copy(now_ms().unwrap()).primary,0);
+        host.clear_copy_echo();assert_eq!(host.own_copy(now_ms().unwrap()).primary,0);
     }
 }

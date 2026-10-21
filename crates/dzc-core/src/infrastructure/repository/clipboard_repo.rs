@@ -299,6 +299,121 @@ impl SqliteClipboardRepository {
         }
         Ok(id)
     }
+    pub(crate) fn update_entry_metadata_authorized(
+        &self,
+        id: i64,
+        pinned: Option<bool>,
+        tags: Option<Vec<String>>,
+        permit: &crate::api::PrivacyReadPermit,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        permit.require_interactive().map_err(|error| error.to_string())?;
+        if id <= 0 || (pinned.is_none() && tags.is_none()) {
+            return Err("EntryMetadataMutationRequired".into());
+        }
+        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable")?;
+        super::protection::atomic_with_cleanup(&conn, |conn| {
+            crate::database::ensure_writable(conn)?;
+            crate::api::privacy_session::check_read_with_conn(conn, permit, now_ms)
+                .map_err(|error| error.to_string())?;
+            let protected: bool = conn.query_row(
+                "SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",
+                [id], |row| row.get(0),
+            ).optional().map_err(|_| "ClipboardRecordUnavailable")?
+                .ok_or("ClipboardRecordUnavailable")?;
+            let mut cleanup = None;
+            if let Some(tags) = tags {
+                let mut seen = std::collections::HashSet::new();
+                let cleaned: Vec<String> = tags.into_iter().filter_map(|tag| {
+                    let value = tag.trim();
+                    (!value.is_empty() && seen.insert(value.to_owned())).then(|| value.to_owned())
+                }).collect();
+                if protected && !has_sensitive_tag(&cleaned) {
+                    return Err("SensitiveAccessDenied".into());
+                }
+                if has_sensitive_tag(&cleaned) {
+                    let directory = conn.path().filter(|path| !path.is_empty())
+                        .and_then(|path| std::path::Path::new(path).parent());
+                    cleanup = Some(super::sensitive_tags::AttachmentCleanup::for_entries(
+                        conn, directory, &std::collections::HashSet::from([id]),
+                    )?);
+                    self.encrypt_entry_with_conn(conn, id)?;
+                }
+                self.sync_entry_tags_with_conn(conn, id, &cleaned)?;
+                conn.execute("UPDATE clipboard_history SET tags=?1 WHERE id=?2",
+                    params![serde_json::to_string(&cleaned).map_err(|_| "SensitivePersistenceRejected")?, id],
+                ).map_err(|error| error.to_string())?;
+            }
+            if let Some(pinned) = pinned {
+                self.toggle_pin_with_conn(conn, id, pinned)?;
+            }
+            self.invalidate_caches();
+            Ok(((), cleanup))
+        })
+    }
+
+    pub(crate) fn persist_session_metadata_authorized(
+        &self,
+        original: &ClipboardEntry,
+        pinned: Option<bool>,
+        tags: Option<Vec<String>>,
+        intent: crate::api::ManualPersistenceIntent,
+        permit: &crate::api::PrivacyReadPermit,
+        now_ms: i64,
+    ) -> Result<i64, String> {
+        permit.require_interactive().map_err(|error| error.to_string())?;
+        if original.id >= 0 || (pinned.is_none() && tags.is_none()) {
+            return Err("SessionMetadataMutationRequired".into());
+        }
+        let conn = self.conn.lock().map_err(|_| "PrivacyStateUnavailable")?;
+        let tx = rusqlite::Transaction::new_unchecked(
+            &conn,
+            rusqlite::TransactionBehavior::Immediate,
+        ).map_err(|_| "PrivacyStateUnavailable")?;
+        crate::api::privacy_session::check_read_with_conn(&tx, permit, now_ms)
+            .map_err(|error| error.to_string())?;
+        crate::api::privacy_session::check_manual_with_conn(&tx, intent, now_ms)
+            .map_err(|error| error.to_string())?;
+        let protected = super::privacy_policy::protected(original);
+        if protected && tags.as_ref().is_some_and(|tags| !has_sensitive_tag(tags)) {
+            return Err("SensitiveAccessDenied".into());
+        }
+        let mut entry = original.clone();
+        entry.id = 0;
+        if let Some(pinned) = pinned {
+            entry.is_pinned = pinned;
+        }
+        if let Some(tags) = tags {
+            entry.tags = tags;
+        }
+        if protected {
+            entry.content = encryption::decode_for_mutation(&entry.content)
+                .map_err(|error| error.to_string())?;
+            entry.preview = encryption::decode_for_mutation(&entry.preview)
+                .map_err(|error| error.to_string())?;
+            entry.html_content = entry.html_content.as_deref()
+                .map(encryption::decode_for_mutation).transpose()
+                .map_err(|error| error.to_string())?;
+            entry.ocr_text = entry.ocr_text.as_deref()
+                .map(encryption::decode_for_mutation).transpose()
+                .map_err(|error| error.to_string())?;
+            if !has_sensitive_tag(&entry.tags) {
+                entry.tags.push("sensitive".into());
+            }
+        }
+        let (entry, decision) = super::privacy_policy::prepare_entry_policy(&tx, &entry, true)?;
+        let mut cleanup = super::privacy_policy::transition_cleanup(&tx, &entry)?;
+        let id = self.save_entry_with_policy(&tx, &entry, None, None, true, &decision)?;
+        if let Some(cleanup) = &mut cleanup {
+            cleanup.protect_surviving_references(&tx)?;
+        }
+        tx.commit().map_err(|_| "SensitivePersistenceRejected")?;
+        if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
+            return Err("ProtectedAttachmentCleanupIncomplete".into());
+        }
+        Ok(id)
+    }
+
     pub(crate) fn update_manual_authorized(
         &self,
         id: i64,
