@@ -163,6 +163,61 @@ fn exact_exception_is_encrypted_scoped_to_complete_representation_and_reversible
 }
 
 #[test]
+fn removing_an_ordinary_exact_exception_preserves_visible_history_and_session() {
+    let repo = memory();
+    let item = entry("ordinaryexactrevocationunique");
+    let id = repo.save(&item, None).unwrap();
+    repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+    let repeated = repo.save(&item, None).unwrap();
+    let mut session = item.clone();
+    session.id = -41;
+    let mut session = [session];
+    let before_session = serde_json::to_value(&session).unwrap();
+    repo.remove_privacy_rule(&rule.id, &mut session, &permit(&repo), 1).unwrap();
+    for entry_id in [id, repeated] {
+        assert!(visible(&repo, entry_id));
+        assert_eq!(raw(&repo, entry_id).0, item.content);
+    }
+    assert_eq!(serde_json::to_value(&session).unwrap(), before_session);
+    assert!(repo.privacy_rule_summaries().unwrap().is_empty());
+}
+
+#[test]
+fn ordinary_exception_removal_applies_current_policy_after_removing_the_rule() {
+    let repo = memory();
+    let item = entry("qvxcredential newly protected after ordinary exception");
+    let id = repo.save(&item, None).unwrap();
+    assert!(visible(&repo, id));
+    repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+    configure_custom(&repo);
+    let repeated = repo.save(&item, None).unwrap();
+    assert!(visible(&repo, repeated));
+    let mut session = item;
+    session.id = -42;
+    let mut session = [session];
+    repo.remove_privacy_rule(&rule.id, &mut session, &permit(&repo), 1).unwrap();
+    assert!(!visible(&repo, id));
+    assert!(!visible(&repo, repeated));
+    assert!(crate::database::has_sensitive_tag(&session[0].tags));
+}
+
+#[test]
+fn removing_a_previously_protected_exact_exception_preserves_manual_protection_intent() {
+    let repo = memory();
+    let mut item = entry("manual protection without configured detector");
+    item.tags.push("sensitive".into());
+    let id = repo.save(&item, None).unwrap();
+    repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+    assert!(visible(&repo, id));
+    repo.remove_privacy_rule(&rule.id, &mut [], &permit(&repo), 1).unwrap();
+    assert!(!visible(&repo, id));
+    assert!(encryption::has_ciphertext_envelope(&raw(&repo, id).0));
+}
+
+#[test]
 fn one_record_feedback_does_not_create_a_future_exception_and_requires_explicit_permission() {
     let repo = memory();
     configure_custom(&repo);
