@@ -3,7 +3,7 @@ import type { Dispatch, MouseEvent, SetStateAction } from "react";
 import type { DragControls } from "framer-motion";
 import ClipboardItem, { hideCompactPreviewGlobal } from "./ClipboardItem";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
-import { beginPrivacyAccess, getPrivacyEntry, invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { beginPrivacyAccess, forgetPrivacyReveal, getPrivacyEntry, invokePrivacyBound, registerPrivacyReveal, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
 
@@ -107,7 +107,7 @@ const ClipboardItemRenderer = ({
     useEffect(() => {
         mounted.current = true;
         const stop = subscribePrivacyInvalidation(() => { detailGeneration.current += 1; setDetail(null); setResourcePreview(null); });
-        return () => { mounted.current = false; detailGeneration.current += 1; stop(); };
+        return () => { mounted.current = false; detailGeneration.current += 1; forgetPrivacyReveal(currentItem.current); stop(); };
     }, []);
     useEffect(() => {
         detailGeneration.current += 1;
@@ -161,6 +161,7 @@ const ClipboardItemRenderer = ({
             e.stopPropagation();
             const generation = ++detailGeneration.current;
             if (isRevealed) {
+                forgetPrivacyReveal(item);
                 clearRichTextSnapshots();
                 void hideCompactPreviewGlobal();
                 setDetail(null);
@@ -171,6 +172,7 @@ const ClipboardItemRenderer = ({
             if (!access) return;
             void loadFullItem().then(value => {
                 if (!mounted.current || !access.isCurrent() || currentItem.current !== item || detailGeneration.current !== generation) return;
+                registerPrivacyReveal(item);
                 setDetail(value);
                 setRevealedIds(previous => new Set(previous).add(itemId));
             }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation) onTransformError(item, "privacy_read", t("privacy_action_failed")); });

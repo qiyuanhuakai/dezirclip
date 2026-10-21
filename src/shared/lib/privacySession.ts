@@ -11,6 +11,7 @@ export interface PrivacyViewState {
   generation: number;
 }
 const fence = createPrivacyFence();
+const reveals = new WeakMap<ClipboardEntry, ReturnType<typeof fence.capture>>();
 let model: PrivacyViewState = { phase: "loading", snapshot: null, pending: false, generation: 0 };
 const observers = new Set<() => void>();
 const invalidators = new Set<() => void>();
@@ -18,6 +19,18 @@ let stopEvents: (() => void) | null = null;
 let lifecycle = 0;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshRequest: Promise<void> | null = null;
+let viewSuspended = false;
+
+export function registerPrivacyReveal(entry: ClipboardEntry): void {
+  if (model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
+  reveals.set(entry, fence.capture());
+}
+export function forgetPrivacyReveal(entry: ClipboardEntry): void { reveals.delete(entry); }
+export function privacyRevealEpoch(entry: ClipboardEntry): number | null {
+  const grant = reveals.get(entry);
+  return model.phase === "ready" && grant && fence.isCurrent(grant)
+    ? model.snapshot?.privacy_epoch ?? null : null;
+}
 
 export const getPrivacyViewState = () => model;
 const publish = (next: Partial<PrivacyViewState>) => {
@@ -50,9 +63,11 @@ const accept = (value: unknown) => {
 export async function refreshPrivacyState(): Promise<void> {
   revoke();
   publish({ phase: "loading" });
+  if (viewSuspended) return;
   if (refreshRequest) return refreshRequest;
   refreshRequest = (async () => {
     for (;;) {
+      if (viewSuspended) return;
       const token = fence.capture();
       try {
         const value = await invoke<unknown>("get_privacy_status");
@@ -66,19 +81,34 @@ export async function refreshPrivacyState(): Promise<void> {
   return refreshRequest;
 }
 
-const onFocus = () => { void refreshPrivacyState(); };
+const onFocus = () => { viewSuspended = false; void refreshPrivacyState(); };
+const onHide = () => {
+  viewSuspended = true;
+  if (expiryTimer !== null) clearTimeout(expiryTimer);
+  expiryTimer = null;
+  revoke();
+  publish({ phase: "loading" });
+};
+const onVisibility = () => { if (document.hidden) onHide(); else onFocus(); };
 export function subscribePrivacyState(observer: () => void): () => void {
   observers.add(observer);
   if (observers.size === 1) {
     const started = ++lifecycle;
     window.addEventListener("focus", onFocus);
-    void listen<unknown>("privacy-state-changed", () => {
+    window.addEventListener("blur", onHide);
+    window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    const subscriptions = [listen<unknown>("privacy-state-changed", () => {
       if (started === lifecycle) void refreshPrivacyState();
-    }).then(stop => {
+    }), listen("privacy-view-hidden", () => { if (started === lifecycle) onHide(); }),
+      listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); })];
+    void Promise.all(subscriptions).then(stops => {
+      const stop = () => { stops.forEach(unlisten => unlisten()); };
       if (started !== lifecycle) { stop(); return; }
       stopEvents = stop;
       void refreshPrivacyState();
     }, () => {
+      subscriptions.forEach(subscription => { void subscription.then(stop => stop(), () => undefined); });
       if (started === lifecycle) {
         revoke();
         publish({ phase: "unavailable", snapshot: null });
@@ -92,9 +122,13 @@ export function subscribePrivacyState(observer: () => void): () => void {
       stopEvents?.();
       stopEvents = null;
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onHide);
+      window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onVisibility);
       if (expiryTimer !== null) clearTimeout(expiryTimer);
       expiryTimer = null;
       revoke();
+      viewSuspended = false;
       model = { phase: "loading", snapshot: null, pending: false, generation: fence.current() };
     }
   };

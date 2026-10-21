@@ -51,7 +51,8 @@ import { useOverlays } from "./shared/hooks/useOverlays";
 import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import { usePrivacySession } from "./shared/hooks/usePrivacySession";
-import { subscribePrivacyInvalidation } from "./shared/lib/privacySession";
+import { beginPrivacyAccess, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
+import { isSensitiveEntry } from "./shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
 import { PrivacyStatusBanner } from "./shared/components/PrivacyStatusBanner";
 import type { ClipboardEntry } from "./shared/types";
@@ -665,6 +666,18 @@ const App = () => {
     virtualListRef
   });
 
+  const copyFromKeyboard = useCallback((id: number, content: string, contentType: string,
+    pasteWithFormat = false, pasteImageAsBase64 = false) => {
+    const entry = filteredHistory.find(item => item.id === id);
+    const access = beginPrivacyAccess();
+    const epoch = entry && isSensitiveEntry(entry) ? privacyRevealEpoch(entry) : undefined;
+    if (!entry || !access || (isSensitiveEntry(entry) && (!revealedIds.has(id) || epoch === null))) {
+      pushToast(t("privacy_reveal_first"));
+      return Promise.resolve();
+    }
+    return copyToClipboard(id, content, contentType, pasteWithFormat, pasteImageAsBase64, epoch ?? undefined);
+  }, [filteredHistory, revealedIds, copyToClipboard, pushToast, t]);
+
   useKeyboardNavigation({
     filteredHistory,
     selectedIndex,
@@ -679,7 +692,7 @@ const App = () => {
     arrowKeySelection,
     richPasteHotkey,
     searchInputRef,
-    copyToClipboard,
+    copyToClipboard: copyFromKeyboard,
     setSearch
   });
 
