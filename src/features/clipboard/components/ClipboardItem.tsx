@@ -42,7 +42,7 @@ import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
 import { resolveContextMenuPoint } from "./contextMenuPosition";
-import { beginPrivacyAccess, getPrivacyViewState, invokePrivacyBound, refreshPrivacyState, submitPrivacyFeedback, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { beginPrivacyAccess, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, submitPrivacyFeedback, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
 import { ask } from "@tauri-apps/plugin-dialog";
 
@@ -1317,7 +1317,7 @@ const ClipboardItem = ({
                 : action === "exact_exception" ? "privacy_feedback_exact_confirm" : "privacy_feedback_confirm");
             const confirmed = await ask(hint ? `${hint}\n\n${prompt}` : prompt, { title: t("privacy_feedback_title"), kind: "warning" });
             if (!confirmed) return;
-            await refreshPrivacyState();
+            await refreshPrivacyAfterConfirmation(access.epoch);
             if (getPrivacyViewState().phase !== "ready" || getPrivacyViewState().snapshot?.privacy_epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
             await submitPrivacyFeedback(item.id, action, item.host_instance_id);
             onTransformItemSuccess?.("privacy_feedback");
