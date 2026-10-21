@@ -12,7 +12,7 @@ pub struct WaylandOwner {
     done: mpsc::Receiver<()>,
     thread: Option<std::thread::JoinHandle<Result<(), WaylandError>>>,
     private: bool,
-    exports: Option<crate::private_files::BoundExport>,
+    exports: crate::native_clipboard::selection_export::SelectionExport,
 }
 impl WaylandOwner {
     pub fn start(payloads: Vec<MimeData>) -> Result<Self, WaylandError> {
@@ -25,6 +25,8 @@ impl WaylandOwner {
     ) -> Result<Self, WaylandError> {
         super::validate_payloads(&payloads)?;
         let private = !leases.is_empty();
+        let exports = crate::native_clipboard::selection_export::SelectionExport::new(exports);
+        let worker_export = exports.clone();
         let (cancel, trigger) = WaylandClipboardBackend::cancellation_pair()?;
         let (ready_tx, ready) = mpsc::sync_channel(1);
         let (done_tx, done) = mpsc::sync_channel(1);
@@ -41,6 +43,7 @@ impl WaylandOwner {
                     },
                     cancel,
                 );
+                let result = result.and(worker_export.close().map_err(|_| WaylandError::PermissionDenied));
                 if let Err(error) = result {
                     let _ = ready_tx.try_send(Err(error));
                 }
@@ -97,17 +100,13 @@ impl WaylandOwner {
         result
     }
     pub fn is_stopped(&self) -> bool {
-        self.thread.is_none() && self.exports.is_none()
+        self.thread.is_none() && self.exports.is_closed()
     }
     pub(crate) fn is_private(&self) -> bool {
         self.private
     }
     fn close_export(&mut self) -> Result<(), WaylandError> {
-        if let Some(export) = self.exports.as_mut() {
-            export.close().map_err(|_| WaylandError::PermissionDenied)?;
-        }
-        self.exports = None;
-        Ok(())
+        self.exports.close().map_err(|_| WaylandError::PermissionDenied)
     }
 }
 impl Drop for WaylandOwner {

@@ -265,6 +265,17 @@ pub(crate) fn assess_entry(
             PrivacyReason::UserRequestedProtection,
         ));
     }
+    let stored_protected = entry.id > 0 && conn.query_row(
+        "SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",
+        [entry.id], |row| row.get::<_,bool>(0),
+    ).optional().map_err(unavailable)?.unwrap_or(false);
+    if stored_protected {
+        evidence.push(PrivacyEvidence::new(
+            EvidenceSource::ExistingRecord,
+            EvidenceLevel::Explicit,
+            PrivacyReason::ExistingRecordProtected,
+        ));
+    }
     let matching: Vec<_> = rules
         .iter()
         .filter(|rule| {
@@ -342,6 +353,21 @@ pub(crate) fn assess_entry(
     })
 }
 impl SqliteClipboardRepository {
+    pub(crate) fn policy_entry_authorized(
+        &self,
+        id: i64,
+        permit: &crate::api::PrivacyReadPermit,
+        now_ms: i64,
+    ) -> Result<ClipboardEntry, String> {
+        permit
+            .require_interactive()
+            .map_err(|error| error.to_string())?;
+        let conn = self.conn.lock().map_err(unavailable)?;
+        crate::api::privacy_session::check_read_with_conn(&conn, permit, now_ms)
+            .map_err(|error| error.to_string())?;
+        require_mutation_access(&conn, id, permit)?;
+        strict_entry(self, &conn, id)
+    }
     pub(crate) fn privacy_rule_summaries(&self) -> Result<Vec<PrivacyRuleSummary>, String> {
         let conn = self.conn.lock().map_err(unavailable)?;
         Ok(load_rules(&conn)?.iter().map(StoredRule::summary).collect())
@@ -492,9 +518,11 @@ impl SqliteClipboardRepository {
             }
             strict_entry(self, &tx, id)?
         };
-        let was_protected = if id>0 {
+        let was_protected = if id > 0 {
             tx.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[id],|row|row.get(0)).map_err(unavailable)?
-        } else {protected(&entry)};
+        } else {
+            protected(&entry)
+        };
         let mut rules = load_rules(&tx)?;
         let mut added = None;
         if action != PrivacyFeedbackAction::NotSensitive {
@@ -720,12 +748,7 @@ pub(super) fn apply_to_entry(
         return Err("PrivacySourceExcluded".into());
     }
     let mut result = entry.clone();
-    let stored_protected = if entry.id > 0 {
-        conn.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[entry.id],|row|row.get::<_,bool>(0)).optional().map_err(unavailable)?.unwrap_or(false)
-    } else {
-        false
-    };
-    if (report.decision.action == crate::privacy::PrivacyAction::Encrypt || stored_protected)
+    if report.decision.action == crate::privacy::PrivacyAction::Encrypt
         && !crate::database::has_sensitive_tag(&result.tags)
     {
         result.tags.push("sensitive".into());

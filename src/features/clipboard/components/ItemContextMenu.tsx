@@ -159,7 +159,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       if (isTransformable) {
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
-      if (entry && entry.id > 0 && onPrivacyFeedback) {
+      if (entry && entry.id !== 0 && onPrivacyFeedback) {
         for (const action of privacyActions) {
           const key = `privacy_feedback_${action}` as keyof typeof translations.zh;
           items.push({ key: `privacy:${action}`, label: translations[language][key] });
