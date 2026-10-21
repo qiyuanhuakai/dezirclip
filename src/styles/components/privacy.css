@@ -60,3 +60,6 @@
 .privacy-hidden-content { color: var(--text-secondary); padding: 12px 0; font-size: 12px; }
 .privacy-file-metadata { white-space: pre-wrap; overflow-wrap: anywhere; }
 .item-context-menu { max-height: calc(100vh - 16px); overflow-y: auto; }
+.privacy-manual-confirm { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.6; }
+.privacy-manual-confirm input { flex: none; margin-top: 4px; }
+.privacy-manual-hint { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }

@@ -5,8 +5,9 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
-import { getPrivacyEntry, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { beginPrivacyAccess, getPrivacyEntry, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
+import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
 import { useTagLibrary } from '../hooks/useTagLibrary';
 import { TagDialog } from './TagDialog';
 import { TagHistoryRow } from './TagHistoryRow';
@@ -29,16 +30,18 @@ interface TagManagerProps {
 type Dialog = { kind: 'createTag' }
     | { kind: 'renameTag'; tag: string }
     | { kind: 'removeTag'; tag: string }
-    | { kind: 'createItem'; tag: string }
+    | { kind: 'createItem'; tag: string; expectedPrivacyEpoch?: number }
     | { kind: 'editItem'; id: number; protectedContent: boolean }
     | { kind: 'deleteSelection'; tag: string; selection: TagBatchSelection; count: number; scope: string }
     | { kind: 'deleteItem'; item: ClipboardEntry };
 
-function protectedTag(name: string): boolean { return name.toLowerCase() === 'sensitive' || name === '密码'; }
+function protectedTag(name: string): boolean { return isSensitiveEntry({ tags: [name] }); }
 
 export default function TagManager({ t, theme, language = 'zh', compactMode = false, isWindowPinned = false,
     privacyProtection = true, tagColors, richTextSnapshotPreview = false, onCompactModeChange }: TagManagerProps) {
     const library = useTagLibrary();
+    const privacy = usePrivacySession();
+    const privacyActive = privacy.phase === 'ready' && privacy.snapshot?.session.active === true;
     const { selectedTag, selectTag, refresh } = library;
     const [tagSearch, setTagSearch] = useState('');
     const { split } = useSettingsLayout();
@@ -60,6 +63,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const [value, setValue] = useState('');
     const [busy, setBusy] = useState(false);
     const [dialogError, setDialogError] = useState<string | null>(null);
+    const [confirmPersistence, setConfirmPersistence] = useState(false);
     const [actionError, setActionError] = useState(false);
     const root = useRef<HTMLDivElement>(null);
     const menu = useRef<HTMLDivElement>(null);
@@ -88,6 +92,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         setQrEntry(null);
         setDialog(null);
         setValue('');
+        setConfirmPersistence(false);
         setMenuOpen(false);
     }), []);
 
@@ -151,11 +156,14 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     };
 
     const openDialog = useCallback((next: Dialog) => {
+        const access = beginPrivacyAccess();
+        if (next.kind === 'createItem' && !access) { notifyError(); return; }
         detailSequence.current += 1;
         setMenuOpen(false); setPickerOpen(false); setDialogError(null);
         setValue(next.kind === 'renameTag' ? next.tag : next.kind === 'createTag' ? tagSearch.trim() : '');
-        setDialog(next);
-    }, [tagSearch]);
+        setConfirmPersistence(false);
+        setDialog(next.kind === 'createItem' ? { ...next, expectedPrivacyEpoch: access?.epoch } : next);
+    }, [tagSearch, notifyError]);
     const editItem = useCallback((item: ClipboardEntry) => {
         const request = ++detailSequence.current;
         void getPrivacyEntry(item.id).then(detail => {
@@ -196,6 +204,9 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         if (['createTag', 'renameTag', 'createItem', 'editItem'].includes(current.kind) && !trimmed) return;
         if (current.kind === 'renameTag' && protectedTag(trimmed)) { setDialogError(t('tag_sensitive_target')); return; }
         if (current.kind === 'removeTag' && protectedTag(current.tag) && privacyProtection) { setDialogError(t('tag_sensitive_delete_locked')); return; }
+        if (current.kind === 'createItem' && (privacy.phase !== 'ready'
+            || current.expectedPrivacyEpoch !== beginPrivacyAccess()?.epoch
+            || (privacyActive && !confirmPersistence))) { setDialogError(t('privacy_action_failed')); return; }
         setBusy(true); setDialogError(null);
         try {
             let deletedCount: number | null = null;
@@ -211,7 +222,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 else await invoke('remove_tag_from_all', { tagName: current.tag });
                 if (selectedTag === current.tag) selectTag(null);
             } else if (current.kind === 'createItem') {
-                await invoke('add_manual_item', { content: value, contentType: 'text', tags: [current.tag] });
+                await invoke('add_manual_item', { content: value, contentType: 'text', tags: [current.tag],
+                    expectedPrivacyEpoch: current.expectedPrivacyEpoch, confirmPersistence: privacyActive && confirmPersistence });
             } else if (current.kind === 'editItem') {
                 await invoke('update_item_content', { id: current.id, newContent: value });
             } else if (current.kind === 'deleteSelection') {
@@ -281,6 +293,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     };
 
     const isTextDialog = dialog?.kind === 'createItem' || dialog?.kind === 'editItem';
+    const protectedDialog = dialog?.kind === 'editItem' ? dialog.protectedContent
+        : dialog?.kind === 'createItem' && protectedTag(dialog.tag);
     const isNameDialog = dialog?.kind === 'createTag' || dialog?.kind === 'renameTag';
     const destructiveTag = dialog?.kind === 'removeTag' && protectedTag(dialog.tag);
     const dialogTitle = dialog?.kind === 'deleteSelection' ? t('tag_batch_delete_title') : dialog?.kind === 'createTag' ? t('tag_create') : dialog?.kind === 'renameTag' ? t('tag_rename')
@@ -414,8 +428,13 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         {dialog && <TagDialog title={dialogTitle} closeLabel={t('common_close')} busy={busy} onClose={closeDialog} wide={isTextDialog}>
             <form onSubmit={event => { event.preventDefault(); void saveDialog(); }}>
                 {isNameDialog && <label className="tag-manager-field"><span>{t('tag_name')}</span><input className="search-input" autoFocus value={value} maxLength={80} readOnly={busy} onChange={event => setValue(event.target.value)} /></label>}
-                {isTextDialog && <label className="tag-manager-field" data-privacy-protected={dialog.kind === 'editItem' && dialog.protectedContent ? 'true' : undefined}
-                    onDragStart={event => { if (dialog.kind === 'editItem' && dialog.protectedContent) event.preventDefault(); }}><span>{t('input_content_placeholder')}</span><textarea className="modal-textarea" autoFocus value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
+                {isTextDialog && <label className="tag-manager-field" data-privacy-protected={protectedDialog ? 'true' : undefined}
+                    onDragStart={event => { if (protectedDialog) event.preventDefault(); }}><span>{t('input_content_placeholder')}</span><textarea className="modal-textarea" autoFocus value={value} readOnly={busy} onChange={event => setValue(event.target.value)} spellCheck={false} /></label>}
+                {dialog.kind === 'createItem' && privacyActive && <>
+                    <label className="privacy-manual-confirm"><input type="checkbox" checked={confirmPersistence} disabled={busy}
+                        onChange={event => setConfirmPersistence(event.target.checked)} /><span>{t('privacy_manual_confirm')}</span></label>
+                    <p className="privacy-manual-hint">{t('privacy_manual_hint')}</p>
+                </>}
                 {dialog.kind === 'removeTag' && <p className="confirm-dialog-message">{t(destructiveTag ? 'tag_sensitive_delete_hint' : 'tag_remove_hint')}</p>}
                 {dialog.kind === 'deleteItem' && <p className="confirm-dialog-message">{t('confirm_delete_desc')}</p>}
                 {dialog.kind === 'deleteSelection' && <p className="confirm-dialog-message">{t(dialog.selection.mode === 'all' ? 'tag_batch_delete_all_confirm' : 'tag_batch_delete_confirm')
@@ -423,7 +442,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                 {dialogError && <p className="tag-manager-dialog-error" role="alert">{dialogError}</p>}
                 <div className="confirm-dialog-buttons">
                     <button type="button" className="confirm-dialog-button" disabled={busy} onClick={closeDialog}>{t('cancel')}</button>
-                    <button type="submit" className="confirm-dialog-button primary" disabled={busy || ((isNameDialog || isTextDialog) && !value.trim())}>
+                    <button type="submit" className="confirm-dialog-button primary" disabled={busy || ((isNameDialog || isTextDialog) && !value.trim())
+                        || (dialog.kind === 'createItem' && (privacy.phase !== 'ready' || (privacyActive && !confirmPersistence)))}>
                         {t(dialog.kind === 'deleteItem' || dialog.kind === 'deleteSelection' || destructiveTag ? 'common_delete' : dialog.kind === 'removeTag' ? 'tag_remove' : dialog.kind === 'createTag' ? 'tag_create' : 'common_save')}
                     </button>
                 </div>

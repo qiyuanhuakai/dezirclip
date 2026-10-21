@@ -20,6 +20,8 @@ export const tw = {
         privacy_session_hotkey_hint: "可嘗試 Ctrl+Alt+P；留空表示不註冊。儲存前會檢查衝突與目前系統能力。",
         privacy_retry: "重新讀取",
         privacy_action_failed: "操作未能確認。請重新讀取狀態後再試。",
+        privacy_manual_confirm: "隱私工作階段仍在進行，我確認將此項目儲存至歷史。",
+        privacy_manual_hint: "此操作僅儲存目前手動新增的記錄，自動擷取繼續暫停。",
         privacy_rules_title: "隱私回饋與例外",
         privacy_rules_hint: "在記錄選單中修正誤判或設定來源原則。精確例外僅比對指定內容與來源，可隨時撤銷；不會放行整個憑證類別。",
         privacy_rules_empty: "尚無回饋規則。",

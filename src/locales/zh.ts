@@ -24,6 +24,8 @@ export const zh = {
         privacy_session_hotkey: "切换隐私会话快捷键",
         privacy_session_hotkey_hint: "可尝试 Ctrl+Alt+P；留空表示不注册。保存前会检查冲突与当前系统能力。",
         privacy_action_failed: "操作未能确认。请重新读取状态后重试。",
+        privacy_manual_confirm: "隐私会话仍在进行，我确认将此条目保存到历史。",
+        privacy_manual_hint: "此操作只保存当前手动新增的记录，自动捕获继续暂停。",
         privacy_rules_title: "隐私反馈与例外",
         privacy_rules_hint: "在记录菜单中纠正误判或设置来源策略。精确例外只匹配指定内容与来源，可随时撤销；不会放行整个凭据类别。",
         privacy_rules_empty: "暂无反馈规则。",

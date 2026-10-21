@@ -20,6 +20,8 @@ export const en = {
         privacy_session_hotkey_hint: "Try Ctrl+Alt+P, or leave empty to disable. Saving checks conflicts and current platform support.",
         privacy_retry: "Refresh state",
         privacy_action_failed: "The operation could not be confirmed. Refresh state and try again.",
+        privacy_manual_confirm: "The privacy session is active. I confirm saving this entry to history.",
+        privacy_manual_hint: "Only this manually added entry will be saved. Automatic capture remains paused.",
         privacy_rules_title: "Privacy feedback and exceptions",
         privacy_rules_hint: "Use a record’s menu to correct detection or set a source policy. Exact exceptions apply to specific content and source, can be revoked, and never allow a whole credential category.",
         privacy_rules_empty: "No feedback rules yet.",
