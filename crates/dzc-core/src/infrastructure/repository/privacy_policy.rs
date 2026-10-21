@@ -255,6 +255,15 @@ pub(crate) fn assess_entry(
     entry: &ClipboardEntry,
     include_exclusion: bool,
 ) -> Result<PrivacyDecisionReport, String> {
+    assess_entry_with_plan(conn, entry, include_exclusion, None)
+}
+
+fn assess_entry_with_plan(
+    conn: &Connection,
+    entry: &ClipboardEntry,
+    include_exclusion: bool,
+    attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+) -> Result<PrivacyDecisionReport, String> {
     let settings = settings(conn)?;
     let rules = load_rules(conn)?;
     let mut evidence = source_evidence(
@@ -299,7 +308,15 @@ pub(crate) fn assess_entry(
         })
         .collect();
     if !matching.is_empty() {
-        let digest = content_digest(entry)?;
+        // Planned paths are not files yet. Match the exact RAM representation without
+        // materializing plaintext before policy checks and the SQL write succeed.
+        let digest = if let Some(plan) = attachments {
+            let mut candidate = entry.clone();
+            candidate.html_content = Some(plan.inline_html()?);
+            content_digest(&candidate)?
+        } else {
+            content_digest(entry)?
+        };
         for rule in matching {
             if rule.digest == Some(salted_digest(&digest, &rule.salt)) {
                 evidence.push(rule.evidence(PrivacyReason::ExactExceptionMatched));
@@ -775,7 +792,15 @@ pub(super) fn apply_to_entry(
     conn: &Connection,
     entry: &ClipboardEntry,
 ) -> Result<(ClipboardEntry, PrivacyDecision), String> {
-    let report = assess_entry(conn, entry, true)?;
+    apply_with_plan(conn, entry, None)
+}
+
+fn apply_with_plan(
+    conn: &Connection,
+    entry: &ClipboardEntry,
+    attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+) -> Result<(ClipboardEntry, PrivacyDecision), String> {
+    let report = assess_entry_with_plan(conn, entry, true, attachments)?;
     if report.decision.action == crate::privacy::PrivacyAction::Skip {
         return Err("PrivacySourceExcluded".into());
     }
@@ -887,6 +912,15 @@ pub(super) fn prepare_entry_policy(
     entry: &ClipboardEntry,
     inherit_missing_ocr: bool,
 ) -> Result<(ClipboardEntry, PrivacyDecision), String> {
+    prepare_entry_policy_with_plan(conn, entry, inherit_missing_ocr, None)
+}
+
+pub(super) fn prepare_entry_policy_with_plan(
+    conn: &Connection,
+    entry: &ClipboardEntry,
+    inherit_missing_ocr: bool,
+    attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+) -> Result<(ClipboardEntry, PrivacyDecision), String> {
     if inherit_missing_ocr && entry.id > 0 && entry.ocr_text.is_none() {
         let old: Option<String> = conn
             .query_row(
@@ -903,7 +937,7 @@ pub(super) fn prepare_entry_policy(
             .map(encryption::decode_for_mutation)
             .transpose()
             .map_err(|error| error.to_string())?;
-        return apply_to_entry(conn, &complete);
+        return apply_with_plan(conn, &complete, attachments);
     }
-    apply_to_entry(conn, entry)
+    apply_with_plan(conn, entry, attachments)
 }
