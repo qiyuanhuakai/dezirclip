@@ -227,7 +227,7 @@ function publication(mode, version, config, log, transport, acceptance) {
   const latest = client.releaseByTag(tag);
   if (latest.id !== release.id || client.releaseCommit(tag) !== commit) throw new Error('Release source changed during verification');
   for (const asset of release.assets) {
-    if (!latest.assets.some(value => value.id === asset.id && value.size === asset.size
+    if (!latest.assets.some(value => value.id === asset.id && value.name === asset.name && value.size === asset.size
         && value.updated_at === asset.updated_at)) {
       throw new Error('Release assets changed during verification');
     }
@@ -262,8 +262,10 @@ function publication(mode, version, config, log, transport, acceptance) {
     channels = client.releaseByTag(channelTag);
     const staged = channels.assets.find(asset => asset.name === stagedName);
     if (!staged || !client.downloadAsset(staged).equals(contents)) throw new Error('Uploaded channel verification failed');
-    if (old) client.moveAsset(old, `${channel}-previous-${old.id}.json`);
-    try { client.moveAsset(staged, `${channel}.json`); }
+    try {
+      if (old) client.moveAsset(old, `${channel}-previous-${old.id}.json`);
+      client.moveAsset(staged, `${channel}.json`);
+    }
     catch (error) {
       const active = client.releaseByTag(channelTag).assets.find(asset => asset.name === `${channel}.json`);
       // A lost API response can follow a successful rename; resolve that outcome first.

@@ -110,6 +110,7 @@ function publisherFixture(options = {}) {
       if (path === 'releases?per_page=100') {
         assert.deepEqual(args.slice(2), ['--paginate', '--slurp']);
         if (++state.listCalls === options.listErrorAt) throw options.apiError;
+        if (state.listCalls === options.renameAssetAt) state.product.assets[0].name += '.renamed';
         const matches = [state.product, ...(state.channel ? [state.channel] : [])];
         if (options.duplicate) matches.push({ ...state.product, id: 11 });
         // Put the target on a later page: checking only the first page fails.
@@ -142,6 +143,10 @@ function publisherFixture(options = {}) {
           }
           found.name = name;
           state.mutations.push(`rename:${name}`);
+          if (name.startsWith('preview-previous-') && options.lostOldRenameResponse && !state.lostOldResponse) {
+            state.lostOldResponse = true;
+            throw new Error('Synthetic lost old rename response');
+          }
           if (activating && options.lostRenameResponse && !state.lostResponse) {
             state.lostResponse = true;
             throw new Error('Synthetic lost rename response');
@@ -309,5 +314,23 @@ test('promotion refuses changed accepted assets and preserves both channels', ()
   assert.throws(() => promote('0.2.0-alpha.1', fixture.config, accepted(receipt), () => {}, fixture.transport), /completed public acceptance/);
   assert.deepEqual(fixture.state.mutations, []);
   assert.deepEqual(fixture.active('stable.json'), stable);
+  assert.deepEqual(fixture.active('preview.json'), preview);
+});
+
+test('a lost old-index rename response restores the original active index', () => {
+  const fixture = publisherFixture({ published: true, channel: 'published', lostOldRenameResponse: true });
+  const preview = fixture.active('preview.json');
+  const stable = fixture.active('stable.json');
+  assert.throws(() => publish('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport), /lost old rename response/);
+  assert.equal(fixture.state.lostOldResponse, true);
+  assert.deepEqual(fixture.active('preview.json'), preview);
+  assert.deepEqual(fixture.active('stable.json'), stable);
+});
+
+test('asset rename during fresh verification prevents promotion even if other metadata is unchanged', () => {
+  const fixture = publisherFixture({ published: true, channel: 'published', renameAssetAt: 6 });
+  const preview = fixture.active('preview.json');
+  assert.throws(() => publish('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport), /assets changed during verification/);
+  assert.deepEqual(fixture.state.mutations, []);
   assert.deepEqual(fixture.active('preview.json'), preview);
 });
