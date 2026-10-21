@@ -771,3 +771,236 @@ fn session_feedback_and_rule_removal_publish_only_after_sql_commit() {
         .unwrap();
     assert!(crate::database::has_sensitive_tag(&items[0].tags));
 }
+
+#[test]
+fn session_metadata_persistence_keeps_protection_without_granting_body_access() {
+    let repo = memory();
+    repo.privacy_service()
+        .set_session(PrivacySessionCommand::On { duration_ms: None }, 1)
+        .unwrap();
+    let ordinary = repo
+        .privacy_service()
+        .authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            1,
+        )
+        .unwrap();
+    let mut item = entry("metadatasecretunique");
+    item.id = -7;
+    item.tags = vec!["sensitive".into()];
+    item.ocr_text = Some("metadataocrsecretunique".into());
+    let original = serde_json::to_value(&item).unwrap();
+    let before = snapshot(&repo);
+    assert_eq!(
+        repo.persist_session_metadata_authorized(
+            &item,
+            Some(true),
+            None,
+            ManualPersistenceIntent::Ordinary,
+            &ordinary,
+            1,
+        )
+        .unwrap_err(),
+        "ManualPersistenceConfirmationRequired"
+    );
+    assert_eq!(snapshot(&repo), before);
+    assert_eq!(
+        repo.persist_session_metadata_authorized(
+            &item,
+            None,
+            Some(vec!["work".into()]),
+            ManualPersistenceIntent::ConfirmedDuringPrivacySession,
+            &ordinary,
+            1,
+        )
+        .unwrap_err(),
+        "SensitiveAccessDenied"
+    );
+    assert_eq!(snapshot(&repo), before);
+    let id = repo
+        .persist_session_metadata_authorized(
+            &item,
+            Some(true),
+            Some(vec!["sensitive".into(), "work".into()]),
+            ManualPersistenceIntent::ConfirmedDuringPrivacySession,
+            &ordinary,
+            1,
+        )
+        .unwrap();
+    let stored = raw(&repo, id);
+    assert_ne!(stored.0, item.content);
+    assert_ne!(stored.2, item.ocr_text);
+    assert_eq!(
+        encryption::decode_for_mutation(&stored.0).unwrap(),
+        item.content
+    );
+    assert_eq!(
+        stored
+            .2
+            .as_deref()
+            .map(encryption::decode_for_mutation)
+            .transpose()
+            .unwrap(),
+        item.ocr_text
+    );
+    assert!(!visible(&repo, id));
+    assert!(repo
+        .conn
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT is_pinned FROM clipboard_history WHERE id=?1",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )
+        .unwrap());
+    assert_eq!(
+        repo.policy_entry_authorized(id, &ordinary, 1).unwrap_err(),
+        "SensitiveAccessDenied"
+    );
+    assert!(!ordinary.includes_sensitive());
+    assert_eq!(serde_json::to_value(&item).unwrap(), original);
+    assert_eq!(repo.conn.lock().unwrap().query_row(
+        "SELECT count(*) FROM clipboard_fts WHERE clipboard_fts MATCH 'metadatasecretunique OR metadataocrsecretunique'",
+        [], |row| row.get::<_, i64>(0),
+    ).unwrap(), 0);
+}
+
+#[test]
+fn session_metadata_persistence_rejects_stale_permissions_and_rolls_back_sql_failure() {
+    let repo = memory();
+    let ordinary = repo
+        .privacy_service()
+        .authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            1,
+        )
+        .unwrap();
+    let mut item = entry("original session text");
+    item.id = -2;
+    repo.privacy_service()
+        .set_session(PrivacySessionCommand::On { duration_ms: None }, 1)
+        .unwrap();
+    repo.privacy_service()
+        .set_session(PrivacySessionCommand::Off, 1)
+        .unwrap();
+    let before = snapshot(&repo);
+    assert_eq!(
+        repo.persist_session_metadata_authorized(
+            &item,
+            Some(true),
+            None,
+            ManualPersistenceIntent::Ordinary,
+            &ordinary,
+            1,
+        )
+        .unwrap_err(),
+        "PrivacyEpochChanged"
+    );
+    assert_eq!(snapshot(&repo), before);
+    let restricted = repo
+        .privacy_service()
+        .authorize_read(
+            PrivacyAccessIntent::AutomationRead,
+            SensitiveAccess::Denied,
+            None,
+            1,
+        )
+        .unwrap();
+    assert_eq!(
+        repo.persist_session_metadata_authorized(
+            &item,
+            Some(true),
+            None,
+            ManualPersistenceIntent::Ordinary,
+            &restricted,
+            1,
+        )
+        .unwrap_err(),
+        "SensitiveAccessDenied"
+    );
+    let current = repo
+        .privacy_service()
+        .authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            1,
+        )
+        .unwrap();
+    repo.conn.lock().unwrap().execute_batch(
+        "CREATE TRIGGER fail_session_metadata BEFORE INSERT ON entry_tags BEGIN SELECT RAISE(ABORT,'synthetic metadata rollback'); END;",
+    ).unwrap();
+    assert!(repo
+        .persist_session_metadata_authorized(
+            &item,
+            Some(true),
+            Some(vec!["work".into()]),
+            ManualPersistenceIntent::Ordinary,
+            &current,
+            1,
+        )
+        .is_err());
+    assert_eq!(snapshot(&repo), before);
+    assert_eq!(item.id, -2);
+    repo.conn
+        .lock()
+        .unwrap()
+        .execute_batch("DROP TRIGGER fail_session_metadata")
+        .unwrap();
+    let id = repo
+        .persist_session_metadata_authorized(
+            &item,
+            Some(true),
+            Some(vec!["work".into()]),
+            ManualPersistenceIntent::Ordinary,
+            &current,
+            1,
+        )
+        .unwrap();
+    assert_eq!(raw(&repo, id).0, item.content);
+    assert!(visible(&repo, id));
+}
+
+#[test]
+fn session_metadata_persistence_preserves_untagged_encrypted_fields() {
+    let repo = memory();
+    let ordinary = repo
+        .privacy_service()
+        .authorize_read(
+            PrivacyAccessIntent::InteractiveRead,
+            SensitiveAccess::Denied,
+            None,
+            1,
+        )
+        .unwrap();
+    let mut item = entry("unused");
+    item.id = -9;
+    item.content = encryption::encrypt_sensitive("legacyciphersecret")
+        .unwrap()
+        .into_string();
+    assert!(item.tags.is_empty());
+    let id = repo
+        .persist_session_metadata_authorized(
+            &item,
+            Some(true),
+            None,
+            ManualPersistenceIntent::Ordinary,
+            &ordinary,
+            1,
+        )
+        .unwrap();
+    let stored = raw(&repo, id);
+    assert_eq!(
+        encryption::decode_for_mutation(&stored.0).unwrap(),
+        "legacyciphersecret"
+    );
+    assert!(crate::database::has_sensitive_tag(
+        &serde_json::from_str::<Vec<String>>(&stored.1).unwrap()
+    ));
+    assert!(!visible(&repo, id));
+}
