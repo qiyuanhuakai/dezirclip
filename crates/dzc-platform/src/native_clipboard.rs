@@ -142,6 +142,9 @@ impl EmbeddedOwner {
             self.wayland = None;
         }
         self.clipboard = None;
+        if let Some(export) = self.exports.as_mut() {
+            export.close()?;
+        }
         self.exports = None;
         self.private = false;
         Ok(())
@@ -723,7 +726,9 @@ pub fn serve_owner() -> Result<(), String> {
             }
             conn.flush().map_err(|e| e.to_string())?;
         }
-        drop(exports);
+        if let Some(mut exports) = exports {
+            exports.close()?;
+        }
         Ok(())
     }
     #[cfg(target_os = "windows")]

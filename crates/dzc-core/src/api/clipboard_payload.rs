@@ -102,6 +102,26 @@ fn payload(
 }
 
 impl HistoryService {
+    /// Native OCR consumes decoded image bytes through the same selected-copy authorization.
+    pub fn image_bytes_authorized(
+        &self,
+        id: i64,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<Option<Vec<u8>>> {
+        let result = self.clipboard_payload_authorized(id, permit, now_ms)?;
+        let result = match result {
+            ClipboardPayload::Private { payload, .. } => *payload,
+            payload => payload,
+        };
+        let bytes = match result {
+            ClipboardPayload::Image { bytes, .. } => Some(bytes),
+            _ => None,
+        };
+        self.privacy().check_read(permit, now_ms)?;
+        Ok(bytes)
+    }
+
     pub fn clipboard_payload_authorized(
         &self,
         id: i64,
@@ -402,6 +422,71 @@ mod tests {
     };
     fn entry(id: i64, content: &str) -> ClipboardEntry {
         serde_json::from_value(serde_json::json!({"id":id,"content_type":"text","content":content,"preview":content,"source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap()
+    }
+    #[test]
+    fn ocr_image_bytes_require_current_permission_for_ordinary_and_private_images() {
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let data = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(png.get_ref())
+        );
+        for sensitive in [false, true] {
+            let mut image = entry(0, &data);
+            image.content_type = "image".into();
+            if sensitive {
+                image.tags.push("sensitive".into());
+            }
+            let id = history.save(&image, None).unwrap();
+            let denied = history
+                .privacy()
+                .authorize_read(
+                    PrivacyAccessIntent::SelectedCopy,
+                    SensitiveAccess::Denied,
+                    None,
+                    1,
+                )
+                .unwrap();
+            if sensitive {
+                assert!(history.image_bytes_authorized(id, &denied, 1).is_err());
+            } else {
+                assert!(history
+                    .image_bytes_authorized(id, &denied, 1)
+                    .unwrap()
+                    .is_some());
+            }
+            let permit = history
+                .privacy()
+                .authorize_read(
+                    PrivacyAccessIntent::SelectedCopy,
+                    SensitiveAccess::ExplicitUserAction,
+                    None,
+                    1,
+                )
+                .unwrap();
+            assert_eq!(
+                history
+                    .image_bytes_authorized(id, &permit, 1)
+                    .unwrap()
+                    .unwrap(),
+                *png.get_ref()
+            );
+            history
+                .privacy()
+                .set_session(PrivacySessionCommand::On { duration_ms: None }, 2)
+                .unwrap();
+            assert_eq!(
+                history.image_bytes_authorized(id, &permit, 2).unwrap_err(),
+                PrivacyError::PrivacyEpochChanged
+            );
+            history
+                .privacy()
+                .set_session(PrivacySessionCommand::Off, 3)
+                .unwrap();
+        }
     }
     #[test]
     fn copy_requires_copy_intent_and_revokes_after_epoch_change() {

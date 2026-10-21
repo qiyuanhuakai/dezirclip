@@ -3,7 +3,7 @@ use dzc_core::ports::{ClipboardAuthorization, ClipboardFile};
 use std::{fs::File, io::Write, path::PathBuf};
 static ACTIVE: std::sync::OnceLock<std::sync::Mutex<Vec<ActiveLease>>> = std::sync::OnceLock::new();
 struct ActiveLease {
-    lease: std::sync::Weak<std::sync::Mutex<Option<Exports>>>,
+    lease: std::sync::Arc<std::sync::Mutex<Option<Exports>>>,
     clipboard: bool,
 }
 const MAX_TOTAL: usize = 32 * 1024 * 1024;
@@ -11,8 +11,11 @@ pub(crate) struct Exports {
     handles: Vec<File>,
     paths: Vec<String>,
     directory: Option<PathBuf>,
+    #[cfg(target_os = "linux")]
+    owner: Option<linux_owner::Owner>,
 }
 impl Exports {
+    #[cfg(any(test, target_os = "linux"))]
     pub(crate) fn create(files: Vec<ClipboardFile>) -> Result<Self, String> {
         Self::create_with_access(files, false)
     }
@@ -26,6 +29,8 @@ impl Exports {
             handles: Vec::new(),
             paths: Vec::new(),
             directory: None,
+            #[cfg(target_os = "linux")]
+            owner: None,
         };
         #[cfg(target_os = "windows")]
         {
@@ -35,7 +40,7 @@ impl Exports {
             exports.directory = Some(directory);
         }
         let mut total = 0usize;
-        for file in files {
+        for (index, file) in files.iter().enumerate() {
             total = total
                 .checked_add(file.bytes.len())
                 .ok_or("PrivateExportRejected")?;
@@ -48,10 +53,11 @@ impl Exports {
                 return Err("PrivateExportRejected".into());
             }
             #[cfg(target_os = "linux")]
-            let (mut handle, path) = {
-                use std::os::fd::{AsRawFd, FromRawFd};
-                let name =
-                    std::ffi::CString::new(file.name).map_err(|_| "PrivateExportRejected")?;
+            let (handle, path) = {
+                let _ = index;
+                use std::os::fd::FromRawFd;
+                let name = std::ffi::CString::new(file.name.as_str())
+                    .map_err(|_| "PrivateExportRejected")?;
                 let fd = unsafe {
                     libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC | libc::MFD_ALLOW_SEALING)
                 };
@@ -59,17 +65,19 @@ impl Exports {
                     return Err("PrivateExportRejected".into());
                 }
                 let handle = unsafe { File::from_raw_fd(fd) };
-                let path = format!("/proc/{}/fd/{}", std::process::id(), handle.as_raw_fd());
+                let path = String::new();
                 (handle, path)
             };
             #[cfg(target_os = "windows")]
-            let (mut handle, path) = {
+            let (handle, path) = {
                 use std::os::windows::fs::OpenOptionsExt;
-                let path = exports
+                let directory = exports
                     .directory
                     .as_ref()
                     .ok_or("PrivateExportRejected")?
-                    .join(file.name);
+                    .join(index.to_string());
+                create_private_directory(&directory)?;
+                let path = directory.join(&file.name);
                 let handle = std::fs::OpenOptions::new()
                     .write(true)
                     .read(true)
@@ -81,6 +89,22 @@ impl Exports {
                     .map_err(|_| "PrivateExportRejected")?;
                 (handle, path.to_string_lossy().into_owned())
             };
+            exports.handles.push(handle);
+            exports.paths.push(path);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            // The new owner has only empty files until its never-before-used PID is approved.
+            let owner = linux_owner::Owner::start(&exports.handles)?;
+            exports.paths = exports
+                .handles
+                .iter()
+                .map(|file| format!("/proc/{}/fd/{}", owner.pid(), file.as_raw_fd()))
+                .collect();
+            exports.owner = Some(owner);
+        }
+        for (handle, file) in exports.handles.iter_mut().zip(&files) {
             handle
                 .write_all(&file.bytes)
                 .map_err(|_| "PrivateExportRejected")?;
@@ -101,10 +125,50 @@ impl Exports {
                     return Err("PrivateExportRejected".into());
                 }
             }
-            exports.handles.push(handle);
-            exports.paths.push(path);
         }
         Ok(exports)
+    }
+    pub(crate) fn stop(&mut self) -> Result<(), String> {
+        #[cfg(target_os = "linux")]
+        if let Some(owner) = &mut self.owner {
+            owner.stop()?;
+        }
+        Ok(())
+    }
+    fn modified(&self, index: usize) -> Result<std::time::SystemTime, String> {
+        self.handles
+            .get(index)
+            .ok_or("PrivateExportRejected")?
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .map_err(|_| "PrivateExportRejected".into())
+    }
+    fn read(&self, index: usize) -> Result<Vec<u8>, String> {
+        let file = self.handles.get(index).ok_or("PrivateExportRejected")?;
+        let size = file.metadata().map_err(|_| "PrivateExportRejected")?.len();
+        if size > 16 * 1024 * 1024 {
+            return Err("PrivateExportRejected".into());
+        }
+        let mut bytes = vec![0; size as usize];
+        let mut offset = 0usize;
+        while offset < bytes.len() {
+            #[cfg(target_os = "linux")]
+            let count = {
+                use std::os::unix::fs::FileExt;
+                file.read_at(&mut bytes[offset..], offset as u64)
+            };
+            #[cfg(target_os = "windows")]
+            let count = {
+                use std::os::windows::fs::FileExt;
+                file.seek_read(&mut bytes[offset..], offset as u64)
+            };
+            let count = count.map_err(|_| "PrivateExportRejected")?;
+            if count == 0 {
+                return Err("PrivateExportRejected".into());
+            }
+            offset += count;
+        }
+        Ok(bytes)
     }
     pub(crate) fn paths(&self) -> Vec<String> {
         self.paths.clone()
@@ -233,19 +297,29 @@ impl BoundExport {
         }
         let exports = Exports::create_with_access(files, writable)?;
         let lease = std::sync::Arc::new(std::sync::Mutex::new(Some(exports)));
-        ACTIVE
-            .get_or_init(Default::default)
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(ActiveLease {
-                lease: std::sync::Arc::downgrade(&lease),
+        {
+            let mut active = ACTIVE
+                .get_or_init(Default::default)
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            active.retain(|entry| {
+                entry
+                    .lease
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .is_some()
+            });
+            active.push(ActiveLease {
+                lease: lease.clone(),
                 clipboard: !writable,
             });
+        }
         if !authorization.is_current() {
-            lease
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take();
+            let _ = close_exports(
+                &mut lease
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
             return Err("PrivacyEpochChanged".into());
         }
         let owned = lease.clone();
@@ -262,10 +336,15 @@ impl BoundExport {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            owned
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take();
+            while close_exports(
+                &mut owned
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            )
+            .is_err()
+            {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
         });
         Ok(Self {
             lease,
@@ -284,61 +363,219 @@ impl BoundExport {
             .map(Exports::paths)
             .ok_or("PrivacyEpochChanged".into())
     }
+    pub(crate) fn modified(&self, index: usize) -> Result<std::time::SystemTime, String> {
+        if !self.authorization.is_current() {
+            return Err("PrivacyEpochChanged".into());
+        }
+        self.lease
+            .lock()
+            .map_err(|_| "PrivateExportRejected")?
+            .as_ref()
+            .ok_or("PrivacyEpochChanged")?
+            .modified(index)
+    }
+    pub(crate) fn read(&self, index: usize) -> Result<Vec<u8>, String> {
+        if !self.authorization.is_current() {
+            return Err("PrivacyEpochChanged".into());
+        }
+        let result = self
+            .lease
+            .lock()
+            .map_err(|_| "PrivateExportRejected")?
+            .as_ref()
+            .ok_or("PrivacyEpochChanged")?
+            .read(index)?;
+        if !self.authorization.is_current() {
+            return Err("PrivacyEpochChanged".into());
+        }
+        Ok(result)
+    }
     pub(crate) fn retain(mut self) {
         self.retained = true;
+    }
+    pub(crate) fn close(&mut self) -> Result<(), String> {
+        let mut lease = self
+            .lease
+            .lock()
+            .map_err(|_| "PrivateExportRevocationUnconfirmed")?;
+        close_exports(&mut lease)
     }
 }
 impl Drop for BoundExport {
     fn drop(&mut self) {
         if !self.retained {
-            self.lease
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take();
+            let _ = close_exports(
+                &mut self
+                    .lease
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
         }
     }
 }
 
-pub(crate) fn revoke() {
-    revoke_matching(false);
+fn close_exports(lease: &mut Option<Exports>) -> Result<(), String> {
+    if let Some(exports) = lease.as_mut() {
+        exports.stop()?;
+    }
+    lease.take();
+    Ok(())
 }
-pub(crate) fn revoke_clipboard() {
-    revoke_matching(true);
+pub(crate) fn revoke() -> Result<(), String> {
+    revoke_matching(false)
 }
-fn revoke_matching(clipboard_only: bool) {
+pub(crate) fn revoke_clipboard() -> Result<(), String> {
+    revoke_matching(true)
+}
+fn revoke_matching(clipboard_only: bool) -> Result<(), String> {
     let Some(active) = ACTIVE.get() else {
-        return;
+        return Ok(());
     };
     let mut active = active
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut failed = false;
     active.retain(|entry| {
-        let Some(lease) = entry.lease.upgrade() else {
-            return false;
-        };
+        let mut lease = entry
+            .lease
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if !clipboard_only || entry.clipboard {
-            lease
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take();
-            false
-        } else {
-            true
+            if close_exports(&mut lease).is_err() {
+                failed = true;
+            }
         }
+        lease.is_some()
     });
+    if failed {
+        Err("PrivateExportRevocationUnconfirmed".into())
+    } else {
+        Ok(())
+    }
 }
 
 impl Drop for Exports {
     fn drop(&mut self) {
+        #[cfg(target_os = "linux")]
+        self.owner.take();
         self.handles.clear();
         if let Some(directory) = self.directory.take() {
+            if let Ok(children) = std::fs::read_dir(&directory) {
+                for child in children.flatten() {
+                    let _ = std::fs::remove_dir(child.path());
+                }
+            }
             let _ = std::fs::remove_dir(directory);
         }
     }
 }
+#[cfg(target_os = "linux")]
+#[path = "private_file_owner.rs"]
+mod linux_owner;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn owner_descriptor_table_excludes_the_hosts_other_files() {
+        let unrelated = std::fs::File::open("/proc/self/status").unwrap();
+        let exports = Exports::create(vec![ClipboardFile {
+            name: "synthetic.txt".into(),
+            bytes: b"one member".to_vec(),
+        }])
+        .unwrap();
+        let path = exports.paths().remove(0);
+        let pid = path.split('/').nth(2).unwrap();
+        let descriptors: Vec<_> = std::fs::read_dir(format!("/proc/{pid}/fd"))
+            .unwrap()
+            .collect();
+        assert_eq!(descriptors.len(), 2, "one member and one control pipe");
+        use std::os::fd::AsRawFd;
+        assert!(std::fs::read_link(format!("/proc/{pid}/fd/{}", unrelated.as_raw_fd())).is_err());
+    }
+    #[test]
+    fn external_editor_reads_the_bound_handle_and_revoke_stops_following_it() {
+        use dzc_core::api::{
+            HistoryService, PrivacyAccessIntent, PrivacySessionCommand, SensitiveAccess,
+        };
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let entry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"editor A","preview":"editor A","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
+        let id = history.save(&entry, None).unwrap();
+        let permit = history
+            .privacy()
+            .authorize_read(
+                PrivacyAccessIntent::SelectedCopy,
+                SensitiveAccess::Denied,
+                None,
+                1,
+            )
+            .unwrap();
+        let export = history.external_files_authorized(id, &permit, 1).unwrap();
+        let original = BoundExport::new(export.files, export.authorization).unwrap();
+        let old_path = original.paths().unwrap().remove(0);
+        std::fs::write(&old_path, b"edited A").unwrap();
+        assert_eq!(original.read(0).unwrap(), b"edited A");
+        history
+            .privacy()
+            .set_session(PrivacySessionCommand::On { duration_ms: None }, 2)
+            .unwrap();
+        assert!(original.read(0).is_err());
+        revoke().unwrap();
+        let next = Exports::create(vec![ClipboardFile {
+            name: "DezirClip.txt".into(),
+            bytes: b"editor B".to_vec(),
+        }])
+        .unwrap();
+        assert!(original.read(0).is_err());
+        assert!(original.modified(0).is_err());
+        assert!(std::fs::read(&old_path).is_err());
+        assert_eq!(next.read(0).unwrap(), b"editor B");
+    }
+    #[test]
+    fn revoked_export_never_aliases_a_later_export_in_this_host() {
+        let first = Exports::create(vec![ClipboardFile {
+            name: "same.txt".into(),
+            bytes: b"export A".to_vec(),
+        }])
+        .unwrap();
+        let old_path = first.paths().remove(0);
+        drop(first);
+        let second = Exports::create(vec![ClipboardFile {
+            name: "same.txt".into(),
+            bytes: b"export B".to_vec(),
+        }])
+        .unwrap();
+        assert_ne!(old_path, second.paths()[0]);
+        assert!(std::fs::read(&old_path).is_err());
+        assert_eq!(std::fs::read(&second.paths()[0]).unwrap(), b"export B");
+        assert_eq!(second.read(0).unwrap(), b"export B");
+    }
+    #[test]
+    fn equal_and_case_equivalent_basenames_preserve_every_member() {
+        let names = ["same.txt", "same.txt", "SAME.TXT"];
+        let exports = Exports::create(
+            names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| ClipboardFile {
+                    name: (*name).into(),
+                    bytes: vec![index as u8],
+                })
+                .collect(),
+        )
+        .unwrap();
+        let paths = exports.paths();
+        assert_eq!(paths.len(), names.len());
+        for (index, path) in paths.iter().enumerate() {
+            assert_eq!(std::fs::read(path).unwrap(), vec![index as u8]);
+            assert_eq!(exports.read(index).unwrap(), vec![index as u8]);
+        }
+        drop(exports);
+        for path in paths {
+            assert!(std::fs::read(path).is_err());
+        }
+    }
     #[test]
     fn new_readers_are_revoked_while_an_existing_reader_can_finish() {
         use std::io::Read;
@@ -370,7 +607,7 @@ mod tests {
             b"private synthetic bytes"
         );
         #[cfg(target_os = "linux")]
-        assert!(paths[0].starts_with(&format!("/proc/{}/fd/", std::process::id())));
+        assert!(!paths[0].starts_with(&format!("/proc/{}/fd/", std::process::id())));
         drop(exports);
         assert!(!std::path::Path::new(&paths[0]).exists());
     }

@@ -84,7 +84,8 @@ impl ClipboardWriter for StandaloneClipboardWriter {
         native::clipboard_probe()
     }
     fn write(&self, payload: ClipboardPayload) -> PlatformResult<()> {
-        crate::private_files::revoke_clipboard();
+        crate::private_files::revoke_clipboard()
+            .map_err(|_| clipboard_failure(Capability::Write))?;
         crate::native_clipboard::revoke_private_owners()
             .map_err(|_| clipboard_failure(Capability::Write))?;
         let (payload, mut authorization) = match payload {
@@ -291,6 +292,9 @@ impl EmbeddedClipboardWriter {
         owner
             .write_with_intent(payload, suppress)
             .map_err(|_| clipboard_failure(Capability::Write))?;
+        if let Some(previous) = export_slot.as_mut() {
+            previous.close()?;
+        }
         *export_slot = export;
         if authorization
             .as_ref()
@@ -300,6 +304,9 @@ impl EmbeddedClipboardWriter {
             owner
                 .revoke_private()
                 .map_err(|_| PlatformError::failed(Capability::Write))?;
+            if let Some(export) = export_slot.as_mut() {
+                export.close()?;
+            }
             *export_slot = None;
             return Err(clipboard_failure(Capability::Write));
         }
@@ -311,10 +318,14 @@ impl EmbeddedClipboardWriter {
             .map_err(|_| PlatformError::failed(Capability::Write))?
             .stop()
             .map_err(|_| PlatformError::failed(Capability::Write))?;
-        self.private_files
+        let mut files = self
+            .private_files
             .lock()
-            .map_err(|_| PlatformError::failed(Capability::Write))?
-            .take();
+            .map_err(|_| PlatformError::failed(Capability::Write))?;
+        if let Some(export) = files.as_mut() {
+            export.close()?;
+        }
+        *files = None;
         Ok(())
     }
 }
@@ -894,6 +905,7 @@ mod tests {
             NativeClipboard.read_representation("text/plain").unwrap(),
             b"ordinary synthetic remains"
         );
+        scoped_private_writers_close_only_their_own_exports(authorize);
         let authorization = authorize();
         writer
             .write(ClipboardPayload::Private {
@@ -958,6 +970,7 @@ mod tests {
             ClipboardPayload::Private { authorization, .. } => authorization.clone(),
             _ => panic!("protected copy required"),
         };
+        let scoped_authorization = authorization.clone();
         let writer = EmbeddedClipboardWriter::default();
         writer.write_suppressing_recapture(payload).unwrap();
         assert_eq!(
@@ -1030,13 +1043,59 @@ mod tests {
             NativeClipboard.read_representation("text/plain").unwrap(),
             b"ordinary X11 remains"
         );
+        scoped_private_writers_close_only_their_own_exports(|| scoped_authorization.clone());
         writer.stop().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    fn scoped_private_writers_close_only_their_own_exports(
+        authorize: impl Fn() -> ClipboardAuthorization,
+    ) {
+        let first = EmbeddedClipboardWriter::default();
+        let second = EmbeddedClipboardWriter::default();
+        let file_path = || {
+            let uris = String::from_utf8(
+                NativeClipboard
+                    .read_representation("text/uri-list")
+                    .unwrap(),
+            )
+            .unwrap();
+            urlencoding::decode(uris.trim().strip_prefix("file://").unwrap())
+                .unwrap()
+                .into_owned()
+        };
+        first
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "first.txt".into(),
+                    bytes: b"scoped first".to_vec(),
+                }],
+                authorization: authorize(),
+            })
+            .unwrap();
+        let first_path = file_path();
+        second
+            .write_suppressing_recapture(ClipboardPayload::ProtectedFiles {
+                files: vec![ClipboardFile {
+                    name: "second.txt".into(),
+                    bytes: b"scoped second".to_vec(),
+                }],
+                authorization: authorize(),
+            })
+            .unwrap();
+        let second_path = file_path();
+        first.stop().unwrap();
+        assert!(std::fs::read(&first_path).is_err());
+        assert_eq!(std::fs::read(&second_path).unwrap(), b"scoped second");
+        assert_eq!(file_path(), second_path);
+        second.stop().unwrap();
+        assert!(std::fs::read(&second_path).is_err());
     }
 }
 
 /// The unique native owner calls this synchronously before acknowledging a privacy epoch change.
 pub fn revoke_private_exports() -> PlatformResult<()> {
-    crate::private_files::revoke();
+    crate::private_files::revoke().map_err(|_| PlatformError::failed(Capability::Write))?;
     crate::native_clipboard::revoke_private_owners()
         .map_err(|_| PlatformError::failed(Capability::Write))
 }
@@ -1044,6 +1103,11 @@ pub fn revoke_private_exports() -> PlatformResult<()> {
 /// Native-only export handles; paths never belong to a WebView or external Surface response.
 pub struct PrivateFileExport(crate::private_files::BoundExport);
 impl PrivateFileExport {
+    pub fn close(&mut self) -> PlatformResult<()> {
+        self.0
+            .close()
+            .map_err(|_| PlatformError::failed(Capability::Write))
+    }
     pub fn paths(&self) -> PlatformResult<Vec<String>> {
         self.0
             .paths()
@@ -1051,6 +1115,16 @@ impl PrivateFileExport {
     }
     pub fn is_current(&self) -> bool {
         self.0.paths().is_ok()
+    }
+    pub fn modified(&self, index: usize) -> PlatformResult<std::time::SystemTime> {
+        self.0
+            .modified(index)
+            .map_err(|_| clipboard_failure(Capability::Write))
+    }
+    pub fn read(&self, index: usize) -> PlatformResult<Vec<u8>> {
+        self.0
+            .read(index)
+            .map_err(|_| clipboard_failure(Capability::Write))
     }
     pub fn retain(self) {
         self.0.retain();

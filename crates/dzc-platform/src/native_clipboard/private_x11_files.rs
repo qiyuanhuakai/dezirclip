@@ -22,6 +22,7 @@ pub(super) struct FileOwner {
     cancel: UnixStream,
     done: mpsc::Receiver<()>,
     worker: Option<std::thread::JoinHandle<Result<(), String>>>,
+    exports: Option<crate::private_files::BoundExport>,
 }
 impl FileOwner {
     pub(super) fn start(
@@ -38,7 +39,7 @@ impl FileOwner {
         let worker = std::thread::Builder::new()
             .name("private-x11-file-owner".into())
             .spawn(move || {
-                let result = run(paths, leases, exports, cancel, || {
+                let result = run(paths, leases, cancel, || {
                     let _ = ready_tx.send(Ok(()));
                 });
                 if let Err(error) = &result {
@@ -52,6 +53,7 @@ impl FileOwner {
             cancel: trigger,
             done,
             worker: Some(worker),
+            exports,
         };
         match ready.recv_timeout(Duration::from_secs(3)) {
             Ok(Ok(())) => Ok(owner),
@@ -66,7 +68,7 @@ impl FileOwner {
     }
     pub(super) fn stop(&mut self) -> Result<(), String> {
         if self.worker.is_none() {
-            return Ok(());
+            return self.close_export();
         }
         let _ = (&self.cancel).write_all(&[1]);
         if self.done.recv_timeout(Duration::from_secs(5)).is_err()
@@ -80,13 +82,22 @@ impl FileOwner {
         self.wait()
     }
     pub(super) fn is_stopped(&self) -> bool {
-        self.worker.is_none()
+        self.worker.is_none() && self.exports.is_none()
     }
     pub(super) fn wait(&mut self) -> Result<(), String> {
-        match self.worker.take() {
+        let result = match self.worker.take() {
             Some(worker) => worker.join().map_err(|_| "PrivateFileOwnerPanicked")?,
             None => Ok(()),
+        };
+        self.close_export()?;
+        result
+    }
+    fn close_export(&mut self) -> Result<(), String> {
+        if let Some(export) = self.exports.as_mut() {
+            export.close()?;
         }
+        self.exports = None;
+        Ok(())
     }
 }
 impl Drop for FileOwner {
@@ -118,7 +129,6 @@ pub(super) fn drain() -> Result<(), String> {
 fn run(
     paths: Vec<String>,
     leases: Vec<NativeReadLease>,
-    _exports: Option<crate::private_files::BoundExport>,
     cancel: UnixStream,
     ready: impl FnOnce(),
 ) -> Result<(), String> {

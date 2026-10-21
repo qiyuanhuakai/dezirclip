@@ -12,6 +12,7 @@ pub struct WaylandOwner {
     done: mpsc::Receiver<()>,
     thread: Option<std::thread::JoinHandle<Result<(), WaylandError>>>,
     private: bool,
+    exports: Option<crate::private_files::BoundExport>,
 }
 impl WaylandOwner {
     pub fn start(payloads: Vec<MimeData>) -> Result<Self, WaylandError> {
@@ -34,7 +35,7 @@ impl WaylandOwner {
                 let result = WaylandClipboardBackend::serve_authorized(
                     payloads,
                     leases,
-                    exports,
+                    None,
                     || {
                         let _ = notify.send(Ok(()));
                     },
@@ -54,6 +55,7 @@ impl WaylandOwner {
             done,
             thread: Some(thread),
             private,
+            exports,
         })
     }
     pub fn wait_ready(&self) -> Result<(), WaylandError> {
@@ -73,7 +75,7 @@ impl WaylandOwner {
     }
     pub fn stop(&mut self) -> Result<(), WaylandError> {
         if self.thread.is_none() {
-            return Ok(());
+            return self.close_export();
         }
         let _ = (&self.cancel).write_all(&[1]);
         if self.done.recv_timeout(Duration::from_secs(5)).is_err()
@@ -84,17 +86,28 @@ impl WaylandOwner {
         {
             return Err(WaylandError::TimedOut);
         }
-        self.thread
+        let result = self
+            .thread
             .take()
             .expect("owner exists until joined")
             .join()
-            .map_err(|_| WaylandError::Disconnected)?
+            .map_err(|_| WaylandError::Disconnected)
+            .and_then(|result| result);
+        self.close_export()?;
+        result
     }
     pub fn is_stopped(&self) -> bool {
-        self.thread.is_none()
+        self.thread.is_none() && self.exports.is_none()
     }
     pub(crate) fn is_private(&self) -> bool {
         self.private
+    }
+    fn close_export(&mut self) -> Result<(), WaylandError> {
+        if let Some(export) = self.exports.as_mut() {
+            export.close().map_err(|_| WaylandError::PermissionDenied)?;
+        }
+        self.exports = None;
+        Ok(())
     }
 }
 impl Drop for WaylandOwner {
@@ -127,7 +140,7 @@ pub(crate) fn replace_owner(
 ) -> Result<(), WaylandError> {
     let prepared = crate::native_clipboard::prepare_owner_payload(payload)
         .map_err(|_| WaylandError::PermissionDenied)?;
-    let mut fresh = WaylandOwner::start_authorized(
+    let fresh = WaylandOwner::start_authorized(
         super::representations_with_intent(prepared.payload, suppress_recapture)?,
         prepared.leases,
         prepared.exports,
