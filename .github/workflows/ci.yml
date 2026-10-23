@@ -132,6 +132,24 @@ jobs:
         run: >-
           python -c "import sqlite3; print('Fixture SQLite', sqlite3.sqlite_version); assert sqlite3.sqlite_version_info >= (3, 50, 4), 'Synthetic schema20 fixtures require SQLite >=3.50.4'; connection=sqlite3.connect(':memory:'); connection.execute('CREATE VIRTUAL TABLE fixture_fts USING fts5(content)'); connection.close()"
 
+      - name: Permit private user namespaces on disposable Linux runner
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          assert sys.platform == 'linux' and os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted', 'Only a disposable Actions Linux runner may configure this prerequisite'
+          # Ubuntu 24.04 mediates capabilities within unprivileged user namespaces:
+          # https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions
+          key = pathlib.Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')
+          print('DEZIRCLIP_USERNS_PREREQUISITE', {'key_exists': key.exists(), 'apparmor_label': pathlib.Path('/proc/self/attr/current').read_text().strip()}, flush=True)
+          if key.exists():
+              before = key.read_text().strip()
+              assert before in ('0', '1'), 'Unknown AppArmor userns restriction value'
+              subprocess.run(['sudo', '-n', 'sysctl', '-w', 'kernel.apparmor_restrict_unprivileged_userns=0'], check=True)
+              after = key.read_text().strip()
+              print('DEZIRCLIP_USERNS_PREREQUISITE', {'before': before, 'after': after}, flush=True)
+              assert after == '0', 'User namespace prerequisite readback failed'
+
       - name: Test standalone packaging
         run: python -m unittest discover -s scripts/tests -v
 

@@ -8,6 +8,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import textwrap
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -46,6 +47,28 @@ def evaluate(machine,audit,number):
     raise AssertionError('Filter did not return')
 
 class ReleaseIdentities(unittest.TestCase):
+    def test_disposable_userns_setup_refuses_local_execution_and_checks_readback(self):
+        blocks=[]
+        for name in ('ci.yml','release-identities.yml'):
+            source=(identity.ROOT/'.github/workflows'/name).read_text()
+            step=source.split('      - name: Permit private user namespaces on disposable Linux runner\n',1)[1].split('\n      - name:',1)[0]
+            blocks.append(textwrap.dedent(step.split('        run: |\n',1)[1]))
+        self.assertEqual(blocks[0],blocks[1])
+        for environment in ({},{'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'self-hosted'}):
+            with patch.dict(os.environ,environment,clear=True),patch('sys.platform','linux'),patch('subprocess.run') as mutate,patch('pathlib.Path') as path:
+                with self.assertRaises(AssertionError):exec(blocks[0],{})
+                mutate.assert_not_called();path.assert_not_called()
+        for exists,before,after,passes in ((False,None,None,True),(True,'1','0',True),(True,'0','0',True),(True,'1','1',False),(True,'unexpected','0',False)):
+            key=SimpleNamespace(exists=lambda:exists,read_text=lambda:next(values))
+            values=iter((before,after))
+            label=SimpleNamespace(read_text=lambda:'synthetic-unconfined')
+            with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted'},clear=True),patch('sys.platform','linux'),patch('pathlib.Path',side_effect=lambda name:key if name.endswith('apparmor_restrict_unprivileged_userns') else label),patch('subprocess.run') as mutate,patch('builtins.print'):
+                if passes:exec(blocks[0],{})
+                else:
+                    with self.assertRaises(AssertionError):exec(blocks[0],{})
+                if exists and before in ('0','1'):mutate.assert_called_once_with(['sudo','-n','sysctl','-w','kernel.apparmor_restrict_unprivileged_userns=0'],check=True)
+                else:mutate.assert_not_called()
+
     @unittest.skipUnless(sys.platform=='linux' and shutil.which('bwrap'),'Real Linux bubblewrap mount control; no product execution')
     def test_real_readonly_directory_requires_the_nested_file_mountpoint(self):
         source=str(Path(identity.__file__).parent)
