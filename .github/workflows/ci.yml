@@ -99,6 +99,17 @@ jobs:
       - name: Check src-tauri/src/bin layout
         run: node scripts/check-tauri-bin-dir.mjs
 
+      - name: Verify the active Explorer prerequisite for final release upgrades
+        if: matrix.name == 'windows-x86_64'
+        shell: pwsh
+        run: |
+          $processes = @(Get-Process explorer -ErrorAction SilentlyContinue)
+          try {
+            $original = @($processes | ForEach-Object { @{ pid = $_.Id; started_at = $_.StartTime.ToUniversalTime().ToString('o') } })
+            ConvertTo-Json -InputObject $original -Depth 4
+            if ($original.Count -eq 0) { throw 'Final release upgrade acceptance requires an active original Explorer; an empty process set cannot prove preservation.' }
+          } finally { foreach ($process in $processes) { $process.Dispose() } }
+
       - name: Setup Python for archive validation
         if: runner.os == 'Windows'
         uses: actions/setup-python@v6
