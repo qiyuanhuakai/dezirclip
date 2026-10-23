@@ -5,8 +5,9 @@ use std::sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc, Condvar, Mutex, OnceL
 use std::time::{Duration, Instant};
 use windows::core::w;
 use windows::Win32::Foundation::{GetLastError, GlobalFree, SetLastError, HANDLE, HWND, WIN32_ERROR};
-use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW, SetClipboardData};
+use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW, SetClipboardData};
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
 use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, DispatchMessageW, PeekMessageW, TranslateMessage, HWND_MESSAGE, MSG, PM_REMOVE, WINDOW_EX_STYLE, WINDOW_STYLE};
 
 const LIFETIME: Duration = Duration::from_secs(300);
@@ -238,6 +239,31 @@ fn set_bytes(format: u32, bytes: &[u8]) -> Result<(), String> {
     }
     Ok(())
 }
+fn materialize_conversions() -> Result<(), String> {
+    // The original publication lock excludes later writers while Windows creates
+    // its implicit representations. Capture the sequence only after they exist.
+    let mut materialized = Vec::new();
+    for _ in 0..8 {
+        let mut format = 0;
+        let mut added = false;
+        loop {
+            unsafe { SetLastError(WIN32_ERROR(0)); }
+            format = unsafe { EnumClipboardFormats(format) };
+            if format == 0 {
+                if unsafe { GetLastError() }.0 != 0 { return Err("PrivateClipboardFormatUnavailable".into()); }
+                break;
+            }
+            if materialized.contains(&format) { continue; }
+            if materialized.len() >= 64 { return Err("PrivateClipboardFormatUnavailable".into()); }
+            unsafe { GetClipboardData(format) }.map_err(|_| "PrivateClipboardFormatUnavailable")?;
+            #[cfg(test)] native_trace(&format!("worker.materialized.{format}"), None, None);
+            materialized.push(format);
+            added = true;
+        }
+        if !added { return Ok(()); }
+    }
+    Err("PrivateClipboardFormatUnavailable".into())
+}
 fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut exports: Option<crate::private_files::BoundExport>, lifetime: Duration, state: &State, ready: &mpsc::SyncSender<Result<(), String>>) -> Result<(), String> {
     let window = Window::new()?;
     let (original, accepted) = {
@@ -250,6 +276,7 @@ fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut e
             if let Err(error) = set_bytes(format, &bytes) { result = Err(error); break; }
             #[cfg(test)] native_trace(&format!("worker.format_set.{format}"), None, None);
         }
+        if result.is_ok() { result = materialize_conversions(); }
         let identity = current_selection();
         let accepted = result.is_ok() && identity.is_some_and(|original| original.owner == window.0.0 as usize) && leases.iter().all(NativeReadLease::is_current);
         #[cfg(test)] native_trace("worker.original_pre_close", identity, None);
@@ -298,6 +325,17 @@ fn unicode(value: &str) -> Result<Vec<u8>, String> {
     if value.contains('\0') { return Err("PrivateClipboardPayloadRejected".into()); }
     Ok(value.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect())
 }
+fn input_locale_id(layout: usize) -> Option<u32> {
+    let language = (layout & 0xffff) as u32;
+    (language != 0).then_some(language)
+}
+fn input_locale() -> Result<Vec<u8>, String> {
+    // CF_LOCALE associates the publishing caller's current input language with
+    // Windows' implicit ANSI/OEM text conversions; Unicode remains authoritative.
+    // HKL's low word is LANGID. With the default sort, this is the locale's LCID.
+    input_locale_id(unsafe { GetKeyboardLayout(0) }.0 as usize)
+        .map(|locale| locale.to_le_bytes().to_vec()).ok_or_else(|| "PrivateClipboardLocaleUnavailable".into())
+}
 fn html_bytes(fragment: &str) -> Vec<u8> {
     let prefix = "<html><body><!--StartFragment-->";
     let suffix = "<!--EndFragment--></body></html>";
@@ -325,8 +363,8 @@ fn representations(payload: Payload) -> Result<Vec<(u32, Vec<u8>)>, String> {
     let Payload::Private(payload) = payload else { return Err("NativeLeaseOwnerRequired".into()); };
     let mut result = vec![(registered("ExcludeClipboardContentFromMonitorProcessing")?, vec![0]), (registered("CanIncludeInClipboardHistory")?, 0u32.to_le_bytes().to_vec()), (registered("CanUploadToCloudClipboard")?, 0u32.to_le_bytes().to_vec())];
     match *payload {
-        Payload::Text(text) => result.push((13, unicode(&text)?)),
-        Payload::Html { html, text } => { result.push((13, unicode(&text)?)); result.push((registered("HTML Format")?, html_bytes(&html))); }
+        Payload::Text(text) => { result.push((16, input_locale()?)); result.push((13, unicode(&text)?)); }
+        Payload::Html { html, text } => { result.push((16, input_locale()?)); result.push((13, unicode(&text)?)); result.push((registered("HTML Format")?, html_bytes(&html))); }
         Payload::Image(bytes) => { let (dib, png) = image_bytes(&bytes)?; result.push((17, dib)); result.push((registered("PNG")?, png)); }
         Payload::Files(paths) => {
             if paths.is_empty() || paths.len() > 64 { return Err("PrivateClipboardPayloadRejected".into()); }
@@ -342,6 +380,13 @@ fn representations(payload: Payload) -> Result<Vec<(u32, Vec<u8>)>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_locale_uses_input_language_not_keyboard_device_or_thread_locale() {
+        assert_eq!(input_locale_id(0xf001_0804), Some(0x0804));
+        assert_eq!(input_locale_id(0x0409_0409), Some(0x0409));
+        assert_eq!(input_locale_id(0), None);
+    }
 
     #[test]
     fn retained_finished_handles_do_not_consume_active_worker_capacity() {
@@ -448,10 +493,10 @@ mod tests {
         let pixels = vec![7, 8, 9, 255, 1, 2, 3, 128];
         let mut png = std::io::Cursor::new(Vec::new());
         image::RgbaImage::from_raw(2, 1, pixels.clone()).unwrap().write_to(&mut png, image::ImageFormat::Png).unwrap();
-        for (payload, format, expected) in [
-            (ClipboardPayload::Text("synthetic private 中文🙂".into()), 13, unicode("synthetic private 中文🙂").unwrap()),
-            (ClipboardPayload::Html { html: "<b>synthetic 中文🙂</b>".into(), text: "synthetic 中文🙂".into() }, registered("HTML Format").unwrap(), html_bytes("<b>synthetic 中文🙂</b>")),
-            (ClipboardPayload::Image { bytes: png.get_ref().clone(), mime: "image/png".into() }, registered("PNG").unwrap(), png.get_ref().clone()),
+        for (payload, format, expected, expected_unicode) in [
+            (ClipboardPayload::Text("synthetic private 中文🙂".into()), 13, unicode("synthetic private 中文🙂").unwrap(), Some(unicode("synthetic private 中文🙂").unwrap())),
+            (ClipboardPayload::Html { html: "<b>synthetic 中文🙂</b>".into(), text: "synthetic 中文🙂".into() }, registered("HTML Format").unwrap(), html_bytes("<b>synthetic 中文🙂</b>"), Some(unicode("synthetic 中文🙂").unwrap())),
+            (ClipboardPayload::Image { bytes: png.get_ref().clone(), mime: "image/png".into() }, registered("PNG").unwrap(), png.get_ref().clone(), None),
         ] {
             eprintln!("dzc.private_native fixture_payload_format={format}");
             writer.write(ClipboardPayload::Private { payload: Box::new(payload), authorization: authorize() }).unwrap();
@@ -461,6 +506,12 @@ mod tests {
             assert!(raw[expected.len()..].iter().all(|byte| *byte == 0));
             assert_eq!(&read_raw(registered("CanIncludeInClipboardHistory").unwrap())[..4], &[0; 4]);
             assert_eq!(&read_raw(registered("CanUploadToCloudClipboard").unwrap())[..4], &[0; 4]);
+            if let Some(expected_unicode) = expected_unicode {
+                assert_eq!(&read_raw(16)[..4], input_locale().unwrap().as_slice());
+                let _ansi = read_raw(1);
+                let _oem = read_raw(7);
+                assert_eq!(&read_raw(13)[..expected_unicode.len()], expected_unicode.as_slice());
+            }
             assert!(current_selection().owner != 0);
             history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, now()).unwrap();
             native_trace("fixture.epoch_changed_before_stop", None, None);
@@ -496,6 +547,31 @@ mod tests {
         }
         same_owner.stop().unwrap();
         assert_eq!(&read_raw(13)[..unicode("later sequence same owner").unwrap().len()], unicode("later sequence same owner").unwrap().as_slice());
+
+        let appended_owner = Owner::start(Payload::Private(Box::new(Payload::Text("earlier append selection".into()))), vec![authorize().native_lease().unwrap()], None).unwrap();
+        let original = current_selection();
+        {
+            let _lock = ClipboardLock::acquire(HWND(original.owner as *mut std::ffi::c_void)).unwrap();
+            set_bytes(13, &unicode("later append without empty").unwrap()).unwrap();
+            let later = current_selection();
+            assert_eq!(later.owner, original.owner);
+            assert_ne!(later.sequence, original.sequence);
+        }
+        appended_owner.stop().unwrap();
+        assert_eq!(&read_raw(13)[..unicode("later append without empty").unwrap().len()], unicode("later append without empty").unwrap().as_slice());
+
+        let added_owner = Owner::start(Payload::Private(Box::new(Payload::Text("earlier format set".into()))), vec![authorize().native_lease().unwrap()], None).unwrap();
+        let original = current_selection();
+        let added_format = registered("DezirClip synthetic later append").unwrap();
+        {
+            let _lock = ClipboardLock::acquire(HWND(original.owner as *mut std::ffi::c_void)).unwrap();
+            set_bytes(added_format, b"later added format\0").unwrap();
+            let later = current_selection();
+            assert_eq!(later.owner, original.owner);
+            assert_ne!(later.sequence, original.sequence);
+        }
+        added_owner.stop().unwrap();
+        assert_eq!(&read_raw(added_format)[..19], b"later added format\0");
 
         // The original worker independently observes epoch changes, without a GUI stop call.
         let epoch_owner = Owner::start(Payload::Private(Box::new(Payload::Text("epoch bound".into()))), vec![authorize().native_lease().unwrap()], None).unwrap();
