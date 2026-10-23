@@ -1,0 +1,150 @@
+name: Final release identities
+
+on:
+  workflow_call:
+    inputs:
+      source:
+        required: true
+        type: string
+      release-id:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  native:
+    name: Release identities (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows-x86_64
+            runner: windows-latest
+            architecture: x64
+          - target: windows-aarch64
+            runner: windows-11-arm
+            architecture: arm64
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+            architecture: x64
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+            architecture: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+          architecture: ${{ matrix.architecture }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          architecture: ${{ matrix.architecture }}
+
+      - name: Install native Linux receipt runtime
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap xvfb xauth dbus-x11 gnome-keyring webkit2gtk-driver libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libpipewire-0.3-0 libgbm1 libdbus-1-dev pkg-config squashfs-tools libarchive-tools flatpak ostree
+          sudo flatpak remote-add --if-not-exists --system flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install --system -y flathub org.gnome.Platform//50
+
+      - name: Install native Rust for explicit synthetic Secret Service helper
+        if: runner.os == 'Linux'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build QA-only preseed helper
+        if: runner.os == 'Linux'
+        run: cargo build --locked -p dzc-platform --example release_receipt_preseed
+
+      - name: Resolve this job identity and download exact draft assets
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_RECEIPT_SOURCE: ${{ inputs.source }}
+          DZC_RECEIPT_RELEASE_ID: ${{ inputs.release-id }}
+          DZC_RECEIPT_TARGET: ${{ matrix.target }}
+        run: |
+          import json, os, pathlib, subprocess, sys
+          sys.path.insert(0, 'scripts')
+          from release_identities import VERSION, expected_assets, native_target, require
+          repo = os.environ['GITHUB_REPOSITORY']
+          source = os.environ['DZC_RECEIPT_SOURCE']
+          target = os.environ['DZC_RECEIPT_TARGET']
+          native_target(target)
+          require(repo == 'qiyuanhuakai/dezirclip' and source == os.environ['GITHUB_SHA'] and os.environ['GITHUB_REF'] == 'refs/tags/v' + VERSION, 'Exact final tag source required')
+          def api(route): return json.loads(subprocess.check_output(['gh', 'api', route], text=True))
+          release = api('repos/' + repo + '/releases/' + os.environ['DZC_RECEIPT_RELEASE_ID'])
+          require(release['draft'] is True and release['tag_name'] == 'v' + VERSION, 'Expected original draft release')
+          # Only this run's identity metadata is read here; no CI diagnostics or logs.
+          jobs = api(f'repos/{repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}/attempts/{os.environ["GITHUB_RUN_ATTEMPT"]}/jobs?per_page=100')['jobs']
+          matches = [j for j in jobs if j['name'].endswith('Release identities (' + target + ')') and j['runner_name'] == os.environ['RUNNER_NAME'] and j['head_sha'] == source]
+          require(len(matches) == 1, 'Unique actual native job identity required')
+          assets = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-release-download-' + target)
+          assets.mkdir(exist_ok=False)
+          archive, packages = expected_assets(target)
+          for name in [archive, archive + '.sha256', *packages]:
+              require(sum(a['name'] == name for a in release['assets']) == 1, 'Missing/duplicate final asset: ' + name)
+              subprocess.run(['gh', 'release', 'download', 'v' + VERSION, '--repo', repo, '--pattern', name, '--dir', str(assets)], check=True)
+          out = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-release-identities-' + target)
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write(f'DZC_RECEIPT_ASSETS={assets}\nDZC_RECEIPT_OUT={out}\nDZC_RECEIPT_JOB_ID={matches[0]["id"]}\n')
+
+      - name: Collect actual final-byte native identities
+        shell: python
+        env:
+          DZC_RECEIPT_SOURCE: ${{ inputs.source }}
+          DZC_RECEIPT_TARGET: ${{ matrix.target }}
+        run: |
+          import os, pathlib, subprocess, sys
+          args = [sys.executable, 'scripts/release_identities.py', '--source', os.environ['DZC_RECEIPT_SOURCE'], '--target', os.environ['DZC_RECEIPT_TARGET'], '--assets', os.environ['DZC_RECEIPT_ASSETS'], '--out', os.environ['DZC_RECEIPT_OUT'], '--job-id', os.environ['DZC_RECEIPT_JOB_ID']]
+          if sys.platform == 'linux': args += ['--preseed-helper', str(pathlib.Path('target/debug/examples/release_receipt_preseed').resolve())]
+          subprocess.run(args, check=True)
+
+      - name: Preserve original native receipts and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-identities-${{ matrix.target }}-attempt-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/dezirclip-release-identities-${{ matrix.target }}/*.json
+            ${{ runner.temp }}/dezirclip-release-identities-${{ matrix.target }}/**/*.log
+            ${{ runner.temp }}/dezirclip-release-identities-${{ matrix.target }}/**/actual-identities.json
+            ${{ runner.temp }}/dezirclip-release-identities-${{ matrix.target }}/**/proof.json
+            ${{ runner.temp }}/dezirclip-release-identities-${{ matrix.target }}/**/boundary.json
+          if-no-files-found: error
+
+  aggregate:
+    name: Bind final source and all fourteen assets
+    needs: native
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-identities-*-attempt-${{ github.run_attempt }}
+          path: original-receipts
+      - name: Bind original reports without synthesizing BuildInfo
+        env:
+          DZC_RECEIPT_SOURCE: ${{ inputs.source }}
+        run: python scripts/release_identity_merge.py --reports original-receipts --source "$DZC_RECEIPT_SOURCE" --out provenance.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-identities-provenance-attempt-${{ github.run_attempt }}
+          path: provenance.json
+          if-no-files-found: error
