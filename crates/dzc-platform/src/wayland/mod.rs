@@ -794,7 +794,11 @@ impl WaylandClipboardBackend {
             }
         }
         let _clear = Clear;
-        let mut client = Client::new(cancel)?;
+        let mut client = match Client::new(cancel) {
+            Ok(client) => client,
+            Err(WaylandError::Cancelled) => return Ok(()),
+            Err(error) => return Err(error),
+        };
         MONITOR_READY.store(true, Ordering::Release);
         ready();
         loop {

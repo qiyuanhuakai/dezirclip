@@ -53,7 +53,10 @@ pub(super) fn run_controlled(
         match connect_xfixes() {
             Ok((connection, clipboard)) => {
                 ready();
-                return listen_xfixes(&callback, &cancel, connection, clipboard);
+                return after_established_xfixes(
+                    listen_xfixes(&callback, &cancel, connection, clipboard),
+                    || poll_clipboard(&callback, &cancel),
+                );
             }
             Err(error) => {
                 eprintln!("[clipboard] XFixes unavailable ({error}); using clipboard polling")
@@ -63,6 +66,20 @@ pub(super) fn run_controlled(
     arboard::Clipboard::new().map_err(|_| "ClipboardConnectionUnavailable".to_owned())?;
     ready();
     poll_clipboard(&callback, &cancel)
+}
+
+fn after_established_xfixes(
+    result: Result<(), String>,
+    polling: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            eprintln!("[clipboard] XFixes connection lost ({error}); using clipboard polling");
+            // Startup was already acknowledged. Polling can wait for the X server to return.
+            polling()
+        }
+    }
 }
 
 fn listen_xfixes(
@@ -184,6 +201,27 @@ fn poll_clipboard(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_established_xfixes_error_enters_polling_once_and_preserves_its_result() {
+        let calls = std::cell::Cell::new(0);
+        assert_eq!(
+            after_established_xfixes(Err("ClipboardConnectionLost".into()), || {
+                calls.set(calls.get() + 1);
+                Err("ClipboardCancellationFailed".into())
+            }),
+            Err("ClipboardCancellationFailed".into())
+        );
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn a_normal_xfixes_stop_does_not_start_polling() {
+        assert_eq!(
+            after_established_xfixes(Ok(()), || panic!("A stopped listener must not restart")),
+            Ok(())
+        );
+    }
 
     #[test]
     fn image_only_copies_have_distinct_fingerprints() {
