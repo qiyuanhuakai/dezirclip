@@ -5,7 +5,8 @@ use std::sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc, Condvar, Mutex, OnceL
 use std::time::{Duration, Instant};
 use windows::core::w;
 use windows::Win32::Foundation::{GetLastError, GlobalFree, SetLastError, HANDLE, HGLOBAL, HWND, WIN32_ERROR};
-use windows::Win32::Globalization::{GetLocaleInfoW, WideCharToMultiByte, LOCALE_IDEFAULTANSICODEPAGE, LOCALE_IDEFAULTCODEPAGE, LOCALE_RETURN_NUMBER};
+use windows::Win32::Graphics::Gdi::{CreateDIBitmap, DeleteObject, GetDC, ReleaseDC, BITMAPV5HEADER, CBM_INIT, DIB_RGB_COLORS, HGDIOBJ};
+use windows::Win32::Globalization::{GetLocaleInfoW, LocaleNameToLCID, ResolveLocaleName, WideCharToMultiByte, LOCALE_IDEFAULTANSICODEPAGE, LOCALE_IDEFAULTCODEPAGE, LOCALE_RETURN_NUMBER};
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW, SetClipboardData};
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
@@ -292,6 +293,44 @@ fn publish_text_conversions(representations: &[(u32, Vec<u8>)]) -> Result<(), St
     }
     Ok(())
 }
+fn legacy_dib(v5: &[u8]) -> Result<Vec<u8>, String> {
+    if v5.len() < 124 || v5.len() > MAX_BYTES || v5[..4] != 124u32.to_le_bytes()
+        || v5[12..16] != [1, 0, 32, 0] || v5[16..20] != 3u32.to_le_bytes() {
+        return Err("PrivateClipboardImageRejected".into());
+    }
+    let width = i32::from_le_bytes(v5[4..8].try_into().unwrap());
+    let height = i32::from_le_bytes(v5[8..12].try_into().unwrap());
+    let bytes = height.checked_abs().and_then(|height| (width > 0 && height > 0).then_some((width as usize, height as usize)))
+        .and_then(|(width, height)| width.checked_mul(height)).and_then(|pixels| pixels.checked_mul(4));
+    if bytes != Some(v5.len() - 124) { return Err("PrivateClipboardImageRejected".into()); }
+    let mut result = v5[..52].to_vec();
+    result[..4].copy_from_slice(&40u32.to_le_bytes());
+    result.extend_from_slice(&v5[124..]);
+    Ok(result)
+}
+fn publish_image_conversions(representations: &[(u32, Vec<u8>)]) -> Result<(), String> {
+    let Some((_, v5)) = representations.iter().find(|(format, _)| *format == 17) else { return Ok(()); };
+    // DIB/bitmap are legacy RGB views. Original V5/PNG retain all alpha values.
+    set_bytes(8, &legacy_dib(v5)?)?;
+    // The byte slice is our bounded, validated V5 header. Copy it to aligned
+    // storage before handing its header/masks and top-down BGRA rows to GDI.
+    let header = unsafe { std::ptr::read_unaligned(v5.as_ptr().cast::<BITMAPV5HEADER>()) };
+    unsafe {
+        let dc = GetDC(None);
+        if dc.0.is_null() { return Err("PrivateClipboardImageRejected".into()); }
+        let bitmap = CreateDIBitmap(dc, Some((&header as *const BITMAPV5HEADER).cast()), CBM_INIT as u32,
+            Some(v5[124..].as_ptr().cast()), Some((&header as *const BITMAPV5HEADER).cast()), DIB_RGB_COLORS);
+        let _ = ReleaseDC(None, dc);
+        if bitmap.0.is_null() { return Err("PrivateClipboardImageRejected".into()); }
+        if SetClipboardData(2, Some(HANDLE(bitmap.0))).is_err() {
+            let _ = DeleteObject(HGDIOBJ(bitmap.0));
+            return Err("PrivateClipboardWriteFailed".into());
+        }
+        // A successful SetClipboardData transfers the bitmap to Windows.
+    }
+    #[cfg(test)] native_trace("worker.image_formats_published", None, None);
+    Ok(())
+}
 fn materialize_conversions() -> Result<(), String> {
     // The original publication lock excludes later writers while Windows creates
     // its implicit representations. Capture the sequence only after they exist.
@@ -330,6 +369,7 @@ fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut e
             #[cfg(test)] native_trace(&format!("worker.format_set.{format}"), None, None);
         }
         if result.is_ok() { result = publish_text_conversions(&representations); }
+        if result.is_ok() { result = publish_image_conversions(&representations); }
         if result.is_ok() { result = materialize_conversions(); }
         let identity = current_selection();
         let accepted = result.is_ok() && identity.is_some_and(|original| original.owner == window.0.0 as usize) && leases.iter().all(NativeReadLease::is_current);
@@ -381,14 +421,32 @@ fn unicode(value: &str) -> Result<Vec<u8>, String> {
 }
 fn input_locale_id(layout: usize) -> Option<u32> {
     let language = (layout & 0xffff) as u32;
-    (language != 0).then_some(language)
+    (!matches!(language, 0 | 0x2000 | 0x2400)).then_some(language)
+}
+fn resolved_input_locale(tag: &[u16]) -> Option<u32> {
+    if tag.is_empty() || tag.len() >= 85 || tag.contains(&0) { return None; }
+    let tag = tag.iter().copied().chain(Some(0)).collect::<Vec<_>>();
+    let mut name = [0u16; 85];
+    if unsafe { ResolveLocaleName(windows::core::PCWSTR(tag.as_ptr()), Some(&mut name)) } <= 1 { return None; }
+    let locale = unsafe { LocaleNameToLCID(windows::core::PCWSTR(name.as_ptr()), 0) };
+    input_locale_id(locale as usize).map(|_| locale)
 }
 fn input_locale() -> Result<Vec<u8>, String> {
     // CF_LOCALE associates the publishing caller's current input language with
     // Windows' implicit ANSI/OEM text conversions; Unicode remains authoritative.
     // HKL's low word is LANGID. With the default sort, this is the locale's LCID.
-    input_locale_id(unsafe { GetKeyboardLayout(0) }.0 as usize)
-        .map(|locale| locale.to_le_bytes().to_vec()).ok_or_else(|| "PrivateClipboardLocaleUnavailable".into())
+    let layout = unsafe { GetKeyboardLayout(0) }.0 as usize;
+    let locale = match input_locale_id(layout) {
+        Some(locale) => Some(locale),
+        None if matches!(layout & 0xffff, 0x2000 | 0x2400) => {
+            // Transient input-language slots can be reassigned and are not LCIDs.
+            // Windows requires a WinRT input-method tag to be resolved before NLS.
+            windows::Globalization::Language::CurrentInputMethodLanguageTag().ok()
+                .and_then(|tag| resolved_input_locale(&tag))
+        },
+        None => None,
+    };
+    locale.map(|locale| locale.to_le_bytes().to_vec()).ok_or_else(|| "PrivateClipboardLocaleUnavailable".into())
 }
 fn html_bytes(fragment: &str) -> Vec<u8> {
     let prefix = "<html><body><!--StartFragment-->";
@@ -440,6 +498,15 @@ mod tests {
         assert_eq!(input_locale_id(0xf001_0804), Some(0x0804));
         assert_eq!(input_locale_id(0x0409_0409), Some(0x0409));
         assert_eq!(input_locale_id(0), None);
+        assert_eq!(input_locale_id(0xf001_2000), None);
+        assert_eq!(input_locale_id(0xf001_2400), None);
+    }
+    #[test]
+    fn transient_input_language_resolves_named_locale_before_nls() {
+        assert_eq!(resolved_input_locale(&"zh-Hans-CN".encode_utf16().collect::<Vec<_>>()), Some(0x0804));
+        assert_eq!(resolved_input_locale(&"en".encode_utf16().collect::<Vec<_>>()), Some(0x0409));
+        assert_eq!(resolved_input_locale(&[]), None);
+        assert_eq!(resolved_input_locale(&[b'e' as u16, 0, b'n' as u16]), None);
     }
     #[test]
     fn windows_legacy_conversion_preserves_unicode_and_uses_chinese_locale() {
@@ -498,6 +565,23 @@ mod tests {
         assert!(image_bytes(b"not an image").is_err());
     }
     #[test]
+    fn legacy_dib_preserves_rgb_masks_top_down_rows_and_original_v5() {
+        let pixels = vec![1, 2, 3, 255, 4, 5, 6, 128, 7, 8, 9, 0, 10, 11, 12, 64];
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::from_raw(2, 2, pixels.clone()).unwrap().write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let (v5, encoded) = image_bytes(png.get_ref()).unwrap();
+        let original = v5.clone();
+        let dib = legacy_dib(&v5).unwrap();
+        assert_eq!(&dib[..4], &40u32.to_le_bytes());
+        assert_eq!(i32::from_le_bytes(dib[8..12].try_into().unwrap()), -2);
+        assert_eq!(&dib[40..52], &v5[40..52]);
+        assert_eq!(&dib[52..], &[3, 2, 1, 255, 6, 5, 4, 128, 9, 8, 7, 0, 12, 11, 10, 64]);
+        assert_eq!(v5, original);
+        assert_eq!(image::load_from_memory(&encoded).unwrap().into_rgba8().into_raw(), pixels);
+        assert!(legacy_dib(&v5[..123]).is_err());
+        assert!(legacy_dib(&v5[..v5.len() - 1]).is_err());
+    }
+    #[test]
     fn unicode_rejects_embedded_nul_before_native_write() {
         assert!(unicode("one\0two").is_err());
         let bytes = unicode("中文🙂").unwrap();
@@ -512,6 +596,7 @@ mod tests {
         use dzc_core::api::{ClipboardEntry, HistoryService, PrivacyAccessIntent, SensitiveAccess};
         use dzc_core::ports::ClipboardPayload;
         use windows::Win32::System::DataExchange::CountClipboardFormats;
+        use windows::Win32::Graphics::Gdi::{GetDIBits, BITMAPINFO, BITMAPINFOHEADER, HBITMAP};
         assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
         assert_eq!(std::env::var("RUNNER_ENVIRONMENT").as_deref(), Ok("github-hosted"));
         assert_eq!(std::env::var("DZC_PRIVATE_LEASE_DISPOSABLE").as_deref(), Ok("1"));
@@ -530,9 +615,9 @@ mod tests {
             ClipboardPayload::Private { authorization, .. } => authorization.native_lease().unwrap(),
             _ => panic!("original Core private authorization required"),
         };
-        let pixels = vec![7, 8, 9, 255, 1, 2, 3, 128];
+        let pixels = vec![7, 8, 9, 255, 1, 2, 3, 128, 10, 11, 12, 0, 20, 21, 22, 64];
         let mut png = std::io::Cursor::new(Vec::new());
-        image::RgbaImage::from_raw(2, 1, pixels.clone()).unwrap().write_to(&mut png, image::ImageFormat::Png).unwrap();
+        image::RgbaImage::from_raw(2, 2, pixels.clone()).unwrap().write_to(&mut png, image::ImageFormat::Png).unwrap();
         let owner = Owner::start(Payload::Private(Box::new(Payload::Image(png.into_inner()))), vec![lease], None).unwrap();
         let reader = Window::new().unwrap();
         {
@@ -540,7 +625,24 @@ mod tests {
             let png = copied_global_bytes(unsafe { GetClipboardData(registered("PNG").unwrap()) }.unwrap()).unwrap();
             assert_eq!(image::load_from_memory(&png).unwrap().into_rgba8().into_raw(), pixels);
             let dib = copied_global_bytes(unsafe { GetClipboardData(17) }.unwrap()).unwrap();
-            assert_eq!(&dib[124..132], &[9, 8, 7, 255, 3, 2, 1, 128]);
+            assert_eq!(&dib[124..140], &[9, 8, 7, 255, 3, 2, 1, 128, 12, 11, 10, 0, 22, 21, 20, 64]);
+            let legacy = copied_global_bytes(unsafe { GetClipboardData(8) }.unwrap()).unwrap();
+            assert_eq!(&legacy[52..68], &dib[124..140]);
+            let bitmap = unsafe { GetClipboardData(2) }.unwrap();
+            let mut info = BITMAPINFO { bmiHeader: BITMAPINFOHEADER { biSize: 40, biWidth: 2, biHeight: -2,
+                biPlanes: 1, biBitCount: 32, ..Default::default() }, ..Default::default() };
+            let mut rgb = [0u8; 16];
+            let lines = unsafe {
+                let dc = GetDC(None);
+                assert!(!dc.0.is_null());
+                let lines = GetDIBits(dc, HBITMAP(bitmap.0), 0, 2, Some(rgb.as_mut_ptr().cast()), &mut info, DIB_RGB_COLORS);
+                let _ = ReleaseDC(None, dc);
+                lines
+            };
+            assert_eq!(lines, 2);
+            for (actual, expected) in rgb.chunks_exact(4).zip(pixels.chunks_exact(4)) {
+                assert_eq!(&actual[..3], &[expected[2], expected[1], expected[0]]);
+            }
         }
         owner.stop().unwrap();
         let _lock = ClipboardLock::acquire(reader.0).unwrap();
