@@ -3,10 +3,12 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +20,7 @@ from release_identity_packages import squashfs_offset
 from release_identity_packages import windows_environment
 from release_identity_packages import remove_owned_tree
 from release_identity_linux import flatpak_bindings
+from release_identity_linux import sandbox_info
 
 REVISION='a'*40
 DIGEST='b'*64
@@ -43,6 +46,75 @@ def evaluate(machine,audit,number):
     raise AssertionError('Filter did not return')
 
 class ReleaseIdentities(unittest.TestCase):
+    @unittest.skipUnless(sys.platform=='linux' and shutil.which('bwrap'),'Real Linux bubblewrap mount control; no product execution')
+    def test_real_readonly_directory_requires_the_nested_file_mountpoint(self):
+        source=str(Path(identity.__file__).parent)
+        inner='''
+import errno,json,os,pathlib,sys
+sys.path.insert(0,'/fixture-bin')
+import guard
+proof={'guard':guard.probe(),'namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('user','pid','net','ipc','uts','mnt')}}
+try:pathlib.Path('/fixture-bin/refuse-write').write_bytes(b'synthetic')
+except OSError as error:
+    assert error.errno==errno.EROFS
+    proof['readonly_tree']=True
+else:raise AssertionError('Fixture tree became writable')
+print(json.dumps(proof))
+'''
+        script='''
+import json,os,pathlib,subprocess,sys,tempfile
+sys.path.insert(0,sys.argv[1])
+import release_identity_guard as guard
+proof={'guard':guard.install(),'mounts':[],'parent_namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('user','pid','net','ipc','uts','mnt')}}
+with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-mount-') as temp:
+    root=pathlib.Path(temp)
+    (root/'guard.py').write_bytes((pathlib.Path(sys.argv[1])/'release_identity_guard.py').read_bytes())
+    for prepared in (False,True):
+        if prepared:(root/'WebKitWebDriver').open('xb').close()
+        command=['bwrap','--unshare-all','--die-with-parent','--new-session','--clearenv','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--proc','/proc','--dev','/dev']
+        if pathlib.Path('/lib64').exists():command+=['--ro-bind','/lib64','/lib64']
+        command+=['--ro-bind',str(root),'/fixture-bin','--ro-bind','/usr/bin/true','/fixture-bin/WebKitWebDriver','/usr/bin/python3','-I','-B','-c',sys.argv[2]]
+        result=subprocess.run(command,capture_output=True,text=True,timeout=10)
+        proof['mounts'].append({'prepared':prepared,'returncode':result.returncode,'stderr':result.stderr,'stdout':result.stdout})
+print(json.dumps(proof))
+'''
+        result=subprocess.run([sys.executable,'-I','-B','-c',script,source,inner],capture_output=True,text=True,timeout=25)
+        self.assertEqual(result.returncode,0,result.stderr)
+        proof=json.loads(result.stdout);self.assertEqual(proof['guard']['status'],'passed')
+        missing,prepared=proof['mounts']
+        self.assertNotEqual(missing['returncode'],0);self.assertIn('Read-only file system',missing['stderr'])
+        self.assertEqual(prepared['returncode'],0,prepared['stderr'])
+        inside=json.loads(prepared['stdout']);self.assertTrue(inside['readonly_tree'])
+        self.assertEqual(inside['guard']['status'],'passed')
+        self.assertTrue(all(proof['parent_namespaces'][name]!=value for name,value in inside['namespaces'].items()))
+        print('DEZIRCLIP_RELEASE_MOUNT_BOUNDARY '+json.dumps(proof),flush=True)
+
+    def test_every_linux_receipt_prepares_driver_before_readonly_source_bind(self):
+        for package in ('standalone','AppImage','deb','rpm','flatpak'):
+            with self.subTest(package=package),tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
+                logs=Path(temp);extracted=logs/'extracted';extracted.mkdir()
+                roles=('cli',) if package=='standalone' else tuple(identity.ROLES)
+                members={role:extracted/binary for role,binary in identity.ROLES.items() if role in roles}
+                for path in members.values():path.write_bytes(b'synthetic member; never executed')
+                before={role:identity.sha(path) for role,path in members.items()}
+                helper=logs/'synthetic-helper';helper.write_bytes(b'synthetic helper; never executed')
+                args=SimpleNamespace(preseed_helper=helper,source=REVISION,target='linux-x86_64')
+                def assert_mount(command,directory,label,**kwargs):
+                    source=logs/'sources';destination=source/'WebKitWebDriver'
+                    self.assertTrue(destination.is_file());self.assertFalse(destination.is_symlink())
+                    self.assertEqual(destination.read_bytes(),b'')
+                    source_bind=command.index(str(source))
+                    self.assertEqual(command[source_bind-1:source_bind+2],['--ro-bind',str(source),'/fixture-bin'])
+                    driver_bind=command.index('/usr/bin/WebKitWebDriver')
+                    self.assertGreater(driver_bind,source_bind)
+                    self.assertEqual(command[driver_bind-1:driver_bind+2],['--ro-bind','/usr/bin/WebKitWebDriver','/fixture-bin/WebKitWebDriver'])
+                    private=logs/'private-ss';private.mkdir();(private/'proof.json').write_text(json.dumps({'status':'passed'}))
+                    (logs/'actual-identities.json').write_text(json.dumps({'credential_probe':{'status':'passed'},'build_info':{role:info(role,args.target) for role in roles}}))
+                with patch('release_identity_guard.install',return_value={'synthetic':True}),patch('release_identity_linux.run',side_effect=assert_mount) as execute:
+                    result=sandbox_info(args,members,extracted,logs,package=='flatpak')
+                self.assertEqual(set(result),set(roles));execute.assert_called_once()
+                self.assertEqual(before,{role:identity.sha(path) for role,path in members.items()})
+
     def test_flatpak_var_is_an_owned_separate_mount_without_member_changes(self):
         with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
             logs=Path(temp);extracted=logs/'extracted';extracted.mkdir()

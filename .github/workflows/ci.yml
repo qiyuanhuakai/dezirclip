@@ -155,7 +155,16 @@ jobs:
             libxrandr-dev \
             libxtst-dev \
             libdbus-1-dev \
+            bubblewrap \
             xdg-utils
+
+      - name: Verify actual private Linux release receipt mounts
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import shutil, subprocess, sys
+          assert sys.platform == 'linux' and shutil.which('bwrap'), 'Actual bubblewrap execution is required; skipping cannot pass this gate'
+          subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
 
       - name: Install Rust stable
         if: matrix.rust_target == ''

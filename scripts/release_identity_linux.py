@@ -28,6 +28,8 @@ def sandbox_info(args,members,extracted,logs,flatpak):
         shutil.copy2(ROOT/'scripts'/name,source/name)
     shutil.copy2(ROOT/'scripts/performance/native_capture.py',source/'native_capture.py')
     shutil.copy2(args.preseed_helper,source/'ss-preseed');(source/'ss-preseed').chmod(0o700)
+    # The later file bind needs an existing destination in the read-only tree.
+    (source/'WebKitWebDriver').open('xb').close()
     plan={'source_revision':args.source,'target':args.target,'flatpak':flatpak,'members':{role:'/package/'+path.relative_to(extracted).as_posix() for role,path in members.items()}}
     if (extracted/'AppRun').is_file():plan['desktop_launcher']='/package/AppRun'
     (source/'plan.json').write_text(json.dumps(plan))
