@@ -45,6 +45,15 @@ async fn service_queue_entry(client:&mut Client,id:i64,instance:&str,epoch:u64,m
     if entry.id!=id {return Err(failed());}
     Ok(entry)
 }
+async fn resolve_queue_body(body:Result<DesktopEntry,String>,metadata:impl std::future::Future<Output=Result<DesktopEntry,String>>)->Result<DesktopEntry,String> {
+    match body {
+        Err(error) if error=="ClipboardRecordUnavailable"=>match metadata.await {
+            Ok(_)=>Err("SensitiveAccessDenied".into()),
+            Err(error)=>Err(error),
+        },
+        result=>result,
+    }
+}
 impl ServiceQueueCopy {
     pub async fn copy(&mut self)->Result<(),String> {
         let result:OperationResult=self.client.call(Method::DesktopClipboardCopy,DesktopCopyParams{id:self.id,service_instance_id:self.instance.clone(),expected_epoch:self.epoch,
@@ -95,6 +104,19 @@ fn app()->Option<&'static AppHandle> {crate::global_state::GLOBAL_APP_HANDLE.get
 #[cfg(test)]
 mod queue_contract_tests {
     use super::*;
+    #[test]
+    fn a_missing_queue_body_rechecks_metadata_without_renewing_or_hiding_authority_errors() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let metadata=||DesktopEntry{id:7,content_type:"text".into(),content:String::new(),preview:String::new(),html_content:None,source_app:String::new(),tags:vec![],is_pinned:false,timestamp:1,is_external:false,use_count:0,pinned_order:0,file_preview_exists:false,content_kinds:vec![],ocr_text:None,ocr_status:None};
+            assert_eq!(resolve_queue_body(Err("ClipboardRecordUnavailable".into()),async {Err("ClipboardRecordUnavailable".into())}).await.unwrap_err(),"ClipboardRecordUnavailable","deleted between summary and body must be skipped");
+            assert_eq!(resolve_queue_body(Err("ClipboardRecordUnavailable".into()),async {Ok(metadata())}).await.unwrap_err(),"SensitiveAccessDenied","an existing protected row must remain queued");
+            for error in ["PrivacyEpochChanged","ClipboardHostInstanceChanged","ClipboardHostUnavailable","ClipboardHostPermissionDenied"] {
+                assert_eq!(resolve_queue_body(Err("ClipboardRecordUnavailable".into()),async {Err(error.into())}).await.unwrap_err(),error,"a failed original-authority recheck must never be called missing");
+                assert_eq!(resolve_queue_body(Err(error.into()),async {panic!("only a missing body may trigger the extra metadata request")}).await.unwrap_err(),error);
+            }
+            assert_eq!(resolve_queue_body(Ok(metadata()),async {panic!("an available body needs no extra metadata request")}).await.unwrap().id,7);
+        });
+    }
     #[test]
     fn reserved_queue_epoch_is_not_refreshed_after_async_preparation() {
         let history=HistoryService::from_legacy_connection(Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap())));
@@ -256,10 +278,14 @@ impl DesktopHost {
         let privacy:PrivacyState=client.call(Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await.map_err(remote_error)?;
         check_queue_state(original_instance,epoch,original_instance,privacy.privacy_epoch)?;
         self.check_queue_state(original_instance,epoch)?;
-        let summary=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistorySummary).await?;
+        let summary=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistorySummary).await;
+        self.check_queue_state(original_instance,epoch)?;
+        let summary=summary?;
         let content=if matches!(summary.content_type.as_str(),"text"|"code"|"url"|"rich_text") {
-            let entry=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistoryGet).await
-                .map_err(|error|if error=="ClipboardRecordUnavailable"{"SensitiveAccessDenied".into()}else{error})?;
+            let body=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistoryGet).await;
+            let entry=resolve_queue_body(body,service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistorySummary)).await;
+            self.check_queue_state(original_instance,epoch)?;
+            let entry=entry?;
             if entry.content_type!=summary.content_type {return Err(failed());}
             Some(entry.content)
         }else{None};
