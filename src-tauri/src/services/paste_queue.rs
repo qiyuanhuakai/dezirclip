@@ -138,6 +138,9 @@ impl QueueStepGuard {
     fn consume(&self,missing:bool)->Option<bool> {
         self.queue.lock().ok().and_then(|mut queue|consume_step(&mut queue,&self.step,missing))
     }
+    fn accept_keystroke(&self,result:Result<(),String>)->Result<Option<bool>,String> {
+        result.map(|_|self.consume(false))
+    }
     fn skip_missing(&self,app:&tauri::AppHandle) {
         if let Ok(mut queue)=self.queue.lock() {
             if let Some(length)=skip_missing_step(&mut queue,&self.step) {
@@ -242,8 +245,7 @@ async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::De
         bridge.check_queue_state(&instance,epoch)?;
         Ok(())
     });
-    if let Err(error)=result {guard.fail(&app,&error);return;}
-    let empty=guard.consume(false);
+    let empty=match guard.accept_keystroke(result) {Ok(empty)=>empty,Err(error)=>{guard.fail(&app,&error);return;}};
     let completed=prepared.complete(delete).await;
     finish_pasted(&app,&guard,empty,completed,delete);
 }
@@ -300,8 +302,7 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
         if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
         history.privacy().check_read(&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|error.to_string())
     });
-    if let Err(error)=pasted {guard.fail(&app_handle,&error);return;}
-    let empty=guard.consume(false);
+    let empty=match guard.accept_keystroke(pasted) {Ok(empty)=>empty,Err(error)=>{guard.fail(&app_handle,&error);return;}};
     let completed=bridge.complete_embedded_queue(id,&instance,permit.epoch(),delete);
     finish_pasted(&app_handle,&guard,empty,completed,delete);
 }
@@ -309,6 +310,39 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
 mod authorization_tests {
     use super::*;
     use std::sync::{Arc,Mutex};
+    #[test]
+    fn rejected_windows_input_keeps_the_queue_and_drop_releases_the_original_reservation() {
+        use crate::infrastructure::paste_input::{self,Input,InputDriver};
+        struct Rejected { call:usize,fail:usize,accepted:usize }
+        impl InputDriver for Rejected {
+            fn send(&mut self,inputs:&[Input])->usize {let call=self.call;self.call+=1;if call==self.fail {self.accepted}else{inputs.len()}}
+            fn pause(&mut self,_:u64) {}
+            fn key_is_down(&self,_:u16)->bool {false}
+            fn begin_text(&mut self)->bool {true}
+            fn same_target(&self)->bool {true}
+            fn end_text(&mut self) {}
+        }
+        for (method,text,fail,accepted) in [
+            ("ctrl_v",None,0,4),("ctrl_v",None,1,0),("ctrl_v",None,1,1),("ctrl_v",None,2,1),
+            ("shift_insert",None,2,0),("game_mode",None,2,0),("game_mode",Some("中😀\r\n"),7,0),
+        ] {
+            let shared=Arc::new(Mutex::new(PasteQueueState::default()));
+            shared.lock().unwrap().items.extend([17,18]);
+            let step=reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap();
+            {
+                let guard=QueueStepGuard{queue:shared.clone(),step};
+                let result=paste_input::send_paste(&mut Rejected{call:0,fail,accepted},method,text,Some("text")).map_err(|error|error.to_string());
+                let mut completions=0;
+                let accepted=guard.accept_keystroke(result).map(|_|{completions+=1;});
+                assert!(accepted.is_err(),"{method} failed input must not acknowledge a queue item");
+                assert_eq!(completions,0,"neither service nor embedded completion may delete/count after failed input");
+                assert!(guard.current());
+                assert_eq!(shared.lock().unwrap().items.iter().copied().collect::<Vec<_>>(),vec![17,18]);
+            }
+            assert!(shared.lock().unwrap().in_flight.is_none());
+            assert_eq!(reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap().id,17);
+        }
+    }
 #[test]
     fn dropping_a_cancelled_async_step_releases_its_reservation_without_consuming() {
         let shared=Arc::new(Mutex::new(PasteQueueState::default()));
