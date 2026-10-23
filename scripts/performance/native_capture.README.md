@@ -1,6 +1,6 @@
 # Linux Desktop 原生捕获验收与采样
 
-`native_capture.py` 测量真实 Linux Desktop 从外部进程写入系统剪贴板，到 GUI 收到实际持久化捕获事件的路径。旧版监听 `clipboard-updated`，候选版监听 `clipboard-captured`；候选事件必须只有 `id`。工具没有修改产品或生成替代事件。
+`native_capture.py` 测量真实 Linux Desktop 从外部进程写入系统剪贴板，到 GUI 收到实际持久化捕获事件的路径。0.1.20 监听 `clipboard-updated`，alpha.1 和当前候选监听 `clipboard-captured`。工具根据实际 GUI 的构建清单选择严格的元数据契约：alpha.1 只有 `id`；链接 `dzc-host` 的 GUI 必须恰好包含 `id` 和启动采样时真实 Host 的 `host_instance_id`，其他字段或其他 Host 的事件均拒绝。工具没有修改产品或生成替代事件。
 
 时钟起点是实际 WebView 中的 `performance.now()`，终点是该 WebView 的原生事件回调。因此结果包含 WebDriver 启用计时后的返回、外部 CLI 启动、OS 剪贴板写入、监听、业务处理、SQLite 提交和事件传输。它不是纯 Core/Engine 耗时，也不是从 writer 完成后才开始计时。`writer_elapsed_ms` 单独保留。WebKit 的时钟精度保持原样，不对样本插值。
 
@@ -12,7 +12,7 @@
 
 每个块创建新的 user/PID/network/IPC/UTS/mount namespace、Xvfb、DBus、HOME 和 XDG profile。`--clearenv` 后只建立显式环境；宿主 display、session bus、用户目录、数据库和剪贴板不可见。剪贴板 owner 进程与 GUI 均在私有 PID namespace 内。除只读系统运行库、明确提供的二进制/工具/载荷外，只挂载本块的临时目录。临时根只能由外层工具创建为 `/tmp/dezirclip-native-capture-*`，内层核对普通 marker 文件及 namespace。证据不会自动删除。
 
-GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`，启动后通过真实 `get_data_path` 核对。每端先使用其对应版本 CLI 初始化 schema，再通过 `sqlite_history_fixture` 测试连接插入相同中性历史。旧版保持原 schema，当前候选使用 schema 21，不让旧程序写新库；旧冻结树的报告保留其实际 schema，不重贴标签。persistent 与 deduplicate 开启；persistent limit、idle destroy、privacy detection、OCR、sequential 和 sound 关闭；rich text、files 开启。实际设置、schema 及环境随报告保存。只关闭 window tracker、edge docking、mouse hotkey 服务，剪贴板监听保持启用。
+GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`，启动后通过真实 `get_data_path` 核对。每端先使用其对应版本 CLI 初始化 schema，再通过 `sqlite_history_fixture` 测试连接插入相同中性历史。alpha.1 为 schema 21，当前 alpha.2 为 schema 24；不让旧程序写新库。旧冻结树的报告保留其实际 schema，不重贴标签。persistent 与 deduplicate 开启；persistent limit、idle destroy、privacy detection、OCR、sequential 和 sound 关闭；rich text、files 开启。实际设置、schema 及环境随报告保存。只关闭 window tracker、edge docking、mouse hotkey 服务，剪贴板监听保持启用。
 
 两份 `build.json` 至少包含如下信息，完整原文件会复制保留：
 
@@ -29,7 +29,7 @@ GUI 使用标准 `$XDG_DATA_HOME/io.github.qiyuanhuakai.dezirclip/clipboard.db`�
 }
 ```
 
-默认旧源仍为 `802808b06e6b795064c5065d1d880bae9b193b9a`，监听原有 `clipboard-updated`。alpha.2 与已发布 alpha.1 比较时，须显式传入 `--baseline-revision 90ba9960744b6cd57caaaf597f68533a7e41be45`，并提供这个实际提交的独立 release 构建凭据；此时基线和候选均监听 `clipboard-captured`，两端都严格要求事件只有 ID。基线参数只接受这两个完整冻结提交，不能传分支、短 SHA 或任意选择较慢版本。原 alpha.1 工具快照和所有历史报告保持原样，不重新标注版本。
+默认旧源仍为 `802808b06e6b795064c5065d1d880bae9b193b9a`，监听原有 `clipboard-updated`。alpha.2 与已发布 alpha.1 比较时，须显式传入 `--baseline-revision 90ba9960744b6cd57caaaf597f68533a7e41be45`，并提供这个实际提交的独立 release 构建凭据；此时基线和候选均监听 `clipboard-captured`，按各自真实组件清单核对上述契约。监听前核对真实 `get_build_info` 的完整源码提交与构建凭据一致；Host 身份来自实际 `get_clipboard_host_status`，不是参数自行声明。两份信息及选择的契约均保留于块报告。基线参数只接受这两个完整冻结提交，不能传分支、短 SHA 或任意选择较慢版本。原 alpha.1 工具快照和所有历史报告保持原样，不重新标注版本。
 
 凭据还应保留归档核对、允许的构建隔离改动、前端锁文件与构建、构建命令及源码文件哈希。工具验证实际二进制与凭据一致，并拒绝两端 profile、Rust 1.91.1 或 target 不一致。正式两端使用同一个候选 CLI 执行 `clipboard write - --mime ...`；写入命令不初始化或迁移历史数据库。
 
@@ -72,7 +72,7 @@ python3 scripts/performance/native_capture.py --mode formal --python-runtime /re
 
 四场景是 200 字节与 1 MiB UTF-8/CRLF 文本、3 KiB HTML、3840×2160 RGBA 图像。图像通过有效 PNG 写给 CLI，经实际解码形成 33,177,600 字节 RGBA；报告分别记录编码字节数与解码尺寸，不把 PNG stdin 当作原始 RGBA stdin。固定 seed 生成同一载荷组供所有块使用，每个样本内容唯一。HTML 的 text fallback 与 HTML 均由真实 CLI 写入。每个完成样本后固定冷却 700 ms，并记录相邻 arm 的实际间隔，跨过 500 ms 通知合并窗口；不是精确的 700 ms 起点间隔。
 
-每次事件必须对应 SQLite 中新增的预期 ID 且恰好新增一行。文本完整内容与 HTML 逐字核对；图像必须外置到当前 profile 的真实附件路径，核对 PNG CRC、3840×2160 RGBA 及唯一角点颜色。最终核对总行数与 SQLite `quick_check`。这些检查不依赖 UI 显示数量。候选事件的非 ID 字段会导致失败。
+每次事件必须对应 SQLite 中新增的预期正整数 ID 且恰好新增一行。文本完整内容与 HTML 逐字核对；图像必须外置到当前 profile 的真实附件路径，核对 PNG CRC、3840×2160 RGBA 及唯一角点颜色。最终核对总行数与 SQLite `quick_check`。这些检查不依赖 UI 显示数量。事件包含正文等契约外字段、缺少 Host 或携带另一 Host 身份时会导致失败；计时起止、700 ms 冷却、样本数及性能阈值保持原规则。
 
 ## 证据与失败
 
