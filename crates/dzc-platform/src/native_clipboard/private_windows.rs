@@ -4,9 +4,10 @@ use dzc_core::api::NativeReadLease;
 use std::sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc, Condvar, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use windows::core::w;
-use windows::Win32::Foundation::{GetLastError, GlobalFree, SetLastError, HANDLE, HWND, WIN32_ERROR};
+use windows::Win32::Foundation::{GetLastError, GlobalFree, SetLastError, HANDLE, HGLOBAL, HWND, WIN32_ERROR};
+use windows::Win32::Globalization::{GetLocaleInfoW, WideCharToMultiByte, LOCALE_IDEFAULTANSICODEPAGE, LOCALE_IDEFAULTCODEPAGE, LOCALE_RETURN_NUMBER};
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW, SetClipboardData};
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
 use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, DispatchMessageW, PeekMessageW, TranslateMessage, HWND_MESSAGE, MSG, PM_REMOVE, WINDOW_EX_STYLE, WINDOW_STYLE};
 
@@ -239,6 +240,58 @@ fn set_bytes(format: u32, bytes: &[u8]) -> Result<(), String> {
     }
     Ok(())
 }
+fn copied_global_bytes(handle: HANDLE) -> Result<Vec<u8>, String> {
+    let memory = HGLOBAL(handle.0);
+    // Only our own publication and its Windows conversions are read under the
+    // original clipboard lock. A borrowed clipboard handle is never reused.
+    unsafe {
+        let size = GlobalSize(memory);
+        if size == 0 || size > MAX_BYTES { return Err("PrivateClipboardFormatUnavailable".into()); }
+        let bytes = GlobalLock(memory);
+        if bytes.is_null() { return Err("PrivateClipboardFormatUnavailable".into()); }
+        let copied = std::slice::from_raw_parts(bytes.cast::<u8>(), size).to_vec();
+        let _ = GlobalUnlock(memory);
+        Ok(copied)
+    }
+}
+fn legacy_text(unicode: &[u8], locale: u32, kind: u32) -> Result<Vec<u8>, String> {
+    if unicode.is_empty() || unicode.len() % 2 != 0 || unicode.len() > MAX_BYTES { return Err("PrivateClipboardPayloadRejected".into()); }
+    let wide = unicode.chunks_exact(2).map(|pair| u16::from_le_bytes([pair[0], pair[1]])).collect::<Vec<_>>();
+    let mut code_page = [0u16; 2];
+    if unsafe { GetLocaleInfoW(locale, kind | LOCALE_RETURN_NUMBER, Some(&mut code_page)) } != 2 { return Err("PrivateClipboardLocaleUnavailable".into()); }
+    let code_page = u32::from(code_page[0]) | (u32::from(code_page[1]) << 16);
+    multibyte_text(&wide, code_page)
+}
+fn multibyte_text(wide: &[u16], code_page: u32) -> Result<Vec<u8>, String> {
+    // Null default-character pointers are valid for both legacy and UTF-8 code
+    // pages. Only these optional legacy views can lose unrepresentable symbols.
+    let count = unsafe { WideCharToMultiByte(code_page, 0, wide, None, windows::core::PCSTR::null(), None) };
+    if count <= 0 || count as usize > MAX_BYTES { return Err("PrivateClipboardPayloadRejected".into()); }
+    let mut result = vec![0; count as usize];
+    if unsafe { WideCharToMultiByte(code_page, 0, wide, Some(&mut result), windows::core::PCSTR::null(), None) } != count { return Err("PrivateClipboardFormatUnavailable".into()); }
+    Ok(result)
+}
+fn publish_text_conversions(representations: &[(u32, Vec<u8>)]) -> Result<(), String> {
+    let Some((_, unicode)) = representations.iter().find(|(format, _)| *format == 13) else { return Ok(()); };
+    let locale = representations.iter().find(|(format, _)| *format == 16)
+        .and_then(|(_, bytes)| <[u8; 4]>::try_from(bytes.as_slice()).ok()).map(u32::from_le_bytes).ok_or("PrivateClipboardLocaleUnavailable")?;
+    for (format, kind) in [(1, LOCALE_IDEFAULTANSICODEPAGE), (7, LOCALE_IDEFAULTCODEPAGE)] {
+        let bytes = match unsafe { GetClipboardData(format) } {
+            Ok(handle) => {
+                #[cfg(test)] native_trace(&format!("worker.derived_native.{format}"), None, None);
+                copied_global_bytes(handle)?
+            },
+            Err(_) => {
+                #[cfg(test)] native_trace(&format!("worker.derived_nls.{format}"), None, None);
+                legacy_text(unicode, locale, kind)?
+            },
+        };
+        // Explicitly publish a fresh object: CloseClipboard must not register a
+        // previously absent automatic format after the original snapshot.
+        set_bytes(format, &bytes)?;
+    }
+    Ok(())
+}
 fn materialize_conversions() -> Result<(), String> {
     // The original publication lock excludes later writers while Windows creates
     // its implicit representations. Capture the sequence only after they exist.
@@ -272,10 +325,11 @@ fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut e
         unsafe { EmptyClipboard() }.map_err(|_| "PrivateClipboardWriteFailed")?;
         #[cfg(test)] native_trace("worker.initial_empty", None, None);
         let mut result = Ok(());
-        for (format, bytes) in representations {
-            if let Err(error) = set_bytes(format, &bytes) { result = Err(error); break; }
+        for (format, bytes) in &representations {
+            if let Err(error) = set_bytes(*format, bytes) { result = Err(error); break; }
             #[cfg(test)] native_trace(&format!("worker.format_set.{format}"), None, None);
         }
+        if result.is_ok() { result = publish_text_conversions(&representations); }
         if result.is_ok() { result = materialize_conversions(); }
         let identity = current_selection();
         let accepted = result.is_ok() && identity.is_some_and(|original| original.owner == window.0.0 as usize) && leases.iter().all(NativeReadLease::is_current);
@@ -387,6 +441,25 @@ mod tests {
         assert_eq!(input_locale_id(0x0409_0409), Some(0x0409));
         assert_eq!(input_locale_id(0), None);
     }
+    #[test]
+    fn windows_legacy_conversion_preserves_unicode_and_uses_chinese_locale() {
+        let unicode = unicode("中文🙂").unwrap();
+        let original = unicode.clone();
+        for kind in [LOCALE_IDEFAULTANSICODEPAGE, LOCALE_IDEFAULTCODEPAGE] {
+            let converted = legacy_text(&unicode, 0x0804, kind).unwrap();
+            assert_eq!(&converted[..4], &[0xd6, 0xd0, 0xce, 0xc4]);
+            assert_eq!(converted.last(), Some(&0));
+        }
+        assert_eq!(unicode, original);
+        assert_eq!(legacy_text(&[0, 0], 0x0409, LOCALE_IDEFAULTANSICODEPAGE).unwrap(), [0]);
+        assert!(legacy_text(&[0], 0x0409, LOCALE_IDEFAULTANSICODEPAGE).is_err());
+    }
+    #[test]
+    fn utf8_system_code_page_uses_null_default_character_arguments() {
+        let wide = "中文🙂\0".encode_utf16().collect::<Vec<_>>();
+        assert_eq!(multibyte_text(&wide, 65001).unwrap(), "中文🙂\0".as_bytes());
+        assert_eq!(multibyte_text(&[0], 65001).unwrap(), [0]);
+    }
 
     #[test]
     fn retained_finished_handles_do_not_consume_active_worker_capacity() {
@@ -431,6 +504,48 @@ mod tests {
         let units = bytes.chunks_exact(2).map(|pair| u16::from_le_bytes(pair.try_into().unwrap())).collect::<Vec<_>>();
         assert_eq!(units.last(), Some(&0));
         assert_eq!(String::from_utf16(&units[..units.len() - 1]).unwrap(), "中文🙂");
+    }
+
+    #[test]
+    #[ignore = "requires the disposable Windows GitHub runner and explicit fixture opt-in"]
+    fn disposable_native_image_publication() {
+        use dzc_core::api::{ClipboardEntry, HistoryService, PrivacyAccessIntent, SensitiveAccess};
+        use dzc_core::ports::ClipboardPayload;
+        use windows::Win32::System::DataExchange::CountClipboardFormats;
+        assert_eq!(std::env::var("GITHUB_ACTIONS").as_deref(), Ok("true"));
+        assert_eq!(std::env::var("RUNNER_ENVIRONMENT").as_deref(), Ok("github-hosted"));
+        assert_eq!(std::env::var("DZC_PRIVATE_LEASE_DISPOSABLE").as_deref(), Ok("1"));
+        let runner = std::fs::canonicalize(std::env::var_os("RUNNER_TEMP").expect("runner-owned temporary directory")).unwrap();
+        let root = runner.join(format!("dzc-private-image-fixture-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        assert_eq!(root.parent(), Some(runner.as_path()));
+        std::env::set_var("TEMP", &root);
+        std::env::set_var("TMP", &root);
+        let history = HistoryService::open(&root.join("synthetic.db")).unwrap();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        let epoch = history.privacy().status(now).unwrap().privacy_epoch;
+        let permit = history.privacy().authorize_read(PrivacyAccessIntent::SelectedCopy, SensitiveAccess::ExplicitUserAction, Some(epoch), now).unwrap();
+        let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":-42,"content_type":"text","content":"synthetic private text","preview":"private","source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
+        let lease = match history.session_clipboard_payload_authorized(&entry, &permit, now).unwrap() {
+            ClipboardPayload::Private { authorization, .. } => authorization.native_lease().unwrap(),
+            _ => panic!("original Core private authorization required"),
+        };
+        let pixels = vec![7, 8, 9, 255, 1, 2, 3, 128];
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::RgbaImage::from_raw(2, 1, pixels.clone()).unwrap().write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let owner = Owner::start(Payload::Private(Box::new(Payload::Image(png.into_inner()))), vec![lease], None).unwrap();
+        let reader = Window::new().unwrap();
+        {
+            let _lock = ClipboardLock::acquire(reader.0).unwrap();
+            let png = copied_global_bytes(unsafe { GetClipboardData(registered("PNG").unwrap()) }.unwrap()).unwrap();
+            assert_eq!(image::load_from_memory(&png).unwrap().into_rgba8().into_raw(), pixels);
+            let dib = copied_global_bytes(unsafe { GetClipboardData(17) }.unwrap()).unwrap();
+            assert_eq!(&dib[124..132], &[9, 8, 7, 255, 3, 2, 1, 128]);
+        }
+        owner.stop().unwrap();
+        let _lock = ClipboardLock::acquire(reader.0).unwrap();
+        native_trace("fixture.image_assert_empty", None, None);
+        assert_eq!(unsafe { CountClipboardFormats() }, 0);
     }
 
     // Native access is deliberately opt-in and restricted to an ephemeral CI runner.
