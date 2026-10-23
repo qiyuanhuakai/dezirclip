@@ -3,10 +3,13 @@ import copy
 import json
 import os
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
 import tempfile
+import textwrap
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -18,6 +21,7 @@ from release_identity_packages import squashfs_offset
 from release_identity_packages import windows_environment
 from release_identity_packages import remove_owned_tree
 from release_identity_linux import flatpak_bindings
+from release_identity_linux import sandbox_info
 
 REVISION='a'*40
 DIGEST='b'*64
@@ -43,6 +47,134 @@ def evaluate(machine,audit,number):
     raise AssertionError('Filter did not return')
 
 class ReleaseIdentities(unittest.TestCase):
+    def test_final_mount_step_requires_the_original_run_receipt_and_only_reads_sysctl(self):
+        source=(identity.ROOT/'.github/workflows/ci.yml').read_text(encoding='utf-8')
+        def block(name):
+            step=source.split('      - name: '+name+'\n',1)[1].split('\n      - name:',1)[0].split('\n  standalone-cli:',1)[0]
+            return textwrap.dedent(step.split('        run: |\n',1)[1]).rstrip()
+        early=block('Permit private user namespaces on disposable Linux runner')
+        late=block('Verify actual private Linux release receipt mounts')
+        with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
+            root=Path(temp);concrete=type(root)
+            environment={'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','RUNNER_TEMP':temp,'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'2','GITHUB_JOB':'tauri','GITHUB_SHA':REVISION,'RUNNER_NAME':'synthetic-runner','RUNNER_ARCH':'X64'}
+            current=['1','0'];key=SimpleNamespace(exists=lambda:True,read_text=lambda:current.pop(0) if len(current)>1 else current[0])
+            label=SimpleNamespace(read_text=lambda:'synthetic-unconfined')
+            def path(name):
+                if str(name)=='/proc/sys/kernel/apparmor_restrict_unprivileged_userns':return key
+                if str(name)=='/proc/self/attr/current':return label
+                return concrete(name)
+            with patch.dict(os.environ,environment,clear=True),patch('sys.platform','linux'),patch('pathlib.Path',side_effect=path),patch('shutil.which',return_value='/usr/bin/bwrap'),patch('subprocess.run') as execute,patch('builtins.print'):
+                exec(early,{})
+                execute.assert_called_once_with(['sudo','-n','sysctl','-w','kernel.apparmor_restrict_unprivileged_userns=0'],check=True)
+                receipt=root/'dezirclip-userns-123-2-tauri.json';original=json.loads(receipt.read_text())
+                execute.reset_mock();exec(late,{})
+                execute.assert_called_once()
+                self.assertNotIn('sudo',execute.call_args.args[0])
+                for field,value in (('GITHUB_RUN_ID','124'),('GITHUB_RUN_ATTEMPT','3'),('GITHUB_JOB','other'),('GITHUB_SHA','c'*40),('RUNNER_NAME','other'),('RUNNER_ARCH','ARM64')):
+                    altered=copy.deepcopy(original);altered['identity'][field]=value;receipt.write_text(json.dumps(altered));execute.reset_mock()
+                    with self.subTest(field=field),self.assertRaises(AssertionError):exec(late,{})
+                    execute.assert_not_called()
+                for field,value in (('schema_version',True),('status','failed'),('key_exists',1),('before','unknown'),('after','1'),('padding','x'*8192)):
+                    altered=copy.deepcopy(original);altered[field]=value;receipt.write_text(json.dumps(altered));execute.reset_mock()
+                    with self.subTest(field=field),self.assertRaises(AssertionError):exec(late,{})
+                    execute.assert_not_called()
+                receipt.write_text(json.dumps(original));current[0]='1';execute.reset_mock()
+                with self.assertRaises(AssertionError):exec(late,{})
+                execute.assert_not_called();receipt.unlink()
+                with self.assertRaises(AssertionError):exec(late,{})
+                execute.assert_not_called()
+
+    def test_disposable_userns_setup_refuses_local_execution_and_checks_readback(self):
+        blocks=[]
+        for name in ('ci.yml','release-identities.yml'):
+            source=(identity.ROOT/'.github/workflows'/name).read_text(encoding='utf-8')
+            step=source.split('      - name: Permit private user namespaces on disposable Linux runner\n',1)[1].split('\n      - name:',1)[0]
+            blocks.append(textwrap.dedent(step.split('        run: |\n',1)[1].split('          # Retain this run',1)[0]).rstrip())
+        self.assertEqual(blocks[0],blocks[1])
+        for environment in ({},{'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'self-hosted'}):
+            with patch.dict(os.environ,environment,clear=True),patch('sys.platform','linux'),patch('subprocess.run') as mutate,patch('pathlib.Path') as path:
+                with self.assertRaises(AssertionError):exec(blocks[0],{})
+                mutate.assert_not_called();path.assert_not_called()
+        for exists,before,after,passes in ((False,None,None,True),(True,'1','0',True),(True,'0','0',True),(True,'1','1',False),(True,'unexpected','0',False)):
+            key=SimpleNamespace(exists=lambda:exists,read_text=lambda:next(values))
+            values=iter((before,after))
+            label=SimpleNamespace(read_text=lambda:'synthetic-unconfined')
+            with patch.dict(os.environ,{'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted'},clear=True),patch('sys.platform','linux'),patch('pathlib.Path',side_effect=lambda name:key if name.endswith('apparmor_restrict_unprivileged_userns') else label),patch('subprocess.run') as mutate,patch('builtins.print'):
+                if passes:exec(blocks[0],{})
+                else:
+                    with self.assertRaises(AssertionError):exec(blocks[0],{})
+                if exists and before in ('0','1'):mutate.assert_called_once_with(['sudo','-n','sysctl','-w','kernel.apparmor_restrict_unprivileged_userns=0'],check=True)
+                else:mutate.assert_not_called()
+
+    @unittest.skipUnless(sys.platform=='linux' and shutil.which('bwrap'),'Real Linux bubblewrap mount control; no product execution')
+    def test_real_readonly_directory_requires_the_nested_file_mountpoint(self):
+        source=str(Path(identity.__file__).parent)
+        inner='''
+import errno,json,os,pathlib,sys
+sys.path.insert(0,'/fixture-bin')
+import guard
+proof={'guard':guard.probe(),'namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('user','pid','net','ipc','uts','mnt')}}
+try:pathlib.Path('/fixture-bin/refuse-write').write_bytes(b'synthetic')
+except OSError as error:
+    assert error.errno==errno.EROFS
+    proof['readonly_tree']=True
+else:raise AssertionError('Fixture tree became writable')
+print(json.dumps(proof))
+'''
+        script='''
+import json,os,pathlib,subprocess,sys,tempfile
+sys.path.insert(0,sys.argv[1])
+import release_identity_guard as guard
+proof={'guard':guard.install(),'mounts':[],'parent_namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('user','pid','net','ipc','uts','mnt')}}
+with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-mount-') as temp:
+    root=pathlib.Path(temp)
+    (root/'guard.py').write_bytes((pathlib.Path(sys.argv[1])/'release_identity_guard.py').read_bytes())
+    for prepared in (False,True):
+        if prepared:(root/'WebKitWebDriver').open('xb').close()
+        command=['bwrap','--unshare-all','--die-with-parent','--new-session','--clearenv','--ro-bind','/usr','/usr','--ro-bind','/lib','/lib','--proc','/proc','--dev','/dev']
+        if pathlib.Path('/lib64').exists():command+=['--ro-bind','/lib64','/lib64']
+        command+=['--ro-bind',str(root),'/fixture-bin','--ro-bind','/usr/bin/true','/fixture-bin/WebKitWebDriver','/usr/bin/python3','-I','-B','-c',sys.argv[2]]
+        result=subprocess.run(command,capture_output=True,text=True,timeout=10)
+        proof['mounts'].append({'prepared':prepared,'returncode':result.returncode,'stderr':result.stderr,'stdout':result.stdout})
+print(json.dumps(proof))
+'''
+        result=subprocess.run([sys.executable,'-I','-B','-c',script,source,inner],capture_output=True,text=True,timeout=25)
+        self.assertEqual(result.returncode,0,result.stderr)
+        proof=json.loads(result.stdout);self.assertEqual(proof['guard']['status'],'passed')
+        missing,prepared=proof['mounts']
+        self.assertNotEqual(missing['returncode'],0);self.assertIn('Read-only file system',missing['stderr'])
+        self.assertEqual(prepared['returncode'],0,prepared['stderr'])
+        inside=json.loads(prepared['stdout']);self.assertTrue(inside['readonly_tree'])
+        self.assertEqual(inside['guard']['status'],'passed')
+        self.assertTrue(all(proof['parent_namespaces'][name]!=value for name,value in inside['namespaces'].items()))
+        print('DEZIRCLIP_RELEASE_MOUNT_BOUNDARY '+json.dumps(proof),flush=True)
+
+    def test_every_linux_receipt_prepares_driver_before_readonly_source_bind(self):
+        for package in ('standalone','AppImage','deb','rpm','flatpak'):
+            with self.subTest(package=package),tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
+                logs=Path(temp);extracted=logs/'extracted';extracted.mkdir()
+                roles=('cli',) if package=='standalone' else tuple(identity.ROLES)
+                members={role:extracted/binary for role,binary in identity.ROLES.items() if role in roles}
+                for path in members.values():path.write_bytes(b'synthetic member; never executed')
+                before={role:identity.sha(path) for role,path in members.items()}
+                helper=logs/'synthetic-helper';helper.write_bytes(b'synthetic helper; never executed')
+                args=SimpleNamespace(preseed_helper=helper,source=REVISION,target='linux-x86_64')
+                def assert_mount(command,directory,label,**kwargs):
+                    source=logs/'sources';destination=source/'WebKitWebDriver'
+                    self.assertTrue(destination.is_file());self.assertFalse(destination.is_symlink())
+                    self.assertEqual(destination.read_bytes(),b'')
+                    source_bind=command.index(str(source))
+                    self.assertEqual(command[source_bind-1:source_bind+2],['--ro-bind',str(source),'/fixture-bin'])
+                    driver_bind=command.index('/usr/bin/WebKitWebDriver')
+                    self.assertGreater(driver_bind,source_bind)
+                    self.assertEqual(command[driver_bind-1:driver_bind+2],['--ro-bind','/usr/bin/WebKitWebDriver','/fixture-bin/WebKitWebDriver'])
+                    private=logs/'private-ss';private.mkdir();(private/'proof.json').write_text(json.dumps({'status':'passed'}))
+                    (logs/'actual-identities.json').write_text(json.dumps({'credential_probe':{'status':'passed'},'build_info':{role:info(role,args.target) for role in roles}}))
+                with patch('release_identity_guard.install',return_value={'synthetic':True}),patch('release_identity_linux.run',side_effect=assert_mount) as execute:
+                    result=sandbox_info(args,members,extracted,logs,package=='flatpak')
+                self.assertEqual(set(result),set(roles));execute.assert_called_once()
+                self.assertEqual(before,{role:identity.sha(path) for role,path in members.items()})
+
     def test_flatpak_var_is_an_owned_separate_mount_without_member_changes(self):
         with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
             logs=Path(temp);extracted=logs/'extracted';extracted.mkdir()
