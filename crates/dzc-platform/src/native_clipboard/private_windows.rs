@@ -23,6 +23,9 @@ struct State {
     finished: Mutex<bool>,
     changed: Condvar,
 }
+fn unfinished(owner: &Weak<State>) -> bool {
+    owner.upgrade().is_some_and(|state| !*state.finished.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+}
 pub(super) struct Owner {
     state: Arc<State>,
 }
@@ -40,7 +43,7 @@ impl Owner {
         let (ready_tx, ready) = mpsc::sync_channel(1);
         {
             let mut active = ACTIVE.get_or_init(Default::default).lock().map_err(|_| "PrivateClipboardOwnerUnavailable")?;
-            active.retain(|owner| owner.strong_count() > 0);
+            active.retain(unfinished);
             if active.len() >= 64 { return Err("PrivateClipboardOwnerUnavailable".into()); }
             active.push(Arc::downgrade(&state));
         }
@@ -78,7 +81,7 @@ fn stop(state: &State) -> Result<(), String> {
 pub(super) fn revoke_all() -> Result<(), String> {
     let owners = {
         let mut registry = ACTIVE.get_or_init(Default::default).lock().map_err(|_| "PrivateClipboardStopNotConfirmed")?;
-        registry.retain(|owner| owner.strong_count() > 0);
+        registry.retain(unfinished);
         registry.iter().filter_map(Weak::upgrade).collect::<Vec<_>>()
     };
     let mut failed = false;
@@ -322,6 +325,17 @@ fn representations(payload: Payload) -> Result<Vec<(u32, Vec<u8>)>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retained_finished_handles_do_not_consume_active_worker_capacity() {
+        let finished = Arc::new(State { revoked: AtomicBool::new(true), finished: Mutex::new(true), changed: Condvar::new() });
+        let live = Arc::new(State { revoked: AtomicBool::new(false), finished: Mutex::new(false), changed: Condvar::new() });
+        let mut registry = vec![Arc::downgrade(&finished), Arc::downgrade(&live), Weak::new()];
+        registry.retain(unfinished);
+        assert_eq!(registry.len(), 1);
+        assert!(Arc::ptr_eq(&registry[0].upgrade().unwrap(), &live));
+        assert_eq!(Arc::strong_count(&finished), 1);
+    }
 
     #[test]
     fn html_offsets_are_utf8_byte_offsets() {
