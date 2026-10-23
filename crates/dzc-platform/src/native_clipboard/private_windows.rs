@@ -581,7 +581,7 @@ mod tests {
     #[test]
     #[ignore = "requires the disposable Windows GitHub runner and explicit fixture opt-in"]
     fn disposable_native_image_publication() {
-        use dzc_core::api::{ClipboardEntry, HistoryService, PrivacyAccessIntent, SensitiveAccess};
+        use dzc_core::api::{ClipboardEntry, HistoryService, SensitiveAccess};
         use dzc_core::ports::ClipboardPayload;
         use windows::Win32::System::DataExchange::CountClipboardFormats;
         use windows::Win32::Graphics::Gdi::{GetDIBits, BITMAPINFO, BITMAPINFOHEADER, HBITMAP};
@@ -595,11 +595,12 @@ mod tests {
         std::env::set_var("TEMP", &root);
         std::env::set_var("TMP", &root);
         let history = HistoryService::open(&root.join("synthetic.db")).unwrap();
+        let original_host = "00000000-0000-4000-8000-000000000042";
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
         let epoch = history.privacy().status(now).unwrap().privacy_epoch;
-        let permit = history.privacy().authorize_read(PrivacyAccessIntent::SelectedCopy, SensitiveAccess::ExplicitUserAction, Some(epoch), now).unwrap();
         let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":-42,"content_type":"text","content":"synthetic private text","preview":"private","source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
-        let lease = match history.session_clipboard_payload_authorized(&entry, &permit, now).unwrap() {
+        let permit = history.privacy().authorize_selected_copy(entry.id, Some(original_host), SensitiveAccess::ExplicitUserAction, Some(epoch), now).unwrap();
+        let lease = match history.session_clipboard_payload_for_host_authorized(&entry, original_host, &permit, now).unwrap() {
             ClipboardPayload::Private { authorization, .. } => authorization.native_lease().unwrap(),
             _ => panic!("original Core private authorization required"),
         };
@@ -660,12 +661,13 @@ mod tests {
         let executable = std::fs::canonicalize(std::env::var_os("DZC_PRIVATE_OWNER_FIXTURE_EXE").expect("CI-built standalone CLI")).unwrap();
         assert_eq!(executable.file_name().unwrap(), "dzc.exe");
         let history = HistoryService::open(&root.join("synthetic.db")).unwrap();
+        let original_host = "00000000-0000-4000-8000-000000000042";
         let now = || std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
         let authorize = || {
             let epoch = history.privacy().status(now()).unwrap().privacy_epoch;
-            let permit = history.privacy().authorize_selected_copy(-42, Some("00000000-0000-4000-8000-000000000042"), SensitiveAccess::ExplicitUserAction, Some(epoch), now()).unwrap();
             let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":-42,"content_type":"text","content":"synthetic private text","preview":"private","source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
-            match history.session_clipboard_payload_for_host_authorized(&entry, "00000000-0000-4000-8000-000000000042", &permit, now()).unwrap() {
+            let permit = history.privacy().authorize_selected_copy(entry.id, Some(original_host), SensitiveAccess::ExplicitUserAction, Some(epoch), now()).unwrap();
+            match history.session_clipboard_payload_for_host_authorized(&entry, original_host, &permit, now()).unwrap() {
                 ClipboardPayload::Private { authorization, .. } => authorization,
                 _ => panic!("original Core private authorization required"),
             }
