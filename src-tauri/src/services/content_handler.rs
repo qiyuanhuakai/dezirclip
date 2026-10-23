@@ -12,6 +12,36 @@ use std::process::Command;
 use std::sync::{mpsc, OnceLock};
 use tauri::{Emitter, Manager, State};
 
+fn edit_watch_ticket(
+    history:&dzc_core::api::HistoryService,
+    permit:&dzc_core::api::PrivacyReadPermit,
+    id:i64,
+    content_type:&str,
+    now:i64,
+)->Result<Option<dzc_core::api::CaptureTicket>,dzc_core::api::PrivacyError> {
+    history.privacy().check_read(permit,now)?;
+    if id<=0 || !matches!(content_type,"image"|"text"|"rich_text"|"code") {return Ok(None);}
+    match history.privacy().capture_ticket(now) {
+        Ok(ticket) if ticket.epoch()==permit.epoch()=>Ok(Some(ticket)),
+        Ok(_)=>Err(dzc_core::api::PrivacyError::PrivacyEpochChanged),
+        Err(dzc_core::api::PrivacyError::PrivacySessionActive)=>Ok(None),
+        Err(error)=>Err(error),
+    }
+}
+
+fn complete_external_open(
+    history:&dzc_core::api::HistoryService,
+    id:i64,
+    permit:&dzc_core::api::PrivacyReadPermit,
+    launched:Result<(),AppError>,
+    now:i64,
+)->Result<(),AppError> {
+    launched?;
+    history.privacy().check_read(permit,now).map_err(|error|AppError::Validation(error.to_string()))?;
+    if id>0 {history.increment_use_count(id).map_err(|error|AppError::Database(error.to_string()))?;}
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn open_content(
     app_handle: tauri::AppHandle,
@@ -29,10 +59,6 @@ pub async fn open_content(
     use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
     let history = state.history_service();
     let now = || chrono::Utc::now().timestamp_millis();
-    let ticket = history
-        .privacy()
-        .capture_ticket(now())
-        .map_err(|error| AppError::Validation(error.to_string()))?;
     let permit = history
         .privacy()
         .authorize_read(
@@ -42,7 +68,7 @@ pub async fn open_content(
             } else {
                 SensitiveAccess::Denied
             },
-            Some(expected_privacy_epoch.unwrap_or(ticket.epoch())),
+            expected_privacy_epoch,
             now(),
         )
         .map_err(|error| AppError::Validation(error.to_string()))?;
@@ -74,8 +100,11 @@ pub async fn open_content(
             .privacy()
             .check_read(&permit, now())
             .map_err(|error| AppError::Validation(error.to_string()))?;
-        return handle_url_content(&app_path, &entry.content).await;
+        let launched=handle_url_content(&app_path, &entry.content).await;
+        return complete_external_open(&history,id,&permit,launched,now());
     }
+    let ticket=edit_watch_ticket(&history,&permit,id,&content_type,now())
+        .map_err(|error|AppError::Validation(error.to_string()))?;
     let export = if id > 0 {
         history.external_files_authorized(id, &permit, now())
     } else {
@@ -95,17 +124,9 @@ pub async fn open_content(
         .privacy()
         .check_read(&permit, now())
         .map_err(|error| AppError::Validation(error.to_string()))?;
-    launch_file_with_app(&app_path, &file_path, &path, &content_type, false).await?;
-    history
-        .privacy()
-        .check_read(&permit, now())
-        .map_err(|error| AppError::Validation(error.to_string()))?;
-    if id != 0
-        && matches!(
-            content_type.as_str(),
-            "image" | "text" | "rich_text" | "code"
-        )
-    {
+    let launched=launch_file_with_app(&app_path, &file_path, &path, &content_type, false).await;
+    complete_external_open(&history,id,&permit,launched,now())?;
+    if let Some(ticket)=ticket {
         start_file_watcher(app_handle, file_path, lease, content_type, id, ticket);
     } else {
         lease.retain();
@@ -571,4 +592,56 @@ fn update_database_with_changes(
         }
     }
     let _ = app_handle.emit("clipboard-changed", id);
+}
+
+#[cfg(test)]
+mod authorization_tests {
+    use super::*;
+    use std::sync::{Arc,Mutex};
+
+    fn fixture()->(dzc_core::api::HistoryService,Arc<Mutex<rusqlite::Connection>>) {
+        let connection=crate::database::init_db(":memory:").unwrap();
+        connection.execute("INSERT INTO clipboard_history(id,content_type,content,preview,tags,source_app,timestamp,is_pinned) VALUES(1,'url','https://example.invalid/','synthetic','[]','Synthetic',1,0)",[]).unwrap();
+        let connection=Arc::new(Mutex::new(connection));
+        (dzc_core::api::HistoryService::from_legacy_connection(connection.clone()),connection)
+    }
+
+    fn permit(history:&dzc_core::api::HistoryService,now:i64)->dzc_core::api::PrivacyReadPermit {
+        history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,dzc_core::api::SensitiveAccess::Denied,None,now).unwrap()
+    }
+
+    fn uses(connection:&Arc<Mutex<rusqlite::Connection>>)->i32 {
+        connection.lock().unwrap().query_row("SELECT use_count FROM clipboard_history WHERE id=1",[],|row|row.get(0)).unwrap()
+    }
+
+    #[test]
+    fn paused_recording_allows_read_only_open_without_an_edit_write_ticket() {
+        let (history,_)=fixture();
+        history.privacy().toggle(10).unwrap();
+        let permit=permit(&history,11);
+        assert!(history.get_entry_authorized(1,&permit,11).unwrap().is_some());
+        for kind in ["url","files","video","image","text","rich_text","code"] {
+            assert!(edit_watch_ticket(&history,&permit,1,kind,11).unwrap().is_none(),"{kind}");
+        }
+        history.privacy().toggle(12).unwrap();
+        assert_eq!(edit_watch_ticket(&history,&permit,1,"text",13).unwrap_err(),dzc_core::api::PrivacyError::PrivacyEpochChanged);
+        let current=self::permit(&history,13);
+        assert_eq!(edit_watch_ticket(&history,&current,1,"text",13).unwrap().unwrap().epoch(),current.epoch());
+        assert!(edit_watch_ticket(&history,&current,1,"files",13).unwrap().is_none());
+    }
+
+    #[test]
+    fn only_successful_current_persistent_opens_increment_use_count_once() {
+        let (history,connection)=fixture();
+        let permit=permit(&history,10);
+        assert!(complete_external_open(&history,1,&permit,Err(AppError::IO("synthetic launch failure".into())),10).is_err());
+        assert_eq!(uses(&connection),0);
+        complete_external_open(&history,0,&permit,Ok(()),10).unwrap();
+        assert_eq!(uses(&connection),0);
+        complete_external_open(&history,1,&permit,Ok(()),10).unwrap();
+        assert_eq!(uses(&connection),1);
+        history.privacy().toggle(11).unwrap();
+        assert!(complete_external_open(&history,1,&permit,Ok(()),12).is_err());
+        assert_eq!(uses(&connection),1);
+    }
 }

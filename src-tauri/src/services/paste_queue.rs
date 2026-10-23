@@ -8,6 +8,26 @@ use tauri::{Emitter, Manager, State};
 #[allow(dead_code)]
 const WM_PASTE: u32 = 0x0302;
 
+#[derive(Debug)]
+struct PreparedQueueEntry {
+    entry: dzc_core::api::ClipboardEntry,
+    permit: dzc_core::api::PrivacyReadPermit,
+}
+
+fn prepare_queue_entry(history:&dzc_core::api::HistoryService,id:i64,now:i64)->Result<Option<PreparedQueueEntry>,dzc_core::api::PrivacyError> {
+    if id<=0 {return Err(dzc_core::api::PrivacyError::SensitiveAccessDenied);}
+    let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,
+        dzc_core::api::SensitiveAccess::Denied,None,now)?;
+    let entry=history.get_entry_authorized(id,&permit,now)?;
+    if entry.is_none() {
+        let metadata=history.query(&dzc_core::api::HistoryQuery{id:Some(id),limit:1,metadata:true,..Default::default()})
+            .map_err(|_|dzc_core::api::PrivacyError::PrivacyStateUnavailable)?;
+        history.privacy().check_read(&permit,now)?;
+        if !metadata.is_empty() {return Err(dzc_core::api::PrivacyError::SensitiveAccessDenied);}
+    }
+    Ok(entry.map(|entry|PreparedQueueEntry{entry,permit}))
+}
+
 fn reset_paste_tracking(queue: &mut PasteQueueState) {
     queue.last_action_was_paste = false;
     queue.last_pasted_content = None;
@@ -153,24 +173,17 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
             },
             Ok(Some(_))=>(),
         }
-        // 2. Get Content (DB Lock acquired here, safe because Queue lock is released)
-        let content_opt = if id < 0 {
-            let s = session.inner().0.lock().unwrap();
-            s.iter().find(|i| i.id == id).map(|i| {
-                (
-                    i.content.clone(),
-                    i.content_type.clone(),
-                    i.html_content.clone(),
-                )
-            })
-        } else {
-            db_state
-                .repo
-                .get_entry_content_with_html(id)
-                .unwrap_or(None)
+        let original_instance=match bridge.instance() {
+            Ok(instance)=>instance,
+            Err(_)=>{let _=app_handle.emit("paste-queue-unavailable","ClipboardHostUnavailable");return;},
         };
-
-        if let Some((content, c_type, html_content)) = content_opt {
+        let history=db_state.history_service();
+        let content_opt=match prepare_queue_entry(&history,id,chrono::Utc::now().timestamp_millis()) {
+            Ok(entry)=>entry,
+            Err(_)=>{clear_paste_tracking(&state);let _=app_handle.emit("paste-queue-unavailable","SensitiveAccessDenied");return;},
+        };
+        if let Some(PreparedQueueEntry{entry,permit}) = content_opt {
+            let (content,c_type,html_content)=(entry.content,entry.content_type,entry.html_content);
             // CRITICAL: Update last_pasted_content BEFORE modifying clipboard to prevent race condition
             // where the monitor sees the change before we've marked it as an echo.
             {
@@ -181,16 +194,10 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
 
             let paste_with_format = c_type == "rich_text" && html_content.as_deref().is_some();
 
-            if crate::services::clipboard_ops::write_content_to_system_clipboard(
-                &content,
-                crate::services::clipboard_ops::ClipboardWriteOptions {
-                    content_type: &c_type,
-                    html_content: html_content.as_deref(),
-                    paste_with_format,
-                    mark_as_self_copy: true,
-                },
-            )
-            .is_err()
+            if bridge.call_embedded::<dzc_host::wire::OperationResult>(dzc_host::wire::Method::DesktopClipboardCopy,
+                dzc_host::wire::DesktopCopyParams{id,service_instance_id:original_instance.clone(),expected_epoch:permit.epoch(),reveal:false,paste:false,
+                    derived_text:None,image_as_base64:None,with_format:Some(paste_with_format),delete_after_use:Some(false),move_to_top:Some(false)})
+                .is_err()
             {
                 clear_paste_tracking(&state);
                 return;
@@ -217,6 +224,13 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
                 #[cfg(not(target_os = "windows"))]
                 false
             };
+
+            if bridge.instance().ok().as_deref()!=Some(original_instance.as_str())
+                || history.privacy().check_read(&permit,chrono::Utc::now().timestamp_millis()).is_err() {
+                clear_paste_tracking(&state);
+                let _=app_handle.emit("paste-queue-unavailable","PrivacyEpochChanged");
+                return;
+            }
 
             if crate::services::clipboard_ops::send_paste_keystroke(
                 &paste_method,
@@ -314,5 +328,41 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
         // nothing at all. This event names the cause.
         let _ = app_handle.emit("paste-queue-empty", ());
         emit_queue_finished(&app_handle, &state);
+    }
+}
+
+#[cfg(test)]
+mod authorization_tests {
+    use super::*;
+    use std::sync::{Arc,Mutex};
+
+    fn history(protected:bool,kind:&str)->dzc_core::api::HistoryService {
+        let connection=crate::database::init_db(":memory:").unwrap();
+        connection.execute("INSERT INTO clipboard_history(id,content_type,content,preview,tags,source_app,timestamp,is_pinned) VALUES(1,?1,?2,'synthetic preview',?3,'Synthetic',1,0)",
+            rusqlite::params![kind,"synthetic queue body",if protected {"[\"sensitive\"]"} else {"[]"}]).unwrap();
+        dzc_core::api::HistoryService::from_legacy_connection(Arc::new(Mutex::new(connection)))
+    }
+
+    #[test]
+    fn queue_cannot_decrypt_protected_text_html_images_or_files_without_a_user_read_grant() {
+        for kind in ["text","rich_text","image","files","video"] {
+            let history=history(true,kind);
+            assert_eq!(history.get_entry_content(1).unwrap().as_deref(),Some("synthetic queue body"));
+            assert_eq!(prepare_queue_entry(&history,1,10).unwrap_err(),dzc_core::api::PrivacyError::SensitiveAccessDenied,"{kind}");
+        }
+    }
+
+    #[test]
+    fn ordinary_queue_reads_keep_the_original_epoch_and_work_while_recording_is_paused() {
+        let history=history(false,"text");
+        let before=prepare_queue_entry(&history,1,10).unwrap().unwrap();
+        history.privacy().toggle(11).unwrap();
+        assert_eq!(history.privacy().check_read(&before.permit,12).unwrap_err(),dzc_core::api::PrivacyError::PrivacyEpochChanged);
+        let active=prepare_queue_entry(&history,1,12).unwrap().unwrap();
+        assert_eq!(active.entry.content,"synthetic queue body");
+        assert!(history.privacy().check_read(&active.permit,12).is_ok());
+        assert!(history.privacy().capture_ticket(12).is_err());
+        assert!(prepare_queue_entry(&history,2,12).unwrap().is_none());
+        assert!(prepare_queue_entry(&history,-1,12).is_err());
     }
 }
