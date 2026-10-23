@@ -181,6 +181,17 @@ fn finish_pasted(app:&tauri::AppHandle,guard:&QueueStepGuard,empty:Option<bool>,
     }
 }
 
+fn send_queue_input(
+    validate:impl FnOnce()->Result<(),String>,
+    send:impl FnOnce()->Result<(),String>,
+    restore:impl FnOnce(),
+)->Result<(),String> {
+    validate()?;
+    let result=send();
+    restore();
+    result
+}
+
 fn send_queue_keystroke(method:&str,content:Option<&str>,content_type:&str,validate:impl FnOnce()->Result<(),String>)->Result<(),String> {
             let alt_was_down = {
                 #[cfg(target_os = "windows")]
@@ -192,8 +203,9 @@ fn send_queue_keystroke(method:&str,content:Option<&str>,content_type:&str,valid
             };
 
 
-    validate()?;
-    crate::services::clipboard_ops::send_paste_keystroke(method,content,Some(content_type)).map_err(|error|format!("PasteKeystrokeFailed:{error}"))?;
+    send_queue_input(validate,|| {
+        crate::services::clipboard_ops::send_paste_keystroke(method,content,Some(content_type)).map_err(|error|format!("PasteKeystrokeFailed:{error}"))
+    },|| {
             // Settle time
             std::thread::sleep(std::time::Duration::from_millis(20));
 
@@ -223,7 +235,7 @@ fn send_queue_keystroke(method:&str,content:Option<&str>,content_type:&str,valid
                 }
             }
 
-    Ok(())
+    })
 }
 
 async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::DesktopHost,guard:QueueStepGuard,instance:String,epoch:u64,method:String,delete:bool) {
@@ -310,6 +322,32 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
 mod authorization_tests {
     use super::*;
     use std::sync::{Arc,Mutex};
+    #[test]
+    fn held_alt_is_restored_after_input_failure_without_masking_the_error_or_consuming() {
+        use std::cell::{Cell,RefCell};
+        let held=Cell::new(true);let order=RefCell::new(Vec::new());
+        let original="PasteKeystrokeFailed:accepted 1 of 2 events".to_owned();
+        let result=send_queue_input(
+            ||{order.borrow_mut().push("validate");Ok(())},
+            ||{order.borrow_mut().push("send");held.set(false);Err(original.clone())},
+            ||{order.borrow_mut().push("restore");held.set(true)},
+        );
+        assert_eq!(result,Err(original));
+        assert!(held.get());
+        assert_eq!(*order.borrow(),vec!["validate","send","restore"]);
+        let shared=Arc::new(Mutex::new(PasteQueueState::default()));shared.lock().unwrap().items.push_back(17);
+        let step=reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap();
+        let guard=QueueStepGuard{queue:shared.clone(),step};
+        assert!(guard.accept_keystroke(result).is_err());
+        assert_eq!(shared.lock().unwrap().items.front(),Some(&17));
+        drop(guard);assert!(shared.lock().unwrap().in_flight.is_none());
+        order.borrow_mut().clear();
+        let denied=send_queue_input(||Err("PrivacyEpochChanged".into()),||{order.borrow_mut().push("send");Ok(())},||{order.borrow_mut().push("restore");});
+        assert_eq!(denied,Err("PrivacyEpochChanged".into()));
+        assert!(order.borrow().is_empty(),"validation failure must not inject or restore keys");
+        assert_eq!(send_queue_input(||Ok(()),||Ok(()),||{order.borrow_mut().push("restore");}),Ok(()));
+        assert_eq!(*order.borrow(),vec!["restore"]);
+    }
     #[test]
     fn rejected_windows_input_keeps_the_queue_and_drop_releases_the_original_reservation() {
         use crate::infrastructure::paste_input::{self,Input,InputDriver};
