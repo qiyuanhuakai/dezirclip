@@ -353,6 +353,7 @@ print(json.dumps(result))
     $settingsBefore = @(Snapshot-WindowsSettings); $explorerBefore = @(Snapshot-Explorer)
     Save-Json (Join-Path $fixture 'windows-settings-before-upgrade.json') $settingsBefore
     Save-Json (Join-Path $fixture 'explorer-before-upgrade.json') $explorerBefore
+    if ($explorerBefore.Count -eq 0) { throw 'Explorer preservation requires at least one active original Explorer before upgrading.' }
     Invoke-OwnedCommand (Join-Path $fixture 'candidate-setup.exe') @('/S', '/UPDATE') 'install-final-release-upgrade' 120000 ('/D=' + $installDirectory) | Write-Output
     Pass-Check 'actual_upgrade_same_directory' @{ old_directory = $installDirectory; final_directory = $installDirectory; arguments = @('/S', '/UPDATE', ('/D=' + $installDirectory)); installer_sha256 = Get-Digest (Join-Path $fixture 'candidate-setup.exe') }
     $raw.installed = @(Assert-InstalledFiles)

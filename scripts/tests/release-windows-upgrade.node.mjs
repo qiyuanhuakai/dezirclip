@@ -90,7 +90,7 @@ function nativeFixture(scenario = 'LegacyToAlpha2') {
     history_and_schema24: { before: clone(marker), after: clone(migrated), actual_gui_evidence: 'final-gui-evidence.json' },
     frozen_preferences_preserved: { before: clone(frozen), after: clone(frozen) },
     windows_settings_preserved: { before: clone(settings), after: clone(settings) },
-    explorer_not_restarted: { before: clone(explorer), after_upgrade: clone(explorer), after_uninstall: clone(explorer) },
+    explorer_not_restarted: { before: clone(explorer), after_upgrade: clone(explorer), after_uninstall: clone(explorer), had_existing_explorer: true },
     controlled_processes_exited: { count: processes.length, original_handles_verified: true },
     actual_release_uninstall: { uninstaller_sha256: 'd'.repeat(64), registered_installation_absent: true,
       missing: ['dezirclip.exe', 'dzc.exe', 'dzc-service.exe'] },
@@ -251,6 +251,19 @@ test('synthetic raw observations reject unexited or substituted process handles,
     value => { evidence(value.report, 'actual_release_uninstall').registered_installation_absent = false; },
     value => { evidence(value.report, 'windows_settings_preserved').after[0].value++; },
     value => { evidence(value.report, 'explorer_not_restarted').after_upgrade[0].pid++; }]) rejectsNative(change);
+});
+
+test('Explorer preservation requires an active original identity, not three matching empty snapshots', () => {
+  rejectsNative(({ report }) => {
+    const explorer = evidence(report, 'explorer_not_restarted');
+    explorer.before = []; explorer.after_upgrade = []; explorer.after_uninstall = [];
+  });
+  rejectsNative(({ report }) => { evidence(report, 'explorer_not_restarted').had_existing_explorer = false; });
+  rejectsNative(({ report }) => { delete evidence(report, 'explorer_not_restarted').had_existing_explorer; });
+  for (const invalid of [{ pid: 0 }, { started_at: null }, { started_at: 'invalid' }]) rejectsNative(({ report }) => {
+    const explorer = evidence(report, 'explorer_not_restarted');
+    for (const stage of ['before', 'after_upgrade', 'after_uninstall']) Object.assign(explorer[stage][0], invalid);
+  });
 });
 
 test('synthetic GUI exit accepts natural success or confirmed original-tree termination only', () => {

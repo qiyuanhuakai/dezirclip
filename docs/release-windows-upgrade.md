@@ -18,8 +18,10 @@ same final NSIS archive. CLI and Service metadata come from their real programs;
 Desktop metadata, profile identity and rendered retained history come from its
 actual WebView. A synthetic pinned/tagged record and all five frozen preferences
 must survive schema24 migration and the real final uninstaller. Typed external
-clipboard settings and Explorer identities must remain unchanged. Native
-clipboard writes and settings ownership acquisition are disabled in the GUI
+clipboard settings and Explorer identities must remain unchanged. Acceptance
+requires at least one active original Explorer before the final
+upgrade; a headless runner without one fails instead of accepting empty snapshots.
+Native clipboard writes and settings ownership acquisition are disabled in the GUI
 bridge for these two upgrade scenarios.
 
 All product execution is restricted to the disposable hosted Windows runner.

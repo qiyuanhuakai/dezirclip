@@ -297,7 +297,10 @@ export function validateNative(report, inputs, extracted) {
   requireValue(Array.isArray(settings.before) && settings.before.length === 6 && equal(settings.before, settings.after)
     && equal(settings.before, uninstalled.windows_settings), 'Upgrade or uninstall changed Windows settings');
   const explorer = evidence('explorer_not_restarted');
-  requireValue(Array.isArray(explorer.before) && equal(explorer.before, explorer.after_upgrade)
+  requireValue(Array.isArray(explorer.before) && explorer.before.length > 0 && explorer.had_existing_explorer === true
+    && new Set(explorer.before.map(item => item.pid)).size === explorer.before.length
+    && explorer.before.every(item => Number.isSafeInteger(item.pid) && item.pid > 0 && typeof item.started_at === 'string'
+      && Number.isFinite(Date.parse(item.started_at))) && equal(explorer.before, explorer.after_upgrade)
     && equal(explorer.before, explorer.after_uninstall), 'Explorer identity changed');
   const uninstall = evidence('actual_release_uninstall');
   requireValue(/^[a-f0-9]{64}$/.test(uninstall.uninstaller_sha256) && uninstall.uninstaller_sha256 === report.uninstaller_sha256

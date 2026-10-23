@@ -107,6 +107,7 @@ class UpgradeSourceContract(unittest.TestCase):
         self.assertIn("Invoke-ProfileCheck 'check' 'upgraded-profile-check'", SOURCE)
         self.assertIn("Invoke-ProfileCheck 'check' 'uninstalled-profile-check'", SOURCE)
         self.assertIn('registered_installation_absent = $true', SOURCE)
+        self.assertLess(SOURCE.index("if ($explorerBefore.Count -eq 0) { throw"), SOURCE.index("'install-final-release-upgrade'"))
 
     def test_workflow_is_reusable_only_and_keeps_each_scenario_disposable(self):
         self.assertIn('on:\n  workflow_call:', WORKFLOW)
