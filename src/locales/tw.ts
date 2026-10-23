@@ -269,6 +269,8 @@ export const tw = {
         sequential_paste_mode: "順序貼上模式",
         sequential_paste_hint: "開啟後，使用專用快速鍵 (如 {hotkey}) 進行貼上時，將按照複製的順序依次進行貼上。當開始新一輪複製時，貼上佇列會自動重置。",
         sequential_paste_queue_empty: "貼上佇列是空的。先複製幾條，再按順序貼上快速鍵",
+        sequential_paste_queue_unavailable: "本次順序貼上未完成，項目仍保留在佇列中",
+        sequential_paste_history_update_failed: "貼上已完成，但歷史記錄更新失敗，請檢查該項記錄",
         sequential_paste_queue_count: "待貼上 {count} 條",
         sequential_paste_clear_queue: "清空佇列",
         sequential_paste_hotkey_label: "順序貼上快速鍵",

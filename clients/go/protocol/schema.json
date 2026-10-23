@@ -613,7 +613,8 @@
             "pin",
             "tags",
             "edit",
-            "delete"
+            "delete",
+            "used"
           ]
         },
         "pinned": {

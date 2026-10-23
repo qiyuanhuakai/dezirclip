@@ -273,6 +273,8 @@ export const zh = {
         sequential_paste_mode: "顺序粘贴模式",
         sequential_paste_hint: "开启后，使用专用快捷键（如 {hotkey}）进行粘贴时，将按照复制的顺序依次进行粘贴。当开始新一轮复制时，粘贴队列会自动重置。",
         sequential_paste_queue_empty: "粘贴队列是空的，先复制几条再按顺序粘贴快捷键",
+        sequential_paste_queue_unavailable: "本次顺序粘贴未完成，条目仍保留在队列中",
+        sequential_paste_history_update_failed: "粘贴已完成，但历史记录更新失败，请检查该条记录",
         sequential_paste_queue_count: "待粘贴 {count} 条",
         sequential_paste_clear_queue: "清空队列",
         sequential_paste_hotkey_label: "顺序粘贴快捷键",

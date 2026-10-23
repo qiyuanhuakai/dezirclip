@@ -41,10 +41,19 @@ pub struct PasteQueueState {
     pub items: VecDeque<i64>,
     pub last_action_was_paste: bool,
     pub last_pasted_content: Option<String>,
+    pub version: std::sync::Arc<()>,
+    pub in_flight: Option<std::sync::Arc<()>>,
+}
+impl PasteQueueState {
+    pub fn reset_tracking(&mut self) {
+        self.last_action_was_paste=false;
+        self.last_pasted_content=None;
+        self.version=std::sync::Arc::new(());
+    }
 }
 
 #[derive(Default)]
-pub struct PasteQueue(pub Mutex<PasteQueueState>);
+pub struct PasteQueue(pub std::sync::Arc<Mutex<PasteQueueState>>);
 
 pub struct SessionHistory(pub std::sync::Arc<Mutex<VecDeque<ClipboardEntry>>>);
 

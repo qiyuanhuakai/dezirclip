@@ -85,7 +85,17 @@ impl Host {
         if self.is_stopping() {return Err(WireErrorCode::Busy);}
         if request.service_instance_id!=self.snapshot()?.service_instance_id {return Err(WireErrorCode::PrivacyBlocked);}
         let now=crate::router::now_ms()?;
-        let permit=self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead,if request.reveal{SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
+        let completed_copy=request.action=="used";
+        let permit=self.history.privacy().authorize_read(if completed_copy{PrivacyAccessIntent::SelectedCopy}else{PrivacyAccessIntent::InteractiveRead},if request.reveal && !completed_copy{SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
+        if completed_copy {
+            if request.id<=0 || request.reveal || request.content.is_some() || request.tags.is_some() || request.pinned.is_some() || request.confirm_persistence.is_some() {return Err(WireErrorCode::InvalidRequest);}
+            let rows=self.history.query(&dzc_core::api::HistoryQuery{id:Some(request.id),metadata:true,limit:1,..Default::default()}).map_err(|_|WireErrorCode::Unavailable)?;
+            if rows.is_empty() {return Err(WireErrorCode::NotFound);}
+            self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
+            self.history.increment_use_count(request.id).map_err(|_|WireErrorCode::Unavailable)?;
+            self.publish(EventKind::EntryUpdated,EventData{entry_id:Some(request.id),status:None})?;
+            return Ok(DesktopMutationResult{id:request.id,performed:true});
+        }
         if request.action=="delete" {
             if request.id<0 {
                 let mut rows=self.session.lock().map_err(|_|WireErrorCode::Unavailable)?;
@@ -149,3 +159,60 @@ fn image_text(payload:ClipboardPayload)->Result<ClipboardPayload,WireErrorCode> 
     _=>return Err(WireErrorCode::InvalidRequest),
 })}
 fn payload_text(payload:&ClipboardPayload)->Option<&str> {match payload {ClipboardPayload::Text(text)=>Some(text),ClipboardPayload::Private{payload,..}=>payload_text(payload),_=>None}}
+#[cfg(test)]
+mod queue_completion_tests {
+    use super::*;
+    use std::sync::{Arc,atomic::{AtomicUsize,Ordering}};
+    #[derive(Default)]
+    struct Actions {copies:AtomicUsize,pastes:AtomicUsize}
+    impl crate::HostActions for Actions {
+        fn platform_capabilities(&self)->Value {serde_json::json!({})}
+        fn can_copy(&self)->bool {true}
+        fn copy(&self,_:ClipboardPayload)->Result<(),WireErrorCode> {self.copies.fetch_add(1,Ordering::SeqCst);Ok(())}
+        fn can_paste(&self)->bool {true}
+        fn paste(&self)->Result<(),WireErrorCode> {self.pastes.fetch_add(1,Ordering::SeqCst);Ok(())}
+        fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+    }
+    fn session(host:&Host,role:ClientRole)->Session {
+        let grant=host.grants().issue_control(role).unwrap();
+        host.hello(HelloParams{protocol_version:VERSION,client_version:"synthetic".into(),client_role:role,capabilities:vec![],required_capabilities:vec![],grant:Some(grant.token().into())}).unwrap().0
+    }
+    fn call(host:&Host,owner:&Session,method:Method,params:Value)->Response {
+        host.dispatch(owner,Request{request_id:"queue-completion".into(),method,params})
+    }
+    fn used(id:i64,state:&RuntimeState)->Value {
+        serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"action":"used"})
+    }
+    #[test]
+    fn host_copy_only_does_not_paste_delete_or_count_and_completion_only_updates_metadata() {
+        let original=crate::router::tests::synthetic_host();
+        let actions=Arc::new(Actions::default());
+        let host=Host::new(crate::HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
+        let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic queue","preview":"synthetic","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
+        let id=host.history.save(&entry,None).unwrap();let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
+        let copy=call(&host,&owner,Method::DesktopClipboardCopy,serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"paste":false,"delete_after_use":false,"move_to_top":false}));
+        assert!(copy.error.is_none());assert_eq!(actions.copies.load(Ordering::SeqCst),1);assert_eq!(actions.pastes.load(Ordering::SeqCst),0);
+        assert_eq!(host.history.query(&dzc_core::api::HistoryQuery{id:Some(id),metadata:true,limit:1,..Default::default()}).unwrap()[0].use_count,0);
+        let completed=call(&host,&owner,Method::DesktopHistoryMutate,used(id,&state));
+        assert!(completed.error.is_none());assert_eq!(completed.result.unwrap(),serde_json::json!({"id":id,"performed":true}));
+        assert_eq!(host.history.query(&dzc_core::api::HistoryQuery{id:Some(id),metadata:true,limit:1,..Default::default()}).unwrap()[0].use_count,1);
+        assert_eq!(actions.copies.load(Ordering::SeqCst),1);assert_eq!(actions.pastes.load(Ordering::SeqCst),0);
+        let mut deletion=used(id,&state);deletion["action"]="delete".into();
+        assert!(call(&host,&owner,Method::DesktopHistoryMutate,deletion).error.is_none());
+        assert!(host.history.query(&dzc_core::api::HistoryQuery{id:Some(id),metadata:true,limit:1,..Default::default()}).unwrap().is_empty());
+    }
+    #[test]
+    fn completed_use_requires_desktop_grant_original_instance_epoch_and_metadata_only_parameters() {
+        let host=crate::router::tests::synthetic_host();let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
+        assert_eq!(call(&host,&session(&host,ClientRole::Cli),Method::DesktopHistoryMutate,used(1,&state)).error.unwrap().code,WireErrorCode::PermissionDenied);
+        let capabilities=call(&host,&owner,Method::Capabilities,serde_json::json!({})).result.unwrap();
+        assert_eq!(capabilities["platform"]["desktop_queue_completion"],serde_json::json!({"supported":true,"version":1}));
+        let mut wrong=used(1,&state);wrong["service_instance_id"]="replacement".into();
+        assert_eq!(call(&host,&owner,Method::DesktopHistoryMutate,wrong).error.unwrap().code,WireErrorCode::PrivacyBlocked);
+        let mut body=used(1,&state);body["content"]="unexpected body".into();
+        assert_eq!(call(&host,&owner,Method::DesktopHistoryMutate,body).error.unwrap().code,WireErrorCode::InvalidRequest);
+        assert_eq!(call(&host,&owner,Method::DesktopHistoryMutate,used(999,&state)).error.unwrap().code,WireErrorCode::NotFound);
+        host.history.privacy().toggle(crate::router::now_ms().unwrap()).unwrap();
+        assert_eq!(call(&host,&owner,Method::DesktopHistoryMutate,used(1,&state)).error.unwrap().code,WireErrorCode::PrivacyEpochChanged);
+    }
+}
