@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { once } from "node:events";
+import { performance } from "node:perf_hooks";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { prepareSidecars, sidecarOptions } from "../prepare-tauri-sidecars.mjs";
 import { bundleRpm, rpmBundleConfig } from "../bundle-rpm.mjs";
+import { nativeWriterTimeoutMs, waitForNativeProcess } from "./native-process-deadline.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -290,4 +294,59 @@ test("native acceptance refuses local execution before any product operation", {
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /GitHub-hosted/);
   }
+});
+
+const nativeObservation = () => ({ status: "starting", stdout: "", stderr: "" });
+
+test("native writer wait retains output and settles once for real process exits", async () => {
+  assert.equal(nativeWriterTimeoutMs, 15000);
+  for (const exitCode of [0, 7]) {
+    const child = spawn(process.execPath, ["-e", `process.stdout.write('synthetic-output'); process.stderr.write('synthetic-error'); process.exitCode=${exitCode}`],
+      { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const observation = nativeObservation();
+    const waiting = waitForNativeProcess(child, observation);
+    if (exitCode) await assert.rejects(waiting, /failed \(7\)/);
+    else await waiting;
+    assert.equal(observation.exitCode, exitCode);
+    assert.equal(observation.status, exitCode ? "failed" : "passed");
+    assert.equal(observation.stdout, "synthetic-output");
+    assert.equal(observation.stderr, "synthetic-error");
+  }
+});
+
+async function runningNativeChild(t) {
+  const source = "process.stdout.write('synthetic-before-timeout'); process.send({ ready: true }); setInterval(() => {}, 1000)";
+  const child = spawn(process.execPath, ["-e", source], { windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  const kill = child.kill.bind(child);
+  t.after(() => {
+    kill();
+    child.stdout.destroy();
+    child.stderr.destroy();
+    if (child.connected) child.disconnect();
+    child.unref();
+  });
+  await once(child, "message", { signal: AbortSignal.timeout(10000) });
+  return { child, kill };
+}
+
+test("native writer deadline rejects immediately when its real process cannot be terminated", async t => {
+  const { child, kill } = await runningNativeChild(t);
+  child.kill = () => false;
+  const observation = nativeObservation();
+  const started = performance.now();
+  await assert.rejects(waitForNativeProcess(child, observation, 150), /timed out/);
+  assert(performance.now() - started < 1000, "Cleanup must not add the former two-second grace period");
+  assert.equal(observation.status, "timeout");
+  await nextTurn();
+  assert.equal(observation.killRequested, false);
+  assert.equal(child.exitCode, null, "The controlled child is still alive after the failed termination request");
+  assert.equal(observation.stdout, "synthetic-before-timeout");
+  const finishedAt = observation.finishedAt;
+  child.ref();
+  const closed = once(child, "close", { signal: AbortSignal.timeout(5000) });
+  kill();
+  await closed;
+  assert.equal(observation.status, "timeout");
+  assert.equal(observation.finishedAt, finishedAt);
+  assert.equal(observation.exitCode, null);
 });

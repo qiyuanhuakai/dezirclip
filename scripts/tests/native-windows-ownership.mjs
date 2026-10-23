@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, lstatSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { waitForNativeProcess } from "./native-process-deadline.mjs";
 
 // This bridge observes the installed GUI; it never mocks invoke or emits fixture events.
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted" || process.platform !== "win32" || !process.env.RUNNER_TEMP) {
@@ -76,39 +77,13 @@ async function poll(label, operation) {
 }
 async function setNativeClipboard(text) {
   // Supply synthetic text as environment data, never shell source.
-  await new Promise((resolve, reject) => {
-    const observation = { startedAt: new Date().toISOString(), status: "starting", stdout: "", stderr: "" };
-    evidence.nativeClipboardWrites.push(observation);
-    const child = spawn("python", [fileURLToPath(new URL("./native-windows-clipboard.py", import.meta.url))], {
-      env: { ...process.env, DEZIRCLIP_NATIVE_CAPTURE_TEXT: text }, windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    observation.pid = child.pid;
-    const retain = (field, chunk) => { observation[field] = (observation[field] + chunk.toString("utf8")).slice(0, 65536); };
-    child.stdout.on("data", chunk => retain("stdout", chunk));
-    child.stderr.on("data", chunk => retain("stderr", chunk));
-    let settled = false;
-    let killDeadline;
-    const finish = (code, error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      clearTimeout(killDeadline);
-      observation.finishedAt = new Date().toISOString();
-      observation.exitCode = code;
-      if (error || code !== 0) {
-        if (observation.status !== "timeout") observation.status = "failed";
-        reject(error || new Error(`Native clipboard writer failed (${code}): ${observation.stdout} ${observation.stderr}`));
-      } else { observation.status = "passed"; resolve(); }
-    };
-    const timeout = setTimeout(() => {
-      observation.status = "timeout";
-      observation.killRequested = child.kill();
-      killDeadline = setTimeout(() => finish(null, new Error("Native clipboard writer timed out; partial output retained")), 2000);
-    }, 15000);
-    child.once("error", error => finish(null, error));
-    child.once("close", code => finish(code, observation.status === "timeout" ? new Error("Native clipboard writer timed out; partial output retained") : null));
+  const observation = { startedAt: new Date().toISOString(), status: "starting", stdout: "", stderr: "" };
+  evidence.nativeClipboardWrites.push(observation);
+  const child = spawn("python", [fileURLToPath(new URL("./native-windows-clipboard.py", import.meta.url))], {
+    env: { ...process.env, DEZIRCLIP_NATIVE_CAPTURE_TEXT: text }, windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  await waitForNativeProcess(child, observation);
 }
 function comparablePath(value) {
   return path.resolve(value.replace(/^\\\\\?\\/, "")).replace(/[\\/]+$/, "").toLowerCase();
