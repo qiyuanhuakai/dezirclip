@@ -193,7 +193,7 @@ fn send_queue_keystroke(method:&str,content:Option<&str>,content_type:&str,valid
 
 
     validate()?;
-    crate::services::clipboard_ops::send_paste_keystroke(method,content,Some(content_type)).map_err(|_|"PasteKeystrokeFailed".to_owned())?;
+    crate::services::clipboard_ops::send_paste_keystroke(method,content,Some(content_type)).map_err(|error|format!("PasteKeystrokeFailed:{error}"))?;
             // Settle time
             std::thread::sleep(std::time::Duration::from_millis(20));
 

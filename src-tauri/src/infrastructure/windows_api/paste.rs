@@ -141,4 +141,3 @@ unsafe fn restore_game_mode_ime(target_hwnd: HWND, ctx: &GameModeImeContext) {
         let _ = ImmReleaseContext(target_hwnd, ctx.himc);
     }
 }
-
