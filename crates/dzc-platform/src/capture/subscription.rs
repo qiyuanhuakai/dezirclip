@@ -145,6 +145,77 @@ pub fn subscribe_clipboard(callback: Callback) -> Result<ClipboardSubscription, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    fn regression_runtime(flag: &str) -> Option<std::path::PathBuf> {
+        if std::env::var(flag).as_deref() != Ok("1") { return None; }
+        let root = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+        assert!(root.is_absolute());
+        assert_eq!(std::fs::read(root.join("p94-private-native-fixture")).unwrap(), b"synthetic-p94-native-only\n");
+        Some(root)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn isolated_pending_wayland_setup_cancels_as_a_successful_stop() {
+        let Some(root) = regression_runtime("DEZIRCLIP_RUN_STARTUP_CANCEL_FIXTURE") else { return; };
+        assert_eq!(std::env::var("WAYLAND_DISPLAY").unwrap(), "wayland-p94-setup");
+        assert!(std::env::var_os("DISPLAY").is_none());
+        use std::io::Read;
+        let listener = std::os::unix::net::UnixListener::bind(root.join("wayland-p94-setup")).unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let (started_tx, started) = mpsc::sync_channel(1);
+        let (finish_tx, finish) = mpsc::sync_channel(1);
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(std::time::Instant::now() < deadline);
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("Private setup connection failed: {error}"),
+                }
+            };
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut request = [0u8; 64];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            started_tx.send(()).unwrap();
+            let _ = finish.recv_timeout(Duration::from_secs(5));
+        });
+        let mut subscription = subscribe_clipboard(Arc::new(|_| panic!("Setup must not emit capture events"))).unwrap();
+        started.recv_timeout(Duration::from_secs(5)).unwrap();
+        subscription.stop().unwrap();
+        assert!(subscription.is_stopped());
+        assert_eq!(subscription.wait_ready(Duration::from_secs(1)), Err("ClipboardStartupCancelled".into()));
+        finish_tx.send(()).unwrap();
+        server.join().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn isolated_established_xfixes_loss_falls_back_and_recovers_after_server_restart() {
+        let Some(root) = regression_runtime("DEZIRCLIP_RUN_XFIXES_RESTART_FIXTURE") else { return; };
+        assert!(std::env::var_os("WAYLAND_DISPLAY").is_none());
+        assert_eq!(super::super::probe_clipboard_monitor().unwrap(), "x11-xfixes");
+        let (tx, rx) = mpsc::channel();
+        let mut subscription = subscribe_clipboard(Arc::new(move |event| { let _ = tx.send(event.sequence); })).unwrap();
+        subscription.wait_ready(Duration::from_secs(5)).unwrap();
+        std::fs::write(root.join("p94-xfixes-ready"), b"ready\n").unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !root.join("p94-x11-restarted").is_file() {
+            assert!(std::time::Instant::now() < deadline, "Private X server restart was not confirmed");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(subscription.worker.as_ref().is_some_and(|worker| !worker.is_finished()), "Established XFixes failure ended capture instead of polling");
+        let mut clipboard = arboard::Clipboard::new().unwrap();
+        clipboard.set_text("synthetic p94 restart first").unwrap();
+        std::thread::sleep(Duration::from_millis(250));
+        clipboard.set_text("synthetic p94 restart second").unwrap();
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        subscription.stop().unwrap();
+        assert!(subscription.is_stopped());
+    }
     #[test]
     fn unconfirmed_stop_keeps_worker_owned_until_retry_joins() {
         let control = Arc::new(Control::default());
