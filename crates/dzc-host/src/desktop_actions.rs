@@ -188,6 +188,39 @@ mod queue_completion_tests {
         serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"action":"used"})
     }
     #[test]
+    fn rejected_native_paste_preserves_history_in_embedded_and_service_modes() {
+        struct FailingPaste;
+        impl crate::HostActions for FailingPaste {
+            fn platform_capabilities(&self)->Value {serde_json::json!({})}
+            fn can_copy(&self)->bool {true}
+            fn copy(&self,_:ClipboardPayload)->Result<(),WireErrorCode> {Ok(())}
+            fn can_paste(&self)->bool {true}
+            fn paste(&self)->Result<(),WireErrorCode> {Err(WireErrorCode::Unavailable)}
+            fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+        }
+        for mode in [HostMode::Embedded,HostMode::Service] {
+            for delete in [false,true] {
+                let original=crate::router::tests::synthetic_host();
+                let host=Host::new(crate::HostOptions{mode,history:original.history.clone(),directory:original.directory.clone(),actions:Arc::new(FailingPaste)}).unwrap();
+                let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic rejected paste","preview":"synthetic","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
+                let id=host.history.save(&entry,None).unwrap();
+                let query=dzc_core::api::HistoryQuery{id:Some(id),metadata:true,limit:1,..Default::default()};
+                let before=host.history.query(&query).unwrap();
+                let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
+                let cursor=state.event_sequence;
+                let failed=call(&host,&owner,Method::DesktopClipboardCopy,serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"paste":true,"delete_after_use":delete,"move_to_top":true}));
+                assert_eq!(failed.error.unwrap().code,WireErrorCode::Unavailable);
+                let after=host.history.query(&query).unwrap();
+                assert_eq!(after.len(),1);
+                assert_eq!(after[0].use_count,before[0].use_count);
+                assert_eq!(after[0].timestamp,before[0].timestamp);
+                assert_eq!(after[0].content,before[0].content);
+                let events:EventsResult=serde_json::from_value(call(&host,&owner,Method::EventsSubscribe,serde_json::json!({"after_sequence":cursor,"wait_ms":0})).result.unwrap()).unwrap();
+                assert!(!events.events.iter().any(|event|matches!(event.event,EventKind::EntryDeleted|EventKind::EntryUpdated)));
+            }
+        }
+    }
+    #[test]
     fn host_copy_only_does_not_paste_delete_or_count_and_completion_only_updates_metadata() {
         let original=crate::router::tests::synthetic_host();
         let actions=Arc::new(Actions::default());
