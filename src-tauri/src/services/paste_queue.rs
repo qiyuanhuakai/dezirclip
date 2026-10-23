@@ -16,7 +16,7 @@ struct PreparedQueueEntry {
 
 fn prepare_queue_entry(history:&dzc_core::api::HistoryService,id:i64,now:i64)->Result<Option<PreparedQueueEntry>,dzc_core::api::PrivacyError> {
     if id<=0 {return Err(dzc_core::api::PrivacyError::SensitiveAccessDenied);}
-    let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,
+    let permit=history.privacy().authorize_selected_copy(id,None,
         dzc_core::api::SensitiveAccess::Denied,None,now)?;
     let entry=history.get_entry_authorized(id,&permit,now)?;
     if entry.is_none() {

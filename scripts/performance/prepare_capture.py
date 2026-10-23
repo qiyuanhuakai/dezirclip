@@ -230,6 +230,7 @@ engine=["native-provider"]
 legacy-layout=[]
 privacy-runtime=[]
 privacy-policy=["privacy-runtime"]
+capture-protection-report=["privacy-policy"]
 
 [[bin]]
 name="capture-perf-{variant}"
@@ -263,6 +264,16 @@ def capture_contract(package, source):
     if type(version) is not int or version not in (1, 2, 3):
         raise ValueError("Unsupported Core capture contract")
     return version
+
+
+def capture_protection_report(package, source):
+    if package != "dzc-core":
+        return False
+    manifest = tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))
+    value = manifest.get("package", {}).get("metadata", {}).get("dzc", {}).get("capture-protection-report", False)
+    if type(value) is not bool or value and capture_contract(package, source) < 3:
+        raise ValueError("Unsupported Core capture protection receipt")
+    return value
 
 
 def prepare(args):
@@ -316,16 +327,20 @@ def prepare(args):
                 ("engine", "dzc-core", candidate / "crates/dzc-core", candidate / "crates/dzc-platform", candidate / "Cargo.lock", ["engine"])]
     for variant, package, package_source, native, lock, features in variants:
         contract = capture_contract(package, package_source)
+        protection_report = capture_protection_report(package, package_source)
         if variant == "engine" and contract >= 2:
             features = [*features, "privacy-runtime"]
         if variant == "engine" and contract >= 3:
             features = [*features, "privacy-policy"]
+        if variant == "engine" and protection_report:
+            features = [*features, "capture-protection-report"]
         manifest, bridge = write_adapter(output, variant, package, package_source, native, lock)
         if bridge:
             features = [*features, "legacy-layout"]
         record = {"manifest": str(manifest), "manifest_sha256": sha256(manifest), "features": features,
                   "source_package": package, "source_manifest": str(package_source / "Cargo.toml"),
-                  "role": "baseline" if variant == "legacy" else "candidate", "capture_contract": contract}
+                   "role": "baseline" if variant == "legacy" else "candidate", "capture_contract": contract,
+                   "capture_protection_report": protection_report}
         if args.mode != "prepare":
             name = f"capture-perf-{variant}"
             common = ["--offline", "--manifest-path", str(manifest), "--bin", name,

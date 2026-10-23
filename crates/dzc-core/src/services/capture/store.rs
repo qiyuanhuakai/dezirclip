@@ -85,6 +85,11 @@ pub trait CaptureStore {
         })
     }
     fn commit(&self, capture: &PreparedCapture) -> Result<CaptureCommit, CaptureFailure>;
+    /// Only adapters with an actual committed storage receipt return Some.
+    /// Existing external stores retain unknown protection through the default.
+    fn commit_with_protection(&self, capture: &PreparedCapture) -> Result<(CaptureCommit, Option<bool>), CaptureFailure> {
+        self.commit(capture).map(|commit| (commit, None))
+    }
 }
 
 struct SqliteCaptureStore<'a> {
@@ -263,13 +268,16 @@ impl CaptureStore for SqliteCaptureStore<'_> {
     }
 
     fn commit(&self, capture: &PreparedCapture) -> Result<CaptureCommit, CaptureFailure> {
+        self.commit_with_protection(capture).map(|(commit, _)| commit)
+    }
+    fn commit_with_protection(&self, capture: &PreparedCapture) -> Result<(CaptureCommit, Option<bool>), CaptureFailure> {
         let connection = self
             .connection
             .lock()
             .map_err(|error| failure(CaptureStage::Persist, error))?;
-        let id = self
+        let (id, protected) = self
             .repository
-            .save_automatic_capture_with_conn(
+            .save_automatic_capture_with_protection(
                 &connection,
                 &capture.entry,
                 Some(self.directory),
@@ -286,7 +294,7 @@ impl CaptureStore for SqliteCaptureStore<'_> {
             .repository
             .enforce_limit_with_conn(&connection, Some(self.directory))
             .unwrap_or_default();
-        Ok(CaptureCommit { id, removed_ids })
+        Ok((CaptureCommit { id, removed_ids }, Some(protected)))
     }
 }
 
@@ -1010,9 +1018,13 @@ mod tests {
 
     #[test]
     fn malformed_pem_prefixes_cannot_hide_a_later_valid_key_from_persistence_protection() {
+        // This checks parsing and transactional persistence, independently of OS scheduling.
+        crate::privacy::with_scan_clock(|| std::time::Duration::ZERO, || {
         use base64::Engine;
+        for public_key in [false, true] {
         let mut der = vec![0x30, 46, 2, 1, 0, 0x30, 5, 6, 3, 0x2b, 0x65, 0x70, 4, 34, 4, 32];
         der.extend([7; 32]);
+        if public_key { der[4]=1;der[1]+=35;der.extend([0x81,33,0]);der.extend([9;32]); }
         let valid = format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----", base64::engine::general_purpose::STANDARD.encode(der));
         for prefix in ["-----BEGIN PRIVATE KEY-----\nY29udGVudA==\n-----END PRIVATE KEY-----\n", "-----BEGIN PRIVATE KEY-----\nmissing terminator\n", "-----BEGIN PRIVATE KEY-----\n%%%invalid%%%\n-----END PRIVATE KEY-----\n"] {
             let (directory, state) = database();
@@ -1023,7 +1035,7 @@ mod tests {
             let text = format!("{prefix}{valid}");
             let frame = CaptureFrame { data: CaptureData::Text(text.clone()), metadata: Default::default() };
             let CaptureOutcome::Stored(capture) = authorized_frame(&context, frame, &store, &mut ()) else { panic!("structured key must persist under protection"); };
-            assert_eq!(capture.privacy.action, crate::privacy::PrivacyAction::Encrypt);
+            assert_eq!(capture.privacy.action, crate::privacy::PrivacyAction::Encrypt, "capture decision: {:?}", capture.privacy);
             let conn = state.conn.lock().unwrap();
             let stored: String = conn.query_row("SELECT content FROM clipboard_history WHERE id=?1", [capture.entry.id], |row| row.get(0)).unwrap();
             assert!(crate::infrastructure::encryption::has_ciphertext_envelope(&stored));
@@ -1032,6 +1044,32 @@ mod tests {
             drop(conn); drop(store); drop(state);
             std::fs::remove_dir_all(directory).unwrap();
         }
+        }
+        });
+    }
+    #[test]
+    fn committed_protection_is_reflected_when_the_initial_scan_budget_expires() {
+        use base64::Engine;
+        use std::{cell::Cell,time::Duration};
+        thread_local! {static CLOCK_CALLS: Cell<usize> = const {Cell::new(0)};}
+        fn clock() -> Duration {CLOCK_CALLS.with(|calls| {let count=calls.get();calls.set(count+1);if count==0 {Duration::from_millis(6)} else {Duration::ZERO}})}
+        CLOCK_CALLS.with(|calls|calls.set(0));
+        crate::privacy::with_scan_clock(clock, || {
+            let (directory,state)=database();let store=state.capture_store(&directory);
+            let session=Mutex::new(VecDeque::new());let context=context(&session);
+            let mut der=vec![0x30,46,2,1,0,0x30,5,6,3,0x2b,0x65,0x70,4,34,4,32];der.extend([7;32]);
+            let text=format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",base64::engine::general_purpose::STANDARD.encode(der));
+            let frame=CaptureFrame{data:CaptureData::Text(text),metadata:Default::default()};
+            let CaptureOutcome::Stored(capture)=authorized_frame(&context,frame,&store,&mut ()) else {panic!("capture must commit");};
+            let conn=state.conn.lock().unwrap();
+            let (content,tags):(String,String)=conn.query_row("SELECT content,tags FROM clipboard_history WHERE id=?1",[capture.entry.id],|row|Ok((row.get(0)?,row.get(1)?))).unwrap();
+            assert!(crate::infrastructure::encryption::has_ciphertext_envelope(&content));
+            assert!(tags.contains("sensitive"));
+            assert!(capture.privacy.evidence.iter().any(|item|item.reason==crate::privacy::PrivacyReason::ScanIncomplete));
+            assert_eq!(capture.privacy.action,crate::privacy::PrivacyAction::Encrypt,"first assessment expired, commit stored ciphertext; capture report: {:?}",capture.privacy);
+            assert!(crate::database::has_sensitive_tag(&capture.entry.tags));
+            drop(conn);drop(store);drop(state);std::fs::remove_dir_all(directory).unwrap();
+        });
     }
 
 }

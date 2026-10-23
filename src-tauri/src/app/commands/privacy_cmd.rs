@@ -142,7 +142,7 @@ pub async fn get_history_resource_preview(
 #[cfg(all(test, target_os = "windows", not(feature = "portable")))]
 mod native_protected_resource_tests {
     use dzc_core::api::{
-        HistoryService, PrivacyAccessIntent, PrivacySessionCommand, SensitiveAccess,
+        HistoryService, PrivacySessionCommand, SensitiveAccess,
     };
     #[test]
     fn native_dpapi_protected_files_remain_ciphertext_and_external_lease_revocation_closes_new_readers(
@@ -169,8 +169,9 @@ mod native_protected_resource_tests {
         assert!(!directory.join("attachments").exists());
         let permit = history
             .privacy()
-            .authorize_read(
-                PrivacyAccessIntent::SelectedCopy,
+            .authorize_selected_copy(
+                id,
+                None,
                 SensitiveAccess::ExplicitUserAction,
                 None,
                 1,

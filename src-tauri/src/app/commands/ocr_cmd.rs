@@ -37,7 +37,7 @@ fn prepare_ocr_image(
     ),
     String,
 > {
-    use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
+    use dzc_core::api::SensitiveAccess;
     let now = || chrono::Utc::now().timestamp_millis();
     let ticket = history
         .privacy()
@@ -45,8 +45,9 @@ fn prepare_ocr_image(
         .map_err(|error| error.to_string())?;
     let permit = history
         .privacy()
-        .authorize_read(
-            PrivacyAccessIntent::SelectedCopy,
+        .authorize_selected_copy(
+            item_id,
+            None,
             if expected_privacy_epoch.is_some() {
                 SensitiveAccess::ExplicitUserAction
             } else {

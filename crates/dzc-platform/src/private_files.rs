@@ -497,15 +497,16 @@ mod tests {
     #[test]
     fn external_editor_reads_the_bound_handle_and_revoke_stops_following_it() {
         use dzc_core::api::{
-            HistoryService, PrivacyAccessIntent, PrivacySessionCommand, SensitiveAccess,
+            HistoryService, PrivacySessionCommand, SensitiveAccess,
         };
         let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
         let entry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"editor A","preview":"editor A","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
         let id = history.save(&entry, None).unwrap();
         let permit = history
             .privacy()
-            .authorize_read(
-                PrivacyAccessIntent::SelectedCopy,
+            .authorize_selected_copy(
+                id,
+                None,
                 SensitiveAccess::Denied,
                 None,
                 1,

@@ -40,12 +40,12 @@ impl Host {
         let ticket=if generated {match self.history.privacy().capture_ticket(now) {
             Ok(ticket)=>Some(ticket),Err(dzc_core::api::PrivacyError::PrivacySessionActive)=>None,Err(error)=>return Err(denied(error))}}
             else {None};
-        let permit=self.history.privacy().authorize_read(PrivacyAccessIntent::SelectedCopy,if request.reveal {SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
+        let permit=self.history.privacy().authorize_selected_copy(request.id,Some(&request.service_instance_id),if request.reveal {SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
         let session_entry=if request.id<0 {Some(self.session.lock().map_err(|_|WireErrorCode::Unavailable)?.iter().find(|row|row.id==request.id).cloned().ok_or(WireErrorCode::NotFound)?)}else{None};
         let mut payload=if let Some(text)=request.derived_text {
-            if let Some(entry)=session_entry.as_ref() {self.history.session_derived_text_payload_authorized(entry,text,&permit,now)}
+            if let Some(entry)=session_entry.as_ref() {self.history.session_derived_text_payload_for_host_authorized(entry,&request.service_instance_id,text,&permit,now)}
                 else {self.history.derived_text_payload_authorized(request.id,text,&permit,now)}
-        } else if let Some(entry)=session_entry.as_ref() {self.history.session_clipboard_payload_authorized(entry,&permit,now)}
+        } else if let Some(entry)=session_entry.as_ref() {self.history.session_clipboard_payload_for_host_authorized(entry,&request.service_instance_id,&permit,now)}
             else {self.history.clipboard_payload_authorized(request.id,&permit,now)}.map_err(denied)?;
         if request.image_as_base64.unwrap_or(false) {payload=image_text(payload)?;}
         if request.with_format==Some(false) {payload=plain(payload);}

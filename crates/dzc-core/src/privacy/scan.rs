@@ -6,6 +6,25 @@ use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+pub(crate) struct ScanTimer(Instant);
+impl ScanTimer {
+    pub(crate) fn start() -> Self { Self(Instant::now()) }
+    pub(crate) fn elapsed(&self) -> Duration {
+        #[cfg(test)]
+        if let Some(clock) = SCAN_CLOCK.with(std::cell::Cell::get) { return clock(); }
+        self.0.elapsed()
+    }
+}
+#[cfg(test)]
+thread_local! { static SCAN_CLOCK: std::cell::Cell<Option<fn() -> Duration>> = const { std::cell::Cell::new(None) }; }
+#[cfg(test)]
+pub(crate) fn with_scan_clock<T>(clock: fn() -> Duration, run: impl FnOnce() -> T) -> T {
+    struct Reset(Option<fn() -> Duration>);
+    impl Drop for Reset { fn drop(&mut self) { SCAN_CLOCK.with(|value| value.set(self.0)); } }
+    let _reset = Reset(SCAN_CLOCK.with(|value| value.replace(Some(clock))));
+    run()
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ScanBudget {
     pub max_bytes: usize,
@@ -82,6 +101,49 @@ fn der_item(bytes: &[u8]) -> Option<(u8, &[u8], &[u8])> {
     Some((tag, &data[..length], &data[length..]))
 }
 
+fn der_algorithm(bytes: &[u8]) -> bool {
+    let Some((6, oid, rest)) = der_item(bytes) else { return false; };
+    !oid.is_empty() && (rest.is_empty() || der_item(rest).is_some_and(|(_, _, tail)| tail.is_empty()))
+}
+
+fn der_attributes(mut bytes: &[u8]) -> bool {
+    while !bytes.is_empty() {
+        let Some((0x30, attribute, rest)) = der_item(bytes) else { return false; };
+        let Some((6, oid, values)) = der_item(attribute) else { return false; };
+        let Some((0x31, mut values, [])) = der_item(values) else { return false; };
+        if oid.is_empty() || values.is_empty() { return false; }
+        while !values.is_empty() {
+            let Some((_, _, rest)) = der_item(values) else { return false; };
+            values = rest;
+        }
+        bytes = rest;
+    }
+    true
+}
+
+fn private_key_info(fields: &[(u8, &[u8])]) -> bool {
+    if !(3..=5).contains(&fields.len()) || fields[0].0 != 2
+        || !matches!(fields[0].1, [0] | [1]) || fields[1].0 != 0x30
+        || !der_algorithm(fields[1].1) || fields[2].0 != 4 || fields[2].1.len() < 16 {
+        return false;
+    }
+    let mut next = 3;
+    if fields.get(next).is_some_and(|(tag, _)| *tag == 0xa0) {
+        if !der_attributes(fields[next].1) { return false; }
+        next += 1;
+    }
+    // RFC 5958 uses IMPLICIT [1] BIT STRING and version INTEGER 1 when present.
+    let public = fields.get(next).is_some_and(|(tag, _)| *tag == 0x81);
+    if public {
+        let bits = fields[next].1;
+        if bits.len() < 2 || bits[0] > 7 || bits.last().is_none_or(|last| last & ((1u8 << bits[0]) - 1) != 0) {
+            return false;
+        }
+        next += 1;
+    }
+    next == fields.len() && public == (fields[0].1 == [1])
+}
+
 fn der_private_key(bytes: &[u8], label: &str) -> bool {
     let Some((0x30, mut sequence, [])) = der_item(bytes) else {
         return false;
@@ -98,17 +160,7 @@ fn der_private_key(bytes: &[u8], label: &str) -> bool {
         return false;
     }
     match label {
-        "PRIVATE KEY" => {
-            fields.len() >= 3
-                && fields[0] == (2, &[0][..])
-                && fields[1].0 == 0x30
-                && der_item(fields[1].1).is_some_and(|(tag, oid, _)| tag == 6 && !oid.is_empty())
-                && fields[2].0 == 4
-                && fields[2].1.len() >= 16
-                && fields[3..]
-                    .iter()
-                    .all(|(tag, _)| matches!(tag, 0xa0 | 0x81 | 0xa1))
-        }
+        "PRIVATE KEY" => private_key_info(&fields),
         "RSA PRIVATE KEY" => {
             fields.len() == 9
                 && fields[0] == (2, &[0][..])
@@ -184,7 +236,7 @@ pub fn scan_content(
     custom: &[String],
     budget: ScanBudget,
 ) -> ScanReport {
-    let started = Instant::now();
+    let started = ScanTimer::start();
     let mut end = content.len().min(budget.max_bytes);
     while !content.is_char_boundary(end) {
         end -= 1;
@@ -355,6 +407,27 @@ mod tests {
         assert!(!serde_json::to_string(&report.evidence)
             .unwrap()
             .contains(&rule));
+    }
+    #[test]
+    fn pkcs8_public_key_variant_validates_version_order_and_bit_string() {
+        fn key(version: u8, extra: &[u8]) -> Vec<u8> {
+            let mut der = vec![0x30, (46 + extra.len()) as u8, 2, 1, version, 0x30, 5, 6, 3, 0x2b, 0x65, 0x70, 4, 34, 4, 32];
+            der.extend([7; 32]);der.extend(extra);der
+        }
+        let mut public = vec![0x81, 33, 0];public.extend([9; 32]);
+        let mut attributes_then_public = vec![0xa0, 0];attributes_then_public.extend(&public);
+        for der in [key(0,&[]),key(1,&public),key(1,&attributes_then_public)] {
+            assert!(der_private_key(&der,"PRIVATE KEY"));
+            let pem=format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",base64::engine::general_purpose::STANDARD.encode(der));
+            assert_eq!(PrivacyPolicy.decide(scan_content(&pem,&[],&[],budget()).evidence).action,PrivacyAction::Encrypt);
+        }
+        let mut bad_padding=public.clone();bad_padding[2]=1;
+        let mut duplicate=public.clone();duplicate.extend(&public);
+        let mut wrong_order=public.clone();wrong_order.extend([0xa0,0]);
+        let mut explicit=public.clone();explicit[0]=0xa1;
+        for der in [key(0,&public),key(1,&[]),key(2,&public),key(1,&[0x81,1,0]),key(1,&[0x81,2,8,0]),key(1,&bad_padding),key(1,&duplicate),key(1,&wrong_order),key(1,&explicit),key(1,&[0xa0,1,0])] {
+            assert!(!der_private_key(&der,"PRIVATE KEY"));
+        }
     }
     #[test]
     fn budgets_and_invalid_rules_report_incomplete_instead_of_safe() {

@@ -35,3 +35,4 @@ libc.workspace = true
 
 [package.metadata.dzc]
 capture-contract = 3
+capture-protection-report = true
