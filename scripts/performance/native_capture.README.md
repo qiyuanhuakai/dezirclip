@@ -45,6 +45,7 @@ python3 scripts/performance/native_capture.py --mode isolation --python-runtime 
 
 ```sh
 python3 scripts/performance/native_capture.py --mode functional --python-runtime /readonly/python \
+  --baseline-revision 90ba9960744b6cd57caaaf597f68533a7e41be45 \
   --old-gui /readonly/old/bin/dezirclip --old-cli /readonly/old/bin/dzc \
   --old-proof /readonly/old/build.json \
   --candidate-gui /readonly/candidate/bin/dezirclip \
@@ -60,6 +61,7 @@ python3 scripts/performance/native_capture.py --mode functional --python-runtime
 
 ```sh
 python3 scripts/performance/native_capture.py --mode formal --python-runtime /readonly/python \
+  --baseline-revision 90ba9960744b6cd57caaaf597f68533a7e41be45 \
   --old-gui /readonly/old/bin/dezirclip --old-cli /readonly/old/bin/dzc \
   --old-proof /readonly/old/build.json \
   --candidate-gui /readonly/candidate/bin/dezirclip \
