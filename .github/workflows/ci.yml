@@ -221,6 +221,13 @@ jobs:
           binary = Path("target/debug") / ("dzc.exe" if os.name == "nt" else "dzc")
           subprocess.run(["python", "scripts/test-local-host.py", "--cli", str(binary)], check=True)
 
+      - name: Verify private Windows clipboard leases on disposable runner
+        if: runner.os == 'Windows' && matrix.can_test
+        env:
+          DZC_PRIVATE_LEASE_DISPOSABLE: '1'
+          DZC_PRIVATE_OWNER_FIXTURE_EXE: ${{ github.workspace }}/target/debug/dzc.exe
+        run: cargo test -p dzc-platform --features ipc native_clipboard::private_windows::tests::disposable_native_lifecycle -- --ignored --exact --nocapture --test-threads=1
+
       - name: Check backend without replacing the built CLI
         shell: python
         run: |
