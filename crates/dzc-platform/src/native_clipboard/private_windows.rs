@@ -509,6 +509,24 @@ mod tests {
             loop { if let Some(status) = child.try_wait().unwrap() { assert!(status.success()); break; } assert!(Instant::now() < deadline); std::thread::sleep(Duration::from_millis(10)); }
         }
         empty();
+        history.privacy().set_session(PrivacySessionCommand::Off, now()).unwrap();
+        start_child(&executable, Payload::LeasedFiles { files: vec![super::super::NativeFile { name: "helper-owned.txt".into(), bytes: b"helper owns the only export handles".to_vec() }], lease: authorize().native_lease().unwrap() }).unwrap();
+        let drop_files = read_raw(15);
+        let path_units = drop_files[20..].chunks_exact(2).map(|pair| u16::from_le_bytes(pair.try_into().unwrap())).take_while(|unit| *unit != 0).collect::<Vec<_>>();
+        let helper_path = String::from_utf16(&path_units).unwrap();
+        assert!(std::path::Path::new(&helper_path).starts_with(&root));
+        let children = std::mem::take(&mut *CHILDREN.get().unwrap().lock().unwrap());
+        let mut detached_files = children.into_iter().map(|child| { drop(child.control); child.process }).collect::<Vec<_>>();
+        std::thread::sleep(Duration::from_millis(150));
+        assert_eq!(std::fs::read(&helper_path).unwrap(), b"helper owns the only export handles");
+        for child in &mut detached_files { assert!(child.try_wait().unwrap().is_none()); }
+        history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, now()).unwrap();
+        for child in &mut detached_files {
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop { if let Some(status) = child.try_wait().unwrap() { assert!(status.success()); break; } assert!(Instant::now() < deadline); std::thread::sleep(Duration::from_millis(10)); }
+        }
+        assert!(std::fs::read(&helper_path).is_err());
+        empty();
         writer.stop().unwrap();
         println!("Windows private lease native cases passed: text/html/PNG pixels, original epoch, expiry, later owner preservation, file deletion, helper stop and caller exit");
     }
