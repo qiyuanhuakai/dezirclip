@@ -225,8 +225,10 @@ jobs:
         if: runner.os == 'Windows' && matrix.can_test
         env:
           DZC_PRIVATE_LEASE_DISPOSABLE: '1'
+          DZC_PRIVATE_LEASE_DIAGNOSTICS: '1'
           DZC_PRIVATE_OWNER_FIXTURE_EXE: ${{ github.workspace }}/target/debug/dzc.exe
-        run: cargo test -p dzc-platform --features ipc native_clipboard::private_windows::tests::disposable_native_lifecycle -- --ignored --exact --nocapture --test-threads=1
+          RUST_BACKTRACE: '1'
+        run: cargo test -p dzc-platform --features ipc native_clipboard::private_windows::tests::disposable_native_ -- --ignored --nocapture --test-threads=1
 
       - name: Check backend without replacing the built CLI
         shell: python
