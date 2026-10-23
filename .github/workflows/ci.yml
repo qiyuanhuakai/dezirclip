@@ -136,12 +136,13 @@ jobs:
         if: runner.os == 'Linux'
         shell: python
         run: |
-          import os, pathlib, subprocess, sys
+          import json, os, pathlib, re, subprocess, sys
           assert sys.platform == 'linux' and os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted', 'Only a disposable Actions Linux runner may configure this prerequisite'
           # Ubuntu 24.04 mediates capabilities within unprivileged user namespaces:
           # https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions
           key = pathlib.Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')
           print('DEZIRCLIP_USERNS_PREREQUISITE', {'key_exists': key.exists(), 'apparmor_label': pathlib.Path('/proc/self/attr/current').read_text().strip()}, flush=True)
+          before = after = None
           if key.exists():
               before = key.read_text().strip()
               assert before in ('0', '1'), 'Unknown AppArmor userns restriction value'
@@ -149,6 +150,14 @@ jobs:
               after = key.read_text().strip()
               print('DEZIRCLIP_USERNS_PREREQUISITE', {'before': before, 'after': after}, flush=True)
               assert after == '0', 'User namespace prerequisite readback failed'
+          # Retain this run's original values for the final native step.
+          identity = {name: os.environ[name] for name in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'GITHUB_SHA', 'RUNNER_NAME', 'RUNNER_ARCH')}
+          assert re.fullmatch('[1-9][0-9]*', identity['GITHUB_RUN_ID']) and re.fullmatch('[1-9][0-9]*', identity['GITHUB_RUN_ATTEMPT']) and re.fullmatch('[A-Za-z0-9_-]+', identity['GITHUB_JOB']) and re.fullmatch('[0-9a-f]{40}', identity['GITHUB_SHA']), 'Invalid native job identity'
+          receipt = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-userns-' + identity['GITHUB_RUN_ID'] + '-' + identity['GITHUB_RUN_ATTEMPT'] + '-' + identity['GITHUB_JOB'] + '.json')
+          with receipt.open('x', encoding='utf-8') as output:
+              json.dump({'schema_version': 1, 'status': 'passed', 'identity': identity, 'key_exists': key.exists(), 'before': before, 'after': after}, output)
+              output.flush()
+              os.fsync(output.fileno())
 
       - name: Test standalone packaging
         run: python -m unittest discover -s scripts/tests -v
@@ -175,14 +184,6 @@ jobs:
             libdbus-1-dev \
             bubblewrap \
             xdg-utils
-
-      - name: Verify actual private Linux release receipt mounts
-        if: runner.os == 'Linux'
-        shell: python
-        run: |
-          import shutil, subprocess, sys
-          assert sys.platform == 'linux' and shutil.which('bwrap'), 'Actual bubblewrap execution is required; skipping cannot pass this gate'
-          subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
 
       - name: Install Rust stable
         if: matrix.rust_target == ''
@@ -291,6 +292,24 @@ jobs:
           ], check=True)
           if hashlib.sha256(binary.read_bytes()).digest() != before:
               raise RuntimeError("backend check replaced the built CLI")
+
+      - name: Verify actual private Linux release receipt mounts
+        if: runner.os == 'Linux'
+        shell: python
+        run: |
+          import json, os, pathlib, shutil, subprocess, sys
+          assert sys.platform == 'linux' and os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and shutil.which('bwrap'), 'Actual bubblewrap execution on the disposable Linux runner is required'
+          identity = {name: os.environ[name] for name in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_JOB', 'GITHUB_SHA', 'RUNNER_NAME', 'RUNNER_ARCH')}
+          receipt = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-userns-' + identity['GITHUB_RUN_ID'] + '-' + identity['GITHUB_RUN_ATTEMPT'] + '-' + identity['GITHUB_JOB'] + '.json')
+          assert receipt.is_file() and not receipt.is_symlink() and receipt.stat().st_size <= 8192, 'Original bounded userns receipt is missing'
+          saved = json.loads(receipt.read_text(encoding='utf-8'))
+          assert type(saved['schema_version']) is int and saved['schema_version'] == 1 and saved['status'] == 'passed' and saved['identity'] == identity, 'Original userns receipt belongs to another run/attempt/job'
+          key = pathlib.Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')
+          assert type(saved['key_exists']) is bool and saved['key_exists'] == key.exists(), 'Userns prerequisite availability changed'
+          current = key.read_text().strip() if key.exists() else None
+          assert (saved['before'] in ('0', '1') and saved['after'] == current == '0') if key.exists() else saved['before'] is saved['after'] is current is None, 'Userns prerequisite no longer matches its original readback'
+          print('DEZIRCLIP_USERNS_PREREQUISITE_RETAINED', {'original': saved, 'current': current}, flush=True)
+          subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
 
   standalone-cli:
     name: Compatible standalone CLI

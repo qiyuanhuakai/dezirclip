@@ -47,12 +47,49 @@ def evaluate(machine,audit,number):
     raise AssertionError('Filter did not return')
 
 class ReleaseIdentities(unittest.TestCase):
+    def test_final_mount_step_requires_the_original_run_receipt_and_only_reads_sysctl(self):
+        source=(identity.ROOT/'.github/workflows/ci.yml').read_text(encoding='utf-8')
+        def block(name):
+            step=source.split('      - name: '+name+'\n',1)[1].split('\n      - name:',1)[0].split('\n  standalone-cli:',1)[0]
+            return textwrap.dedent(step.split('        run: |\n',1)[1]).rstrip()
+        early=block('Permit private user namespaces on disposable Linux runner')
+        late=block('Verify actual private Linux release receipt mounts')
+        with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
+            root=Path(temp);concrete=type(root)
+            environment={'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','RUNNER_TEMP':temp,'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'2','GITHUB_JOB':'tauri','GITHUB_SHA':REVISION,'RUNNER_NAME':'synthetic-runner','RUNNER_ARCH':'X64'}
+            current=['1','0'];key=SimpleNamespace(exists=lambda:True,read_text=lambda:current.pop(0) if len(current)>1 else current[0])
+            label=SimpleNamespace(read_text=lambda:'synthetic-unconfined')
+            def path(name):
+                if str(name)=='/proc/sys/kernel/apparmor_restrict_unprivileged_userns':return key
+                if str(name)=='/proc/self/attr/current':return label
+                return concrete(name)
+            with patch.dict(os.environ,environment,clear=True),patch('sys.platform','linux'),patch('pathlib.Path',side_effect=path),patch('shutil.which',return_value='/usr/bin/bwrap'),patch('subprocess.run') as execute,patch('builtins.print'):
+                exec(early,{})
+                execute.assert_called_once_with(['sudo','-n','sysctl','-w','kernel.apparmor_restrict_unprivileged_userns=0'],check=True)
+                receipt=root/'dezirclip-userns-123-2-tauri.json';original=json.loads(receipt.read_text())
+                execute.reset_mock();exec(late,{})
+                execute.assert_called_once()
+                self.assertNotIn('sudo',execute.call_args.args[0])
+                for field,value in (('GITHUB_RUN_ID','124'),('GITHUB_RUN_ATTEMPT','3'),('GITHUB_JOB','other'),('GITHUB_SHA','c'*40),('RUNNER_NAME','other'),('RUNNER_ARCH','ARM64')):
+                    altered=copy.deepcopy(original);altered['identity'][field]=value;receipt.write_text(json.dumps(altered));execute.reset_mock()
+                    with self.subTest(field=field),self.assertRaises(AssertionError):exec(late,{})
+                    execute.assert_not_called()
+                for field,value in (('schema_version',True),('status','failed'),('key_exists',1),('before','unknown'),('after','1'),('padding','x'*8192)):
+                    altered=copy.deepcopy(original);altered[field]=value;receipt.write_text(json.dumps(altered));execute.reset_mock()
+                    with self.subTest(field=field),self.assertRaises(AssertionError):exec(late,{})
+                    execute.assert_not_called()
+                receipt.write_text(json.dumps(original));current[0]='1';execute.reset_mock()
+                with self.assertRaises(AssertionError):exec(late,{})
+                execute.assert_not_called();receipt.unlink()
+                with self.assertRaises(AssertionError):exec(late,{})
+                execute.assert_not_called()
+
     def test_disposable_userns_setup_refuses_local_execution_and_checks_readback(self):
         blocks=[]
         for name in ('ci.yml','release-identities.yml'):
             source=(identity.ROOT/'.github/workflows'/name).read_text(encoding='utf-8')
             step=source.split('      - name: Permit private user namespaces on disposable Linux runner\n',1)[1].split('\n      - name:',1)[0]
-            blocks.append(textwrap.dedent(step.split('        run: |\n',1)[1]))
+            blocks.append(textwrap.dedent(step.split('        run: |\n',1)[1].split('          # Retain this run',1)[0]).rstrip())
         self.assertEqual(blocks[0],blocks[1])
         for environment in ({},{'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'self-hosted'}):
             with patch.dict(os.environ,environment,clear=True),patch('sys.platform','linux'),patch('subprocess.run') as mutate,patch('pathlib.Path') as path:
