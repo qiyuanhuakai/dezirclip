@@ -250,9 +250,20 @@ jobs:
       version: ${{ github.ref_name }}
     secrets: inherit
 
+  collect-release-identities:
+    name: Collect actual final package identities
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/release-identities.yml
+    with:
+      source: ${{ github.sha }}
+      release-id: ${{ needs.create-release.outputs.release_id }}
+
   verify-publish-and-promote:
     name: Verify signed artifacts and publish before public acceptance
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
