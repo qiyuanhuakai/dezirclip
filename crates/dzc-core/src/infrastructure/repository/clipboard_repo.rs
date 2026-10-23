@@ -1104,7 +1104,7 @@ impl SqliteClipboardRepository {
             )
             .map_err(|e| e.to_string())?;
             self.sync_entry_tags_with_conn(conn, entry.id, &cleaned_tags)?;
-            super::privacy_policy::record_exception_use(conn, entry.id, privacy_decision)?;
+            super::privacy_policy::record_exception_use(self, conn, entry.id, privacy_decision)?;
             self.invalidate_caches();
             Ok(entry.id)
         } else {
@@ -1131,7 +1131,7 @@ impl SqliteClipboardRepository {
 
             let new_id = conn.last_insert_rowid();
             self.sync_entry_tags_with_conn(conn, new_id, &cleaned_tags)?;
-            super::privacy_policy::record_exception_use(conn, new_id, privacy_decision)?;
+            super::privacy_policy::record_exception_use(self, conn, new_id, privacy_decision)?;
             self.invalidate_caches();
             Ok(new_id)
         }
@@ -1552,7 +1552,7 @@ impl SqliteClipboardRepository {
             return Err("ClipboardRecordUnavailable".into());
         }
         self.sync_entry_tags_with_conn(conn, entry.id, &entry.tags)?;
-        super::privacy_policy::record_exception_use(conn, entry.id, &decision)?;
+        super::privacy_policy::record_exception_use(self, conn, entry.id, &decision)?;
         self.invalidate_caches();
         Ok(cleanup)
     }
@@ -1705,7 +1705,7 @@ impl SqliteClipboardRepository {
                     params![ocr_text, ocr_status, id],
                 )
                 .map_err(|error| error.to_string())?;
-            super::privacy_policy::record_exception_use(conn, id, &decision)?;
+            super::privacy_policy::record_exception_use(self, conn, id, &decision)?;
             self.invalidate_caches();
             Ok(rows)
         })

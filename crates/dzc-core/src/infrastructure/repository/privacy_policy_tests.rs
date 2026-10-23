@@ -218,6 +218,221 @@ fn removing_a_previously_protected_exact_exception_preserves_manual_protection_i
 }
 
 #[test]
+fn a_reused_exact_exception_restores_each_records_own_protection() {
+    for protected_first in [false, true] {
+        let repo = memory();
+        let ordinary = entry("per association manual protection without detector");
+        let mut sensitive = ordinary.clone();
+        sensitive.tags.push("sensitive".into());
+        let first = repo.save(if protected_first { &sensitive } else { &ordinary }, None).unwrap();
+        repo.privacy_feedback(first, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+        let second = repo.save(if protected_first { &ordinary } else { &sensitive }, None).unwrap();
+        assert_ne!(first, second);
+        repo.privacy_feedback(second, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+        repo.privacy_feedback(second, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+        assert!(visible(&repo, first) && visible(&repo, second));
+        let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+        repo.remove_privacy_rule(&rule.id, &mut [], &permit(&repo), 1).unwrap();
+        assert_eq!(visible(&repo, first), !protected_first);
+        assert_eq!(visible(&repo, second), protected_first);
+    }
+}
+
+#[test]
+fn reused_session_exceptions_restore_only_the_protected_association() {
+    for protected_first in [false, true] {
+        let repo = memory();
+        let mut first = entry("session association manual protection without detector");
+        first.id = -51;
+        let mut second = first.clone();
+        second.id = -52;
+        if protected_first { first.tags.push("sensitive".into()); }
+        else { second.tags.push("sensitive".into()); }
+        for item in [&mut first, &mut second] {
+            repo.privacy_feedback(item.id, Some(item), PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+        }
+        let persistent = repo.save(&entry(&first.content), None).unwrap();
+        let mut items = [first, second];
+        let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+        repo.remove_privacy_rule(&rule.id, &mut items, &permit(&repo), 1).unwrap();
+        assert_eq!(protected(&items[0]), protected_first);
+        assert_eq!(protected(&items[1]), !protected_first);
+        assert!(visible(&repo, persistent));
+    }
+}
+
+fn replace_rule_json(repo: &SqliteClipboardRepository, change: impl FnOnce(&mut serde_json::Value)) {
+    let conn = repo.conn.lock().unwrap();
+    let cipher: String = conn.query_row("SELECT encrypted_rule FROM privacy_rules", [], |row| row.get(0)).unwrap();
+    let mut value = serde_json::from_str(&encryption::decode_for_mutation(&cipher).unwrap()).unwrap();
+    change(&mut value);
+    let cipher = encryption::encrypt_sensitive(&serde_json::to_string(&value).unwrap()).unwrap().into_string();
+    conn.execute("UPDATE privacy_rules SET encrypted_rule=?1", [cipher]).unwrap();
+}
+
+#[test]
+fn session_protection_does_not_follow_an_id_from_another_host_instance() {
+    let repo = memory();
+    let mut item = entry("session instance association without detector");
+    item.id = -61;
+    item.tags.push("sensitive".into());
+    repo.privacy_feedback(item.id, Some(&mut item), PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    replace_rule_json(&repo, |rule| rule["association_protection"]["session_instance"] = uuid::Uuid::new_v4().to_string().into());
+    let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+    let mut items = [item];
+    repo.remove_privacy_rule(&rule.id, &mut items, &permit(&repo), 1).unwrap();
+    assert!(!protected(&items[0]));
+}
+
+#[test]
+fn deleted_history_ids_do_not_inherit_a_previous_associations_manual_protection() {
+    let repo = memory();
+    let mut item = entry("reused persistent id without detector");
+    item.tags.push("sensitive".into());
+    let id = repo.save(&item, None).unwrap();
+    repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    repo.conn.lock().unwrap().execute("DELETE FROM clipboard_history WHERE id=?1", [id]).unwrap();
+    item.tags.clear();
+    let reused = repo.save(&item, None).unwrap();
+    assert_eq!(id, reused);
+    let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+    repo.remove_privacy_rule(&rule.id, &mut [], &permit(&repo), 1).unwrap();
+    assert!(visible(&repo, reused));
+}
+
+#[test]
+fn ambiguous_legacy_associations_refuse_feedback_and_revocation_atomically() {
+    let repo = memory();
+    let ordinary = entry("legacy association without recoverable provenance");
+    let first = repo.save(&ordinary, None).unwrap();
+    repo.privacy_feedback(first, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    let mut sensitive = ordinary.clone();
+    sensitive.tags.push("sensitive".into());
+    let second = repo.save(&sensitive, None).unwrap();
+    repo.privacy_feedback(second, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    replace_rule_json(&repo, |rule| { rule.as_object_mut().unwrap().remove("association_protection"); });
+    let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+    let mut session = [ordinary];
+    session[0].id = -71;
+    let before = snapshot(&repo);
+    let before_session = serde_json::to_value(&session).unwrap();
+    assert_eq!(repo.remove_privacy_rule(&rule.id, &mut session, &permit(&repo), 1).unwrap_err(), "PrivacyRuleProvenanceUnavailable");
+    assert_eq!(snapshot(&repo), before);
+    assert_eq!(serde_json::to_value(&session).unwrap(), before_session);
+    assert_eq!(repo.privacy_feedback(first, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap_err(), "PrivacyRuleProvenanceUnavailable");
+    assert_eq!(snapshot(&repo), before);
+}
+
+#[test]
+fn an_unambiguous_legacy_origin_retains_its_original_protection() {
+    for was_protected in [false, true] {
+        let repo = memory();
+        let mut item = entry("legacy origin with recoverable provenance");
+        if was_protected { item.tags.push("sensitive".into()); }
+        let id = repo.save(&item, None).unwrap();
+        repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+        replace_rule_json(&repo, |rule| { rule.as_object_mut().unwrap().remove("association_protection"); });
+        let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+        repo.remove_privacy_rule(&rule.id, &mut [], &permit(&repo), 1).unwrap();
+        assert_eq!(visible(&repo, id), !was_protected);
+    }
+}
+
+#[test]
+fn association_payload_budget_refuses_declassification_atomically() {
+    let repo = memory();
+    let ordinary = entry("bounded association payload without detector");
+    let id = repo.save(&ordinary, None).unwrap();
+    repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    let mut sensitive = ordinary;
+    sensitive.tags.push("sensitive".into());
+    let id = repo.save(&sensitive, None).unwrap();
+    let mut failing = repo.clone();
+    failing.encrypt_text = |_| encryption::encrypt_sensitive(&"x".repeat(16 * 1024));
+    let before = snapshot(&repo);
+    assert_eq!(failing.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap_err(), "PrivacyRuleLimitExceeded");
+    assert_eq!(snapshot(&repo), before);
+    assert!(!visible(&repo, id));
+}
+
+#[test]
+fn a_real_near_limit_association_payload_rejects_another_protected_session() {
+    let repo = memory();
+    let ordinary = entry("actual bounded provenance without detector");
+    let id = repo.save(&ordinary, None).unwrap();
+    repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+    let conn = repo.conn.lock().unwrap();
+    let cipher: String = conn.query_row("SELECT encrypted_rule FROM privacy_rules", [], |row| row.get(0)).unwrap();
+    let mut value: serde_json::Value = serde_json::from_str(&encryption::decode_for_mutation(&cipher).unwrap()).unwrap();
+    let mut low = 0;
+    let mut high = 2048;
+    let mut bounded = cipher;
+    while low < high {
+        let count = (low + high + 1) / 2;
+        value["association_protection"]["session"] = serde_json::json!((0..count).map(|n| -1_000_000_000i64 - n as i64).collect::<Vec<_>>());
+        let candidate = encryption::encrypt_sensitive(&serde_json::to_string(&value).unwrap()).unwrap().into_string();
+        if candidate.len() <= 16 * 1024 { low = count; bounded = candidate; }
+        else { high = count - 1; }
+    }
+    assert!(low > 0 && bounded.len() <= 16 * 1024);
+    conn.execute("UPDATE privacy_rules SET encrypted_rule=?1", [bounded]).unwrap();
+    drop(conn);
+    assert_eq!(repo.privacy_rule_summaries().unwrap().len(), 1);
+    let mut session = ordinary;
+    session.id = i64::MIN;
+    session.tags.push("sensitive".into());
+    let before = snapshot(&repo);
+    let before_session = serde_json::to_value(&session).unwrap();
+    assert_eq!(repo.privacy_feedback(session.id, Some(&mut session), PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap_err(), "PrivacyRuleLimitExceeded");
+    assert_eq!(snapshot(&repo), before);
+    assert_eq!(serde_json::to_value(&session).unwrap(), before_session);
+}
+
+#[test]
+fn exact_associations_keep_persistent_and_session_protection_independent() {
+    for persistent_protected in [false, true] {
+        let repo = memory();
+        let mut persistent = entry("mixed persistent session exact association");
+        let mut session = persistent.clone();
+        session.id = -81;
+        if persistent_protected { persistent.tags.push("sensitive".into()); }
+        else { session.tags.push("sensitive".into()); }
+        let id = repo.save(&persistent, None).unwrap();
+        repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+        repo.privacy_feedback(session.id, Some(&mut session), PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap();
+        let rule = repo.privacy_rule_summaries().unwrap().remove(0);
+        repo.remove_privacy_rule(&rule.id, std::slice::from_mut(&mut session), &permit(&repo), 1).unwrap();
+        assert_eq!(visible(&repo, id), !persistent_protected);
+        assert_eq!(protected(&session), !persistent_protected);
+    }
+}
+
+#[test]
+fn the_rule_count_budget_rejects_new_feedback_without_declassification() {
+    let repo = memory();
+    let mut item = entry("bounded rule count protected feedback");
+    item.tags.push("sensitive".into());
+    let id = repo.save(&item, None).unwrap();
+    let conn = repo.conn.lock().unwrap();
+    for n in 0..128 {
+        let rule = StoredRule {
+            id: uuid::Uuid::new_v4().to_string(), version: 1,
+            kind: crate::api::PrivacyRuleKind::ProtectSource,
+            source_app: Some(format!("Unrelated Synthetic {n}")), content_type: None,
+            salt: [0; 16], digest: None, origin_entry_id: None, originally_protected: false,
+            association_protection: None, created_at_ms: 1,
+        };
+        let cipher = encryption::encrypt_sensitive(&serde_json::to_string(&rule).unwrap()).unwrap().into_string();
+        conn.execute("INSERT INTO privacy_rules VALUES(?1,?2,1)", rusqlite::params![rule.id, cipher]).unwrap();
+    }
+    drop(conn);
+    let before = snapshot(&repo);
+    assert_eq!(repo.privacy_feedback(id, None, PrivacyFeedbackAction::ExactException, &permit(&repo), 1).unwrap_err(), "PrivacyRuleLimitExceeded");
+    assert_eq!(snapshot(&repo), before);
+    assert!(!visible(&repo, id));
+}
+
+#[test]
 fn one_record_feedback_does_not_create_a_future_exception_and_requires_explicit_permission() {
     let repo = memory();
     configure_custom(&repo);
@@ -720,6 +935,7 @@ fn bounded_scan_is_explicitly_incomplete_and_suspicions_are_not_a_blanket_encryp
             digest: None,
             origin_entry_id: None,
             originally_protected: false,
+            association_protection: None,
             created_at_ms: 1,
         };
         let cipher = encryption::encrypt_sensitive(&serde_json::to_string(&rule).unwrap())
