@@ -4,12 +4,15 @@ use dzc_core::api::NativeReadLease;
 use std::sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc, Condvar, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 use windows::core::w;
-use windows::Win32::Foundation::{GetLastError, GlobalFree, SetLastError, HANDLE, HGLOBAL, HWND, WIN32_ERROR};
+use windows::Win32::Foundation::{GetLastError, GlobalFree, SetLastError, HANDLE, HWND, WIN32_ERROR};
+#[cfg(test)]
+use windows::Win32::Foundation::HGLOBAL;
 use windows::Win32::Graphics::Gdi::{CreateDIBitmap, DeleteObject, GetDC, ReleaseDC, BITMAPV5HEADER, CBM_INIT, DIB_RGB_COLORS, HGDIOBJ};
-use windows::Win32::Globalization::{GetLocaleInfoW, LocaleNameToLCID, ResolveLocaleName, WideCharToMultiByte, LOCALE_IDEFAULTANSICODEPAGE, LOCALE_IDEFAULTCODEPAGE, LOCALE_RETURN_NUMBER};
+use windows::Win32::Globalization::{GetLocaleInfoW, GetUserDefaultLocaleName, LocaleNameToLCID, ResolveLocaleName, WideCharToMultiByte, LOCALE_IDEFAULTANSICODEPAGE, LOCALE_IDEFAULTCODEPAGE, LOCALE_RETURN_NUMBER};
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, EnumClipboardFormats, GetClipboardData, GetClipboardOwner, GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW, SetClipboardData};
-use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
-use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
+use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+#[cfg(test)]
+use windows::Win32::System::Memory::GlobalSize;
 use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, DispatchMessageW, PeekMessageW, TranslateMessage, HWND_MESSAGE, MSG, PM_REMOVE, WINDOW_EX_STYLE, WINDOW_STYLE};
 
 const LIFETIME: Duration = Duration::from_secs(300);
@@ -241,6 +244,7 @@ fn set_bytes(format: u32, bytes: &[u8]) -> Result<(), String> {
     }
     Ok(())
 }
+#[cfg(test)]
 fn copied_global_bytes(handle: HANDLE) -> Result<Vec<u8>, String> {
     let memory = HGLOBAL(handle.0);
     // Only our own publication and its Windows conversions are read under the
@@ -277,16 +281,8 @@ fn publish_text_conversions(representations: &[(u32, Vec<u8>)]) -> Result<(), St
     let locale = representations.iter().find(|(format, _)| *format == 16)
         .and_then(|(_, bytes)| <[u8; 4]>::try_from(bytes.as_slice()).ok()).map(u32::from_le_bytes).ok_or("PrivateClipboardLocaleUnavailable")?;
     for (format, kind) in [(1, LOCALE_IDEFAULTANSICODEPAGE), (7, LOCALE_IDEFAULTCODEPAGE)] {
-        let bytes = match unsafe { GetClipboardData(format) } {
-            Ok(handle) => {
-                #[cfg(test)] native_trace(&format!("worker.derived_native.{format}"), None, None);
-                copied_global_bytes(handle)?
-            },
-            Err(_) => {
-                #[cfg(test)] native_trace(&format!("worker.derived_nls.{format}"), None, None);
-                legacy_text(unicode, locale, kind)?
-            },
-        };
+        #[cfg(test)] native_trace(&format!("worker.derived_nls.{format}"), None, None);
+        let bytes = legacy_text(unicode, locale, kind)?;
         // Explicitly publish a fresh object: CloseClipboard must not register a
         // previously absent automatic format after the original snapshot.
         set_bytes(format, &bytes)?;
@@ -419,33 +415,24 @@ fn unicode(value: &str) -> Result<Vec<u8>, String> {
     if value.contains('\0') { return Err("PrivateClipboardPayloadRejected".into()); }
     Ok(value.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect())
 }
-fn input_locale_id(layout: usize) -> Option<u32> {
-    let language = (layout & 0xffff) as u32;
-    (!matches!(language, 0 | 0x2000 | 0x2400)).then_some(language)
+fn concrete_locale_id(locale: u32) -> Option<u32> {
+    (!matches!(locale & 0xffff, 0 | 0x0400 | 0x0800 | 0x0c00 | 0x1000 | 0x1400 | 0x2000 | 0x2400)).then_some(locale)
 }
-fn resolved_input_locale(tag: &[u16]) -> Option<u32> {
+fn resolved_publication_locale(tag: &[u16]) -> Option<u32> {
     if tag.is_empty() || tag.len() >= 85 || tag.contains(&0) { return None; }
     let tag = tag.iter().copied().chain(Some(0)).collect::<Vec<_>>();
     let mut name = [0u16; 85];
     if unsafe { ResolveLocaleName(windows::core::PCWSTR(tag.as_ptr()), Some(&mut name)) } <= 1 { return None; }
     let locale = unsafe { LocaleNameToLCID(windows::core::PCWSTR(name.as_ptr()), 0) };
-    input_locale_id(locale as usize).map(|_| locale)
+    concrete_locale_id(locale)
 }
-fn input_locale() -> Result<Vec<u8>, String> {
-    // CF_LOCALE associates the publishing caller's current input language with
-    // Windows' implicit ANSI/OEM text conversions; Unicode remains authoritative.
-    // HKL's low word is LANGID. With the default sort, this is the locale's LCID.
-    let layout = unsafe { GetKeyboardLayout(0) }.0 as usize;
-    let locale = match input_locale_id(layout) {
-        Some(locale) => Some(locale),
-        None if matches!(layout & 0xffff, 0x2000 | 0x2400) => {
-            // Transient input-language slots can be reassigned and are not LCIDs.
-            // Windows requires a WinRT input-method tag to be resolved before NLS.
-            windows::Globalization::Language::CurrentInputMethodLanguageTag().ok()
-                .and_then(|tag| resolved_input_locale(&tag))
-        },
-        None => None,
-    };
+fn publication_locale() -> Result<Vec<u8>, String> {
+    // Legacy views explicitly use a concrete user-default locale and its NLS
+    // code pages. Their CF_LOCALE matches those bytes; Unicode stays authoritative.
+    // No focused-input-thread or transient keyboard language state is consulted.
+    let mut name = [0u16; 85];
+    let size = unsafe { GetUserDefaultLocaleName(&mut name) };
+    let locale = (size > 1).then(|| resolved_publication_locale(&name[..size as usize - 1])).flatten();
     locale.map(|locale| locale.to_le_bytes().to_vec()).ok_or_else(|| "PrivateClipboardLocaleUnavailable".into())
 }
 fn html_bytes(fragment: &str) -> Vec<u8> {
@@ -475,8 +462,8 @@ fn representations(payload: Payload) -> Result<Vec<(u32, Vec<u8>)>, String> {
     let Payload::Private(payload) = payload else { return Err("NativeLeaseOwnerRequired".into()); };
     let mut result = vec![(registered("ExcludeClipboardContentFromMonitorProcessing")?, vec![0]), (registered("CanIncludeInClipboardHistory")?, 0u32.to_le_bytes().to_vec()), (registered("CanUploadToCloudClipboard")?, 0u32.to_le_bytes().to_vec())];
     match *payload {
-        Payload::Text(text) => { result.push((16, input_locale()?)); result.push((13, unicode(&text)?)); }
-        Payload::Html { html, text } => { result.push((16, input_locale()?)); result.push((13, unicode(&text)?)); result.push((registered("HTML Format")?, html_bytes(&html))); }
+        Payload::Text(text) => { result.push((16, publication_locale()?)); result.push((13, unicode(&text)?)); }
+        Payload::Html { html, text } => { result.push((16, publication_locale()?)); result.push((13, unicode(&text)?)); result.push((registered("HTML Format")?, html_bytes(&html))); }
         Payload::Image(bytes) => { let (dib, png) = image_bytes(&bytes)?; result.push((17, dib)); result.push((registered("PNG")?, png)); }
         Payload::Files(paths) => {
             if paths.is_empty() || paths.len() > 64 { return Err("PrivateClipboardPayloadRejected".into()); }
@@ -494,19 +481,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn text_locale_uses_input_language_not_keyboard_device_or_thread_locale() {
-        assert_eq!(input_locale_id(0xf001_0804), Some(0x0804));
-        assert_eq!(input_locale_id(0x0409_0409), Some(0x0409));
-        assert_eq!(input_locale_id(0), None);
-        assert_eq!(input_locale_id(0xf001_2000), None);
-        assert_eq!(input_locale_id(0xf001_2400), None);
+    fn legacy_publication_requires_a_concrete_nontransient_locale() {
+        assert_eq!(concrete_locale_id(0x0804), Some(0x0804));
+        assert_eq!(concrete_locale_id(0x0409), Some(0x0409));
+        assert_eq!(concrete_locale_id(0x10407), Some(0x10407));
+        for alias in [0, 0x0400, 0x0800, 0x0c00, 0x1000, 0x1400, 0x2000, 0x2400] {
+            assert_eq!(concrete_locale_id(alias), None);
+        }
     }
     #[test]
-    fn transient_input_language_resolves_named_locale_before_nls() {
-        assert_eq!(resolved_input_locale(&"zh-Hans-CN".encode_utf16().collect::<Vec<_>>()), Some(0x0804));
-        assert_eq!(resolved_input_locale(&"en".encode_utf16().collect::<Vec<_>>()), Some(0x0409));
-        assert_eq!(resolved_input_locale(&[]), None);
-        assert_eq!(resolved_input_locale(&[b'e' as u16, 0, b'n' as u16]), None);
+    fn publication_locale_resolves_named_locale_before_nls() {
+        assert_eq!(resolved_publication_locale(&"zh-Hans-CN".encode_utf16().collect::<Vec<_>>()), Some(0x0804));
+        assert_eq!(resolved_publication_locale(&"en".encode_utf16().collect::<Vec<_>>()), Some(0x0409));
+        assert_eq!(resolved_publication_locale(&[]), None);
+        assert_eq!(resolved_publication_locale(&[b'e' as u16, 0, b'n' as u16]), None);
     }
     #[test]
     fn windows_legacy_conversion_preserves_unicode_and_uses_chinese_locale() {
@@ -724,7 +712,7 @@ mod tests {
             assert_eq!(&read_raw(registered("CanIncludeInClipboardHistory").unwrap())[..4], &[0; 4]);
             assert_eq!(&read_raw(registered("CanUploadToCloudClipboard").unwrap())[..4], &[0; 4]);
             if let Some(expected_unicode) = expected_unicode {
-                assert_eq!(&read_raw(16)[..4], input_locale().unwrap().as_slice());
+                assert_eq!(&read_raw(16)[..4], publication_locale().unwrap().as_slice());
                 let _ansi = read_raw(1);
                 let _oem = read_raw(7);
                 assert_eq!(&read_raw(13)[..expected_unicode.len()], expected_unicode.as_slice());
@@ -739,9 +727,13 @@ mod tests {
         }
         let replacement = Window::new().unwrap();
         let publish_replacement = || {
-            let _lock = ClipboardLock::acquire(replacement.0).unwrap();
-            unsafe { EmptyClipboard() }.unwrap();
-            set_bytes(13, &unicode("later ordinary owner").unwrap()).unwrap();
+            {
+                let _lock = ClipboardLock::acquire(replacement.0).unwrap();
+                unsafe { EmptyClipboard() }.unwrap();
+                set_bytes(13, &unicode("later ordinary owner").unwrap()).unwrap();
+            }
+            // This is only the fixture's observation of its later ordinary
+            // writer after Windows has completed that writer's own close.
             current_selection()
         };
         writer.write(ClipboardPayload::Private { payload: Box::new(ClipboardPayload::Text("old private".into())), authorization: authorize() }).unwrap();
