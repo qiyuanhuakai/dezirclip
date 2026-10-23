@@ -49,6 +49,17 @@ impl std::ops::Deref for HostedEntry {type Target=ClipboardEntry;fn deref(&self)
 fn app()->Option<&'static AppHandle> {crate::global_state::GLOBAL_APP_HANDLE.get()}
 fn emit(name:&str,value:impl Serialize+Clone) {if let Some(app)=app() {let _=app.emit(name,value);}}
 fn failed()->String {"ClipboardHostUnavailable".into()}
+fn dispatch_embedded<T:DeserializeOwned>(host:&Host,method:Method,params:impl Serialize)->Result<T,String> {
+    let params=serde_json::to_value(params).map_err(|_|failed())?;
+    let grant=host.grants().issue_control(ClientRole::Desktop).map_err(|_|failed())?;
+    let accepted=host.hello(HelloParams{protocol_version:dzc_host::wire::VERSION,client_version:env!("CARGO_PKG_VERSION").into(),client_role:ClientRole::Desktop,
+        capabilities:vec![],required_capabilities:vec![],grant:Some(grant.token().into())});
+    let (session,_)=match accepted {Ok(value)=>value,Err(_)=>{host.grants().revoke(&grant);return Err(failed());}};
+    let response=host.dispatch(&session,Request{request_id:"embedded-desktop".into(),method,params});
+    host.grants().revoke(&grant);
+    if let Some(error)=response.error {return Err(public_code(error.code));}
+    serde_json::from_value(response.result.ok_or_else(failed)?).map_err(|_|failed())
+}
 fn public_code(code:WireErrorCode)->String {match code {
     WireErrorCode::PrivacyStateUnavailable=>"PrivacyStateUnavailable",WireErrorCode::PrivacyEpochChanged=>"PrivacyEpochChanged",
     WireErrorCode::PrivacySessionActive=>"PrivacySessionActive",WireErrorCode::SensitiveAccessDenied=>"SensitiveAccessDenied",
@@ -126,18 +137,15 @@ impl DesktopHost {
     }
     pub async fn call<T:DeserializeOwned>(&self,method:Method,params:impl Serialize,schema:&str)->Result<T,String> {
         if let Some(host)=self.embedded()? {
-            let grant=host.grants().issue_control(ClientRole::Desktop).map_err(|_|failed())?;
-            let accepted=host.hello(HelloParams{protocol_version:dzc_host::wire::VERSION,client_version:env!("CARGO_PKG_VERSION").into(),client_role:ClientRole::Desktop,
-                capabilities:vec![],required_capabilities:vec![],grant:Some(grant.token().into())});
-            let (session,_)=match accepted {Ok(value)=>value,Err(_)=>{host.grants().revoke(&grant);return Err(failed());}};
-            let response=host.dispatch(&session,Request{request_id:"embedded-desktop".into(),method,params:serde_json::to_value(params).map_err(|_|failed())?});
-            host.grants().revoke(&grant);
-            if let Some(error)=response.error {return Err(public_code(error.code));}
-            return serde_json::from_value(response.result.ok_or_else(failed)?).map_err(|_|failed());
+            return dispatch_embedded(&host,method,params);
         }
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
         client.call(method,params,schema).await.map_err(remote_error)
+    }
+    pub(crate) fn call_embedded<T:DeserializeOwned>(&self,method:Method,params:impl Serialize)->Result<T,String> {
+        let host=self.embedded()?.ok_or_else(failed)?;
+        dispatch_embedded(&host,method,params)
     }
     pub async fn page(&self,limit:i32,offset:i32,kind:Option<String>,query:Option<String>)->Result<Option<Vec<HostedEntry>>,String> {
         if self.embedded()?.is_some() {return Ok(None);}
