@@ -27,7 +27,7 @@ impl Host {
             if uploads.len()>=4 {return Err(WireErrorCode::Busy);}
             let copying=request.copy_to_clipboard.unwrap_or(false);
             if copying && !self.actions.can_copy() {return Err(WireErrorCode::UnsupportedCapability);}
-            let copy_permit=if copying {Some(self.history.privacy().authorize_read(PrivacyAccessIntent::SelectedCopy,SensitiveAccess::Denied,Some(request.expected_epoch),now).map_err(crate::router::privacy_error)?)}else{None};
+            let copy_permit=if copying {Some(self.history.privacy().authorize_read(PrivacyAccessIntent::GeneratedCopy,SensitiveAccess::Denied,Some(request.expected_epoch),now).map_err(crate::router::privacy_error)?)}else{None};
             let ticket=match self.history.privacy().capture_ticket(now) {
                 Ok(ticket)=>Some(ticket),
                 Err(PrivacyError::PrivacySessionActive) if copying=>None,
@@ -69,10 +69,10 @@ impl Host {
             // This entry contains only the caller's new payload. It is never
             // resolved as a history/session ID or allowed to name a local file.
             if body.kind=="image" && !body.text.starts_with("data:image/") {return Err(WireErrorCode::InvalidRequest);}
-            let entry=dzc_core::api::ClipboardEntry {id:-1,content_type:body.kind.clone(),content:body.text.clone(),html_content:body.html.clone(),
+            let entry=dzc_core::api::ClipboardEntry {id:0,content_type:body.kind.clone(),content:body.text.clone(),html_content:body.html.clone(),
                 source_app:request.source_app.clone(),source_app_path:None,timestamp:upload.timestamp,preview:String::new(),is_pinned:false,tags:vec![],
                 use_count:0,is_external:false,pinned_order:0,file_preview_exists:true,content_kinds:vec![],ocr_text:None,ocr_status:None};
-            let payload=self.history.session_clipboard_payload_authorized(&entry,&permit,now).map_err(crate::router::privacy_error)?;
+            let payload=self.history.generated_clipboard_payload_authorized(&entry,&permit,now).map_err(crate::router::privacy_error)?;
             if self.capture_owner.load(std::sync::atomic::Ordering::Acquire) {
                 if let Some(ticket)=upload.ticket {
                     let frame=CaptureFrame{data:generated_data(body)?,metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),..Default::default()}};

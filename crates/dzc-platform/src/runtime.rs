@@ -729,7 +729,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn private_wayland_payloads_share_hints_and_revoke(runtime: &std::path::Path) {
         use dzc_core::api::{
-            ClipboardEntry, HistoryService, PrivacyAccessIntent, PrivacySessionCommand,
+            ClipboardEntry, HistoryService, PrivacySessionCommand,
             SensitiveAccess,
         };
         let history = HistoryService::open(&runtime.join("private-copy-history.db")).unwrap();
@@ -744,8 +744,9 @@ mod tests {
             let epoch = history.privacy().status(now()).unwrap().privacy_epoch;
             let permit = history
                 .privacy()
-                .authorize_read(
-                    PrivacyAccessIntent::SelectedCopy,
+                .authorize_selected_copy(
+                    -42,
+                    Some("00000000-0000-4000-8000-000000000042"),
                     SensitiveAccess::ExplicitUserAction,
                     Some(epoch),
                     now(),
@@ -756,7 +757,7 @@ mod tests {
                 "source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]
             })).unwrap();
             match history
-                .session_clipboard_payload_authorized(&entry, &permit, now())
+                .session_clipboard_payload_for_host_authorized(&entry, "00000000-0000-4000-8000-000000000042", &permit, now())
                 .unwrap()
             {
                 ClipboardPayload::Private { authorization, .. } => authorization,
@@ -908,7 +909,7 @@ mod tests {
         assert!(
             runtime.is_absolute() && runtime.join("dezirclip-isolated-wayland-fixture").is_file()
         );
-        use dzc_core::api::{ClipboardEntry, HistoryService, PrivacyAccessIntent, SensitiveAccess};
+        use dzc_core::api::{ClipboardEntry, HistoryService, SensitiveAccess};
         let history = HistoryService::open(&runtime.join("private-x11-history.db")).unwrap();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -916,8 +917,9 @@ mod tests {
             .as_millis() as i64;
         let permit = history
             .privacy()
-            .authorize_read(
-                PrivacyAccessIntent::SelectedCopy,
+            .authorize_selected_copy(
+                -42,
+                Some("00000000-0000-4000-8000-000000000042"),
                 SensitiveAccess::ExplicitUserAction,
                 None,
                 now,
@@ -929,7 +931,7 @@ mod tests {
         }))
         .unwrap();
         let payload = history
-            .session_clipboard_payload_authorized(&entry, &permit, now)
+            .session_clipboard_payload_for_host_authorized(&entry, "00000000-0000-4000-8000-000000000042", &permit, now)
             .unwrap();
         let authorization = match &payload {
             ClipboardPayload::Private { authorization, .. } => authorization.clone(),

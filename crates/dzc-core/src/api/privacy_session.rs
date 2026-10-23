@@ -82,6 +82,7 @@ pub enum PrivacyAccessIntent {
     AutomationRead,
     InteractiveRead,
     SelectedCopy,
+    GeneratedCopy,
 }
 
 /// A host chooses this only after authenticating and authorizing the request.
@@ -97,10 +98,19 @@ pub struct PrivacyReadPermit {
     intent: PrivacyAccessIntent,
     ticket: CaptureTicket,
     sensitive: bool,
+    scope: ReadScope,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadScope {
+    General,
+    Generated,
+    Persistent(i64),
+    Session { id: i64, host: uuid::Uuid },
+    CaptureImage(i64),
 }
 impl PrivacyReadPermit {
     pub(crate) fn require_interactive(&self) -> PrivacyResult<()> {
-        if self.intent != PrivacyAccessIntent::InteractiveRead {
+        if self.intent != PrivacyAccessIntent::InteractiveRead || self.scope != ReadScope::General {
             return Err(PrivacyError::SensitiveAccessDenied);
         }
         Ok(())
@@ -117,13 +127,27 @@ impl PrivacyReadPermit {
         self.sensitive
     }
     pub(super) fn require_copy(&self) -> PrivacyResult<()> {
-        if self.intent != PrivacyAccessIntent::SelectedCopy {
+        if !matches!(self.intent, PrivacyAccessIntent::SelectedCopy | PrivacyAccessIntent::GeneratedCopy) {
             return Err(PrivacyError::SensitiveAccessDenied);
         }
         Ok(())
     }
     fn allows_body(&self) -> bool {
-        self.intent != PrivacyAccessIntent::RestrictedSummary
+        self.intent != PrivacyAccessIntent::RestrictedSummary && self.scope != ReadScope::Generated
+    }
+    fn require_entry(&self, id: i64, host: Option<&str>) -> PrivacyResult<()> {
+        let allowed = match self.scope {
+            ReadScope::General => self.allows_body(),
+            ReadScope::Generated => false,
+            ReadScope::Persistent(selected) | ReadScope::CaptureImage(selected) => id > 0 && id == selected,
+            ReadScope::Session { id: selected, host: original } => id < 0 && id == selected
+                && host.and_then(|value| uuid::Uuid::parse_str(value).ok()) == Some(original),
+        };
+        if allowed { Ok(()) } else { Err(PrivacyError::SensitiveAccessDenied) }
+    }
+    pub(super) fn require_generated(&self) -> PrivacyResult<()> {
+        self.require_copy()?;
+        if self.scope == ReadScope::Generated { Ok(()) } else { Err(PrivacyError::SensitiveAccessDenied) }
     }
 }
 
@@ -307,6 +331,7 @@ impl PrivacySessionService {
         &self,
         permit: &PrivacyReadPermit,
     ) -> PrivacyResult<Option<NativeReadLease>> {
+        permit.require_copy()?;
         let conn = self.connection.lock().map_err(unavailable)?;
         let database = conn
             .path()
@@ -377,17 +402,22 @@ impl PrivacySessionService {
     /// Internal background OCR uses the original unforgeable capture ticket, never a user grant.
     pub(super) fn capture_ocr_permit(
         &self,
+        id: i64,
         ticket: &CaptureTicket,
         now_ms: i64,
     ) -> PrivacyResult<PrivacyReadPermit> {
+        if id <= 0 { return Err(PrivacyError::SensitiveAccessDenied); }
         self.check_capture(ticket, now_ms)?;
         Ok(PrivacyReadPermit {
-            intent: PrivacyAccessIntent::SelectedCopy,
+            intent: PrivacyAccessIntent::InteractiveRead,
             ticket: *ticket,
             sensitive: true,
+            scope: ReadScope::CaptureImage(id),
         })
     }
 
+    /// SelectedCopy requires authorize_selected_copy and an original target.
+    /// GeneratedCopy authorizes only a caller-owned new payload, never history.
     pub fn authorize_read(
         &self,
         intent: PrivacyAccessIntent,
@@ -395,6 +425,9 @@ impl PrivacySessionService {
         expected_epoch: Option<u64>,
         now_ms: i64,
     ) -> PrivacyResult<PrivacyReadPermit> {
+        if intent == PrivacyAccessIntent::SelectedCopy {
+            return Err(PrivacyError::SensitiveAccessDenied);
+        }
         self.status(now_ms)?;
         let conn = self.connection.lock().map_err(unavailable)?;
         let state = read_state(&conn, now_ms)?;
@@ -403,7 +436,7 @@ impl PrivacySessionService {
         }
         let sensitive = match (intent, sensitive) {
             (
-                PrivacyAccessIntent::InteractiveRead | PrivacyAccessIntent::SelectedCopy,
+                PrivacyAccessIntent::InteractiveRead,
                 SensitiveAccess::ExplicitUserAction,
             ) => true,
             (_, SensitiveAccess::ExplicitUserAction) => {
@@ -418,7 +451,31 @@ impl PrivacySessionService {
                 epoch: state.snapshot.privacy_epoch,
             },
             sensitive,
+            scope: if intent == PrivacyAccessIntent::GeneratedCopy { ReadScope::Generated } else { ReadScope::General },
         })
+    }
+
+    /// A selected-copy grant names exactly one original record. Session IDs also
+    /// name the original Host instance; they are never portable between Hosts.
+    pub fn authorize_selected_copy(
+        &self,
+        id: i64,
+        host_instance: Option<&str>,
+        sensitive: SensitiveAccess,
+        expected_epoch: Option<u64>,
+        now_ms: i64,
+    ) -> PrivacyResult<PrivacyReadPermit> {
+        let scope = if id > 0 {
+            ReadScope::Persistent(id)
+        } else if id < 0 {
+            let host = host_instance.and_then(|value| uuid::Uuid::parse_str(value).ok())
+                .filter(|value| !value.is_nil()).ok_or(PrivacyError::SensitiveAccessDenied)?;
+            ReadScope::Session { id, host }
+        } else { return Err(PrivacyError::SensitiveAccessDenied); };
+        let mut permit = self.authorize_read(PrivacyAccessIntent::InteractiveRead, sensitive, expected_epoch, now_ms)?;
+        permit.intent = PrivacyAccessIntent::SelectedCopy;
+        permit.scope = scope;
+        Ok(permit)
     }
 
     pub fn check_read(&self, permit: &PrivacyReadPermit, now_ms: i64) -> PrivacyResult<()> {
@@ -519,7 +576,7 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<Vec<ClipboardEntry>> {
-        if !permit.allows_body() {
+        if !permit.allows_body() || permit.intent == PrivacyAccessIntent::SelectedCopy || permit.scope != ReadScope::General {
             return Err(PrivacyError::SensitiveAccessDenied);
         }
         if !(1..=1000).contains(&query.limit) || query.offset < 0 {
@@ -618,9 +675,28 @@ impl HistoryService {
         permit: &PrivacyReadPermit,
         now_ms: i64,
     ) -> PrivacyResult<ClipboardEntry> {
+        self.authorize_session_entry_scoped(entry, None, permit, now_ms)
+    }
+    pub fn authorize_session_entry_for_host(
+        &self,
+        entry: &ClipboardEntry,
+        host_instance: &str,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<ClipboardEntry> {
+        self.authorize_session_entry_scoped(entry, Some(host_instance), permit, now_ms)
+    }
+    pub(super) fn authorize_session_entry_scoped(
+        &self,
+        entry: &ClipboardEntry,
+        host_instance: Option<&str>,
+        permit: &PrivacyReadPermit,
+        now_ms: i64,
+    ) -> PrivacyResult<ClipboardEntry> {
         if !permit.allows_body() {
             return Err(PrivacyError::SensitiveAccessDenied);
         }
+        permit.require_entry(entry.id, host_instance)?;
         self.privacy().check_read(permit, now_ms)?;
         if entry.id >= 0 || (!permit.includes_sensitive() && !session_entry_visible(entry)) {
             return Err(PrivacyError::SensitiveAccessDenied);
@@ -757,6 +833,7 @@ impl HistoryService {
         if !permit.allows_body() {
             return Err(PrivacyError::SensitiveAccessDenied);
         }
+        permit.require_entry(id, None)?;
         let privacy = self.privacy();
         privacy.check_read(permit, now_ms)?;
         let entries = self
