@@ -257,6 +257,16 @@ jobs:
         with:
           node-version: 22
 
+      - name: Setup native clipboard fixture runtime
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+
+      - name: Check disposable native clipboard boundary
+        if: matrix.scenario != 'LegacyUninstall'
+        run: python -m unittest discover -s scripts/tests -p test_native_windows_clipboard.py
+
       - name: Test sidecar packaging contracts
         run: node --test scripts/tests/packaging-sidecars.node.mjs
 
