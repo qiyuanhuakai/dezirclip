@@ -725,16 +725,35 @@ mod tests {
             empty();
             history.privacy().set_session(PrivacySessionCommand::Off, now()).unwrap();
         }
-        let replacement = Window::new().unwrap();
-        let publish_replacement = || {
-            {
-                let _lock = ClipboardLock::acquire(replacement.0).unwrap();
-                unsafe { EmptyClipboard() }.unwrap();
-                set_bytes(13, &unicode("later ordinary owner").unwrap()).unwrap();
+        // An ordinary owner must keep dispatching WM_DESTROYCLIPBOARD while
+        // the test caller waits for the next private worker's readiness.
+        let (replacement_commands, replacement_requests) = mpsc::channel::<Option<mpsc::SyncSender<Selection>>>();
+        let replacement_worker = std::thread::spawn(move || {
+            let window = Window::new().unwrap();
+            loop {
+                pump();
+                match replacement_requests.recv_timeout(Duration::from_millis(5)) {
+                    Ok(Some(reply)) => {
+                        {
+                            let _lock = ClipboardLock::acquire(window.0).unwrap();
+                            unsafe { EmptyClipboard() }.unwrap();
+                            set_bytes(13, &unicode("later ordinary owner").unwrap()).unwrap();
+                        }
+                        // Only observe this ordinary writer after its own close;
+                        // this does not authorize the private product selection.
+                        let selection = super::current_selection().unwrap();
+                        native_trace("fixture.ordinary_after_close", Some(selection), None);
+                        reply.send(selection).unwrap();
+                    },
+                    Ok(None) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {},
+                }
             }
-            // This is only the fixture's observation of its later ordinary
-            // writer after Windows has completed that writer's own close.
-            current_selection()
+        });
+        let publish_replacement = || {
+            let (reply, result) = mpsc::sync_channel(1);
+            replacement_commands.send(Some(reply)).unwrap();
+            result.recv_timeout(Duration::from_secs(3)).unwrap()
         };
         writer.write(ClipboardPayload::Private { payload: Box::new(ClipboardPayload::Text("old private".into())), authorization: authorize() }).unwrap();
         let later = publish_replacement();
@@ -815,6 +834,9 @@ mod tests {
         assert_eq!(current_selection(), replacement_selection);
         assert_eq!(&read_raw(13)[..unicode("later ordinary owner").unwrap().len()], unicode("later ordinary owner").unwrap().as_slice());
         history.privacy().set_session(PrivacySessionCommand::Off, now()).unwrap();
+
+        replacement_commands.send(None).unwrap();
+        replacement_worker.join().unwrap();
 
         let helper_payload = || Payload::Leased { payload: Box::new(Payload::Private(Box::new(Payload::Text("standalone original lease".into())))), lease: authorize().native_lease().unwrap() };
         start_child(&executable, helper_payload()).unwrap();
