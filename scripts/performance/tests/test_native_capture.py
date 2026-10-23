@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -41,6 +42,82 @@ class BaselineContractTests(unittest.TestCase):
         for selected in ('master', '90ba996', '0' * 40):
             with self.subTest(selected=selected), self.assertRaises(RuntimeError):
                 NATIVE.baseline_contract({'source_revision': selected}, selected)
+
+
+class CaptureEventContractTests(unittest.TestCase):
+    revision = '90ba9960744b6cd57caaaf597f68533a7e41be45'
+    host = '55da2846-8e07-48e5-a36f-7a6e9b7e0a94'
+
+    def metadata(self, host=False):
+        names = ['dzc-core', 'dzc-platform', 'dzc-protocol'] + (['dzc-host'] if host else [])
+        return {'source_revision': self.revision, 'linked_components': [{'component': name} for name in names]}
+
+    def test_actual_build_inventory_selects_strict_id_or_id_and_original_host(self):
+        legacy = NATIVE.capture_event_contract('clipboard-updated')
+        baseline = NATIVE.capture_event_contract('clipboard-captured', self.metadata(), self.revision)
+        hosted = NATIVE.capture_event_contract('clipboard-captured', self.metadata(True), self.revision, {'state': {'service_instance_id': self.host}})
+        self.assertIsNone(legacy['keys'])
+        self.assertEqual(baseline['keys'], ['id'])
+        self.assertIsNone(baseline['host_instance_id'])
+        self.assertEqual(hosted['keys'], ['host_instance_id', 'id'])
+        self.assertEqual(hosted['host_instance_id'], self.host)
+
+    def test_missing_or_changed_build_and_host_identities_fail_before_listening(self):
+        for changed in (None, {}, self.metadata() | {'source_revision': '0' * 40},
+                        self.metadata() | {'linked_components': []},
+                        self.metadata() | {'linked_components': [{'component': 'dzc-core'}] * 3},
+                        self.metadata() | {'linked_components': [{'component': 'unknown'}]},
+                        self.metadata() | {'linked_components': None}):
+            with self.subTest(changed=changed), self.assertRaises(RuntimeError):
+                NATIVE.capture_event_contract('clipboard-captured', changed, self.revision)
+        for status in (None, {}, {'state': None}, {'state': {'service_instance_id': ''}}, {'state': {'service_instance_id': 'other'}}):
+            with self.subTest(status=status), self.assertRaises(RuntimeError):
+                NATIVE.capture_event_contract('clipboard-captured', self.metadata(True), self.revision, status)
+
+    def test_final_listener_snapshot_rejects_a_late_violation_after_valid_samples(self):
+        events = [{'id': 7, 'keys': ['host_instance_id', 'id'], 'host_instance_id': self.host}]
+        self.assertEqual(NATIVE.validated_listener_events({'events': events, 'error': None}), events)
+        for snapshot in (None, {}, {'events': None}, {'events': events, 'error': 'Capture event came from a different Host instance'},
+                         {'events': events, 'error': 'Capture event violated its metadata contract'}):
+            with self.subTest(snapshot=snapshot), self.assertRaises(RuntimeError):
+                NATIVE.validated_listener_events(snapshot)
+
+    def test_real_listener_rejects_extra_payload_or_other_host_without_arming_a_hit(self):
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('Node runtime is required to execute the measurement listener')
+        baseline = NATIVE.capture_event_contract('clipboard-captured', self.metadata(), self.revision)
+        hosted = NATIVE.capture_event_contract('clipboard-captured', self.metadata(True), self.revision, {'state': {'service_instance_id': self.host}})
+        scenarios = [
+            {'contract': baseline, 'payload': {'id': 7}, 'valid': True},
+            {'contract': hosted, 'payload': {'id': 7, 'host_instance_id': self.host}, 'valid': True},
+            {'contract': baseline, 'payload': {'id': 7, 'host_instance_id': self.host}, 'valid': False},
+            {'contract': baseline, 'payload': {'id': 7, 'content': 'synthetic body'}, 'valid': False},
+            {'contract': hosted, 'payload': {'id': 7}, 'valid': False},
+            {'contract': hosted, 'payload': {'id': 7, 'host_instance_id': 'different-host'}, 'valid': False},
+            {'contract': hosted, 'payload': {'id': 7, 'host_instance_id': self.host, 'content': 'synthetic body'}, 'valid': False},
+            *({'contract': hosted, 'payload': {'id': value, 'host_instance_id': self.host}, 'valid': False} for value in (0, -1, '7', None, 1.5, 9007199254740992)),
+        ]
+        script = '''
+const fs=require('node:fs'), assert=require('node:assert/strict');
+(async()=>{
+ const {listener,scenarios}=JSON.parse(fs.readFileSync(0,'utf8'));
+ for(const scenario of scenarios){
+  let callback;
+  global.window={__TAURI_INTERNALS__:{transformCallback(fn){callback=fn;return 1},invoke(name,args){assert.equal(name,'plugin:event|listen');assert.equal(args.event,scenario.contract.event);return Promise.resolve(1)}}};
+  await new Promise(done=>new Function(listener)(scenario.contract,done));
+  window.__nativeCapturePerf.arm={expectedId:7,start:performance.now()-10,hit:null};
+  callback({payload:scenario.payload});
+  const state=window.__nativeCapturePerf;
+  assert.equal(Boolean(state.arm.hit),scenario.valid);
+  assert.equal(Boolean(state.error),!scenario.valid);
+  assert.equal(state.events.length,scenario.valid?1:0);
+  if(scenario.valid) assert(state.arm.hit.elapsed_ms>0);
+ }
+})().catch(error=>{console.error(error);process.exitCode=1});
+'''
+        result = subprocess.run([node, '-e', script], input=json.dumps({'listener': NATIVE.CAPTURE_LISTENER, 'scenarios': scenarios}), text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 class RuntimeTests(unittest.TestCase):

@@ -52,6 +52,6 @@ python scripts/performance/compare_capture.py --baseline REPOSITORY/.harness/cap
 
 ## CLI 与 scope 边界
 
-已有 `scripts/sample-history-latency.py`、`sample-write-latency.py` 继续单独采集完整 JSON。两端相同 profile/target、schema 对应的 `connect_fixture_database`、相同 seed、1k/10k 中性历史、1 MiB UTF-8/CRLF `add -`、`add @file`、`tag add ID sensitive`。最终 tag 采样加 `--require-protected-conversion`，并保存全部 samples_ms。旧 CLI tag 只写标签，需明确其正文/preview 未加密且 FTS 仍可命中；不能把旧返回时间冒充完整转换的基线。
+已有 `scripts/sample-history-latency.py`、`sample-write-latency.py` 继续单独采集完整 JSON。两端相同 profile/target、schema 对应的 `connect_fixture_database`、相同 seed、1k/10k 中性历史、1 MiB UTF-8/CRLF `add -`、`add @file`、`tag add ID sensitive`。最终 tag 采样加 `--require-protected-conversion`，并保存全部 samples_ms。历史 0.1.20 CLI tag 只写标签，其正文/preview 未加密且 FTS 仍可命中，不能把该返回时间冒充完整转换的基线。alpha.2 使用的 alpha.1 基线 `90ba9960744b6cd57caaaf597f68533a7e41be45` 已同步完成保护转换，应与候选一样启用该断言并检查真实密文与 FTS 后置条件。
 
 本工具的共同门槛是 **真实 store 子路径**。Engine 的 prepare、total、non-store 开销单列。旧 AppHandle pipeline 没有等价的 headless 入口，不能把旧仓库 total 与新引擎 total 直接等价比较。因此输出始终保留 `complete_capture_acceptance=false`。它不覆盖 OS reader、listener 调度、GUI、OCR worker、事件运输、异步队列等待，逻辑 FTS 查询也不证明历史 WAL 的物理擦除。已有 CDP/面板样本与 CLI 冷启动同样不替代这些边界。
