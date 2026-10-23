@@ -7,6 +7,8 @@ use super::echo::fingerprint;
 
 #[derive(Default)]
 pub struct NativeCaptureReader {
+    #[cfg(target_os = "windows")]
+    expected_selection: Option<u64>,
     #[cfg(target_os = "linux")]
     x11_privacy: Option<super::x11_privacy::SelectionSnapshot>,
     metadata: CaptureReadMetadata,
@@ -187,6 +189,15 @@ fn image_fallback() -> Option<String> {
 }
 
 impl NativeCaptureReader {
+    /// Windows notifications carry the actual clipboard sequence. Linux native
+    /// adapters freeze their own selection snapshot instead of this counter.
+    pub fn for_notification(sequence: u32) -> Self {
+        #[cfg(target_os = "windows")]
+        { Self { expected_selection: Some(u64::from(sequence)), ..Self::default() } }
+        #[cfg(target_os = "linux")]
+        { let _ = sequence; Self::default() }
+    }
+
     #[cfg(target_os = "linux")]
     fn read_wayland(
         &mut self,
@@ -433,7 +444,7 @@ impl CaptureReader for NativeCaptureReader {
 
     #[cfg(target_os = "windows")]
     fn preflight_privacy(&mut self) -> Result<dzc_core::capture::PrivacyPreflight, CaptureFailure> {
-        super::windows_privacy::preflight()
+        super::windows_privacy::preflight_for(self.expected_selection)
     }
     #[cfg(target_os = "windows")]
     fn selection_id(&self) -> Option<u64> {

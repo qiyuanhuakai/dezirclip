@@ -110,7 +110,7 @@ impl CaptureManager {
             notifications.set_persistence_mode(context.settings.persistent);
             let store = host.history.capture_store(&host.directory);
             let mut events = HostEvents(&host, hooks.as_ref());
-            let Ok(frame) = CaptureEngine::read_authorized(&context, &mut NativeCaptureReader::default(), &store, &mut events) else { return; };
+            let Ok(frame) = CaptureEngine::read_authorized(&context, &mut NativeCaptureReader::for_notification(change.sequence), &store, &mut events) else { return; };
             let repeated = if notifications.repeats_file(frame.metadata) {
                 match CaptureEngine::file_history_exists(&context, &frame, &store) { Ok(exists) => exists, Err(_) => { diagnostic(&host, "CaptureReadFailed"); return; } }
             } else { false };
