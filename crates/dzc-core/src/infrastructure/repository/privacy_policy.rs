@@ -28,7 +28,58 @@ pub(super) struct StoredRule {
     pub digest: Option<[u8; 32]>,
     pub origin_entry_id: Option<i64>,
     pub originally_protected: bool,
+    #[serde(default)]
+    pub association_protection: Option<AssociationProtection>,
     pub created_at_ms: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AssociationProtection {
+    // Only associations whose feedback removed protection need an override.
+    history: Vec<i64>,
+    session_instance: String,
+    session: Vec<i64>,
+}
+fn session_instance() -> &'static str {
+    static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    INSTANCE.get_or_init(|| uuid::Uuid::new_v4().to_string())
+}
+impl AssociationProtection {
+    fn new() -> Self {
+        Self {
+            history: Vec::new(),
+            session_instance: session_instance().into(),
+            session: Vec::new(),
+        }
+    }
+    fn valid(&self) -> bool {
+        uuid::Uuid::parse_str(&self.session_instance).is_ok()
+            && self.history.iter().all(|id| *id > 0)
+            && self.session.iter().all(|id| *id < 0)
+            && self.history.iter().collect::<std::collections::HashSet<_>>().len() == self.history.len()
+            && self.session.iter().collect::<std::collections::HashSet<_>>().len() == self.session.len()
+    }
+    fn remember(&mut self, conn: &Connection, rule: &str, id: i64, protected: bool) -> Result<(), String> {
+        let mut live = conn
+            .prepare("SELECT entry_id FROM privacy_rule_entries WHERE rule_id=?1")
+            .map_err(unavailable)?;
+        let ids = live
+            .query_map([rule], |row| row.get::<_, i64>(0))
+            .map_err(unavailable)?
+            .collect::<rusqlite::Result<std::collections::HashSet<_>>>()
+            .map_err(unavailable)?;
+        self.history.retain(|entry| ids.contains(entry));
+        if self.session_instance != session_instance() {
+            self.session_instance = session_instance().into();
+            self.session.clear();
+        }
+        let entries = if id > 0 { &mut self.history } else { &mut self.session };
+        if protected && !entries.contains(&id) {
+            entries.push(id);
+        }
+        Ok(())
+    }
 }
 fn unavailable<T>(_: T) -> String {
     "PrivacyRulesUnavailable".into()
@@ -123,8 +174,15 @@ impl StoredRule {
     }
 }
 fn load_rules(conn: &Connection) -> Result<Vec<StoredRule>, String> {
-    let mut statement=conn.prepare("SELECT substr(id,1,37),substr(encrypted_rule,1,16385),created_at_ms FROM privacy_rules ORDER BY created_at_ms,id LIMIT 129").map_err(unavailable)?;
-    let mut rows = statement.query([]).map_err(unavailable)?;
+    load_selected_rules(conn, None)
+}
+fn load_selected_rules(conn: &Connection, id: Option<&str>) -> Result<Vec<StoredRule>, String> {
+    let mut statement = conn.prepare(if id.is_some() {
+        "SELECT substr(id,1,37),substr(encrypted_rule,1,16385),created_at_ms FROM privacy_rules WHERE id=?1 LIMIT 1"
+    } else {
+        "SELECT substr(id,1,37),substr(encrypted_rule,1,16385),created_at_ms FROM privacy_rules ORDER BY created_at_ms,id LIMIT 129"
+    }).map_err(unavailable)?;
+    let mut rows = if let Some(id) = id { statement.query([id]) } else { statement.query([]) }.map_err(unavailable)?;
     let mut rules = Vec::new();
     while let Some(row) = rows.next().map_err(unavailable)? {
         if rules.len() >= MAX_RULES {
@@ -154,6 +212,7 @@ fn load_rules(conn: &Connection) -> Result<Vec<StoredRule>, String> {
                     || rule.digest.is_some()
                     || rule.content_type.is_some())
             || rule.kind == PrivacyRuleKind::ExactException && rule.digest.is_none()
+            || rule.association_protection.as_ref().is_some_and(|state| !state.valid())
         {
             return Err(unavailable(()));
         }
@@ -507,6 +566,21 @@ fn directory(conn: &Connection) -> Option<std::path::PathBuf> {
         .map(std::path::Path::to_path_buf)
 }
 impl SqliteClipboardRepository {
+    fn update_privacy_rule(&self, conn: &Connection, rule: &StoredRule) -> Result<(), String> {
+        let plain = serde_json::to_string(rule).map_err(unavailable)?;
+        let cipher = (self.encrypt_text)(&plain)
+            .map_err(|error| error.to_string())?
+            .into_string();
+        if cipher.len() > MAX_RULE_BYTES {
+            return Err("PrivacyRuleLimitExceeded".into());
+        }
+        if conn.execute("UPDATE privacy_rules SET encrypted_rule=?1 WHERE id=?2", rusqlite::params![cipher, rule.id])
+            .map_err(unavailable)? != 1
+        {
+            return Err("PrivacyRuleUnavailable".into());
+        }
+        Ok(())
+    }
     fn store_privacy_rule(&self, conn: &Connection, rule: &StoredRule) -> Result<(), String> {
         let plain = serde_json::to_string(rule).map_err(unavailable)?;
         let cipher = (self.encrypt_text)(&plain)
@@ -602,6 +676,9 @@ impl SqliteClipboardRepository {
                 }
             }
             let rule = if let Some(rule) = matching {
+                if rule.kind == PrivacyRuleKind::ExactException && rule.association_protection.is_none() {
+                    return Err("PrivacyRuleProvenanceUnavailable".into());
+                }
                 rule.clone()
             } else {
                 if rules.len() >= MAX_RULES {
@@ -629,12 +706,17 @@ impl SqliteClipboardRepository {
                     },
                     origin_entry_id: (id > 0).then_some(id),
                     originally_protected: was_protected,
+                    association_protection: (kind == PrivacyRuleKind::ExactException).then(AssociationProtection::new),
                     created_at_ms: now_ms,
                 };
                 self.store_privacy_rule(&tx, &rule)?;
                 rule
             };
             added = Some(rule);
+        }
+        if let Some(rule) = added.as_mut().filter(|rule| rule.kind == PrivacyRuleKind::ExactException) {
+            rule.association_protection.as_mut().ok_or("PrivacyRuleProvenanceUnavailable")?
+                .remember(&tx, &rule.id, id, was_protected)?;
         }
         let protecting = action == PrivacyFeedbackAction::ProtectSource;
         let mut cleanup = if protecting && id > 0 {
@@ -672,6 +754,9 @@ impl SqliteClipboardRepository {
                     tx.execute("INSERT OR IGNORE INTO privacy_rule_entries(rule_id,entry_id) VALUES(?1,?2)",rusqlite::params![rule.id,id]).map_err(unavailable)?;
                 }
             }
+        }
+        if let Some(rule) = added.as_ref().filter(|rule| rule.kind == PrivacyRuleKind::ExactException) {
+            self.update_privacy_rule(&tx, rule)?;
         }
         if let Some(cleanup) = &mut cleanup {
             cleanup.protect_surviving_references(&tx)?;
@@ -743,7 +828,18 @@ impl SqliteClipboardRepository {
         let mut changed_session = Vec::new();
         if rule.kind == PrivacyRuleKind::ExactException {
             let should_reprotect = |entry: &ClipboardEntry| -> Result<bool, String> {
-                Ok(rule.originally_protected
+                let originally_protected = if let Some(state) = &rule.association_protection {
+                    if entry.id > 0 {
+                        state.history.contains(&entry.id)
+                    } else {
+                        state.session_instance == session_instance() && state.session.contains(&entry.id)
+                    }
+                } else if rule.origin_entry_id == Some(entry.id) {
+                    rule.originally_protected
+                } else {
+                    return Err("PrivacyRuleProvenanceUnavailable".into());
+                };
+                Ok(originally_protected
                     || assess_entry(&tx, entry, true)?.decision.action
                         == crate::privacy::PrivacyAction::Encrypt)
             };
@@ -818,6 +914,7 @@ fn apply_with_plan(
     Ok((result, report.decision))
 }
 pub(super) fn record_exception_use(
+    repository: &SqliteClipboardRepository,
     conn: &Connection,
     id: i64,
     decision: &PrivacyDecision,
@@ -831,6 +928,14 @@ pub(super) fn record_exception_use(
             .find(|evidence| evidence.reason == PrivacyReason::ExactExceptionMatched)
             .and_then(|evidence| evidence.rule_id.as_deref())
         {
+            let mut stored = load_selected_rules(conn, Some(rule))?.into_iter().next().ok_or("PrivacyRuleUnavailable")?;
+            if let Some(state) = &mut stored.association_protection {
+                if state.history.contains(&id) {
+                    // A record write creates a fresh association, including after row-ID reuse.
+                    state.history.retain(|entry| *entry != id);
+                    repository.update_privacy_rule(conn, &stored)?;
+                }
+            }
             conn.execute(
                 "INSERT OR IGNORE INTO privacy_rule_entries(rule_id,entry_id) VALUES(?1,?2)",
                 rusqlite::params![rule, id],
