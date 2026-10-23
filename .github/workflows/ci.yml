@@ -47,7 +47,10 @@ jobs:
         run: python scripts/generate-protocol.py --check
 
       - name: Test updater release gates
-        run: node --test scripts/tests/updater-release.node.mjs
+        run: node --test scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
+
+      - name: Check final Windows upgrade source boundary
+        run: python -I -B scripts/tests/release-windows-upgrade-ps.py
 
       - name: Check theme CSS contracts
         run: node scripts/audit-theme-css.mjs --check

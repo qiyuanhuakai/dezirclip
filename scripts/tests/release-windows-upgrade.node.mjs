@@ -1,0 +1,297 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import test from 'node:test';
+import { assertAuthority, checkNames, combine, inspectPe, nsisMembers, oldPackages, releaseAssets,
+  sha256, updaterNames, validateAssets, validateInfo, validateNative, verifyDownloads, version } from '../release-windows-upgrade.mjs';
+
+// Every observation below is synthetic, in memory, and only tests rejection
+// contracts. No product, installer, clipboard, registry or network runs. The
+// Windows-only PowerShell refusal check exits at the first hosted-runner guard.
+const source = 'a'.repeat(40);
+const releaseId = '42';
+const policyHash = 'b'.repeat(64);
+const clone = value => structuredClone(value);
+const encode = value => Buffer.from(value).toString('base64');
+const assetName = suffix => `DezirClip_${version}_${suffix}`;
+const frozen = { 'app.quick_paste_hotkey': 'Ctrl+Alt+Shift+F9', 'app.classification_enabled': 'false',
+  'app.hidden_filter_chips': 'release-upgrade-fixture', 'app.screenshot_enabled': 'false', 'app.ocr_enabled': 'false' };
+
+function signedDownloads() {
+  const key = generateKeyPairSync('ed25519');
+  const id = Buffer.from('0102030405060708', 'hex');
+  const rawKey = key.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32);
+  const publicKey = encode(`untrusted comment: synthetic public key\n${Buffer.concat([Buffer.from('Ed'), id, rawKey]).toString('base64')}`);
+  const bytes = new Map();
+  const assets = [];
+  for (const suffix of ['x64-setup.exe', 'arm64-setup.exe', 'amd64.AppImage', 'aarch64.AppImage']) {
+    const name = assetName(suffix);
+    const payload = Buffer.from('Synthetic non-executable payload ' + name);
+    const signed = sign(null, createHash('blake2b512').update(payload).digest(), key.privateKey);
+    const comment = `timestamp:1\tfile:${name}\tversion:${version}`;
+    const global = sign(null, Buffer.concat([signed, Buffer.from(comment)]), key.privateKey);
+    const packet = Buffer.concat([Buffer.from('ED'), id, signed]);
+    const signature = Buffer.from(encode(`untrusted comment: synthetic signature\n${packet.toString('base64')}\ntrusted comment: ${comment}\n${global.toString('base64')}`));
+    for (const [asset, data] of [[name, payload], [name + '.sig', signature]]) {
+      bytes.set(asset, data);
+      assets.push({ id: assets.length + 1, name: asset, size: data.length, state: 'uploaded', updated_at: '2026-10-23T00:00:00Z', digest: 'sha256:' + sha256(data) });
+    }
+  }
+  return { publicKey, bytes, release: { id: Number(releaseId), tag_name: 'v' + version, prerelease: true, draft: true, assets } };
+}
+const downloads = signedDownloads();
+const identities = downloads.release.assets.map(({ name, id, size, updated_at }) => ({ name, id, size, updated_at, sha256: sha256(downloads.bytes.get(name)) }));
+
+function buildInfo(role) {
+  return { metadata_version: 1, component: role, component_version: version, source_revision: source,
+    build_id: version + '@' + source, source_state: 'verified_checkout', revision_origin: 'explicit_checkout',
+    target: 'x86_64-pc-windows-msvc', database_schema_version: 24, protocol_version: { major: 1, minor: 0 },
+    linked_components: ['dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host', ...(role === 'service' ? ['dzc-service'] : [])]
+      .map(component => ({ component, version })) };
+}
+
+function nativeFixture(scenario = 'LegacyToAlpha2') {
+  const inputs = { source_revision: source, release_id: Number(releaseId), policy_sha256: policyHash, scenario,
+    old: clone(oldPackages[scenario]), signed_assets: clone(identities), marker: 'nativeupgradefixturemarker' + '1'.repeat(32),
+    candidate: clone(identities.find(item => item.name === assetName('x64-setup.exe'))),
+    signature: clone(identities.find(item => item.name === assetName('x64-setup.exe.sig'))) };
+  const marker = { id: 7, content: inputs.marker, content_type: 'text', is_pinned: 1, tags: JSON.stringify(['releaseupgradetag']) };
+  const oldProfile = { status: 'passed', schema_version: scenario === 'PublishedAlphaToAlpha2' ? 21 : 17,
+    marker: clone(marker), frozen_preferences: clone(frozen) };
+  const migrated = { ...clone(oldProfile), schema_version: 24 };
+  const extracted = ['desktop', 'cli', 'service'].map((role, index) => ({ role,
+    member: 'synthetic/' + { desktop: 'dezirclip.exe', cli: 'dzc.exe', service: 'dzc-service.exe' }[role],
+    bytes: 100 + index, sha256: String(index + 1).repeat(64) }));
+  const installed = extracted.map(({ role, bytes, sha256: hash }) => ({ role, bytes, sha256: hash }));
+  const roles = Object.fromEntries(['desktop', 'cli', 'service'].map(role => [role, buildInfo(role)]));
+  const settings = [
+    ['Software\\Microsoft\\Clipboard', 'EnableClipboardHistory'], ['Software\\Microsoft\\Clipboard', 'EnableCloudClipboard'],
+    ['Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced', 'DisabledHotkeys'],
+    ['Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer', 'DisallowClipboardHistory'],
+    ['Software\\Policies\\Microsoft\\Windows\\System', 'AllowClipboardHistory'], ['Software\\Policies\\Microsoft\\Windows\\System', 'AllowCrossDeviceClipboard'],
+  ].map(([key, name]) => ({ key, name, kind: name === 'DisabledHotkeys' ? 'String' : 'DWord', value: name === 'DisabledHotkeys' ? 'XV' : 7, exists: true }));
+  const explorer = [{ pid: 55, started_at: '2026-10-23T00:00:00Z' }];
+  const labels = ['verify-staged', 'extract-packaged-roles', 'install-original-published', 'old-cli-version', 'old-cli-create-profile',
+    'seed-owned-old-profile', 'install-final-release-upgrade', 'final-cli-build-info', 'final-service-build-info', 'final-cli-retained-history',
+    'upgraded-profile-check', 'actual-final-gui', 'actual-final-gui-bridge', 'after-gui-profile-check', 'uninstall-actual-final-release',
+    'uninstalled-profile-check', ...(scenario === 'PublishedAlphaToAlpha2' ? ['old-cli-build-info'] : [])];
+  const processes = labels.map((label, index) => ({ label, pid: 100 + index,
+    original_handle_retained: true, exited: true, status: 'passed', exit_code: label === 'actual-final-gui' ? -1 : 0,
+    ...(label === 'actual-final-gui' ? { terminated_original_tree: true } : {}) }));
+  const evidence = {
+    original_installer_hash: { path: 'old-setup.exe', sha256: inputs.old.sha256, expected: inputs.old.sha256 },
+    candidate_signature_and_hash: { verifier: 'verify-staged', candidate: clone(inputs.candidate), signature: clone(inputs.signature) },
+    actual_old_install: { installer_sha256: inputs.old.sha256, cli_version: 'dzc ' + inputs.old.version },
+    actual_old_profile_created: { actual: clone(oldProfile), backup_sha256: 'c'.repeat(64) },
+    actual_upgrade_same_directory: { old_directory: 'C:\\synthetic-owned\\installed', final_directory: 'C:\\synthetic-owned\\installed',
+      installer_sha256: inputs.candidate.sha256, arguments: ['/S', '/UPDATE', '/D=C:\\synthetic-owned\\installed'] },
+    installed_three_role_bytes: clone(installed), actual_three_role_build_info: clone(roles),
+    history_and_schema24: { before: clone(marker), after: clone(migrated), actual_gui_evidence: 'final-gui-evidence.json' },
+    frozen_preferences_preserved: { before: clone(frozen), after: clone(frozen) },
+    windows_settings_preserved: { before: clone(settings), after: clone(settings) },
+    explorer_not_restarted: { before: clone(explorer), after_upgrade: clone(explorer), after_uninstall: clone(explorer) },
+    controlled_processes_exited: { count: processes.length, original_handles_verified: true },
+    actual_release_uninstall: { uninstaller_sha256: 'd'.repeat(64), registered_installation_absent: true,
+      missing: ['dezirclip.exe', 'dzc.exe', 'dzc-service.exe'] },
+    uninstall_preserves_profile_and_settings: { profile: clone(migrated), windows_settings: clone(settings) },
+  };
+  const report = { schema_version: 1, kind: 'release_windows_upgrade_native', status: 'passed', failure: null,
+    version, source_revision: source, release_id: Number(releaseId), policy_sha256: policyHash, scenario,
+    old: clone(inputs.old), signed_assets: clone(inputs.signed_assets), roles, packaged: clone(extracted), installed,
+    old_profile: clone(oldProfile), old_profile_backup_sha256: 'c'.repeat(64), uninstaller_sha256: 'd'.repeat(64), processes,
+    checks: checkNames.map(name => ({ name, status: 'passed', evidence: evidence[name] })),
+    gui_process_identity: { verified: true }, gui_exit: { original_process_exited: true, cdp_port_released: true }, cleanup: [] };
+  return { inputs, report, extracted };
+}
+const evidence = (report, name) => report.checks.find(item => item.name === name).evidence;
+const verify = fixture => validateNative(fixture.report, fixture.inputs, fixture.extracted);
+function rejectsNative(change) {
+  const fixture = nativeFixture();
+  change(fixture);
+  assert.throws(() => verify(fixture));
+}
+
+test('synthetic authority permits only exact final-tag hosted checkout and actual x64 Windows', () => {
+  const env = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_REPOSITORY: 'qiyuanhuakai/dezirclip',
+    GITHUB_REF: 'refs/tags/v' + version, GITHUB_SHA: source, PROCESSOR_ARCHITECTURE: 'AMD64' };
+  assert.doesNotThrow(() => assertAuthority(env, source, releaseId, 'win32', 'x64', true));
+  assert.doesNotThrow(() => assertAuthority(env, source, releaseId, 'linux', 'x64'));
+  for (const [key, value] of Object.entries({ GITHUB_ACTIONS: 'false', RUNNER_ENVIRONMENT: 'self-hosted', GITHUB_REPOSITORY: 'other/repo',
+    GITHUB_REF: 'refs/heads/master', GITHUB_SHA: 'f'.repeat(40), PROCESSOR_ARCHITECTURE: 'ARM64', PROCESSOR_ARCHITEW6432: 'AMD64' })) {
+    assert.throws(() => assertAuthority({ ...env, [key]: value }, source, releaseId, 'win32', 'x64', true));
+  }
+  for (const [platform, arch] of [['linux', 'x64'], ['win32', 'arm64'], ['win32', 'ia32']]) assert.throws(() => assertAuthority(env, source, releaseId, platform, arch, true));
+  for (const id of ['0', '-1', '01', '42x']) assert.throws(() => assertAuthority(env, source, id, 'win32', 'x64', true));
+});
+
+test('synthetic release metadata requires all unique four updater payloads and four signatures', () => {
+  assert.deepEqual(releaseAssets(downloads.release, releaseId).map(item => item.name), updaterNames);
+  for (const change of [value => value.assets.pop(), value => value.assets.push(clone(value.assets[0])),
+    value => { value.tag_name = 'v0.2.0-alpha.1'; }, value => { value.id++; }, value => { value.prerelease = false; }, value => { value.draft = false; },
+    value => { value.assets[0].state = 'starter'; },
+    value => { value.assets[0].id = 0; }, value => { value.assets[0].size = 0; }, value => { value.assets[1].size = 16385; }]) {
+    const value = clone(downloads.release); change(value); assert.throws(() => releaseAssets(value, releaseId));
+  }
+});
+
+test('in-memory Ed25519 downloads verify signatures, exact sizes, server digests and public key', () => {
+  assert.deepEqual(verifyDownloads(downloads.release, releaseId, downloads.bytes, downloads.publicKey), identities);
+  const changed = new Map(downloads.bytes); changed.set(assetName('x64-setup.exe'), Buffer.from('different payload'));
+  assert.throws(() => verifyDownloads(downloads.release, releaseId, changed, downloads.publicKey));
+  const sameSize = new Map(downloads.bytes); const payload = Buffer.from(sameSize.get(assetName('x64-setup.exe'))); payload[0] ^= 1;
+  sameSize.set(assetName('x64-setup.exe'), payload);
+  const noDigest = clone(downloads.release); for (const asset of noDigest.assets) delete asset.digest;
+  assert.throws(() => verifyDownloads(noDigest, releaseId, sameSize, downloads.publicKey));
+  const absent = new Map(downloads.bytes); absent.delete(assetName('x64-setup.exe.sig'));
+  assert.throws(() => verifyDownloads(downloads.release, releaseId, absent, downloads.publicKey));
+  const serverMismatch = clone(downloads.release); serverMismatch.assets[0].digest = 'sha256:' + 'f'.repeat(64);
+  assert.throws(() => verifyDownloads(serverMismatch, releaseId, downloads.bytes, downloads.publicKey));
+  assert.throws(() => verifyDownloads(downloads.release, releaseId, downloads.bytes, signedDownloads().publicKey));
+});
+
+test('synthetic asset receipts reject duplicate IDs, names, missing bytes and invalid hashes', () => {
+  assert.doesNotThrow(() => validateAssets(identities));
+  for (const change of [value => value.pop(), value => value.push(clone(value[0])), value => { value[1].id = value[0].id; },
+    value => { value[1].name = value[0].name; }, value => { value[0].sha256 = 'x'.repeat(64); }, value => { value[0].size = 0; },
+    value => { value[0].updated_at = 'invalid'; }]) {
+    const value = clone(identities); change(value); assert.throws(() => validateAssets(value));
+  }
+});
+
+test('synthetic NSIS listing requires three safe unique role members and rejects links or folders', () => {
+  const listing = names => names.map(name => `Path = ${name}\nSize = 100\nFolder = -`).join('\n\n');
+  const names = ['app/dezirclip.exe', 'app/dzc.exe', 'app/dzc-service.exe'];
+  assert.deepEqual(nsisMembers(listing(names)), names);
+  for (const invalid of [names.slice(1), [...names, 'duplicate/dzc.exe'], ['../dezirclip.exe', ...names.slice(1)],
+    ['/dezirclip.exe', ...names.slice(1)], ['C:/dezirclip.exe', ...names.slice(1)], ['-dezirclip.exe', ...names.slice(1)]]) {
+    assert.throws(() => nsisMembers(listing(invalid)));
+  }
+  for (const extra of ['Symbolic Link = target', 'Hard Link = target', 'Folder = +']) {
+    assert.throws(() => nsisMembers(listing(names) + '\n' + extra));
+  }
+});
+
+test('synthetic PE headers reject wrong machine, bitness and bounded-header escapes without execution', () => {
+  const bytes = Buffer.alloc(160); bytes.write('MZ'); bytes.writeUInt32LE(64, 60); bytes.write('PE\0\0', 64);
+  bytes.writeUInt16LE(0x8664, 68); bytes.writeUInt16LE(0x20b, 88);
+  assert.doesNotThrow(() => inspectPe(bytes));
+  for (const change of [value => value.write('NO'), value => value.writeUInt32LE(1000, 60),
+    value => value.writeUInt16LE(0xaa64, 68), value => value.writeUInt16LE(0x10b, 88)]) {
+    const value = Buffer.from(bytes); change(value); assert.throws(() => inspectPe(value));
+  }
+  assert.throws(() => inspectPe(Buffer.alloc(20)));
+});
+
+test('synthetic BuildInfo distinguishes desktop/CLI four and Service five linked components', () => {
+  for (const role of ['desktop', 'cli', 'service']) assert.doesNotThrow(() => validateInfo(buildInfo(role), role, source));
+  for (const change of [value => { value.source_revision = 'f'.repeat(40); }, value => { value.component_version = '0.2.0-alpha.1'; },
+    value => { value.database_schema_version = 21; }, value => { value.target = 'aarch64-pc-windows-msvc'; },
+    value => { value.protocol_version.minor = 1; }, value => { value.source_state = 'unknown'; },
+    value => { value.linked_components.pop(); }, value => { value.linked_components[1] = clone(value.linked_components[0]); }]) {
+    const value = buildInfo('service'); change(value); assert.throws(() => validateInfo(value, 'service', source));
+  }
+  assert.throws(() => validateInfo(buildInfo('cli'), 'desktop', source));
+});
+
+test('synthetic raw observations accept both historical scenarios only as pure validation data', () => {
+  for (const scenario of Object.keys(oldPackages)) assert.doesNotThrow(() => verify(nativeFixture(scenario)));
+});
+
+test('synthetic raw observations require exactly fourteen distinct passed checks and evidence', () => {
+  for (const change of [value => value.report.checks.pop(), value => value.report.checks.push(clone(value.report.checks[0])),
+    value => { value.report.checks[1] = clone(value.report.checks[0]); }, value => { value.report.checks[0].status = 'not_run'; },
+    value => { value.report.checks[0].evidence = null; }]) rejectsNative(change);
+});
+
+test('synthetic raw observations reject source, policy, assets, original installer or candidate substitutions', () => {
+  for (const change of [value => { value.report.source_revision = 'f'.repeat(40); }, value => { value.report.policy_sha256 = 'f'.repeat(64); },
+    value => { value.report.release_id++; }, value => { value.report.old.sha256 = 'f'.repeat(64); },
+    value => { value.report.signed_assets[0].sha256 = 'f'.repeat(64); },
+    value => { evidence(value.report, 'original_installer_hash').sha256 = 'f'.repeat(64); },
+    value => { evidence(value.report, 'actual_old_install').cli_version = 'dzc 99.0.0'; },
+    value => { evidence(value.report, 'candidate_signature_and_hash').candidate.sha256 = 'f'.repeat(64); },
+    value => { evidence(value.report, 'actual_upgrade_same_directory').final_directory += '-other'; }]) rejectsNative(change);
+});
+
+test('synthetic raw observations reject changed installed bytes and role inventories', () => {
+  for (const change of [value => { value.report.installed[0].sha256 = 'f'.repeat(64); }, value => { value.report.installed[0].bytes++; },
+    value => { value.report.packaged[0].sha256 = 'f'.repeat(64); }, value => { value.report.installed[1].role = 'desktop'; },
+    value => { value.report.roles.service = buildInfo('cli'); }, value => { value.report.roles.cli.source_revision = 'f'.repeat(40); }]) rejectsNative(change);
+});
+
+function eachOriginal(report, change) {
+  const history = evidence(report, 'history_and_schema24');
+  for (const marker of [report.old_profile.marker, evidence(report, 'actual_old_profile_created').actual.marker,
+    history.before, history.after.marker, evidence(report, 'uninstall_preserves_profile_and_settings').profile.marker]) change(marker);
+}
+test('synthetic raw observations reject an unpinned or retagged original even if every copy agrees', () => {
+  for (const change of [marker => { marker.is_pinned = 0; }, marker => { marker.tags = '[]'; },
+    marker => { marker.content += 'changed'; }, marker => { marker.id = -1; }]) rejectsNative(value => eachOriginal(value.report, change));
+});
+
+test('synthetic raw observations require all five frozen keys and preserve exact values through uninstall', () => {
+  rejectsNative(({ report }) => {
+    for (const profile of [report.old_profile, evidence(report, 'actual_old_profile_created').actual,
+      evidence(report, 'history_and_schema24').after, evidence(report, 'uninstall_preserves_profile_and_settings').profile]) delete profile.frozen_preferences['app.ocr_enabled'];
+    for (const pair of ['before', 'after']) delete evidence(report, 'frozen_preferences_preserved')[pair]['app.ocr_enabled'];
+  });
+  rejectsNative(({ report }) => { evidence(report, 'history_and_schema24').after.frozen_preferences['app.ocr_enabled'] = 'true'; });
+  rejectsNative(({ report }) => { evidence(report, 'uninstall_preserves_profile_and_settings').profile.frozen_preferences['app.quick_paste_hotkey'] = 'Ctrl+F1'; });
+  rejectsNative(({ report }) => { evidence(report, 'history_and_schema24').after.schema_version = 23; });
+});
+
+test('synthetic raw observations reject unexited or substituted process handles, GUI and cleanup failures', () => {
+  for (const change of [value => { value.report.processes[0].exited = false; }, value => { value.report.processes[0].original_handle_retained = false; },
+    value => { value.report.processes[0].pid = 0; }, value => { value.report.processes[1].label = value.report.processes[0].label; },
+    value => { value.report.processes[0].exit_code = 3; }, value => { value.report.processes[0].label = 'different-unique-process'; },
+    value => { value.report.processes.find(item => item.label === 'actual-final-gui').terminated_original_tree = false; },
+    value => { evidence(value.report, 'controlled_processes_exited').count--; }, value => { value.report.gui_exit.cdp_port_released = false; },
+    value => { value.report.gui_process_identity.verified = false; }, value => value.report.cleanup.push({ error: 'synthetic failure' }),
+    value => { evidence(value.report, 'actual_release_uninstall').registered_installation_absent = false; },
+    value => { evidence(value.report, 'windows_settings_preserved').after[0].value++; },
+    value => { evidence(value.report, 'explorer_not_restarted').after_upgrade[0].pid++; }]) rejectsNative(change);
+});
+
+test('synthetic GUI exit accepts natural success or confirmed original-tree termination only', () => {
+  for (const terminated of [false, true]) {
+    const fixture = nativeFixture();
+    const gui = fixture.report.processes.find(item => item.label === 'actual-final-gui');
+    gui.exit_code = 0;
+    gui.terminated_original_tree = terminated;
+    assert.doesNotThrow(() => verify(fixture));
+  }
+  assert.doesNotThrow(() => verify(nativeFixture()));
+  rejectsNative(({ report }) => { report.processes.find(item => item.label === 'actual-final-gui').terminated_original_tree = false; });
+  rejectsNative(({ report }) => { delete report.processes.find(item => item.label === 'actual-final-gui').terminated_original_tree; });
+});
+
+function sealedScenario(scenario) {
+  const { report } = nativeFixture(scenario);
+  const value = { ...report, kind: 'release_windows_upgrade_report', raw_native_sha256: 'e'.repeat(64) };
+  return { value, sha256: sha256(Buffer.from(JSON.stringify(value, null, 2) + '\n')) };
+}
+test('synthetic aggregation binds both distinct scenarios, source, release, policy and original report-byte hashes', () => {
+  const reports = Object.keys(oldPackages).map(sealedScenario);
+  const combined = combine(reports, source, releaseId, policyHash);
+  assert.deepEqual(combined.checks.map(item => item.report_sha256), reports.map(item => item.sha256));
+  assert.deepEqual(combined.signed_assets, identities);
+  for (const change of [value => value.pop(), value => { value[1].value.scenario = value[0].value.scenario; },
+    value => { value[1].value.source_revision = 'f'.repeat(40); }, value => { value[1].value.release_id++; },
+    value => { value[1].value.policy_sha256 = 'f'.repeat(64); }, value => { value[1].sha256 = 'invalid'; },
+    value => { value[1].value.signed_assets[0].sha256 = 'f'.repeat(64); }, value => { value[1].value.status = 'failed'; }]) {
+    const value = clone(reports); change(value); assert.throws(() => combine(value, source, releaseId, policyHash));
+  }
+});
+
+test('Windows local entry point refuses before any product operation', { skip: process.platform !== 'win32' }, () => {
+  const script = fileURLToPath(new URL('../test-release-windows-upgrade.ps1', import.meta.url));
+  const result = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', script,
+    '-FixtureDirectory', 'unused-local-release-refusal-fixture', '-ExpectedSource', source,
+    '-ExpectedReleaseId', '1', '-ExpectedPolicySha256', 'a'.repeat(64)],
+  { encoding: 'utf8', timeout: 20000, maxBuffer: 65536,
+    env: { ...process.env, GITHUB_ACTIONS: 'false', RUNNER_ENVIRONMENT: 'local' } });
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout + result.stderr, /Final release upgrade execution requires|GitHub-hosted runner/);
+});

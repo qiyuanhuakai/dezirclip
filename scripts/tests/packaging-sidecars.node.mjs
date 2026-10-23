@@ -173,7 +173,13 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(identities, /uses: \.\/\.github\/workflows\/release-identities\.yml/);
   assert.match(identities, /source: \$\{\{ github\.sha \}\}/);
   assert.match(identities, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
-  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities\]/);
+  const upgrades = workflow.split("  verify-final-windows-upgrade:")[1]?.split("\n  verify-publish-and-promote:")[0];
+  assert(upgrades, "publication requires actual final signed NSIS installation and upgrade acceptance");
+  assert.match(upgrades, /needs: \[create-release, publish-tauri\]/);
+  assert.match(upgrades, /uses: \.\/\.github\/workflows\/release-windows-upgrade\.yml/);
+  assert.match(upgrades, /source: \$\{\{ github\.sha \}\}/);
+  assert.match(upgrades, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
+  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade\]/);
 });
 
 test("RPM metadata derives supported preview and stable versions without build metadata precedence", () => {

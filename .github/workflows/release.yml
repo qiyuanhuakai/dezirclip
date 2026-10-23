@@ -38,7 +38,7 @@ jobs:
         run: node scripts/updater-release.mjs preflight "$GITHUB_REF_NAME"
 
       - name: Verify updater release logic
-        run: node --test scripts/tests/updater-release.node.mjs
+        run: node --test scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
 
       - name: Create or reuse release
         id: release
@@ -261,9 +261,19 @@ jobs:
       source: ${{ github.sha }}
       release-id: ${{ needs.create-release.outputs.release_id }}
 
+  verify-final-windows-upgrade:
+    name: Verify actual signed Windows upgrades
+    needs: [create-release, publish-tauri]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-windows-upgrade.yml
+    with:
+      source: ${{ github.sha }}
+      release-id: ${{ needs.create-release.outputs.release_id }}
+
   verify-publish-and-promote:
     name: Verify signed artifacts and publish before public acceptance
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities]
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
