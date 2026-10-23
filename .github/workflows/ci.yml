@@ -43,8 +43,14 @@ jobs:
       - name: Check i18n keys
         run: pnpm run i18n:check
 
+      - name: Check single-source local protocol generation
+        run: python scripts/generate-protocol.py --check
+
       - name: Test updater release gates
-        run: node --test scripts/tests/updater-release.node.mjs
+        run: node --test scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
+
+      - name: Check final Windows upgrade source boundary
+        run: python -I -B scripts/tests/release-windows-upgrade-ps.py
 
       - name: Check theme CSS contracts
         run: node scripts/audit-theme-css.mjs --check
@@ -92,6 +98,17 @@ jobs:
 
       - name: Check src-tauri/src/bin layout
         run: node scripts/check-tauri-bin-dir.mjs
+
+      - name: Verify the active Explorer prerequisite for final release upgrades
+        if: matrix.name == 'windows-x86_64'
+        shell: pwsh
+        run: |
+          $processes = @(Get-Process explorer -ErrorAction SilentlyContinue)
+          try {
+            $original = @($processes | ForEach-Object { @{ pid = $_.Id; started_at = $_.StartTime.ToUniversalTime().ToString('o') } })
+            ConvertTo-Json -InputObject $original -Depth 4
+            if ($original.Count -eq 0) { throw 'Final release upgrade acceptance requires an active original Explorer; an empty process set cannot prove preservation.' }
+          } finally { foreach ($process in $processes) { $process.Dispose() } }
 
       - name: Setup Python for archive validation
         if: runner.os == 'Windows'
@@ -161,6 +178,39 @@ jobs:
         with:
           workspaces: . -> target
 
+      - name: Setup Go for local IPC compatibility
+        if: matrix.can_test
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: clients/go/go.sum
+
+      - name: Test Go local protocol client
+        if: matrix.can_test
+        working-directory: clients/go
+        env:
+          GOTOOLCHAIN: local
+        run: go test ./...
+
+      - name: Test bounded native local IPC
+        if: matrix.can_test
+        run: |
+          cargo test -p dzc-protocol --features wire
+          cargo test -p dzc-platform --features ipc ipc::
+          cargo build -p dzc-platform --features ipc --example ipc_protocol_fixture
+
+      - name: Verify native Rust and Go protocol compatibility
+        if: matrix.can_test
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+          fixture = Path("target/debug/examples") / ("ipc_protocol_fixture.exe" if os.name == "nt" else "ipc_protocol_fixture")
+          subprocess.run(["python", "scripts/test-local-ipc.py", "--rust-fixture", str(fixture), "--go", shutil.which("go")], check=True)
+          subprocess.run(["python", "scripts/test-capture-lease.py", "--fixture", str(fixture)], check=True)
+
       - name: Test Tauri crate
         if: matrix.can_test
         working-directory: src-tauri
@@ -173,6 +223,26 @@ jobs:
       - name: Build Tauri crate
         working-directory: src-tauri
         run: cargo build ${{ matrix.cargo_args }}
+
+      - name: Verify optional local service without native capture
+        if: matrix.can_test
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          import subprocess
+          subprocess.run(["cargo", "build", "--locked", "--no-default-features", "--bin", "dzc", "--bin", "dzc-service"], check=True)
+          binary = Path("target/debug") / ("dzc.exe" if os.name == "nt" else "dzc")
+          subprocess.run(["python", "scripts/test-local-host.py", "--cli", str(binary)], check=True)
+
+      - name: Verify private Windows clipboard leases on disposable runner
+        if: runner.os == 'Windows' && matrix.can_test
+        env:
+          DZC_PRIVATE_LEASE_DISPOSABLE: '1'
+          DZC_PRIVATE_LEASE_DIAGNOSTICS: '1'
+          DZC_PRIVATE_OWNER_FIXTURE_EXE: ${{ github.workspace }}/target/debug/dzc.exe
+          RUST_BACKTRACE: '1'
+        run: cargo test -p dzc-platform --features ipc native_clipboard::private_windows::tests::disposable_native_ -- --ignored --nocapture --test-threads=1
 
       - name: Check backend without replacing the built CLI
         shell: python
@@ -206,7 +276,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [LegacyUninstall, OldToNew, OwnedUpgrade, OwnedExternalEdit]
+        scenario: [LegacyUninstall, OldToNew, PublishedAlphaToAlpha, OwnedUpgrade, OwnedExternalEdit]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -221,6 +291,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Setup native clipboard fixture runtime
+        if: matrix.scenario != 'LegacyUninstall'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+
+      - name: Check disposable native clipboard boundary
+        if: matrix.scenario != 'LegacyUninstall'
+        run: python -m unittest discover -s scripts/tests -p test_native_windows_clipboard.py
 
       - name: Test sidecar packaging contracts
         run: node --test scripts/tests/packaging-sidecars.node.mjs
@@ -253,15 +333,21 @@ jobs:
         run: |
           Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.1.20/DezirClip_0.1.20_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe"
 
+      - name: Download pinned published alpha.1 installer
+        if: matrix.scenario == 'PublishedAlphaToAlpha'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://github.com/qiyuanhuakai/dezirclip/releases/download/v0.2.0-alpha.1/DezirClip_0.2.0-alpha.1_x64-setup.exe' -OutFile "$env:RUNNER_TEMP/legacy-setup.exe"
+
       - name: Build previous unpublished fixture package
         if: matrix.scenario == 'OwnedUpgrade'
         shell: pwsh
-        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.0 -Destination "$env:RUNNER_TEMP/previous-setup.exe"
+        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.1 -Destination "$env:RUNNER_TEMP/previous-setup.exe"
 
       - name: Build current unpublished fixture package
         if: matrix.scenario != 'LegacyUninstall'
         shell: pwsh
-        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.1 -Destination "$env:RUNNER_TEMP/candidate-setup.exe"
+        run: ./scripts/build-native-windows-fixture.ps1 -Version 0.2.0-alpha.2 -Destination "$env:RUNNER_TEMP/candidate-setup.exe"
 
       - name: Exercise actual installer and application
         shell: pwsh

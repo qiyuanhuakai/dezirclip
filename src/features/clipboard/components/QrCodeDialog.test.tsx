@@ -7,6 +7,9 @@ import qrDialogCss from "./qrDialogCssLoader.mjs";
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
+vi.mock("../../../shared/lib/privacySession", () => ({
+  beginPrivacyAccess: () => ({ epoch: 0, isCurrent: () => true }),
+}));
 
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
@@ -79,6 +82,8 @@ describe("QrCodeDialog", () => {
         pasteWithFormat: false,
         moveToTop: false,
         pasteImageAsBase64: false,
+        expectedPrivacyEpoch: 0,
+        derivedFromId: undefined,
       });
     });
   });

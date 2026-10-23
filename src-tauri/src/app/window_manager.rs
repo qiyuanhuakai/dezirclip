@@ -297,7 +297,7 @@ pub fn toggle_window(app: &AppHandle) {
 
         if let Ok(size) = window.outer_size() {
             let settings = app.state::<SettingsState>();
-            if settings.follow_mouse.load(Ordering::Relaxed) {
+            if settings.follow_mouse.load(Ordering::Relaxed) && !dzc_platform::runtime::is_native_wayland() {
                 #[cfg(windows)]
                 {
                     let w = size.width as i32;

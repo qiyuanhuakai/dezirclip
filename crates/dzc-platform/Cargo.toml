@@ -6,8 +6,14 @@ authors.workspace = true
 description = "Native clipboard and key protection adapters for DezirClip"
 publish = false
 
+[[example]]
+name = "ipc_protocol_fixture"
+required-features = ["ipc"]
+
 [features]
 portable = ["dzc-core/portable"]
+ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
+native-ocr = ["dep:windows-core"]
 
 [dependencies]
 dzc-protocol.workspace = true
@@ -21,12 +27,20 @@ image.workspace = true
 urlencoding.workspace = true
 rand.workspace = true
 aes-gcm.workspace = true
+sha2 = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt", "sync", "time", "macros"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring.workspace = true
 x11rb = { workspace = true, features = ["xkb"] }
 libc.workspace = true
 x11-clipboard.workspace = true
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+socket2 = "0.6"
+dbus = "0.9"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows.workspace = true
+windows = { workspace = true, features = ["Win32_System_Pipes", "Win32_Storage_FileSystem"] }
+windows-core = { workspace = true, optional = true }

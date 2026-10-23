@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings:CaptureSettings {persistent:true,deduplicate:true,..Default::default()},session:&session,paused:false,sequential_echo:None};
     let directory=std::env::temp_dir();
     let store=history.capture_store(&directory);
-    let captured=CaptureEngine::capture_frame(&context,CaptureFrame {data:CaptureData::Text("typed capture".into()),metadata:Default::default()},&store,&mut ());
+    let captured=CaptureEngine::capture_frame(&context,CaptureFrame {data:CaptureData::Text("typed capture".into()),metadata:CaptureReadMetadata {privacy_ticket:store.capture_ticket(chrono::Utc::now().timestamp_millis()).expect("shared privacy state must be available"),..Default::default()}},&store,&mut ());
     let CaptureOutcome::Stored(captured)=captured else {panic!("capture should use the stable history store");};
     assert!(captured.persistent);assert_eq!(history.get_entry_by_id(captured.entry.id)?.unwrap().content,"typed capture");
     assert!(captured.privacy.evidence.iter().any(|evidence|evidence.reason==dzc_core::privacy::PrivacyReason::PrivacyHintsUnavailable));

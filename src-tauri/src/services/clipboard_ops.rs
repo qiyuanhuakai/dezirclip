@@ -13,7 +13,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{Emitter, Manager, State};
 use urlencoding::decode;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::HWND;
@@ -115,6 +115,7 @@ pub fn copy_image_bytes_to_system_clipboard(bytes: Vec<u8>) -> AppResult<()> {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
+    owned_clipboard_writer()?.release_private_selection().map_err(|error|AppError::Internal(error.to_string()))?;
     let hashes = copy_image_bytes_to_clipboard(bytes, current_time)?;
     crate::LAST_APP_SET_HASH.store(hashes.0, Ordering::SeqCst);
     crate::LAST_APP_SET_HASH_ALT.store(hashes.1, Ordering::SeqCst);
@@ -128,14 +129,48 @@ pub async fn copy_to_clipboard(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     mut content: String,
-    content_type: String,
+    mut content_type: String,
     paste: bool,
     id: i64,
     delete_after_use: bool,
     paste_with_format: Option<bool>,
     move_to_top: Option<bool>,
     paste_image_as_base64: Option<bool>,
+    expected_privacy_epoch: Option<u64>,
+    derived_from_id: Option<i64>,
+    expected_host_instance_id:Option<String>,
 ) -> AppResult<()> {
+    if paste && dzc_platform::runtime::is_native_wayland() {
+        return Err(AppError::Validation("wayland_interaction_unavailable".into()));
+    }
+    let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>();
+    let source_id=if id!=0 {id}else{derived_from_id.unwrap_or(0)};
+    bridge.check_instance(source_id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
+    if bridge.embedded().map_err(AppError::Validation)?.is_none() {
+        if paste {handle_window_focus_for_paste(&app_handle).await?;}
+        if source_id==0 {
+            let upload=bridge.begin_generated_copy(expected_privacy_epoch).await.map_err(AppError::Validation)?;
+            let body=generated_copy_body(&content,&content_type,paste_image_as_base64.unwrap_or(false))?;
+            upload.finish_copy(body,paste).await.map_err(AppError::Validation)?;
+            if paste {play_paste_sound_if_enabled(&app_handle);}
+            return Ok(());
+        }
+        let epoch=expected_privacy_epoch.unwrap_or(state.history_service().runtime_snapshot(Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch);
+        let _:dzc_host::wire::OperationResult=bridge.call(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams {
+            id:source_id,service_instance_id:bridge.instance().map_err(AppError::Validation)?,expected_epoch:epoch,reveal:expected_privacy_epoch.is_some(),paste,
+            with_format:paste_with_format,derived_text:derived_from_id.filter(|_|id==0).map(|_|content.clone()),image_as_base64:paste_image_as_base64,
+            delete_after_use:Some(delete_after_use),move_to_top,
+        },"OperationResult").await.map_err(AppError::Validation)?;
+        if paste {play_paste_sound_if_enabled(&app_handle);}
+        return Ok(());
+    }
+    let operation_permission=if let Some(epoch)=expected_privacy_epoch {
+        Some(state.history_service().privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::GeneratedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
+    } else {None};
+    let generated_ticket = if paste_image_as_base64.unwrap_or(false) || derived_from_id.is_some() {
+        crate::services::clipboard::generated_capture_ticket(&app_handle).await?
+    } else { None };
+
     println!(
         "[DEBUG] copy_to_clipboard called: id={}, paste={}, content_type={}, content_len={}",
         id,
@@ -146,24 +181,31 @@ pub async fn copy_to_clipboard(
 
     let mut html_content: Option<String> = None;
 
-    // 0. Resolve full content if ID is provided and content is placeholder/truncated
+    let history=state.history_service();
+    let mut read_permit=None;
+    let mut private_payload=None;
     if id != 0 {
-        if id > 0 {
-            // Fetch from Database
-            if let Ok(Some((full_content, _ctype, html))) =
-                state.repo.get_entry_content_with_html(id)
-            {
-                content = full_content;
-                html_content = html;
-            }
-        } else {
-            // Fetch from Session
-            let session_items = session.inner().0.lock().unwrap();
-            if let Some(item) = session_items.iter().find(|i| i.id == id) {
-                content = item.content.clone();
-                html_content = item.html_content.clone();
-            }
-        }
+        let sensitive=if expected_privacy_epoch.is_some() { dzc_core::api::SensitiveAccess::ExplicitUserAction } else { dzc_core::api::SensitiveAccess::Denied };
+        let permit=history.privacy().authorize_selected_copy(id,expected_host_instance_id.as_deref(),sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+        let entry=if id>0 { history.get_entry_authorized(id,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))? }
+            else {
+                let entry=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
+                history.authorize_session_entry_for_host(&entry,&bridge.instance().map_err(AppError::Validation)?,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?
+            };
+        content=entry.content.clone();html_content=entry.html_content.clone();content_type=entry.content_type.clone();
+        let payload=if id>0 { history.clipboard_payload_authorized(id,&permit,chrono::Utc::now().timestamp_millis()) } else { history.session_clipboard_payload_for_host_authorized(&entry,&bridge.instance().map_err(AppError::Validation)?,&permit,chrono::Utc::now().timestamp_millis()) }.map_err(|error|AppError::Validation(error.to_string()))?;
+        if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}|dzc_core::ports::ClipboardPayload::ProtectedFiles{..}) { private_payload=Some(payload); }
+        read_permit=Some(permit);
+    } else if let Some(source_id)=derived_from_id {
+        if source_id==0 || !matches!(content_type.as_str(),"text"|"code"|"url"|"rich_text") { return Err(AppError::Validation("DerivedPayloadKindRejected".into())); }
+        let sensitive=if expected_privacy_epoch.is_some(){dzc_core::api::SensitiveAccess::ExplicitUserAction}else{dzc_core::api::SensitiveAccess::Denied};
+        let permit=history.privacy().authorize_selected_copy(source_id,expected_host_instance_id.as_deref(),sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+        let payload=if source_id>0 {history.derived_text_payload_authorized(source_id,content.clone(),&permit,chrono::Utc::now().timestamp_millis())} else {
+            let source=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==source_id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
+            history.session_derived_text_payload_for_host_authorized(&source,&bridge.instance().map_err(AppError::Validation)?,content.clone(),&permit,chrono::Utc::now().timestamp_millis())
+        }.map_err(|error|AppError::Validation(error.to_string()))?;
+        if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}){ private_payload=Some(payload); }
+        read_permit=Some(permit);
     }
 
     let paste_image_as_base64_requested = paste_image_as_base64.unwrap_or(false);
@@ -187,6 +229,8 @@ pub async fn copy_to_clipboard(
         }
     }
 
+    if derived_from_id.is_some() && private_payload.is_some() && self_insert_label.is_none() { self_insert_label=Some("DezirClip Protected Derived".into()); }
+
     // 1. Handle Window Visibility and Focus
     if paste {
         handle_window_focus_for_paste(&app_handle).await?;
@@ -199,12 +243,14 @@ pub async fn copy_to_clipboard(
     // clipboard write below is then marked as a self-copy so the OS clipboard monitor
     // does not race us by creating a duplicate row.
     if let Some(label) = self_insert_label.as_ref() {
-        crate::services::clipboard::process_new_entry(
+        crate::services::clipboard::process_new_entry_with_protection(
             &app_handle,
             crate::services::clipboard::ClipboardData::Text(content.clone()),
             Some(label.clone()),
             None,
-        );
+            generated_ticket,
+            private_payload.is_some(),
+        ).await?;
     }
 
     // 3. Copy to system clipboard. For self-insert paths we force mark_as_self_copy=true
@@ -215,6 +261,14 @@ pub async fn copy_to_clipboard(
         should_mark_clipboard_write_as_self_copy(id, paste, paste_image_as_base64_requested)
     };
 
+    if let Some(permit)=&operation_permission { history.privacy().check_read(permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?; }
+    if let Some(permit)=&read_permit { history.privacy().check_read(permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?; }
+    if let Some(mut payload)=private_payload {
+        if let dzc_core::ports::ClipboardPayload::Private{payload:inner,..}=&mut payload {
+            if self_insert_label.is_some() || !paste_with_format.unwrap_or(effective_content_type=="rich_text" && html_content.is_some()) && matches!(inner.as_ref(),dzc_core::ports::ClipboardPayload::Html{..}) { **inner=dzc_core::ports::ClipboardPayload::Text(content.clone()); }
+        }
+        bridge.writer().map_err(AppError::Validation)?.write_suppressing_recapture(payload).map_err(|error|AppError::Internal(error.to_string()))?;
+    } else {
     write_content_to_system_clipboard(
         &content,
         ClipboardWriteOptions {
@@ -226,6 +280,7 @@ pub async fn copy_to_clipboard(
             mark_as_self_copy,
         },
     )?;
+    }
 
     // 4. Perform paste action if requested
     if paste {
@@ -242,6 +297,30 @@ pub async fn copy_to_clipboard(
     }
 
     Ok(())
+}
+
+fn generated_copy_body(content:&str,kind:&str,image_as_text:bool)->AppResult<dzc_host::wire::GeneratedBody> {
+    let (kind,text)=if kind=="image" && !image_as_text {
+        let unavailable=||AppError::Validation("GeneratedImageUnavailable".into());
+        let maximum=16*1024*1024;
+        let value=content.trim();
+        let bytes=if value.starts_with("data:image/") {
+            if value.len()>maximum*4/3+1024 {return Err(unavailable());}
+            let (header,data)=value.split_once(',').ok_or_else(unavailable)?;
+            if !header.ends_with(";base64") {return Err(unavailable());}
+            general_purpose::STANDARD.decode(data).map_err(|_|unavailable())?
+        } else {
+            let raw=value.strip_prefix("file://").unwrap_or(value);
+            let raw=if raw.starts_with('/') && raw.chars().nth(2)==Some(':') {&raw[1..]}else{raw};
+            let path=decode(raw).map_err(|_|unavailable())?;
+            dzc_core::filesystem::read_bounded_regular(std::path::Path::new(path.as_ref()),maximum).map_err(|_|unavailable())?
+        };
+        if bytes.len()>maximum {return Err(unavailable());}
+        let format=image::guess_format(&bytes).map_err(|_|unavailable())?;
+        ("image",format!("data:{};base64,{}",format.to_mime_type(),general_purpose::STANDARD.encode(bytes)))
+    } else if matches!(kind,"text"|"code"|"url"|"rich_text"|"image") {("text",content.into())}
+    else {return Err(AppError::Validation("GeneratedPayloadKindRejected".into()));};
+    Ok(dzc_host::wire::GeneratedBody{kind:kind.into(),text,html:None})
 }
 
 async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResult<()> {
@@ -382,7 +461,13 @@ pub(crate) fn write_content_to_system_clipboard(
 ) -> AppResult<()> {
     let (content_hash, current_time) = calculate_content_hash(content);
 
-    let clipboard_hashes = match options.content_type {
+    let clipboard_hashes = if cfg!(target_os="linux") {
+        write_native_wayland_content(content, &options)?;
+        (content_hash.max(1), 0)
+    } else {
+        owned_clipboard_writer()?
+            .release_private_selection().map_err(|error| AppError::Internal(error.to_string()))?;
+        match options.content_type {
         "image" | "video" | "file" => {
             copy_file_like_content(content, options.content_type, current_time, content_hash)?
         }
@@ -398,7 +483,7 @@ pub(crate) fn write_content_to_system_clipboard(
             copy_text_with_retry(content)?;
             (content_hash, 0)
         }
-    };
+    }};
 
     if options.mark_as_self_copy {
         crate::LAST_APP_SET_HASH.store(clipboard_hashes.0, Ordering::SeqCst);
@@ -407,6 +492,51 @@ pub(crate) fn write_content_to_system_clipboard(
     }
 
     Ok(())
+}
+
+fn write_native_wayland_content(content: &str, options: &ClipboardWriteOptions<'_>) -> AppResult<()> {
+    use dzc_core::ports::{ClipboardPayload as Payload, ClipboardWriter};
+    let payload = match options.content_type {
+        "image" => {
+            const LIMIT: usize = 64 * 1024 * 1024;
+            let bytes = if content.starts_with('/') || content.starts_with("file://") || content.contains(":\\") {
+                let path = crate::infrastructure::attachments::path_from_uri(content).map_err(AppError::Internal)?;
+                dzc_platform::local_file::read_bounded_regular(std::path::Path::new(&path), LIMIT).map_err(AppError::from)?
+            } else {
+                let encoded = content.split_once(',').filter(|_| content.starts_with("data:image/")).map(|(_, data)| data).unwrap_or(content);
+                if encoded.len() > (LIMIT / 3 + 1) * 4 { return Err(AppError::Validation("WaylandTransferBudgetExceeded".into())); }
+                general_purpose::STANDARD.decode(encoded).map_err(|_| AppError::Validation("ClipboardImageInvalid".into()))?
+            };
+            let mime = match image::guess_format(&bytes).map_err(|_| AppError::Validation("ClipboardImageInvalid".into()))? {
+                image::ImageFormat::Png => "image/png",
+                image::ImageFormat::Jpeg => "image/jpeg",
+                image::ImageFormat::Gif => "image/gif",
+                image::ImageFormat::WebP => "image/webp",
+                image::ImageFormat::Bmp => "image/bmp",
+                _ => return Err(AppError::Validation("ClipboardImageInvalid".into())),
+            };
+            Payload::Image { bytes, mime: mime.into() }
+        }
+        "file" | "files" | "video" if content.starts_with('/') || content.contains(":\\") => Payload::Files(split_local_paths(content)),
+        _ if options.paste_with_format && options.html_content.is_some() => {
+            let (html, _) = split_rich_html_and_image_fallback(options.html_content.expect("checked above"));
+            Payload::Html { html, text: content.to_string() }
+        }
+        _ => Payload::Text(content.to_string()),
+    };
+    let writer = owned_clipboard_writer()?;
+    if options.mark_as_self_copy { writer.write_suppressing_recapture(payload) } else { writer.write(payload) }
+        .map_err(|error| AppError::Internal(error.to_string()))
+}
+
+fn owned_clipboard_writer()->AppResult<dzc_platform::runtime::EmbeddedClipboardWriter> {
+    if let Some(app)=crate::global_state::GLOBAL_APP_HANDLE.get() {
+        return app.state::<crate::app::ipc_host::DesktopHost>().writer().map_err(AppError::Validation);
+    }
+    #[cfg(test)]
+    return Ok(dzc_platform::runtime::shared_embedded_clipboard_writer().clone());
+    #[cfg(not(test))]
+    Err(AppError::Validation("ClipboardHostUnavailable".into()))
 }
 
 fn copy_file_like_content(
@@ -423,10 +553,7 @@ fn copy_file_like_content(
         return copy_inline_image_content(content, current_time);
     }
 
-    let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
-    clipboard
-        .set_text(content.to_string())
-        .map_err(AppError::from)?;
+    copy_text_with_retry(content)?;
     Ok((content_hash.max(1), 0))
 }
 
@@ -492,6 +619,14 @@ fn copy_rich_text_content(
         let (content_hash, _) = calculate_content_hash(content);
         return Ok((content_hash.max(1), 0));
     };
+
+    #[cfg(target_os = "linux")]
+    if dzc_platform::runtime::is_native_wayland() && paste_with_format {
+        let (html, _) = split_rich_html_and_image_fallback(html);
+        crate::infrastructure::linux_api::clipboard::set_clipboard_text_and_html(content.to_string(), Some(html))?;
+        let (content_hash, _) = calculate_content_hash(content);
+        return Ok((content_hash.max(1), 0));
+    }
 
     if !paste_with_format {
         copy_text_with_retry(content)?;
@@ -715,14 +850,9 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, _current_time: u64) -> AppResul
 
     #[cfg(target_os = "linux")]
     {
-        crate::infrastructure::linux_api::clipboard::set_clipboard_image_with_formats(
-            crate::infrastructure::linux_api::clipboard::ImageData {
-                width: width as usize,
-                height: height as usize,
-                bytes: rgba.into_raw(),
-            },
-        )
-        .map_err(AppError::from)?;
+        use dzc_core::ports::ClipboardWriter;
+        owned_clipboard_writer()?.write_suppressing_recapture(dzc_core::ports::ClipboardPayload::Image{bytes,mime:if is_gif{"image/gif"}else{"image/png"}.into()})
+            .map_err(|error|AppError::Internal(error.to_string()))?;
     }
 
     Ok((primary_hash, secondary_hash))
@@ -1385,6 +1515,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
         };
 
         let history = crate::app::commands::history_cmd::get_clipboard_history(
+            app_handle_clone.clone(),
             app_handle_clone.state::<DbState>(),
             app_handle_clone.state::<SessionHistory>(),
             1,
@@ -1407,135 +1538,11 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
                     Some(true),   // paste_with_format
                     None,
                     None,
+                    None,
+                    None,
+                    item.host_instance_id.clone(),
                 )
                 .await;
-            }
-        }
-    });
-}
-
-#[cfg_attr(
-    not(target_os = "windows"),
-    allow(
-        unused_variables,
-        reason = "Linux OCR is stubbed; bytes only consumed on Windows"
-    )
-)]
-pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: AppHandle) {
-    let db_state = app.state::<DbState>();
-    {
-        let conn = match db_state.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                crate::error!("[ocr-trigger] DB lock failed for id={}: {}", item_id, e);
-                return;
-            }
-        };
-        if let Err(e) = db_state
-            .repo
-            .update_ocr_text_with_conn(&conn, item_id, "", "processing")
-        {
-            crate::error!(
-                "[ocr-trigger] Failed to set processing status for id={}: {}",
-                item_id,
-                e
-            );
-            return;
-        }
-    }
-
-    tauri::async_runtime::spawn(async move {
-        let result: Result<String, String> = async {
-            #[cfg(target_os = "linux")]
-            {
-                let service = crate::services::ocr::OcrService::new()
-                    .map_err(|e| format!("OCR engine init failed: {e}"))?;
-                // recognize() is sync and invokes the tesseract binary; off-load it
-                // to a blocking task so we do not stall the async runtime.
-                let png_owned = png_bytes;
-                tokio::task::spawn_blocking(move || service.recognize(&png_owned))
-                    .await
-                    .map_err(|e| format!("OCR blocking task failed: {e}"))?
-                    .map_err(|e| format!("OCR recognition failed: {e}"))
-            }
-            #[cfg(target_os = "windows")]
-            {
-                let service = crate::services::ocr::OcrService::new()
-                    .map_err(|e| format!("OCR engine init failed: {e}"))?;
-                service
-                    .recognize(&png_bytes)
-                    .map_err(|e| format!("OCR recognition failed: {e}"))
-            }
-        }
-        .await;
-
-        let db_state = app.state::<DbState>();
-        let conn = match db_state.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                crate::error!(
-                    "[ocr-trigger] DB lock failed on completion for id={}: {}",
-                    item_id,
-                    e
-                );
-                return;
-            }
-        };
-
-        match result {
-            Ok(text) => {
-                if let Err(e) = db_state
-                    .repo
-                    .update_ocr_text_with_conn(&conn, item_id, &text, "done")
-                {
-                    crate::error!(
-                        "[ocr-trigger] Failed to persist OCR text for id={}: {}",
-                        item_id,
-                        e
-                    );
-                    return;
-                }
-                drop(conn);
-                let _ = app.emit(
-                    "ocr:complete",
-                    crate::app::commands::ocr_cmd::OcrResult {
-                        item_id,
-                        text,
-                        confidence: None,
-                        status: "done".to_string(),
-                    },
-                );
-            }
-            Err(e) => {
-                let msg = e;
-                let status = if msg.contains("not supported") {
-                    "unsupported"
-                } else {
-                    "failed"
-                };
-                if let Err(e2) = db_state
-                    .repo
-                    .update_ocr_text_with_conn(&conn, item_id, "", status)
-                {
-                    crate::error!(
-                        "[ocr-trigger] Failed to set {} status for id={}: {}",
-                        status,
-                        item_id,
-                        e2
-                    );
-                    return;
-                }
-                drop(conn);
-                crate::error!("[ocr-trigger] OCR failed for id={}: {}", item_id, msg);
-                let _ = app.emit(
-                    "ocr:complete",
-                    crate::app::commands::ocr_cmd::OcrResult {
-                        item_id,
-                        text: String::new(),
-                        confidence: None,
-                        status: status.to_string(),
-                    },
-                );
             }
         }
     });
@@ -1544,6 +1551,53 @@ pub async fn trigger_ocr_for_image_item(item_id: i64, png_bytes: Vec<u8>, app: A
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn generated_remote_copy_normalizes_favorite_images_and_keeps_ocr_as_text() {
+        let emoji=generated_copy_body("🎸","text",false).unwrap();
+        assert_eq!((emoji.kind.as_str(),emoji.text.as_str()),("text","🎸"));
+        let image="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVQI12P4z8AAAAMBAQAY3Y2wAAAAAElFTkSuQmCC";
+        let directory=std::env::temp_dir().join(format!("dzc-generated-image-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let path=directory.join("favorite.png");
+        std::fs::write(&path,general_purpose::STANDARD.decode(image.split_once(',').unwrap().1).unwrap()).unwrap();
+        let favorite=generated_copy_body(path.to_str().unwrap(),"image",false).unwrap();
+        assert_eq!(favorite.kind,"image");
+        assert_eq!(favorite.text,image);
+        assert!(favorite.html.is_none());
+        let ocr=generated_copy_body("ordinary OCR result","image",true).unwrap();
+        assert_eq!((ocr.kind.as_str(),ocr.text.as_str()),("text","ordinary OCR result"));
+        assert!(generated_copy_body("data:image/png,not-base64","image",false).is_err());
+        assert!(generated_copy_body("/synthetic/file","files",false).is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn isolated_wayland_gui_write_intent_preserves_generated_capture() {
+        if std::env::var("DEZIRCLIP_RUN_WAYLAND_SMOKE_TESTS").as_deref() != Ok("1") { return; }
+        use dzc_core::capture::*;
+        use dzc_core::api::{HistoryQuery, HistoryService};
+        use std::{collections::VecDeque, sync::Mutex};
+        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+        assert!(runtime.join("dezirclip-isolated-wayland-fixture").is_file());
+        assert!(std::env::var_os("DISPLAY").is_none());
+        let history = HistoryService::open(&runtime.join("gui-write-intent.db")).unwrap();
+        let store = history.capture_store(&runtime);
+        let session = Mutex::new(VecDeque::new());
+        let context = CaptureContext { source: CaptureSource::default(), timestamp: 12345,
+            settings: CaptureSettings { persistent: true, ..Default::default() }, session: &session, paused: false, sequential_echo: None };
+        for (id, text) in [(0, "synthetic conversion text"), (0, "synthetic OCR text"), (7, "synthetic existing history copy")] {
+            write_content_to_system_clipboard(text, ClipboardWriteOptions { content_type: "text", html_content: None,
+                paste_with_format: false, mark_as_self_copy: should_mark_clipboard_write_as_self_copy(id, false, false) }).unwrap();
+            let result = CaptureEngine::capture(&context, &mut dzc_platform::capture::NativeCaptureReader::default(), &store, &mut ());
+            if id == 0 { assert!(matches!(result, CaptureOutcome::Stored(_))); }
+            else { assert!(matches!(result, CaptureOutcome::Skipped(CaptureSkip::OwnClipboard))); }
+        }
+        let rows = history.query(&HistoryQuery { limit: 10, ..Default::default() }).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().any(|row| row.content == "synthetic conversion text"));
+        assert!(rows.iter().any(|row| row.content == "synthetic OCR text"));
+    }
 
     // `copy_image_bytes_to_clipboard` hashes the decoded pixels so the monitor
     // can recognise and skip our own copy. The monitor side hashes the

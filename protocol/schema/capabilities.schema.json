@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/capabilities.schema.json",
+  "$defs": {
+    "Permission": {
+      "type": "string",
+      "enum": [
+        "history_read",
+        "history_body",
+        "clipboard_copy",
+        "clipboard_paste",
+        "privacy_write",
+        "service_manage",
+        "surface_control",
+        "desktop_history"
+      ]
+    },
+    "HostMode": {
+      "type": "string",
+      "enum": [
+        "embedded",
+        "service"
+      ]
+    },
+    "CapabilityReport": {
+      "type": "object",
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 64
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/capabilities.schema.json#/$defs/Permission"
+          },
+          "maxItems": 16
+        },
+        "platform": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "methods",
+        "permissions",
+        "platform"
+      ],
+      "additionalProperties": true
+    },
+    "ServiceStatus": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "$ref": "https://dezirclip.local/protocol/v1/capabilities.schema.json#/$defs/HostMode"
+        },
+        "capture_owner": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        },
+        "privacy": {
+          "$ref": "https://dezirclip.local/protocol/v1/privacy.schema.json#/$defs/PrivacyState"
+        },
+        "capture_unavailable_reason": {
+          "type": "string",
+          "enum": [
+            "native_listener_unavailable",
+            "capture_ownership_unavailable",
+            "disabled_by_request"
+          ]
+        }
+      },
+      "required": [
+        "mode",
+        "capture_owner",
+        "state",
+        "privacy"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

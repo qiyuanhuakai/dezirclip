@@ -25,58 +25,93 @@ pub struct OcrStatusResponse {
     pub ocr_text: Option<String>,
 }
 
+fn prepare_ocr_image(
+    history: &dzc_core::api::HistoryService,
+    item_id: i64,
+    expected_privacy_epoch: Option<u64>,
+) -> Result<
+    (
+        dzc_core::api::CaptureTicket,
+        dzc_core::api::PrivacyReadPermit,
+        Vec<u8>,
+    ),
+    String,
+> {
+    use dzc_core::api::SensitiveAccess;
+    let now = || chrono::Utc::now().timestamp_millis();
+    let ticket = history
+        .privacy()
+        .capture_ticket(now())
+        .map_err(|error| error.to_string())?;
+    let permit = history
+        .privacy()
+        .authorize_selected_copy(
+            item_id,
+            None,
+            if expected_privacy_epoch.is_some() {
+                SensitiveAccess::ExplicitUserAction
+            } else {
+                SensitiveAccess::Denied
+            },
+            Some(expected_privacy_epoch.unwrap_or(ticket.epoch())),
+            now(),
+        )
+        .map_err(|error| error.to_string())?;
+    let bytes = history
+        .image_bytes_authorized(item_id, &permit, now())
+        .map_err(|error| error.to_string())?
+        .ok_or("OcrImageRequired")?;
+    Ok((ticket, permit, bytes))
+}
+
 #[tauri::command]
-pub async fn recognize_clipboard_image(item_id: i64, app: AppHandle) -> Result<OcrResult, String> {
-    let db_state = app.state::<DbState>();
-    let conn = db_state
-        .conn
-        .lock()
-        .map_err(|e| format!("DB lock failed: {e}"))?;
-
-    let entry = db_state
-        .repo
-        .get_entry_by_id_with_conn(&conn, item_id)?
-        .ok_or_else(|| format!("Clipboard entry {item_id} not found"))?;
-
-    if entry.content_type != "image" {
-        return Err(format!(
-            "Entry {item_id} is not an image (content_type={})",
-            entry.content_type
-        ));
-    }
-
-    let png_bytes = crate::services::clipboard_ops::resolve_image_bytes(&entry.content)
-        .ok_or_else(|| {
-            format!(
-                "Failed to resolve image bytes for entry {item_id} (content_len={})",
-                entry.content.len()
-            )
-        })?;
-
-    let text = {
-        let service = crate::services::ocr::OcrService::new()
-            .map_err(|e| format!("OCR engine init failed: {e}"))?;
-        service
-            .recognize(&png_bytes)
-            .map_err(|e| format!("OCR recognition failed: {e}"))?
-    };
-
-    db_state
-        .repo
-        .update_ocr_text_with_conn(&conn, item_id, &text, "done")
-        .map_err(|e| format!("Failed to persist OCR text: {e}"))?;
-
-    drop(conn);
-
+pub async fn recognize_clipboard_image(
+    item_id: i64,
+    app: AppHandle,
+    expected_privacy_epoch: Option<u64>,
+    expected_host_instance_id:Option<String>,
+) -> Result<OcrResult, String> {
+    let bridge=app.state::<crate::app::ipc_host::DesktopHost>();
+    bridge.check_instance(item_id,expected_host_instance_id.as_deref())?;
+    if item_id<0 {return Err("SessionOcrUnavailable".into());}
+    if bridge.embedded()?.is_none() {return Err("RemoteOcrUnavailable".into());}
+    let work=bridge.embedded()?.ok_or("ClipboardHostUnavailable")?.begin_work().map_err(|_|"CaptureWorkUnavailable")?;
+    let history = app.state::<DbState>().history_service();
+    let now = || chrono::Utc::now().timestamp_millis();
+    let (ticket, permit, bytes) = prepare_ocr_image(&history, item_id, expected_privacy_epoch)?;
+    let task_work=work.clone();
+    let text = tokio::task::spawn_blocking(move || {
+        let _work=task_work;
+        crate::services::ocr::OcrService::new()
+            .map_err(|_| "OcrEngineUnavailable".to_owned())?
+            .recognize(&bytes)
+            .map_err(|_| "OcrRecognitionFailed".to_owned())
+    })
+    .await
+    .map_err(|_| "OcrRecognitionFailed")??;
+    history
+        .update_ocr_authorized(item_id, &text, "done", &ticket, now())
+        .map_err(|error| error.to_string())?;
+    history
+        .privacy()
+        .check_read(&permit, now())
+        .map_err(|error| error.to_string())?;
     let result = OcrResult {
         item_id,
-        text: text.clone(),
+        text,
         confidence: None,
-        status: "done".to_string(),
+        status: "done".into(),
     };
-
-    let _ = app.emit("ocr:complete", &result);
-
+    drop(work);
+    let _ = app.emit(
+        "ocr:complete",
+        OcrResult {
+            item_id,
+            text: String::new(),
+            confidence: None,
+            status: "done".into(),
+        },
+    );
     Ok(result)
 }
 
@@ -85,18 +120,26 @@ pub fn get_ocr_status(
     state: State<'_, DbState>,
     item_id: i64,
 ) -> Result<OcrStatusResponse, String> {
-    let conn = state
-        .conn
-        .lock()
-        .map_err(|e| format!("DB lock failed: {e}"))?;
-    let (ocr_status, ocr_text) = state
-        .repo
-        .get_ocr_status_with_conn(&conn, item_id)?
-        .ok_or_else(|| format!("Clipboard entry {item_id} not found"))?;
+    use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
+    let now = || chrono::Utc::now().timestamp_millis();
+    let history = state.history_service();
+    let permit = history
+        .privacy()
+        .authorize_read(
+            PrivacyAccessIntent::AutomationRead,
+            SensitiveAccess::Denied,
+            None,
+            now(),
+        )
+        .map_err(|error| error.to_string())?;
+    let entry = history
+        .get_entry_authorized(item_id, &permit, now())
+        .map_err(|error| error.to_string())?
+        .ok_or("SensitiveAccessDenied")?;
     Ok(OcrStatusResponse {
         item_id,
-        ocr_status,
-        ocr_text,
+        ocr_status: entry.ocr_status.unwrap_or_else(|| "pending".into()),
+        ocr_text: entry.ocr_text,
     })
 }
 
@@ -118,6 +161,69 @@ pub fn check_ocr_engine_available() -> OcrEngineInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(target_os = "windows", not(feature = "portable")))]
+    #[test]
+    fn manual_ocr_command_preparation_accepts_private_images_and_rejects_stale_epoch() {
+        use base64::Engine;
+        use dzc_core::api::{HistoryService, PrivacySessionCommand};
+        dzc_platform::install_default_key_provider();
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let content = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(png.get_ref())
+        );
+        for sensitive in [false, true] {
+            let entry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"image","content":content,"preview":"synthetic","source_app":"Synthetic OCR","timestamp":1,"is_pinned":false,"tags":if sensitive {vec!["sensitive"]} else {vec![]}})).unwrap();
+            let id = history.save(&entry, None).unwrap();
+            if sensitive {
+                assert_eq!(
+                    prepare_ocr_image(&history, id, None).unwrap_err(),
+                    "SensitiveAccessDenied"
+                );
+            } else {
+                assert_eq!(
+                    prepare_ocr_image(&history, id, None).unwrap().2,
+                    *png.get_ref()
+                );
+            }
+            let epoch = history
+                .privacy()
+                .status(chrono::Utc::now().timestamp_millis())
+                .unwrap()
+                .privacy_epoch;
+            assert_eq!(
+                prepare_ocr_image(&history, id, Some(epoch)).unwrap().2,
+                *png.get_ref()
+            );
+            history
+                .privacy()
+                .set_session(
+                    PrivacySessionCommand::On { duration_ms: None },
+                    chrono::Utc::now().timestamp_millis(),
+                )
+                .unwrap();
+            assert_eq!(
+                prepare_ocr_image(&history, id, Some(epoch)).unwrap_err(),
+                "PrivacySessionActive"
+            );
+            history
+                .privacy()
+                .set_session(
+                    PrivacySessionCommand::Off,
+                    chrono::Utc::now().timestamp_millis(),
+                )
+                .unwrap();
+            assert_eq!(
+                prepare_ocr_image(&history, id, Some(epoch)).unwrap_err(),
+                "PrivacyEpochChanged"
+            );
+        }
+    }
 
     #[test]
     fn test_ocr_result_serialize_roundtrip() {

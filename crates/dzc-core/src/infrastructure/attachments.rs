@@ -125,6 +125,21 @@ impl HtmlAttachmentPlan {
         Ok(path)
     }
 
+    /// Restore planned RAM images without ever creating their plaintext files.
+    pub fn inline_html(&self) -> Result<String, String> {
+        let mut html = self.html.clone();
+        for (path, bytes) in &self.files {
+            let mime = image::guess_format(bytes).map_err(|_| "AttachmentPersistenceRejected")?.to_mime_type();
+            let replacement = format!("data:{mime};base64,{}", STANDARD.encode(bytes));
+            let raw = path.to_string_lossy();
+            let normalized = raw.replace('\\', "/");
+            let uri = if normalized.starts_with('/') { format!("file://{normalized}") } else { format!("file:///{normalized}") };
+            html = html.replace(&uri, &replacement).replace(raw.as_ref(), &replacement);
+
+        }
+        crate::infrastructure::protected_resources::normalize_html(&html)
+    }
+
     pub fn materialize(&self) -> Result<CreatedAttachments, String> {
         let mut created = CreatedAttachments { paths: Vec::new() };
         for (path, bytes) in &self.files {

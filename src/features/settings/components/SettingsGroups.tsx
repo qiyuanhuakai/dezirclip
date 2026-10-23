@@ -5,6 +5,7 @@ import AppearanceSettingsGroup from "./groups/AppearanceSettingsGroup";
 import DefaultAppsSettingsGroup from "./groups/DefaultAppsSettingsGroup";
 import DataSettingsGroup from "./groups/DataSettingsGroup";
 import ToolsSettingsGroup from "./groups/ToolsSettingsGroup";
+import AboutSettingsGroup from "./groups/AboutSettingsGroup";
 import type { LabelWithHintProps, SettingsPanelProps } from "./SettingsPanel.types";
 import type { SettingsGroupId } from "../utils/settingsLayout";
 import { isSettingsGroupCollapsed } from "../utils/settingsLayout";
@@ -47,7 +48,7 @@ const SettingsGroups = ({
 }: SettingsGroupsProps) => {
     const { t, collapsedGroups, toggleGroup, saveAppSetting } = settings;
 
-    // The narrow layout keeps the accordion exactly as it was: all six groups stay
+    // The narrow layout keeps the accordion: every group stays
     // mounted and `collapsedGroups` decides which bodies are visible.
     //
     // The split layout hands that choice to the rail -- only the active group is
@@ -58,7 +59,7 @@ const SettingsGroups = ({
     // is also what makes dragging the window narrow restore the accordion exactly
     // as it was left.
     //
-    // The five groups the rail is *not* pointing at keep their stored fold rather
+    // The groups the rail is *not* pointing at keep their stored fold rather
     // than being forced open. Opening them meant mounting bodies nobody could see,
     // and those bodies start work on mount: `ToolsCaptureSection` probes for an
     // OCR engine, which on Linux means a `tesseract --version` subprocess, and
@@ -272,6 +273,14 @@ const SettingsGroups = ({
                     ocrEnabled={ocrEnabled}
                     setOcrEnabled={setOcrEnabled}
                     saveAppSetting={saveAppSetting}
+                />
+            </div>
+            <div className="settings-group-slot" hidden={!shown("about")}>
+                <AboutSettingsGroup
+                    t={t}
+                    collapsed={isCollapsed("about")}
+                    collapsible={!split}
+                    onToggle={() => collapse("about")}
                 />
             </div>
         </>

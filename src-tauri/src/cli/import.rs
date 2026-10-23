@@ -86,10 +86,11 @@ pub fn run(args: &ImportArgs, repo: &HistoryService) -> Result<(), String> {
     // 4. Read the file. Surface the underlying IO error verbatim —
     //    a `No such file or directory` message is the most useful
     //    thing we can show the user here.
+    let ticket = repo.privacy().capture_ticket(super::access::now()).map_err(|error| error.to_string())?;
     let bytes = std::fs::read(path).map_err(|e| format!("import: read {path:?}: {e}"))?;
 
     let passphrase = if is_encrypted { args.passphrase.as_deref() } else { None };
-    let imported = BackupService::new(repo.clone()).import_bytes(&bytes, passphrase, mode)
+    let imported = BackupService::new(repo.clone()).import_bytes_authorized(&bytes, passphrase, mode, &ticket)
         .map_err(|error| format!("import: {error}"))?;
     let total = imported;
 

@@ -1,9 +1,11 @@
 //! Business entry points shared by desktop, terminal and automation clients.
 mod backup;
 mod clipboard;
+mod clipboard_payload;
 mod error;
 mod history;
 mod summary;
+pub(crate) mod privacy_session;
 
 pub use crate::domain::models::ClipboardEntry;
 pub use crate::privacy::{PrivacyAction, PrivacyDecision, PrivacyEvidence, PrivacyPolicy};
@@ -12,9 +14,13 @@ pub use clipboard::ClipboardService;
 pub use error::{CoreError, CoreErrorCode, CoreResult};
 pub use history::{AutomationHistory, HistoryQuery, HistorySearchMode, HistoryService};
 pub use summary::{EntrySummary, SearchRequest, SearchResult, SummaryQuery, SummarySearchMode};
+pub use privacy_session::{NativeReadLease,CaptureTicket, PrivacyError, PrivacyResult, PrivacySessionCommand,
+    PrivacySessionService, PrivacySessionStatus, RuntimeSnapshot, PrivacyAccessIntent,
+    PrivacyReadPermit, SensitiveAccess, ManualPersistenceIntent};
 
 /// Storage compatibility version maintained by the authoritative migration code.
 pub const DATABASE_SCHEMA_VERSION: i32 = crate::infrastructure::repository::migrations::SUPPORTED_SCHEMA_VERSION;
+pub use crate::infrastructure::data_paths::cli_database_path as resolve_database_path;
 
 pub use crate::infrastructure::repository::{
     sensitive_tags::SensitiveTagDeletion as TagDeletionReport, tag_batch::TagEntrySelection,
@@ -24,3 +30,6 @@ pub use crate::infrastructure::repository::{
 pub use crate::capture::{CaptureEngine, CaptureStore, EventSink};
 
 mod capture_store;
+mod settings;
+mod privacy_policy;
+pub use privacy_policy::{PrivacyPolicyService,PrivacyRuleKind,PrivacyRuleSummary,PrivacyFeedbackAction,PrivacyDecisionReport,PrivacyScanStatus};

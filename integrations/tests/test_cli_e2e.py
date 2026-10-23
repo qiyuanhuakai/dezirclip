@@ -48,22 +48,29 @@ class RealCliTests(unittest.TestCase):
             self.assertIsInstance(report[name]["backend"], str)
             self.assertIsInstance(report[name]["probe"], str)
         self.assertEqual(report["global_shortcut"]["availability"]["reason"], "adapter_unavailable")
-        self.assertEqual(report["read_privacy_hints"]["availability"]["reason"], "adapter_unavailable")
+        self.assertEqual(report["read_privacy_hints"]["availability"], report["read"]["availability"])
         self.assertFalse(self.database.exists())
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "X11 runtime boundary")
     def test_capabilities_verify_connection_and_do_not_guess_wayland_support(self):
-        environment = {key: value for key, value in os.environ.items() if key not in ("DISPLAY", "WAYLAND_DISPLAY")}
-        for extra, reason in (({}, "no_graphical_session"), ({"WAYLAND_DISPLAY": "synthetic-wayland"}, "native_wayland_unavailable"), ({"DISPLAY": ":65530"}, "connection_unavailable")):
+        environment = {key: value for key, value in os.environ.items() if key not in ("DISPLAY", "WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS")}
+        runtime = Path(self.directory.name) / "private-runtime"
+        runtime.mkdir(mode=0o700)
+        environment["XDG_RUNTIME_DIR"] = str(runtime)
+        for extra, reason in (({}, "no_graphical_session"), ({"WAYLAND_DISPLAY": "synthetic-wayland"}, "connection_unavailable"), ({"DISPLAY": ":65530"}, "connection_unavailable")):
             result = subprocess.run([os.environ["DZC_TEST_BIN"], "capabilities", "--json"], env={**environment, **extra}, capture_output=True, check=True, timeout=10)
             report = json.loads(result.stdout)
             for name in ("read", "write", "resolve_source", "auto_paste"):
-                self.assertEqual(report[name]["availability"], {"status": "unsupported", "reason": reason})
+                actual_reason = "adapter_unavailable" if "WAYLAND_DISPLAY" in extra and name in ("resolve_source", "auto_paste") else reason
+                self.assertEqual(report[name]["availability"], {"status": "unsupported", "reason": actual_reason})
+                self.assertFalse(report[name]["active"])
+            self.assertFalse(report["monitor"]["active"])
             self.assertFalse(self.database.exists())
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "X11 native boundary")
     def test_invalid_x11_display_rejects_native_access_without_panicking(self):
-        result = subprocess.run([os.environ["DZC_TEST_BIN"], "clipboard", "formats", "--json"], env={**os.environ, "DISPLAY": ":65530"}, capture_output=True, timeout=10)
+        environment = {key: value for key, value in os.environ.items() if key not in ("WAYLAND_DISPLAY", "WAYLAND_SOCKET", "XDG_SESSION_TYPE")}
+        result = subprocess.run([os.environ["DZC_TEST_BIN"], "clipboard", "formats", "--json"], env={**environment, "DISPLAY": ":65530", "XDG_SESSION_TYPE": "x11"}, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 1)
         self.assertNotIn(b"panicked", result.stderr)
         self.assertFalse(self.database.exists())

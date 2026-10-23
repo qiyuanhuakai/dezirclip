@@ -15,14 +15,16 @@ cargo build --offline --locked \
 
 python3 scripts/test-native-appimage.py \
   --old-appimage /path/to/DezirClip_0.1.20_amd64.AppImage \
-  --candidate /path/to/DezirClip_0.2.0-alpha.1_amd64.AppImage \
+  --candidate /path/to/DezirClip_0.2.0-alpha.2_amd64.AppImage \
   --public-key /path/to/test-updater.key.pub \
   --helper /tmp/dezirclip-v02-native-target/debug/dezirclip-native-updater-acceptance \
   --webkit-driver /path/to/WebKitWebDriver \
   --source-revision "$(git rev-parse HEAD)"
 ```
 
-候选旁必须有同名 `.AppImage.sig`。仅传入一次性测试公钥；工具不生成、读取或复制私钥。旧 0.1.20 包固定 SHA256 为 `da4abe1af820226ccf0cb8c40c8d7512b5ae3d7de89babcd1acecfd1ece9f0f0`；候选文件名和实际 CLI 版本固定为 `0.2.0-alpha.1`。`--source-revision` 是可选的来源标签，报告另行记录实际工具源码哈希，不能用标签代替源码凭据。
+候选旁必须有同名 `.AppImage.sig`。仅传入验签公钥；工具不生成、读取或复制私钥。旧 0.1.20 包固定 SHA256 为 `da4abe1af820226ccf0cb8c40c8d7512b5ae3d7de89babcd1acecfd1ece9f0f0`；候选文件名和实际 CLI 版本固定为 `0.2.0-alpha.2`。`--source-revision` 是可选的来源标签，报告另行记录实际工具源码哈希，不能用标签代替源码凭据。
+
+另以 `--previous-release 0.2.0-alpha.1 --old-appimage /path/to/DezirClip_0.2.0-alpha.1_amd64.AppImage` 独立运行整套场景，覆盖已发布 alpha.1 到 alpha.2 的迁移。alpha.1 固定官方包 SHA256 为 `660d8d73d9b719b5c7b92f471024a715eb61fa471b56cba7364edfa1c2464628`，还须由包内实际 CLI 确认发布提交 `90ba9960744b6cd57caaaf597f68533a7e41be45`、schema 21、三个链接组件，并实际创建 schema 21 的合成历史；不接受仅将候选改名得到的“旧版本”。
 
 ## 五个场景
 
@@ -34,7 +36,7 @@ python3 scripts/test-native-appimage.py \
 
 `old` 写入历史后，仅在合成 profile 显式设置 `app.silent_start=false` 和 `app.disable_webview_gpu=true`，让实际 release GUI 在无 GPU 的 Xvfb 中可见。记录设置的旧值与新值，升级后的两个 GUI 场景必须保留这些值；产品默认值和真实用户配置均不改变。这项验收覆盖现有无 GPU 模式，不代表硬件加速路径已在真实桌面验证。
 
-升级后的两个 GUI 场景另通过包内实际 `dzc build-info --json` 和 WebView 的 `get_build_info` 核对同一构建集：版本、规范 build_id、已确认的干净源码、目标、协议、schema 与三个链接组件必须一致；传入 `--source-revision` 时同时绑定冻结提交。完整两端元数据保留为 JSON。来源未知、修改中、版本集或字段矛盾都拒绝验收；这些静态构建信息不代替后续 IPC 身份认证。
+升级后的两个 GUI 场景另通过包内实际 `dzc build-info --json`、`dzc-service --build-info` 和 WebView 的 `get_build_info` 核对同一构建集：版本、规范 build_id、已确认的干净源码、目标、协议 1.0、schema 24 必须一致；桌面与 CLI 的四个链接组件为 Core、Platform、Protocol、Host，Service 另含自身。此项只读取 Service 元数据，不启动它。传入 `--source-revision` 时同时绑定冻结提交。完整三端元数据保留为 JSON。来源未知、修改中、版本集或字段矛盾都拒绝验收；这些静态构建信息不代替后续 IPC 身份认证。
 
 WebView 另行保留实际 URL、DOM、页面与原生窗口可见性、Tauri bridge 和布局状态。就绪失败时尝试截图并记录截图错误，原始失败不会被重标为通过。
 

@@ -1,0 +1,5 @@
+[data-privacy-protected],
+[data-privacy-protected] * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}

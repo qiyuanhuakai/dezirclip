@@ -1,6 +1,6 @@
 """SQLite connections for disposable tests and synthetic render benchmarks only.
 
-Schemas 19–21 need a pure visibility UDF on every fixture writer. Schemas 20/21
+Schemas 19–24 need a pure visibility UDF on every fixture writer. Schemas 20–24
 require SQLite >= 3.50.4, persistent FTS5 secure-delete, and connection-level
 secure_delete. These trusted synthetic fixtures do not validate the product's
 pinned SQLite engine or safely accept untrusted/corrupt database input.
@@ -108,7 +108,7 @@ def search_visible(tags, content, preview, html_content, ocr_text):
 def require_secure_delete_runtime():
     """Reject unsupported engines; only trusted disposable fixture data is accepted."""
     if sqlite3.sqlite_version_info < (3, 50, 4):
-        raise RuntimeError("Schemas 20/21 synthetic fixtures require SQLite >= 3.50.4; found " + sqlite3.sqlite_version)
+        raise RuntimeError("Schemas 20–24 synthetic fixtures require SQLite >= 3.50.4; found " + sqlite3.sqlite_version)
 
 
 def connect_fixture_database(*args, **kwargs):
@@ -117,8 +117,8 @@ def connect_fixture_database(*args, **kwargs):
         connection.create_function("dc_search_visible", 5, search_visible, deterministic=True)
         schema = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").fetchone()
         version = connection.execute("SELECT COALESCE(MAX(version),0) FROM schema_migrations").fetchone()[0] if schema else 0
-        if version > 21:
-            raise RuntimeError("Synthetic fixture schema is newer than supported schema 21")
+        if version > 24:
+            raise RuntimeError("Synthetic fixture schema is newer than supported schema 24")
         if version >= 20:
             require_secure_delete_runtime()
             option = connection.execute("SELECT v FROM clipboard_fts_config WHERE k='secure-delete'").fetchone()
@@ -127,6 +127,28 @@ def connect_fixture_database(*args, **kwargs):
             connection.execute("PRAGMA secure_delete=ON")
             if connection.execute("PRAGMA secure_delete").fetchone() != (1,):
                 raise RuntimeError(f"Schema {version} fixture requires connection secure_delete=ON")
+        if version >= 22:
+            state = connection.execute("SELECT state_id,history_revision,privacy_epoch,session_enabled,session_expires_at_ms FROM privacy_runtime_state WHERE singleton=1").fetchone()
+            if (state is None or len(state[0]) != 36 or not isinstance(state[1], int) or state[1] < 0
+                    or not isinstance(state[2], int) or state[2] < 0 or state[3] not in (0, 1)
+                    or (state[4] is not None and (not isinstance(state[4], int) or state[4] < 0))):
+                raise RuntimeError("Schema 22 fixture requires valid persistent privacy state")
+            expected = {f"revision_{table}_{operation}" for table in ("clipboard_history", "entry_tags", "saved_tags")
+                        for operation in ("INSERT", "UPDATE", "DELETE")}
+            expected.update(f"privacy_settings_{operation}" for operation in ("INSERT", "UPDATE", "DELETE"))
+            if version >= 23:
+                expected.add("privacy_record_visibility")
+            triggers = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+            if not expected.issubset(triggers):
+                raise RuntimeError("Schema 22 fixture requires history revision and privacy epoch triggers")
+        if version >= 24:
+            required = {"privacy_rule_entry_update", "privacy_rule_entry_delete", "privacy_rule_insert", "privacy_rule_update", "privacy_rule_delete"}
+            if not required.issubset(triggers):
+                raise RuntimeError("Schema 24 fixture requires privacy rule revocation triggers")
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(privacy_rules)")}
+            provenance = {row[1] for row in connection.execute("PRAGMA table_info(privacy_rule_entries)")}
+            if columns != {"id", "encrypted_rule", "created_at_ms"} or provenance != {"rule_id", "entry_id"}:
+                raise RuntimeError("Schema 24 fixture requires encrypted privacy rules and exact-exception provenance")
     except Exception:
         connection.close()
         raise

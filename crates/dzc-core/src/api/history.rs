@@ -113,6 +113,13 @@ impl HistoryService {
     pub fn automation(&self) -> AutomationHistory {
         AutomationHistory(self.clone())
     }
+    /// The original pre-read capture ticket is required even when OCR starts much later.
+    pub fn update_content_authorized(&self,id:i64,content:&str,preview:&str,ticket:&super::CaptureTicket,now_ms:i64)->CoreResult<()> {
+        self.repository.update_content_authorized(id,content,preview,ticket,now_ms).map_err(Into::into)
+    }
+    pub fn update_ocr_authorized(&self,id:i64,text:&str,status:&str,ticket:&super::CaptureTicket,now_ms:i64)->CoreResult<usize> {
+        self.repository.update_ocr_authorized(id,text,status,ticket,now_ms).map_err(Into::into)
+    }
     pub fn get_history(
         &self,
         limit: i32,
@@ -237,12 +244,12 @@ impl HistoryService {
         self.repository.get_count().map_err(Into::into)
     }
     pub fn save(&self, entry: &ClipboardEntry, data_dir: Option<&Path>) -> CoreResult<i64> {
-        self.repository.save(entry, data_dir).map_err(Into::into)
+        self.save_manual(entry, data_dir, super::ManualPersistenceIntent::Ordinary, chrono::Utc::now().timestamp_millis())
     }
     pub fn update_entry_content(&self, id: i64, content: &str, preview: &str) -> CoreResult<()> {
-        self.repository
-            .update_entry_content(id, content, preview)
-            .map_err(Into::into)
+        let now=chrono::Utc::now().timestamp_millis();
+        let ticket=self.privacy().capture_ticket(now).map_err(|error|CoreError::from(error.to_string()))?;
+        self.update_content_authorized(id,content,preview,&ticket,now)
     }
     pub fn update_entry_tags(&self, id: i64, tags: Vec<String>) -> CoreResult<()> {
         self.tags
@@ -262,6 +269,9 @@ impl HistoryService {
     }
     pub fn increment_use_count(&self, id: i64) -> CoreResult<()> {
         self.repository.increment_use_count(id).map_err(Into::into)
+    }
+    pub fn touch_entry(&self,id:i64,timestamp:i64)->CoreResult<()> {
+        self.repository.touch_entry(id,timestamp).map_err(Into::into)
     }
     pub fn ensure_export_destination(&self, target: &Path) -> CoreResult<()> {
         self.repository

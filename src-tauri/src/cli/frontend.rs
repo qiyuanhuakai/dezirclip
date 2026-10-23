@@ -1,6 +1,5 @@
 //! Common history queries and output actions for the native terminal frontends.
 use crate::domain::models::ClipboardEntry;
-use crate::ports::ClipboardPayload as Payload;
 use crate::infrastructure::osc52::{self, Passthrough};
 use crate::api::{HistoryQuery, HistoryService};
 use std::io::Write;
@@ -32,7 +31,7 @@ pub fn query_rows(
     if !(1..=200).contains(&options.limit) || options.offset < 0 {
         return Err("limit must be between 1 and 200; offset must be nonnegative".to_string());
     }
-    repo.query(&HistoryQuery {
+    super::access::query(repo, &HistoryQuery {
         limit: options.limit,
         offset: options.offset,
         kind: options.kind.as_deref(),
@@ -51,33 +50,11 @@ pub fn display_text(value: &str, max_chars: usize) -> String {
     }).take(max_chars).collect()
 }
 
-fn entry_payload(entry: ClipboardEntry) -> Result<Payload, String> {
-    Ok(match entry.content_type.as_str() {
-        "image" => Payload::Image { bytes: super::payload::image_bytes(&entry.content)?, mime: "image/png".to_owned() },
-        "file" | "files" | "video" => Payload::Files(super::payload::files(&entry.content)?),
-        "html" => Payload::Html {
-            html: entry.html_content.unwrap_or_else(|| entry.content.clone()),
-            text: entry.content,
-        },
-        _ => {
-            if let Some(html) = entry.html_content {
-                Payload::Html {
-                    html,
-                    text: entry.content,
-                }
-            } else {
-                Payload::Text(entry.content)
-            }
-        }
-    })
-}
-
 pub fn copy_entry(id: i64, repo: &HistoryService) -> Result<(), String> {
-    dzc_platform::runtime::standalone_clipboard_service().write(entry_payload(super::get::resolve(
-        &id.to_string(),
-        false,
-        repo,
-    )?)?).map_err(Into::into)
+    let permit = repo.privacy().authorize_selected_copy(id,None,
+        crate::api::SensitiveAccess::Denied, None, super::access::now()).map_err(|error| error.to_string())?;
+    let payload = repo.clipboard_payload_authorized(id, &permit, super::access::now()).map_err(|error| error.to_string())?;
+    dzc_platform::runtime::standalone_clipboard_service().write(payload).map_err(Into::into)
 }
 
 pub fn apply_action(

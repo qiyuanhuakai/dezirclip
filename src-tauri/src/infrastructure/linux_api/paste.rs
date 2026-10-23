@@ -11,6 +11,9 @@ pub fn simulate_paste_with_method_and_content(
     content_type: Option<&str>,
     expected_text: Option<&str>,
 ) -> Result<(), String> {
+    if dzc_platform::runtime::is_native_wayland() {
+        return Err("wayland_interaction_unavailable".into());
+    }
     if let Some(text) = expected_text.filter(|_| content_type_is_text_like(content_type)) {
         wait_for_clipboard_text(text);
     }
@@ -76,6 +79,9 @@ fn release_active_modifiers() {
 }
 
 pub fn simulate_paste_sequence(texts: Vec<String>) -> Result<(), String> {
+    if dzc_platform::runtime::is_native_wayland() {
+        return Err("wayland_interaction_unavailable".into());
+    }
     for (i, text) in texts.iter().enumerate() {
         set_clipboard_text(text)?;
         simulate_paste_with_method("shift_insert", Some("text"))?;

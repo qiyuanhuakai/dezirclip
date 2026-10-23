@@ -28,6 +28,11 @@ argon2.workspace = true
 aes-gcm.workspace = true
 rand.workspace = true
 zeroize.workspace = true
+sha2.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
+
+[package.metadata.dzc]
+capture-contract = 3
+capture-protection-report = true

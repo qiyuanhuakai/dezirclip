@@ -1,0 +1,552 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/desktop.schema.json",
+  "$defs": {
+    "DesktopPageParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 150,
+          "x-rust-type": "u16"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000,
+          "x-rust-type": "u32"
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 16384
+        }
+      },
+      "required": [
+        "limit",
+        "offset"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopEntryParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "thumbnail_dimension": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "content_type": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "html_content": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "source_app": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "preview": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "is_pinned": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "maxItems": 128
+        },
+        "use_count": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i64"
+        },
+        "is_external": {
+          "type": "boolean"
+        },
+        "pinned_order": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "file_preview_exists": {
+          "type": "boolean"
+        },
+        "content_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "maxItems": 128
+        },
+        "ocr_text": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "ocr_status": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id",
+        "content_type",
+        "content",
+        "source_app",
+        "timestamp",
+        "preview",
+        "is_pinned",
+        "tags",
+        "use_count",
+        "is_external",
+        "pinned_order",
+        "file_preview_exists",
+        "content_kinds"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopEntries": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopEntry"
+          },
+          "maxItems": 150
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": true
+    },
+    "BodySnapshot": {
+      "type": "object",
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "total_bytes",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "SnapshotReadParams": {
+      "type": "object",
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "offset",
+        "expected_epoch",
+        "service_instance_id"
+      ],
+      "additionalProperties": true
+    },
+    "SnapshotChunk": {
+      "type": "object",
+      "properties": {
+        "data_base64": {
+          "type": "string",
+          "maxLength": 262144,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "data_base64",
+        "offset",
+        "next_offset",
+        "finished",
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "PrivacyHotkey": {
+      "type": "object",
+      "properties": {
+        "hotkey": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "hotkey"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureBeginParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "copy_to_clipboard": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureBeginResult": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureWriteParams": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 33554432,
+          "x-rust-type": "u32"
+        },
+        "data_base64": {
+          "type": "string",
+          "maxLength": 262144,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
+        }
+      },
+      "required": [
+        "capture_id",
+        "offset",
+        "data_base64"
+      ],
+      "additionalProperties": true
+    },
+    "CaptureFinishParams": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "source_app": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "inherited_protection": {
+          "type": "boolean"
+        },
+        "paste": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "capture_id",
+        "source_app",
+        "inherited_protection"
+      ],
+      "additionalProperties": true
+    },
+    "GeneratedBody": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "html",
+            "image"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 33554432
+        },
+        "html": {
+          "type": "string",
+          "maxLength": 33554432
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopMutationParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "pin",
+            "tags",
+            "edit",
+            "delete",
+            "used"
+          ]
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "maxItems": 128
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 524288
+        },
+        "confirm_persistence": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal",
+        "action"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopMutationResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "performed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "performed"
+      ],
+      "additionalProperties": true
+    },
+    "DesktopCopyParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "reveal": {
+          "type": "boolean"
+        },
+        "paste": {
+          "type": "boolean"
+        },
+        "with_format": {
+          "type": "boolean"
+        },
+        "derived_text": {
+          "type": "string",
+          "maxLength": 524288
+        },
+        "image_as_base64": {
+          "type": "boolean"
+        },
+        "delete_after_use": {
+          "type": "boolean"
+        },
+        "move_to_top": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "service_instance_id",
+        "expected_epoch",
+        "reveal",
+        "paste"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

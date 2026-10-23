@@ -14,7 +14,7 @@ desktop = [
     "dep:tauri", "dep:tauri-build", "dep:tauri-plugin-opener",
     "dep:tauri-plugin-dialog", "dep:tauri-plugin-global-shortcut",
     "dep:tauri-plugin-single-instance", "dep:tauri-plugin-window-state",
-    "dep:window-vibrancy", "dep:tokio", "dep:machine-uid",
+    "dep:window-vibrancy", "dep:machine-uid",
     "dep:dotenvy", "dep:qrcode2", "dep:xcap", "dep:font-kit",
     "dep:windows-core", "dep:windows-future", "dep:windows-version",
     "dep:winreg", "dep:webview2-com", "dep:x11-clipboard", "dep:ksni",
@@ -29,6 +29,8 @@ serde_json = { workspace = true }
 [dependencies]
 dzc-core = { workspace = true, features = ["legacy-bridge"] }
 dzc-platform.workspace = true
+dzc-host.workspace = true
+dzc-service.workspace = true
 tauri = { workspace = true, optional = true }
 tauri-plugin-opener = { workspace = true, optional = true }
 tauri-plugin-updater = { workspace = true, optional = true }
@@ -46,7 +48,7 @@ arboard = { workspace = true }
 argon2 = { workspace = true }
 aes-gcm = { workspace = true }
 image = { workspace = true }
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
 tauri-plugin-dialog = { workspace = true, optional = true }
 tauri-plugin-global-shortcut = { workspace = true, optional = true }
 window-vibrancy = { workspace = true, optional = true }
@@ -82,6 +84,10 @@ path = "src/bin/dzc.rs"
 name = "dezirclip"
 path = "src/main.rs"
 required-features = ["desktop"]
+
+[[bin]]
+name = "dzc-service"
+path = "src/bin/dzc-service.rs"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true }

@@ -50,6 +50,11 @@ import { useClipboardItemRenderer } from "./shared/hooks/useClipboardItemRendere
 import { useOverlays } from "./shared/hooks/useOverlays";
 import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
+import { usePrivacySession } from "./shared/hooks/usePrivacySession";
+import { beginPrivacyAccess, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
+import { isSensitiveEntry } from "./shared/lib/privacyRuntime";
+import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
+import { PrivacyStatusBanner } from "./shared/components/PrivacyStatusBanner";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
 
@@ -57,6 +62,7 @@ import type { VirtualClipboardListHandle } from "./features/clipboard/types";
 const SCROLL_TOP_BUTTON_THRESHOLD_PX = 200;
 
 const App = () => {
+  const privacyState = usePrivacySession();
   const appState = useAppState();
   const {
     showSettings,
@@ -328,6 +334,18 @@ const App = () => {
 
 
   const { toasts, pushToast, confirmDialog, openConfirm, closeConfirm } = useOverlays();
+  useEffect(() => subscribePrivacyInvalidation(() => {
+    setHistory([]);
+    setRevealedIds(new Set());
+    setQrEntry(null);
+    setEditingTagsId(null);
+    setTagInput("");
+    clearRichTextSnapshots();
+    closeConfirm();
+  }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm]);
+  useEffect(() => {
+    if (privacyState.phase === "ready") void fetchHistory(true);
+  }, [privacyState.phase, privacyState.generation, fetchHistory]);
 
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
@@ -648,6 +666,18 @@ const App = () => {
     virtualListRef
   });
 
+  const copyFromKeyboard = useCallback((id: number, content: string, contentType: string,
+    pasteWithFormat = false, pasteImageAsBase64 = false) => {
+    const entry = filteredHistory.find(item => item.id === id);
+    const access = beginPrivacyAccess();
+    const epoch = entry && isSensitiveEntry(entry) ? privacyRevealEpoch(entry) : undefined;
+    if (!entry || !access || (isSensitiveEntry(entry) && (!revealedIds.has(id) || epoch === null))) {
+      pushToast(t("privacy_reveal_first"));
+      return Promise.resolve();
+    }
+    return copyToClipboard(id, content, contentType, pasteWithFormat, pasteImageAsBase64, epoch ?? undefined, undefined, entry.host_instance_id);
+  }, [filteredHistory, revealedIds, copyToClipboard, pushToast, t]);
+
   useKeyboardNavigation({
     filteredHistory,
     selectedIndex,
@@ -662,7 +692,7 @@ const App = () => {
     arrowKeySelection,
     richPasteHotkey,
     searchInputRef,
-    copyToClipboard,
+    copyToClipboard: copyFromKeyboard,
     setSearch
   });
 
@@ -671,13 +701,13 @@ const App = () => {
     setQrEntry(item);
   }, []);
 
-  const handleTransformError = useCallback((_item: ClipboardEntry, _kind: string, message: string) => {
+  const handleTransformError = useCallback((_item: ClipboardEntry, kind: string, message: string) => {
     const msg = message || "unknown error";
-    pushToast(t("transform_failed").replace("{message}", msg));
+    pushToast(kind.startsWith("privacy_") ? msg : t("transform_failed").replace("{message}", msg));
   }, [t, pushToast]);
 
-  const handleTransformSuccess = useCallback((_item: ClipboardEntry, _kind: string) => {
-    pushToast(t("transform_applied"));
+  const handleTransformSuccess = useCallback((_item: ClipboardEntry, kind: string) => {
+    pushToast(t(kind === "privacy_feedback" ? "privacy_feedback_done" : "transform_applied"));
   }, [t, pushToast]);
 
   const { renderItemContent } = useClipboardItemRenderer({
@@ -811,6 +841,7 @@ const App = () => {
       className="app-container"
     >
       <AppHeader {...appHeaderProps} />
+      <PrivacyStatusBanner t={t} />
 
 
       <WheelHotZone onWheel={handleMainWheel}>

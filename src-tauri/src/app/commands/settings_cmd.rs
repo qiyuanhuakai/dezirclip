@@ -294,7 +294,8 @@ pub fn set_ignore_blur(ignore: bool) {
 }
 
 #[tauri::command]
-pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinned: bool) {
+pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinned: bool) -> AppResult<()> {
+    super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?;
     crate::WINDOW_PINNED.store(pinned, Ordering::Relaxed);
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_always_on_top(pinned);
@@ -320,6 +321,7 @@ pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinne
     let _ = state
         .settings_repo
         .set("app.window_pinned", &pinned.to_string());
+    Ok(())
 }
 
 #[tauri::command]
@@ -389,7 +391,7 @@ pub fn set_delete_after_paste(
 }
 
 #[tauri::command]
-pub fn set_privacy_protection(
+pub async fn set_privacy_protection(
     app: AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
     db_state: State<'_, DbState>,
@@ -397,27 +399,31 @@ pub fn set_privacy_protection(
 ) -> AppResult<()> {
     save_bool_setting(&db_state, "app.privacy_protection", enabled)?;
     state.privacy_protection.store(enabled, Ordering::Relaxed);
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     let _ = app.emit("clipboard-changed", ());
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_privacy_protection_kinds(
+pub async fn set_privacy_protection_kinds(
+    app:AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
     db_state: State<'_, DbState>,
     kinds: Vec<String>,
 ) -> AppResult<()> {
-    let mut guard = state.privacy_protection_kinds.lock().unwrap();
-    *guard = kinds.clone();
     let serialized = kinds.join(",");
     db_state
         .settings_repo
         .set("app.privacy_protection_kinds", &serialized)
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    *state.privacy_protection_kinds.lock().unwrap()=kinds;
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
+    Ok(())
 }
 
 #[tauri::command]
-pub fn set_privacy_protection_custom_rules(
+pub async fn set_privacy_protection_custom_rules(
+    app:AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
     db_state: State<'_, DbState>,
     rules: String,
@@ -427,12 +433,13 @@ pub fn set_privacy_protection_custom_rules(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>();
-    let mut guard = state.privacy_protection_custom_rules.lock().unwrap();
-    *guard = list;
     db_state
         .settings_repo
         .set("app.privacy_protection_custom_rules", &rules)
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    *state.privacy_protection_custom_rules.lock().unwrap()=list;
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -564,6 +571,7 @@ pub fn set_edge_docking(
     state: State<'_, crate::app_state::SettingsState>,
     enabled: bool,
 ) -> AppResult<()> {
+    if enabled { super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?; }
     state.edge_docking.store(enabled, Ordering::Relaxed);
     let db_state = app_handle.state::<DbState>();
     save_bool_setting(&db_state, "app.edge_docking", enabled)
@@ -575,6 +583,7 @@ pub fn set_follow_mouse(
     state: State<'_, crate::app_state::SettingsState>,
     enabled: bool,
 ) -> AppResult<()> {
+    if enabled { super::capability_cmd::require_desktop_interaction().map_err(AppError::Validation)?; }
     state.follow_mouse.store(enabled, Ordering::Relaxed);
     let db_state = app_handle.state::<DbState>();
     save_bool_setting(&db_state, "app.follow_mouse", enabled)

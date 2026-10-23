@@ -12,7 +12,9 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 
 正式候选要求干净 checkout 且 HEAD 匹配传入 SHA。准备阶段可用 `--allow-dirty-candidate` 检查未提交的 API；只要使用此选项，生成物就标记 `functional_only=true`、`eligible_for_timing=false`，即使期间候选已提交，采样器也会拒绝使用。工具在构建前后核对候选源码指纹，变化即失败。
 
-`preparation.json` 包含实际引用候选源码每个 Git 文件的 SHA256、集合哈希、HEAD 和脏状态；旧源 archive 哈希及唯一临时 manifest workspace 隔离改动前后哈希；Rust/Cargo 版本、profile、target、相关构建环境、机器标识哈希；Python 工具和 Rust 模板哈希；各适配器 manifest/lock/命令、只读二进制哈希及功能报告哈希。适配器 lock 从对应源码 lock 复制，构建后拒绝出现源 lock 以外的外部包版本。release profile 保持 LTO、单 codegen unit、`opt-level=s`、strip、abort。
+`preparation.json` 包含实际引用候选源码每个 Git 文件的 SHA256、集合哈希、HEAD 和脏状态；旧源 archive 哈希及临时 manifest 的 workspace 处理前后哈希；Rust/Cargo 版本、profile、target、相关构建环境、机器标识哈希；Python 工具和 Rust 模板哈希；各适配器的实际源码包、角色、manifest/lock/命令、只读二进制哈希及功能报告哈希。适配器 lock 从对应源码 lock 复制，构建后拒绝出现源 lock 以外的外部包版本。release profile 保持 LTO、单 codegen unit、`opt-level=s`、strip、abort。
+
+`--baseline-revision` 可指定已冻结的 alpha.1 完整 SHA `90ba9960744b6cd57caaaf597f68533a7e41be45`。归档存在根 workspace 时保持原样，使用其 `dzc-core`、根 lock 和真实 Platform 密钥提供器；早期单包基线继续使用 `src-tauri` 及其 lock，仅在没有根 workspace 时补空 workspace 隔离。为兼容已有采样命令，基线适配器名称仍为 `legacy`；它表示比较中的基线角色，实际引用的包由凭据记录，不表示 alpha.1 尚未拆分 Core。此适配支持不构成新的采样或性能通过结论。
 
 适配器显式使用 `rustc --print host-tuple` 的本机目标；继承的 `CARGO_BUILD_TARGET` 仍记录在凭据中，但不能改变正式测量的目标。构建保留完整 Cargo JSON 与 stderr 及哈希，只接受本次成功构建报告的唯一 `compiler-artifact.executable`，并核对 manifest、bin、目标和 profile 目录。冻结副本前后再次核对源文件与副本哈希，绝不回退到缓存根目录中的同名文件。回归覆盖同宿主显式 target、空缓存、旧根目录负控、错误或缺失 artifact；`DZC_TEST_REAL_CARGO=1` 可额外运行 std-only 的真实 Cargo JSON 冒烟。
 
@@ -25,6 +27,14 @@ python scripts/performance/prepare_capture.py --repository REPOSITORY --candidat
 候选 Core 若提供非默认 `legacy-bridge`，适配器会显式启用它，以 `legacy` 下的隐藏兼容出口测量仓库边界，同时从公开 `capture` 使用实际引擎。这只影响测量程序，不要求稳定 facade 公开数据库连接。
 
 `capture/measured_engine.rs` 经共享既有仓库与缓存的 `history_service()` 兼容桥取得 `HistoryService`，再调用公开的 `HistoryService::capture_store` 工厂。包装按泛型 `CaptureStore` 委托 `prepare/find_duplicate/contains/contains_image_hash/commit`，不引用私有 store 类型；各方法前后读取 Instant 并累计时长。EventSink 只计数，不复制正文。没有插入额外事务、查询、SQL 模型或加密实现。`engine_total_ms` 包含这些少量计时记账及事件计数开销，`engine_non_store_ms` 也包含包装开销，不把它全部归因于业务引擎。六个固定文本/HTML 场景不构成图片查重性能证据。
+
+Core 的 `[package.metadata.dzc] capture-contract=2` 及更高支持版本声明读前隐私 ticket 契约。测量器仅为该实际源码启用临时 `privacy-runtime` 分支，完整委托 `capture_ticket/check_capture/with_capture_guard`，并在 payload frame 构造前取得真实 SQLite store ticket。计时从取票之前开始；新旧 Engine 模板均包含 payload clone，授权方法另列时长且计入总开销。`privacy_guard_ms` 用 guard 总 Duration 减去其全部 publish 回调的累计 Duration，只记录授权及 guard 自身开销；publish 中的 `commit_ms` 独立记录，不能重复计入 `store_total_ms`。记账不跨 publish 持有 RefCell 借用；若回调时间超出外层或 store 合计超出 Engine 总时长则明确失败，不把负值截成零。内联测试用确定性时钟验证分区，Windows contract2 功能测试另以真实 SQLite/DPAPI 检查普通与敏感捕获。早期契约缺省为 1，未知契约明确拒绝，不能用 fake store 默认方法或计时后补票绕过生产权限。共同 deduplicate+commit 及转换门槛保持原定义，构建凭据记录两端实际契约和 features。
+
+`capture-contract=3` 另显式启用 `privacy-policy`：完整委托生产 store 的 `privacy_source` 与 `assess_privacy_entry`，分别记录来源规则与内容策略耗时，不使用 trait 默认分支跳过新策略。实际普通、敏感及 RAM 会话捕获回归均要求这些分区存在，并保留原 ticket、功能后置条件和非重叠总量断言。仅接受整数契约 1、2、3；未知后续版本、布尔值或字符串版本在构建前拒绝。策略耗时计入 engine/store 总量；凭据扫描的 5ms 预算不包含精确内容完整性散列，二者不混称同一预算。
+
+contract3 源码还可通过独立布尔能力 `capture-protection-report=true` 声明实际提交保护回执。只有明确声明此能力的 Engine 适配器才转发 `commit_with_protection`，仍在原 `commit_ms` 起止边界计时；没有额外测量查询或编解码。旧源码保持原 commit 调用，不能把默认的 unknown 回执解释为 false 或已经核验。构建凭据记录该能力及实际启用的 feature，非布尔值与低于 contract3 的声明在构建前拒绝。
+
+contract3 的合成测量库在计时及取票前写入并读回 `app.privacy_protection`、`app.privacy_protection_custom_rules` 和 `app.privacy_protection_kinds`，与旧 Engine 的场景配置一致。内置种类为空，避免新 Core 的缺省种类为相同场景额外扫描；敏感场景仍由相同自定义规则保护。生产 store 因此读取真实数据库策略，测量器不替换判定结果。此准备只作用于独立 fixture 数据库，不计入捕获耗时。
 
 六个场景为普通新捕获、普通重复、富文本新捕获、敏感新捕获、继承手工保护的敏感重复、实际 `encrypt_entry_with_conn` 转换。每次使用新复制的数据库。功能断言包括正文与 HTML 原样解密、预览、敏感字段密文、逻辑 FTS 可见性、重复 ID、记录数，以及实际 Engine 只发一次 Stored 元数据事件。转换场景直接比较同一生产方法的入口至提交，不把旧版异步队列或 tag 提前返回当作加密完成。
 
@@ -44,6 +54,6 @@ python scripts/performance/compare_capture.py --baseline REPOSITORY/.harness/cap
 
 ## CLI 与 scope 边界
 
-已有 `scripts/sample-history-latency.py`、`sample-write-latency.py` 继续单独采集完整 JSON。两端相同 profile/target、schema 对应的 `connect_fixture_database`、相同 seed、1k/10k 中性历史、1 MiB UTF-8/CRLF `add -`、`add @file`、`tag add ID sensitive`。最终 tag 采样加 `--require-protected-conversion`，并保存全部 samples_ms。旧 CLI tag 只写标签，需明确其正文/preview 未加密且 FTS 仍可命中；不能把旧返回时间冒充完整转换的基线。
+已有 `scripts/sample-history-latency.py`、`sample-write-latency.py` 继续单独采集完整 JSON。两端相同 profile/target、schema 对应的 `connect_fixture_database`、相同 seed、1k/10k 中性历史、1 MiB UTF-8/CRLF `add -`、`add @file`、`tag add ID sensitive`。最终 tag 采样加 `--require-protected-conversion`，并保存全部 samples_ms。历史 0.1.20 CLI tag 只写标签，其正文/preview 未加密且 FTS 仍可命中，不能把该返回时间冒充完整转换的基线。alpha.2 使用的 alpha.1 基线 `90ba9960744b6cd57caaaf597f68533a7e41be45` 已同步完成保护转换，应与候选一样启用该断言并检查真实密文与 FTS 后置条件。
 
 本工具的共同门槛是 **真实 store 子路径**。Engine 的 prepare、total、non-store 开销单列。旧 AppHandle pipeline 没有等价的 headless 入口，不能把旧仓库 total 与新引擎 total 直接等价比较。因此输出始终保留 `complete_capture_acceptance=false`。它不覆盖 OS reader、listener 调度、GUI、OCR worker、事件运输、异步队列等待，逻辑 FTS 查询也不证明历史 WAL 的物理擦除。已有 CDP/面板样本与 CLI 冷启动同样不替代这些边界。

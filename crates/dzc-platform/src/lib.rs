@@ -5,6 +5,13 @@ pub mod local_file;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
+#[cfg(feature = "ipc")]
+pub mod ipc;
+pub mod shortcut;
+#[cfg(feature = "native-ocr")]
+pub mod ocr;
+#[cfg(target_os = "linux")]
+pub mod wayland;
 
 pub struct NativeKeyProvider;
 
@@ -28,3 +35,5 @@ pub fn install_default_key_provider() {
 pub fn set_diagnostic_sink(sink: fn(&str)) {
     encryption::set_diagnostic_sink(sink);
 }
+
+mod private_files;

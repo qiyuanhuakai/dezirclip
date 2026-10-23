@@ -11,6 +11,10 @@ pub enum CoreErrorCode {
     ProtectedRecordUnavailable,
     ClipboardRecordUnavailable,
     PlatformUnavailable,
+    PrivacyStateUnavailable,
+    PrivacyEpochChanged,
+    PrivacySessionActive,
+    ManualPersistenceConfirmationRequired,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +43,8 @@ impl CoreError {
             CoreErrorCode::ProtectedRecordUnavailable => Wire::ProtectedRecordUnavailable,
             CoreErrorCode::ClipboardRecordUnavailable => Wire::EntryUnavailable,
             CoreErrorCode::PlatformUnavailable => Wire::PlatformUnavailable,
+            CoreErrorCode::PrivacyStateUnavailable => Wire::StorageFailed,
+            CoreErrorCode::PrivacyEpochChanged | CoreErrorCode::PrivacySessionActive | CoreErrorCode::ManualPersistenceConfirmationRequired => Wire::InvalidRequest,
         };
         dzc_protocol::history::DzcError { code }
     }
@@ -52,6 +58,10 @@ impl From<String> for CoreError {
             "SensitivePersistenceRejected" => SensitivePersistenceRejected,
             "ProtectedRecordUnavailable" => ProtectedRecordUnavailable,
             "ClipboardRecordUnavailable" => ClipboardRecordUnavailable,
+            "PrivacyStateUnavailable" => PrivacyStateUnavailable,
+            "PrivacyEpochChanged" => PrivacyEpochChanged,
+            "PrivacySessionActive" => PrivacySessionActive,
+            "ManualPersistenceConfirmationRequired" => ManualPersistenceConfirmationRequired,
             _ => Storage,
         };
         Self { code, message }

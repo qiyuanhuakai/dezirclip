@@ -1,18 +1,37 @@
+#[cfg(test)]
 use crate::infrastructure::encryption::EncryptionError;
 use rusqlite::Connection;
 
-pub fn validate_sensitive_record(
-    content_type: &str,
-    external: bool,
-    html: Option<&str>,
-) -> Result<(), String> {
-    if external
-        || matches!(content_type, "image" | "file" | "video")
-        || html.is_some_and(super::sensitive_tags::has_unsupported_sensitive_resources)
-    {
-        return Err(EncryptionError::SensitivePersistenceRejected.to_string());
+/// File cleanup is deferred until the outer commit; a legacy nested caller cannot acknowledge it.
+pub(super) fn atomic_with_cleanup<T>(
+    conn: &Connection,
+    operation: impl FnOnce(
+        &Connection,
+    ) -> Result<(T, Option<super::sensitive_tags::AttachmentCleanup>), String>,
+) -> Result<T, String> {
+    if !conn.is_autocommit() {
+        return atomic(conn, |conn| {
+            let (value, mut cleanup) = operation(conn)?;
+            if let Some(cleanup) = &mut cleanup {
+                cleanup.protect_surviving_references(conn)?;
+                if !cleanup.is_empty() {
+                    return Err("AttachmentPersistenceRejected".into());
+                }
+            }
+            Ok(value)
+        });
     }
-    Ok(())
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    let (value, mut cleanup) = operation(&tx)?;
+    if let Some(cleanup) = &mut cleanup {
+        cleanup.protect_surviving_references(&tx)?;
+    }
+    tx.commit().map_err(|error| error.to_string())?;
+    if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
+        return Err("ProtectedAttachmentCleanupIncomplete".into());
+    }
+    Ok(value)
 }
 
 pub(super) fn atomic<T>(
@@ -81,6 +100,7 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
         conn.execute("INSERT INTO settings(key,value) VALUES('db.sensitive_alignment_done','true') ON CONFLICT(key) DO UPDATE SET value='true'", []).unwrap();
+        super::super::migrations::remove_runtime_state_fixture(&conn);
         conn.execute("DELETE FROM schema_migrations WHERE version>=19", [])
             .unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
@@ -108,35 +128,6 @@ mod tests {
             .unwrap(),
             "true"
         );
-    }
-
-    #[test]
-    fn sensitive_resources_are_rejected_before_any_persistence() {
-        for kind in ["image", "file", "video"] {
-            assert_eq!(
-                validate_sensitive_record(kind, false, None).unwrap_err(),
-                "SensitivePersistenceRejected"
-            );
-        }
-        for html in [
-            "<img src='file:///private.png'>",
-            "<p style='background:url(private.png)'>text</p>",
-            "<!--TIEZ_RICH_IMAGE:data:image/png;base64,AAAA-->",
-            "<img src='data:image/png;base64,AAAA'>",
-            "<svg><image href='private.png'/></svg>",
-            "<!--> <img src='private.png'> -->",
-        ] {
-            assert_eq!(
-                validate_sensitive_record("rich_text", false, Some(html)).unwrap_err(),
-                "SensitivePersistenceRejected"
-            );
-        }
-        assert!(
-            validate_sensitive_record("rich_text", false, Some("<p>private <b>text</b></p>"))
-                .is_ok()
-        );
-        assert!(validate_sensitive_record("text", false, None).is_ok());
-        assert!(validate_sensitive_record("text", true, None).is_err());
     }
 
     #[test]
@@ -171,6 +162,7 @@ mod tests {
     fn version_nineteen_rebuild_omits_legacy_sensitive_terms_and_preserves_plain_prefix_text() {
         let mut conn = Connection::open_in_memory().unwrap();
         super::super::migrations::run_migrations(&mut conn).unwrap();
+        super::super::migrations::remove_runtime_state_fixture(&conn);
         conn.execute_batch(r#"INSERT INTO clipboard_history(id,content_type,content,preview,source_app,timestamp,tags,ocr_text)
             VALUES(1,'text','privateprobe','summary','test',1,'["sensitive"]','privateocr'),
                   (2,'text','linux: ordinaryprefix','dpapi: plainpreview','test',2,'[]',NULL);
@@ -860,7 +852,7 @@ mod transition_tests {
             &context,
             CaptureFrame {
                 data: CaptureData::Text("manualprotected".into()),
-                metadata: Default::default(),
+                metadata: crate::capture::CaptureReadMetadata { privacy_ticket: store.capture_ticket(chrono::Utc::now().timestamp_millis()).unwrap(), ..Default::default() },
             },
             &store,
             &mut (),

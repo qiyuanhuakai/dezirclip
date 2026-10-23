@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/events.schema.json",
+  "$defs": {
+    "EventKind": {
+      "type": "string",
+      "enum": [
+        "EntryAdded",
+        "EntryUpdated",
+        "EntryDeleted",
+        "HistoryReset",
+        "PrivacyStateChanged",
+        "CapabilitiesChanged",
+        "ServiceStateChanged"
+      ]
+    },
+    "RuntimeState": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "history_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "privacy_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "event_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "history_revision",
+        "privacy_epoch",
+        "event_sequence"
+      ],
+      "additionalProperties": true
+    },
+    "EventData": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "not": {
+            "const": 0
+          },
+          "x-rust-type": "i64"
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "Event": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/EventKind"
+        },
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        },
+        "data": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/EventData"
+        }
+      },
+      "required": [
+        "event",
+        "state",
+        "data"
+      ],
+      "additionalProperties": true
+    },
+    "SubscribeParams": {
+      "type": "object",
+      "properties": {
+        "after_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000,
+          "x-rust-type": "u16"
+        }
+      },
+      "required": [
+        "after_sequence"
+      ],
+      "additionalProperties": true
+    },
+    "EventsResult": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/Event"
+          },
+          "maxItems": 256
+        },
+        "state": {
+          "$ref": "https://dezirclip.local/protocol/v1/events.schema.json#/$defs/RuntimeState"
+        },
+        "resync_required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "events",
+        "state",
+        "resync_required"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

@@ -1,0 +1,660 @@
+[
+  {
+    "name": "surface-hello",
+    "schema": "Request",
+    "value": {
+      "request_id": "a",
+      "method": "hello",
+      "params": {
+        "protocol_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "client_version": "0.2.0-alpha.1",
+        "client_role": "surface",
+        "capabilities": [
+          "history_read"
+        ],
+        "required_capabilities": []
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "list",
+    "schema": "Request",
+    "value": {
+      "request_id": "b",
+      "method": "history.list",
+      "params": {
+        "limit": 20,
+        "offset": 0
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "zero-id",
+    "schema": "Request",
+    "value": {
+      "request_id": "c",
+      "method": "surface.copy",
+      "params": {
+        "id": 0
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "unknown-method",
+    "schema": "Request",
+    "value": {
+      "request_id": "d",
+      "method": "sql.execute",
+      "params": {}
+    },
+    "valid": false
+  },
+  {
+    "name": "bounded-page",
+    "schema": "Request",
+    "value": {
+      "request_id": "e",
+      "method": "history.list",
+      "params": {
+        "limit": 201,
+        "offset": 0
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "no-null-page",
+    "schema": "Request",
+    "value": {
+      "request_id": "f",
+      "method": "history.list",
+      "params": null
+    },
+    "valid": false
+  },
+  {
+    "name": "no-unsafe-counter",
+    "schema": "RuntimeState",
+    "value": {
+      "service_instance_id": "test",
+      "history_revision": 9007199254740992,
+      "privacy_epoch": 0,
+      "event_sequence": 0
+    },
+    "valid": false
+  },
+  {
+    "name": "response-success",
+    "schema": "Response",
+    "value": {
+      "request_id": "g",
+      "result": {}
+    },
+    "valid": true
+  },
+  {
+    "name": "response-failure",
+    "schema": "Response",
+    "value": {
+      "request_id": "g",
+      "error": {
+        "code": "permission_denied",
+        "message": "PermissionDenied"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "response-both",
+    "schema": "Response",
+    "value": {
+      "request_id": "g",
+      "result": {},
+      "error": {
+        "code": "internal",
+        "message": "Internal"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "response-neither",
+    "schema": "Response",
+    "value": {
+      "request_id": "g"
+    },
+    "valid": false
+  },
+  {
+    "name": "metadata-event",
+    "schema": "Event",
+    "value": {
+      "event": "EntryAdded",
+      "state": {
+        "service_instance_id": "test",
+        "history_revision": 3,
+        "privacy_epoch": 1,
+        "event_sequence": 1
+      },
+      "data": {
+        "entry_id": 4
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "body-event-rejected",
+    "schema": "EventData",
+    "value": {
+      "entry_id": 4,
+      "content": "body"
+    },
+    "valid": false
+  },
+  {
+    "name": "nullable-expiry",
+    "schema": "PrivacyState",
+    "value": {
+      "active": false,
+      "privacy_epoch": 0,
+      "expires_at_ms": null
+    },
+    "valid": true
+  },
+  {
+    "name": "optional-forward-field",
+    "schema": "EmptyParams",
+    "value": {
+      "future_flag": true
+    },
+    "valid": true
+  },
+  {
+    "name": "bounded-nesting",
+    "schema": "EmptyParams",
+    "value": {
+      "nested": {
+        "nested": {
+          "nested": {
+            "nested": {
+              "nested": {
+                "nested": {
+                  "nested": {
+                    "nested": {
+                      "nested": {
+                        "nested": {
+                          "nested": {
+                            "nested": {
+                              "nested": {
+                                "nested": {
+                                  "nested": {
+                                    "nested": {
+                                      "nested": {
+                                        "nested": {
+                                          "nested": {
+                                            "nested": {
+                                              "nested": {
+                                                "nested": {
+                                                  "nested": {
+                                                    "nested": {
+                                                      "nested": {
+                                                        "nested": {
+                                                          "nested": {
+                                                            "nested": {
+                                                              "nested": {
+                                                                "nested": {
+                                                                  "nested": {
+                                                                    "nested": {
+                                                                      "nested": {
+                                                                        "nested": {
+                                                                          "nested": {
+                                                                            "nested": {
+                                                                              "nested": {
+                                                                                "nested": {
+                                                                                  "nested": {
+                                                                                    "nested": {
+                                                                                      "nested": {
+                                                                                        "nested": {
+                                                                                          "nested": {
+                                                                                            "nested": {
+                                                                                              "nested": {
+                                                                                                "nested": {
+                                                                                                  "nested": {
+                                                                                                    "nested": {
+                                                                                                      "nested": {
+                                                                                                        "nested": {
+                                                                                                          "nested": {
+                                                                                                            "nested": {
+                                                                                                              "nested": {
+                                                                                                                "nested": {
+                                                                                                                  "nested": {
+                                                                                                                    "nested": {
+                                                                                                                      "nested": {
+                                                                                                                        "nested": {
+                                                                                                                          "nested": {
+                                                                                                                            "nested": {
+                                                                                                                              "nested": {
+                                                                                                                                "nested": {
+                                                                                                                                  "nested": {
+                                                                                                                                    "nested": {
+                                                                                                                                      "nested": {}
+                                                                                                                                    }
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "case-alias-cannot-enable-privacy",
+    "schema": "PrivacySetParams",
+    "value": {
+      "active": false,
+      "Active": true
+    },
+    "expected": {
+      "active": false
+    },
+    "valid": true
+  },
+  {
+    "name": "nested-case-alias-cannot-change-role-or-version",
+    "schema": "HelloParams",
+    "value": {
+      "protocol_version": {
+        "major": 1,
+        "minor": 0,
+        "Major": 2
+      },
+      "client_version": "fixture",
+      "client_role": "surface",
+      "capabilities": [],
+      "required_capabilities": [],
+      "Client_role": "desktop"
+    },
+    "expected": {
+      "protocol_version": {
+        "major": 1,
+        "minor": 0
+      },
+      "client_version": "fixture",
+      "client_role": "surface",
+      "capabilities": [],
+      "required_capabilities": []
+    },
+    "valid": true
+  },
+  {
+    "name": "error-alias-does-not-override-code",
+    "schema": "WireError",
+    "value": {
+      "code": "permission_denied",
+      "Code": "internal",
+      "message": "public",
+      "Message": "override"
+    },
+    "expected": {
+      "code": "permission_denied",
+      "message": "public"
+    },
+    "valid": true
+  },
+  {
+    "name": "array-case-alias-does-not-change-summary",
+    "schema": "HistoryResult",
+    "value": {
+      "entries": [
+        {
+          "id": 1,
+          "kind": "text",
+          "preview": "safe",
+          "tags": [],
+          "pinned": false,
+          "timestamp": 1,
+          "source_app": "synthetic",
+          "privacy_visibility": "ordinary",
+          "Preview": "override",
+          "Id": 99
+        }
+      ]
+    },
+    "expected": {
+      "entries": [
+        {
+          "id": 1,
+          "kind": "text",
+          "preview": "safe",
+          "tags": [],
+          "pinned": false,
+          "timestamp": 1,
+          "source_app": "synthetic",
+          "privacy_visibility": "ordinary"
+        }
+      ]
+    },
+    "valid": true
+  },
+  {
+    "name": "lone-high-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\ud800\"}",
+    "valid": false
+  },
+  {
+    "name": "lone-low-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\udfff\"}",
+    "valid": false
+  },
+  {
+    "name": "high-without-low-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\ud800\\u0061\"}",
+    "valid": false
+  },
+  {
+    "name": "valid-surrogate-pair",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\ud83d\\ude00\"}",
+    "valid": true
+  },
+  {
+    "name": "literal-backslash-u-is-not-surrogate",
+    "schema": "EmptyParams",
+    "raw": "{\"value\":\"\\\\ud800\"}",
+    "valid": true
+  },
+  {
+    "name": "raw-invalid-utf8",
+    "schema": "EmptyParams",
+    "raw_hex": "7b2276616c7565223a22ff227d",
+    "valid": false
+  },
+  {
+    "name": "desktop-session-feedback",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-session-feedback",
+      "method": "desktop.privacy.feedback",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "id": -7,
+        "action": "exact_exception"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "desktop-policy-missing-id",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-policy-missing-id",
+      "method": "desktop.privacy.feedback",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "action": "not_sensitive"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "desktop-policy-missing-rule",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-policy-missing-rule",
+      "method": "desktop.privacy.remove_rule",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "desktop-policy-invalid-action",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-policy-invalid-action",
+      "method": "desktop.privacy.feedback",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "id": 1,
+        "action": "reveal_all"
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "desktop-session-edit",
+    "schema": "Request",
+    "value": {
+      "request_id": "desktop-session-edit",
+      "method": "desktop.history.mutate",
+      "params": {
+        "service_instance_id": "fixture-host",
+        "expected_epoch": 7,
+        "id": -7,
+        "action": "edit",
+        "reveal": false,
+        "content": "synthetic edit"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "session-copy-requires-origin",
+    "schema": "Request",
+    "value": {
+      "request_id": "session-copy-requires-origin",
+      "method": "surface.copy",
+      "params": {
+        "id": -7
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "session-copy-origin",
+    "schema": "Request",
+    "value": {
+      "request_id": "session-copy-origin",
+      "method": "surface.copy",
+      "params": {
+        "id": -7,
+        "service_instance_id": "fixture-host"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "session-body-requires-origin",
+    "schema": "Request",
+    "value": {
+      "request_id": "session-body-requires-origin",
+      "method": "history.get",
+      "params": {
+        "id": -7
+      }
+    },
+    "valid": false
+  },
+  {
+    "name": "public-privacy_state_unavailable",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_state_unavailable",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_state_unavailable",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-privacy_epoch_changed",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_epoch_changed",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_epoch_changed",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-privacy_session_active",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_session_active",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_session_active",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-sensitive_access_denied",
+    "schema": "WireError",
+    "value": {
+      "code": "sensitive_access_denied",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "sensitive_access_denied",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-manual_persistence_confirmation_required",
+    "schema": "WireError",
+    "value": {
+      "code": "manual_persistence_confirmation_required",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "manual_persistence_confirmation_required",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "public-privacy_duration_invalid",
+    "schema": "WireError",
+    "value": {
+      "code": "privacy_duration_invalid",
+      "message": "Local request failed"
+    },
+    "expected": {
+      "code": "privacy_duration_invalid",
+      "message": "Local request failed"
+    },
+    "valid": true
+  },
+  {
+    "name": "desktop-queue-used-completion",
+    "schema": "Request",
+    "value": {
+      "request_id": "queue-completion",
+      "method": "desktop.history.mutate",
+      "params": {
+        "id": 7,
+        "service_instance_id": "11111111-1111-4111-8111-111111111111",
+        "expected_epoch": 13,
+        "reveal": false,
+        "action": "used"
+      }
+    },
+    "valid": true
+  },
+  {
+    "name": "desktop-queue-unknown-completion",
+    "schema": "Request",
+    "value": {
+      "request_id": "queue-completion",
+      "method": "desktop.history.mutate",
+      "params": {
+        "id": 7,
+        "service_instance_id": "11111111-1111-4111-8111-111111111111",
+        "expected_epoch": 13,
+        "reveal": false,
+        "action": "used_all"
+      }
+    },
+    "valid": false
+  }
+]

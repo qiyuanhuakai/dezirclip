@@ -3,6 +3,8 @@ import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync, lstatSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { waitForNativeProcess } from "./native-process-deadline.mjs";
 
 // This bridge observes the installed GUI; it never mocks invoke or emits fixture events.
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted" || process.platform !== "win32" || !process.env.RUNNER_TEMP) {
@@ -29,11 +31,11 @@ assert.equal(path.dirname(input).toLowerCase(), fixtureRoot.toLowerCase(), "Inpu
 assert.match(path.basename(fixtureRoot), /^dezirclip-upgrade-[a-f0-9]{32}$/);
 const configuration = JSON.parse((await readFile(input, "utf8")).replace(/^\uFEFF/, ""));
 assert.equal(fixturePath(configuration.profileDirectory).toLowerCase(), path.join(fixtureRoot, "profile").toLowerCase());
-assert.match(configuration.expectedVersion, /^0\.2\.0-alpha\.[01]$/);
+assert.match(configuration.expectedVersion, /^0\.2\.0-alpha\.[12]$/);
 assert.match(configuration.marker, /^nativeupgradefixturemarker[a-f0-9]{32}$/);
 assert.equal(typeof configuration.acquireOwnership, "boolean");
 assert.equal(typeof configuration.verifyCapture, "boolean");
-const evidence = { schemaVersion: 2, configuration, observations: [], result: "running" };
+const evidence = { schemaVersion: 3, configuration, observations: [], nativeClipboardWrites: [], result: "running" };
 const delay = (milliseconds) => new Promise(resolve => setTimeout(resolve, milliseconds));
 let socket;
 let page;
@@ -75,20 +77,13 @@ async function poll(label, operation) {
 }
 async function setNativeClipboard(text) {
   // Supply synthetic text as environment data, never shell source.
-  await new Promise((resolve, reject) => {
-    const child = spawn("powershell.exe", ["-NoLogo", "-NoProfile", "-NonInteractive", "-STA", "-Command", "Set-Clipboard -Value $env:DEZIRCLIP_NATIVE_CAPTURE_TEXT"], {
-      env: { ...process.env, DEZIRCLIP_NATIVE_CAPTURE_TEXT: text }, windowsHide: true,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    let stderr = "";
-    child.stderr.on("data", chunk => { stderr += chunk; });
-    const timeout = setTimeout(() => { child.kill(); reject(new Error("Native Set-Clipboard timed out")); }, 15000);
-    child.once("error", error => { clearTimeout(timeout); reject(error); });
-    child.once("exit", code => {
-      clearTimeout(timeout);
-      if (code === 0) resolve(); else reject(new Error(`Native Set-Clipboard failed (${code}): ${stderr}`));
-    });
+  const observation = { startedAt: new Date().toISOString(), status: "starting", stdout: "", stderr: "" };
+  evidence.nativeClipboardWrites.push(observation);
+  const child = spawn("python", [fileURLToPath(new URL("./native-windows-clipboard.py", import.meta.url))], {
+    env: { ...process.env, DEZIRCLIP_NATIVE_CAPTURE_TEXT: text }, windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
   });
+  await waitForNativeProcess(child, observation);
 }
 function comparablePath(value) {
   return path.resolve(value.replace(/^\\\\\?\\/, "")).replace(/[\\/]+$/, "").toLowerCase();
@@ -202,11 +197,15 @@ try {
     });
     await poll("Native repeated capture event", () => evaluate(`window.__dezirclipNativeAcceptance.captured.filter(payload => payload?.id === ${first.id}).length >= 2`));
     const observed = await evaluate("({ captured: window.__dezirclipNativeAcceptance.captured, legacy: window.__dezirclipNativeAcceptance.legacy })");
+    const captureHost = await invoke("get_clipboard_host_status");
+    assert.equal(typeof captureHost?.state?.service_instance_id, "string");
+    assert(captureHost.state.service_instance_id.length > 0);
     assert.equal(await evaluate("window.__dezirclipNativeAcceptance.overflow"), false, "Fixture event evidence overflowed");
     for (const payload of observed.captured) {
       assert(payload && typeof payload === "object" && !Array.isArray(payload));
-      assert.deepEqual(Object.keys(payload).sort(), ["id"], "Capture event broadcast a field beyond its ID");
+      assert.deepEqual(Object.keys(payload).sort(), ["host_instance_id", "id"], "Capture event broadcast a field beyond its owner and ID");
       assert(Number.isSafeInteger(payload.id) && payload.id > 0);
+      assert.equal(payload.host_instance_id, captureHost.state.service_instance_id, "Capture event did not retain its actual Host instance");
     }
     assert(!observed.legacy.some(payload => payload.id === first.id || payload.id === second.id), "Native capture also broadcast a legacy full-entry event");
     evidence.capture = { firstText, secondText, firstId: first.id, secondId: second.id, repeatedId: repeated.id, firstTimestamp: first.timestamp, repeatedTimestamp: repeated.timestamp, ...observed };

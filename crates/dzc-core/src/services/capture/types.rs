@@ -62,6 +62,11 @@ pub struct CaptureReadRequest {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CaptureReadMetadata {
+    /// Issued before reading the payload; the repository rechecks it inside commit.
+    pub privacy_ticket: Option<crate::api::CaptureTicket>,
+    pub privacy_hints_checked: bool,
+    /// Trusted generated transformations preserve the protection of their source.
+    pub inherited_protection: bool,
     pub fingerprint: Option<u64>,
     pub echo_hash: Option<u64>,
     pub image: bool,
@@ -78,6 +83,12 @@ pub struct CaptureFrame {
 
 /// Native adapters choose formats and decode them; Core requests only enabled data.
 pub trait CaptureReader {
+    fn preflight_privacy(&mut self) -> Result<PrivacyPreflight, CaptureFailure> {
+        Ok(PrivacyPreflight::default())
+    }
+    fn selection_id(&self) -> Option<u64> {
+        None
+    }
     fn read(&mut self, request: CaptureReadRequest) -> Result<Option<CaptureData>, CaptureFailure>;
 
     fn metadata(&self) -> CaptureReadMetadata {
@@ -89,8 +100,25 @@ pub trait CaptureReader {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PrivacyHintAvailability {
+    Checked,
+    #[default]
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PrivacyPreflight {
+    pub hints: Vec<crate::ports::PrivacyHint>,
+    pub availability: PrivacyHintAvailability,
+    pub selection_id: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaptureSkip {
+    PrivacySession,
+    ExplicitPrivacyHint,
+    PrivacyEpochChanged,
     Paused,
     ExcludedSource,
     Empty,
@@ -128,6 +156,7 @@ pub struct StoredCapture {
     pub persistent: bool,
     pub removed_ids: Vec<i64>,
     pub ocr_target: Option<i64>,
+    pub privacy_ticket: Option<crate::api::CaptureTicket>,
     pub privacy: crate::privacy::PrivacyDecision,
 }
 

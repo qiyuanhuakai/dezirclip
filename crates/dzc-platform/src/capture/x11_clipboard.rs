@@ -304,7 +304,7 @@ fn parse_gnome_copied_files_payload(data: &[u8]) -> Option<Vec<String>> {
     collect_file_paths(uri_lines.iter().copied())
 }
 
-fn parse_uri_list_payload(data: &[u8]) -> Option<Vec<String>> {
+pub(super) fn parse_uri_list_payload(data: &[u8]) -> Option<Vec<String>> {
     let text = String::from_utf8(data.to_vec()).ok()?;
     collect_file_paths(
         text.lines()

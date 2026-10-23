@@ -126,7 +126,7 @@ fn e2e_10_entries_json_roundtrip() {
 
     let file_contents = fs::read_to_string(&path).expect("read back");
     assert!(
-        file_contents.contains("\"version\": \"dezirclip-export-v1\""),
+        file_contents.contains("\"version\": \"dezirclip-export-v2\""),
         "header version missing"
     );
     let reimported = entries_from_json(&file_contents).expect("reimport");
@@ -139,6 +139,34 @@ fn e2e_10_entries_json_roundtrip() {
     assert_eq!(s_replace.imported, 10);
     assert_eq!(s_replace.mode, "replace");
     let _ = fs::remove_file(&path);
+}
+
+#[test]
+fn e2e_previous_v1_json_remains_importable() {
+    let json = r#"{
+        "version": "dezirclip-export-v1",
+        "exported_at": 1700000000,
+        "entries": [{
+            "id": 42,
+            "content_type": "text",
+            "content": "previous-format synthetic entry 你好",
+            "created_at": 1699999999,
+            "updated_at": 1700000000
+        }]
+    }"#;
+    let entries = entries_from_json(json).expect("import previous v1 fixture");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].id, 42);
+    assert_eq!(entries[0].content_type, "text");
+    assert_eq!(entries[0].content, "previous-format synthetic entry 你好");
+    assert_eq!(entries[0].created_at, 1_699_999_999);
+    assert_eq!(entries[0].updated_at, 1_700_000_000);
+    assert!(entries[0].tags.is_empty());
+    assert!(entries[0].kinds.is_empty());
+    let summary = import_from_json(json, ImportMode::Merge).expect("v1 import summary");
+    assert_eq!(summary.imported, 1);
+    assert_eq!(summary.skipped, 0);
+    assert_eq!(summary.mode, "merge");
 }
 
 #[test]

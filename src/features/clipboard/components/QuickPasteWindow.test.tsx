@@ -46,6 +46,7 @@ describe("QuickPasteWindow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_privacy_status") return { history_revision: 0, privacy_epoch: 0, session: { active: false, expires_at_ms: null } };
       if (cmd === "get_clipboard_history") return ENTRIES;
       return null;
     });
@@ -115,6 +116,7 @@ describe("QuickPasteWindow", () => {
 
   it("empty state shows placeholder", async () => {
     mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "get_privacy_status") return { history_revision: 0, privacy_epoch: 0, session: { active: false, expires_at_ms: null } };
       if (cmd === "get_clipboard_history") return [];
       return null;
     });

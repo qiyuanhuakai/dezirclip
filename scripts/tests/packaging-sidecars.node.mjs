@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { once } from "node:events";
+import { performance } from "node:perf_hooks";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { prepareSidecars, sidecarOptions } from "../prepare-tauri-sidecars.mjs";
 import { bundleRpm, rpmBundleConfig } from "../bundle-rpm.mjs";
+import { nativeWriterTimeoutMs, waitForNativeProcess } from "./native-process-deadline.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
@@ -20,6 +24,7 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
   const targetDirectory = join(directory, "custom cargo target");
   const extension = target.includes("windows") ? ".exe" : "";
   const source = join(targetDirectory, target, profile, `dzc${extension}`);
+  const serviceSource = join(targetDirectory, target, profile, `dzc-service${extension}`);
   const hostDefault = join(targetDirectory, profile, `dzc${host.includes("windows") ? ".exe" : ""}`);
   const cache = join(targetDirectory, "cached-desktop.bin");
   mkdirSync(dirname(hostDefault), { recursive: true });
@@ -36,22 +41,24 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
       assert.deepEqual(args, ["--print", "host-tuple"]);
       return host + "\n";
     }
-    if (command === source) {
-      assert.deepEqual(args, ["build-info", "--json"]);
-      return JSON.stringify({ component: "cli", component_version: "0.2.0-alpha.1", target,
+    if (command === source || command === serviceSource) {
+      assert.deepEqual(args, command === source ? ["build-info", "--json"] : ["--build-info"]);
+      return JSON.stringify({ component: command === source ? "cli" : "service", component_version: "0.2.0-alpha.1", target,
+        linked_components: ["dzc-host", "dzc-service"].map((component) => ({component,version:"0.2.0-alpha.1"})),
         source_revision: "a".repeat(40), build_id: "0.2.0-alpha.1@" + "a".repeat(40), source_state: "verified_checkout" });
     }
     if (command === "git") return "a".repeat(40);
     assert.equal(command, "cargo");
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
-    assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", "dzc", "--locked", "--no-default-features", "--target", target,
+    assert(["dzc", "dzc-service"].includes(args[4]));
+    assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", args[4], "--locked", "--no-default-features", "--target", target,
       ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : [])]);
     if (!omitOutput) {
       mkdirSync(dirname(source), { recursive: true });
-      writeFileSync(source, payload);
+      writeFileSync(args[4] === "dzc" ? source : serviceSource, args[4] === "dzc" ? payload : Buffer.from("service:"+payload.toString()));
     }
   };
-  return { directory, targetDirectory, source, hostDefault, cache, payload, calls, run, host, target };
+  return { directory, targetDirectory, source, serviceSource, hostDefault, cache, payload, calls, run, host, target };
 }
 
 for (const parameters of [
@@ -74,9 +81,15 @@ for (const parameters of [
     const staged = proof.binaryPaths.find((item) => item.role === "external-bin").path;
     assert.deepEqual(JSON.parse(readFileSync(staged + ".proof.json", "utf8")), proof);
     assert.equal(proof.cargoLockSha256, hash(readFileSync(join(f.directory, "Cargo.lock"))));
-    assert.equal(f.calls.length, 4, "one native metadata query follows the build");
+    assert.equal(f.calls.length, 6, "each standalone helper has its own native build identity query");
     assert.equal(proof.buildInfoVerification, "executed_native_cli");
     assert.equal(proof.buildInfo.component, "cli");
+    assert.equal(proof.serviceHelper.buildInfo.component, "service");
+    assert.equal(proof.serviceHelper.binaryPaths.length, 3);
+    for (const item of proof.serviceHelper.binaryPaths) {
+      assert.equal(hash(readFileSync(item.path)), proof.serviceHelper.sha256);
+      assert.deepEqual(readFileSync(item.path), Buffer.from("service:"+f.payload.toString()));
+    }
   });
 }
 
@@ -154,7 +167,19 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(rpmStep, /needs\.create-release\.outputs\.release_id/);
   assert.match(rpmStep, /--jq '\.draft'\)" = true/);
   assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
-  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
+  const identities = workflow.split("  collect-release-identities:")[1]?.split("\n  verify-publish-and-promote:")[0];
+  assert(identities, "publication requires the actual final-package identity workflow");
+  assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
+  assert.match(identities, /uses: \.\/\.github\/workflows\/release-identities\.yml/);
+  assert.match(identities, /source: \$\{\{ github\.sha \}\}/);
+  assert.match(identities, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
+  const upgrades = workflow.split("  verify-final-windows-upgrade:")[1]?.split("\n  verify-publish-and-promote:")[0];
+  assert(upgrades, "publication requires actual final signed NSIS installation and upgrade acceptance");
+  assert.match(upgrades, /needs: \[create-release, publish-tauri\]/);
+  assert.match(upgrades, /uses: \.\/\.github\/workflows\/release-windows-upgrade\.yml/);
+  assert.match(upgrades, /source: \$\{\{ github\.sha \}\}/);
+  assert.match(upgrades, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
+  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade\]/);
 });
 
 test("RPM metadata derives supported preview and stable versions without build metadata precedence", () => {
@@ -178,6 +203,7 @@ test("RPM wrapper invokes only the bundle process and keeps source versions and 
   prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: {} });
   mkdirSync(join(f.directory, "src-tauri"), { recursive: true });
   const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
+  config.version = JSON.parse(readFileSync(join(f.directory, "package.json"), "utf8")).version;
   writeFileSync(join(f.directory, "src-tauri/tauri.conf.json"), JSON.stringify(config));
   const protectedPaths = [join(f.directory, "package.json"), join(f.directory, "src-tauri/tauri.conf.json"), join(f.directory, "Cargo.lock"), f.hostDefault];
   const before = protectedPaths.map((path) => hash(readFileSync(path)));
@@ -255,8 +281,8 @@ for (const parameters of [
       return { name, main: name === main };
     });
     assert.deepEqual(binaries.filter((item) => item.main).map((item) => item.name), ["dezirclip"]);
-    assert.deepEqual(binaries.filter((item) => !item.main).map((item) => item.name), ["dzc"]);
-    assert.deepEqual(readdirSync(join(root, "src-tauri/src/bin")), ["dzc.rs"]);
+    assert.deepEqual(binaries.filter((item) => !item.main).map((item) => item.name), ["dzc", "dzc-service"]);
+    assert.deepEqual(readdirSync(join(root, "src-tauri/src/bin")).sort(), ["dzc-service.rs", "dzc.rs"]);
 
     const f = fixture(t, parameters);
     const proof = prepareSidecars({ repoRoot: f.directory, run: f.run, args: ["--phase", "bundle"], env: { TAURI_ENV_TARGET_TRIPLE: f.target } });
@@ -273,6 +299,9 @@ for (const parameters of [
     const bundledCli = cargoFiles.find((item) => item.name === `dzc${extension}`);
     assert.deepEqual(readFileSync(bundledCli.path), f.payload, "the native/cross Cargo bundle input must use the prepared standalone bytes");
     assert.equal(hash(readFileSync(bundledCli.path)), proof.sha256);
+    const bundledService = cargoFiles.find((item) => item.name === `dzc-service${extension}`);
+    assert.equal(destinations.filter((name) => name === bundledService.name).length, 1);
+    assert.equal(hash(readFileSync(bundledService.path)), proof.serviceHelper.sha256);
     assert.deepEqual(readFileSync(cargoFiles.find((item) => item.name === `dezirclip${extension}`).path), mainPayload);
     assert.deepEqual(readFileSync(proof.binaryPaths.find((item) => item.role === "external-bin").path), f.payload, "the diagnostic staging copy retains the same bytes without a second bundle registration");
   });
@@ -290,4 +319,59 @@ test("native acceptance refuses local execution before any product operation", {
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /GitHub-hosted/);
   }
+});
+
+const nativeObservation = () => ({ status: "starting", stdout: "", stderr: "" });
+
+test("native writer wait retains output and settles once for real process exits", async () => {
+  assert.equal(nativeWriterTimeoutMs, 15000);
+  for (const exitCode of [0, 7]) {
+    const child = spawn(process.execPath, ["-e", `process.stdout.write('synthetic-output'); process.stderr.write('synthetic-error'); process.exitCode=${exitCode}`],
+      { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const observation = nativeObservation();
+    const waiting = waitForNativeProcess(child, observation);
+    if (exitCode) await assert.rejects(waiting, /failed \(7\)/);
+    else await waiting;
+    assert.equal(observation.exitCode, exitCode);
+    assert.equal(observation.status, exitCode ? "failed" : "passed");
+    assert.equal(observation.stdout, "synthetic-output");
+    assert.equal(observation.stderr, "synthetic-error");
+  }
+});
+
+async function runningNativeChild(t) {
+  const source = "process.stdout.write('synthetic-before-timeout'); process.send({ ready: true }); setInterval(() => {}, 1000)";
+  const child = spawn(process.execPath, ["-e", source], { windowsHide: true, stdio: ["ignore", "pipe", "pipe", "ipc"] });
+  const kill = child.kill.bind(child);
+  t.after(() => {
+    kill();
+    child.stdout.destroy();
+    child.stderr.destroy();
+    if (child.connected) child.disconnect();
+    child.unref();
+  });
+  await once(child, "message", { signal: AbortSignal.timeout(10000) });
+  return { child, kill };
+}
+
+test("native writer deadline rejects immediately when its real process cannot be terminated", async t => {
+  const { child, kill } = await runningNativeChild(t);
+  child.kill = () => false;
+  const observation = nativeObservation();
+  const started = performance.now();
+  await assert.rejects(waitForNativeProcess(child, observation, 150), /timed out/);
+  assert(performance.now() - started < 1000, "Cleanup must not add the former two-second grace period");
+  assert.equal(observation.status, "timeout");
+  await nextTurn();
+  assert.equal(observation.killRequested, false);
+  assert.equal(child.exitCode, null, "The controlled child is still alive after the failed termination request");
+  assert.equal(observation.stdout, "synthetic-before-timeout");
+  const finishedAt = observation.finishedAt;
+  child.ref();
+  const closed = once(child, "close", { signal: AbortSignal.timeout(5000) });
+  kill();
+  await closed;
+  assert.equal(observation.status, "timeout");
+  assert.equal(observation.finishedAt, finishedAt);
+  assert.equal(observation.exitCode, null);
 });

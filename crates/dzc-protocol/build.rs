@@ -14,6 +14,7 @@ fn copied_build_input(name: &str) -> bool {
         || ((name.starts_with("crates/") || name.starts_with("src-tauri/"))
             && (name.ends_with(".rs") || name.ends_with("/Cargo.toml") || name.ends_with("/Cargo.lock")))
         || name.starts_with("src-tauri/src/cli/shell/")
+        || name == "crates/dzc-protocol/src/wire/schema.json"
         || name == "skills/dezirclip-theme/assets/forest.theme.json"
 }
 

@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     validate_isolation(root)?;
     let target = directory.join("current.AppImage");
-    let candidate_path = directory.join("DezirClip_0.2.0-alpha.1_amd64.AppImage");
+    let candidate_path = directory.join("DezirClip_0.2.0-alpha.2_amd64.AppImage");
     for input in [
         target.clone(),
         candidate_path.clone(),
@@ -83,9 +83,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .configure_client(|_| panic!("offline fixture must not make network requests"))
         .build()?;
     let manifest = serde_json::json!({
-        "version": "0.2.0-alpha.1",
+        "version": "0.2.0-alpha.2",
         "platforms": { "linux-x86_64": {
-            "url": "https://example.invalid/DezirClip_0.2.0-alpha.1_amd64.AppImage",
+            "url": "https://example.invalid/DezirClip_0.2.0-alpha.2_amd64.AppImage",
             "signature": signature.trim(),
         }},
     });
@@ -124,7 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "tampered bytes changed installed file"
     );
     let mut wrong_version = manifest.clone();
-    wrong_version["version"] = "0.2.0-alpha.2".into();
+    wrong_version["version"] = "0.2.0-alpha.3".into();
     let mismatched = updater
         .restore_update(wrong_version)?
         .ok_or("mismatched update missing")?;

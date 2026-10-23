@@ -502,14 +502,14 @@ fn setup_state(
 
     app.manage(SessionHistory(std::sync::Mutex::new(
         std::collections::VecDeque::new(),
-    )));
+    ).into()));
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));
     app.manage(PasteQueue::default());
     app.manage(SearchHistory::default());
 }
 
 fn setup_main_window(app: &App, s: &StartupSettings) {
-    let effective_pinned = s.window_pinned;
+    let effective_pinned = s.window_pinned && !dzc_platform::runtime::is_native_wayland();
     WINDOW_PINNED.store(effective_pinned, Ordering::Relaxed);
 
     if let Some(window) = app.get_webview_window("main") {
@@ -580,7 +580,7 @@ fn start_core_background_services(app_handle: &AppHandle) {
     crate::services::clipboard::start_clipboard_monitor(app_handle.clone());
     #[cfg(target_os = "linux")]
     {
-        if !linux_service_disabled("edge_docking") {
+        if !dzc_platform::runtime::is_native_wayland() && !linux_service_disabled("edge_docking") {
             start_edge_docking_monitor(app_handle.clone());
         }
     }
@@ -598,17 +598,10 @@ fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
 
     #[cfg(target_os = "linux")]
     {
-        let wayland_display = std::env::var("WAYLAND_DISPLAY").unwrap_or_default();
-        let x11_display = std::env::var("DISPLAY").unwrap_or_default();
-        if !wayland_display.is_empty() && x11_display.is_empty() {
-            crate::warn!(">>> [STARTUP] Wayland session detected without XWayland. Global shortcuts require X11 and will not work.");
-        } else if !wayland_display.is_empty() {
-            crate::warn!(">>> [STARTUP] Wayland session detected (XWayland display: {}). Global shortcuts may not work reliably.", x11_display);
-        } else if !x11_display.is_empty() {
-            crate::info!(
-                ">>> [STARTUP] X11 session detected (display: {}). Global shortcuts should work.",
-                x11_display
-            );
+        if dzc_platform::runtime::is_native_wayland() {
+            crate::info!(">>> [STARTUP] Native Wayland experimental clipboard selected. Desktop interaction adapters remain unavailable; X11 fallback is disabled.");
+        } else if std::env::var_os("DISPLAY").is_some() {
+            crate::info!(">>> [STARTUP] X11 session selected; capabilities depend on runtime probes.");
         } else {
             crate::warn!(
                 ">>> [STARTUP] No display server detected. Global shortcuts will not work."
@@ -1871,7 +1864,7 @@ fn handle_blur(window: &tauri::Window) {
     }
 
     let settings = window.app_handle().state::<SettingsState>();
-    if settings.edge_docking.load(Ordering::Relaxed) {
+    if settings.edge_docking.load(Ordering::Relaxed) && !dzc_platform::runtime::is_native_wayland() {
         return;
     }
 

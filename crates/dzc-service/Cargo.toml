@@ -1,0 +1,17 @@
+[package]
+name = "dzc-service"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Explicitly started current-user DezirClip Host service"
+publish = false
+
+[dependencies]
+dzc-core.workspace = true
+dzc-platform = { workspace = true, features = ["ipc"] }
+dzc-protocol = { workspace = true, features = ["wire"] }
+dzc-host.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
+clap.workspace = true
+ctrlc.workspace = true

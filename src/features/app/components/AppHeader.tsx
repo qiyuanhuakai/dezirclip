@@ -1,3 +1,4 @@
+import { usePlatformCapabilities } from "../../../shared/hooks/usePlatformCapabilities";
 import { lazy, startTransition, Suspense, useEffect, useId, useRef } from "react";
 import type { RefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -77,6 +78,7 @@ const AppHeader = ({
   typeFilter,
   setTypeFilter
 }: AppHeaderProps) => {
+  const { desktopInteractions, failed, pending } = usePlatformCapabilities();
   const panelOnTop = showSettings || showTagManager || showEmojiPanel;
   const searchBoxVisible = showSearchBox || search.trim().length > 0;
   // The whole search box sits behind a panel guard, so closing a panel remounts
@@ -123,7 +125,8 @@ const AppHeader = ({
         {/* Pin Button - Always visible but single instance */}
         <button
           className={`btn-icon btn-icon-scalable btn-icon-size-header ${isWindowPinned ? 'active' : ''}`}
-          title={t('pin')}
+          disabled={!desktopInteractions}
+          title={t(desktopInteractions ? 'pin' : pending ? 'platform_capabilities_checking' : failed ? 'platform_capabilities_unavailable' : 'wayland_interaction_unavailable')}
           onClick={() => {
             const newVal = !isWindowPinned;
             setIsWindowPinned(newVal);

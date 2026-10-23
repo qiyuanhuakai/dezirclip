@@ -23,6 +23,7 @@ impl<'a> Drop for GrabGuard<'a> {
 }
 
 pub fn start_mouse_hotkey_listener() {
+    if dzc_platform::runtime::is_native_wayland() { return; }
     thread::spawn(|| {
         let Ok((conn, screen_num)) = x11rb::connect(None) else {
             eprintln!("[mouse-hotkey] Failed to connect to X11 display");

@@ -164,6 +164,7 @@ fn record_dispatch(id: i64) {
 /// surfacing an error to the user.
 #[tauri::command]
 pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
+    super::capability_cmd::require_desktop_interaction()?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, _created| {
             show_quick_paste_window(&app, window)
@@ -176,6 +177,7 @@ pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
 /// Evaluate toggles inside the same operation as a possible cold build, so two
 /// hotkey presses during creation still open and then close the overlay.
 pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
+    super::capability_cmd::require_desktop_interaction()?;
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, created| {
             if !created && window.is_visible().unwrap_or(false) {
@@ -283,12 +285,18 @@ pub async fn paste_quick_paste_selection(
     state: tauri::State<'_, DbState>,
     session: tauri::State<'_, SessionHistory>,
     entry_id: i64,
+    expected_host_instance_id:Option<String>,
 ) -> Result<(), String> {
-    if entry_id <= 0 {
+    super::capability_cmd::require_desktop_interaction()?;
+    if entry_id == 0 {
         return Err(format!("Invalid entry id: {entry_id}"));
     }
+    let bridge=app.state::<crate::app::ipc_host::DesktopHost>();
+    bridge.check_instance(entry_id,expected_host_instance_id.as_deref())?;
 
-    let entry = {
+    let entry = if let Some(entry)=bridge.summary(entry_id,expected_host_instance_id.as_deref()).await? {entry.entry}
+    else if entry_id<0 {session.0.lock().map_err(|_|"PrivacyStateUnavailable")?.iter().find(|entry|entry.id==entry_id).cloned().ok_or("ClipboardRecordUnavailable")?}
+    else {{
         let conn = state
             .conn
             .lock()
@@ -298,7 +306,7 @@ pub async fn paste_quick_paste_selection(
             .get_entry_by_id_with_conn(&conn, entry_id)
             .map_err(|e| format!("Failed to load entry {entry_id}: {e}"))?
     }
-    .ok_or_else(|| format!("Entry not found: {entry_id}"))?;
+    .ok_or_else(|| format!("Entry not found: {entry_id}"))?};
 
     let (content, content_type, plan) =
         build_paste_dispatch_plan(entry.id, &entry.content, &entry.content_type);
@@ -320,6 +328,9 @@ pub async fn paste_quick_paste_selection(
         Some(plan.paste_with_format),
         Some(plan.move_to_top),
         Some(plan.paste_image_as_base64),
+        None,
+        None,
+        expected_host_instance_id,
     )
     .await
     .map_err(|e| e.to_string())

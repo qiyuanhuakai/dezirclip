@@ -1,6 +1,9 @@
 import { forwardRef, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { ClipboardEntry } from "../../../shared/types";
+import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
+import { translations } from "../../../locales";
+const privacyActions: PrivacyFeedbackAction[] = ["not_sensitive", "exact_exception", "ignore_source", "protect_source"];
 
 const SUBMENU_CLOSE_DELAY_MS = 120;
 
@@ -32,6 +35,7 @@ export interface ItemContextMenuProps {
   language?: "zh" | "en" | "tw";
   ocrRunning?: boolean;
   ocrText?: string | null;
+  onPrivacyFeedback?: (action: PrivacyFeedbackAction) => void;
 }
 
 const MENU_WIDTH = 180;
@@ -99,6 +103,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       language = "zh",
       ocrRunning = false,
       ocrText,
+      onPrivacyFeedback,
     },
     ref
   ) => {
@@ -154,8 +159,14 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
       if (isTransformable) {
         items.push({ key: "transforms", label: "文本转换 →", hasSubmenu: true });
       }
+      if (entry && entry.id !== 0 && onPrivacyFeedback) {
+        for (const action of privacyActions) {
+          const key = `privacy_feedback_${action}` as keyof typeof translations.zh;
+          items.push({ key: `privacy:${action}`, label: translations[language][key] });
+        }
+      }
       return items;
-    }, [entry?.is_pinned, entry?.content_type, ocrRunning, ocrText, onEdit, editLabel]);
+    }, [entry?.is_pinned, entry?.content_type, entry?.id, ocrRunning, ocrText, onEdit, editLabel, onPrivacyFeedback, language]);
 
 	    const totalItems = menuItems.length;
 	    const menuHeight = totalItems * MENU_ITEM_HEIGHT + MENU_PADDING * 2;
@@ -167,6 +178,8 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
 
     const handleAction = useCallback(
       (key: string) => {
+        const privacyAction = privacyActions.find(action => key === `privacy:${action}`);
+        if (privacyAction) onPrivacyFeedback?.(privacyAction);
         switch (key) {
           case "copy":
             onCopy?.(false);
@@ -206,7 +219,7 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
           onClose();
         }
       },
-      [onCopy, onEdit, onEditTags, onQRCode, onDelete, onPin, onShare, onImageBase64, onOcr, onPasteOcr, onClose]
+      [onCopy, onEdit, onEditTags, onQRCode, onDelete, onPin, onShare, onImageBase64, onOcr, onPasteOcr, onClose, onPrivacyFeedback]
     );
 
     const handleTransformSelect = useCallback(

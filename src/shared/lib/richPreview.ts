@@ -1,4 +1,4 @@
-import { toTauriLocalImageSrc } from "./localImageSrc";
+import { isRamImageSource } from "./privacyRuntime";
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
@@ -31,7 +31,5 @@ export const resolveRichImageSrc = (payload?: string): string | null => {
   if (!payload) return null;
   const value = payload.trim();
   if (!value) return null;
-  if (value.startsWith("data:image/")) return value;
-  if (/^https?:\/\/asset\.localhost\//i.test(value)) return value;
-  return toTauriLocalImageSrc(value);
+  return isRamImageSource(value) ? value : null;
 };

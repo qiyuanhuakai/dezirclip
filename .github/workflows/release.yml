@@ -38,7 +38,7 @@ jobs:
         run: node scripts/updater-release.mjs preflight "$GITHUB_REF_NAME"
 
       - name: Verify updater release logic
-        run: node --test scripts/tests/updater-release.node.mjs
+        run: node --test scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
 
       - name: Create or reuse release
         id: release
@@ -250,9 +250,30 @@ jobs:
       version: ${{ github.ref_name }}
     secrets: inherit
 
-  verify-publish-and-promote:
-    name: Verify signed artifacts, publish and advance one channel
+  collect-release-identities:
+    name: Collect actual final package identities
     needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/release-identities.yml
+    with:
+      source: ${{ github.sha }}
+      release-id: ${{ needs.create-release.outputs.release_id }}
+
+  verify-final-windows-upgrade:
+    name: Verify actual signed Windows upgrades
+    needs: [create-release, publish-tauri]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-windows-upgrade.yml
+    with:
+      source: ${{ github.sha }}
+      release-id: ${{ needs.create-release.outputs.release_id }}
+
+  verify-publish-and-promote:
+    name: Verify signed artifacts and publish before public acceptance
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade]
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -267,4 +288,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: node scripts/updater-release.mjs publish "$GITHUB_REF_NAME"
+        run: node scripts/updater-release.mjs publish-only "$GITHUB_REF_NAME"

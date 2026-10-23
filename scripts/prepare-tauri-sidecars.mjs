@@ -94,6 +94,36 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
     declaredBuildSet: { version, sourceRevision: declaredRevision, buildId: declaredRevision ? `${version}@${declaredRevision}` : null },
     helperSha256: digest(script), cargoLockSha256: digest(join(repoRoot, "Cargo.lock")),
   };
+  // A service is a normal Cargo binary, not externalBin. Rebuild it without
+  // desktop features too, then synchronize exactly the paths enumerated by
+  // the bundler, including its default-host namespace.
+  const serviceArgs = cargoArgs.map((value) => value === "dzc" ? "dzc-service" : value);
+  run("cargo", serviceArgs, { cwd: repoRoot, stdio: "inherit" });
+  const serviceSource = join(targetDirectory, targetTriple, options.profile, `dzc-service${extension}`);
+  const serviceSha256 = digest(serviceSource);
+  let serviceInfo = null;
+  if (targetTriple === hostTriple) {
+    serviceInfo = JSON.parse(run(serviceSource, ["--build-info"], { cwd: repoRoot, encoding: "utf8" }));
+    if (serviceInfo.component !== "service" || serviceInfo.component_version !== version || serviceInfo.target !== targetTriple
+      || serviceInfo.source_revision !== declaredRevision || serviceInfo.build_id !== buildInfo.build_id
+      || serviceInfo.source_state !== buildInfo.source_state
+      || !serviceInfo.linked_components?.some((item) => item.component === "dzc-host" && item.version === version)
+      || !serviceInfo.linked_components?.some((item) => item.component === "dzc-service" && item.version === version)) throw new Error("Service build identity differs from its package build");
+  }
+  const servicePaths = [{ role: "cargo-target", path: serviceSource }, { role: "external-bin", path: join(repoRoot, "src-tauri", "binaries", `dzc-service-${targetTriple}${extension}`) }];
+  if (targetTriple === hostTriple) servicePaths.push({ role: "cargo-host-default", path: join(targetDirectory, options.profile, `dzc-service${extension}`) });
+  for (const item of servicePaths) {
+    mkdirSync(dirname(item.path), { recursive: true });
+    if (resolve(item.path) !== resolve(serviceSource)) {
+      const temporary = item.path + `.sidecar-${randomUUID()}.tmp`;
+      try { copyFileSync(serviceSource, temporary); if (digest(temporary) !== serviceSha256) throw new Error("Service copy changed before publication"); renameSync(temporary, item.path); }
+      finally { if (existsSync(temporary)) unlinkSync(temporary); }
+    }
+    item.sha256 = digest(item.path);
+    if (item.sha256 !== serviceSha256) throw new Error("Service input differs from standalone service build");
+  }
+  proof.serviceHelper = { source: serviceSource, sha256: serviceSha256, binaryPaths: servicePaths, command: ["cargo", ...serviceArgs], buildInfo: serviceInfo,
+    buildInfoVerification: serviceInfo ? "executed_native_service" : "cross_target_not_executed" };
   writeFileSync(staged + ".proof.json", JSON.stringify(proof, null, 2) + "\n");
   console.log(`Verified standalone sidecar inputs (${options.phase}, ${options.profile}, ${targetTriple}): ${sha256}`);
   return proof;

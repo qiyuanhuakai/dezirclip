@@ -53,7 +53,7 @@ pub fn run(args: &SearchArgs, repo: &HistoryService) -> Result<(), String> {
     let entries = if args.query.trim().is_empty() {
         Vec::new()
     } else {
-        repo.query(&HistoryQuery {
+        super::access::query(repo, &HistoryQuery {
             limit,
             offset: args.offset,
             kind: args.kind.as_deref(),

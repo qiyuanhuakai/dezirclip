@@ -48,7 +48,8 @@ use zeroize::Zeroize;
 // ---------------------------------------------------------------------------
 
 /// 导出版本号。导入时校验。后续破坏性 schema 升级时递增到 `v2`。
-pub const EXPORT_VERSION: &str = "dezirclip-export-v1";
+pub const EXPORT_VERSION: &str = "dezirclip-export-v2";
+const PREVIOUS_EXPORT_VERSION: &str = "dezirclip-export-v1";
 const LEGACY_EXPORT_VERSION: &str = "tiez-export-v1";
 
 /// AES-GCM nonce 长度（字节）。标准 96-bit nonce。
@@ -232,6 +233,11 @@ impl From<std::io::Error> for BackupError {
 /// 不会有序列化失败，所以这条路径基本不会触发，但保留 `Result`
 /// 以保持 API 一致性）。
 pub fn export_to_json(entries: Vec<ExportEntry>) -> Result<String, BackupError> {
+    if entries.iter().any(|entry| crate::database::has_sensitive_tag(&entry.tags) || entry.content.starts_with(crate::infrastructure::protected_resources::FILES_PREFIX)) { return Err(BackupError::InvalidFormat("SensitiveBackupPassphraseRequired".into())); }
+    serialize_json(entries)
+}
+
+fn serialize_json(entries: Vec<ExportEntry>) -> Result<String, BackupError> {
     let file = ExportFile {
         version: EXPORT_VERSION.to_string(),
         exported_at: now_unix_secs(),
@@ -319,7 +325,7 @@ pub fn export_to_encrypted(
         ));
     }
 
-    let json = export_to_json(entries)?;
+    let json = serialize_json(entries)?;
 
     // 1. 随机 nonce + salt
     let mut nonce_bytes = [0u8; NONCE_LEN];
@@ -427,7 +433,7 @@ fn fill_random(buf: &mut [u8]) -> Result<(), BackupError> {
 
 /// 校验导出文件头的 `version` 字段。
 fn validate_version(version: &str) -> Result<(), BackupError> {
-    if version != EXPORT_VERSION && version != LEGACY_EXPORT_VERSION {
+    if version != EXPORT_VERSION && version != PREVIOUS_EXPORT_VERSION && version != LEGACY_EXPORT_VERSION {
         return Err(BackupError::InvalidFormat(format!(
             "expected version {EXPORT_VERSION}, got {version}"
         )));
@@ -520,6 +526,14 @@ pub fn apply_entries(
     entries: &[ExportEntry],
     mode: ImportMode,
 ) -> Result<(), String> {
+    let ticket=repo.privacy_service().capture_ticket(chrono::Utc::now().timestamp_millis()).map_err(|error|error.to_string())?;
+    apply_entries_authorized(repo, entries, mode, &ticket)
+}
+
+pub(crate) fn apply_entries_authorized(
+    repo: &crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository,
+    entries: &[ExportEntry], mode: ImportMode, ticket: &crate::api::CaptureTicket,
+) -> Result<(), String> {
     let mut restored: Vec<ClipboardEntry> = entries.iter().map(restore_entry).collect();
     // Validate every image before replacing history. Imported bytes stay inside
     // SQLite, so rollback cannot leave partially replaced external attachments.
@@ -540,7 +554,7 @@ pub fn apply_entries(
             entry.is_external = false;
         }
     }
-    repo.import_cli_entries(&restored, mode == ImportMode::Replace)
+    repo.import_cli_entries_authorized(&restored, mode == ImportMode::Replace, ticket)
 }
 
 #[cfg(test)]
@@ -586,7 +600,7 @@ mod tests {
 
     #[test]
     fn test_export_version_constant() {
-        assert_eq!(EXPORT_VERSION, "dezirclip-export-v1");
+        assert_eq!(EXPORT_VERSION, "dezirclip-export-v2");
         assert_eq!(LEGACY_EXPORT_VERSION, "tiez-export-v1");
     }
 
@@ -1051,7 +1065,9 @@ mod data_integrity_tests {
         assert_eq!(exported.content, source.content);
         assert_eq!(exported.preview.as_deref(), Some(source.preview.as_str()));
         assert_eq!(exported.html_content, source.html_content);
-        let json = export_to_json(vec![exported]).unwrap();
+        assert!(export_to_json(vec![exported.clone()]).is_err());
+        let bytes=export_to_encrypted(vec![exported],"synthetic backup passphrase").unwrap();
+        let json=decrypt_to_json(&bytes,"synthetic backup passphrase").unwrap();
         let (restored, _) = repository();
         apply_entries(
             &restored,
@@ -1091,7 +1107,7 @@ mod data_integrity_tests {
                 ImportMode::Replace
             )
             .unwrap_err(),
-            "SensitivePersistenceRejected"
+            "AttachmentReadRejected"
         );
         assert_eq!(rows(&repo)[0].content, before[0].content);
         assert_eq!(rows(&repo).len(), before.len());

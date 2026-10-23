@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:OS -ne 'Windows_NT' -or -not $env:RUNNER_TEMP) {
     throw 'Native fixture builds run only in disposable GitHub-hosted Windows jobs.'
 }
-if ($Version -notin @('0.2.0-alpha.0', '0.2.0-alpha.1')) { throw 'Only unpublished fixture versions are allowed.' }
+if ($Version -notin @('0.2.0-alpha.1', '0.2.0-alpha.2')) { throw 'Only explicit alpha.1/alpha.2 fixture version labels are allowed.' }
 function Assert-NoReparsePoint([string]$Path, [string]$Boundary) {
     $current = $Path
     while ($current.Length -ge $Boundary.Length) {
@@ -33,17 +33,17 @@ function Get-NsisApplicationProof([string]$Path) {
         patchOffset = $offset
     }
 }
-function Get-NsisCompilerInputs([string]$Script, [string]$Application, [string]$CargoBinary, [string]$ExpectedSha256) {
+function Get-NsisCompilerInputs([string]$Script, [string]$Application, [string]$CargoBinary, [string]$ExpectedSha256, [ValidateSet('dzc.exe', 'dzc-service.exe')][string]$Destination = 'dzc.exe') {
     if ($ExpectedSha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Expected a complete standalone CLI SHA-256.' }
     $text = [System.IO.File]::ReadAllText($Script)
     $main = [regex]::Matches($text, '(?m)^\s*!define MAINBINARYSRCPATH "([^"]+)"\s*$')
     if ($main.Count -ne 1 -or [System.IO.Path]::GetFullPath($main[0].Groups[1].Value) -ine [System.IO.Path]::GetFullPath($Application)) { throw 'NSIS did not select the proven GUI build.' }
-    $entries = [regex]::Matches($text, '(?im)^\s*File\s+/a\s+"/oname=dzc\.exe"\s+"([^"]+)"\s*$')
+    $entries = [regex]::Matches($text, ('(?im)^\s*File\s+/a\s+"/oname=' + [regex]::Escape($Destination) + '"\s+"([^"]+)"\s*$'))
     if ($entries.Count -ne 1) { throw 'Expected exactly one NSIS Cargo CLI input; investigate any bundler layout change.' }
     $source = [System.IO.Path]::GetFullPath($entries[0].Groups[1].Value)
     if ($source -ine [System.IO.Path]::GetFullPath($CargoBinary)) { throw 'NSIS selected a CLI source other than the exact Cargo binary.' }
     if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'NSIS selected a CLI other than the proven standalone build.' }
-    [pscustomobject]@{ source = $source; destination = 'dzc.exe'; sha256 = $ExpectedSha256; role = 'cargo-binary' }
+    [pscustomobject]@{ source = $source; destination = $Destination; sha256 = $ExpectedSha256; role = 'cargo-binary' }
 }
 $destinationPath = [System.IO.Path]::GetFullPath($Destination)
 $temporaryRoot = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\', '/')
@@ -100,19 +100,32 @@ if ((Get-FileHash -LiteralPath $cargoSidecar -Algorithm SHA256).Hash -ne $sideca
 if ((Get-FileHash -LiteralPath $application -Algorithm SHA256).Hash -ne $applicationProof.rawSha256) { throw 'Tauri did not restore the original GUI after bundling.' }
 $nsisScript = Join-Path $metadata.target_directory 'debug/nsis/x64/installer.nsi'
 $compilerInputs = @(Get-NsisCompilerInputs $nsisScript $application $cargoSidecar $sidecarDigest)
+$serviceProof = $sidecarProof.serviceHelper
+$serviceBinary = Join-Path $metadata.target_directory 'debug/dzc-service.exe'
+if ($serviceProof.buildInfoVerification -ne 'executed_native_service' -or $serviceProof.buildInfo.component -ne 'service' -or $serviceProof.buildInfo.build_id -ne $buildInfo.build_id -or $serviceProof.buildInfo.database_schema_version -ne $buildInfo.database_schema_version) { throw 'Packaged service has a different build set.' }
+if (@($serviceProof.binaryPaths).Count -ne 3) { throw 'Service requires three synchronized native build inputs.' }
+$expectedServicePaths = @([System.IO.Path]::GetFullPath("src-tauri/binaries/dzc-service-$triple.exe"), [System.IO.Path]::GetFullPath($serviceBinary), [System.IO.Path]::GetFullPath((Join-Path $metadata.target_directory "$triple/debug/dzc-service.exe")))
+$observedServicePaths = @()
+foreach ($compilerInput in $serviceProof.binaryPaths) {
+    $path = [System.IO.Path]::GetFullPath($compilerInput.path)
+    if ($path -notin $expectedServicePaths -or $path -in $observedServicePaths -or $compilerInput.sha256 -ne $serviceProof.sha256 -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $serviceProof.sha256) { throw 'A service source differs from the shared helper build.' }
+    $observedServicePaths += $path
+}
+$serviceInputs = @(Get-NsisCompilerInputs $nsisScript $application $serviceBinary $serviceProof.sha256 'dzc-service.exe')
 Copy-Item -LiteralPath $nsisScript -Destination ($destinationPath + '.nsi')
 $sourceCommit = (& git rev-parse HEAD | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-fA-F0-9]{40}$') { throw 'Fixture source commit is unavailable.' }
 @{
-    schemaVersion = 3; kind = 'dezirclip-native-nsis-fixture'; version = $Version; target = $triple
+    schemaVersion = 4; kind = 'dezirclip-native-nsis-fixture'; version = $Version; target = $triple
     installerSha256 = (Get-FileHash -LiteralPath $destinationPath -Algorithm SHA256).Hash
     applicationSha256 = $applicationProof.packagedSha256
     applicationRawSha256 = $applicationProof.rawSha256; applicationPatchOffset = $applicationProof.patchOffset
     applicationPatch = 'tauri-nsis-bundle-token-v1'
     sidecarSha256 = (Get-FileHash -LiteralPath $sidecar -Algorithm SHA256).Hash
     sidecarVersion = $sidecarVersion; sidecarSource = 'standalone-no-default-features'
-    nsisInputLayout = 'single-cargo-binary-v1'; nsisInputs = $compilerInputs
+    nsisInputLayout = 'cargo-cli-and-service-v1'; nsisInputs = $compilerInputs
     sidecarPreparation = $sidecarProof
+    serviceSha256 = $serviceProof.sha256; serviceBuildInfo = $serviceProof.buildInfo; serviceInputs = $serviceInputs
     buildInfo = $buildInfo
     nsisScriptSha256 = (Get-FileHash -LiteralPath ($destinationPath + '.nsi') -Algorithm SHA256).Hash
     overrideConfigurationSha256 = (Get-FileHash -LiteralPath $override -Algorithm SHA256).Hash

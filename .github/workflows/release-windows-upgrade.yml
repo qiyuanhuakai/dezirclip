@@ -1,0 +1,151 @@
+name: Final Windows release upgrades
+
+on:
+  workflow_call:
+    inputs:
+      source:
+        required: true
+        type: string
+      release-id:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Verify final signed upgrade inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      policy_sha256: ${{ steps.policy.outputs.policy_sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify all eight assets and retain the exact input policy
+        id: policy
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_UPGRADE_SOURCE: ${{ inputs.source }}
+          DZC_UPGRADE_RELEASE_ID: ${{ inputs.release-id }}
+        run: |
+          import os, pathlib, re, subprocess, sys
+          directory = pathlib.Path(os.environ['RUNNER_TEMP']) / 'upgrade-inputs'
+          result = subprocess.run(['node', 'scripts/release-windows-upgrade.mjs', 'prepare', os.environ['DZC_UPGRADE_SOURCE'], os.environ['DZC_UPGRADE_RELEASE_ID'], str(directory)], capture_output=True, text=True)
+          sys.stderr.write(result.stderr)
+          if result.returncode:
+              sys.stdout.write(result.stdout)
+              raise RuntimeError('Preparation failed; original controller diagnostics are retained above')
+          value = result.stdout.strip()
+          if not re.fullmatch('[a-f0-9]{64}', value):
+              raise RuntimeError('The prepared policy must return exactly one SHA-256')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write('policy_sha256=' + value + '\n')
+      - name: Preserve original verified inputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-upgrade-inputs-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/upgrade-inputs
+          if-no-files-found: error
+
+  native:
+    name: Final published upgrade (${{ matrix.scenario }})
+    needs: prepare
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [LegacyToAlpha2, PublishedAlphaToAlpha2]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+      - name: Allocate a fresh disposable native evidence path
+        shell: pwsh
+        run: |
+          $fixture = Join-Path $env:RUNNER_TEMP ('dezirclip-upgrade-' + [guid]::NewGuid().ToString('N'))
+          "DZC_RELEASE_UPGRADE_FIXTURE=$fixture" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+          architecture: x64
+      - name: Require the supported synthetic SQLite writer
+        shell: python
+        run: |
+          import sqlite3
+          if sqlite3.sqlite_version_info < (3, 50, 4):
+              raise RuntimeError('Synthetic historical fixture writers require SQLite >= 3.50.4')
+          print('Fixture SQLite:', sqlite3.sqlite_version)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          architecture: x64
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows-upgrade-inputs-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/upgrade-inputs
+      - name: Stage the original final installer and pinned historical installer
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_UPGRADE_SOURCE: ${{ inputs.source }}
+          DZC_UPGRADE_RELEASE_ID: ${{ inputs.release-id }}
+          DZC_UPGRADE_POLICY: ${{ needs.prepare.outputs.policy_sha256 }}
+          DZC_UPGRADE_SCENARIO: ${{ matrix.scenario }}
+        run: |
+          import os, pathlib, subprocess
+          subprocess.run(['node', 'scripts/release-windows-upgrade.mjs', 'stage', os.environ['DZC_UPGRADE_SOURCE'], os.environ['DZC_UPGRADE_RELEASE_ID'], str(pathlib.Path(os.environ['RUNNER_TEMP']) / 'upgrade-inputs'), os.environ['DZC_UPGRADE_POLICY'], os.environ['DZC_UPGRADE_SCENARIO'], os.environ['DZC_RELEASE_UPGRADE_FIXTURE']], check=True)
+      - name: Execute the actual final NSIS upgrade and uninstall
+        shell: pwsh
+        env:
+          DZC_UPGRADE_SOURCE: ${{ inputs.source }}
+          DZC_UPGRADE_RELEASE_ID: ${{ inputs.release-id }}
+          DZC_UPGRADE_POLICY: ${{ needs.prepare.outputs.policy_sha256 }}
+        run: |
+          & ./scripts/test-release-windows-upgrade.ps1 -FixtureDirectory $env:DZC_RELEASE_UPGRADE_FIXTURE -ExpectedSource $env:DZC_UPGRADE_SOURCE -ExpectedReleaseId $env:DZC_UPGRADE_RELEASE_ID -ExpectedPolicySha256 $env:DZC_UPGRADE_POLICY
+      - name: Preserve original native observations and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-upgrade-${{ matrix.scenario }}-attempt-${{ github.run_attempt }}
+          path: ${{ env.DZC_RELEASE_UPGRADE_FIXTURE }}
+          if-no-files-found: error
+
+  aggregate:
+    name: Bind both actual final installer upgrades
+    needs: [prepare, native]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-windows-upgrade-*ToAlpha2-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/upgrade-reports
+      - name: Validate the same-policy native reports
+        shell: python
+        env:
+          DZC_UPGRADE_SOURCE: ${{ inputs.source }}
+          DZC_UPGRADE_RELEASE_ID: ${{ inputs.release-id }}
+          DZC_UPGRADE_POLICY: ${{ needs.prepare.outputs.policy_sha256 }}
+        run: |
+          import os, pathlib, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          subprocess.run(['node', 'scripts/release-windows-upgrade.mjs', 'aggregate', os.environ['DZC_UPGRADE_SOURCE'], os.environ['DZC_UPGRADE_RELEASE_ID'], os.environ['DZC_UPGRADE_POLICY'], str(root / 'upgrade-reports'), str(root / 'windows-upgrade.json')], check=True)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-upgrade-gate-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-upgrade.json
+          if-no-files-found: error

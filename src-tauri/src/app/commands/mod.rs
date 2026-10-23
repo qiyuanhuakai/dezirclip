@@ -1,3 +1,4 @@
+pub mod capability_cmd;
 pub mod classification_cmd;
 pub mod clipboard_cmd;
 pub mod export_cmd;
@@ -8,6 +9,8 @@ pub mod hotkey_cmd;
 pub mod image_preview_cmd;
 pub mod import_cmd;
 pub mod ocr_cmd;
+pub mod privacy_cmd;
+pub mod privacy_feedback_cmd;
 pub mod qr_cmd;
 pub mod quick_paste_cmd;
 pub mod screenshot_cmd;
@@ -19,6 +22,7 @@ pub mod tools_cmd;
 pub mod transform_cmd;
 pub mod ui_cmd;
 pub mod theme_cmd;
+pub mod user_resource_cmd;
 
 // Re-export all commands for convenience in main.rs if needed,
 // though tauri usually expects them to be referenced via module path in generate_handler!
@@ -31,6 +35,8 @@ pub use history_cmd::*;
 pub use hotkey_cmd::*;
 pub use image_preview_cmd::*;
 pub use ocr_cmd::*;
+pub use privacy_cmd::*;
+pub use privacy_feedback_cmd::*;
 pub use qr_cmd::*;
 pub use quick_paste_cmd::*;
 pub use screenshot_cmd::*;
@@ -42,3 +48,4 @@ pub use tools_cmd::*;
 pub use transform_cmd::*;
 pub use ui_cmd::*;
 pub use theme_cmd::*;
+pub use user_resource_cmd::*;

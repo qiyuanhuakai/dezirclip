@@ -197,6 +197,7 @@ pub fn mark_frontend_catchup_pending() {
 /// whatever was there when the window went down.
 pub fn notify_main_window_shown(app: &AppHandle) {
     mark_shown();
+    let _ = app.emit_to("main", "privacy-view-shown", ());
     if !FRONTEND_CATCHUP_PENDING.swap(false, Ordering::SeqCst) {
         return;
     }

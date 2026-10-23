@@ -3,13 +3,32 @@ use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::error::{AppError, AppResult};
 use crate::services::clipboard::truncate_html_for_preview;
-use tauri::State;
+use tauri::{AppHandle,Manager,State};
+use crate::app::ipc_host::{DesktopHost,HostedEntry};
 
 const UI_CONTENT_LIMIT: usize = 2000;
 const UI_PREVIEW_LIMIT: usize = 500;
 const TAG_CONTENT_LIMIT: usize = 50000;
 const MAX_HISTORY_LIMIT: i32 = 150;
 const MIN_HISTORY_LIMIT: i32 = 1;
+
+#[derive(serde::Serialize)]
+pub struct HostedTagItemsPage {
+    pub items:Vec<HostedEntry>,
+    pub total:usize,
+    pub has_more:bool,
+    pub next_offset:Option<usize>,
+}
+impl HostedTagItemsPage {
+    fn from_core(page:dzc_core::api::TagItemsPage,instance:&str)->Self {
+        Self {items:page.items.into_iter().map(|entry|HostedEntry{entry,host_instance_id:Some(instance.into())}).collect(),
+            total:page.total,has_more:page.has_more,next_offset:page.next_offset}
+    }
+}
+fn check_tag_host_instance(original:&str,current:&str)->AppResult<()> {
+    if original!=current {return Err(AppError::Validation("ClipboardHostInstanceChanged".into()));}
+    Ok(())
+}
 
 fn is_text_like_content_type(content_type: &str) -> bool {
     matches!(content_type, "text" | "code" | "url" | "rich_text")
@@ -66,7 +85,10 @@ fn captured_entry_summary(
     } else {
         None
     };
-    let mut entry = entry.ok_or_else(|| AppError::Validation("CapturedEntryUnavailable".into()))?;
+    let entry = entry.ok_or_else(|| AppError::Validation("CapturedEntryUnavailable".into()))?;
+    let mut guarded=vec![entry];
+    repository.entries_for_gui(&mut guarded,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    let mut entry=guarded.pop().ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))?;
     normalize_entries_for_ui(std::slice::from_mut(&mut entry));
     Ok(crate::services::clipboard::summarize_captured_entry(entry))
 }
@@ -74,22 +96,30 @@ fn captured_entry_summary(
 /// Hydrate a committed capture on demand; capture notifications contain only its ID.
 #[tauri::command]
 pub async fn get_captured_entry_summary(
+    app:AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     id: i64,
-) -> AppResult<ClipboardEntry> {
-    captured_entry_summary(&state.history_service(), &session, id)
+    expected_host_instance_id:Option<String>,
+) -> AppResult<HostedEntry> {
+    let bridge=app.state::<DesktopHost>();
+    if let Some(entry)=bridge.summary(id,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)? {return Ok(entry);}
+    bridge.check_instance(id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
+    bridge.hosted(captured_entry_summary(&state.history_service(), &session, id)?).map_err(AppError::Validation)
 }
 
 #[tauri::command]
 pub async fn get_clipboard_history(
+    app:AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     limit: i32,
     offset: i32,
     content_type: Option<String>,
-) -> AppResult<Vec<ClipboardEntry>> {
+) -> AppResult<Vec<HostedEntry>> {
     let limit = normalize_limit(limit);
+    let bridge=app.state::<DesktopHost>();
+    if let Some(entries)=bridge.page(limit,offset,content_type.clone(),None).await.map_err(AppError::Validation)? {return Ok(entries);}
     // 1. Get history from repository
     let mut history = state
         .history_service()
@@ -126,19 +156,23 @@ pub async fn get_clipboard_history(
         history.truncate(limit as usize);
     }
 
+    state.history_service().entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
-    Ok(history)
+    history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
 }
 
 #[tauri::command]
 pub async fn search_clipboard_history(
+    app:AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     search_term: String,
     limit: i32,
-) -> AppResult<Vec<ClipboardEntry>> {
+) -> AppResult<Vec<HostedEntry>> {
     let limit = normalize_limit(limit);
+    let bridge=app.state::<DesktopHost>();
+    if let Some(entries)=bridge.page(limit,0,None,Some(search_term.clone())).await.map_err(AppError::Validation)? {return Ok(entries);}
     let mut history = state.history_service().search(&search_term, limit)?;
 
     let term = search_term.to_lowercase();
@@ -160,18 +194,24 @@ pub async fn search_clipboard_history(
         history.truncate(limit as usize);
     }
 
+    state.history_service().entries_for_gui(&mut history,false,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
-    Ok(history)
+    history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
 }
 
 #[tauri::command]
-pub fn delete_clipboard_entry(
+pub async fn delete_clipboard_entry(
+    app:AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     app_data: State<'_, AppDataDir>,
     id: i64,
+    expected_host_instance_id:Option<String>,
 ) -> AppResult<()> {
+    let bridge=app.state::<DesktopHost>();
+    let request=bridge.mutation_request(id,"delete",None).map_err(AppError::Validation)?;
+    if bridge.mutation(request,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)?.is_some() {return Ok(());}
     {
         let mut session_items = session.inner().0.lock().unwrap();
         session_items.retain(|item| item.id != id);
@@ -181,6 +221,7 @@ pub fn delete_clipboard_entry(
         let data_dir = app_data.0.lock().unwrap();
         state.history_service().delete(id, Some(&data_dir))?;
     }
+    crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     Ok(())
 }
 
@@ -208,6 +249,7 @@ pub async fn get_tag_items(
         .get_entries_by_tag(&tag)
         .map_err(AppError::from)?;
 
+    state.history_service().entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     for item in &mut history {
         if is_text_like_content_type(&item.content_type) {
             item.content =
@@ -220,36 +262,52 @@ pub async fn get_tag_items(
 
 #[tauri::command]
 pub async fn get_tag_items_page(
+    app:AppHandle,
     state: State<'_, DbState>,
     tag: String,
     query: Option<String>,
     sort_by: Option<String>,
     limit: Option<usize>,
     offset: Option<usize>,
-) -> AppResult<dzc_core::api::TagItemsPage> {
+) -> AppResult<HostedTagItemsPage> {
+    let bridge=app.state::<DesktopHost>().inner().clone();
+    let instance=bridge.instance().map_err(AppError::Validation)?;
     let repository = state.history_service();
-    tauri::async_runtime::spawn_blocking(move || {
-        repository.tag_page(
+    let page=tauri::async_runtime::spawn_blocking(move || {
+        let mut page=repository.tag_page(
             &tag,
             query.as_deref().unwrap_or(""),
             sort_by.as_deref().unwrap_or("time"),
             limit.unwrap_or(60),
             offset.unwrap_or(0),
-        )
+        )?;
+        repository.entries_for_gui(&mut page.items,query.as_deref().unwrap_or("").is_empty(),chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
+        Ok::<_,dzc_core::api::CoreError>(page)
     })
     .await
     .map_err(|error| AppError::Internal(error.to_string()))?
-    .map_err(AppError::from)
+    .map_err(AppError::from)?;
+    check_tag_host_instance(&instance,&bridge.instance().map_err(AppError::Validation)?)?;
+    Ok(HostedTagItemsPage::from_core(page,&instance))
 }
 
 #[tauri::command]
-pub async fn get_tag_item_detail(state: State<'_, DbState>, id: i64) -> AppResult<ClipboardEntry> {
+pub async fn get_tag_item_detail(app:AppHandle,state: State<'_, DbState>, id: i64) -> AppResult<HostedEntry> {
+    let bridge=app.state::<DesktopHost>().inner().clone();
+    let instance=bridge.instance().map_err(AppError::Validation)?;
     let repository = state.history_service();
-    tauri::async_runtime::spawn_blocking(move || repository.get_entry_by_id(id))
+    let entry=tauri::async_runtime::spawn_blocking(move || {
+        let entry=repository.get_entry_by_id(id)?;
+        let mut entries=entry.into_iter().collect();
+        repository.entries_for_gui(&mut entries,true,chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
+        Ok::<_,dzc_core::api::CoreError>(entries.pop())
+    })
         .await
         .map_err(|error| AppError::Internal(error.to_string()))?
         .map_err(AppError::from)?
-        .ok_or_else(|| AppError::Validation("Entry not found".into()))
+        .ok_or_else(|| AppError::Validation("Entry not found".into()))?;
+    check_tag_host_instance(&instance,&bridge.instance().map_err(AppError::Validation)?)?;
+    Ok(HostedEntry{entry,host_instance_id:Some(instance)})
 }
 
 #[tauri::command]
@@ -425,26 +483,28 @@ pub fn create_new_tag(state: State<'_, DbState>, tag_name: String) -> AppResult<
 
 #[tauri::command]
 pub async fn get_clipboard_content(
+    app:AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     id: i64,
+    expected_host_instance_id:Option<String>,
 ) -> AppResult<String> {
-    {
-        let session_items = session.inner().0.lock().unwrap();
-        if let Some(item) = session_items.iter().find(|i| i.id == id) {
-            return Ok(item.content.clone());
-        }
-    }
-
-    state
-        .history_service()
-        .get_entry_content(id)
-        .map_err(AppError::from)?
-        .ok_or_else(|| AppError::Validation("Entry not found".to_string()))
+    let bridge=app.state::<DesktopHost>();
+    let epoch=state.history_service().runtime_snapshot(chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch;
+    if let Some(entry)=bridge.entry(id,epoch,false,None,expected_host_instance_id.as_deref()).await.map_err(AppError::Validation)? {return Ok(entry.entry.content);}
+    bridge.check_instance(id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
+    let history=state.history_service();
+    let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::InteractiveRead,dzc_core::api::SensitiveAccess::Denied,None,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    let entry=if id<0 {
+        let entry=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
+        history.session_entry_for_preview_authorized(&entry,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?
+    } else { history.get_entry_for_preview_authorized(id,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))? };
+    Ok(entry.content)
 }
 
 #[tauri::command]
 pub fn update_pinned_order(state: State<'_, DbState>, orders: Vec<(i64, i64)>) -> AppResult<()> {
+    if orders.iter().any(|(id,_)|*id<=0) {return Err(AppError::Validation("SessionOrderUnavailable".into()));}
     state
         .history_service()
         .update_pinned_order(orders)
@@ -459,7 +519,7 @@ pub async fn get_db_count(state: State<'_, DbState>) -> AppResult<i64> {
 #[cfg(test)]
 mod capture_summary_tests {
     use super::*;
-    use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
+    use crate::infrastructure::repository::clipboard_repo::{SqliteClipboardRepository,ClipboardRepository};
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
 
@@ -492,9 +552,32 @@ mod capture_summary_tests {
     }
 
     #[test]
+    fn tag_page_keeps_hidden_core_projection_and_original_host_identity() {
+        let repository=repository();
+        let mut hidden=entry(2);
+        hidden.tags=vec!["sensitive".into()];
+        hidden.content="synthetic private tag body".into();
+        hidden.preview=hidden.content.clone();
+        hidden.html_content=Some("<b>synthetic private tag body</b>".into());
+        let mut items=vec![hidden];
+        repository.entries_for_gui(&mut items,true,chrono::Utc::now().timestamp_millis()).unwrap();
+        let page=HostedTagItemsPage::from_core(dzc_core::api::TagItemsPage{items,total:61,has_more:true,next_offset:Some(60)},"original-tag-host");
+        let json=serde_json::to_value(page).unwrap();
+        assert_eq!(json["items"][0]["id"],2);
+        assert_eq!(json["items"][0]["host_instance_id"],"original-tag-host");
+        assert_eq!(json["total"],61);
+        assert_eq!(json["has_more"],true);
+        assert_eq!(json["next_offset"],60);
+        assert_eq!(json.as_object().unwrap().len(),4);
+        assert!(!json.to_string().contains("synthetic private tag body"));
+        check_tag_host_instance("original-tag-host","original-tag-host").unwrap();
+        assert!(check_tag_host_instance("original-tag-host","replacement-tag-host").unwrap_err().to_string().ends_with("ClipboardHostInstanceChanged"));
+    }
+
+    #[test]
     fn session_summary_is_bounded_preserves_metadata_and_does_not_mutate_source() {
         let repository = repository();
-        let session = SessionHistory(Mutex::new(VecDeque::from([entry(-1)])));
+        let session = SessionHistory(Mutex::new(VecDeque::from([entry(-1)])).into());
         let summary = captured_entry_summary(&repository, &session, -1).unwrap();
         assert_eq!(summary.id, -1);
         assert!(summary.content.chars().count() < 2100);
@@ -513,7 +596,7 @@ mod capture_summary_tests {
     }
 
     #[test]
-    fn persistent_image_summary_uses_the_committed_attachment_path() {
+    fn persistent_image_summary_returns_bounded_ram_pixels_without_attachment_paths() {
         let directory = std::env::temp_dir().join(format!(
             "dezirclip-capture-summary-{}",
             uuid::Uuid::new_v4()
@@ -524,18 +607,24 @@ mod capture_summary_tests {
         let mut image = entry(0);
         image.content_type = "image".into();
         image.html_content = None;
-        image.content = "data:image/png;base64,b3RoZXI=".into();
+        let pixels=image::RgbaImage::from_pixel(2,2,image::Rgba([3,4,5,255]));
+        let mut encoded=std::io::Cursor::new(Vec::new());
+        pixels.write_to(&mut encoded,image::ImageFormat::Png).unwrap();
+        use base64::Engine;
+        image.content = format!("data:image/png;base64,{}",base64::engine::general_purpose::STANDARD.encode(encoded.get_ref()));
         let id = repository
             .save_with_conn(&connection.lock().unwrap(), &image, Some(&directory))
             .unwrap();
-        let session = SessionHistory(Mutex::new(VecDeque::new()));
+        let session = SessionHistory(Mutex::new(VecDeque::new()).into());
         let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
         let summary = captured_entry_summary(&history, &session, id).unwrap();
         assert_eq!(summary.id, id);
-        assert!(summary.is_external);
-        assert!(!summary.content.starts_with("data:"));
-        assert!(std::path::Path::new(&summary.content).starts_with(directory.join("attachments")));
-        assert_eq!(std::fs::read(&summary.content).unwrap(), b"other");
+        assert!(!summary.is_external);
+        assert!(summary.content.starts_with("data:image/png;base64,"));
+        assert!(!summary.content.contains("attachments"));
+        let stored=repository.get_entry_by_id(id).unwrap().unwrap();
+        assert!(std::path::Path::new(&stored.content).starts_with(directory.join("attachments")));
+        assert_eq!(std::fs::read(stored.content).unwrap(),*encoded.get_ref());
         assert!(image.content.starts_with("data:"));
         drop(repository);
         drop(connection);
@@ -550,7 +639,7 @@ mod capture_summary_tests {
             .unwrap()
             .execute_batch("DROP TABLE clipboard_history")
             .unwrap();
-        let session = SessionHistory(Mutex::new(VecDeque::new()));
+        let session = SessionHistory(Mutex::new(VecDeque::new()).into());
         let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
         let error = captured_entry_summary(&history, &session, 1)
             .unwrap_err()

@@ -66,21 +66,26 @@ class BuildSetTests(unittest.TestCase):
         self.revision = 'a' * 40
 
     def component(self, role):
-        version = '0.2.0-alpha.1'
+        version = '0.2.0-alpha.2'
+        names = ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')
+        if role == 'service':
+            names += ('dzc-service',)
         return {'component': role, 'component_version': version,
                 'source_revision': self.revision, 'build_id': version + '@' + self.revision,
                 'source_state': 'verified_checkout', 'metadata_version': 1,
-                'database_schema_version': 21, 'protocol_version': {'major': 1, 'minor': 0},
+                'database_schema_version': 24, 'protocol_version': {'major': 1, 'minor': 0},
                 'target': 'x86_64-unknown-linux-gnu',
                 'linked_components': [{'component': name, 'version': version}
-                                      for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]}
+                                      for name in names]}
 
     def test_actual_components_must_match_the_frozen_version_set(self):
-        result = self.verify(self.component('cli'), self.component('desktop'), self.revision)
+        result = self.verify(self.component('cli'), self.component('desktop'), self.component('service'), self.revision)
         self.assertTrue(result['verified'])
         self.assertEqual(result['source_revision'], self.revision)
+        self.assertEqual(result['components'], ['desktop', 'cli', 'service'])
+        self.assertFalse(result['service_started'])
         with self.assertRaisesRegex(RuntimeError, 'frozen'):
-            self.verify(self.component('cli'), self.component('desktop'), 'b' * 40)
+            self.verify(self.component('cli'), self.component('desktop'), self.component('service'), 'b' * 40)
 
     def test_unknown_inconsistent_or_different_component_metadata_is_rejected(self):
         changes = [('component', 'surface'), ('component_version', '0.2.0-alpha.0'),
@@ -88,22 +93,61 @@ class BuildSetTests(unittest.TestCase):
                    ('source_state', 'modified_checkout'), ('source_state', 'unknown'),
                    ('metadata_version', True), ('metadata_version', 2),
                    ('database_schema_version', 19), ('database_schema_version', 20),
-                   ('database_schema_version', 22), ('database_schema_version', True),
+                   ('database_schema_version', 23), ('database_schema_version', True),
+                   ('database_schema_version', 22), ('database_schema_version', 25),
                    ('protocol_version', {'major': True, 'minor': 0}),
                    ('protocol_version', {'major': 1, 'minor': 1}),
                    ('target', 'aarch64-unknown-linux-gnu'), ('linked_components', [])]
-        for role in ('cli', 'desktop'):
+        for role in ('cli', 'desktop', 'service'):
             for field, value in changes:
                 with self.subTest(role=role, field=field, value=value):
-                    cli, desktop = self.component('cli'), self.component('desktop')
-                    (cli if role == 'cli' else desktop)[field] = value
+                    components = {name: self.component(name) for name in ('cli', 'desktop', 'service')}
+                    components[role][field] = value
                     with self.assertRaises(RuntimeError):
-                        self.verify(cli, desktop, self.revision)
+                        self.verify(components['cli'], components['desktop'], components['service'], self.revision)
         cli, desktop = self.component('cli'), self.component('desktop')
         desktop['source_revision'] = 'b' * 40
         desktop['build_id'] = desktop['component_version'] + '@' + desktop['source_revision']
         with self.assertRaisesRegex(RuntimeError, 'different build sets'):
-            self.verify(cli, desktop, '')
+            self.verify(cli, desktop, self.component('service'), '')
+
+    def test_inventory_is_independent_of_agreeing_self_reports(self):
+        for names in [('dzc-core', 'dzc-platform', 'dzc-protocol'),
+                      ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host', 'dzc-host'),
+                      ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host', 'dzc-surface')]:
+            components = [self.component(role) for role in ('cli', 'desktop', 'service')]
+            for info in components:
+                info['linked_components'] = [{'component': name, 'version': info['component_version']} for name in names]
+            with self.subTest(names=names), self.assertRaisesRegex(RuntimeError, 'linked version set'):
+                self.verify(*components, self.revision)
+        service = self.component('service')
+        service['source_revision'] = 'b' * 40
+        service['build_id'] = service['component_version'] + '@' + service['source_revision']
+        with self.assertRaisesRegex(RuntimeError, 'different build sets'):
+            self.verify(self.component('cli'), self.component('desktop'), service, '')
+
+
+class PreviousAlphaTests(unittest.TestCase):
+    def test_previous_alpha_is_bound_to_the_published_source_schema_and_inventory(self):
+        verify = load_fixture_function('verify_previous_alpha')
+        revision = '90ba9960744b6cd57caaaf597f68533a7e41be45'
+        version = '0.2.0-alpha.1'
+        original = {'component': 'cli', 'component_version': version,
+                    'source_revision': revision, 'build_id': version + '@' + revision,
+                    'source_state': 'verified_checkout', 'metadata_version': 1,
+                    'database_schema_version': 21, 'protocol_version': {'major': 1, 'minor': 0},
+                    'target': 'x86_64-unknown-linux-gnu',
+                    'linked_components': [{'component': name, 'version': version}
+                                          for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]}
+        self.assertTrue(verify(original)['verified'])
+        for field, value in [('component_version', '0.2.0-alpha.2'), ('source_revision', 'a' * 40),
+                             ('build_id', None), ('source_state', 'modified_checkout'),
+                             ('metadata_version', True), ('database_schema_version', 24),
+                             ('database_schema_version', True), ('target', 'aarch64-unknown-linux-gnu'),
+                             ('protocol_version', {'major': True, 'minor': 0}),
+                             ('linked_components', [])]:
+            with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
+                verify({**original, field: value})
 
 
 if __name__ == '__main__':

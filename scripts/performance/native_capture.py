@@ -38,11 +38,59 @@ IDENTIFIER = 'io.github.qiyuanhuakai.dezirclip'
 INTERVAL_SECONDS = .7
 MINIMUM_SQLITE = (3, 50, 4)
 SYSTEM_PYTHON = Path('/usr/bin/python3')
+BASELINES = {
+    '802808b06e6b795064c5065d1d880bae9b193b9a': 'clipboard-updated',
+    '90ba9960744b6cd57caaaf597f68533a7e41be45': 'clipboard-captured',
+}
+CAPTURE_LISTENER = '''
+const done=arguments[arguments.length-1], contract=arguments[0];
+window.__nativeCapturePerf={events:[],arm:null,error:null};
+const handler=window.__TAURI_INTERNALS__.transformCallback(event=>{
+  const arrival=performance.now(), state=window.__nativeCapturePerf, payload=event.payload;
+  const keys=Object.keys(payload??{}).sort();
+  if(contract.keys && (JSON.stringify(keys)!==JSON.stringify(contract.keys) || !Number.isSafeInteger(payload?.id) || payload.id<=0)) {
+    state.error="Capture event violated its metadata contract"; return;
+  }
+  if(contract.host_instance_id && payload.host_instance_id!==contract.host_instance_id) {
+    state.error="Capture event came from a different Host instance"; return;
+  }
+  const observed={id:payload?.id,keys,arrival_ms:arrival};
+  if(contract.host_instance_id) observed.host_instance_id=payload.host_instance_id;
+  state.events.push(observed);
+  if(state.arm && observed.id===state.arm.expectedId && !state.arm.hit) state.arm.hit={...observed,elapsed_ms:arrival-state.arm.start};
+});
+window.__TAURI_INTERNALS__.invoke("plugin:event|listen",{event:contract.event,target:{kind:"Any"},handler}).then(id=>done({ok:true,id})).catch(error=>done({ok:false,error:String(error)}));
+'''
 
 
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def capture_event_contract(event, build_info=None, source_revision=None, host_status=None):
+    if event == 'clipboard-updated':
+        return {'event': event, 'keys': None, 'host_instance_id': None}
+    require(event == 'clipboard-captured', 'Unknown capture event contract')
+    require(isinstance(build_info, dict) and build_info.get('source_revision') == source_revision and
+            isinstance(source_revision, str) and re.fullmatch(r'[0-9a-f]{40}', source_revision), 'Actual GUI build revision differs from its proof')
+    inventory = build_info.get('linked_components')
+    require(isinstance(inventory, list) and all(isinstance(item, dict) and isinstance(item.get('component'), str) for item in inventory), 'Actual GUI component inventory is missing')
+    components = [item['component'] for item in inventory]
+    expected = {'dzc-core', 'dzc-platform', 'dzc-protocol'}
+    require(len(components) == len(set(components)) and set(components) in (expected, expected | {'dzc-host'}), 'Unknown actual GUI component inventory')
+    host = None
+    if 'dzc-host' in components:
+        state = host_status.get('state') if isinstance(host_status, dict) else None
+        host = state.get('service_instance_id') if isinstance(state, dict) else None
+        require(isinstance(host, str) and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', host), 'Actual GUI Host identity is missing')
+    return {'event': event, 'keys': ['host_instance_id', 'id'] if host else ['id'], 'host_instance_id': host}
+
+
+def validated_listener_events(snapshot):
+    require(isinstance(snapshot, dict) and isinstance(snapshot.get('events'), list), 'Native event listener state is missing')
+    require(not snapshot.get('error'), snapshot.get('error'))
+    return snapshot['events']
 
 
 def digest(path):
@@ -223,6 +271,12 @@ def load_proof(path, gui, cli):
     return value
 
 
+def baseline_contract(proof, revision):
+    require(revision in BASELINES, 'Select an explicitly supported full baseline revision')
+    require(proof.get('source_revision') == revision, 'Baseline proof differs from the explicitly selected source')
+    return {'source_revision': revision, 'event': BASELINES[revision]}
+
+
 def request(port, route, payload=None, method=None):
     data = json.dumps(payload).encode() if payload is not None else None
     query = Request(f'http://127.0.0.1:{port}/{route}', data=data, method=method, headers={'Content-Type': 'application/json'})
@@ -401,19 +455,15 @@ def inside(root, plan, block):
         require(Path(data_path).resolve() == database.parent, 'Actual GUI opened a different profile than its CLI bootstrap')
         driver.invoke('focus_clipboard_window')
         evidence['gui'] = {'data_path': data_path, 'version': driver.invoke('plugin:app|version')}
-        event_name = 'clipboard-updated' if block['variant'] == 'old' else 'clipboard-captured'
-        listener = request(driver.port, driver.route + '/execute/async', {'script': '''
-const done=arguments[arguments.length-1], name=arguments[0], metadataOnly=arguments[1];
-window.__nativeCapturePerf={events:[],arm:null,error:null};
-const handler=window.__TAURI_INTERNALS__.transformCallback(event=>{
-  const arrival=performance.now(), state=window.__nativeCapturePerf, payload=event.payload;
-  const keys=Object.keys(payload??{}).sort();
-  if(metadataOnly && (keys.length!==1||keys[0]!=="id")) state.error="Capture event contained more than an ID";
-  const observed={id:payload?.id,keys,arrival_ms:arrival}; state.events.push(observed);
-  if(state.arm && observed.id===state.arm.expectedId && !state.arm.hit) state.arm.hit={...observed,elapsed_ms:arrival-state.arm.start};
-});
-window.__TAURI_INTERNALS__.invoke("plugin:event|listen",{event:name,target:{kind:"Any"},handler}).then(id=>done({ok:true,id})).catch(error=>done({ok:false,error:String(error)}));
-''', 'args': [event_name, block['variant'] == 'candidate']})
+        event_name = plan['baseline']['event'] if block['variant'] == 'old' else 'clipboard-captured'
+        build_info = driver.invoke('get_build_info') if event_name == 'clipboard-captured' else None
+        inventory = build_info.get('linked_components') if isinstance(build_info, dict) else None
+        has_host = isinstance(inventory, list) and any(isinstance(item, dict) and item.get('component') == 'dzc-host' for item in inventory)
+        host_status = driver.invoke('get_clipboard_host_status') if has_host else None
+        contract = capture_event_contract(event_name, build_info, plan['source_revisions'][block['variant']], host_status)
+        evidence['gui'].update(build_info=build_info, initial_host_status=host_status)
+        evidence['event_contract'] = contract
+        listener = request(driver.port, driver.route + '/execute/async', {'script': CAPTURE_LISTENER, 'args': [contract]})
         require(listener.get('ok'), 'Actual event listener could not register')
         evidence['event'] = event_name
         time.sleep(1)
@@ -461,9 +511,9 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|listen",{event:name,target:{kind
             evidence['final_rows'] = connection.execute('SELECT count(*) FROM clipboard_history').fetchone()[0]
             require(evidence['final_rows'] == block['rows'] + len(plan['cases']) * (plan['warmup'] + plan['samples']), 'Final history row count differs')
             require(connection.execute('PRAGMA quick_check').fetchone()[0] == 'ok', 'Post-capture SQLite integrity failed')
-        evidence['events'] = driver.execute('return window.__nativeCapturePerf.events;')
         screenshot = request(driver.port, driver.route + '/screenshot')
         (directory / 'desktop.png').write_bytes(base64.b64decode(screenshot))
+        evidence['events'] = validated_listener_events(driver.execute('return {events:window.__nativeCapturePerf.events,error:window.__nativeCapturePerf.error};'))
         evidence['status'] = 'passed'
     except BaseException as error:
         evidence.update(status='failed', failure={'type': type(error).__name__, 'message': str(error)}, timing_eligible=False)
@@ -542,7 +592,7 @@ def outside(options):
             driver = regular(Path(options.webkit_driver))
             proof_paths = [('old', options.old_proof)] + ([] if options.baseline_only else [('candidate', options.candidate_proof)])
             proofs = {variant: load_proof(regular(Path(proof)), inputs['old-gui' if variant == 'old' else 'candidate-gui'], inputs['old-cli' if variant == 'old' else 'writer']) for variant, proof in proof_paths}
-            require(proofs['old']['source_revision'] == '802808b06e6b795064c5065d1d880bae9b193b9a', 'Baseline must be the exact archived 802808b source')
+            report['baseline'] = baseline_contract(proofs['old'], options.baseline_revision)
             if options.baseline_only:
                 require(digest(inputs['writer']) == digest(inputs['old-cli']), 'Baseline-only tool checks must explicitly use the proven old CLI writer')
                 report['writer_scope'] = 'Old CLI used only to verify baseline tool functionality; not eligible for comparison.'
@@ -573,6 +623,8 @@ def outside(options):
         if options.mode == 'isolation':
             blocks = [{'name': 'isolation', 'variant': None, 'rows': 0, 'directory': 'isolation'}]
         plan = {'mode': options.mode, 'samples': options.samples, 'warmup': options.warmup, 'cases': options.cases, 'host_namespaces': namespaces(), 'blocks': blocks, 'python_runtime': runtime,
+                'baseline': report.get('baseline'),
+                'source_revisions': {variant: proof['source_revision'] for variant, proof in proofs.items()},
                 'payloads': prepare_payloads(root, options.cases, options.samples + options.warmup) if options.mode != 'isolation' else {}}
         save(root / 'plan.json', plan)
         report['plan_sha256'] = digest(root / 'plan.json')
@@ -665,6 +717,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode', choices=('isolation', 'functional', 'formal'), default='functional')
     parser.add_argument('--baseline-only', action='store_true', help='Functional-only old GUI smoke check using its proven old CLI writer')
+    parser.add_argument('--baseline-revision', choices=BASELINES, default='802808b06e6b795064c5065d1d880bae9b193b9a',
+                        help='Exact supported source revision; event contract is fixed by this selection, not caller-provided')
     parser.add_argument('--python-runtime', type=Path, help='Standalone Python 3.13 prefix, mounted read-only at its real path; actual SQLite must be >= 3.50.4')
     for name in ('old-gui', 'old-cli', 'candidate-gui', 'writer', 'old-proof', 'candidate-proof', 'webkit-driver', 'quiet-window-note'):
         parser.add_argument('--' + name)

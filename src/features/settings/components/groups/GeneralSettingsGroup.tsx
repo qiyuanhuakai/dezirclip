@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import UpdateSettingsSection from "./UpdateSettingsSection";
+import WaylandCapabilitiesSection from "./WaylandCapabilitiesSection";
+import NativeFeatureBoundary from "../NativeFeatureBoundary";
 
 interface LabelWithHintProps {
     label: string;
@@ -116,7 +117,7 @@ const GeneralSettingsGroup = ({
         </div>
         {!collapsed && (
             <div className="group-content">
-                <UpdateSettingsSection t={t} />
+                <WaylandCapabilitiesSection t={t} />
                 <div className="setting-item">
                     <div className="item-label-group">
                         <span className="item-label">{t('autostart')}</span>
@@ -155,6 +156,7 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
+                <NativeFeatureBoundary t={t}>
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('edge_docking')}
@@ -194,6 +196,7 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
+                </NativeFeatureBoundary>
                 <div className="setting-item">
                     <LabelWithHint
                         label={t('disable_webview_gpu')}
