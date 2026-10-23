@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn privacy_epoch_change_stops_a_transfer_between_pipe_chunks() {
         use dzc_core::api::{
-            ClipboardEntry, HistoryService, PrivacyAccessIntent, PrivacySessionCommand,
+            ClipboardEntry, HistoryService, PrivacySessionCommand,
             SensitiveAccess,
         };
         use dzc_core::ports::ClipboardPayload;
@@ -212,8 +212,9 @@ mod tests {
         };
         let permit = history
             .privacy()
-            .authorize_read(
-                PrivacyAccessIntent::SelectedCopy,
+            .authorize_selected_copy(
+                -1,
+                Some("00000000-0000-4000-8000-000000000042"),
                 SensitiveAccess::ExplicitUserAction,
                 None,
                 now(),
@@ -221,7 +222,7 @@ mod tests {
             .unwrap();
         let entry:ClipboardEntry=serde_json::from_value(serde_json::json!({"id":-1,"content_type":"text","content":"private synthetic pipe","preview":"private","source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
         let ClipboardPayload::Private { authorization, .. } = history
-            .session_clipboard_payload_authorized(&entry, &permit, now())
+            .session_clipboard_payload_for_host_authorized(&entry, "00000000-0000-4000-8000-000000000042", &permit, now())
             .unwrap()
         else {
             panic!("Core authorization required")

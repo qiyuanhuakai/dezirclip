@@ -388,7 +388,7 @@ fn process(
     let new_image = entry.id == 0 && entry.content_type == "image";
     let mut removed_ids;
     if persistent {
-        let committed = match store.commit(&prepared) {
+        let (committed, protected) = match store.commit_with_protection(&prepared) {
             Ok(committed) => committed,
             Err(error) => return failure(error),
         };
@@ -400,6 +400,13 @@ fn process(
         }
         prepared.entry.id = committed.id;
         removed_ids = committed.removed_ids;
+        if protected == Some(true) {
+            if !has_sensitive_tag(&prepared.entry.tags) { prepared.entry.tags.push("sensitive".into()); }
+            if decision.action != PrivacyAction::Encrypt {
+                evidence.push(PrivacyEvidence::new(EvidenceSource::ExistingRecord, EvidenceLevel::Explicit, PrivacyReason::ExistingRecordProtected));
+                decision = PrivacyPolicy.decide(evidence.clone());
+            }
+        }
     } else {
         let entry = &mut prepared.entry;
         if let Err(error) =

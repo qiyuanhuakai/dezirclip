@@ -167,7 +167,13 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(rpmStep, /needs\.create-release\.outputs\.release_id/);
   assert.match(rpmStep, /--jq '\.draft'\)" = true/);
   assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
-  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
+  const identities = workflow.split("  collect-release-identities:")[1]?.split("\n  verify-publish-and-promote:")[0];
+  assert(identities, "publication requires the actual final-package identity workflow");
+  assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
+  assert.match(identities, /uses: \.\/\.github\/workflows\/release-identities\.yml/);
+  assert.match(identities, /source: \$\{\{ github\.sha \}\}/);
+  assert.match(identities, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
+  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities\]/);
 });
 
 test("RPM metadata derives supported preview and stable versions without build metadata precedence", () => {

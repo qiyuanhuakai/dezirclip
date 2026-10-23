@@ -2,6 +2,9 @@
 use serde::{Deserialize, Serialize};
 mod scan;
 pub use scan::{scan_content, ScanBudget, ScanReport};
+pub(crate) use scan::ScanTimer;
+#[cfg(test)]
+pub(crate) use scan::with_scan_clock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

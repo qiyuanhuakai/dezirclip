@@ -831,6 +831,19 @@ impl SqliteClipboardRepository {
         )
     }
 
+    pub(crate) fn save_automatic_capture_with_protection(
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>,
+        attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+        ticket: &crate::api::CaptureTicket,
+        now_ms: i64,
+    ) -> Result<(i64, bool), String> {
+        self.save_capture_guarded_receipt(conn, entry, data_dir, image_hash, attachments, Some((ticket, now_ms)))
+    }
+
     fn save_capture_guarded(
         &self,
         conn: &Connection,
@@ -840,6 +853,31 @@ impl SqliteClipboardRepository {
         attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
         privacy: Option<(&crate::api::CaptureTicket, i64)>,
     ) -> Result<i64, String> {
+        self.save_capture_guarded_receipt(conn, entry, data_dir, image_hash, attachments, privacy).map(|(id, _)| id)
+    }
+
+    fn save_capture_guarded_receipt(
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>,
+        attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+        privacy: Option<(&crate::api::CaptureTicket, i64)>,
+    ) -> Result<(i64, bool), String> {
+        self.save_capture_guarded_receipt_checked(conn, entry, data_dir, image_hash, attachments, privacy, |_| {})
+    }
+
+    fn save_capture_guarded_receipt_checked(
+        &self,
+        conn: &Connection,
+        entry: &ClipboardEntry,
+        data_dir: Option<&std::path::Path>,
+        image_hash: Option<i64>,
+        attachments: Option<&crate::infrastructure::attachments::HtmlAttachmentPlan>,
+        privacy: Option<(&crate::api::CaptureTicket, i64)>,
+        after_commit: impl FnOnce(i64),
+    ) -> Result<(i64, bool), String> {
         crate::database::ensure_writable(conn)?;
         // The receipt must live until the outermost commit, so captures own this transaction.
         if !conn.is_autocommit()
@@ -888,14 +926,19 @@ impl SqliteClipboardRepository {
         if let Some(cleanup) = &mut cleanup {
             cleanup.protect_surviving_references(&transaction)?;
         }
+        // Read final fields under the original write transaction, before another
+        // process can replace this record or change its protection after commit.
+        let protected = transaction.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[id],|row|row.get::<_,bool>(0))
+            .map_err(|error|error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
+        after_commit(id);
         if let Some(created) = created {
             created.keep();
         }
         if cleanup.is_some_and(|cleanup| !cleanup.finish().is_empty()) {
             return Err("ProtectedAttachmentCleanupIncomplete".into());
         }
-        Ok(id)
+        Ok((id, protected))
     }
 
     fn save_entry_with_policy(
@@ -2350,6 +2393,27 @@ mod tests {
             params![content, app, ts, preview],
         )
         .expect("insert failed");
+    }
+
+    #[test]
+    fn capture_receipt_keeps_original_transaction_protection_when_a_peer_rewrites_after_commit() {
+        let directory=std::env::temp_dir().join(format!("dzc-capture-receipt-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();let path=directory.join("synthetic.db");
+        let mut writer=Connection::open(&path).unwrap();run_migrations(&mut writer).unwrap();
+        let shared=Arc::new(Mutex::new(writer));let repo=SqliteClipboardRepository::new(shared.clone());
+        let ticket=repo.privacy_service().capture_ticket(1).unwrap();
+        let peer=Connection::open(&path).unwrap();super::super::migrations::configure_privacy_writer(&peer).unwrap();
+        let entry:ClipboardEntry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic original private","preview":"private","source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap();
+        let conn=shared.lock().unwrap();
+        let (id,protected)=repo.save_capture_guarded_receipt_checked(&conn,&entry,None,None,None,Some((&ticket,1)),|id| {
+            peer.execute("UPDATE clipboard_history SET content='later ordinary value',preview='ordinary',tags='[]' WHERE id=?1",[id]).unwrap();
+        }).unwrap();
+        assert!(protected,"receipt must describe the original committed transaction");
+        let current:bool=peer.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[id],|row|row.get(0)).unwrap();
+        assert!(!current,"independent connection rewrote the row before the receipt returned");
+        drop(conn);
+        assert!(repo.privacy_service().check_capture(&ticket,1).is_err());
+        drop(peer);drop(repo);drop(shared);std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

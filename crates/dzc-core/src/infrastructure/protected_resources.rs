@@ -255,7 +255,7 @@ pub fn thumbnail_html(html: &str, maximum: u32) -> Result<String, String> {
 mod tests {
     use super::*;
     use crate::api::{
-        BackupService, ClipboardEntry, HistoryService, ImportMode, PrivacyAccessIntent,
+        BackupService, ClipboardEntry, HistoryService, ImportMode,
         PrivacyError, PrivacySessionCommand, SensitiveAccess,
     };
     use crate::infrastructure::repository::migrations;
@@ -281,11 +281,12 @@ mod tests {
         fn entry(&self, kind: &str, content: String) -> ClipboardEntry {
             serde_json::from_value(serde_json::json!({"id":0,"content_type":kind,"content":content,"preview":"private summary","source_app":"Synthetic","timestamp":1,"is_pinned":false,"tags":["sensitive"]})).unwrap()
         }
-        fn permit(&self) -> crate::api::PrivacyReadPermit {
+        fn permit(&self, id: i64) -> crate::api::PrivacyReadPermit {
             self.history
                 .privacy()
-                .authorize_read(
-                    PrivacyAccessIntent::SelectedCopy,
+                .authorize_selected_copy(
+                    id,
+                    None,
                     SensitiveAccess::ExplicitUserAction,
                     None,
                     1,
@@ -355,7 +356,7 @@ mod tests {
                 .unwrap(),
             0
         );
-        let permit = fixture.permit();
+        let permit = fixture.permit(ids[2]);
         let preview = fixture
             .history
             .get_entry_for_preview_authorized(ids[2], &permit, 1)
@@ -474,7 +475,7 @@ mod tests {
             .unwrap();
         let entry = restored
             .history
-            .get_entry_authorized(id, &restored.permit(), 1)
+            .get_entry_authorized(id, &restored.permit(id), 1)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -488,7 +489,7 @@ mod tests {
         let mut entry = fixture.entry("text", "ordinary before protection".into());
         entry.tags.clear();
         let id = fixture.history.save(&entry, None).unwrap();
-        let permit = fixture.permit();
+        let permit = fixture.permit(id);
         let ticket = fixture.history.privacy().capture_ticket(1).unwrap();
         fixture
             .history
@@ -719,8 +720,9 @@ mod tests {
         let denied = fixture
             .history
             .privacy()
-            .authorize_read(
-                PrivacyAccessIntent::SelectedCopy,
+            .authorize_selected_copy(
+                id,
+                None,
                 SensitiveAccess::Denied,
                 None,
                 1,
@@ -733,7 +735,7 @@ mod tests {
                 .unwrap_err(),
             PrivacyError::SensitiveAccessDenied
         );
-        let permit = fixture.permit();
+        let permit = fixture.permit(id);
         let crate::ports::ClipboardPayload::Private {
             payload,
             authorization,

@@ -271,6 +271,8 @@ export const en = {
         sequential_paste_mode: "Sequential Paste Mode",
         sequential_paste_hint: "When enabled, pasting with the dedicated hotkey (e.g. {hotkey}) will paste items in the order they were copied. Starting a new copy sequence automatically resets the queue.",
         sequential_paste_queue_empty: "The paste queue is empty. Copy a few items first, then use the sequential paste hotkey",
+        sequential_paste_queue_unavailable: "Sequential paste did not complete. The item remains in the queue",
+        sequential_paste_history_update_failed: "Paste completed, but history could not be updated. Please check the entry",
         sequential_paste_queue_count: "{count} waiting",
         sequential_paste_clear_queue: "Clear queue",
         sequential_paste_hotkey_label: "Sequential Paste Hotkey",

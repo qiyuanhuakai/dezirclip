@@ -59,18 +59,12 @@ pub async fn open_content(
     use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
     let history = state.history_service();
     let now = || chrono::Utc::now().timestamp_millis();
-    let permit = history
-        .privacy()
-        .authorize_read(
-            PrivacyAccessIntent::SelectedCopy,
-            if expected_privacy_epoch.is_some() {
-                SensitiveAccess::ExplicitUserAction
-            } else {
-                SensitiveAccess::Denied
-            },
-            expected_privacy_epoch,
-            now(),
-        )
+    let sensitive = if expected_privacy_epoch.is_some() { SensitiveAccess::ExplicitUserAction } else { SensitiveAccess::Denied };
+    let permit = if id > 0 {
+        history.privacy().authorize_selected_copy(id, None, sensitive, expected_privacy_epoch, now())
+    } else {
+        history.privacy().authorize_read(PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied, expected_privacy_epoch, now())
+    }
         .map_err(|error| AppError::Validation(error.to_string()))?;
     let entry = if id > 0 {
         history
@@ -91,7 +85,7 @@ pub async fn open_content(
             .authorize_session_entry(&entry, &permit, now())
             .map_err(|error| AppError::Validation(error.to_string()))?
     } else {
-        serde_json::from_value(serde_json::json!({"id":-1,"content_type":content_type,"content":content,"preview":"","source_app":"Manual","timestamp":now(),"is_pinned":false})).map_err(|_|AppError::Validation("PrivateExportRejected".into()))?
+        serde_json::from_value(serde_json::json!({"id":0,"content_type":content_type,"content":content,"preview":"","source_app":"Manual","timestamp":now(),"is_pinned":false})).map_err(|_|AppError::Validation("PrivateExportRejected".into()))?
     };
     let content_type = entry.content_type.clone();
     let app_path = get_app_path_for_content_type(&state, &content_type)?;
@@ -108,7 +102,7 @@ pub async fn open_content(
     let export = if id > 0 {
         history.external_files_authorized(id, &permit, now())
     } else {
-        history.session_external_files_authorized(&entry, &permit, now())
+        history.generated_external_files_authorized(&entry, &permit, now())
     }
     .map_err(|error| AppError::Validation(error.to_string()))?;
     let lease = dzc_platform::runtime::private_file_export(export)
@@ -607,7 +601,7 @@ mod authorization_tests {
     }
 
     fn permit(history:&dzc_core::api::HistoryService,now:i64)->dzc_core::api::PrivacyReadPermit {
-        history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,dzc_core::api::SensitiveAccess::Denied,None,now).unwrap()
+        history.privacy().authorize_selected_copy(1,None,dzc_core::api::SensitiveAccess::Denied,None,now).unwrap()
     }
 
     fn uses(connection:&Arc<Mutex<rusqlite::Connection>>)->i32 {

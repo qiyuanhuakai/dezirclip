@@ -239,6 +239,7 @@ impl Host {
         if let Some(platform) = platform.as_object_mut() {
             if can(Permission::DesktopHistory) && session.role()==ClientRole::Desktop {
                 platform.insert("desktop_generated_copy".into(),serde_json::json!({"supported":self.actions.can_copy(),"version":1}));
+                platform.insert("desktop_queue_completion".into(),serde_json::json!({"supported":true,"version":1}));
             }
             platform.insert("service_start".into(),serde_json::json!({"supported":service_transition,
                 "reason":if service_transition {"available"} else {"process_exit_observation_unavailable"}}));
@@ -375,11 +376,11 @@ impl Host {
                 if request.method == Method::SurfacePaste { session.require(Permission::ClipboardPaste)?; if !self.actions.can_paste() { return Err(WireErrorCode::Unavailable); } }
                 let request_body: ClipboardCopyParams = params(request.params)?;
                 if request_body.id<0 && request_body.service_instance_id.as_deref()!=Some(self.instance.as_str()) {return Err(WireErrorCode::PrivacyBlocked);}
-                let permit = self.history.privacy().authorize_read(PrivacyAccessIntent::SelectedCopy, SensitiveAccess::Denied, None, now).map_err(privacy_error)?;
+                let permit = self.history.privacy().authorize_selected_copy(request_body.id, request_body.service_instance_id.as_deref(), SensitiveAccess::Denied, None, now).map_err(privacy_error)?;
                 let payload = if request_body.id < 0 {
                     let entries = self.session.lock().map_err(unavailable)?;
                     let entry = entries.iter().find(|entry| entry.id == request_body.id).ok_or(WireErrorCode::NotFound)?;
-                    self.history.session_clipboard_payload_authorized(entry, &permit, now).map_err(privacy_error)?
+                    self.history.session_clipboard_payload_for_host_authorized(entry, &self.instance, &permit, now).map_err(privacy_error)?
                 } else { self.history.clipboard_payload_authorized(request_body.id, &permit, now).map_err(privacy_error)? };
                 self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
                 self.copy_payload(payload)?;

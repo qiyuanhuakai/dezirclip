@@ -404,7 +404,7 @@ fn assess_entry_with_plan(
         PrivacyScanStatus::NotApplicable
     } else {
         let budget = ScanBudget::default();
-        let started = std::time::Instant::now();
+        let started = crate::privacy::ScanTimer::start();
         for field in fields {
             let duration = budget.max_duration.saturating_sub(started.elapsed());
             let remaining = budget.max_bytes.saturating_sub(scanned_bytes);

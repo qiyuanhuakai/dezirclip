@@ -165,7 +165,7 @@ pub async fn copy_to_clipboard(
         return Ok(());
     }
     let operation_permission=if let Some(epoch)=expected_privacy_epoch {
-        Some(state.history_service().privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
+        Some(state.history_service().privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::GeneratedCopy,dzc_core::api::SensitiveAccess::Denied,Some(epoch),chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?)
     } else {None};
     let generated_ticket = if paste_image_as_base64.unwrap_or(false) || derived_from_id.is_some() {
         crate::services::clipboard::generated_capture_ticket(&app_handle).await?
@@ -186,23 +186,23 @@ pub async fn copy_to_clipboard(
     let mut private_payload=None;
     if id != 0 {
         let sensitive=if expected_privacy_epoch.is_some() { dzc_core::api::SensitiveAccess::ExplicitUserAction } else { dzc_core::api::SensitiveAccess::Denied };
-        let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+        let permit=history.privacy().authorize_selected_copy(id,expected_host_instance_id.as_deref(),sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
         let entry=if id>0 { history.get_entry_authorized(id,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.ok_or_else(||AppError::Validation("SensitiveAccessDenied".into()))? }
             else {
                 let entry=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
-                history.authorize_session_entry(&entry,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?
+                history.authorize_session_entry_for_host(&entry,&bridge.instance().map_err(AppError::Validation)?,&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?
             };
         content=entry.content.clone();html_content=entry.html_content.clone();content_type=entry.content_type.clone();
-        let payload=if id>0 { history.clipboard_payload_authorized(id,&permit,chrono::Utc::now().timestamp_millis()) } else { history.session_clipboard_payload_authorized(&entry,&permit,chrono::Utc::now().timestamp_millis()) }.map_err(|error|AppError::Validation(error.to_string()))?;
+        let payload=if id>0 { history.clipboard_payload_authorized(id,&permit,chrono::Utc::now().timestamp_millis()) } else { history.session_clipboard_payload_for_host_authorized(&entry,&bridge.instance().map_err(AppError::Validation)?,&permit,chrono::Utc::now().timestamp_millis()) }.map_err(|error|AppError::Validation(error.to_string()))?;
         if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}|dzc_core::ports::ClipboardPayload::ProtectedFiles{..}) { private_payload=Some(payload); }
         read_permit=Some(permit);
     } else if let Some(source_id)=derived_from_id {
         if source_id==0 || !matches!(content_type.as_str(),"text"|"code"|"url"|"rich_text") { return Err(AppError::Validation("DerivedPayloadKindRejected".into())); }
         let sensitive=if expected_privacy_epoch.is_some(){dzc_core::api::SensitiveAccess::ExplicitUserAction}else{dzc_core::api::SensitiveAccess::Denied};
-        let permit=history.privacy().authorize_read(dzc_core::api::PrivacyAccessIntent::SelectedCopy,sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+        let permit=history.privacy().authorize_selected_copy(source_id,expected_host_instance_id.as_deref(),sensitive,expected_privacy_epoch,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
         let payload=if source_id>0 {history.derived_text_payload_authorized(source_id,content.clone(),&permit,chrono::Utc::now().timestamp_millis())} else {
             let source=session.0.lock().map_err(|_|AppError::Internal("PrivacyStateUnavailable".into()))?.iter().find(|entry|entry.id==source_id).cloned().ok_or_else(||AppError::Validation("ClipboardRecordUnavailable".into()))?;
-            history.session_derived_text_payload_authorized(&source,content.clone(),&permit,chrono::Utc::now().timestamp_millis())
+            history.session_derived_text_payload_for_host_authorized(&source,&bridge.instance().map_err(AppError::Validation)?,content.clone(),&permit,chrono::Utc::now().timestamp_millis())
         }.map_err(|error|AppError::Validation(error.to_string()))?;
         if matches!(payload,dzc_core::ports::ClipboardPayload::Private{..}){ private_payload=Some(payload); }
         read_permit=Some(permit);

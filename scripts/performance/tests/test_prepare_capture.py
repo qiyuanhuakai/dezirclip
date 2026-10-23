@@ -34,7 +34,7 @@ def messages(*items):
 
 
 class PreparationTests(unittest.TestCase):
-    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False, privacy_contract=False):
+    def prepare(self, stale=False, cargo_target=HOST, bad_artifact=False, workspace_baseline=False, privacy_contract=False, protection_report=False):
         contract = 2 if privacy_contract is True else privacy_contract or 1
         temporary = tempfile.TemporaryDirectory(prefix="dzc-prepare-artifact-test-")
         self.addCleanup(temporary.cleanup)
@@ -46,6 +46,8 @@ class PreparationTests(unittest.TestCase):
         if privacy_contract:
             with (core / "Cargo.toml").open("a") as stream:
                 stream.write(f'\n[package.metadata.dzc]\ncapture-contract={contract}\n')
+                if protection_report:
+                    stream.write('capture-protection-report=true\n')
         (root / "Cargo.toml").write_text('[workspace]\nmembers=["crates/dzc-core"]\n[workspace.dependencies]\nrusqlite={git="' + SQLITE_GIT + '",rev="' + SQLITE_REV + '",features=["bundled","functions"]}\n')
         (root / "Cargo.lock").write_text(lock)
         # This conflicting config and environment must not redirect a native
@@ -137,10 +139,13 @@ class PreparationTests(unittest.TestCase):
                 self.assertEqual(dependency, {"git": SQLITE_GIT, "rev": SQLITE_REV, "features": ["bundled", "functions"]})
             self.assertEqual(record["role"], "baseline" if variant == "legacy" else "candidate")
             self.assertEqual(record["capture_contract"], contract if privacy_contract and variant != "legacy" else 1)
+            self.assertEqual(record["capture_protection_report"], protection_report and variant != "legacy")
             if privacy_contract and variant == "engine":
                 expected_features = ["engine", "privacy-runtime"]
                 if contract >= 3:
                     expected_features.append("privacy-policy")
+                if protection_report:
+                    expected_features.append("capture-protection-report")
                 self.assertEqual(record["features"], [*expected_features, "legacy-layout"])
             elif variant != "engine":
                 self.assertNotIn("privacy-runtime", record["features"])
@@ -181,8 +186,29 @@ class PreparationTests(unittest.TestCase):
     def test_policy_contract_selects_and_records_both_source_and_content_delegation(self):
         self.prepare(privacy_contract=3)
 
+    def test_committed_protection_receipt_is_enabled_only_for_the_declared_candidate(self):
+        self.prepare(privacy_contract=3, protection_report=True)
+
 
 class CaptureContractTests(unittest.TestCase):
+    def test_protection_receipt_requires_an_explicit_supported_boolean_capability(self):
+        with tempfile.TemporaryDirectory(prefix="dzc-capture-receipt-") as directory:
+            source = Path(directory)
+            manifest = source / "Cargo.toml"
+            manifest.write_text('[package.metadata.dzc]\ncapture-contract=3\n')
+            self.assertFalse(PREPARE.capture_protection_report("dzc-core", source))
+            for value, expected in [("true", True), ("false", False), ("1", None), ('"true"', None)]:
+                manifest.write_text('[package.metadata.dzc]\ncapture-contract=3\ncapture-protection-report=' + value + '\n')
+                if expected is None:
+                    with self.assertRaisesRegex(ValueError, "Unsupported Core capture protection receipt"):
+                        PREPARE.capture_protection_report("dzc-core", source)
+                else:
+                    self.assertEqual(PREPARE.capture_protection_report("dzc-core", source), expected)
+            manifest.write_text('[package.metadata.dzc]\ncapture-contract=2\ncapture-protection-report=true\n')
+            with self.assertRaisesRegex(ValueError, "Unsupported Core capture protection receipt"):
+                PREPARE.capture_protection_report("dzc-core", source)
+            self.assertFalse(PREPARE.capture_protection_report("dezirclip", source))
+
     def test_only_explicit_supported_integer_contracts_select_the_adapter(self):
         with tempfile.TemporaryDirectory(prefix="dzc-capture-contract-") as directory:
             source = Path(directory)

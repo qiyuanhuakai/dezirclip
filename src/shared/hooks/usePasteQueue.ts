@@ -70,6 +70,13 @@ export const usePasteQueue = ({ t, pushToast }: UsePasteQueueOptions) => {
         const unlisteners = [
             listen("queue-item-pasted", () => refresh()),
             listen("queue-finished", () => refresh()),
+            listen<string>("paste-queue-unavailable", (event) => {
+                if (event.payload === "PasteQueueBusy") return;
+                refresh();
+                const pasted = typeof event.payload === "string"
+                    && event.payload.startsWith("PasteCompletedMetadataUpdateFailed:");
+                pushToast(t(pasted ? "sequential_paste_history_update_failed" : "sequential_paste_queue_unavailable"));
+            }),
             listen<number>("paste-queue-changed", (event) => {
                 applyCount(event.payload);
             }),

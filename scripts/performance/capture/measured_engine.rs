@@ -77,6 +77,10 @@ impl<T: CaptureStore> CaptureStore for TimedStore<T> {
     fn commit(&self, capture: &PreparedCapture) -> Result<CaptureCommit, CaptureFailure> {
         self.timed("commit_ms", || self.actual.commit(capture))
     }
+    #[cfg(feature = "capture-protection-report")]
+    fn commit_with_protection(&self, capture: &PreparedCapture) -> Result<(CaptureCommit, Option<bool>), CaptureFailure> {
+        self.timed("commit_ms", || self.actual.commit_with_protection(capture))
+    }
 }
 #[derive(Default)]
 struct Events {
