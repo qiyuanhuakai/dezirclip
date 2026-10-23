@@ -86,9 +86,13 @@ impl Host {
         if request.service_instance_id!=self.snapshot()?.service_instance_id {return Err(WireErrorCode::PrivacyBlocked);}
         let now=crate::router::now_ms()?;
         let completed_copy=request.action=="used";
-        let permit=self.history.privacy().authorize_read(if completed_copy{PrivacyAccessIntent::SelectedCopy}else{PrivacyAccessIntent::InteractiveRead},if request.reveal && !completed_copy{SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
+        if completed_copy && (request.id<=0 || request.reveal || request.content.is_some() || request.tags.is_some() || request.pinned.is_some() || request.confirm_persistence.is_some()) {return Err(WireErrorCode::InvalidRequest);}
+        let permit=if completed_copy {
+            self.history.privacy().authorize_selected_copy(request.id,Some(&request.service_instance_id),SensitiveAccess::Denied,Some(request.expected_epoch),now)
+        } else {
+            self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead,if request.reveal {SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now)
+        }.map_err(denied)?;
         if completed_copy {
-            if request.id<=0 || request.reveal || request.content.is_some() || request.tags.is_some() || request.pinned.is_some() || request.confirm_persistence.is_some() {return Err(WireErrorCode::InvalidRequest);}
             let rows=self.history.query(&dzc_core::api::HistoryQuery{id:Some(request.id),metadata:true,limit:1,..Default::default()}).map_err(|_|WireErrorCode::Unavailable)?;
             if rows.is_empty() {return Err(WireErrorCode::NotFound);}
             self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
