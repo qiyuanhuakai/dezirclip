@@ -1,8 +1,9 @@
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, lstatSync, realpathSync,
+  openSync, closeSync, fstatSync, readSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const repository = 'qiyuanhuakai/dezirclip';
@@ -133,6 +134,63 @@ export function shouldPromote(current, candidate) {
   return !current || compareVersions(candidate, current) > 0;
 }
 
+const acceptanceGates = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
+const assetIdentity = assets => !Array.isArray(assets) || assets.length !== 8 ? null : JSON.stringify(
+  assets.map(asset => ({ name: asset.name, id: asset.id, size: asset.size,
+    updated_at: asset.updated_at, sha256: asset.sha256 })).sort((a, b) => a.name.localeCompare(b.name)));
+
+function readEvidenceJson(path) {
+  let descriptor;
+  try {
+    const info = lstatSync(path);
+    if (!info.isFile() || info.isSymbolicLink() || info.size === 0 || info.size > 8 * 1024 * 1024) throw new Error();
+    descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const unchanged = observed => observed.isFile() && !observed.isSymbolicLink()
+      && observed.dev === info.dev && observed.ino === info.ino && observed.size === info.size
+      && observed.mtimeMs === info.mtimeMs && observed.ctimeMs === info.ctimeMs;
+    if (!unchanged(fstatSync(descriptor))) throw new Error();
+    const buffer = Buffer.alloc(info.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const count = readSync(descriptor, buffer, length, buffer.length - length, null);
+      if (!count) break;
+      length += count;
+    }
+    if (length !== info.size || !unchanged(fstatSync(descriptor)) || !unchanged(lstatSync(path))) throw new Error();
+    const bytes = buffer.subarray(0, length);
+    return { value: JSON.parse(bytes.toString('utf8')), sha256: createHash('sha256').update(bytes).digest('hex') };
+  } catch { throw new Error('Public acceptance report is missing, malformed or changed'); }
+  finally { if (descriptor !== undefined) closeSync(descriptor); }
+}
+
+function acceptanceBundle(path) {
+  if (typeof path !== 'string' || !path) throw new Error('Promotion requires an acceptance bundle path');
+  const file = resolve(path);
+  const root = realpathSync(dirname(file));
+  const acceptance = readEvidenceJson(file).value;
+  const reports = {};
+  for (const gate of acceptanceGates) {
+    const reference = acceptance.gates?.[gate];
+    const name = reference?.file;
+    if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.json$/.test(name)
+        || typeof reference.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(reference.sha256)) {
+      throw new Error('Promotion requires completed public acceptance report files');
+    }
+    const report = readEvidenceJson(join(root, name));
+    if (report.sha256 !== reference.sha256 || report.value?.status !== 'passed'
+        || report.value.schema_version !== 1 || report.value.kind !== gate
+        || report.value.version !== acceptance.version || report.value.source_revision !== acceptance.source_revision
+        || report.value.release_id !== acceptance.release_id
+        || assetIdentity(report.value.signed_assets) !== assetIdentity(acceptance.signed_assets)
+        || !Array.isArray(report.value.checks) || report.value.checks.length === 0
+        || report.value.checks.some(check => !check || typeof check.name !== 'string' || !check.name.trim() || check.status !== 'passed')) {
+      throw new Error('Promotion requires matching passed public acceptance reports');
+    }
+    reports[gate] = report.sha256;
+  }
+  return { acceptance, reports };
+}
+
 function gh(args, binary = false) {
   return execFileSync('gh', args, { encoding: binary ? undefined : 'utf8',
     maxBuffer: 1024 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -179,7 +237,7 @@ function githubClient(transport) {
   return { releaseByTag, downloadAsset, moveAsset, releaseCommit };
 }
 
-function publication(mode, version, config, log, transport, acceptance) {
+function publication(mode, version, config, log, transport, bundle) {
   const client = githubClient(transport);
   const parsed = parseVersion(version);
   const tag = `v${parsed.value}`;
@@ -201,15 +259,12 @@ function publication(mode, version, config, log, transport, acceptance) {
   const receipt = { schema_version: 1, version: parsed.value, source_revision: commit,
     release_id: release.id, signed_assets: signedAssets };
   if (mode === 'promote') {
-    const assetIdentity = assets => !Array.isArray(assets) || assets.length !== 8 ? null : JSON.stringify(
-      assets.map(asset => ({ name: asset.name, id: asset.id, size: asset.size,
-        updated_at: asset.updated_at, sha256: asset.sha256 })).sort((a, b) => a.name.localeCompare(b.name)));
+    const acceptance = bundle?.acceptance;
     if (acceptance?.status !== 'passed' || acceptance.schema_version !== 1
         || acceptance.version !== receipt.version || acceptance.source_revision !== commit
         || acceptance.release_id !== release.id
         || assetIdentity(acceptance.signed_assets) !== assetIdentity(signedAssets)
-        || ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'].some(
-          gate => typeof acceptance.gates?.[gate] !== 'string' || !/^[a-f0-9]{64}$/.test(acceptance.gates[gate]))) {
+        || acceptanceGates.some(gate => bundle.reports[gate] !== acceptance.gates?.[gate]?.sha256)) {
       throw new Error('Promotion requires matching completed public acceptance evidence');
     }
   }
@@ -286,8 +341,8 @@ export function publishOnly(version, config, log = console.log, transport = gh) 
   return publication('publish-only', version, config, log, transport);
 }
 
-export function promote(version, config, acceptance, log = console.log, transport = gh) {
-  return publication('promote', version, config, log, transport, acceptance);
+export function promote(version, config, acceptancePath, log = console.log, transport = gh) {
+  return publication('promote', version, config, log, transport, acceptanceBundle(acceptancePath));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -301,6 +356,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.log('Updater signing configuration is ready.');
   } else if (mode === 'publish-only') publishOnly(version, config);
   else if (mode === 'promote' && acceptancePath) {
-    promote(version, config, JSON.parse(readFileSync(acceptancePath, 'utf8')));
+    promote(version, config, acceptancePath);
   } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json');
 }

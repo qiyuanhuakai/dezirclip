@@ -1,12 +1,42 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync, symlinkSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, promote, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
+import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
 
-const accepted = receipt => ({ ...receipt, status: 'passed', gates: Object.fromEntries(
-  ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'].map(gate => [gate, 'b'.repeat(64)])) });
+const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
+const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
+  version: receipt.version, source_revision: receipt.source_revision, release_id: receipt.release_id,
+  signed_assets: receipt.signed_assets, checks: [{ name: `synthetic-${kind}`, status: 'passed' }] });
+const reportBytes = (receipt, gate) => Buffer.from(JSON.stringify(gateReport(receipt, gate)));
+const accepted = receipt => ({ ...receipt, status: 'passed', gates: Object.fromEntries(gateNames.map(gate => [gate,
+  { file: `${gate}.json`, sha256: createHash('sha256').update(reportBytes(receipt, gate)).digest('hex') }])) });
+function promote(version, config, receipt, log, transport, options = {}) {
+  const directory = mkdtempSync(join(tmpdir(), 'dezirclip-acceptance-test-'));
+  try {
+    for (const gate of gateNames) {
+      if (options.missing === gate) continue;
+      const report = gateReport(receipt, gate);
+      if (options.failed === gate) report.status = 'failed';
+      if (options.wrongSource === gate) report.source_revision = 'd'.repeat(40);
+      if (options.changeReport && gate === 'performance') options.changeReport(report);
+      const bytes = options.rawReport && gate === 'performance'
+        ? options.rawReport : Buffer.from(JSON.stringify(report));
+      writeFileSync(join(directory, `${gate}.json`), bytes);
+      if (options.rehash && receipt.gates?.[gate]) receipt.gates[gate].sha256 = createHash('sha256').update(bytes).digest('hex');
+    }
+    const path = join(directory, 'acceptance.json');
+    writeFileSync(path, JSON.stringify(receipt));
+    options.setup?.(directory, path);
+    return promoteFile(version, config, path, log, transport);
+  } finally {
+    assert.equal(dirname(resolve(directory)), resolve(tmpdir()));
+    assert(basename(directory).startsWith('dezirclip-acceptance-test-'));
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
 function publish(version, config, log, transport) {
   const receipt = publishOnly(version, config, log, transport);
   return promote(version, config, accepted(receipt), log, transport);
@@ -289,7 +319,10 @@ test('publish-only verifies and publishes without any channel lookup or mutation
 
 test('promotion refuses a draft product or incomplete public acceptance before channel writes', () => {
   const draft = publisherFixture();
-  assert.throws(() => promote('0.2.0-alpha.1', draft.config, {}, () => {}, draft.transport), /already published/);
+  const draftReceipt = publishOnly('0.2.0-alpha.1', draft.config, () => {}, draft.transport);
+  draft.state.product.draft = true;
+  draft.state.mutations = [];
+  assert.throws(() => promote('0.2.0-alpha.1', draft.config, accepted(draftReceipt), () => {}, draft.transport), /already published/);
   assert.deepEqual(draft.state.mutations, []);
   for (const change of [
     receipt => receipt,
@@ -300,7 +333,7 @@ test('promotion refuses a draft product or incomplete public acceptance before c
   ]) {
     const fixture = publisherFixture({ published: true, channel: 'published' });
     const receipt = publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport);
-    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, change(receipt), () => {}, fixture.transport), /completed public acceptance/);
+    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, change(receipt), () => {}, fixture.transport), /acceptance/);
     assert.deepEqual(fixture.state.mutations, []);
   }
 });
@@ -333,4 +366,99 @@ test('asset rename during fresh verification prevents promotion even if other me
   assert.throws(() => publish('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport), /assets changed during verification/);
   assert.deepEqual(fixture.state.mutations, []);
   assert.deepEqual(fixture.active('preview.json'), preview);
+});
+
+test('promotion reads gate files and rejects missing, tampered, failed or unbound reports', () => {
+  for (const options of [{ missing: 'performance' }, { failed: 'appimage_updates' },
+    { failed: 'windows_upgrade', rehash: true }, { wrongSource: 'public_assets', rehash: true }]) {
+    const fixture = publisherFixture({ published: true, channel: 'published' });
+    const receipt = accepted(publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport));
+    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, receipt, () => {}, fixture.transport, options));
+    assert.deepEqual(fixture.state.mutations, []);
+    assert.equal(fixture.active('preview.json').version, '0.2.0-alpha.0');
+  }
+});
+
+test('promotion refuses hash-only declarations and paths outside the evidence bundle', () => {
+  for (const reference of ['b'.repeat(64), { file: '../outside.json', sha256: 'b'.repeat(64) },
+    ...['/outside.json', 'nested\\outside.json', 'nested/outside.json', 'C:outside.json',
+      'performance.json:outside.json', '\\\\server\\outside.json', './performance.json', 'performance.json\u0000']
+      .map(file => ({ file, sha256: 'b'.repeat(64) }))]) {
+    const fixture = publisherFixture({ published: true, channel: 'published' });
+    const receipt = accepted(publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport));
+    receipt.gates.performance = reference;
+    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, receipt, () => {}, fixture.transport));
+    assert.deepEqual(fixture.state.mutations, []);
+  }
+});
+
+test('matching hashes cannot approve failed checks or a report for another release identity', () => {
+  for (const changeReport of [
+    report => { report.schema_version = 2; },
+    report => { report.kind = 'public_assets'; },
+    report => { report.version = '0.2.0-alpha.0'; },
+    report => { report.release_id++; },
+    report => { report.signed_assets = report.signed_assets.slice(1); },
+    report => { report.signed_assets = report.signed_assets.map((asset, index) => index ? asset : { ...asset, sha256: '0'.repeat(64) }); },
+    report => { report.checks = []; },
+    report => { report.checks.push({ name: 'failed-native-check', status: 'failed' }); },
+    report => { report.checks[0].status = 'running'; },
+    report => { report.checks[0].name = ''; },
+    report => { report.checks[0].name = '   '; },
+  ]) {
+    const fixture = publisherFixture({ published: true, channel: 'published' });
+    const receipt = accepted(publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport));
+    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, receipt, () => {}, fixture.transport,
+      { changeReport, rehash: true }), /matching passed public acceptance/);
+    assert.deepEqual(fixture.state.mutations, []);
+    assert.equal(fixture.active('preview.json').version, '0.2.0-alpha.0');
+    assert.equal(fixture.active('stable.json').version, '0.1.20');
+  }
+});
+
+test('promotion rejects malformed, oversized or non-file bundle evidence before remote calls', () => {
+  const cases = [
+    { rawReport: Buffer.from('{'), rehash: true },
+    { rawReport: Buffer.from('null'), rehash: true },
+    { rawReport: Buffer.alloc(8 * 1024 * 1024 + 1, 32), rehash: true },
+    { setup: (directory, path) => writeFileSync(path, '{') },
+    { setup: (directory, path) => rmSync(path) },
+    { setup: directory => {
+      const path = join(directory, 'performance.json');
+      rmSync(path);
+      mkdirSync(path);
+    } },
+  ];
+  for (const options of cases) {
+    const fixture = publisherFixture({ published: true, channel: 'published' });
+    const receipt = accepted(publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport));
+    fixture.state.calls = [];
+    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, receipt, () => {}, fixture.transport, options));
+    assert.deepEqual(fixture.state.calls, []);
+    assert.deepEqual(fixture.state.mutations, []);
+  }
+});
+
+test('promotion rejects symbolic links for a gate report or the acceptance file', t => {
+  for (const linkAcceptance of [false, true]) {
+    const fixture = publisherFixture({ published: true, channel: 'published' });
+    const receipt = accepted(publishOnly('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport));
+    fixture.state.calls = [];
+    let unsupported = false;
+    assert.throws(() => promote('0.2.0-alpha.1', fixture.config, receipt, () => {}, fixture.transport, {
+      setup: (directory, acceptancePath) => {
+        const path = linkAcceptance ? acceptancePath : join(directory, 'performance.json');
+        const target = join(directory, 'linked-target.json');
+        writeFileSync(target, readFileSync(path));
+        rmSync(path);
+        try { symlinkSync(target, path, 'file'); }
+        catch (error) {
+          if (process.platform === 'win32' && error.code === 'EPERM') unsupported = true;
+          throw error;
+        }
+      },
+    }));
+    assert.deepEqual(fixture.state.calls, []);
+    if (unsupported) { t.skip('Windows account cannot create file symbolic links; Linux runs this rejection check.'); return; }
+  }
 });
