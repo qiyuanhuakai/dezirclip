@@ -1,5 +1,9 @@
 //! Native clipboard access shared by the standalone CLI and its X11 owner process.
 use serde::{Deserialize, Serialize};
+#[cfg(any(test, target_os = "windows"))]
+mod selection_lease;
+#[cfg(target_os = "windows")]
+mod private_windows;
 #[cfg(target_os = "linux")]
 mod private_x11_files;
 #[cfg(target_os = "linux")]
@@ -41,6 +45,8 @@ pub struct EmbeddedOwner {
     wayland: Option<crate::wayland::WaylandOwner>,
     #[cfg(target_os = "linux")]
     x11_files: Option<private_x11_files::FileOwner>,
+    #[cfg(target_os = "windows")]
+    windows_private: Option<private_windows::Owner>,
     exports: Option<crate::private_files::BoundExport>,
     private: bool,
     stopped: bool,
@@ -78,6 +84,15 @@ impl EmbeddedOwner {
                 .map_err(|error| error.to_string());
         }
         let prepared = prepare_owner_payload(payload)?;
+        #[cfg(target_os = "windows")]
+        {
+            self.release_selection()?;
+            if prepared.private {
+                self.windows_private = Some(private_windows::Owner::start(prepared.payload, prepared.leases, prepared.exports)?);
+                self.private = true;
+                return Ok(());
+            }
+        }
         #[cfg(target_os = "linux")]
         if matches!(&prepared.payload, Payload::Private(inner) if matches!(inner.as_ref(),Payload::Files(_)))
         {
@@ -124,6 +139,12 @@ impl EmbeddedOwner {
         Ok(())
     }
     fn release_selection(&mut self) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        if let Some(owner) = self.windows_private.as_ref() {
+            owner.stop()?;
+            if !owner.is_stopped() { return Err("PrivateClipboardStopNotConfirmed".into()); }
+            self.windows_private = None;
+        }
         #[cfg(target_os = "linux")]
         if let Some(owner) = self.x11_files.as_mut() {
             let result = owner.stop();
@@ -253,7 +274,6 @@ pub(crate) fn prepare_owner_payload(mut payload: Payload) -> Result<PreparedOwne
                 Payload::Files(paths)
             }
             ordinary => {
-                #[cfg(target_os = "linux")]
                 if private && leases.is_empty() {
                     return Err("NativeLeaseOwnerRequired".into());
                 }
@@ -465,19 +485,11 @@ pub fn write_private(
     payload: Payload,
     lease: Option<dzc_core::api::NativeReadLease>,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let lease = lease.ok_or("NativeLeaseOwnerRequired")?;
-        write(Payload::Leased {
-            payload: Box::new(Payload::Private(Box::new(payload))),
-            lease,
-        })
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = lease;
-        write(Payload::Private(Box::new(payload)))
-    }
+    let lease = lease.ok_or("NativeLeaseOwnerRequired")?;
+    write(Payload::Leased {
+        payload: Box::new(Payload::Private(Box::new(payload))),
+        lease,
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -485,6 +497,8 @@ static PRIVATE_OWNERS: std::sync::OnceLock<std::sync::Mutex<Vec<std::process::Ch
     std::sync::OnceLock::new();
 pub(crate) fn revoke_private_owners() -> Result<(), String> {
     revoke_embedded_private_owners()?;
+    #[cfg(target_os = "windows")]
+    private_windows::revoke_all()?;
     #[cfg(target_os = "linux")]
     crate::wayland::revoke_private_owner().map_err(|_| "PrivateExportRevocationUnconfirmed")?;
     #[cfg(target_os = "linux")]
@@ -526,7 +540,11 @@ pub(crate) fn revoke_private_owners() -> Result<(), String> {
 pub fn write(payload: Payload) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        set(&mut open()?, payload)
+        if matches!(&payload, Payload::Private(_) | Payload::Leased { .. } | Payload::LeasedFiles { .. }) {
+            private_windows::write_standalone(payload)
+        } else {
+            set(&mut open()?, payload)
+        }
     }
     #[cfg(target_os = "linux")]
     {
@@ -609,7 +627,14 @@ pub fn write_embedded_with_intent(
     let _ = suppress_recapture;
     #[cfg(target_os = "windows")]
     {
-        write(payload)
+        let prepared = prepare_owner_payload(payload)?;
+        if prepared.private {
+            let owner = private_windows::Owner::start(prepared.payload, prepared.leases, prepared.exports)?;
+            private_windows::retain(owner);
+            Ok(())
+        } else {
+            set(&mut open()?, prepared.payload)
+        }
     }
     #[cfg(target_os = "linux")]
     {
@@ -640,6 +665,8 @@ pub fn write_embedded_with_intent(
 }
 
 pub fn serve_owner() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    { private_windows::serve_owner() }
     #[cfg(target_os = "linux")]
     {
         use x11rb::{connection::Connection, protocol::xproto::ConnectionExt};
@@ -733,15 +760,17 @@ pub fn serve_owner() -> Result<(), String> {
         }
         Ok(())
     }
-    #[cfg(target_os = "windows")]
-    {
-        Err("clipboard owner helper is only used on X11".to_string())
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::file_uri;
+
+    #[test]
+    fn private_payload_without_original_native_lease_is_rejected_before_io() {
+        assert_eq!(super::prepare_owner_payload(super::Payload::Private(Box::new(super::Payload::Text("private".into())))).err().as_deref(), Some("NativeLeaseOwnerRequired"));
+        assert_eq!(super::write_private(super::Payload::Text("private".into()), None).err().as_deref(), Some("NativeLeaseOwnerRequired"));
+    }
 
     #[test]
     fn file_uris_escape_path_segments_and_keep_absolute_roots() {

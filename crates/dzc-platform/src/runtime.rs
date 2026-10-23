@@ -101,8 +101,6 @@ impl ClipboardWriter for StandaloneClipboardWriter {
         {
             return Err(clipboard_failure(Capability::Write));
         }
-        #[cfg(target_os = "windows")]
-        let mut private: Option<crate::private_files::BoundExport> = None;
         let payload = match payload {
             ClipboardPayload::Private { .. } => return Err(clipboard_failure(Capability::Write)),
             ClipboardPayload::ProtectedFiles {
@@ -112,7 +110,6 @@ impl ClipboardWriter for StandaloneClipboardWriter {
                 if !permission.is_current() {
                     return Err(clipboard_failure(Capability::Write));
                 }
-                #[cfg(target_os = "linux")]
                 {
                     let lease = permission
                         .native_lease()
@@ -128,18 +125,6 @@ impl ClipboardWriter for StandaloneClipboardWriter {
                             .collect(),
                         lease,
                     }
-                }
-                #[cfg(target_os = "windows")]
-                {
-                    let exports =
-                        crate::private_files::BoundExport::readonly(files, permission.clone())
-                            .map_err(|_| clipboard_failure(Capability::Write))?;
-                    let paths = exports
-                        .paths()
-                        .map_err(|_| clipboard_failure(Capability::Write))?;
-                    private = Some(exports);
-                    authorization = Some(permission);
-                    crate::native_clipboard::Payload::Files(paths)
                 }
             }
             ClipboardPayload::Text(value) => crate::native_clipboard::Payload::Text(value),
@@ -177,10 +162,6 @@ impl ClipboardWriter for StandaloneClipboardWriter {
             crate::native_clipboard::write(payload)
         }
         .map_err(|_| clipboard_failure(Capability::Write))?;
-        #[cfg(target_os = "windows")]
-        if let Some(exports) = private {
-            exports.retain();
-        }
         if authorization
             .as_ref()
             .is_some_and(|authorization| !authorization.is_current())
@@ -218,15 +199,11 @@ fn native_payload(payload: ClipboardPayload) -> PlatformResult<crate::native_cli
 #[derive(Clone)]
 pub struct EmbeddedClipboardWriter {
     owner: std::sync::Arc<std::sync::Mutex<crate::native_clipboard::EmbeddedOwner>>,
-    #[cfg(target_os = "windows")]
-    private_files: std::sync::Arc<std::sync::Mutex<Option<PrivateFileExport>>>,
 }
 impl Default for EmbeddedClipboardWriter {
     fn default() -> Self {
         Self {
             owner: crate::native_clipboard::EmbeddedOwner::shared(),
-            #[cfg(target_os = "windows")]
-            private_files: Default::default(),
         }
     }
 }
@@ -238,11 +215,6 @@ impl EmbeddedClipboardWriter {
     fn write_with_intent(&self, payload: ClipboardPayload, suppress: bool) -> PlatformResult<()> {
         let mut owner = self
             .owner
-            .lock()
-            .map_err(|_| PlatformError::failed(Capability::Write))?;
-        #[cfg(target_os = "windows")]
-        let mut export_slot = self
-            .private_files
             .lock()
             .map_err(|_| PlatformError::failed(Capability::Write))?;
         let (payload, authorization) = match payload {
@@ -258,15 +230,12 @@ impl EmbeddedClipboardWriter {
         {
             return Err(clipboard_failure(Capability::Write));
         }
-        #[cfg(target_os = "windows")]
-        let mut export = None;
         let (payload, authorization) = match payload {
             ClipboardPayload::Private { .. } => return Err(clipboard_failure(Capability::Write)),
             ClipboardPayload::ProtectedFiles {
                 files,
                 authorization: permission,
             } => {
-                #[cfg(target_os = "linux")]
                 {
                     // The actual selection worker owns and closes its scoped kernel export.
                     let lease = permission.native_lease().ok_or_else(|| clipboard_failure(Capability::Write))?;
@@ -277,13 +246,6 @@ impl EmbeddedClipboardWriter {
                         lease,
                     }, Some(permission))
                 }
-                #[cfg(target_os = "windows")]
-                {
-                    let files = prepare_private_files(files, permission.clone())?;
-                    let paths = files.paths()?;
-                    export = Some(files);
-                    (crate::native_clipboard::Payload::Files(paths), Some(permission))
-                }
             }
             ordinary => (native_payload(ordinary)?, authorization),
         };
@@ -292,7 +254,6 @@ impl EmbeddedClipboardWriter {
                 return Err(clipboard_failure(Capability::Write));
             }
             let payload = crate::native_clipboard::Payload::Private(Box::new(payload));
-            #[cfg(target_os = "linux")]
             let payload = crate::native_clipboard::Payload::Leased {
                 payload: Box::new(payload),
                 lease: auth
@@ -306,13 +267,6 @@ impl EmbeddedClipboardWriter {
         owner
             .write_with_intent(payload, suppress)
             .map_err(|_| clipboard_failure(Capability::Write))?;
-        #[cfg(target_os = "windows")]
-        {
-            if let Some(previous) = export_slot.as_mut() {
-                previous.close()?;
-            }
-            *export_slot = export;
-        }
         if authorization
             .as_ref()
             .is_some_and(|auth| !auth.is_current())
@@ -321,13 +275,6 @@ impl EmbeddedClipboardWriter {
             owner
                 .revoke_private()
                 .map_err(|_| PlatformError::failed(Capability::Write))?;
-            #[cfg(target_os = "windows")]
-            {
-                if let Some(export) = export_slot.as_mut() {
-                    export.close()?;
-                }
-                *export_slot = None;
-            }
             return Err(clipboard_failure(Capability::Write));
         }
         Ok(())
@@ -338,29 +285,12 @@ impl EmbeddedClipboardWriter {
             .map_err(|_| PlatformError::failed(Capability::Write))?
             .stop()
             .map_err(|_| PlatformError::failed(Capability::Write))?;
-        #[cfg(target_os = "windows")]
-        {
-        let mut files = self
-            .private_files
-            .lock()
-            .map_err(|_| PlatformError::failed(Capability::Write))?;
-        if let Some(export) = files.as_mut() {
-            export.close()?;
-        }
-        *files = None;
-        }
         Ok(())
     }
     /// Ordinary legacy GUI writes close only this GUI's previous private selection.
     pub fn release_private_selection(&self) -> PlatformResult<()> {
         let mut owner = self.owner.lock().map_err(|_| PlatformError::failed(Capability::Write))?;
         owner.revoke_private().map_err(|_| PlatformError::failed(Capability::Write))?;
-        #[cfg(target_os = "windows")]
-        {
-            let mut files = self.private_files.lock().map_err(|_| PlatformError::failed(Capability::Write))?;
-            if let Some(export) = files.as_mut() { export.close()?; }
-            *files = None;
-        }
         Ok(())
     }
 }
