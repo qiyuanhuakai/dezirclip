@@ -3,7 +3,7 @@ use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::attachments::{plan_html_attachments, HtmlAttachmentPlan};
 use crate::infrastructure::repository::clipboard_repo::SqliteClipboardRepository;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -275,9 +275,9 @@ impl CaptureStore for SqliteCaptureStore<'_> {
             .connection
             .lock()
             .map_err(|error| failure(CaptureStage::Persist, error))?;
-        let id = self
+        let (id, protected) = self
             .repository
-            .save_automatic_capture_with_conn(
+            .save_automatic_capture_with_protection(
                 &connection,
                 &capture.entry,
                 Some(self.directory),
@@ -294,9 +294,7 @@ impl CaptureStore for SqliteCaptureStore<'_> {
             .repository
             .enforce_limit_with_conn(&connection, Some(self.directory))
             .unwrap_or_default();
-        let protected = connection.query_row("SELECT NOT dc_search_visible(tags,content,preview,html_content,ocr_text) FROM clipboard_history WHERE id=?1",[id],|row|row.get::<_,bool>(0))
-            .optional().map_err(|error|failure(CaptureStage::Persist,error))?;
-        Ok((CaptureCommit { id, removed_ids }, protected))
+        Ok((CaptureCommit { id, removed_ids }, Some(protected)))
     }
 }
 
