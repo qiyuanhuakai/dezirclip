@@ -50,7 +50,7 @@ class ReleaseIdentities(unittest.TestCase):
     def test_disposable_userns_setup_refuses_local_execution_and_checks_readback(self):
         blocks=[]
         for name in ('ci.yml','release-identities.yml'):
-            source=(identity.ROOT/'.github/workflows'/name).read_text()
+            source=(identity.ROOT/'.github/workflows'/name).read_text(encoding='utf-8')
             step=source.split('      - name: Permit private user namespaces on disposable Linux runner\n',1)[1].split('\n      - name:',1)[0]
             blocks.append(textwrap.dedent(step.split('        run: |\n',1)[1]))
         self.assertEqual(blocks[0],blocks[1])
