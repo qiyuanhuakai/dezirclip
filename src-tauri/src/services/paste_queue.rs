@@ -138,6 +138,14 @@ impl QueueStepGuard {
     fn consume(&self,missing:bool)->Option<bool> {
         self.queue.lock().ok().and_then(|mut queue|consume_step(&mut queue,&self.step,missing))
     }
+    fn skip_missing(&self,app:&tauri::AppHandle) {
+        if let Ok(mut queue)=self.queue.lock() {
+            if let Some(length)=skip_missing_step(&mut queue,&self.step) {
+                let _=app.emit("paste-queue-changed",length);
+                if length==0 {let _=app.emit("queue-finished",());}
+            }
+        }
+    }
     fn track(&self,content:Option<String>) {
         if let Ok(mut queue)=self.queue.lock() {
             if current_step(&queue,&self.step) {queue.last_action_was_paste=true;queue.last_pasted_content=content;}
@@ -150,6 +158,9 @@ impl QueueStepGuard {
         }).unwrap_or(false);
         if pending {let _=app.emit("paste-queue-unavailable",error);}
     }
+}
+fn skip_missing_step(queue:&mut PasteQueueState,step:&QueueStep)->Option<usize> {
+    consume_step(queue,step,true).map(|_|queue.items.len())
 }
 impl Drop for QueueStepGuard {
     fn drop(&mut self) {
@@ -212,12 +223,12 @@ fn send_queue_keystroke(method:&str,content:Option<&str>,content_type:&str,valid
     Ok(())
 }
 
-async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::DesktopHost,guard:QueueStepGuard,instance:String,method:String,delete:bool) {
+async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::DesktopHost,guard:QueueStepGuard,instance:String,epoch:u64,method:String,delete:bool) {
     let id=guard.step.id;
-    let mut prepared=match bridge.prepare_service_queue(id,&instance).await {
+    let mut prepared=match bridge.prepare_service_queue(id,&instance,epoch).await {
         Ok(prepared)=>prepared,
         Err(error) if error=="ClipboardRecordUnavailable"=>{
-            if guard.consume(true)==Some(true) {emit_queue_finished(&app,&app.state::<PasteQueue>());}
+            guard.skip_missing(&app);
             return;
         },
         Err(error)=>{guard.fail(&app,&error);return;},
@@ -228,7 +239,7 @@ async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::De
     if let Err(error)=prepared.check(&bridge).await {guard.fail(&app,&error);return;}
     let result=send_queue_keystroke(&method,prepared.content.as_deref(),&prepared.content_type,|| {
         if !guard.current() {return Err("PasteQueueChanged".into());}
-        if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
+        bridge.check_queue_state(&instance,epoch)?;
         Ok(())
     });
     if let Err(error)=result {guard.fail(&app,&error);return;}
@@ -250,14 +261,14 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
     let id=guard.step.id;
     if id<=0 {guard.fail(&app_handle,"SessionQueueUnavailable");return;}
     let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>().inner().clone();
-    let instance=match bridge.instance() {Ok(instance)=>instance,Err(error)=>{guard.fail(&app_handle,&error);return;}};
+    let (instance,epoch)=match bridge.queue_state() {Ok(state)=>state,Err(error)=>{guard.fail(&app_handle,&error);return;}};
     let db=app_handle.state::<DbState>();
     let method=db.settings_repo.get("app.paste_method").ok().flatten().unwrap_or_else(||"shift_insert".into());
     let delete=app_handle.state::<crate::app_state::SettingsState>().delete_after_paste.load(std::sync::atomic::Ordering::Relaxed);
     match bridge.embedded() {
         Err(error)=>{guard.fail(&app_handle,&error);return;},
         Ok(None)=>{
-            tauri::async_runtime::spawn(paste_service_step(app_handle.clone(),bridge,guard,instance,method,delete));
+            tauri::async_runtime::spawn(paste_service_step(app_handle.clone(),bridge,guard,instance,epoch,method,delete));
             return;
         },
         Ok(Some(_))=>(),
@@ -266,13 +277,15 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
     let prepared=match prepare_queue_entry(&history,id,chrono::Utc::now().timestamp_millis()) {
         Ok(Some(prepared))=>prepared,
         Ok(None)=>{
-            if guard.consume(true)==Some(true) {emit_queue_finished(&app_handle,&state);}
+            guard.skip_missing(&app_handle);
             return;
         },
         Err(_)=>{guard.fail(&app_handle,"SensitiveAccessDenied");return;},
     };
     if !guard.current() {return;}
     let PreparedQueueEntry{entry,permit}=prepared;
+    if permit.epoch()!=epoch {guard.fail(&app_handle,"PrivacyEpochChanged");return;}
+    if let Err(error)=bridge.check_queue_state(&instance,epoch) {guard.fail(&app_handle,&error);return;}
     guard.track(Some(entry.content.clone()));
     let copied=bridge.call_embedded::<dzc_host::wire::OperationResult>(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams{
         id,service_instance_id:instance.clone(),expected_epoch:permit.epoch(),reveal:false,paste:false,derived_text:None,image_as_base64:None,
@@ -354,12 +367,15 @@ mod authorization_tests {
     fn missing_step_can_be_skipped_without_releasing_another_pending_operation() {
         let mut queue=PasteQueueState::default();queue.items.extend([1,2]);
         let step=reserve_step(&mut queue).unwrap().unwrap();
-        assert_eq!(consume_step(&mut queue,&step,true),Some(false));
+        assert_eq!(skip_missing_step(&mut queue,&step),Some(1));
+        assert_eq!(skip_missing_step(&mut queue,&step),None,"stale skips cannot emit a replacement length");
         assert_eq!(queue.items.front(),Some(&2));
         assert!(!queue.last_action_was_paste);
         assert!(reserve_step(&mut queue).is_err());
         release_step(&mut queue,&step);
-        assert_eq!(reserve_step(&mut queue).unwrap().unwrap().id,2);
+        let next=reserve_step(&mut queue).unwrap().unwrap();
+        assert_eq!(next.id,2);
+        assert_eq!(skip_missing_step(&mut queue,&next),Some(0));
     }
 
     fn history(protected:bool,kind:&str)->dzc_core::api::HistoryService {

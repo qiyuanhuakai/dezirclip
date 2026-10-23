@@ -34,6 +34,10 @@ fn supports_queue_completion(report:&CapabilityReport)->bool {
         && feature.get("supported").and_then(serde_json::Value::as_bool)==Some(true)
         && feature.get("version").and_then(serde_json::Value::as_u64)==Some(1)
 }
+fn check_queue_state(instance:&str,epoch:u64,actual_instance:&str,actual_epoch:u64)->Result<(),String> {
+    if actual_instance!=instance {return Err("ClipboardHostInstanceChanged".into());}
+    if actual_epoch!=epoch {return Err("PrivacyEpochChanged".into());} Ok(())
+}
 async fn service_queue_entry(client:&mut Client,id:i64,instance:&str,epoch:u64,method:Method)->Result<DesktopEntry,String> {
     let descriptor:BodySnapshot=client.call(method,DesktopEntryParams{id,service_instance_id:instance.into(),expected_epoch:epoch,reveal:false,thumbnail_dimension:None},"BodySnapshot").await.map_err(remote_error)?;
     if descriptor.state.service_instance_id!=instance || descriptor.state.privacy_epoch!=epoch {return Err("PrivacyEpochChanged".into());}
@@ -91,6 +95,23 @@ fn app()->Option<&'static AppHandle> {crate::global_state::GLOBAL_APP_HANDLE.get
 #[cfg(test)]
 mod queue_contract_tests {
     use super::*;
+    #[test]
+    fn reserved_queue_epoch_is_not_refreshed_after_async_preparation() {
+        let history=HistoryService::from_legacy_connection(Arc::new(Mutex::new(crate::database::init_db(":memory:").unwrap())));
+        let epoch=history.runtime_snapshot(10).unwrap().privacy_epoch;
+        let check=||check_queue_state("original",epoch,"original",history.runtime_snapshot(12).unwrap().privacy_epoch);
+        assert!(check().is_ok());
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            tokio::task::yield_now().await;
+            history.privacy().toggle(11).unwrap();
+            assert_eq!(check().unwrap_err(),"PrivacyEpochChanged","a toggle before connect or during capability awaits must revoke the reserved epoch");
+            let remote_epoch=history.runtime_snapshot(12).unwrap().privacy_epoch;
+            assert_eq!(check_queue_state("original",epoch,"original",remote_epoch).unwrap_err(),"PrivacyEpochChanged");
+            history.privacy().toggle(13).unwrap();
+            assert_eq!(check().unwrap_err(),"PrivacyEpochChanged","toggling back cannot renew the old step");
+        });
+        assert_eq!(check_queue_state("original",epoch,"replacement",epoch).unwrap_err(),"ClipboardHostInstanceChanged");
+    }
     #[test]
     fn old_or_ungranted_service_cannot_start_the_new_queue_flow() {
         let report=|feature:serde_json::Value,permissions:Vec<Permission>|CapabilityReport{methods:vec![],permissions,platform:serde_json::json!({"desktop_queue_completion":feature})};
@@ -181,6 +202,15 @@ impl DesktopHost {
         Mode::Embedded(host) if !host.is_stopping()=>Ok(Some(host.clone())),Mode::Remote(_)=>Ok(None),_=>Err(failed())}}
     pub fn instance(&self)->Result<String,String> {match &*self.0.mode.lock().map_err(|_|failed())? {
         Mode::Embedded(host)=>host.snapshot().map(|state|state.service_instance_id).map_err(|_|failed()),Mode::Remote(instance)=>Ok(instance.clone()),_=>Err(failed())}}
+    pub(crate) fn queue_state(&self)->Result<(String,u64),String> {
+        let instance=self.instance()?;
+        let epoch=self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch;
+        Ok((instance,epoch))
+    }
+    pub(crate) fn check_queue_state(&self,instance:&str,epoch:u64)->Result<(),String> {
+        let (actual_instance,actual_epoch)=self.queue_state()?;
+        check_queue_state(instance,epoch,&actual_instance,actual_epoch)
+    }
     pub fn writer(&self)->Result<dzc_platform::runtime::EmbeddedClipboardWriter,String> {
         if self.embedded()?.is_none() {return Err("ClipboardWriteRequiresHost".into());}
         self.0.writer.lock().map_err(|_|failed())?.clone().ok_or_else(failed)
@@ -216,13 +246,16 @@ impl DesktopHost {
         let result:DesktopMutationResult=self.call_embedded(Method::DesktopHistoryMutate,queue_completion(id,instance.into(),epoch,delete))?;
         if result.id!=id || !result.performed {return Err(failed());} Ok(())
     }
-    pub(crate) async fn prepare_service_queue(&self,id:i64,original_instance:&str)->Result<ServiceQueueCopy,String> {
+    pub(crate) async fn prepare_service_queue(&self,id:i64,original_instance:&str,epoch:u64)->Result<ServiceQueueCopy,String> {
+        self.check_queue_state(original_instance,epoch)?;
         let mut client=self.service_client().await?;
-        if client.hello.state.service_instance_id!=original_instance || self.instance()?!=original_instance {return Err("ClipboardHostInstanceChanged".into());}
+        check_queue_state(original_instance,epoch,&client.hello.state.service_instance_id,client.hello.state.privacy_epoch)?;
+        self.check_queue_state(original_instance,epoch)?;
         let capabilities:CapabilityReport=client.call(Method::Capabilities,serde_json::json!({}),"CapabilityReport").await.map_err(remote_error)?;
         if !supports_queue_completion(&capabilities) {return Err("ClipboardHostCapabilityUnavailable".into());}
         let privacy:PrivacyState=client.call(Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await.map_err(remote_error)?;
-        let epoch=privacy.privacy_epoch;
+        check_queue_state(original_instance,epoch,original_instance,privacy.privacy_epoch)?;
+        self.check_queue_state(original_instance,epoch)?;
         let summary=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistorySummary).await?;
         let content=if matches!(summary.content_type.as_str(),"text"|"code"|"url"|"rich_text") {
             let entry=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistoryGet).await
