@@ -25,6 +25,8 @@ def merge(paths,revision):
         require(isinstance(record.get('standalone'),list) and len(record['standalone'])==1 and isinstance(record.get('containers'),list) and sorted(x.get('asset','') for x in record['containers'])==sorted(containers),'Original asset inventory differs')
         cli=record['standalone'][0]
         require(cli.get('platform')==target and cli.get('asset')==standalone,'Standalone target/name differs')
+        require(cli.get('path')==('dzc.exe' if target.startswith('windows-') else 'dzc')
+                and type(cli.get('bytes')) is int and cli['bytes']>0,'Standalone member path/bytes missing')
         validate_info(cli.get('build_info'),'cli',target,revision)
         for value in (cli.get('asset_sha256'),cli.get('binary_sha256')):require(isinstance(value,str) and re.fullmatch('[0-9a-f]{64}',value),'Standalone digest missing')
         result['standalone'].append(dict(cli,proof=proof))

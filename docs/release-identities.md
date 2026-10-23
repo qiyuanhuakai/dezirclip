@@ -23,6 +23,11 @@ are not assumed equal after packaging or RPATH changes. AppImage extraction
 locates its bounded SquashFS superblock and does not execute the AppImage runtime.
 Flatpak import uses a disposable OSTree repository, without installation of the
 application, and metadata executes against the matching final Platform runtime.
+Its extracted files and metadata remain read-only. A separate disposable writable
+`var` mount supplies the `tmp` and `lib` directories required by `flatpak build`,
+including when its `--readonly` option is enabled.
+Nested Flatpak also receives five empty synthetic `/sys` directories for its
+standard bind setup; the collector does not expose the host's sysfs tree.
 
 CLI `build-info --json` and Service `--build-info` output are captured directly.
 Desktop metadata comes from the actual WebView's existing `get_build_info`

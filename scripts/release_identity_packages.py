@@ -112,7 +112,7 @@ def collect(args,report):
                 from release_identity_linux import sandbox_info
                 info=sandbox_info(args,{'cli':path},root,logs,False)['cli']
             require(sha(path)==binary_digest,'Standalone executable changed during metadata execution')
-            report['standalone'].append({'platform':args.target,'asset':name,'asset_sha256':digest,'binary_sha256':binary_digest,'build_info':info})
+            report['standalone'].append({'platform':args.target,'asset':name,'asset_sha256':digest,'path':path.relative_to(root).as_posix(),'bytes':path.stat().st_size,'binary_sha256':binary_digest,'build_info':info})
         else:
             unpack(archive,root,logs,args.target);members=find_members(root,args.target);infos=native_info(args,members,root,logs,name.endswith('.flatpak'))
             report['containers'].append({'platform':args.target,'asset':name,'asset_sha256':digest,'contents':[{'component':role,'path':path.relative_to(root).as_posix(),'bytes':path.stat().st_size,'binary_sha256':sha(path),'build_info':infos[role]} for role,path in members.items()]})

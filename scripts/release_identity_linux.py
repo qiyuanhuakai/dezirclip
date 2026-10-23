@@ -8,6 +8,17 @@ import sqlite3
 import sys
 from release_identities import ROOT, json_output, require, run, sha, validate_info
 
+def flatpak_bindings(extracted,logs):
+    require(extracted.resolve().is_relative_to(logs.resolve()),'Owned Flatpak extraction required')
+    mountpoint=extracted/'var'
+    require(not mountpoint.is_symlink(),'Flatpak var mountpoint must not be a link')
+    mountpoint.mkdir(mode=0o700,exist_ok=True)
+    variable=logs/'flatpak-var';variable.mkdir(mode=0o700)
+    for name in ('tmp','lib'):(variable/name).mkdir(mode=0o700)
+    bindings=['--bind',str(variable),'/package/var','--dir','/sys']
+    for name in ('block','bus','class','dev','devices'):bindings+=['--dir','/sys/'+name]
+    return bindings
+
 def sandbox_info(args,members,extracted,logs,flatpak):
     import release_identity_guard
     guard=release_identity_guard.install()
@@ -22,7 +33,7 @@ def sandbox_info(args,members,extracted,logs,flatpak):
     (source/'plan.json').write_text(json.dumps(plan))
     cmd=['bwrap','--unshare-user','--unshare-pid','--unshare-net','--unshare-ipc','--unshare-uts','--die-with-parent','--new-session','--clearenv','--ro-bind','/usr','/usr','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--ro-bind','/lib','/lib','--ro-bind','/etc','/etc','--dev','/dev','--proc','/proc','--tmpfs','/tmp','--tmpfs','/run','--dir','/run/fixture','--chmod','0700','/run/fixture','--dir','/q','--dir','/home/fixture','--bind',str(logs),'/evidence','--ro-bind',str(source),'/fixture-bin','--ro-bind',str(extracted),'/package','--ro-bind','/usr/bin/WebKitWebDriver','/fixture-bin/WebKitWebDriver']
     if Path('/lib64').exists():cmd+=['--ro-bind','/lib64','/lib64']
-    if flatpak:cmd+=['--ro-bind','/var/lib/flatpak','/var/lib/flatpak']
+    if flatpak:cmd+=['--ro-bind','/var/lib/flatpak','/var/lib/flatpak',*flatpak_bindings(extracted,logs)]
     env={'HOME':'/home/fixture','XDG_RUNTIME_DIR':'/run/fixture','PATH':'/usr/bin:/bin','LANG':'C.UTF-8','TZ':'UTC','GDK_BACKEND':'x11','NO_AT_BRIDGE':'1','TAURI_WEBVIEW_AUTOMATION':'true','WEBKIT_DISABLE_DMABUF_RENDERER':'1','WEBKIT_DISABLE_COMPOSITING_MODE':'1','DEZIRCLIP_DISABLE_LINUX_SERVICES':'window_tracker,edge_docking,mouse_hotkey','TIEZ_DISABLE_LINUX_SERVICES':'window_tracker,edge_docking,mouse_hotkey'}
     for key,value in env.items():cmd+=['--setenv',key,value]
     cmd+=['--chdir','/evidence','/usr/bin/xvfb-run','-a','-s','-screen 0 1280x900x24 -noreset','/usr/bin/python3','-s','/fixture-bin/release_identity_secret_service.py','--helper','/fixture-bin/ss-preseed','--output','/evidence/private-ss','--','/usr/bin/python3','-s','/fixture-bin/release_identity_linux.py','--inside']

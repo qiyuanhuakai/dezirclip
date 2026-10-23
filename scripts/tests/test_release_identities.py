@@ -17,6 +17,7 @@ from release_identity_merge import merge
 from release_identity_packages import squashfs_offset
 from release_identity_packages import windows_environment
 from release_identity_packages import remove_owned_tree
+from release_identity_linux import flatpak_bindings
 
 REVISION='a'*40
 DIGEST='b'*64
@@ -27,7 +28,7 @@ def info(role,target):
 
 def report(target):
     standalone,containers=identity.expected_assets(target)
-    return {'schema_version':1,'status':'passed','method':'executed_native','tag':'v'+identity.VERSION,'source_revision':REVISION,'target':target,'runner':{'system':'Windows' if target.startswith('windows-') else 'Linux','machine':'ARM64' if target.endswith('aarch64') else 'x86_64'},'job_id':123,'run_url':'https://github.com/qiyuanhuakai/dezirclip/actions/runs/123','standalone':[{'platform':target,'asset':standalone,'asset_sha256':DIGEST,'binary_sha256':DIGEST,'build_info':info('cli',target)}],'containers':[{'platform':target,'asset':name,'asset_sha256':DIGEST,'contents':[{'component':role,'path':'usr/bin/'+binary,'bytes':123,'binary_sha256':DIGEST,'build_info':info(role,target)} for role,binary in identity.ROLES.items()]} for name in containers]}
+    return {'schema_version':1,'status':'passed','method':'executed_native','tag':'v'+identity.VERSION,'source_revision':REVISION,'target':target,'runner':{'system':'Windows' if target.startswith('windows-') else 'Linux','machine':'ARM64' if target.endswith('aarch64') else 'x86_64'},'job_id':123,'run_url':'https://github.com/qiyuanhuakai/dezirclip/actions/runs/123','standalone':[{'platform':target,'asset':standalone,'asset_sha256':DIGEST,'path':'dzc.exe' if target.startswith('windows-') else 'dzc','bytes':123,'binary_sha256':DIGEST,'build_info':info('cli',target)}],'containers':[{'platform':target,'asset':name,'asset_sha256':DIGEST,'contents':[{'component':role,'path':'usr/bin/'+binary,'bytes':123,'binary_sha256':DIGEST,'build_info':info(role,target)} for role,binary in identity.ROLES.items()]} for name in containers]}
 
 def evaluate(machine,audit,number):
     accumulator=0;pc=0;program=guard.instructions(machine)
@@ -42,6 +43,21 @@ def evaluate(machine,audit,number):
     raise AssertionError('Filter did not return')
 
 class ReleaseIdentities(unittest.TestCase):
+    def test_flatpak_var_is_an_owned_separate_mount_without_member_changes(self):
+        with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
+            logs=Path(temp);extracted=logs/'extracted';extracted.mkdir()
+            (extracted/'files').mkdir();(extracted/'files/dzc').write_bytes(b'synthetic original executable')
+            (extracted/'metadata').write_bytes(b'synthetic original metadata')
+            before={name:identity.sha(extracted/name) for name in ('files/dzc','metadata')}
+            bindings=flatpak_bindings(extracted,logs)
+            self.assertEqual(bindings[:3],['--bind',str(logs/'flatpak-var'),'/package/var'])
+            self.assertEqual(bindings[3:],sum((['--dir','/sys'+name] for name in ('','/block','/bus','/class','/dev','/devices')),[]))
+            self.assertTrue((extracted/'var').is_dir());self.assertEqual(list((extracted/'var').iterdir()),[])
+            self.assertTrue((logs/'flatpak-var/tmp').is_dir());self.assertTrue((logs/'flatpak-var/lib').is_dir())
+            self.assertEqual(before,{name:identity.sha(extracted/name) for name in before})
+            outside=logs.parent/'synthetic-outside-package'
+            with self.assertRaises(ValueError):flatpak_bindings(outside,logs)
+
     def test_cleanup_checks_the_final_owned_target(self):
         with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
             root=Path(temp);owned=root/'owned';owned.mkdir();outside=root/'outside';outside.mkdir()
@@ -99,7 +115,7 @@ class ReleaseIdentities(unittest.TestCase):
             merged=merge(paths,REVISION)
             self.assertEqual(len(merged['standalone']),4);self.assertEqual(len(merged['containers']),10)
             self.assertEqual(merged['standalone'][0]['proof']['evidence_sha256'],identity.sha(paths[0]))
-            for index,mutation in enumerate([lambda r:r.update(status='failed'),lambda r:r.update(method='ci_bound_static'),lambda r:r.update(source_revision='d'*40),lambda r:r['runner'].update(machine='x86_64'),lambda r:r['containers'].pop(),lambda r:r['containers'][0]['contents'][0].update(binary_sha256='missing')]):
+            for index,mutation in enumerate([lambda r:r.update(status='failed'),lambda r:r.update(method='ci_bound_static'),lambda r:r.update(source_revision='d'*40),lambda r:r['runner'].update(machine='x86_64'),lambda r:r['containers'].pop(),lambda r:r['containers'][0]['contents'][0].update(binary_sha256='missing'),lambda r:r['standalone'][0].pop('path'),lambda r:r['standalone'][0].update(path='../dzc.exe'),lambda r:r['standalone'][0].pop('bytes'),lambda r:r['standalone'][0].update(bytes=True)]):
                 original=report('windows-aarch64');mutation(original);paths[3].write_text(json.dumps(original))
                 with self.subTest(mutation=index),self.assertRaises(ValueError):merge(paths,REVISION)
 
