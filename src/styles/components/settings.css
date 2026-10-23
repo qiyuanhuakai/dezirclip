@@ -1,6 +1,6 @@
 /* Settings Panel */
 .about-settings-group .group-header h3 { margin: 0; width: 100%; }
-.about-group-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0; border: 0; color: inherit; background: none; font: inherit; cursor: pointer; text-align: start; }
+.about-group-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0; border: 0; color: inherit; background: none; font: inherit; cursor: pointer; text-align: start; pointer-events: auto !important; }
 .about-group-toggle:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 4px; }
 .about-build {
   grid-column: 1 / -1;
