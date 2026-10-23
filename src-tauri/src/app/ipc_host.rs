@@ -16,6 +16,47 @@ struct Inner { mode:Mutex<Mode>, history:HistoryService, directory:PathBuf, data
 struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::Receiver<()>}
 #[derive(Clone)]
 pub struct DesktopHost(Arc<Inner>);
+pub(crate) struct ServiceQueueCopy {
+    client:Client,
+    pub instance:String,
+    pub epoch:u64,
+    id:i64,
+    pub content_type:String,
+    pub content:Option<String>,
+}
+fn queue_completion(id:i64,instance:String,epoch:u64,delete:bool)->DesktopMutationParams {
+    DesktopMutationParams{id,service_instance_id:instance,expected_epoch:epoch,reveal:false,action:if delete{"delete"}else{"used"}.into(),
+        pinned:None,tags:None,content:None,confirm_persistence:None}
+}
+fn supports_queue_completion(report:&CapabilityReport)->bool {
+    let feature=&report.platform["desktop_queue_completion"];
+    report.permissions.contains(&Permission::DesktopHistory)
+        && feature.get("supported").and_then(serde_json::Value::as_bool)==Some(true)
+        && feature.get("version").and_then(serde_json::Value::as_u64)==Some(1)
+}
+async fn service_queue_entry(client:&mut Client,id:i64,instance:&str,epoch:u64,method:Method)->Result<DesktopEntry,String> {
+    let descriptor:BodySnapshot=client.call(method,DesktopEntryParams{id,service_instance_id:instance.into(),expected_epoch:epoch,reveal:false,thumbnail_dimension:None},"BodySnapshot").await.map_err(remote_error)?;
+    if descriptor.state.service_instance_id!=instance || descriptor.state.privacy_epoch!=epoch {return Err("PrivacyEpochChanged".into());}
+    let entry:DesktopEntry=client.read_snapshot(descriptor,"DesktopEntry").await.map_err(remote_error)?;
+    if entry.id!=id {return Err(failed());}
+    Ok(entry)
+}
+impl ServiceQueueCopy {
+    pub async fn copy(&mut self)->Result<(),String> {
+        let result:OperationResult=self.client.call(Method::DesktopClipboardCopy,DesktopCopyParams{id:self.id,service_instance_id:self.instance.clone(),expected_epoch:self.epoch,
+            reveal:false,paste:false,derived_text:None,image_as_base64:None,with_format:Some(self.content_type=="rich_text"),delete_after_use:Some(false),move_to_top:Some(false)},"OperationResult").await.map_err(remote_error)?;
+        if !result.performed {return Err(failed());} Ok(())
+    }
+    pub async fn check(&mut self,bridge:&DesktopHost)->Result<(),String> {
+        let privacy:PrivacyState=self.client.call(Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await.map_err(remote_error)?;
+        if bridge.instance()?!=self.instance {return Err("ClipboardHostInstanceChanged".into());}
+        if privacy.privacy_epoch!=self.epoch {return Err("PrivacyEpochChanged".into());} Ok(())
+    }
+    pub async fn complete(&mut self,delete:bool)->Result<(),String> {
+        let result:DesktopMutationResult=self.client.call(Method::DesktopHistoryMutate,queue_completion(self.id,self.instance.clone(),self.epoch,delete),"DesktopMutationResult").await.map_err(remote_error)?;
+        if result.id!=self.id || !result.performed {return Err(failed());} Ok(())
+    }
+}
 pub struct GeneratedUpload {client:Client,id:String}
 impl GeneratedUpload {
     pub async fn finish(self,body:GeneratedBody,source:String,protected:bool)->Result<bool,String> {
@@ -47,6 +88,30 @@ impl HostedEntry { pub fn local(entry:ClipboardEntry)->Self {Self{entry,host_ins
 impl std::ops::Deref for HostedEntry {type Target=ClipboardEntry;fn deref(&self)->&ClipboardEntry {&self.entry}}
 
 fn app()->Option<&'static AppHandle> {crate::global_state::GLOBAL_APP_HANDLE.get()}
+#[cfg(test)]
+mod queue_contract_tests {
+    use super::*;
+    #[test]
+    fn old_or_ungranted_service_cannot_start_the_new_queue_flow() {
+        let report=|feature:serde_json::Value,permissions:Vec<Permission>|CapabilityReport{methods:vec![],permissions,platform:serde_json::json!({"desktop_queue_completion":feature})};
+        for feature in [serde_json::Value::Null,serde_json::json!({"supported":false,"version":1}),serde_json::json!({"supported":true,"version":2}),serde_json::json!({"supported":"true","version":1})] {
+            assert!(!supports_queue_completion(&report(feature,vec![Permission::DesktopHistory])));
+        }
+        assert!(!supports_queue_completion(&report(serde_json::json!({"supported":true,"version":1}),vec![])));
+        assert!(supports_queue_completion(&report(serde_json::json!({"supported":true,"version":1}),vec![Permission::DesktopHistory])));
+    }
+    #[test]
+    fn queue_completion_keeps_original_identity_epoch_and_never_requests_sensitive_read() {
+        for (delete,action) in [(false,"used"),(true,"delete")] {
+            let request=queue_completion(7,"original-service".into(),13,delete);
+            assert_eq!(request.id,7);assert_eq!(request.service_instance_id,"original-service");assert_eq!(request.expected_epoch,13);
+            assert!(!request.reveal);assert_eq!(request.action,action);
+            assert!(request.content.is_none() && request.tags.is_none() && request.pinned.is_none() && request.confirm_persistence.is_none());
+            let bytes=dzc_host::wire::encode("DesktopMutationParams",&request).unwrap();
+            assert!(dzc_host::wire::decode::<DesktopMutationParams>("DesktopMutationParams",&bytes).is_ok());
+        }
+    }
+}
 fn emit(name:&str,value:impl Serialize+Clone) {if let Some(app)=app() {let _=app.emit(name,value);}}
 fn failed()->String {"ClipboardHostUnavailable".into()}
 fn dispatch_embedded<T:DeserializeOwned>(host:&Host,method:Method,params:impl Serialize)->Result<T,String> {
@@ -146,6 +211,26 @@ impl DesktopHost {
     pub(crate) fn call_embedded<T:DeserializeOwned>(&self,method:Method,params:impl Serialize)->Result<T,String> {
         let host=self.embedded()?.ok_or_else(failed)?;
         dispatch_embedded(&host,method,params)
+    }
+    pub(crate) fn complete_embedded_queue(&self,id:i64,instance:&str,epoch:u64,delete:bool)->Result<(),String> {
+        let result:DesktopMutationResult=self.call_embedded(Method::DesktopHistoryMutate,queue_completion(id,instance.into(),epoch,delete))?;
+        if result.id!=id || !result.performed {return Err(failed());} Ok(())
+    }
+    pub(crate) async fn prepare_service_queue(&self,id:i64,original_instance:&str)->Result<ServiceQueueCopy,String> {
+        let mut client=self.service_client().await?;
+        if client.hello.state.service_instance_id!=original_instance || self.instance()?!=original_instance {return Err("ClipboardHostInstanceChanged".into());}
+        let capabilities:CapabilityReport=client.call(Method::Capabilities,serde_json::json!({}),"CapabilityReport").await.map_err(remote_error)?;
+        if !supports_queue_completion(&capabilities) {return Err("ClipboardHostCapabilityUnavailable".into());}
+        let privacy:PrivacyState=client.call(Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await.map_err(remote_error)?;
+        let epoch=privacy.privacy_epoch;
+        let summary=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistorySummary).await?;
+        let content=if matches!(summary.content_type.as_str(),"text"|"code"|"url"|"rich_text") {
+            let entry=service_queue_entry(&mut client,id,original_instance,epoch,Method::DesktopHistoryGet).await
+                .map_err(|error|if error=="ClipboardRecordUnavailable"{"SensitiveAccessDenied".into()}else{error})?;
+            if entry.content_type!=summary.content_type {return Err(failed());}
+            Some(entry.content)
+        }else{None};
+        Ok(ServiceQueueCopy{client,instance:original_instance.into(),epoch,id,content_type:summary.content_type,content})
     }
     pub async fn page(&self,limit:i32,offset:i32,kind:Option<String>,query:Option<String>)->Result<Option<Vec<HostedEntry>>,String> {
         if self.embedded()?.is_some() {return Ok(None);}

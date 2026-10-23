@@ -75,7 +75,7 @@ fn distribute(app:&AppHandle,capture:StoredCapture,work:dzc_host::CaptureWork) {
     if settings.sequential_mode.load(Ordering::Relaxed) {
         let state=app.state::<PasteQueue>();
         let mut queue=state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if queue.last_action_was_paste {queue.items.clear();queue.last_action_was_paste=false;queue.last_pasted_content=None;}
+        if queue.last_action_was_paste {queue.items.clear();queue.reset_tracking();}
         queue.items.push_back(id);let length=queue.items.len();drop(queue);
         let _=app.emit("paste-queue-changed",length);
     }

@@ -1,7 +1,6 @@
-use crate::app_state::{AppDataDir, PasteQueue, PasteQueueState, SessionHistory};
+use crate::app_state::{PasteQueue, PasteQueueState};
 use crate::database::DbState;
 use crate::error::AppResult;
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use tauri::{Emitter, Manager, State};
 
@@ -29,42 +28,12 @@ fn prepare_queue_entry(history:&dzc_core::api::HistoryService,id:i64,now:i64)->R
 }
 
 fn reset_paste_tracking(queue: &mut PasteQueueState) {
-    queue.last_action_was_paste = false;
-    queue.last_pasted_content = None;
-}
-
-fn clear_paste_tracking(state: &State<'_, PasteQueue>) {
-    let mut queue = state.inner().0.lock().unwrap();
-    reset_paste_tracking(&mut queue);
-}
-
-fn pop_front_if_matches(state: &State<'_, PasteQueue>, id: i64) -> bool {
-    let mut queue = state.inner().0.lock().unwrap();
-    if queue.items.front().copied() == Some(id) {
-        queue.items.pop_front();
-    }
-    queue.items.is_empty()
+    queue.reset_tracking();
 }
 
 fn emit_queue_finished(app_handle: &tauri::AppHandle, state: &State<'_, PasteQueue>) {
-    clear_paste_tracking(state);
-    let _ = app_handle.emit("queue-finished", ());
-}
-
-fn emit_queue_finished_if_empty(app_handle: &tauri::AppHandle, state: &State<'_, PasteQueue>) {
-    let should_emit = {
-        let mut queue = state.inner().0.lock().unwrap();
-        if queue.items.is_empty() {
-            reset_paste_tracking(&mut queue);
-            true
-        } else {
-            false
-        }
-    };
-
-    if should_emit {
-        let _ = app_handle.emit("queue-finished", ());
-    }
+    let empty={let mut queue=state.0.lock().unwrap();if queue.items.is_empty() {reset_paste_tracking(&mut queue);true}else{false}};
+    if empty {let _ = app_handle.emit("queue-finished", ());}
 }
 
 #[tauri::command]
@@ -134,88 +103,71 @@ pub fn clear_paste_queue(app_handle: tauri::AppHandle, state: State<'_, PasteQue
     let _ = app_handle.emit("queue-finished", ());
 }
 
-#[tauri::command]
-pub fn paste_next_step(app_handle: tauri::AppHandle) {
-    let state = app_handle.state::<PasteQueue>();
-    let db_state = app_handle.state::<DbState>();
-    let session = app_handle.state::<SessionHistory>();
-    let _settings = app_handle.state::<crate::app_state::SettingsState>();
 
-    // Peek first so a failed paste keystroke does not lose the queued item.
-    let id_opt = {
-        let queue = state.inner().0.lock().unwrap();
-        queue.items.front().copied()
-    };
-
-    if let Some(id) = id_opt {
-        if id<=0 {
-            let _=app_handle.emit("paste-queue-unavailable","SessionQueueUnavailable");
-            return;
+#[derive(Clone)]
+struct QueueStep { id:i64, version:std::sync::Arc<()>, token:std::sync::Arc<()> }
+fn reserve_step(queue:&mut PasteQueueState)->Result<Option<QueueStep>, &'static str> {
+    if queue.in_flight.is_some() {return Err("PasteQueueBusy");}
+    let Some(id)=queue.items.front().copied() else {return Ok(None);};
+    let token=std::sync::Arc::new(());
+    queue.in_flight=Some(token.clone());
+    Ok(Some(QueueStep{id,version:queue.version.clone(),token}))
+}
+fn current_step(queue:&PasteQueueState,step:&QueueStep)->bool {
+    std::sync::Arc::ptr_eq(&queue.version,&step.version)
+        && queue.in_flight.as_ref().is_some_and(|token|std::sync::Arc::ptr_eq(token,&step.token))
+        && queue.items.front()==Some(&step.id)
+}
+fn consume_step(queue:&mut PasteQueueState,step:&QueueStep,missing:bool)->Option<bool> {
+    if !current_step(queue,step) {return None;}
+    queue.items.pop_front();
+    if missing {reset_paste_tracking(queue);}
+    Some(queue.items.is_empty())
+}
+fn release_step(queue:&mut PasteQueueState,step:&QueueStep) {
+    if queue.in_flight.as_ref().is_some_and(|token|std::sync::Arc::ptr_eq(token,&step.token)) {queue.in_flight=None;}
+}
+struct QueueStepGuard {queue:std::sync::Arc<std::sync::Mutex<PasteQueueState>>, step:QueueStep}
+impl QueueStepGuard {
+    fn same_version(&self)->bool {
+        self.queue.lock().map(|queue|std::sync::Arc::ptr_eq(&queue.version,&self.step.version)).unwrap_or(false)
+    }
+    fn current(&self)->bool {
+        self.queue.lock().map(|queue|current_step(&queue,&self.step)).unwrap_or(false)
+    }
+    fn consume(&self,missing:bool)->Option<bool> {
+        self.queue.lock().ok().and_then(|mut queue|consume_step(&mut queue,&self.step,missing))
+    }
+    fn track(&self,content:Option<String>) {
+        if let Ok(mut queue)=self.queue.lock() {
+            if current_step(&queue,&self.step) {queue.last_action_was_paste=true;queue.last_pasted_content=content;}
         }
-        let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>();
-        match bridge.embedded() {
-            Err(_)=>{let _=app_handle.emit("paste-queue-unavailable","ClipboardHostUnavailable");return;},
-            Ok(None)=>{
-                let bridge=bridge.inner().clone();let app=app_handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    let result=async {
-                        let privacy:dzc_host::wire::PrivacyState=bridge.call(dzc_host::wire::Method::PrivacyGet,serde_json::json!({}),"PrivacyState").await?;
-                        bridge.call::<dzc_host::wire::OperationResult>(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams{
-                            id,service_instance_id:bridge.instance()?,expected_epoch:privacy.privacy_epoch,reveal:false,paste:true,
-                            derived_text:None,image_as_base64:None,with_format:Some(true),delete_after_use:Some(false),move_to_top:Some(false)},"OperationResult").await
-                    }.await;
-                    if result.is_ok() {
-                        let queue=app.state::<PasteQueue>();
-                        if pop_front_if_matches(&queue,id) {emit_queue_finished(&app,&queue);}
-                    }else {let _=app.emit("paste-queue-unavailable","ClipboardHostUnavailable");}
-                });
-                return;
-            },
-            Ok(Some(_))=>(),
-        }
-        let original_instance=match bridge.instance() {
-            Ok(instance)=>instance,
-            Err(_)=>{let _=app_handle.emit("paste-queue-unavailable","ClipboardHostUnavailable");return;},
-        };
-        let history=db_state.history_service();
-        let content_opt=match prepare_queue_entry(&history,id,chrono::Utc::now().timestamp_millis()) {
-            Ok(entry)=>entry,
-            Err(_)=>{clear_paste_tracking(&state);let _=app_handle.emit("paste-queue-unavailable","SensitiveAccessDenied");return;},
-        };
-        if let Some(PreparedQueueEntry{entry,permit}) = content_opt {
-            let (content,c_type,html_content)=(entry.content,entry.content_type,entry.html_content);
-            // CRITICAL: Update last_pasted_content BEFORE modifying clipboard to prevent race condition
-            // where the monitor sees the change before we've marked it as an echo.
-            {
-                let mut queue = state.inner().0.lock().unwrap();
-                queue.last_action_was_paste = true;
-                queue.last_pasted_content = Some(content.clone());
-            }
+    }
+    fn fail(&self,app:&tauri::AppHandle,error:&str) {
+        let pending=self.queue.lock().map(|mut queue| {
+            if !current_step(&queue,&self.step) {return false;}
+            reset_paste_tracking(&mut queue);true
+        }).unwrap_or(false);
+        if pending {let _=app.emit("paste-queue-unavailable",error);}
+    }
+}
+impl Drop for QueueStepGuard {
+    fn drop(&mut self) {
+        if let Ok(mut queue)=self.queue.lock() {release_step(&mut queue,&self.step);}
+    }
+}
+fn finish_pasted(app:&tauri::AppHandle,guard:&QueueStepGuard,empty:Option<bool>,completion:Result<(),String>,delete:bool) {
+    let id=guard.step.id;
+    if let Err(error)=completion {
+        let _=app.emit("paste-queue-unavailable",format!("PasteCompletedMetadataUpdateFailed:{error}"));
+    } else if delete {let _=app.emit("clipboard-removed",id);}
+    if guard.same_version() {
+        let _=app.emit("queue-item-pasted",id);
+        if empty==Some(true) {emit_queue_finished(app,&app.state::<PasteQueue>());}
+    }
+}
 
-            let paste_with_format = c_type == "rich_text" && html_content.as_deref().is_some();
-
-            if bridge.call_embedded::<dzc_host::wire::OperationResult>(dzc_host::wire::Method::DesktopClipboardCopy,
-                dzc_host::wire::DesktopCopyParams{id,service_instance_id:original_instance.clone(),expected_epoch:permit.epoch(),reveal:false,paste:false,
-                    derived_text:None,image_as_base64:None,with_format:Some(paste_with_format),delete_after_use:Some(false),move_to_top:Some(false)})
-                .is_err()
-            {
-                clear_paste_tracking(&state);
-                return;
-            }
-
-            // Get paste method from settings
-            let paste_method = {
-                let db_state = app_handle.state::<DbState>();
-                db_state
-                    .settings_repo
-                    .get("app.paste_method")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_else(|| "shift_insert".to_string())
-            };
-
-            // Send paste keystroke using centralized logic
-            // We measure Alt state BEFORE sending keys to know if we should restore it
+fn send_queue_keystroke(method:&str,content:Option<&str>,content_type:&str,validate:impl FnOnce()->Result<(),String>)->Result<(),String> {
             let alt_was_down = {
                 #[cfg(target_os = "windows")]
                 unsafe {
@@ -225,26 +177,9 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
                 false
             };
 
-            if bridge.instance().ok().as_deref()!=Some(original_instance.as_str())
-                || history.privacy().check_read(&permit,chrono::Utc::now().timestamp_millis()).is_err() {
-                clear_paste_tracking(&state);
-                let _=app_handle.emit("paste-queue-unavailable","PrivacyEpochChanged");
-                return;
-            }
 
-            if crate::services::clipboard_ops::send_paste_keystroke(
-                &paste_method,
-                Some(&content),
-                Some(&c_type),
-            )
-            .is_err()
-            {
-                clear_paste_tracking(&state);
-                return;
-            }
-
-            let queue_became_empty = pop_front_if_matches(&state, id);
-
+    validate()?;
+    crate::services::clipboard_ops::send_paste_keystroke(method,content,Some(content_type)).map_err(|_|"PasteKeystrokeFailed".to_owned())?;
             // Settle time
             std::thread::sleep(std::time::Duration::from_millis(20));
 
@@ -274,67 +209,158 @@ pub fn paste_next_step(app_handle: tauri::AppHandle) {
                 }
             }
 
-            // Perform deletion if delete_after_paste is enabled
-            let delete_after_paste = {
-                let settings_state = app_handle.state::<crate::app_state::SettingsState>();
-                settings_state
-                    .delete_after_paste
-                    .load(std::sync::atomic::Ordering::Relaxed)
-            };
-
-            if delete_after_paste {
-                // Remove from session history first
-                {
-                    let mut s = session.inner().0.lock().unwrap();
-                    if let Some(pos) = s.iter().position(|i| i.id == id) {
-                        s.remove(pos);
-                    }
-                }
-
-                if id > 0 {
-                    // Persistent item: Delete from DB (and cleanup file)
-                    let app_data = app_handle.state::<AppDataDir>();
-                    let data_dir = app_data.0.lock().unwrap();
-                    if db_state.repo.delete(id, Some(&data_dir)).is_ok() {
-                        let _ = app_handle.emit("clipboard-removed", id);
-                    }
-                } else {
-                    // Session item only
-                    let _ = app_handle.emit("clipboard-removed", id);
-                }
-            } else {
-                // If not deleting, increment use count
-                if id > 0 {
-                    let _ = db_state.repo.increment_use_count(id);
-                }
-            }
-
-            // Emit event to update UI queue state
-            let _ = app_handle.emit("queue-item-pasted", id);
-            if queue_became_empty {
-                emit_queue_finished(&app_handle, &state);
-            }
-        } else {
-            let queue_became_empty = pop_front_if_matches(&state, id);
-            clear_paste_tracking(&state);
-            if queue_became_empty {
-                emit_queue_finished_if_empty(&app_handle, &state);
-            }
-        }
-    } else {
-        // The hotkey fired with nothing queued. `queue-finished` alone says
-        // "the queue is now empty", which the UI cannot tell apart from a
-        // batch that just ran dry -- so the press would look like it did
-        // nothing at all. This event names the cause.
-        let _ = app_handle.emit("paste-queue-empty", ());
-        emit_queue_finished(&app_handle, &state);
-    }
+    Ok(())
 }
 
+async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::DesktopHost,guard:QueueStepGuard,instance:String,method:String,delete:bool) {
+    let id=guard.step.id;
+    let mut prepared=match bridge.prepare_service_queue(id,&instance).await {
+        Ok(prepared)=>prepared,
+        Err(error) if error=="ClipboardRecordUnavailable"=>{
+            if guard.consume(true)==Some(true) {emit_queue_finished(&app,&app.state::<PasteQueue>());}
+            return;
+        },
+        Err(error)=>{guard.fail(&app,&error);return;},
+    };
+    if !guard.current() {return;}
+    guard.track(prepared.content.clone());
+    if let Err(error)=prepared.copy().await {guard.fail(&app,&error);return;}
+    if let Err(error)=prepared.check(&bridge).await {guard.fail(&app,&error);return;}
+    let result=send_queue_keystroke(&method,prepared.content.as_deref(),&prepared.content_type,|| {
+        if !guard.current() {return Err("PasteQueueChanged".into());}
+        if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
+        Ok(())
+    });
+    if let Err(error)=result {guard.fail(&app,&error);return;}
+    let empty=guard.consume(false);
+    let completed=prepared.complete(delete).await;
+    finish_pasted(&app,&guard,empty,completed,delete);
+}
+
+#[tauri::command]
+pub fn paste_next_step(app_handle:tauri::AppHandle) {
+    let state=app_handle.state::<PasteQueue>();
+    let reserved={let mut queue=state.0.lock().unwrap();reserve_step(&mut queue)};
+    let step=match reserved {
+        Ok(Some(step))=>step,
+        Ok(None)=>{let _=app_handle.emit("paste-queue-empty",());emit_queue_finished(&app_handle,&state);return;},
+        Err(error)=>{let _=app_handle.emit("paste-queue-unavailable",error);return;},
+    };
+    let guard=QueueStepGuard{queue:state.0.clone(),step};
+    let id=guard.step.id;
+    if id<=0 {guard.fail(&app_handle,"SessionQueueUnavailable");return;}
+    let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>().inner().clone();
+    let instance=match bridge.instance() {Ok(instance)=>instance,Err(error)=>{guard.fail(&app_handle,&error);return;}};
+    let db=app_handle.state::<DbState>();
+    let method=db.settings_repo.get("app.paste_method").ok().flatten().unwrap_or_else(||"shift_insert".into());
+    let delete=app_handle.state::<crate::app_state::SettingsState>().delete_after_paste.load(std::sync::atomic::Ordering::Relaxed);
+    match bridge.embedded() {
+        Err(error)=>{guard.fail(&app_handle,&error);return;},
+        Ok(None)=>{
+            tauri::async_runtime::spawn(paste_service_step(app_handle.clone(),bridge,guard,instance,method,delete));
+            return;
+        },
+        Ok(Some(_))=>(),
+    }
+    let history=db.history_service();
+    let prepared=match prepare_queue_entry(&history,id,chrono::Utc::now().timestamp_millis()) {
+        Ok(Some(prepared))=>prepared,
+        Ok(None)=>{
+            if guard.consume(true)==Some(true) {emit_queue_finished(&app_handle,&state);}
+            return;
+        },
+        Err(_)=>{guard.fail(&app_handle,"SensitiveAccessDenied");return;},
+    };
+    if !guard.current() {return;}
+    let PreparedQueueEntry{entry,permit}=prepared;
+    guard.track(Some(entry.content.clone()));
+    let copied=bridge.call_embedded::<dzc_host::wire::OperationResult>(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams{
+        id,service_instance_id:instance.clone(),expected_epoch:permit.epoch(),reveal:false,paste:false,derived_text:None,image_as_base64:None,
+        with_format:Some(entry.content_type=="rich_text" && entry.html_content.is_some()),delete_after_use:Some(false),move_to_top:Some(false)});
+    match copied {
+        Ok(result) if result.performed=>(),
+        Ok(_)=>{guard.fail(&app_handle,"ClipboardCopyFailed");return;},
+        Err(error)=>{guard.fail(&app_handle,&error);return;},
+    }
+    let pasted=send_queue_keystroke(&method,Some(&entry.content),&entry.content_type,|| {
+        if !guard.current() {return Err("PasteQueueChanged".into());}
+        if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
+        history.privacy().check_read(&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|error.to_string())
+    });
+    if let Err(error)=pasted {guard.fail(&app_handle,&error);return;}
+    let empty=guard.consume(false);
+    let completed=bridge.complete_embedded_queue(id,&instance,permit.epoch(),delete);
+    finish_pasted(&app_handle,&guard,empty,completed,delete);
+}
 #[cfg(test)]
 mod authorization_tests {
     use super::*;
     use std::sync::{Arc,Mutex};
+#[test]
+    fn dropping_a_cancelled_async_step_releases_its_reservation_without_consuming() {
+        let shared=Arc::new(Mutex::new(PasteQueueState::default()));
+        shared.lock().unwrap().items.push_back(1);
+        let step=reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap();
+        {
+            let pending=QueueStepGuard{queue:shared.clone(),step};
+            assert!(reserve_step(&mut shared.lock().unwrap()).is_err());
+            reset_paste_tracking(&mut shared.lock().unwrap());
+            assert!(!pending.current());
+        }
+        let mut queue=shared.lock().unwrap();
+        assert_eq!(queue.items.front(),Some(&1));
+        assert!(queue.in_flight.is_none());
+        let next=reserve_step(&mut queue).unwrap().unwrap();
+        drop(queue);
+        let pending=QueueStepGuard{queue:shared.clone(),step:next.clone()};
+        release_step(&mut shared.lock().unwrap(),&next);
+        let replacement=reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap();
+        drop(pending);
+        assert!(current_step(&shared.lock().unwrap(),&replacement),"a stale Drop must not unlock a newer step");
+        release_step(&mut shared.lock().unwrap(),&replacement);
+    }
+#[test]
+    fn service_step_reservation_blocks_duplicate_work_and_failure_keeps_the_front() {
+        let mut queue=PasteQueueState::default();queue.items.extend([1,2]);
+        let first=reserve_step(&mut queue).unwrap().unwrap();
+        assert!(reserve_step(&mut queue).is_err());
+        release_step(&mut queue,&first);
+        assert_eq!(queue.items.iter().copied().collect::<Vec<_>>(),vec![1,2]);
+        let retry=reserve_step(&mut queue).unwrap().unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first.token,&retry.token));
+        release_step(&mut queue,&first);
+        assert!(reserve_step(&mut queue).is_err(),"old cleanup must not release the current reservation");
+        assert_eq!(consume_step(&mut queue,&retry,false),Some(false));
+        assert_eq!(consume_step(&mut queue,&retry,false),None,"a pasted item is consumed only once");
+        release_step(&mut queue,&retry);
+        assert_eq!(reserve_step(&mut queue).unwrap().unwrap().id,2);
+    }
+    #[test]
+    fn replaced_or_cleared_queue_rejects_old_completion_even_for_the_same_id() {
+        let mut queue=PasteQueueState::default();queue.items.push_back(1);
+        let old=reserve_step(&mut queue).unwrap().unwrap();
+        queue.items.clear();queue.items.push_back(1);reset_paste_tracking(&mut queue);
+        assert!(!current_step(&queue,&old));
+        assert_eq!(consume_step(&mut queue,&old,false),None);
+        assert!(reserve_step(&mut queue).is_err(),"replacement must not overlap the pending cleanup");
+        release_step(&mut queue,&old);
+        let current=reserve_step(&mut queue).unwrap().unwrap();
+        queue.items.clear();reset_paste_tracking(&mut queue);
+        assert_eq!(consume_step(&mut queue,&current,false),None);
+        release_step(&mut queue,&current);
+        assert!(reserve_step(&mut queue).unwrap().is_none());
+    }
+    #[test]
+    fn missing_step_can_be_skipped_without_releasing_another_pending_operation() {
+        let mut queue=PasteQueueState::default();queue.items.extend([1,2]);
+        let step=reserve_step(&mut queue).unwrap().unwrap();
+        assert_eq!(consume_step(&mut queue,&step,true),Some(false));
+        assert_eq!(queue.items.front(),Some(&2));
+        assert!(!queue.last_action_was_paste);
+        assert!(reserve_step(&mut queue).is_err());
+        release_step(&mut queue,&step);
+        assert_eq!(reserve_step(&mut queue).unwrap().unwrap().id,2);
+    }
 
     fn history(protected:bool,kind:&str)->dzc_core::api::HistoryService {
         let connection=crate::database::init_db(":memory:").unwrap();
