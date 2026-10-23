@@ -202,6 +202,12 @@ fn current_selection() -> Option<Selection> {
     let sequence = unsafe { GetClipboardSequenceNumber() };
     (sequence != 0).then_some(Selection { owner, sequence })
 }
+#[cfg(test)]
+fn native_trace(stage: &str, original: Option<Selection>, decision: Option<Action>) {
+    if std::env::var("DZC_PRIVATE_LEASE_DIAGNOSTICS").as_deref() == Ok("1") {
+        eprintln!("dzc.private_native stage={stage} thread={:?} original={original:?} current={:?} decision={decision:?}", std::thread::current().id(), current_selection());
+    }
+}
 fn pump() {
     let mut message = MSG::default();
     unsafe {
@@ -238,12 +244,15 @@ fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut e
         let _clipboard = ClipboardLock::acquire(window.0)?;
         if state.revoked.load(Ordering::Acquire) || leases.iter().any(|lease| !lease.is_current()) { return Err("PrivacyEpochChanged".into()); }
         unsafe { EmptyClipboard() }.map_err(|_| "PrivateClipboardWriteFailed")?;
+        #[cfg(test)] native_trace("worker.initial_empty", None, None);
         let mut result = Ok(());
         for (format, bytes) in representations {
             if let Err(error) = set_bytes(format, &bytes) { result = Err(error); break; }
+            #[cfg(test)] native_trace(&format!("worker.format_set.{format}"), None, None);
         }
         let identity = current_selection();
         let accepted = result.is_ok() && identity.is_some_and(|original| original.owner == window.0.0 as usize) && leases.iter().all(NativeReadLease::is_current);
+        #[cfg(test)] native_trace("worker.original_pre_close", identity, None);
         if !accepted {
             state.revoked.store(true, Ordering::Release);
             // The initial lock still excludes every later writer. Partial publication
@@ -252,6 +261,7 @@ fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut e
         }
         (identity.unwrap_or(Selection { owner: 0, sequence: 0 }), accepted)
     };
+    #[cfg(test)] native_trace("worker.after_close", Some(original), None);
     if accepted { let _ = ready.send(Ok(())); } else { let _ = ready.send(Err("PrivateClipboardWriteFailed".into())); }
     let started = Instant::now();
     loop {
@@ -262,13 +272,20 @@ fn run(representations: Vec<(u32, Vec<u8>)>, leases: Vec<NativeReadLease>, mut e
             continue;
         }
         let decision = match ClipboardLock::acquire(window.0) {
-            Ok(_clipboard) => match action(original, current_selection(), revoked, started.elapsed(), lifetime) {
-                Action::ClearOriginal => if unsafe { EmptyClipboard() }.is_ok() { Action::ReleaseWithoutClear } else { Action::Retry },
-                other => other,
+            Ok(_clipboard) => {
+                let selected = action(original, current_selection(), revoked, started.elapsed(), lifetime);
+                #[cfg(test)] native_trace(if revoked { "worker.revoked_locked" } else { "worker.expiry_or_replacement_locked" }, Some(original), Some(selected));
+                match selected {
+                    Action::ClearOriginal => if unsafe { EmptyClipboard() }.is_ok() { Action::ReleaseWithoutClear } else { Action::Retry },
+                    other => other,
+                }
             },
             Err(_) => Action::Retry,
         };
-        if decision == Action::ReleaseWithoutClear { break; }
+        if decision == Action::ReleaseWithoutClear {
+            #[cfg(test)] native_trace("worker.finished_selection", Some(original), Some(decision));
+            break;
+        }
         std::thread::sleep(Duration::from_millis(20));
     }
     if let Some(export) = exports.as_mut() {
@@ -410,8 +427,11 @@ mod tests {
         let reader = Window::new().unwrap();
         let current_selection = || super::current_selection().expect("native selection identity available");
         let read_raw = |format| {
-            let _lock = ClipboardLock::acquire(reader.0).unwrap();
+            native_trace("fixture.read.before_open", None, None);
+            let lock = ClipboardLock::acquire(reader.0).unwrap();
+            native_trace("fixture.read.before_get", None, None);
             let value = unsafe { GetClipboardData(format) }.unwrap();
+            native_trace("fixture.read.after_get", None, None);
             let memory = HGLOBAL(value.0);
             let size = unsafe { GlobalSize(memory) };
             assert!(size > 0 && size <= MAX_BYTES);
@@ -419,9 +439,11 @@ mod tests {
             assert!(!bytes.is_null());
             let result = unsafe { std::slice::from_raw_parts(bytes.cast::<u8>(), size) }.to_vec();
             unsafe { let _ = GlobalUnlock(memory); }
+            drop(lock);
+            native_trace("fixture.read.after_close", None, None);
             result
         };
-        let empty = || { let _lock = ClipboardLock::acquire(reader.0).unwrap(); assert_eq!(unsafe { CountClipboardFormats() }, 0); };
+        let empty = || { let _lock = ClipboardLock::acquire(reader.0).unwrap(); native_trace("fixture.assert_empty", None, None); assert_eq!(unsafe { CountClipboardFormats() }, 0); };
         let writer = crate::runtime::EmbeddedClipboardWriter::default();
         let pixels = vec![7, 8, 9, 255, 1, 2, 3, 128];
         let mut png = std::io::Cursor::new(Vec::new());
@@ -431,7 +453,9 @@ mod tests {
             (ClipboardPayload::Html { html: "<b>synthetic 中文🙂</b>".into(), text: "synthetic 中文🙂".into() }, registered("HTML Format").unwrap(), html_bytes("<b>synthetic 中文🙂</b>")),
             (ClipboardPayload::Image { bytes: png.get_ref().clone(), mime: "image/png".into() }, registered("PNG").unwrap(), png.get_ref().clone()),
         ] {
+            eprintln!("dzc.private_native fixture_payload_format={format}");
             writer.write(ClipboardPayload::Private { payload: Box::new(payload), authorization: authorize() }).unwrap();
+            native_trace("fixture.write_returned", None, None);
             let raw = read_raw(format);
             assert_eq!(&raw[..expected.len()], expected.as_slice());
             assert!(raw[expected.len()..].iter().all(|byte| *byte == 0));
@@ -439,7 +463,9 @@ mod tests {
             assert_eq!(&read_raw(registered("CanUploadToCloudClipboard").unwrap())[..4], &[0; 4]);
             assert!(current_selection().owner != 0);
             history.privacy().set_session(PrivacySessionCommand::On { duration_ms: None }, now()).unwrap();
+            native_trace("fixture.epoch_changed_before_stop", None, None);
             writer.release_private_selection().unwrap();
+            native_trace("fixture.stop_returned", None, None);
             empty();
             history.privacy().set_session(PrivacySessionCommand::Off, now()).unwrap();
         }
