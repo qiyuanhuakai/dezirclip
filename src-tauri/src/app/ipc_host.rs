@@ -38,6 +38,25 @@ fn check_queue_state(instance:&str,epoch:u64,actual_instance:&str,actual_epoch:u
     if actual_instance!=instance {return Err("ClipboardHostInstanceChanged".into());}
     if actual_epoch!=epoch {return Err("PrivacyEpochChanged".into());} Ok(())
 }
+fn frozen_capture_request(instance:&str,epoch:u64,actual_instance:&str,actual_epoch:u64)->Result<CaptureBeginParams,String> {
+    check_queue_state(instance,epoch,actual_instance,actual_epoch)?;
+    Ok(CaptureBeginParams{service_instance_id:instance.into(),expected_epoch:epoch,copy_to_clipboard:Some(false)})
+}
+#[cfg(test)]
+mod frozen_capture_tests {
+    use super::*;
+    #[test]
+    fn frozen_remote_request_keeps_original_host_and_epoch_after_the_selection_wait() {
+        let request=frozen_capture_request("original-host",7,"original-host",7).unwrap();
+        assert_eq!(request.service_instance_id,"original-host");
+        assert_eq!(request.expected_epoch,7);
+        assert_eq!(request.copy_to_clipboard,Some(false));
+        assert_eq!(frozen_capture_request("original-host",7,"replacement-host",7).err().unwrap(),"ClipboardHostInstanceChanged");
+        for current in [8,9] {
+            assert_eq!(frozen_capture_request("original-host",7,"original-host",current).err().unwrap(),"PrivacyEpochChanged");
+        }
+    }
+}
 async fn service_queue_entry(client:&mut Client,id:i64,instance:&str,epoch:u64,method:Method)->Result<DesktopEntry,String> {
     let descriptor:BodySnapshot=client.call(method,DesktopEntryParams{id,service_instance_id:instance.into(),expected_epoch:epoch,reveal:false,thumbnail_dimension:None},"BodySnapshot").await.map_err(remote_error)?;
     if descriptor.state.service_instance_id!=instance || descriptor.state.privacy_epoch!=epoch {return Err("PrivacyEpochChanged".into());}
@@ -155,7 +174,13 @@ mod queue_contract_tests {
         }
     }
 }
-fn emit(name:&str,value:impl Serialize+Clone) {if let Some(app)=app() {let _=app.emit(name,value);}}
+fn emit(name:&str,value:impl Serialize+Clone) {
+    if matches!(name, "privacy-state-changed" | "clipboard-host-unavailable") {
+        if let Some(app) = app() { crate::app::commands::screenshot_cmd::cancel_region_capture(app); }
+        else { crate::app::commands::screenshot_cmd::clear_region_capture(); }
+    }
+    if let Some(app)=app() {let _=app.emit(name,value);}
+}
 fn failed()->String {"ClipboardHostUnavailable".into()}
 fn dispatch_embedded<T:DeserializeOwned>(host:&Host,method:Method,params:impl Serialize)->Result<T,String> {
     let params=serde_json::to_value(params).map_err(|_|failed())?;
@@ -209,7 +234,10 @@ impl DesktopHost {
         app.manage(bridge.clone());
         tauri::async_runtime::spawn(async move {if bridge.initialize().await.is_err() {bridge.set_mode(Mode::Unavailable);emit("clipboard-host-unavailable",());}});
     }
-    fn set_mode(&self,mode:Mode) {if let Ok(mut current)=self.0.mode.lock() {*current=mode;}}
+    fn set_mode(&self,mode:Mode) {
+        crate::app::commands::screenshot_cmd::clear_region_capture();
+        if let Ok(mut current)=self.0.mode.lock() {*current=mode;}
+    }
     fn invalidate_views(&self) {
         if let Ok(snapshot)=self.0.history.runtime_snapshot(now()) {
             if let Ok(mut value)=serde_json::to_value(snapshot) {
@@ -341,6 +369,15 @@ impl DesktopHost {
     }
     pub async fn begin_generated(&self)->Result<Option<GeneratedUpload>,String> {
         self.begin_upload(false,None).await
+    }
+    pub(crate) async fn begin_generated_for_snapshot(&self,instance:&str,epoch:u64)->Result<Option<GeneratedUpload>,String> {
+        if self.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
+        let mut client=self.service_client().await?;
+        let request=frozen_capture_request(instance,epoch,&client.hello.state.service_instance_id,client.hello.state.privacy_epoch)?;
+        if self.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
+        let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,request,"CaptureBeginResult").await.map_err(remote_error)?;
+        check_queue_state(instance,epoch,&result.state.service_instance_id,result.state.privacy_epoch)?;
+        Ok(result.capture_id.map(|id|GeneratedUpload{client,id}))
     }
     pub async fn begin_generated_copy(&self,epoch:Option<u64>)->Result<GeneratedUpload,String> {
         self.begin_upload(true,epoch).await?.ok_or_else(failed)

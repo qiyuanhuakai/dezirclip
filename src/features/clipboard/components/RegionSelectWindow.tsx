@@ -1,6 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
 import "./RegionSelectWindow.css";
@@ -24,23 +23,18 @@ type RegionSelectWindowProps = {
   onCancel?: () => void;
 };
 
+type RegionCaptureSession = { token: string; x: number; y: number; scale: number };
+
 const MIN_SELECTION_SIZE = 10;
-const CAPTURE_SETTLE_MS = 100;
-
-const hideRegionSelectWindow = async () => {
-  await getCurrentWindow().setFocusable(false);
-  await getCurrentWindow().hide();
-};
-
 /**
  * A cancelled selection has no capture to make, and the overlay is fullscreen —
  * while it sits hidden it still holds a whole display's worth of compositor
  * surface. Handing the hide to the backend lets it drop the window's memory
- * target too, which is what gives the memory back. The success path skips this
- * because `capture_region` releases the selector once it has replied.
+ * target too, which is what gives the memory back. Success parks it only after
+ * the capture reply, using its token so a new selection cannot be hidden.
  */
-const parkRegionSelectWindow = async () => {
-  await invoke("hide_region_select").catch(() => undefined);
+const parkRegionSelectWindow = async (sessionToken?: string) => {
+  await invoke("hide_region_select", { sessionToken }).catch(() => undefined);
 };
 
 const normalizeRect = (sel: Selection) => {
@@ -87,6 +81,8 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
   const framePending = useRef(false);
   const pendingRef = useRef<{ x: number; y: number } | null>(null);
   const visibleRef = useRef(false);
+  const capturePending = useRef(false);
+  const activeSession = useRef<Promise<RegionCaptureSession | null> | null>(null);
 
   // The capture overlay is usually opened straight from a hotkey, long before
   // the main window has ever rendered, so theme and colour mode come from the
@@ -167,6 +163,8 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      if (capturePending.current) return;
+      activeSession.current = invoke<RegionCaptureSession>("get_region_capture_session").catch(() => null);
       e.preventDefault();
       const start = {
         startX: e.clientX,
@@ -194,7 +192,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
   );
 
   const handleMouseUp = useCallback(async () => {
-    if (!dragging) return;
+    if (!dragging || capturePending.current) return;
     setDragging(false);
     // Flush the position queued for the next frame so a release between two
     // frames still captures the rectangle the user actually saw.
@@ -216,30 +214,32 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
       return;
     }
 
+    let sessionToken: string | undefined;
     try {
-      const window = getCurrentWindow();
-      const [origin, scale] = await Promise.all([
-        window.outerPosition(),
-        window.scaleFactor(),
-      ]);
-      const captureRect = toPhysicalCaptureRect(rect, origin, scale);
+      capturePending.current = true;
+      const session = await activeSession.current;
+      if (!session) throw new Error("RegionCaptureSessionExpired");
+      sessionToken = session.token;
+      const captureRect = toPhysicalCaptureRect(rect, session, session.scale);
       clearSelection();
-      await hideRegionSelectWindow();
-      await new Promise((resolve) => globalThis.setTimeout(resolve, CAPTURE_SETTLE_MS));
-      await invoke("capture_region", captureRect);
+      await invoke("capture_region", { ...captureRect, sessionToken: session.token });
+      await parkRegionSelectWindow(session.token);
       onSelect?.(captureRect);
       return;
     } catch (err) {
       console.error("Failed to capture selected region", err);
+    } finally {
+      capturePending.current = false;
     }
 
     clearSelection();
-    await parkRegionSelectWindow();
+    if (sessionToken) await parkRegionSelectWindow(sessionToken);
   }, [dragging, onSelect, cancelFrame, clearSelection]);
 
   // ESC key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (capturePending.current) return;
       if (e.key === "Escape") {
         clearSelection();
         setDragging(false);

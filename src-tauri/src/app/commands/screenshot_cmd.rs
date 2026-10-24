@@ -1,12 +1,13 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use base64::{engine::general_purpose, Engine as _};
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::services::clipboard_ops;
-use crate::services::clipboard::{process_new_entry, ClipboardData};
-use crate::services::screenshot::{self, MonitorRect, ScreenshotResult};
+use crate::services::clipboard::{process_new_entry, ClipboardData, GeneratedCaptureTicket};
+use crate::services::screenshot::{self, FrozenScreenFrame, MonitorRect, ScreenshotResult};
 
 /// The frontend already listens on this channel (`useToastListener`) but
 /// nothing on the backend ever emitted it, so it was a listener waiting for an
@@ -15,6 +16,129 @@ use crate::services::screenshot::{self, MonitorRect, ScreenshotResult};
 /// the three-language build.
 const EVENT_TOAST: &str = "toast";
 const REGION_SELECT_LABEL: &str = "region-select";
+
+enum FrozenCaptureTicket {
+    Local { ticket: dzc_core::api::CaptureTicket, instance: String },
+    Remote { instance: String, epoch: u64 },
+}
+
+impl FrozenCaptureTicket {
+    fn suspend(ticket: GeneratedCaptureTicket) -> Result<Self, String> {
+        match ticket {
+            GeneratedCaptureTicket::Local { ticket, _work, instance } => {
+                drop(_work);
+                Ok(Self::Local { ticket, instance })
+            }
+            GeneratedCaptureTicket::Remote(_) => Err("ClipboardHostInstanceChanged".into()),
+        }
+    }
+
+    async fn resume(self, app: &AppHandle) -> Result<Option<GeneratedCaptureTicket>, String> {
+        match self {
+            Self::Local { ticket, instance } => {
+                let bridge = app.state::<crate::app::ipc_host::DesktopHost>();
+                if bridge.instance()? != instance { return Err("ClipboardHostInstanceChanged".into()); }
+                let host = bridge.embedded()?.ok_or("ClipboardHostInstanceChanged")?;
+                let work = host.begin_work().map_err(|_| "CaptureWorkUnavailable")?;
+                Ok(Some(GeneratedCaptureTicket::Local { ticket, _work: work, instance }))
+            }
+            Self::Remote { instance, epoch } => app.state::<crate::app::ipc_host::DesktopHost>()
+                .begin_generated_for_snapshot(&instance, epoch).await.map(|upload| upload.map(GeneratedCaptureTicket::Remote)),
+        }
+    }
+}
+
+struct RegionCapture {
+    token: String,
+    generation: u64,
+    rect: MonitorRect,
+    frame: FrozenScreenFrame,
+    ticket: Option<FrozenCaptureTicket>,
+    host_instance: String,
+    privacy_epoch: u64,
+}
+
+#[derive(Serialize)]
+pub struct RegionCaptureSession {
+    token: String,
+    x: i32,
+    y: i32,
+    scale: f64,
+}
+
+struct RegionCaptureSlot {
+    frame: Option<RegionCapture>,
+    owner: Option<String>,
+}
+
+static REGION_CAPTURE: Mutex<RegionCaptureSlot> = Mutex::new(RegionCaptureSlot { frame: None, owner: None });
+static REGION_CAPTURE_GENERATION: AtomicU64 = AtomicU64::new(0);
+static REGION_WINDOW_OPERATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+fn clear_region_slot(session: &mut RegionCaptureSlot, token: Option<&str>) -> bool {
+    if let Some(token) = token {
+        if session.owner.as_deref() != Some(token) { return false; }
+    }
+    session.frame = None;
+    session.owner = None;
+    true
+}
+
+/// Cancelling or destroying the selector releases and zeroes its RAM-only frame.
+pub fn clear_region_capture() -> u64 {
+    let mut session = REGION_CAPTURE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let generation = REGION_CAPTURE_GENERATION.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
+    clear_region_slot(&mut session, None);
+    generation
+}
+
+pub fn cancel_region_capture(app: &AppHandle) {
+    let generation = clear_region_capture();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _operation = REGION_WINDOW_OPERATION.lock().await;
+        if check_region_generation(generation).is_ok() {
+            let _ = tauri::async_runtime::spawn_blocking(move || park_selector_window(&app)).await;
+        }
+    });
+}
+
+fn park_selector_window(app: &AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window(REGION_SELECT_LABEL) {
+        crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
+        window.set_focusable(false).map_err(|error| error.to_string())?;
+        window.hide().map_err(|error| error.to_string())?;
+        crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
+    }
+    Ok(())
+}
+
+fn take_region_capture(session: &mut Option<RegionCapture>, token: &str) -> Result<RegionCapture, String> {
+    if session.as_ref().map(|value| value.token.as_str()) != Some(token) {
+        return Err("RegionCaptureSessionExpired".into());
+    }
+    session.take().ok_or_else(|| "RegionCaptureSessionExpired".into())
+}
+
+fn check_region_generation(generation: u64) -> Result<(), String> {
+    if generation != REGION_CAPTURE_GENERATION.load(Ordering::SeqCst) {
+        return Err("RegionCaptureSessionExpired".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_region_capture_session(window: tauri::WebviewWindow) -> Result<RegionCaptureSession, String> {
+    if window.label() != REGION_SELECT_LABEL { return Err("RegionCaptureWindowRequired".into()); }
+    let (token, rect) = {
+        let session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+        let session = session.frame.as_ref().ok_or("RegionCaptureSessionExpired")?;
+        (session.token.clone(), session.rect)
+    };
+    let scale = window.scale_factor().map_err(|_| "RegionCaptureUnavailable")?;
+    if !scale.is_finite() || scale <= 0.0 { return Err("RegionCaptureUnavailable".into()); }
+    Ok(RegionCaptureSession { token, x: rect.x, y: rect.y, scale })
+}
 
 /// Read the global cursor position in physical pixels, or `None` if the
 /// platform cannot answer.
@@ -60,7 +184,7 @@ fn global_cursor(app: &AppHandle) -> Option<(i32, i32)> {
 ///
 /// The chosen rectangle is remembered so `reassert_overlay_geometry` can put it
 /// back after the OS has second thoughts about the size.
-fn cover_cursor_monitor(window: &tauri::WebviewWindow) -> Result<(), String> {
+fn cover_cursor_monitor(window: &tauri::WebviewWindow) -> Result<MonitorRect, String> {
     let monitors = window.available_monitors().unwrap_or_default();
 
     // Half-open containment, matching the bounds test `capture_region` uses:
@@ -102,7 +226,8 @@ fn cover_cursor_monitor(window: &tauri::WebviewWindow) -> Result<(), String> {
     // write avoids a redundant second resize; a DPI change later re-raises it.
     OVERLAY_SIZE_UNCONFIRMED.store(false, Ordering::SeqCst);
     apply_overlay_rect(window, rect)
-        .map_err(|err| format!("Failed to size region selector to its monitor: {err}"))
+        .map_err(|err| format!("Failed to size region selector to its monitor: {err}"))?;
+    Ok(rect)
 }
 
 /// The rectangle the region selector was last asked to cover.
@@ -224,21 +349,74 @@ fn apply_remembered_overlay_rect(window: &tauri::Window) {
 #[tauri::command]
 pub async fn show_region_selector(app: AppHandle) -> Result<(), String> {
     super::capability_cmd::require_desktop_interaction()?;
+    let _operation = REGION_WINDOW_OPERATION.lock().await;
+    let generation = REGION_CAPTURE_GENERATION.load(Ordering::SeqCst);
+    let privacy = super::privacy_cmd::get_privacy_status(app.clone()).await?;
+    let host_instance = app.state::<crate::app::ipc_host::DesktopHost>().instance()?;
+    let embedded = app.state::<crate::app::ipc_host::DesktopHost>().embedded()?.is_some();
+    let (ticket, remote_ticket) = if embedded {
+        (crate::services::clipboard::generated_capture_ticket(&app).await?, None)
+    } else {
+        // The authenticated original Host/epoch authorizes the frozen frame.
+        // The short-lived upload starts only once the user has selected a crop.
+        (None, Some(FrozenCaptureTicket::Remote { instance: host_instance.clone(), epoch: privacy.privacy_epoch }))
+    };
+    let current = super::privacy_cmd::get_privacy_status(app.clone()).await?;
+    if current.privacy_epoch != privacy.privacy_epoch { return Err("PrivacyEpochChanged".into()); }
+    if app.state::<crate::app::ipc_host::DesktopHost>().instance()? != host_instance {
+        return Err("ClipboardHostInstanceChanged".into());
+    }
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, REGION_SELECT_LABEL, |window, _created| {
             crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
+            if window.is_visible().map_err(|_| "RegionCaptureUnavailable")? {
+                if REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?.frame.is_none() {
+                    return Err("RegionSelectorStillVisible".into());
+                }
+                return window.set_focus().map_err(|error| error.to_string());
+            }
+            let generation = {
+                let mut session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+                check_region_generation(generation)?;
+                session.frame = None;
+                session.owner = None;
+                REGION_CAPTURE_GENERATION.fetch_add(1, Ordering::SeqCst).wrapping_add(1)
+            };
             let _ = window.set_focusable(true);
             // Before `show`: sizing a hidden window is free, while doing it after the
             // overlay is on screen would flash the old rectangle first.
-            cover_cursor_monitor(window)?;
+            let rect = cover_cursor_monitor(window)?;
+            check_region_generation(generation)?;
+            crate::infrastructure::capture_visibility::confirm_hidden_selector(window)?;
+            let frame = screenshot::freeze_monitor(rect).map_err(|error| error.to_string())?;
+            // The original local work lease covers screen IO, then only the
+            // original ticket remains while the user chooses a rectangle.
+            let ticket = match remote_ticket {
+                Some(ticket) => Some(ticket),
+                None => ticket.map(FrozenCaptureTicket::suspend).transpose()?,
+            };
+            {
+                let mut session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+                if generation != REGION_CAPTURE_GENERATION.load(Ordering::SeqCst) {
+                    return Err("RegionCaptureSessionExpired".into());
+                }
+                let token = uuid::Uuid::new_v4().to_string();
+                session.owner = Some(token.clone());
+                session.frame = Some(RegionCapture { token, generation, rect, frame,
+                    ticket, host_instance,
+                    privacy_epoch: privacy.privacy_epoch });
+            }
             crate::app::webview_memory::restore_window_memory(window, "region-select-show");
-            window
+            let result = window
                 .show()
-                .map_err(|e| format!("Failed to show region selector: {e}"))?;
-            window
-                .set_focus()
-                .map_err(|e| format!("Failed to focus region selector: {e}"))?;
-            Ok(())
+                .and_then(|_| window.set_focus())
+                .map_err(|e| format!("Failed to show region selector: {e}"));
+            if result.is_err() { clear_region_capture(); let _ = window.hide(); }
+            if generation != REGION_CAPTURE_GENERATION.load(Ordering::SeqCst) {
+                let _ = window.hide();
+                return Err("RegionCaptureSessionExpired".into());
+            }
+            result
         })
     })
     .await
@@ -250,13 +428,18 @@ pub async fn show_region_selector(app: AppHandle) -> Result<(), String> {
 /// Lower its memory target immediately, retaining the webview for another use
 /// within the configured idle timeout. Safe to call when no selector exists.
 #[tauri::command]
-pub fn hide_region_select(app: AppHandle) {
-    if let Some(window) = app.get_webview_window("region-select") {
-        crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
-        let _ = window.set_focusable(false);
-        let _ = window.hide();
-        crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
-    }
+pub async fn hide_region_select(app: AppHandle, session_token: Option<String>) -> Result<(), String> {
+    let _operation = REGION_WINDOW_OPERATION.lock().await;
+    tauri::async_runtime::spawn_blocking(move || {
+        {
+            let mut session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+            // Keep ownership metadata after consuming the RAM frame. State
+            // validation and native hide share the same window operation.
+            if !clear_region_slot(&mut session, session_token.as_deref()) { return Ok(()); }
+            REGION_CAPTURE_GENERATION.fetch_add(1, Ordering::SeqCst);
+        }
+        park_selector_window(&app)
+    }).await.map_err(|error| error.to_string())?
 }
 
 /// Capture the display the cursor is on as a PNG and broadcast a toast.
@@ -292,35 +475,39 @@ pub async fn capture_full_screen(app: AppHandle) -> Result<ScreenshotResult, Str
 /// `ScreenshotError::RegionOutOfBounds` string so the frontend can react.
 #[tauri::command]
 pub async fn capture_region(
+    session_token: String,
     x: i32,
     y: i32,
     width: u32,
     height: u32,
     app: AppHandle,
+    window: tauri::WebviewWindow,
 ) -> Result<ScreenshotResult, String> {
     super::capability_cmd::require_desktop_interaction()?;
-    let ticket = crate::services::clipboard::generated_capture_ticket(&app).await?;
-    // The frontend already hid the overlay so it does not appear in the capture.
+    if window.label() != REGION_SELECT_LABEL { return Err("RegionCaptureWindowRequired".into()); }
+    let operation = REGION_WINDOW_OPERATION.lock().await;
+    let session = {
+        let mut current = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+        take_region_capture(&mut current.frame, &session_token)?
+    };
+    window.set_focusable(false).map_err(|error| error.to_string())?;
+    window.hide().map_err(|error| error.to_string())?;
+    drop(operation);
     crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
-    let result = screenshot::capture_region(x, y, width, height).map_err(|e| e.to_string())?;
+    let current = super::privacy_cmd::get_privacy_status(app.clone()).await?;
+    check_region_generation(session.generation)?;
+    if current.privacy_epoch != session.privacy_epoch { return Err("PrivacyEpochChanged".into()); }
+    if app.state::<crate::app::ipc_host::DesktopHost>().instance()? != session.host_instance {
+        return Err("ClipboardHostInstanceChanged".into());
+    }
+    let result = session.frame.crop(x, y, width, height).map_err(|error| error.to_string())?;
+    drop(session.frame);
+    let ticket = match session.ticket { Some(ticket) => ticket.resume(&app).await?, None => None };
+    check_region_generation(session.generation)?;
     save_screenshot_to_history(&app, &result, ticket).await?;
+    check_region_generation(session.generation)?;
     copy_screenshot_to_clipboard(&result)?;
-    release_selector_after_response(&app);
     Ok(result)
-}
-
-/// Park the selector once the caller has actually received the result.
-///
-/// The capture is invoked *from* the selector, so dropping its memory target
-/// inline would race the IPC reply. Waiting hands the reply back first and
-/// keeps the teardown off the response path; the overlay is hidden and idle for
-/// the whole wait, so nothing the user can see changes.
-fn release_selector_after_response(app: &AppHandle) {
-    let handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        hide_region_select(handle);
-    });
 }
 
 fn copy_screenshot_to_clipboard(result: &ScreenshotResult) -> Result<(), String> {
@@ -367,7 +554,42 @@ mod tests {
 
     const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
+    fn frozen_session(token: &str) -> RegionCapture {
+        let rect = MonitorRect { x: -1, y: 0, width: 1, height: 1, is_primary: false };
+        RegionCapture { token: token.into(), generation: 0, rect,
+            frame: FrozenScreenFrame::from_pixels(rect, xcap::image::RgbaImage::new(1, 1)).unwrap(),
+            ticket: None, host_instance: "synthetic-host".into(), privacy_epoch: 7 }
+    }
+
     #[test]
+    fn frozen_session_stale_token_cannot_consume_a_new_frame_and_replay_is_rejected() {
+        let mut session = Some(frozen_session("new-session"));
+        assert!(take_region_capture(&mut session, "old-session").is_err());
+        assert_eq!(session.as_ref().unwrap().token, "new-session");
+        assert_eq!(take_region_capture(&mut session, "new-session").unwrap().privacy_epoch, 7);
+        assert!(session.is_none());
+        assert!(take_region_capture(&mut session, "new-session").is_err());
+    }
+
+    #[test]
+    fn frozen_session_cancel_discards_pixels_instead_of_creating_another_capture() {
+        let mut session = Some(frozen_session("cancelled-session"));
+        drop(session.take());
+        assert!(take_region_capture(&mut session, "cancelled-session").is_err());
+    }
+
+    #[test]
+    fn frozen_session_old_completion_cannot_park_a_new_frame_or_preparation() {
+        let mut session = RegionCaptureSlot { frame: None, owner: None };
+        assert!(!clear_region_slot(&mut session, Some("completed-A")));
+        session.frame = Some(frozen_session("new-B"));
+        session.owner = Some("new-B".into());
+        assert!(!clear_region_slot(&mut session, Some("completed-A")));
+        assert_eq!(session.frame.as_ref().unwrap().token, "new-B");
+        drop(take_region_capture(&mut session.frame, "new-B").unwrap());
+        assert!(clear_region_slot(&mut session, Some("new-B")));
+        assert!(session.owner.is_none());
+    }
 
     #[test]
     fn test_capture_full_screen_returns_png() {
