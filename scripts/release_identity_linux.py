@@ -33,6 +33,14 @@ def flatpak_command(role,arguments,database,environment,inspector=None):
         inspector=inspector_address(inspector)
         network='--share=network'
         extra=['--env=WEBKIT_INSPECTOR_SERVER='+inspector]
+        private=environment.get('DZC_QA_FIXTURE_ROOT')
+        require(isinstance(private,str) and re.fullmatch(r'/q/dezirclip-private-ss-[a-z0-9_-]+',private),
+                'Exact original private Secret Service root required for Desktop XDG')
+        forwarded={name:private+'/'+relative for name,relative in
+                   (('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache'))}
+        require(all(environment.get(name)==value for name,value in forwarded.items()),
+                'Desktop HOME/XDG must match the original private Secret Service directories')
+        extra+=['--env='+name+'='+value for name,value in forwarded.items()]
         target=['/bin/sh','/evidence/flatpak-desktop-inner.sh',*arguments]
     else:
         require(inspector is None,'Only the Desktop automation transport receives an inspector address')

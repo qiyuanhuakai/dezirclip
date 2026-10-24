@@ -298,7 +298,10 @@ print(json.dumps(proof))
 
 class FlatpakAutomationTransport(unittest.TestCase):
     def environment(self):
-        return {'DISPLAY':':99','DBUS_SESSION_BUS_ADDRESS':'unix:path=/q/private/runtime/bus',
+        private='/q/dezirclip-private-ss-test'
+        return {'DISPLAY':':99','DBUS_SESSION_BUS_ADDRESS':'unix:path='+private+'/runtime/bus',
+                'DZC_QA_FIXTURE_ROOT':private,'HOME':private+'/home','XDG_CONFIG_HOME':private+'/config',
+                'XDG_DATA_HOME':private+'/data','XDG_CACHE_HOME':private+'/cache',
                 'GH_TOKEN':'fixture-not-forwarded','ARBITRARY':'fixture-not-forwarded'}
 
     def observations(self):
@@ -319,6 +322,49 @@ class FlatpakAutomationTransport(unittest.TestCase):
         self.assertEqual(command[command.index('/package')+1:],['/bin/sh','/evidence/flatpak-desktop-inner.sh',*arguments])
         self.assertNotIn('fixture-not-forwarded',' '.join(command))
         with self.assertRaises(ValueError):flatpak_command('desktop',arguments,'/q/db',self.environment())
+
+    def test_desktop_forwards_the_four_exact_original_private_profile_directories(self):
+        environment=self.environment();private=environment['DZC_QA_FIXTURE_ROOT']
+        arguments=['--automation','space argument','semi;argument']
+        database=private+'/data/io.github.qiyuanhuakai.dezirclip/clipboard.db'
+        command=flatpak_command('desktop',arguments,database,environment,'127.0.0.1:12345')
+        for name,relative in (('HOME','home'),('XDG_CONFIG_HOME','config'),('XDG_DATA_HOME','data'),('XDG_CACHE_HOME','cache')):
+            self.assertEqual([value for value in command if value.startswith('--env='+name+'=')],
+                             ['--env='+name+'='+private+'/'+relative])
+        self.assertIn('--env=DEZIRCLIP_DB_PATH='+database,command)
+        self.assertEqual(command[command.index('/package')+1:],['/bin/sh','/evidence/flatpak-desktop-inner.sh',*arguments])
+        self.assertNotIn('--env=DZC_QA_FIXTURE_ROOT='+private,command)
+        self.assertFalse(any(value.startswith('--env=FONTCONFIG_') or value.endswith('/fonts:ro') for value in command))
+
+    def test_desktop_refuses_missing_host_and_noncanonical_private_profile_values(self):
+        environment=self.environment()
+        invalid_roots=(None,'','/home/actual-user','/q/private','/q/dezirclip-private-ss-',
+                       '/q/dezirclip-private-ss-test/','/q//dezirclip-private-ss-test',
+                       '/q/dezirclip-private-ss-test/../outside','relative','/q/dezirclip-private-ss-test\n')
+        for private in invalid_roots:
+            with self.subTest(private=private),self.assertRaises(ValueError):
+                flatpak_command('desktop',[],'/q/private/db',{**environment,'DZC_QA_FIXTURE_ROOT':private},'127.0.0.1:12345')
+        for name in ('HOME','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME'):
+            for value in (None,'','/home/actual-user',environment[name]+'/',environment[name]+'/../outside'):
+                with self.subTest(name=name,value=value),self.assertRaises(ValueError):
+                    flatpak_command('desktop',[],'/q/private/db',{**environment,name:value},'127.0.0.1:12345')
+            missing=dict(environment);missing.pop(name)
+            with self.subTest(missing=name),self.assertRaises(ValueError):
+                flatpak_command('desktop',[],'/q/private/db',missing,'127.0.0.1:12345')
+
+    def test_only_desktop_receives_profile_overrides_without_extending_filesystem_or_network(self):
+        environment=self.environment()
+        for role in ('cli','service'):
+            command=flatpak_command(role,[],'/q/private/db',environment)
+            self.assertFalse(any(value.startswith('--env='+name+'=') for value in command
+                                 for name in ('HOME','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME')))
+            self.assertIn('--unshare=network',command)
+        desktop=flatpak_command('desktop',[],'/q/private/db',environment,'127.0.0.1:12345')
+        self.assertEqual([value for value in desktop if value.startswith('--filesystem=')],
+                         ['--filesystem=/q','--filesystem=/evidence'])
+        self.assertEqual([value for value in desktop if value in ('--share=network','--unshare=network')],['--share=network'])
+        self.assertNotIn('fixture-not-forwarded',' '.join(desktop))
+        self.assertIn('exec /app/bin/dezirclip "$@"',flatpak_inner_source('net:[2]'))
 
     def test_cli_service_and_count_keep_their_nested_network(self):
         for role,arguments,binary in [('cli',['build-info','--json'],'dzc'),('cli',['count','--json'],'dzc'),('service',['--build-info'],'dzc-service')]:
