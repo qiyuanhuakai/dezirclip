@@ -18,6 +18,19 @@ export const oldPackages = Object.freeze({
 export const updaterNames = ['x64-setup.exe', 'arm64-setup.exe', 'amd64.AppImage', 'aarch64.AppImage']
   .flatMap(suffix => ['DezirClip_' + version + '_' + suffix, 'DezirClip_' + version + '_' + suffix + '.sig']);
 const requireValue = (value, message) => { if (!value) throw new Error(message); };
+export function mainWebviewTargets(targets) {
+  requireValue(Array.isArray(targets) && targets.length <= 256, 'A bounded Desktop target list is required');
+  return targets.filter(target => {
+    if (!target || target.type !== 'page' || typeof target.url !== 'string'
+      || typeof target.webSocketDebuggerUrl !== 'string' || !target.webSocketDebuggerUrl) return false;
+    try {
+      const url = new URL(target.url);
+      const localApp = (['http:', 'https:'].includes(url.protocol) && url.hostname === 'tauri.localhost')
+        || (url.protocol === 'tauri:' && url.hostname === 'localhost');
+      return localApp && !url.username && !url.password && !url.searchParams.has('window');
+    } catch { return false; }
+  });
+}
 export const checkNames = Object.freeze(['original_installer_hash', 'candidate_signature_and_hash', 'actual_old_install',
   'actual_old_profile_created', 'actual_upgrade_same_directory', 'installed_three_role_bytes', 'actual_three_role_build_info',
   'history_and_schema24', 'frozen_preferences_preserved', 'windows_settings_preserved', 'explorer_not_restarted',
@@ -414,7 +427,7 @@ export function validateNative(report, inputs, extracted) {
   const uninstall = evidence('actual_release_uninstall');
   requireValue(/^[a-f0-9]{64}$/.test(uninstall.uninstaller_sha256) && uninstall.uninstaller_sha256 === report.uninstaller_sha256
     && uninstall.registered_installation_absent === true && equal(uninstall.missing, Object.values(roleFiles)), 'Actual release uninstall is incomplete');
-  requireValue(Array.isArray(report.processes) && report.processes.length >= 16
+  requireValue(Array.isArray(report.processes) && report.processes.length >= 19
     && new Set(report.processes.map(item => item.label)).size === report.processes.length
     && report.processes.every(item => item.original_handle_retained === true && item.exited === true && item.status === 'passed'
       && Number.isSafeInteger(item.pid) && item.pid > 0 && Number.isInteger(item.exit_code)
@@ -423,7 +436,8 @@ export function validateNative(report, inputs, extracted) {
     && evidence('controlled_processes_exited').original_handles_verified === true, 'An original controlled process was not confirmed exited');
   const labels = ['verify-staged', 'extract-packaged-roles', 'install-original-published', 'old-cli-version', 'old-cli-create-profile',
     'seed-owned-old-profile', 'install-final-release-upgrade', 'final-cli-build-info', 'final-service-build-info', 'final-cli-retained-history',
-    'upgraded-profile-check', 'actual-final-gui', 'actual-final-gui-bridge', 'after-gui-profile-check', 'uninstall-actual-final-release',
+    'upgraded-profile-check', 'configure-final-webview', 'actual-final-gui', 'inspect-final-webview-token',
+    'actual-final-gui-bridge', 'restore-final-webview', 'after-gui-profile-check', 'uninstall-actual-final-release',
     'uninstalled-profile-check', ...(inputs.scenario === 'PublishedAlphaToAlpha2' ? ['old-cli-build-info'] : [])];
   requireValue(equal(report.processes.map(item => item.label).sort(), labels.sort()), 'A required actual native process observation is missing');
   requireValue(report.gui_process_identity?.verified === true && report.gui_exit?.original_process_exited === true

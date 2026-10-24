@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { assertAuthority, checkNames, combine, httpFailureDetails, inspectPe, nsisMembers, oldPackages, prepareFailure, releaseAssets,
+import { assertAuthority, checkNames, combine, httpFailureDetails, inspectPe, mainWebviewTargets, nsisMembers, oldPackages, prepareFailure, releaseAssets,
   safeFailureText, sha256, updaterNames, validateAssets, validateInfo, validateNative, validateRecoveryAuthority, verifyDownloads, version } from '../release-windows-upgrade.mjs';
 
 // Synthetic report observations test pure rejection contracts. Application
@@ -20,6 +20,27 @@ const encode = value => Buffer.from(value).toString('base64');
 const assetName = suffix => `DezirClip_${version}_${suffix}`;
 const frozen = { 'app.quick_paste_hotkey': 'Ctrl+Alt+Shift+F9', 'app.classification_enabled': 'false',
   'app.hidden_filter_chips': 'release-upgrade-fixture', 'app.screenshot_enabled': 'false', 'app.ocr_enabled': 'false' };
+
+test('Desktop discovery requires the unique main app target among auxiliary WebViews', () => {
+  const page = url => ({ type: 'page', url, webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/synthetic' });
+  const main = page('http://tauri.localhost/index.html');
+  const auxiliary = [page('http://tauri.localhost/?window=quick-paste'), page('http://tauri.localhost/?window=region-select')];
+  assert.deepEqual(mainWebviewTargets([...auxiliary, main]), [main]);
+  assert.deepEqual(mainWebviewTargets(auxiliary), []);
+  assert.equal(mainWebviewTargets([main, { ...main }]).length, 2);
+  assert.equal(mainWebviewTargets([page('tauri://localhost/')]).length, 1);
+});
+
+test('Desktop discovery rejects foreign pages, query windows and malformed target lists', () => {
+  const page = url => ({ type: 'page', url, webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/synthetic' });
+  const bad = ['https://example.invalid/', 'http://tauri.localhost.example.invalid/', 'http://tauri.localhost@example.invalid/',
+    'http://user:password@tauri.localhost/', 'tauri://other/', 'http://tauri.localhost/?window=',
+    'http://tauri.localhost/?%77indow=auxiliary', 'not a URL'];
+  assert.deepEqual(mainWebviewTargets(bad.map(page)), []);
+  assert.deepEqual(mainWebviewTargets([null, {}, { ...page('http://tauri.localhost/'), type: 'worker' },
+    { ...page('http://tauri.localhost/'), webSocketDebuggerUrl: '' }]), []);
+  for (const value of [null, {}, Array(257).fill(null)]) assert.throws(() => mainWebviewTargets(value), /bounded Desktop target list/);
+});
 
 function signedDownloads() {
   const key = generateKeyPairSync('ed25519');
@@ -77,7 +98,8 @@ function nativeFixture(scenario = 'LegacyToAlpha2') {
   const explorer = [{ pid: 55, started_at: '2026-10-23T00:00:00Z' }];
   const labels = ['verify-staged', 'extract-packaged-roles', 'install-original-published', 'old-cli-version', 'old-cli-create-profile',
     'seed-owned-old-profile', 'install-final-release-upgrade', 'final-cli-build-info', 'final-service-build-info', 'final-cli-retained-history',
-    'upgraded-profile-check', 'actual-final-gui', 'actual-final-gui-bridge', 'after-gui-profile-check', 'uninstall-actual-final-release',
+    'upgraded-profile-check', 'configure-final-webview', 'actual-final-gui', 'inspect-final-webview-token',
+    'actual-final-gui-bridge', 'restore-final-webview', 'after-gui-profile-check', 'uninstall-actual-final-release',
     'uninstalled-profile-check', ...(scenario === 'PublishedAlphaToAlpha2' ? ['old-cli-build-info'] : [])];
   const processes = labels.map((label, index) => ({ label, pid: 100 + index,
     original_handle_retained: true, exited: true, status: 'passed', exit_code: label === 'actual-final-gui' ? -1 : 0,
@@ -358,6 +380,16 @@ test('Explorer preservation requires an active original identity, not three matc
     const explorer = evidence(report, 'explorer_not_restarted');
     for (const stage of ['before', 'after_upgrade', 'after_uninstall']) Object.assign(explorer[stage][0], invalid);
   });
+});
+
+test('synthetic native gate requires normal configuration, token inspection and restoration exits', () => {
+  for (const label of ['configure-final-webview', 'inspect-final-webview-token', 'restore-final-webview']) {
+    rejectsNative(({ report }) => {
+      report.processes = report.processes.filter(item => item.label !== label);
+      evidence(report, 'controlled_processes_exited').count = report.processes.length;
+    });
+    rejectsNative(({ report }) => { report.processes.find(item => item.label === label).exit_code = 1; });
+  }
 });
 
 test('synthetic GUI exit accepts natural success or confirmed original-tree termination only', () => {
