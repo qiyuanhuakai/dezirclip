@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Resume original alpha.2 assets without rebuilding or moving its tag
+        required: true
+        type: choice
+        options: [resume-existing-alpha2]
 
 permissions:
   contents: write
@@ -21,11 +28,21 @@ jobs:
     name: Create GitHub release
     runs-on: ubuntu-24.04
     outputs:
-      release_id: ${{ steps.release.outputs.release_id }}
-      prerelease: ${{ steps.release.outputs.prerelease }}
+      release_id: ${{ steps.release.outputs.release_id || steps.recovery.outputs.release_id }}
+      prerelease: ${{ steps.release.outputs.prerelease || steps.recovery.outputs.prerelease }}
+      source: ${{ steps.recovery.outputs.source || github.sha }}
+      tooling_source: ${{ github.sha }}
+      tag: ${{ steps.recovery.outputs.tag || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -33,6 +50,7 @@ jobs:
           node-version: 22
 
       - name: Require signed updater configuration
+        if: github.event_name == 'push'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: node scripts/updater-release.mjs preflight "$GITHUB_REF_NAME"
@@ -40,7 +58,64 @@ jobs:
       - name: Verify updater release logic
         run: node --test scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
 
+      - name: Resolve the fixed original release for recovery
+        if: github.event_name == 'workflow_dispatch'
+        id: recovery
+        shell: python
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_RELEASE_RECOVERY: '1'
+          DZC_RELEASE_TOOLING_SOURCE: ${{ github.sha }}
+          DZC_RECOVERY_OPERATION: ${{ inputs.mode }}
+        run: |
+          import json, os, pathlib, sys
+          sys.path.insert(0, 'scripts')
+          from release_recovery import authority
+          from release_identities import VERSION, expected_assets, require
+          from release_identity_inputs import InputFailure, metadata, safe_message
+          source = '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae'
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'release-recovery-context.json'
+          report = {'schema_version': 1, 'kind': 'recovery_preflight', 'status': 'failed', 'stage': 'authority'}
+          try:
+              require(os.environ['DZC_RECOVERY_OPERATION'] == 'resume-existing-alpha2', 'Only the fixed alpha.2 recovery is supported')
+              report['authority'] = authority(source)
+              report['stage'] = 'release_metadata'
+              release, report['request'] = metadata('repos/qiyuanhuakai/dezirclip/releases/422045565', os.environ['GH_TOKEN'])
+              report['stage'] = 'asset_catalog'
+              require(release['id'] == 422045565 and release['tag_name'] == 'v0.2.0-alpha.2' and release['draft'] is True and release['prerelease'] is True, 'Original unpublished alpha.2 release required')
+              names = []
+              for target in ('windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'):
+                  archive, packages = expected_assets(target)
+                  names += [archive, archive + '.sha256', *packages]
+                  names += [name + '.sig' for name in packages if name.endswith(('.exe', '.AppImage', '.deb'))]
+              require(VERSION == '0.2.0-alpha.2' and len(names) == len(set(names)) == 24, 'Original complete asset catalog required')
+              actual = [asset['name'] for asset in release['assets']]
+              require(len(actual) == len(set(actual)) == 24 and set(actual) == set(names), 'All original 24 assets must already exist; recovery never rebuilds or replaces assets')
+              require(all(asset['state'] == 'uploaded' and asset['size'] > 0 for asset in release['assets']), 'Original asset uploads must be complete')
+              report.update(status='passed', stage='complete', release_id=release['id'], assets=[{key: asset[key] for key in ('name', 'id', 'size', 'updated_at', 'digest')} for asset in release['assets']])
+              with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+                  stream.write('release_id=422045565\nprerelease=true\nsource=' + source + '\ntag=v0.2.0-alpha.2\n')
+          except BaseException as error:
+              report['status'] = 'failed'
+              report['error_type'] = type(error).__name__
+              report['error'] = error.details if isinstance(error, InputFailure) else {'category': 'RecoveryContextRejected', 'message': safe_message(str(error), os.environ.get('GH_TOKEN', ''))}
+              raise
+          finally:
+              with output.open('x', encoding='utf-8') as stream:
+                  json.dump(report, stream, indent=2)
+                  stream.flush()
+                  os.fsync(stream.fileno())
+
+      - name: Retain the actual recovery context
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-recovery-context-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-recovery-context.json
+          if-no-files-found: error
+
       - name: Create or reuse release
+        if: github.event_name == 'push'
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,6 +151,7 @@ jobs:
 
   build-standalone-cli:
     name: Build compatible standalone CLI
+    if: github.event_name == 'push'
     needs: create-release
     uses: ./.github/workflows/standalone-cli.yml
     with:
@@ -83,6 +159,7 @@ jobs:
 
   publish-standalone-cli:
     name: Publish verified standalone archives
+    if: github.event_name == 'push'
     needs: [create-release, build-standalone-cli]
     runs-on: ubuntu-24.04
     steps:
@@ -114,6 +191,7 @@ jobs:
 
   publish-tauri:
     name: Tauri release (${{ matrix.name }})
+    if: github.event_name == 'push'
     needs: create-release
     runs-on: ${{ matrix.platform }}
     strategy:
@@ -244,6 +322,7 @@ jobs:
 
   publish-flatpak:
     name: Verified Flatpak release
+    if: github.event_name == 'push'
     needs: create-release
     uses: ./.github/workflows/flatpak.yml
     with:
@@ -253,31 +332,42 @@ jobs:
   collect-release-identities:
     name: Collect actual final package identities
     needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success')) }}
     permissions:
-      contents: read
+      contents: write
       actions: read
     uses: ./.github/workflows/release-identities.yml
     with:
-      source: ${{ github.sha }}
+      source: ${{ needs.create-release.outputs.source }}
+      tooling-source: ${{ needs.create-release.outputs.tooling_source }}
+      recovery: ${{ github.event_name == 'workflow_dispatch' }}
       release-id: ${{ needs.create-release.outputs.release_id }}
 
   verify-final-windows-upgrade:
     name: Verify actual signed Windows upgrades
     needs: [create-release, publish-tauri]
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || needs.publish-tauri.result == 'success') }}
     permissions:
-      contents: read
+      contents: write
     uses: ./.github/workflows/release-windows-upgrade.yml
     with:
-      source: ${{ github.sha }}
+      source: ${{ needs.create-release.outputs.source }}
+      tooling-source: ${{ needs.create-release.outputs.tooling_source }}
+      recovery: ${{ github.event_name == 'workflow_dispatch' }}
       release-id: ${{ needs.create-release.outputs.release_id }}
 
   verify-publish-and-promote:
     name: Verify signed artifacts and publish before public acceptance
     needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade]
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.collect-release-identities.result == 'success' && needs.verify-final-windows-upgrade.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success')) }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.create-release.outputs.tooling_source }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -288,4 +378,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: node scripts/updater-release.mjs publish-only "$GITHUB_REF_NAME"
+        run: node scripts/updater-release.mjs publish-only "${{ needs.create-release.outputs.tag }}"

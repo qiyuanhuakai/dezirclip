@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { assertAuthority, checkNames, combine, inspectPe, nsisMembers, oldPackages, releaseAssets,
-  sha256, updaterNames, validateAssets, validateInfo, validateNative, verifyDownloads, version } from '../release-windows-upgrade.mjs';
+import { assertAuthority, checkNames, combine, httpFailureDetails, inspectPe, nsisMembers, oldPackages, prepareFailure, releaseAssets,
+  safeFailureText, sha256, updaterNames, validateAssets, validateInfo, validateNative, validateRecoveryAuthority, verifyDownloads, version } from '../release-windows-upgrade.mjs';
 
 // Every observation below is synthetic, in memory, and only tests rejection
 // contracts. No product, installer, clipboard, registry or network runs. The
@@ -123,6 +123,97 @@ test('synthetic authority permits only exact final-tag hosted checkout and actua
   }
   for (const [platform, arch] of [['linux', 'x64'], ['win32', 'arm64'], ['win32', 'ia32']]) assert.throws(() => assertAuthority(env, source, releaseId, platform, arch, true));
   for (const id of ['0', '-1', '01', '42x']) assert.throws(() => assertAuthority(env, source, id, 'win32', 'x64', true));
+});
+
+test('an explicit zero recovery flag retains the normal exact-tag authority contract', () => {
+  const env = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_REPOSITORY: 'qiyuanhuakai/dezirclip',
+    GITHUB_REF: 'refs/tags/v' + version, GITHUB_SHA: source, DZC_RELEASE_RECOVERY: '0',
+    DZC_RELEASE_TOOLING_SOURCE: 'f'.repeat(40), PROCESSOR_ARCHITECTURE: 'AMD64' };
+  assert.doesNotThrow(() => assertAuthority(env, source, releaseId, 'win32', 'x64', true));
+  assert.throws(() => assertAuthority({ ...env, GITHUB_REF: 'refs/heads/master' }, source, releaseId, 'win32', 'x64', true));
+  assert.throws(() => assertAuthority({ ...env, GITHUB_SHA: 'f'.repeat(40) }, source, releaseId, 'win32', 'x64', true));
+  assert.throws(() => assertAuthority({ ...env, DZC_RELEASE_RECOVERY: '2' }, source, releaseId, 'win32', 'x64', true));
+});
+
+const recoverySource = '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae';
+const recoveryReleaseId = '422045565';
+const workflowSource = 'f'.repeat(40);
+function recoveryEnvironment() {
+  return { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', GITHUB_REPOSITORY: 'qiyuanhuakai/dezirclip',
+    GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/master', GITHUB_SHA: workflowSource,
+    GITHUB_WORKFLOW_REF: 'qiyuanhuakai/dezirclip/.github/workflows/release.yml@refs/heads/master',
+    GITHUB_RUN_ID: '123456', GITHUB_RUN_ATTEMPT: '2', DZC_RELEASE_RECOVERY: '1',
+    DZC_RELEASE_TOOLING_SOURCE: workflowSource, PROCESSOR_ARCHITECTURE: 'AMD64' };
+}
+function recoveryReceipt() {
+  return { schema_version: 1, mode: 'recovery', source_revision: recoverySource, workflow_source_revision: workflowSource,
+    tag: 'v' + version, release_id: Number(recoveryReleaseId), run_id: '123456', run_attempt: '2' };
+}
+test('pure recovery context validation retains actual dispatch fields without executing its independent authority', () => {
+  const env = recoveryEnvironment();
+  assert.doesNotThrow(() => assertAuthority(env, recoverySource, recoveryReleaseId, 'win32', 'x64', true));
+  assert.equal(validateRecoveryAuthority(recoveryReceipt(), env, recoverySource, recoveryReleaseId).workflow_source_revision, workflowSource);
+  for (const [key, value] of Object.entries({ GITHUB_ACTIONS: 'false', RUNNER_ENVIRONMENT: 'self-hosted',
+    GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/tags/v' + version, GITHUB_SHA: source,
+    GITHUB_WORKFLOW_REF: 'qiyuanhuakai/dezirclip/.github/workflows/release.yml@refs/heads/other',
+    GITHUB_RUN_ID: '0', GITHUB_RUN_ATTEMPT: '0', DZC_RELEASE_RECOVERY: '0', DZC_RELEASE_TOOLING_SOURCE: 'invalid' })) {
+    assert.throws(() => assertAuthority({ ...env, [key]: value }, recoverySource, recoveryReleaseId, 'win32', 'x64', true));
+  }
+  for (const key of ['GITHUB_EVENT_NAME', 'GITHUB_WORKFLOW_REF', 'DZC_RELEASE_TOOLING_SOURCE', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT']) {
+    const missing = { ...env }; delete missing[key];
+    assert.throws(() => assertAuthority(missing, recoverySource, recoveryReleaseId, 'win32', 'x64', true));
+  }
+  assert.throws(() => assertAuthority({ ...env, PROCESSOR_ARCHITECTURE: 'ARM64' }, recoverySource, recoveryReleaseId, 'win32', 'x64', true));
+  for (const [key, value] of Object.entries({ schema_version: 2, mode: 'tag', source_revision: source,
+    workflow_source_revision: source, tag: 'v0.2.0-alpha.1', release_id: 42, run_id: '999', run_attempt: '1' })) {
+    assert.throws(() => validateRecoveryAuthority({ ...recoveryReceipt(), [key]: value }, env, recoverySource, recoveryReleaseId));
+  }
+  assert.throws(() => validateRecoveryAuthority(recoveryReceipt(), {}, recoverySource, recoveryReleaseId));
+});
+
+test('HTTP failure details retain permission diagnostics and exclude credentials, redirects and arbitrary body fields', () => {
+  const token = 'private-read-token-for-tests';
+  const headers = new Headers({ 'X-GitHub-Request-Id': 'request-123', 'X-Accepted-GitHub-Permissions': 'contents=write',
+    'X-RateLimit-Remaining': '4999', 'Content-Type': 'application/json', Authorization: 'Bearer ' + token,
+    Cookie: token, 'Set-Cookie': token, Location: 'https://objects.example/payload?sig=secretSig' });
+  const value = httpFailureDetails(403, headers, { message: 'Resource not accessible ' + token + ' ghp_syntheticToken123 https://objects.example/payload?sig=secretSig',
+    status: '403', documentation_url: 'https://docs.github.com/rest/releases/releases', debug: { Authorization: token } }, token);
+  assert.deepEqual(value.headers, { 'x-github-request-id': 'request-123', 'x-accepted-github-permissions': 'contents=write',
+    'x-ratelimit-remaining': '4999', 'content-type': 'application/json' });
+  assert.equal(value.status, 403);
+  assert.equal(value.response_body.documentation_url, 'https://docs.github.com/rest/releases/releases');
+  assert.deepEqual(Object.keys(value.response_body).sort(), ['documentation_url', 'message', 'status']);
+  assert.doesNotMatch(JSON.stringify(value), /private-read-token|ghp_|secretSig|Authorization|Cookie|Location/);
+  for (const url of ['https://docs.github.com/rest?token=secret', 'https://docs.github.com/rest#secret',
+    'https://user:password@docs.github.com/rest', 'https://other.example/rest', 'http://docs.github.com/rest',
+    'https://docs.github.com/' + token]) {
+    assert.equal(httpFailureDetails(403, {}, { documentation_url: url }, token).response_body.documentation_url, undefined);
+  }
+  assert.equal(httpFailureDetails(403, {}, { message: 'x'.repeat(9000) }).response_body.message.length, 2048);
+  assert.throws(() => httpFailureDetails(0, {}, {}));
+});
+
+test('a pre-policy failure remains failed with a bounded stage and independently bound recovery workflow source', () => {
+  const token = 'private-read-token-for-tests';
+  const error = new Error('Metadata denied ' + token + ' https://objects.example/payload?sig=secretSig');
+  error.http = { ...httpFailureDetails(403, { 'x-accepted-github-permissions': 'contents=write' }, { message: 'denied ' + token }, token),
+    authorization: token, body_truncated: false, body_unavailable: false };
+  const value = prepareFailure(recoverySource, recoveryReleaseId, 'release_metadata', error, recoveryReceipt(), token);
+  assert.equal(value.kind, 'release_windows_upgrade_prepare_failure');
+  assert.equal(value.status, 'failed');
+  assert.equal(value.source_revision, recoverySource);
+  assert.equal(value.workflow_source_revision, workflowSource);
+  assert.equal(value.release_id, Number(recoveryReleaseId));
+  assert.equal(value.failure.http.status, 403);
+  assert.equal(value.failure.http.headers['x-accepted-github-permissions'], 'contents=write');
+  assert.equal(Object.hasOwn(value, 'signed_assets'), false);
+  assert.equal(Object.hasOwn(value, 'policy'), false);
+  assert.equal(Object.hasOwn(value, 'checks'), false);
+  assert.doesNotMatch(JSON.stringify(value), /private-read-token|secretSig|authorization/);
+  assert.equal(Object.hasOwn(prepareFailure(source, releaseId, 'asset_inventory', new Error('missing'), { mode: 'tag' }), 'workflow_source_revision'), false);
+  assert.throws(() => prepareFailure(source, releaseId, 'passed', error, { mode: 'tag' }));
+  assert.throws(() => prepareFailure(source, releaseId, 'download_asset', error, { mode: 'tag' }, token, 'https://objects.example/payload?sig=secretSig'));
+  assert.equal(safeFailureText('\u0000' + token + ' ghp_syntheticToken123 https://example.test/?secret=1', token), '[redacted] [redacted] [url]');
 });
 
 test('synthetic release metadata requires all unique four updater payloads and four signatures', () => {
@@ -295,6 +386,31 @@ test('synthetic aggregation binds both distinct scenarios, source, release, poli
     value => { value[1].value.signed_assets[0].sha256 = 'f'.repeat(64); }, value => { value[1].value.status = 'failed'; }]) {
     const value = clone(reports); change(value); assert.throws(() => combine(value, source, releaseId, policyHash));
   }
+});
+
+test('native and aggregate evidence retain one recovery workflow source while normal reports stay compatible', () => {
+  const fixture = nativeFixture();
+  fixture.inputs.workflow_source_revision = workflowSource;
+  fixture.report.workflow_source_revision = workflowSource;
+  assert.doesNotThrow(() => verify(fixture));
+  fixture.report.workflow_source_revision = source;
+  assert.throws(() => verify(fixture));
+  fixture.report.workflow_source_revision = workflowSource;
+  delete fixture.inputs.workflow_source_revision;
+  assert.throws(() => verify(fixture));
+  const reports = Object.keys(oldPackages).map(sealedScenario);
+  assert.equal(Object.hasOwn(combine(reports, source, releaseId, policyHash), 'workflow_source_revision'), false);
+  for (const item of reports) {
+    item.value.workflow_source_revision = workflowSource;
+    item.sha256 = sha256(Buffer.from(JSON.stringify(item.value)));
+  }
+  assert.equal(combine(reports, source, releaseId, policyHash).workflow_source_revision, workflowSource);
+  reports[1].value.workflow_source_revision = source;
+  assert.throws(() => combine(reports, source, releaseId, policyHash));
+  delete reports[1].value.workflow_source_revision;
+  assert.throws(() => combine(reports, source, releaseId, policyHash));
+  reports[1].value.workflow_source_revision = 'invalid';
+  assert.throws(() => combine(reports, source, releaseId, policyHash));
 });
 
 test('Windows local entry point refuses before any product operation', { skip: process.platform !== 'win32' }, () => {

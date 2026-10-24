@@ -9,16 +9,33 @@ Set-StrictMode -Version Latest
 $version = '0.2.0-alpha.2'
 $repository = Split-Path -Parent $PSScriptRoot
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or -not $env:RUNNER_TEMP -or
-    $env:GITHUB_REPOSITORY -cne 'qiyuanhuakai/dezirclip' -or $env:GITHUB_REF -cne ('refs/tags/v' + $version) -or $env:GITHUB_SHA -cne $ExpectedSource) {
+    $env:GITHUB_REPOSITORY -cne 'qiyuanhuakai/dezirclip') {
     throw 'Final release upgrade execution requires the exact tag on a disposable GitHub-hosted runner.'
 }
 if ($env:OS -cne 'Windows_NT' -or [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture -ne 'X64' -or
     [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64' -or $env:PROCESSOR_ARCHITEW6432 -or
     $env:PROCESSOR_ARCHITECTURE -ine 'AMD64') { throw 'Actual native x64 Windows is required.' }
-$head = & git -C $repository rev-parse HEAD
-if ($LASTEXITCODE -ne 0 -or $head -cne $ExpectedSource) { throw 'The checkout is not the final expected source.' }
-$changes = & git -C $repository status --porcelain=v1 --untracked-files=no
-if ($LASTEXITCODE -ne 0 -or $changes) { throw 'The final source checkout must be clean.' }
+$workflowSource = $null
+if ($env:DZC_RELEASE_RECOVERY -and $env:DZC_RELEASE_RECOVERY -cnotin @('0', '1')) { throw 'Invalid release recovery mode.' }
+if ($env:DZC_RELEASE_RECOVERY -ceq '1') {
+    $authorityOutput = & python (Join-Path $PSScriptRoot 'release_recovery.py') authority $ExpectedSource
+    if ($LASTEXITCODE -ne 0) { throw 'The independent release recovery authority refused this execution.' }
+    $authority = ($authorityOutput -join "`n") | ConvertFrom-Json -Depth 20
+    if ($authority.schema_version -ne 1 -or $authority.mode -cne 'recovery' -or $authority.source_revision -cne $ExpectedSource -or
+        $authority.workflow_source_revision -cnotmatch '^[a-f0-9]{40}$' -or $authority.workflow_source_revision -cne $env:DZC_RELEASE_TOOLING_SOURCE -or
+        $authority.workflow_source_revision -cne $env:GITHUB_SHA -or $authority.tag -cne ('v' + $version) -or
+        $authority.release_id.ToString() -cne $ExpectedReleaseId -or $authority.run_id -cne $env:GITHUB_RUN_ID -or
+        $authority.run_attempt -cne $env:GITHUB_RUN_ATTEMPT) { throw 'The recovery source/release/run receipt differs.' }
+    $workflowSource = $authority.workflow_source_revision
+} else {
+    if ($env:GITHUB_REF -cne ('refs/tags/v' + $version) -or $env:GITHUB_SHA -cne $ExpectedSource) {
+        throw 'Final release upgrade execution requires the exact tag on a disposable GitHub-hosted runner.'
+    }
+    $head = & git -C $repository rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or $head -cne $ExpectedSource) { throw 'The checkout is not the final expected source.' }
+    $changes = & git -C $repository status --porcelain=v1 --untracked-files=no
+    if ($LASTEXITCODE -ne 0 -or $changes) { throw 'The final source checkout must be clean.' }
+}
 
 function Resolve-OwnedPath([string]$Path, [switch]$File) {
     $boundary = [System.IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\', '/')
@@ -56,6 +73,10 @@ if ($inputs.schema_version -ne 1 -or $inputs.kind -cne 'release_windows_upgrade_
     $inputs.source_revision -cne $ExpectedSource -or $inputs.release_id.ToString() -cne $ExpectedReleaseId -or
     $inputs.policy_sha256 -cne $ExpectedPolicySha256 -or -not $expectedOld.ContainsKey($inputs.scenario) -or
     $inputs.marker -cnotmatch '^nativeupgradefixturemarker[a-f0-9]{32}$' -or @($inputs.signed_assets).Count -ne 8) { throw 'Staged inputs do not match the independent final release policy.' }
+$inputWorkflow = $inputs.PSObject.Properties['workflow_source_revision']
+if ($workflowSource) {
+    if (-not $inputWorkflow -or $inputWorkflow.Value -cne $workflowSource) { throw 'Staged inputs belong to another recovery workflow source.' }
+} elseif ($inputWorkflow) { throw 'A normal tag run cannot consume recovery workflow inputs.' }
 $old = $expectedOld[$inputs.scenario]
 if ($inputs.old.version -cne $old.version -or $inputs.old.sha256 -cne $old.sha256) { throw 'The historical package identity is not the pinned published installer.' }
 if ($inputs.scenario -ceq 'PublishedAlphaToAlpha2' -and $inputs.old.source_revision -cne $old.source_revision) { throw 'The historical alpha.1 source differs.' }
@@ -73,6 +94,7 @@ $raw = [ordered]@{ schema_version = 1; kind = 'release_windows_upgrade_native'; 
     scenario = $inputs.scenario; old = $inputs.old; signed_assets = @($inputs.signed_assets); roles = @{}; installed = @(); packaged = @();
     checks = @($checkNames | ForEach-Object { [ordered]@{ name = $_; status = 'not_run' } }); started_at = [DateTime]::UtcNow.ToString('o');
     processes = @(); redirects = @(); cleanup = @(); failure = 'Native acceptance is incomplete.' }
+if ($workflowSource) { $raw['workflow_source_revision'] = $workflowSource }
 $controlled = [System.Collections.Generic.List[object]]::new()
 $redirects = [System.Collections.Generic.List[object]]::new()
 function Save-Raw { Save-Json (Join-Path $fixture 'raw-native.json') $raw }
@@ -87,7 +109,8 @@ function New-ChildEnvironment {
     $allowed = @('SYSTEMROOT', 'WINDIR', 'COMSPEC', 'OS', 'PATH', 'PATHEXT', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432',
         'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP',
         'PROCESSOR_ARCHITECTURE', 'NUMBER_OF_PROCESSORS', 'GITHUB_ACTIONS', 'RUNNER_ENVIRONMENT', 'RUNNER_TEMP',
-        'GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_REF_NAME', 'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_NAME', 'RUNNER_OS', 'RUNNER_ARCH')
+        'GITHUB_REPOSITORY', 'GITHUB_REF', 'GITHUB_REF_NAME', 'GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'GITHUB_EVENT_NAME',
+        'GITHUB_WORKFLOW_REF', 'DZC_RELEASE_RECOVERY', 'DZC_RELEASE_TOOLING_SOURCE', 'RUNNER_NAME', 'RUNNER_OS', 'RUNNER_ARCH')
     $environment = @{}
     foreach ($pair in [Environment]::GetEnvironmentVariables().GetEnumerator()) { if ($pair.Key.ToString().ToUpperInvariant() -in $allowed) { $environment[$pair.Key] = $pair.Value.ToString() } }
     $environment['DEZIRCLIP_DB_PATH'] = $database

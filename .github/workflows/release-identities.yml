@@ -9,16 +9,31 @@ on:
       release-id:
         required: true
         type: string
+      tooling-source:
+        required: false
+        type: string
+        default: ''
+      recovery:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   actions: read
+
+env:
+  DZC_RELEASE_RECOVERY: ${{ inputs.recovery && '1' || '0' }}
+  DZC_RELEASE_TOOLING_SOURCE: ${{ inputs.tooling-source || inputs.source }}
 
 jobs:
   native:
     name: Release identities (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    permissions:
+      contents: write
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -38,7 +53,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ inputs.tooling-source || inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-python@v6
         with:
@@ -87,6 +104,7 @@ jobs:
               assert after == '0', 'User namespace prerequisite readback failed'
 
       - name: Resolve this job identity and download exact draft assets
+        id: inputs
         shell: python
         env:
           GH_TOKEN: ${{ github.token }}
@@ -94,32 +112,13 @@ jobs:
           DZC_RECEIPT_RELEASE_ID: ${{ inputs.release-id }}
           DZC_RECEIPT_TARGET: ${{ matrix.target }}
         run: |
-          import json, os, pathlib, subprocess, sys
-          sys.path.insert(0, 'scripts')
-          from release_identities import VERSION, expected_assets, native_target, require
-          repo = os.environ['GITHUB_REPOSITORY']
-          source = os.environ['DZC_RECEIPT_SOURCE']
+          import os, pathlib, subprocess, sys
           target = os.environ['DZC_RECEIPT_TARGET']
-          native_target(target)
-          require(repo == 'qiyuanhuakai/dezirclip' and source == os.environ['GITHUB_SHA'] and os.environ['GITHUB_REF'] == 'refs/tags/v' + VERSION, 'Exact final tag source required')
-          def api(route): return json.loads(subprocess.check_output(['gh', 'api', route], text=True))
-          release = api('repos/' + repo + '/releases/' + os.environ['DZC_RECEIPT_RELEASE_ID'])
-          require(release['draft'] is True and release['tag_name'] == 'v' + VERSION, 'Expected original draft release')
-          # Only this run's identity metadata is read here; no CI diagnostics or logs.
-          jobs = api(f'repos/{repo}/actions/runs/{os.environ["GITHUB_RUN_ID"]}/attempts/{os.environ["GITHUB_RUN_ATTEMPT"]}/jobs?per_page=100')['jobs']
-          matches = [j for j in jobs if j['name'].endswith('Release identities (' + target + ')') and j['runner_name'] == os.environ['RUNNER_NAME'] and j['head_sha'] == source]
-          require(len(matches) == 1, 'Unique actual native job identity required')
-          assets = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-release-download-' + target)
-          assets.mkdir(exist_ok=False)
-          archive, packages = expected_assets(target)
-          for name in [archive, archive + '.sha256', *packages]:
-              require(sum(a['name'] == name for a in release['assets']) == 1, 'Missing/duplicate final asset: ' + name)
-              subprocess.run(['gh', 'release', 'download', 'v' + VERSION, '--repo', repo, '--pattern', name, '--dir', str(assets)], check=True)
-          out = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-release-identities-' + target)
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
-              env.write(f'DZC_RECEIPT_ASSETS={assets}\nDZC_RECEIPT_OUT={out}\nDZC_RECEIPT_JOB_ID={matches[0]["id"]}\n')
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          subprocess.run([sys.executable, 'scripts/release_identity_inputs.py', '--source', os.environ['DZC_RECEIPT_SOURCE'], '--release-id', os.environ['DZC_RECEIPT_RELEASE_ID'], '--platform', target, '--input', str(root / ('dezirclip-release-download-' + target)), '--output', str(root / ('dezirclip-release-identities-' + target)), '--diagnostics', str(root / ('dezirclip-release-inputs-' + target))], check=True)
 
       - name: Collect actual final-byte native identities
+        id: native
         shell: python
         env:
           DZC_RECEIPT_SOURCE: ${{ inputs.source }}
@@ -129,6 +128,31 @@ jobs:
           args = [sys.executable, 'scripts/release_identities.py', '--source', os.environ['DZC_RECEIPT_SOURCE'], '--target', os.environ['DZC_RECEIPT_TARGET'], '--assets', os.environ['DZC_RECEIPT_ASSETS'], '--out', os.environ['DZC_RECEIPT_OUT'], '--job-id', os.environ['DZC_RECEIPT_JOB_ID']]
           if sys.platform == 'linux': args += ['--preseed-helper', str(pathlib.Path('target/debug/examples/release_receipt_preseed').resolve())]
           subprocess.run(args, check=True)
+
+      - name: Retain preflight failures without changing receipt layout
+        if: always()
+        shell: python
+        env:
+          DZC_RECEIPT_TARGET: ${{ matrix.target }}
+          DZC_INPUTS_OUTCOME: ${{ steps.inputs.outcome }}
+          DZC_NATIVE_OUTCOME: ${{ steps.native.outcome }}
+          DZC_RECEIPT_SOURCE: ${{ inputs.source }}
+        run: |
+          import json, os, pathlib, shutil
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          target = os.environ['DZC_RECEIPT_TARGET']
+          out = root / ('dezirclip-release-identities-' + target)
+          out.mkdir(exist_ok=True)
+          diagnostics = root / ('dezirclip-release-inputs-' + target)
+          if diagnostics.is_dir():
+              for path in diagnostics.iterdir():
+                  if path.is_file() and not path.is_symlink() and path.suffix in ('.json', '.log'):
+                      shutil.copyfile(path, out / ('bootstrap-' + path.name))
+          observation = {'schema_version': 1, 'kind': 'bootstrap_observation_not_native_acceptance', 'input_step_outcome': os.environ['DZC_INPUTS_OUTCOME'], 'native_step_outcome': os.environ['DZC_NATIVE_OUTCOME'], 'source_revision': os.environ['DZC_RECEIPT_SOURCE'], 'workflow_source_revision': os.environ['GITHUB_SHA']}
+          with (out / 'bootstrap-observation.json').open('x', encoding='utf-8') as stream:
+              json.dump(observation, stream, indent=2)
+              stream.flush()
+              os.fsync(stream.fileno())
 
       - name: Preserve original native receipts and failures
         if: always()
@@ -150,7 +174,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ inputs.tooling-source || inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13.15'

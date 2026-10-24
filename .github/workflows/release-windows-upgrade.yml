@@ -9,21 +9,40 @@ on:
       release-id:
         required: true
         type: string
+      tooling-source:
+        required: false
+        type: string
+        default: ''
+      recovery:
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+env:
+  DZC_RELEASE_RECOVERY: ${{ inputs.recovery && '1' || '0' }}
+  DZC_RELEASE_TOOLING_SOURCE: ${{ inputs.tooling-source || inputs.source }}
 
 jobs:
   prepare:
     name: Verify final signed upgrade inputs
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: write
     outputs:
       policy_sha256: ${{ steps.policy.outputs.policy_sha256 }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ inputs.tooling-source || inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -35,9 +54,16 @@ jobs:
           DZC_UPGRADE_SOURCE: ${{ inputs.source }}
           DZC_UPGRADE_RELEASE_ID: ${{ inputs.release-id }}
         run: |
-          import os, pathlib, re, subprocess, sys
+          import json, os, pathlib, re, subprocess, sys
           directory = pathlib.Path(os.environ['RUNNER_TEMP']) / 'upgrade-inputs'
+          bootstrap = pathlib.Path(os.environ['RUNNER_TEMP']) / 'upgrade-input-bootstrap'
+          bootstrap.mkdir(exist_ok=False)
           result = subprocess.run(['node', 'scripts/release-windows-upgrade.mjs', 'prepare', os.environ['DZC_UPGRADE_SOURCE'], os.environ['DZC_UPGRADE_RELEASE_ID'], str(directory)], capture_output=True, text=True)
+          for name, value in [('stdout.log', result.stdout), ('stderr.log', result.stderr), ('controller.json', json.dumps({'schema_version': 1, 'kind': 'prepare_controller_observation', 'returncode': result.returncode}))]:
+              with (bootstrap / name).open('x', encoding='utf-8') as stream:
+                  stream.write(value)
+                  stream.flush()
+                  os.fsync(stream.fileno())
           sys.stderr.write(result.stderr)
           if result.returncode:
               sys.stdout.write(result.stdout)
@@ -47,6 +73,26 @@ jobs:
               raise RuntimeError('The prepared policy must return exactly one SHA-256')
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write('policy_sha256=' + value + '\n')
+      - name: Retain preparation bootstrap diagnostics
+        if: always()
+        shell: python
+        env:
+          DZC_PREPARE_OUTCOME: ${{ steps.policy.outcome }}
+          DZC_UPGRADE_SOURCE: ${{ inputs.source }}
+        run: |
+          import json, os, pathlib, shutil
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          out = root / 'upgrade-inputs'
+          out.mkdir(exist_ok=True)
+          bootstrap = root / 'upgrade-input-bootstrap'
+          if bootstrap.is_dir():
+              for path in bootstrap.iterdir():
+                  if path.is_file() and not path.is_symlink() and path.suffix in ('.json', '.log'):
+                      shutil.copyfile(path, out / ('bootstrap-' + path.name))
+          with (out / 'bootstrap-observation.json').open('x', encoding='utf-8') as stream:
+              json.dump({'schema_version': 1, 'kind': 'bootstrap_observation_not_native_acceptance', 'prepare_step_outcome': os.environ['DZC_PREPARE_OUTCOME'], 'source_revision': os.environ['DZC_UPGRADE_SOURCE'], 'workflow_source_revision': os.environ['GITHUB_SHA']}, stream, indent=2)
+              stream.flush()
+              os.fsync(stream.fileno())
       - name: Preserve original verified inputs
         if: always()
         uses: actions/upload-artifact@v4
@@ -67,7 +113,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ inputs.tooling-source || inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Allocate a fresh disposable native evidence path
         shell: pwsh
         run: |
@@ -126,7 +174,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source }}
+          ref: ${{ inputs.tooling-source || inputs.source }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
       - uses: actions/setup-node@v4
         with:
           node-version: 22

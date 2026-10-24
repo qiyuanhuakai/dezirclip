@@ -134,14 +134,24 @@ def find_members(directory, target):
 
 def source_boundary(target, revision, out):
     require(os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted', 'Final identities require disposable Actions runners')
-    require(os.environ.get('GITHUB_REPOSITORY') == 'qiyuanhuakai/dezirclip' and os.environ.get('GITHUB_REF') == 'refs/tags/v' + VERSION, 'Only final alpha.2 tag receipts are supported')
-    require(re.fullmatch('[0-9a-f]{40}', revision) and os.environ.get('GITHUB_SHA') == revision, 'Exact final source required')
-    require(subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip() == revision
-            and not subprocess.check_output(['git', 'status', '--porcelain=v1', '--untracked-files=no'], cwd=ROOT, text=True).strip(), 'Receipt helper checkout differs')
+    require(os.environ.get('GITHUB_REPOSITORY') == 'qiyuanhuakai/dezirclip', 'Only the original receipt repository is supported')
+    require(re.fullmatch('[0-9a-f]{40}', revision), 'Exact final source required')
+    from release_recovery import authority
+    provenance = authority(revision, ROOT)
+    require(provenance['mode'] in ('tag', 'recovery') and provenance['source_revision'] == revision and provenance['tag'] == 'v' + VERSION,
+            'Receipt release authority differs')
+    if provenance['mode'] == 'tag':
+        require(os.environ.get('GITHUB_REF') == 'refs/tags/v' + VERSION
+                and os.environ.get('GITHUB_SHA') == revision
+                and subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip() == revision,
+                'Exact final tag checkout required')
+    require(not subprocess.check_output(['git', 'status', '--porcelain=v1', '--untracked-files=no'], cwd=ROOT, text=True).strip(),
+            'Receipt helper checkout differs')
     native_target(target)
     boundary = Path(os.environ['RUNNER_TEMP']).resolve()
     require(out.resolve().is_relative_to(boundary) and out.name.startswith('dezirclip-release-identities-') and not out.exists(), 'New owned receipt output required')
     out.mkdir(mode=0o700)
+    return provenance
 
 def json_output(text):
     require(len(text.encode()) <= 64 * 1024, 'BuildInfo exceeds bound')
@@ -156,9 +166,10 @@ def main():
     parser.add_argument('--job-id', type=int, required=True)
     parser.add_argument('--preseed-helper', type=Path)
     args = parser.parse_args()
-    source_boundary(args.target, args.source, args.out)
+    provenance = source_boundary(args.target, args.source, args.out)
     require(args.job_id > 0, 'Actual Actions job id required')
     report = {'schema_version': 1, 'status': 'running', 'tag': 'v' + VERSION, 'source_revision': args.source,
+              'workflow_source_revision': provenance['workflow_source_revision'], 'source_authority': provenance,
               'target': args.target, 'runner': {'system': platform.system(), 'machine': platform.machine()},
               'run_url': f'https://github.com/qiyuanhuakai/dezirclip/actions/runs/{os.environ["GITHUB_RUN_ID"]}',
               'job_id': args.job_id, 'method': 'executed_native', 'standalone': [], 'containers': []}
@@ -171,7 +182,7 @@ def main():
         raise
     finally:
         (args.out / 'report.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-        summary = {k: report[k] for k in ('schema_version', 'status', 'source_revision', 'target', 'run_url', 'job_id')}
+        summary = {k: report[k] for k in ('schema_version', 'status', 'source_revision', 'workflow_source_revision', 'target', 'run_url', 'job_id')}
         summary.update(report_sha256=sha(args.out / 'report.json'), artifacts_path=str(args.out))
         print('DEZIRCLIP_RELEASE_IDENTITIES ' + json.dumps(summary), flush=True)
         bounded=json.dumps(report,separators=(',',':'))
