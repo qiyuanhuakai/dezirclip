@@ -44,15 +44,50 @@ function owned(path) {
 }
 export function assertAuthority(env, source, releaseId, platform, arch, native = false) {
   requireValue(env.GITHUB_ACTIONS === 'true' && env.RUNNER_ENVIRONMENT === 'github-hosted'
-    && env.GITHUB_REPOSITORY === repository && env.GITHUB_REF === 'refs/tags/v' + version, 'Only the final tag on a disposable GitHub runner is allowed');
-  requireValue(/^[a-f0-9]{40}$/.test(source) && env.GITHUB_SHA === source && /^[1-9]\d*$/.test(releaseId), 'Final source/release identity is invalid');
+    && env.GITHUB_REPOSITORY === repository, 'Only the final tag on a disposable GitHub runner is allowed');
+  requireValue(/^[a-f0-9]{40}$/.test(source) && /^[1-9]\d*$/.test(releaseId), 'Final source/release identity is invalid');
+  requireValue(!env.DZC_RELEASE_RECOVERY || ['0', '1'].includes(env.DZC_RELEASE_RECOVERY), 'Invalid release recovery mode');
+  if (env.DZC_RELEASE_RECOVERY === '1') {
+    requireValue(env.GITHUB_EVENT_NAME === 'workflow_dispatch'
+      && env.GITHUB_REF === 'refs/heads/master'
+      && env.GITHUB_WORKFLOW_REF === repository + '/.github/workflows/release.yml@refs/heads/master'
+      && /^[a-f0-9]{40}$/.test(env.DZC_RELEASE_TOOLING_SOURCE ?? '') && env.GITHUB_SHA === env.DZC_RELEASE_TOOLING_SOURCE
+      && /^[1-9]\d*$/.test(env.GITHUB_RUN_ID ?? '') && /^[1-9]\d*$/.test(env.GITHUB_RUN_ATTEMPT ?? ''), 'Recovery requires the actual master dispatch and tooling run context');
+  } else requireValue(env.GITHUB_REF === 'refs/tags/v' + version && env.GITHUB_SHA === source, 'Only the exact final tag source is allowed');
   if (native) requireValue(platform === 'win32' && arch === 'x64'
     && !env.PROCESSOR_ARCHITEW6432 && env.PROCESSOR_ARCHITECTURE?.toUpperCase() === 'AMD64', 'Native x64 Windows is required');
 }
+export function validateRecoveryAuthority(receipt, env, source, releaseId) {
+  assertAuthority(env, source, releaseId, 'linux', 'x64');
+  requireValue(env.DZC_RELEASE_RECOVERY === '1', 'A recovery receipt requires recovery run context');
+  requireValue(receipt?.schema_version === 1 && receipt.mode === 'recovery' && receipt.source_revision === source
+    && receipt.workflow_source_revision === env.DZC_RELEASE_TOOLING_SOURCE && receipt.workflow_source_revision === env.GITHUB_SHA
+    && receipt.tag === 'v' + version && Number.isSafeInteger(receipt.release_id) && receipt.release_id === Number(releaseId)
+    && receipt.run_id === env.GITHUB_RUN_ID && receipt.run_attempt === env.GITHUB_RUN_ATTEMPT, 'Recovery authority receipt differs from the actual source/release/run');
+  return receipt;
+}
+function workflowIdentity(value) {
+  if (!Object.hasOwn(value, 'workflow_source_revision')) return undefined;
+  requireValue(/^[a-f0-9]{40}$/.test(value.workflow_source_revision ?? ''), 'Invalid recovery workflow source identity');
+  return value.workflow_source_revision;
+}
+function workflowFields(context) {
+  if (context?.mode !== 'recovery') return {};
+  requireValue(/^[a-f0-9]{40}$/.test(context.workflow_source_revision ?? ''), 'Invalid recovery workflow source identity');
+  return { workflow_source_revision: context.workflow_source_revision };
+}
+function bindWorkflow(value, context) {
+  requireValue(workflowIdentity(value) === (context?.mode === 'recovery' ? context.workflow_source_revision : undefined), 'Evidence belongs to another workflow source');
+}
 function authority(source, releaseId, native) {
   assertAuthority(process.env, source, releaseId, process.platform, process.arch, native);
+  if (process.env.DZC_RELEASE_RECOVERY === '1') {
+    const receipt = JSON.parse(execFileSync('python', [join(root, 'scripts', 'release_recovery.py'), 'authority', source], { cwd: root, encoding: 'utf8' }));
+    return validateRecoveryAuthority(receipt, process.env, source, releaseId);
+  }
   requireValue(execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() === source
     && execFileSync('git', ['-C', root, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim() === '', 'The exact final source checkout must be clean');
+  return { mode: 'tag' };
 }
 export function releaseAssets(release, releaseId) {
   requireValue(release?.id === Number(releaseId) && release.tag_name === 'v' + version && release.prerelease === true
@@ -67,10 +102,70 @@ export function releaseAssets(release, releaseId) {
     return asset;
   });
 }
+export function safeFailureText(value, token = '') {
+  let text = String(value ?? '');
+  if (token) text = text.split(token).join('[redacted]');
+  return text.replace(/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+/g, '[redacted]')
+    .replace(/https?:\/\/[^\s"'<>]+/gi, '[url]')
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').slice(0, 2048);
+}
+export function httpFailureDetails(status, headers, body, token = '') {
+  requireValue(Number.isInteger(status) && status >= 100 && status <= 599, 'Invalid HTTP failure status');
+  const retained = {};
+  for (const name of ['x-github-request-id', 'x-accepted-github-permissions', 'x-ratelimit-limit', 'x-ratelimit-remaining',
+    'x-ratelimit-reset', 'x-ratelimit-resource', 'x-ratelimit-used', 'retry-after', 'content-type']) {
+    const value = typeof headers?.get === 'function' ? headers.get(name) : headers?.[name];
+    if (typeof value === 'string') retained[name] = safeFailureText(value, token).slice(0, 512);
+  }
+  const responseBody = {};
+  if (body && typeof body === 'object' && !Array.isArray(body)) {
+    if (typeof body.message === 'string') responseBody.message = safeFailureText(body.message, token);
+    if ((typeof body.status === 'string' && /^[1-5]\d\d$/.test(body.status))
+      || (Number.isInteger(body.status) && body.status >= 100 && body.status <= 599)) responseBody.status = body.status;
+    if (typeof body.documentation_url === 'string') {
+      try {
+        const url = new URL(body.documentation_url);
+        if (url.protocol === 'https:' && url.hostname === 'docs.github.com' && !url.username && !url.password && !url.port && !url.search && !url.hash
+          && (!token || !body.documentation_url.includes(token)) && !/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+/.test(body.documentation_url)) {
+          responseBody.documentation_url = url.origin + url.pathname;
+        }
+      } catch {}
+    }
+  }
+  return { status, headers: retained, response_body: responseBody };
+}
+async function requestFailure(response, token, message) {
+  const chunks = []; let length = 0, truncated = false, unavailable = false;
+  try {
+    if (response.body) {
+      for await (const chunk of response.body) {
+        length += chunk.length;
+        if (length > 16384) { truncated = true; break; }
+        chunks.push(Buffer.from(chunk));
+      }
+    }
+  } catch { unavailable = true; }
+  let body;
+  if (!truncated && !unavailable) { try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch {} }
+  const error = new Error(message + ' failed with HTTP ' + response.status);
+  error.http = { ...httpFailureDetails(response.status, response.headers, body, token), body_truncated: truncated, body_unavailable: unavailable };
+  return error;
+}
+export function prepareFailure(source, releaseId, stage, error, context, token = '', asset) {
+  requireValue(/^[a-f0-9]{40}$/.test(source) && /^[1-9]\d*$/.test(releaseId)
+    && ['release_metadata', 'asset_inventory', 'download_asset', 'verify_signed_assets', 'write_candidate', 'write_policy'].includes(stage), 'Invalid preparation failure identity or stage');
+  const failure = { name: safeFailureText(error?.name ?? 'Error', token), message: safeFailureText(error?.message ?? error, token) };
+  if (error?.http) failure.http = { ...httpFailureDetails(error.http.status, error.http.headers, error.http.response_body, token),
+    body_truncated: error.http.body_truncated === true, body_unavailable: error.http.body_unavailable === true };
+  if (asset !== undefined) requireValue(updaterNames.includes(asset), 'Invalid failed updater asset');
+  return { schema_version: 1, kind: 'release_windows_upgrade_prepare_failure', status: 'failed', version,
+    source_revision: source, ...workflowFields(context), release_id: Number(releaseId), stage, ...(asset ? { asset } : {}), failure };
+}
 async function download(url, limit, token) {
   const response = await fetch(url, { headers: token ? { Authorization: 'Bearer ' + token, Accept: 'application/octet-stream' } : {},
     signal: AbortSignal.timeout(180000) });
-  requireValue(response.ok && response.body, 'Release download failed with HTTP ' + response.status);
+  if (!response.ok) throw await requestFailure(response, token, 'Release download');
+  requireValue(response.body, 'Release download returned no body');
   const chunks = []; let length = 0;
   for await (const chunk of response.body) {
     length += chunk.length;
@@ -82,7 +177,7 @@ async function download(url, limit, token) {
 async function metadata(releaseId, token) {
   const response = await fetch('https://api.github.com/repos/' + repository + '/releases/' + releaseId,
     { headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(30000) });
-  requireValue(response.ok, 'Release metadata request failed with HTTP ' + response.status);
+  if (!response.ok) throw await requestFailure(response, token, 'Release metadata request');
   return response.json();
 }
 function publicKey() { return json(join(root, 'src-tauri', 'tauri.conf.json')).plugins.updater.pubkey; }
@@ -102,35 +197,48 @@ export function verifyDownloads(release, releaseId, bytes, key) {
   return identities;
 }
 async function prepare(source, releaseId, output) {
-  authority(source, releaseId, false);
+  const context = authority(source, releaseId, false);
   output = owned(output);
   requireValue(!existsSync(output), 'Prepare output already exists');
-  const token = process.env.GH_TOKEN;
-  requireValue(token, 'The same-repository read token is required');
-  const release = await metadata(releaseId, token);
-  const assets = releaseAssets(release, releaseId);
-  const bytes = new Map();
-  for (const asset of assets) {
-    bytes.set(asset.name, await download('https://api.github.com/repos/' + repository + '/releases/assets/' + asset.id,
-      asset.name.endsWith('.sig') ? 16384 : maximum, token));
-  }
-  const key = publicKey();
-  const signed_assets = verifyDownloads(release, releaseId, bytes, key);
   mkdirSync(output);
-  for (const name of [filename, filename + '.sig']) writeFileSync(join(output, name), bytes.get(name), { flag: 'wx' });
-  const policy = { schema_version: 1, kind: 'release_windows_upgrade_inputs', version, source_revision: source,
-    release_id: Number(releaseId), release_was_draft: release.draft, signed_assets, public_key_sha256: sha256(key),
-    candidate: signed_assets.find(asset => asset.name === filename), signature: signed_assets.find(asset => asset.name === filename + '.sig') };
-  save(join(output, 'policy.json'), policy);
-  process.stdout.write(sha256(readFileSync(join(output, 'policy.json'))) + '\n');
+  const token = process.env.GH_TOKEN;
+  let stage = 'release_metadata', currentAsset;
+  try {
+    requireValue(token, 'The same-repository draft release token is required');
+    const release = await metadata(releaseId, token);
+    stage = 'asset_inventory';
+    const assets = releaseAssets(release, releaseId);
+    const bytes = new Map();
+    for (const asset of assets) {
+      stage = 'download_asset'; currentAsset = asset.name;
+      bytes.set(asset.name, await download('https://api.github.com/repos/' + repository + '/releases/assets/' + asset.id,
+        asset.name.endsWith('.sig') ? 16384 : maximum, token));
+    }
+    currentAsset = undefined; stage = 'verify_signed_assets';
+    const key = publicKey();
+    const signed_assets = verifyDownloads(release, releaseId, bytes, key);
+    stage = 'write_candidate';
+    for (const name of [filename, filename + '.sig']) writeFileSync(join(output, name), bytes.get(name), { flag: 'wx' });
+    const policy = { schema_version: 1, kind: 'release_windows_upgrade_inputs', version, source_revision: source,
+      ...workflowFields(context), release_id: Number(releaseId), release_was_draft: release.draft, signed_assets, public_key_sha256: sha256(key),
+      candidate: signed_assets.find(asset => asset.name === filename), signature: signed_assets.find(asset => asset.name === filename + '.sig') };
+    stage = 'write_policy';
+    save(join(output, 'policy.json'), policy);
+    process.stdout.write(sha256(readFileSync(join(output, 'policy.json'))) + '\n');
+  } catch (error) {
+    try { save(join(output, 'prepare-failure.json'), prepareFailure(source, releaseId, stage, error, context, token, currentAsset)); }
+    catch (retentionError) { process.stderr.write('Preparation failure retention failed: ' + safeFailureText(retentionError.message, token) + '\n'); }
+    throw error;
+  }
 }
-function policy(input, expectedHash, source, releaseId, stagedFiles = false) {
+function policy(input, expectedHash, source, releaseId, stagedFiles = false, context) {
   input = owned(input);
   const bytes = regular(join(input, 'policy.json'), 1024 * 1024);
   requireValue(/^[a-f0-9]{64}$/.test(expectedHash) && sha256(bytes) === expectedHash, 'Input policy changed after preparation');
   const value = JSON.parse(bytes);
   requireValue(value.schema_version === 1 && value.kind === 'release_windows_upgrade_inputs' && value.version === version
     && value.source_revision === source && value.release_id === Number(releaseId) && value.release_was_draft === true, 'Policy identity differs');
+  bindWorkflow(value, context);
   validateAssets(value.signed_assets);
   requireValue(equal(value.candidate, value.signed_assets.find(asset => asset.name === filename))
     && equal(value.signature, value.signed_assets.find(asset => asset.name === filename + '.sig')), 'Candidate differs from the signed asset inventory');
@@ -160,10 +268,10 @@ export function validateAssets(assets) {
       && typeof asset.updated_at === 'string' && Number.isFinite(Date.parse(asset.updated_at)), 'Invalid signed asset receipt');
   }
 }
-function staged(source, releaseId, output, expectedHash) {
+function staged(source, releaseId, output, expectedHash, context) {
   output = owned(output);
   const inputs = JSON.parse(regular(join(output, 'inputs.json'), 1024 * 1024));
-  const verified = policy(output, expectedHash, source, releaseId, true);
+  const verified = policy(output, expectedHash, source, releaseId, true, context);
   requireValue(Object.hasOwn(oldPackages, inputs.scenario) && inputs.policy_sha256 === expectedHash
     && /^nativeupgradefixturemarker[a-f0-9]{32}$/.test(inputs.marker), 'Invalid staged scenario identity');
   const old = oldPackages[inputs.scenario];
@@ -173,15 +281,15 @@ function staged(source, releaseId, output, expectedHash) {
   return inputs;
 }
 function verifyStaged(source, releaseId, output, expectedHash) {
-  authority(source, releaseId, true);
-  staged(source, releaseId, output, expectedHash);
+  const context = authority(source, releaseId, true);
+  staged(source, releaseId, output, expectedHash, context);
   process.stdout.write('The original installer and signed final candidate match the independently hashed policy.\n');
 }
 async function stage(source, releaseId, input, expectedHash, scenario, output) {
-  authority(source, releaseId, true);
+  const context = authority(source, releaseId, true);
   requireValue(Object.hasOwn(oldPackages, scenario), 'Unknown published upgrade scenario');
   output = owned(output); requireValue(!existsSync(output), 'Native output must be new');
-  const verified = policy(input, expectedHash, source, releaseId);
+  const verified = policy(input, expectedHash, source, releaseId, false, context);
   const old = oldPackages[scenario];
   const url = 'https://github.com/' + repository + '/releases/download/v' + old.version + '/DezirClip_' + old.version + '_x64-setup.exe';
   const oldBytes = await download(url, maximum);
@@ -214,9 +322,9 @@ export function inspectPe(bytes) {
     && bytes.readUInt16LE(offset + 4) === 0x8664 && bytes.readUInt16LE(offset + 24) === 0x20b, 'Expected the actual native x64 PE role');
 }
 function extract(source, releaseId, output) {
-  authority(source, releaseId, true); output = owned(output);
+  const context = authority(source, releaseId, true); output = owned(output);
   const inputs = json(join(output, 'inputs.json'));
-  staged(source, releaseId, output, inputs.policy_sha256);
+  staged(source, releaseId, output, inputs.policy_sha256, context);
   const archive = join(output, 'candidate-setup.exe');
   requireValue(inputs.source_revision === source && inputs.release_id === Number(releaseId)
     && sha256(regular(archive)) === inputs.candidate.sha256, 'Staged release installer changed');
@@ -248,6 +356,7 @@ export function validateNative(report, inputs, extracted) {
     && report.release_id === inputs.release_id && report.policy_sha256 === inputs.policy_sha256
     && report.scenario === inputs.scenario && equal(report.old, inputs.old)
     && equal(report.signed_assets, inputs.signed_assets), 'Native report belongs to different inputs or did not pass');
+  requireValue(workflowIdentity(report) === workflowIdentity(inputs), 'Native report belongs to another workflow source');
   validateAssets(report.signed_assets);
   requireValue(Array.isArray(report.checks) && report.checks.length === checkNames.length
     && checkNames.every(name => report.checks.filter(check => check?.name === name && check.status === 'passed'
@@ -320,8 +429,8 @@ export function validateNative(report, inputs, extracted) {
   requireValue(report.gui_process_identity?.verified === true && report.gui_exit?.original_process_exited === true
     && report.gui_exit.cdp_port_released === true && Array.isArray(report.cleanup) && report.cleanup.every(item => !item.error), 'GUI identity, shutdown or cleanup is incomplete');
 }
-function observedReport(source, releaseId, directory, expectedHash) {
-  const inputs = staged(source, releaseId, directory, expectedHash);
+function observedReport(source, releaseId, directory, expectedHash, context) {
+  const inputs = staged(source, releaseId, directory, expectedHash, context);
   const rawBytes = regular(join(directory, 'raw-native.json'), 8 * 1024 * 1024);
   const report = JSON.parse(rawBytes);
   const extracted = JSON.parse(regular(join(directory, 'extracted-roles.json'), 1024 * 1024));
@@ -392,14 +501,14 @@ function observedReport(source, releaseId, directory, expectedHash) {
       && ['dzc-core', 'dzc-platform', 'dzc-protocol'].every(name => oldInfo.linked_components.filter(item => item.component === name && item.version === inputs.old.version).length === 1), 'Actual historical alpha.1 stdout/source/schema/inventory differs');
   }
   return { schema_version: 1, kind: 'release_windows_upgrade_report', status: 'passed', version, source_revision: source,
-    release_id: Number(releaseId), scenario: inputs.scenario, policy_sha256: expectedHash, old: inputs.old,
+    ...workflowFields(context), release_id: Number(releaseId), scenario: inputs.scenario, policy_sha256: expectedHash, old: inputs.old,
     signed_assets: inputs.signed_assets, checks: report.checks, roles: report.roles, installed: report.installed,
     packaged: report.packaged, raw_native_sha256: sha256(rawBytes), evidence_files };
 }
 function seal(source, releaseId, directory) {
-  authority(source, releaseId, true); directory = owned(directory);
+  const context = authority(source, releaseId, true); directory = owned(directory);
   const inputs = json(join(directory, 'inputs.json'));
-  save(join(directory, 'report.json'), observedReport(source, releaseId, directory, inputs.policy_sha256));
+  save(join(directory, 'report.json'), observedReport(source, releaseId, directory, inputs.policy_sha256, context));
 }
 export function combine(reports, source, releaseId, expectedPolicy) {
   requireValue(/^[a-f0-9]{64}$/.test(expectedPolicy) && reports.length === 2
@@ -416,23 +525,27 @@ export function combine(reports, source, releaseId, expectedPolicy) {
     for (const role of Object.keys(roleFiles)) validateInfo(report.roles?.[role], role, source);
   }
   requireValue(equal(reports[0].value.signed_assets, reports[1].value.signed_assets), 'Scenarios observed different release asset identities');
+  const workflowSource = workflowIdentity(reports[0].value);
+  requireValue(workflowIdentity(reports[1].value) === workflowSource, 'Scenarios observed different workflow source identities');
   return { schema_version: 1, kind: 'windows_upgrade', status: 'passed', version, source_revision: source,
-    release_id: Number(releaseId), policy_sha256: expectedPolicy, signed_assets: reports[0].value.signed_assets,
+    ...(workflowSource ? { workflow_source_revision: workflowSource } : {}), release_id: Number(releaseId), policy_sha256: expectedPolicy, signed_assets: reports[0].value.signed_assets,
     checks: reports.map(({ value: report, sha256: digest }) => ({ name: report.scenario, status: 'passed', report_sha256: digest,
       raw_native_sha256: report.raw_native_sha256 })) };
 }
 function aggregate(source, releaseId, expectedPolicy, directory, output) {
-  authority(source, releaseId, false); directory = owned(directory); output = owned(output);
+  const context = authority(source, releaseId, false); directory = owned(directory); output = owned(output);
   const reports = Object.keys(oldPackages).map(scenario => {
     const folder = readdirSync(directory).filter(name => name === 'release-windows-upgrade-' + scenario + '-attempt-' + process.env.GITHUB_RUN_ATTEMPT);
     requireValue(folder.length === 1, 'Missing exact current-run upgrade artifact');
     const reportDirectory = owned(join(directory, folder[0]));
     const bytes = regular(join(reportDirectory, 'report.json'), 8 * 1024 * 1024);
     const value = JSON.parse(bytes);
-    requireValue(value.scenario === scenario && equal(value, observedReport(source, releaseId, reportDirectory, expectedPolicy)), 'Sealed report differs from its retained native evidence');
+    requireValue(value.scenario === scenario && equal(value, observedReport(source, releaseId, reportDirectory, expectedPolicy, context)), 'Sealed report differs from its retained native evidence');
     return { value, sha256: sha256(bytes) };
   });
-  save(output, combine(reports, source, releaseId, expectedPolicy));
+  const combined = combine(reports, source, releaseId, expectedPolicy);
+  bindWorkflow(combined, context);
+  save(output, combined);
 }
 async function main() {
   const [command, ...args] = process.argv.slice(2);
