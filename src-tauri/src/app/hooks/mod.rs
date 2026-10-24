@@ -240,13 +240,12 @@ pub unsafe extern "system" fn keyboard_proc(
                 true
             };
 
-            if !allow_navigation {
+            if !allow_navigation && vk != 0x1B {
                 return CallNextHookEx(None, n_code, w_param, l_param);
             }
 
             let is_navigation_key = vk == 0x26 || vk == 0x28 || vk == 0x0D || vk == 0x1B;
             let is_enter = vk == 0x0D;
-            let _is_escape = vk == 0x1B;
 
             if is_navigation_key && is_down {
                 // Only Enter requires navigation mode to be active

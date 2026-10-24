@@ -6,13 +6,28 @@ export const useWindowVisibility = () => {
   const isWindowVisibleRef = useRef(true);
 
   useEffect(() => {
-    const unlistenBlur = listen("tauri://blur", () => { isWindowVisibleRef.current = false; });
-    const unlistenFocus = listen("tauri://focus", () => { isWindowVisibleRef.current = true; });
-    getCurrentWindow().isVisible().then(v => { isWindowVisibleRef.current = v; });
+    let active = true;
+    let revision = 0;
+    const readVisibility = () => {
+      const request = ++revision;
+      void getCurrentWindow().isVisible().then(visible => {
+        if (active && request === revision) isWindowVisibleRef.current = visible;
+      }, () => { if (active && request === revision) isWindowVisibleRef.current = false; });
+    };
+    const subscriptions = [
+      getCurrentWindow().onFocusChanged(readVisibility),
+      listen("privacy-view-hidden", () => { revision += 1; isWindowVisibleRef.current = false; }),
+      listen("privacy-view-shown", readVisibility),
+    ];
+    subscriptions.forEach(subscription => {
+      void subscription.catch(() => { if (active) isWindowVisibleRef.current = false; });
+    });
+    readVisibility();
 
     return () => {
-      unlistenBlur.then(f => f());
-      unlistenFocus.then(f => f());
+      active = false;
+      revision += 1;
+      subscriptions.forEach(subscription => { void subscription.then(stop => stop(), () => undefined); });
     };
   }, []);
 
