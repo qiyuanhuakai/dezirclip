@@ -2,11 +2,106 @@
 import json
 import os
 from pathlib import Path
-import shlex
+import re
 import shutil
 import sqlite3
 import sys
 from release_identities import ROOT, json_output, require, run, sha, validate_info
+
+def inspector_address(value):
+    require(isinstance(value,str),'Explicit loopback inspector address required')
+    match=re.fullmatch(r'127\.0\.0\.1:([1-9][0-9]{0,4})',value)
+    require(match is not None and int(match.group(1))<=65535,'Explicit loopback inspector address required')
+    return value
+
+
+def network_namespace_value(value):
+    require(isinstance(value,str) and re.fullmatch(r'net:\[[1-9][0-9]*\]',value),
+            'Actual network namespace identity required')
+    return value
+
+
+def current_network_namespace():
+    return network_namespace_value(os.readlink('/proc/self/ns/net'))
+
+
+def flatpak_command(role,arguments,database,environment,inspector=None):
+    binaries={'desktop':'dezirclip','cli':'dzc','service':'dzc-service'}
+    require(role in binaries and isinstance(arguments,list) and all(isinstance(value,str) for value in arguments),
+            'Explicit packaged role and argument vector required')
+    if role=='desktop':
+        inspector=inspector_address(inspector)
+        network='--share=network'
+        extra=['--env=WEBKIT_INSPECTOR_SERVER='+inspector]
+        target=['/bin/sh','/evidence/flatpak-desktop-inner.sh',*arguments]
+    else:
+        require(inspector is None,'Only the Desktop automation transport receives an inspector address')
+        network='--unshare=network';extra=[]
+        target=['/app/bin/'+binaries[role],*arguments]
+    return ['flatpak','build','--runtime','--readonly',network,'--share=ipc','--socket=x11','--socket=session-bus',
+            '--filesystem=/q','--filesystem=/evidence','--env=TAURI_WEBVIEW_AUTOMATION=true',
+            '--env=DEZIRCLIP_DB_PATH='+str(database),'--env=DISPLAY='+environment['DISPLAY'],
+            '--env=DBUS_SESSION_BUS_ADDRESS='+environment['DBUS_SESSION_BUS_ADDRESS'],*extra,'/package',*target]
+
+
+def flatpak_launcher_source():
+    return """#!/usr/bin/python3 -s
+import sys
+sys.dont_write_bytecode=True
+sys.path.insert(0,'/fixture-bin')
+from release_identity_linux import launch_flatpak_desktop
+launch_flatpak_desktop(sys.argv[1:])
+"""
+
+
+def flatpak_inner_source(private):
+    private=network_namespace_value(private)
+    return """#!/bin/sh
+set -eu
+network_namespace=$(readlink /proc/self/ns/net)
+: "${WEBKIT_INSPECTOR_SERVER:?Driver inspector address missing}"
+printf '{"schema_version":1,"kind":"flatpak_automation_inner","status":"observed","network_namespace":"%s","inspector":"%s"}\\n' "$network_namespace" "${WEBKIT_INSPECTOR_SERVER-}" > /evidence/flatpak-transport-inner.log
+[ "$network_namespace" = '__PRIVATE_NAMESPACE__' ] || { printf 'Flatpak private network namespace differs\\n' >&2; exit 1; }
+exec /app/bin/dezirclip "$@"
+""".replace('__PRIVATE_NAMESPACE__',private)
+
+
+def launch_flatpak_desktop(arguments):
+    root=Path('/evidence');plan=json.loads(Path('/fixture-bin/plan.json').read_text())
+    require(plan['flatpak'] is True,'Only the private Flatpak Desktop launcher is supported')
+    outside=network_namespace_value(plan['outside_network_namespace'])
+    private=current_network_namespace()
+    require(private!=outside,'Outer automation namespace must remain separate from the host')
+    inspector=inspector_address(os.environ.get('WEBKIT_INSPECTOR_SERVER'))
+    command=flatpak_command('desktop',arguments,os.environ['DEZIRCLIP_DB_PATH'],os.environ,inspector)
+    record={'schema_version':1,'kind':'flatpak_automation_outer','status':'launching',
+            'source_revision':plan['source_revision'],'target':plan['target'],
+            'outside_network_namespace':outside,'network_namespace':private,'inspector':inspector,
+            'browser_arguments':arguments,'product_acceptance_claimed':False}
+    with (root/'flatpak-transport-outer.log').open('x',encoding='utf-8') as output:
+        json.dump(record,output,indent=2);output.write('\n');output.flush();os.fsync(output.fileno())
+    os.execvp(command[0],command)
+
+
+def validate_flatpak_transport(outer,inner,private,outside):
+    private=network_namespace_value(private);outside=network_namespace_value(outside)
+    require(private!=outside,'Outer automation namespace must remain separate from the host')
+    require(isinstance(outer,dict) and type(outer.get('schema_version')) is int and outer['schema_version']==1
+            and outer.get('kind')=='flatpak_automation_outer' and outer.get('status')=='launching'
+            and outer.get('product_acceptance_claimed') is False,'Original outer automation transport observation required')
+    require(isinstance(inner,dict) and type(inner.get('schema_version')) is int and inner['schema_version']==1
+            and inner.get('kind')=='flatpak_automation_inner' and inner.get('status')=='observed',
+            'Original inner automation transport observation required')
+    require(network_namespace_value(outer.get('outside_network_namespace'))==outside
+            and network_namespace_value(outer.get('network_namespace'))==private
+            and network_namespace_value(inner.get('network_namespace'))==private,
+            'Flatpak automation must share only the original outer private network namespace')
+    inspector=inspector_address(outer.get('inspector'))
+    require(inspector_address(inner.get('inspector'))==inspector,'Flatpak inspector address changed at the namespace boundary')
+    return {'schema_version':1,'kind':'flatpak_automation_transport','status':'observed_same_private_network',
+            'outside_network_namespace':outside,'network_namespace':private,'inspector':inspector,
+            'host_network_shared':False,'product_acceptance_claimed':False}
+
 
 def flatpak_bindings(extracted,logs):
     require(extracted.resolve().is_relative_to(logs.resolve()),'Owned Flatpak extraction required')
@@ -31,6 +126,8 @@ def sandbox_info(args,members,extracted,logs,flatpak):
     # The later file bind needs an existing destination in the read-only tree.
     (source/'WebKitWebDriver').open('xb').close()
     plan={'source_revision':args.source,'target':args.target,'flatpak':flatpak,'members':{role:'/package/'+path.relative_to(extracted).as_posix() for role,path in members.items()}}
+    if flatpak and 'desktop' in members:
+        plan['outside_network_namespace']=current_network_namespace()
     if (extracted/'AppRun').is_file():plan['desktop_launcher']='/package/AppRun'
     (source/'plan.json').write_text(json.dumps(plan))
     cmd=['bwrap','--unshare-user','--unshare-pid','--unshare-net','--unshare-ipc','--unshare-uts','--die-with-parent','--new-session','--clearenv','--ro-bind','/usr','/usr','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--ro-bind','/lib','/lib','--ro-bind','/etc','/etc','--dev','/dev','--proc','/proc','--tmpfs','/tmp','--tmpfs','/run','--dir','/run/fixture','--chmod','0700','/run/fixture','--dir','/q','--dir','/home/fixture','--bind',str(logs),'/evidence','--ro-bind',str(source),'/fixture-bin','--ro-bind',str(extracted),'/package','--ro-bind','/usr/bin/WebKitWebDriver','/fixture-bin/WebKitWebDriver']
@@ -43,7 +140,17 @@ def sandbox_info(args,members,extracted,logs,flatpak):
     secret=json.loads((logs/'private-ss/proof.json').read_text());require(secret['status']=='passed','Private Secret Service proof failed')
     result=json.loads((logs/'actual-identities.json').read_text())
     require(result['credential_probe']['status']=='passed','Inner credential syscall boundary failed')
-    (logs/'boundary.json').write_text(json.dumps({'outer':guard,'inner':result['credential_probe'],'helper_sha256':sha(args.preseed_helper),'command':cmd,'secret_service_proof_sha256':sha(logs/'private-ss/proof.json')},indent=2))
+    boundary={'outer':guard,'inner':result['credential_probe'],'helper_sha256':sha(args.preseed_helper),'command':cmd,'secret_service_proof_sha256':sha(logs/'private-ss/proof.json')}
+    if flatpak and 'desktop' in members:
+        transport=result['flatpak_transport']
+        require(type(transport.get('schema_version')) is int and transport['schema_version']==1
+                and transport['kind']=='flatpak_automation_transport' and transport['status']=='observed_same_private_network'
+                and transport['outside_network_namespace']==plan['outside_network_namespace']
+                and transport['network_namespace']!=plan['outside_network_namespace']
+                and transport['host_network_shared'] is False and transport['product_acceptance_claimed'] is False,
+                'Original private Flatpak transport proof differs')
+        boundary['flatpak_transport']=transport
+    (logs/'boundary.json').write_text(json.dumps(boundary,indent=2))
     return {role:validate_info(info,role,args.target,args.source) for role,info in result['build_info'].items()}
 
 def inside():
@@ -57,7 +164,7 @@ def inside():
     database.parent.mkdir(parents=True,exist_ok=True);os.environ['DEZIRCLIP_DB_PATH']=str(database)
     def command(role,args):
         if plan['flatpak']:
-            return ['flatpak','build','--runtime','--readonly','--unshare=network','--share=ipc','--socket=x11','--socket=session-bus','--filesystem=/q','--filesystem=/evidence','--env=TAURI_WEBVIEW_AUTOMATION=true','--env=DEZIRCLIP_DB_PATH='+str(database),'--env=DISPLAY='+os.environ['DISPLAY'],'--env=DBUS_SESSION_BUS_ADDRESS='+os.environ['DBUS_SESSION_BUS_ADDRESS'],'/package','/app/bin/'+{'desktop':'dezirclip','cli':'dzc','service':'dzc-service'}[role],*args]
+            return flatpak_command(role,args,database,os.environ)
         return [plan['members'][role],*args]
     result={}
     for role,args in [('cli',['build-info','--json']),('service',['--build-info'])]:
@@ -71,10 +178,18 @@ def inside():
             connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',{'app.silent_start':'false','app.idle_destroy_enabled':'false','app.update_auto_check':'false','app.ocr_enabled':'false','app.classification_enabled':'false','app.sequential_mode':'false'}.items())
         executable=plan.get('desktop_launcher',plan['members']['desktop'])
         if plan['flatpak']:
-            launcher=root/'desktop-launcher';launcher.write_text('#!/bin/sh\nexec '+shlex.join(command('desktop',[]))+'\n');launcher.chmod(0o700);executable=str(launcher)
+            launcher=root/'desktop-launcher';launcher.write_text(flatpak_launcher_source());launcher.chmod(0o700);executable=str(launcher)
+            inner=root/'flatpak-desktop-inner.sh';inner.write_text(flatpak_inner_source(current_network_namespace()));inner.chmod(0o700)
         with Driver(root,executable) as driver:
             result['desktop']=validate_info(driver.invoke('get_build_info'),'desktop',plan['target'],plan['source_revision'])
-    (root/'actual-identities.json').write_text(json.dumps({'status':'passed','credential_probe':probe,'build_info':result},indent=2)+'\n')
+    observed={'status':'passed','credential_probe':probe,'build_info':result}
+    if plan['flatpak'] and 'desktop' in plan['members']:
+        outer=json.loads((root/'flatpak-transport-outer.log').read_text())
+        require(outer['source_revision']==plan['source_revision'] and outer['target']==plan['target'],
+                'Flatpak transport source or target changed')
+        observed['flatpak_transport']=validate_flatpak_transport(outer,json.loads((root/'flatpak-transport-inner.log').read_text()),
+            current_network_namespace(),plan['outside_network_namespace'])
+    (root/'actual-identities.json').write_text(json.dumps(observed,indent=2)+'\n')
 
 if __name__=='__main__':
     require(sys.argv[1:]==['--inside'],'Only explicit private collector entry is supported');inside()

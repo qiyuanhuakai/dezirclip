@@ -1,14 +1,17 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { assertAuthority, checkNames, combine, httpFailureDetails, inspectPe, nsisMembers, oldPackages, prepareFailure, releaseAssets,
   safeFailureText, sha256, updaterNames, validateAssets, validateInfo, validateNative, validateRecoveryAuthority, verifyDownloads, version } from '../release-windows-upgrade.mjs';
 
-// Every observation below is synthetic, in memory, and only tests rejection
-// contracts. No product, installer, clipboard, registry or network runs. The
-// Windows-only PowerShell refusal check exits at the first hosted-runner guard.
+// Synthetic report observations test pure rejection contracts. Application
+// discovery extracts only its helper and never starts its empty fixture files.
+// The Windows-only refusal check exits at the first hosted-runner guard.
 const source = 'a'.repeat(40);
 const releaseId = '42';
 const policyHash = 'b'.repeat(64);
@@ -423,4 +426,64 @@ test('Windows local entry point refuses before any product operation', { skip: p
   assert.equal(result.error, undefined);
   assert.notEqual(result.status, 0);
   assert.match(result.stdout + result.stderr, /Final release upgrade execution requires|GitHub-hosted runner/);
+});
+
+test('PowerShell application discovery selects one PATH-first file without running fixtures', { skip: process.platform !== 'win32' }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'dzc-release-application-path-'));
+  const first = path.join(directory, 'actions setup first');
+  const second = path.join(directory, 'global tools second');
+  const names = ['node.exe', 'python.exe', 'pwsh.exe'];
+  try {
+    mkdirSync(first); mkdirSync(second);
+    for (const parent of [first, second]) for (const name of names) writeFileSync(path.join(parent, name), '', { flag: 'wx' });
+    const program = String.raw`
+$ErrorActionPreference = 'Stop'
+$PSStyle.OutputRendering = 'PlainText'
+$tokens = $null; $errors = $null
+$tree = [System.Management.Automation.Language.Parser]::ParseFile($env:DZC_DISCOVERY_SOURCE, [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) { throw 'The release script must remain syntactically valid.' }
+$functions = @($tree.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq 'Resolve-ApplicationPath' }, $true))
+if ($functions.Count -ne 1) { throw 'Expected exactly one isolated application resolver.' }
+. ([scriptblock]::Create($functions[0].Extent.Text))
+$originalPath = $env:PATH
+try {
+    $observed = @()
+    foreach ($name in @('node.exe', 'python.exe', 'pwsh.exe')) {
+        $env:PATH = $env:DZC_DISCOVERY_FIRST + ';' + $env:DZC_DISCOVERY_SECOND
+        if (@(Get-Command -Name $name -CommandType Application -All -ErrorAction Stop).Count -lt 2) { throw 'Both discovery candidates must exist.' }
+        $forward = @(Resolve-ApplicationPath $name)
+        $env:PATH = $env:DZC_DISCOVERY_SECOND + ';' + $env:DZC_DISCOVERY_FIRST
+        $reverse = @(Resolve-ApplicationPath $name)
+        if ($forward.Count -ne 1 -or $reverse.Count -ne 1) { throw 'Application resolution must return one scalar path.' }
+        $observed += @{ name = $name; forward = $forward[0]; reverse = $reverse[0] }
+    }
+    $missingRejected = $false
+    try { Resolve-ApplicationPath 'dzc-missing-discovery-fixture.exe' | Out-Null } catch { $missingRejected = $true }
+    $emptyRejected = $false
+    try { Resolve-ApplicationPath '' | Out-Null } catch { $emptyRejected = $true }
+    ConvertTo-Json -InputObject @{ observed = $observed; missing_rejected = $missingRejected; empty_rejected = $emptyRejected } -Depth 6 -Compress
+} finally { $env:PATH = $originalPath }
+`;
+    const result = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', program], {
+      encoding: 'utf8', timeout: 20000, maxBuffer: 65536,
+      env: { ...process.env, DZC_DISCOVERY_SOURCE: fileURLToPath(new URL('../test-release-windows-upgrade.ps1', import.meta.url)),
+        DZC_DISCOVERY_FIRST: first, DZC_DISCOVERY_SECOND: second },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const observed = JSON.parse(result.stdout);
+    assert.equal(observed.missing_rejected, true);
+    assert.equal(observed.empty_rejected, true);
+    assert.deepEqual(observed.observed.map(item => item.name), names);
+    for (const item of observed.observed) {
+      assert.equal(path.resolve(item.forward).toLowerCase(), path.join(first, item.name).toLowerCase());
+      assert.equal(path.resolve(item.reverse).toLowerCase(), path.join(second, item.name).toLowerCase());
+    }
+  } finally {
+    for (const parent of [first, second]) {
+      for (const name of names) if (existsSync(path.join(parent, name))) unlinkSync(path.join(parent, name));
+      if (existsSync(parent)) rmdirSync(parent);
+    }
+    rmdirSync(directory);
+  }
 });

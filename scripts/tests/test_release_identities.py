@@ -1,5 +1,6 @@
 """Synthetic release receipt validation only; no product, installer or clipboard runs."""
 import copy
+import ast
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,8 @@ from release_identity_packages import windows_environment
 from release_identity_packages import remove_owned_tree
 from release_identity_linux import flatpak_bindings
 from release_identity_linux import sandbox_info
+from release_identity_linux import (inspector_address,network_namespace_value,flatpak_command,
+    flatpak_launcher_source,flatpak_inner_source,validate_flatpak_transport)
 
 REVISION='a'*40
 DIGEST='b'*64
@@ -168,9 +171,17 @@ print(json.dumps(proof))
                     driver_bind=command.index('/usr/bin/WebKitWebDriver')
                     self.assertGreater(driver_bind,source_bind)
                     self.assertEqual(command[driver_bind-1:driver_bind+2],['--ro-bind','/usr/bin/WebKitWebDriver','/fixture-bin/WebKitWebDriver'])
+                    for flag in ('--unshare-user','--unshare-pid','--unshare-net','--unshare-ipc','--unshare-uts'):
+                        self.assertIn(flag,command)
                     private=logs/'private-ss';private.mkdir();(private/'proof.json').write_text(json.dumps({'status':'passed'}))
-                    (logs/'actual-identities.json').write_text(json.dumps({'credential_probe':{'status':'passed'},'build_info':{role:info(role,args.target) for role in roles}}))
-                with patch('release_identity_guard.install',return_value={'synthetic':True}),patch('release_identity_linux.run',side_effect=assert_mount) as execute:
+                    observed={'credential_probe':{'status':'passed'},'build_info':{role:info(role,args.target) for role in roles}}
+                    if package=='flatpak':
+                        observed['flatpak_transport']={'schema_version':1,'kind':'flatpak_automation_transport',
+                            'status':'observed_same_private_network','outside_network_namespace':'net:[1]',
+                            'network_namespace':'net:[2]','inspector':'127.0.0.1:12345',
+                            'host_network_shared':False,'product_acceptance_claimed':False}
+                    (logs/'actual-identities.json').write_text(json.dumps(observed))
+                with patch('release_identity_guard.install',return_value={'synthetic':True}),patch('release_identity_linux.current_network_namespace',return_value='net:[1]'),patch('release_identity_linux.run',side_effect=assert_mount) as execute:
                     result=sandbox_info(args,members,extracted,logs,package=='flatpak')
                 self.assertEqual(set(result),set(roles));execute.assert_called_once()
                 self.assertEqual(before,{role:identity.sha(path) for role,path in members.items()})
@@ -283,5 +294,77 @@ print(json.dumps(proof))
             self.assertEqual(evaluate(machine,audit^1,getpid),0x80000000)
             if machine=='x86_64':
                 for number in numbers:self.assertEqual(evaluate(machine,audit,number|0x40000000),0x50001)
+
+class FlatpakAutomationTransport(unittest.TestCase):
+    def environment(self):
+        return {'DISPLAY':':99','DBUS_SESSION_BUS_ADDRESS':'unix:path=/q/private/runtime/bus',
+                'GH_TOKEN':'fixture-not-forwarded','ARBITRARY':'fixture-not-forwarded'}
+
+    def observations(self):
+        outer={'schema_version':1,'kind':'flatpak_automation_outer','status':'launching',
+               'outside_network_namespace':'net:[1]','network_namespace':'net:[2]',
+               'inspector':'127.0.0.1:12345','product_acceptance_claimed':False}
+        inner={'schema_version':1,'kind':'flatpak_automation_inner','status':'observed',
+               'network_namespace':'net:[2]','inspector':'127.0.0.1:12345'}
+        return outer,inner
+
+    def test_only_desktop_shares_the_outer_network_and_forwards_one_inspector(self):
+        arguments=['--automation','space argument','semi;argument']
+        command=flatpak_command('desktop',arguments,'/q/private/data/clipboard.db',self.environment(),'127.0.0.1:12345')
+        self.assertIn('--share=network',command);self.assertNotIn('--unshare=network',command)
+        self.assertIn('--readonly',command);self.assertIn('--share=ipc',command)
+        self.assertEqual([value for value in command if value.startswith('--env=WEBKIT_INSPECTOR_SERVER=')],
+                         ['--env=WEBKIT_INSPECTOR_SERVER=127.0.0.1:12345'])
+        self.assertEqual(command[command.index('/package')+1:],['/bin/sh','/evidence/flatpak-desktop-inner.sh',*arguments])
+        self.assertNotIn('fixture-not-forwarded',' '.join(command))
+        with self.assertRaises(ValueError):flatpak_command('desktop',arguments,'/q/db',self.environment())
+
+    def test_cli_service_and_count_keep_their_nested_network(self):
+        for role,arguments,binary in [('cli',['build-info','--json'],'dzc'),('cli',['count','--json'],'dzc'),('service',['--build-info'],'dzc-service')]:
+            command=flatpak_command(role,arguments,'/q/private/db',self.environment())
+            self.assertIn('--unshare=network',command);self.assertNotIn('--share=network',command)
+            self.assertEqual(command[command.index('/package')+1:],['/app/bin/'+binary,*arguments])
+            self.assertFalse(any('WEBKIT_INSPECTOR_SERVER' in value for value in command))
+            with self.assertRaises(ValueError):flatpak_command(role,arguments,'/q/db',self.environment(),'127.0.0.1:12')
+
+    def test_launcher_generates_no_frozen_inspector_and_preserves_driver_arguments(self):
+        source=flatpak_launcher_source();tree=ast.parse(source)
+        self.assertEqual([node.module for node in ast.walk(tree) if isinstance(node,ast.ImportFrom)],['release_identity_linux'])
+        self.assertIn("sys.path.insert(0,'/fixture-bin')",source)
+        self.assertIn('launch_flatpak_desktop(sys.argv[1:])',source)
+        self.assertNotIn('WEBKIT_INSPECTOR_SERVER',source)
+        inner=flatpak_inner_source('net:[2]')
+        self.assertIn('readlink /proc/self/ns/net',inner)
+        self.assertIn('${WEBKIT_INSPECTOR_SERVER-}',inner)
+        self.assertIn("[ \"$network_namespace\" = 'net:[2]' ]",inner)
+        self.assertIn('exec /app/bin/dezirclip "$@"',inner)
+        self.assertNotIn('env |',inner)
+
+    def test_invalid_inspector_and_namespace_values_are_rejected(self):
+        for value in (None,'','127.0.0.1:0','127.0.0.1:65536','127.0.0.1:0001','127.0.0.1:12\n',
+                      '0.0.0.0:12','localhost:12','[::1]:12','https://127.0.0.1:12','127.0.0.1:12;echo secret'):
+            with self.subTest(value=value),self.assertRaises(ValueError):inspector_address(value)
+        for value in (None,'','net:[]','net:[0]','mnt:[1]','net:[-1]','net:[2]\n'):
+            with self.subTest(value=value),self.assertRaises(ValueError):network_namespace_value(value)
+            with self.subTest(generated_namespace=value),self.assertRaises(ValueError):flatpak_inner_source(value)
+        self.assertEqual(inspector_address('127.0.0.1:65535'),'127.0.0.1:65535')
+
+    def test_inner_and_outer_must_share_the_private_namespace_and_never_the_host(self):
+        outer,inner=self.observations()
+        observed=validate_flatpak_transport(outer,inner,'net:[2]','net:[1]')
+        self.assertEqual(observed['status'],'observed_same_private_network')
+        self.assertFalse(observed['host_network_shared']);self.assertFalse(observed['product_acceptance_claimed'])
+        for changed in [dict(inner,network_namespace='net:[1]'),dict(inner,network_namespace='net:[3]'),
+                        dict(inner,schema_version=True)]:
+            with self.assertRaises(ValueError):validate_flatpak_transport(outer,changed,'net:[2]','net:[1]')
+        with self.assertRaises(ValueError):validate_flatpak_transport(outer,inner,'net:[1]','net:[1]')
+        with self.assertRaises(ValueError):validate_flatpak_transport(dict(outer,outside_network_namespace='net:[3]'),inner,'net:[2]','net:[1]')
+
+    def test_inspector_and_typed_observations_must_match(self):
+        outer,inner=self.observations()
+        for changed in [dict(inner,inspector='127.0.0.1:54321'),dict(inner,kind='other')]:
+            with self.assertRaises(ValueError):validate_flatpak_transport(outer,changed,'net:[2]','net:[1]')
+        with self.assertRaises(ValueError):validate_flatpak_transport(dict(outer,product_acceptance_claimed=True),inner,'net:[2]','net:[1]')
+
 
 if __name__=='__main__':unittest.main()
