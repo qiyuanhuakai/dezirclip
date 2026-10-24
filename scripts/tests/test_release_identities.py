@@ -234,7 +234,7 @@ print(json.dumps(proof))
         with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp,patch.dict(os.environ,{'RUNNER_TEMP':temp,'GH_TOKEN':'synthetic-do-not-forward','ACTIONS_RUNTIME_TOKEN':'synthetic-do-not-forward'},clear=True):
             env=windows_environment(Path(temp))
             self.assertNotIn('GH_TOKEN',env);self.assertNotIn('ACTIONS_RUNTIME_TOKEN',env)
-            self.assertTrue(Path(env['APPDATA']).is_relative_to(Path(temp)))
+            self.assertTrue(Path(env['APPDATA']).resolve().is_relative_to(Path(temp).resolve()))
     def test_exact_four_standalone_and_ten_distinct_containers(self):
         assets=[asset for target in identity.TARGETS for group in identity.expected_assets(target) for asset in ([group] if isinstance(group,str) else group)]
         self.assertEqual(len(assets),14);self.assertEqual(len(set(assets)),14)
