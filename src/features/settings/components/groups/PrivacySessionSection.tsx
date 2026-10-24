@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
 import { invokePrivacyBound, refreshPrivacyState, setPrivacySession } from "../../../../shared/lib/privacySession";
 import "../../../../styles/components/privacy.css";
+import ThemedSelect from "../ThemedSelect";
+import HotkeyRecorder from "../HotkeyRecorder";
+import SettingsDisclosure from "../SettingsDisclosure";
 
 interface PrivacyRule { id: string; kind: string; source_app: string | null; created_at_ms: number }
 export function PrivacySessionSection({ t, appSettings }: {
@@ -16,6 +19,7 @@ export function PrivacySessionSection({ t, appSettings }: {
   const [rules, setRules] = useState<PrivacyRule[]>([]);
   const [rulesFailed, setRulesFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [recording, setRecording] = useState(false);
   const ready = state.phase === "ready";
   const disabled = !ready || state.pending || busy;
   const active = state.snapshot?.session.active === true && ready;
@@ -66,12 +70,13 @@ export function PrivacySessionSection({ t, appSettings }: {
     </div>
     <div className="privacy-session-controls">
       <label htmlFor="privacy-session-duration">{t("privacy_session_duration")}</label>
-      <select id="privacy-session-duration" value={duration} disabled={disabled} onChange={event => setDuration(event.target.value)}>
-        <option value="300000">{t("privacy_duration_5m")}</option>
-        <option value="900000">{t("privacy_duration_15m")}</option>
-        <option value="3600000">{t("privacy_duration_1h")}</option>
-        <option value="0">{t("privacy_duration_indefinite")}</option>
-      </select>
+      <ThemedSelect inputId="privacy-session-duration" value={duration} isDisabled={disabled} onChange={setDuration}
+        options={[
+          { value: "300000", label: t("privacy_duration_5m") },
+          { value: "900000", label: t("privacy_duration_15m") },
+          { value: "3600000", label: t("privacy_duration_1h") },
+          { value: "0", label: t("privacy_duration_indefinite") },
+        ]} />
       <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void changeSession(true); }}>
         {t(active ? "privacy_session_renew" : "privacy_session_start")}</button>
       {active && <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void changeSession(false); }}>{t("privacy_session_end")}</button>}
@@ -79,14 +84,13 @@ export function PrivacySessionSection({ t, appSettings }: {
         onClick={() => { void refreshPrivacyState(); }}>{t("privacy_retry")}</button>}
     </div>
     <div className="privacy-session-hotkey">
-      <label htmlFor="privacy-session-hotkey">{t("privacy_session_hotkey")}</label>
-      <input id="privacy-session-hotkey" className="search-input" value={hotkey} disabled={disabled}
-        placeholder="Ctrl+Alt+P" spellCheck={false} onChange={event => setHotkey(event.target.value)} />
+      <HotkeyRecorder t={t} labelKey="privacy_session_hotkey" hotkey={hotkey} recording={recording}
+        setRecording={setRecording} onHotkeyChange={setHotkey} disabled={disabled} />
+      <button type="button" className="setting-btn" disabled={disabled || !hotkey} onClick={() => { setHotkey(""); setRecording(false); }}>{t("privacy_session_hotkey_clear")}</button>
       <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void saveHotkey(); }}>{t("save")}</button>
       <p>{t("privacy_session_hotkey_hint")}</p>
     </div>
-    <details className="privacy-rule-list">
-      <summary>{t("privacy_rules_title")}</summary>
+    <SettingsDisclosure className="privacy-rule-list" title={t("privacy_rules_title")}>
       <p>{t("privacy_rules_hint")}</p>
       {rulesFailed ? <button type="button" className="setting-btn" onClick={() => setAttempt(value => value + 1)}>{t("privacy_retry")}</button>
         : rules.length === 0 ? <p>{t("privacy_rules_empty")}</p>
@@ -94,7 +98,7 @@ export function PrivacySessionSection({ t, appSettings }: {
             <span>{t(`privacy_rule_${rule.kind}`)}{rule.source_app ? ` · ${rule.source_app}` : ""}</span>
             <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void removeRule(rule.id); }}>{t("privacy_rule_remove")}</button>
           </li>)}</ul>}
-    </details>
+    </SettingsDisclosure>
     {error && <p role="alert" className="privacy-action-error">{t("privacy_action_failed")}</p>}
   </section>;
 }

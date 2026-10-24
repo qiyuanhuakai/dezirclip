@@ -681,12 +681,14 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         />
                     </div>
 
-                    <div className="setting-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+                    <div className="setting-item column">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <button
                                 type="button"
                                 className="btn-icon"
                                 onClick={() => props.setPrivacyKindsOpen(!props.privacyKindsOpen)}
+                                aria-label={props.t('privacy_protection_kinds')}
+                                aria-expanded={props.privacyKindsOpen}
                                 style={{ width: '24px', height: '24px' }}
                             >
                                 {props.privacyKindsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -704,7 +706,8 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 ].map(opt => {
                                     const checked = props.privacyProtectionKinds.includes(opt.id);
                                     return (
-                                        <label key={opt.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <label key={opt.id} className="privacy-kind-option">
+                                            <span className="switch">
                                             <input
                                                 className="cb"
                                                 type="checkbox"
@@ -717,7 +720,9 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                                     invoke('set_privacy_protection_kinds', { kinds: next }).catch(console.error);
                                                 }}
                                             />
-                                            <span style={{ fontSize: '12px', color: 'var(--text-primary)' }}>{opt.label}</span>
+                                            <span className="toggle"><span className="left" /><span className="right" /></span>
+                                            </span>
+                                            <span>{opt.label}</span>
                                         </label>
                                     );
                                 })}
@@ -725,12 +730,14 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         )}
                     </div>
 
-                    <div className="setting-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '6px' }}>
+                    <div className="setting-item column">
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <button
                                 type="button"
                                 className="btn-icon"
                                 onClick={() => props.setPrivacyRulesOpen(!props.privacyRulesOpen)}
+                                aria-label={props.t('privacy_protection_custom_rules')}
+                                aria-expanded={props.privacyRulesOpen}
                                 style={{ width: '24px', height: '24px' }}
                             >
                                 {props.privacyRulesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
