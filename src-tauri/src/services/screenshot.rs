@@ -42,6 +42,53 @@ pub struct MonitorRect {
     pub is_primary: bool,
 }
 
+/// Pixels captured before the selector is shown. Region selection never reads
+/// the desktop again, so its mask and border cannot enter the resulting PNG.
+pub struct FrozenScreenFrame {
+    rect: MonitorRect,
+    pixels: xcap::image::RgbaImage,
+}
+
+impl FrozenScreenFrame {
+    pub(crate) fn from_pixels(rect: MonitorRect, pixels: xcap::image::RgbaImage) -> Result<Self, ScreenshotError> {
+        if rect.width == 0 || rect.height == 0 || pixels.dimensions() != (rect.width, rect.height) {
+            return Err(ScreenshotError::RegionOutOfBounds);
+        }
+        Ok(Self { rect, pixels })
+    }
+
+    pub fn crop(&self, x: i32, y: i32, width: u32, height: u32) -> Result<ScreenshotResult, ScreenshotError> {
+        let relative_x = i64::from(x) - i64::from(self.rect.x);
+        let relative_y = i64::from(y) - i64::from(self.rect.y);
+        if width == 0 || height == 0 || relative_x < 0 || relative_y < 0
+            || relative_x + i64::from(width) > i64::from(self.pixels.width())
+            || relative_y + i64::from(height) > i64::from(self.pixels.height()) {
+            return Err(ScreenshotError::RegionOutOfBounds);
+        }
+        let pixels = xcap::image::imageops::crop_imm(
+            &self.pixels, relative_x as u32, relative_y as u32, width, height,
+        ).to_image();
+        Ok(ScreenshotResult { width, height, png_bytes: encode_png(&pixels)? })
+    }
+}
+
+impl Drop for FrozenScreenFrame {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.pixels.as_mut().zeroize();
+    }
+}
+
+pub fn freeze_monitor(rect: MonitorRect) -> Result<FrozenScreenFrame, ScreenshotError> {
+    let monitors = Monitor::all().map_err(map_monitor_enumeration_error)?;
+    let rects = read_monitor_rects(&monitors)?;
+    let index = rects.iter().position(|candidate| candidate.x == rect.x && candidate.y == rect.y
+        && candidate.width == rect.width && candidate.height == rect.height)
+        .ok_or(ScreenshotError::RegionOutOfBounds)?;
+    let pixels = monitors[index].capture_image().map_err(map_xcap)?;
+    FrozenScreenFrame::from_pixels(rect, pixels)
+}
+
 /// Whether `(cursor_x, cursor_y)` falls inside `rect`.
 ///
 /// Half-open on both axes, so the pixel at a display's right edge belongs to the
@@ -226,6 +273,32 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frozen_region_crops_original_pixels_with_negative_monitor_origin() {
+        let frame = FrozenScreenFrame {
+            rect: MonitorRect { x: -4, y: -2, width: 4, height: 3, is_primary: false },
+            pixels: xcap::image::RgbaImage::from_fn(4, 3, |x, y| xcap::image::Rgba([x as u8, y as u8, 99, 255])),
+        };
+        let result = frame.crop(-3, -1, 2, 2).unwrap();
+        let decoded = xcap::image::load_from_memory(&result.png_bytes).unwrap().to_rgba8();
+        assert_eq!(decoded.dimensions(), (2, 2));
+        assert_eq!(decoded.get_pixel(0, 0).0, [1, 1, 99, 255]);
+        assert_eq!(decoded.get_pixel(1, 1).0, [2, 2, 99, 255]);
+    }
+
+    #[test]
+    fn frozen_region_rejects_zero_outside_and_overflowing_coordinates() {
+        let frame = FrozenScreenFrame {
+            rect: MonitorRect { x: -4, y: -2, width: 4, height: 3, is_primary: false },
+            pixels: xcap::image::RgbaImage::new(4, 3),
+        };
+        for (x, y, width, height) in [(-4, -2, 0, 1), (-5, -2, 1, 1), (-4, -3, 1, 1),
+            (-1, 0, 2, 1), (i32::MAX, i32::MAX, u32::MAX, u32::MAX)] {
+            assert!(matches!(frame.crop(x, y, width, height), Err(ScreenshotError::RegionOutOfBounds)));
+        }
+        assert!(frame.crop(-4, -2, 4, 3).is_ok());
+    }
 
     /// A 1920x1080 display at the origin.
     fn primary() -> MonitorRect {

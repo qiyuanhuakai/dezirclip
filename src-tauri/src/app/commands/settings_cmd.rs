@@ -279,6 +279,9 @@ pub fn save_setting(
 ) -> AppResult<()> {
     persist_setting_with_legacy(&db_state, &key, &value)?;
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
+    if key == "app.custom_background" {
+        let _ = app_handle.emit("custom-background-changed", &value);
+    }
     if key == "app.privacy_protection" {
         let _ = app_handle.emit("clipboard-changed", ());
     }

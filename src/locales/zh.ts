@@ -309,6 +309,7 @@ export const zh = {
         tag_manager_enabled: "标签管理页开关",
         tag_manager_enabled_hint: "关闭后隐藏标签管理入口",
         custom_background: "自定义背景",
+        custom_background_save_failed: "背景图片未能保存，请重试。",
         choose_background: "选择背景",
         change_background: "更换背景",
         clear_background: "清除背景",

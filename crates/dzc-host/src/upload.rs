@@ -158,6 +158,31 @@ mod tests {
         call(host,session,Method::DesktopCaptureFinish,serde_json::json!({"capture_id":id,"source_app":"Synthetic Emoji","inherited_protection":false,"paste":true}))
     }
     #[test]
+    fn frozen_remote_selection_longer_than_upload_ttl_starts_transport_with_original_epoch() {
+        let original=crate::router::tests::synthetic_host();
+        let actions=Arc::new(Actions::default());
+        let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
+        let desktop=session(&host,ClientRole::Desktop,true);
+        let frozen=host.snapshot().unwrap();
+        // Waiting for a selection creates no upload or upload-expiry deadline.
+        std::thread::sleep(Duration::from_millis(5_100));
+        let response=call(&host,&desktop,Method::DesktopCaptureBegin,serde_json::json!({
+            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true}));
+        let id=response.result.unwrap()["capture_id"].as_str().unwrap().to_owned();
+        let body=serde_json::json!({"kind":"text","text":"synthetic frozen screenshot transfer"});
+        assert!(call(&host,&desktop,Method::DesktopCaptureWrite,serde_json::json!({"capture_id":id,"offset":0,
+            "data_base64":base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&body).unwrap())})).error.is_none());
+        assert_eq!(finish(&host,&desktop,&id).result.unwrap()["performed"],true);
+        assert_eq!(actions.copied.lock().unwrap().len(),1);
+        let now=crate::router::now_ms().unwrap();
+        host.history.privacy().toggle(now).unwrap();
+        host.history.privacy().toggle(now+1).unwrap();
+        let stale=call(&host,&desktop,Method::DesktopCaptureBegin,serde_json::json!({
+            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true}));
+        assert_eq!(stale.error.unwrap().code,WireErrorCode::PrivacyBlocked);
+        assert_eq!(actions.copied.lock().unwrap().len(),1);
+    }
+    #[test]
     fn generated_copy_uses_desktop_owner_for_emoji_image_and_large_unpersisted_content() {
         let original=crate::router::tests::synthetic_host();
         let actions=Arc::new(Actions::default());

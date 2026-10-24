@@ -47,6 +47,12 @@ describe("RegionSelectWindow", () => {
     mockSetFocusable.mockResolvedValue(undefined);
     mockOuterPosition.mockResolvedValue({ x: 0, y: 0 });
     mockScaleFactor.mockResolvedValue(1);
+    mockInvoke.mockImplementation(async command => {
+      if (command === "get_region_capture_session") {
+        return { token: "synthetic-session", ...await mockOuterPosition(), scale: await mockScaleFactor() };
+      }
+      return undefined;
+    });
     Storage.prototype.getItem = vi.fn(() => null);
   });
 
@@ -124,6 +130,7 @@ describe("RegionSelectWindow", () => {
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("capture_region", {
+        sessionToken: "synthetic-session",
         x: 100,
         y: 100,
         width: 320,
@@ -131,8 +138,7 @@ describe("RegionSelectWindow", () => {
       });
     });
     expect(onSelect).toHaveBeenCalledWith({ x: 100, y: 100, width: 320, height: 200 });
-    expect(mockSetFocusable).toHaveBeenCalledWith(false);
-    expect(mockHide).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledWith("hide_region_select", { sessionToken: "synthetic-session" });
   });
 
   it("converts CSS selection coordinates to physical screen coordinates", () => {
@@ -162,6 +168,7 @@ describe("RegionSelectWindow", () => {
 
     await waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith("capture_region", {
+        sessionToken: "synthetic-session",
         x: 2070,
         y: 160,
         width: 480,
@@ -182,7 +189,7 @@ describe("RegionSelectWindow", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     // The backend owns the hide so it can drop the fullscreen window's memory
     // target; hiding from here would leave that surface allocated.
-    expect(mockInvoke).toHaveBeenCalledWith("hide_region_select");
+    expect(mockInvoke).toHaveBeenCalledWith("hide_region_select", { sessionToken: undefined });
   });
 
   it("small selection is ignored (below MIN_SELECTION_SIZE)", async () => {

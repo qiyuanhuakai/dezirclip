@@ -1739,6 +1739,9 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
 
 pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     match event {
+        tauri::WindowEvent::Destroyed if window.label() == "region-select" => {
+            crate::app::commands::screenshot_cmd::clear_region_capture();
+        }
         tauri::WindowEvent::Focused(focused) => {
             if window.label() != "main" {
                 return;
@@ -1787,6 +1790,9 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             crate::app::commands::screenshot_cmd::reassert_overlay_geometry(window);
         }
         tauri::WindowEvent::CloseRequested { api, .. } => {
+            if window.label() == "region-select" {
+                crate::app::commands::screenshot_cmd::clear_region_capture();
+            }
             if window.label() != "main" {
                 return;
             }
