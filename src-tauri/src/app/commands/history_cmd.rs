@@ -263,30 +263,16 @@ pub async fn get_tag_items(
 #[tauri::command]
 pub async fn get_tag_items_page(
     app:AppHandle,
-    state: State<'_, DbState>,
     tag: String,
     query: Option<String>,
     sort_by: Option<String>,
     limit: Option<usize>,
     offset: Option<usize>,
+    expected_epoch: u64,
 ) -> AppResult<HostedTagItemsPage> {
     let bridge=app.state::<DesktopHost>().inner().clone();
-    let instance=bridge.instance().map_err(AppError::Validation)?;
-    let repository = state.history_service();
-    let page=tauri::async_runtime::spawn_blocking(move || {
-        let mut page=repository.tag_page(
-            &tag,
-            query.as_deref().unwrap_or(""),
-            sort_by.as_deref().unwrap_or("time"),
-            limit.unwrap_or(60),
-            offset.unwrap_or(0),
-        )?;
-        repository.entries_for_gui(&mut page.items,query.as_deref().unwrap_or("").is_empty(),chrono::Utc::now().timestamp_millis()).map_err(|error|dzc_core::api::CoreError::from(error.to_string()))?;
-        Ok::<_,dzc_core::api::CoreError>(page)
-    })
-    .await
-    .map_err(|error| AppError::Internal(error.to_string()))?
-    .map_err(AppError::from)?;
+    let (page,instance)=bridge.tag_page(tag,query.unwrap_or_default(),sort_by.unwrap_or_else(||"time".into()),
+        limit.unwrap_or(60),offset.unwrap_or(0),expected_epoch).await.map_err(AppError::Validation)?;
     check_tag_host_instance(&instance,&bridge.instance().map_err(AppError::Validation)?)?;
     Ok(HostedTagItemsPage::from_core(page,&instance))
 }

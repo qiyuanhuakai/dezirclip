@@ -48,23 +48,30 @@ pub async fn set_privacy_session_hotkey(app:AppHandle,hotkey:String)->Result<Str
     Ok(result.hotkey)
 }
 
-/// Invoked only by the local GUI's explicit reveal action. IPC roles do not grant this intent.
+/// Local content actions request one record; only explicit reveal includes protected content.
 #[tauri::command]
 pub async fn get_privacy_entry(
     app: AppHandle,
     id: i64,
     expected_epoch: u64,
     expected_host_instance_id:Option<String>,
+    reveal:Option<bool>,
 ) -> Result<HostedEntry, String> {
     let bridge=app.state::<DesktopHost>();
-    if let Some(entry)=bridge.entry(id,expected_epoch,true,None,expected_host_instance_id.as_deref()).await? {return Ok(entry);}
+    let instance=bridge.instance()?;
+    if expected_host_instance_id.as_ref().is_some_and(|expected| expected!=&instance) {return Err("ClipboardHostInstanceChanged".into());}
+    let reveal=reveal.unwrap_or(true);
+    if let Some(entry)=bridge.entry(id,expected_epoch,reveal,None,expected_host_instance_id.as_deref()).await? {
+        if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
+        return Ok(entry);
+    }
     if id<0 {bridge.check_instance(id,expected_host_instance_id.as_deref())?;}
     let history = app.state::<DbState>().history_service();
     let permit = history
         .privacy()
         .authorize_read(
             PrivacyAccessIntent::InteractiveRead,
-            SensitiveAccess::ExplicitUserAction,
+            if reveal {SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},
             Some(expected_epoch),
             now(),
         )
@@ -92,7 +99,8 @@ pub async fn get_privacy_entry(
         .privacy()
         .check_read(&permit, now())
         .map_err(|error| error.to_string())?;
-    bridge.hosted(entry)
+    if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
+    Ok(HostedEntry{entry,host_instance_id:Some(instance)})
 }
 
 #[tauri::command]

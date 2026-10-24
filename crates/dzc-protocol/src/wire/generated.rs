@@ -80,6 +80,28 @@ pub struct DesktopPageParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopTagPageParams {
+    pub tag: String,
+    pub query: String,
+    pub sort_by: String,
+    pub limit: u16,
+    pub offset: u32,
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopTagItemsPage {
+    pub items: Vec<DesktopEntry>,
+    pub total: u64,
+    pub has_more: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesktopEntryParams {
     pub id: i64,
     pub service_instance_id: String,
@@ -299,6 +321,8 @@ pub enum Method {
     PrivacyHotkeySet,
     #[serde(rename = "desktop.history.page")]
     DesktopHistoryPage,
+    #[serde(rename = "desktop.tags.page")]
+    DesktopTagsPage,
     #[serde(rename = "desktop.history.get")]
     DesktopHistoryGet,
     #[serde(rename = "desktop.snapshot.read")]

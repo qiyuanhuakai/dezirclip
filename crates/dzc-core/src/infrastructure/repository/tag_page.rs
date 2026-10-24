@@ -12,7 +12,7 @@ pub struct TagItemsPage {
     pub next_offset: Option<usize>,
 }
 
-pub(super) const TAG_MATCH_FILTER: &str = "FROM entry_tags et JOIN clipboard_history ch ON ch.id=et.entry_id WHERE et.tag=?1 AND (?2='' OR dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text)) AND (?2='' OR dc_tag_matches(ch.content,ch.preview,ch.source_app,COALESCE(ch.ocr_text,''),?2))";
+pub(super) const TAG_MATCH_FILTER: &str = "FROM entry_tags et JOIN clipboard_history ch ON ch.id=et.entry_id WHERE et.tag=?1 AND (?2='' OR CASE WHEN dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text) THEN dc_tag_matches(ch.content,ch.preview,ch.source_app,COALESCE(ch.ocr_text,''),?2) ELSE 0 END)";
 
 pub(super) fn register_tag_matcher(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.create_scalar_function("dc_tag_matches", 5, FunctionFlags::SQLITE_UTF8, |context| {
@@ -65,9 +65,9 @@ impl SqliteTagRepository {
             .map_err(|error| error.to_string())?;
         let total = usize::try_from(total).map_err(|error| error.to_string())?;
         let sql=format!("SELECT ch.id,ch.content_type,
-            CASE WHEN ch.content_type='image' AND length(ch.content)<=8192 THEN ch.content ELSE '' END,
+            CASE WHEN dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text) AND ch.content_type='image' AND length(ch.content)<=8192 THEN ch.content ELSE '' END,
             ch.source_app,ch.timestamp,
-            CASE WHEN ch.preview LIKE 'dpapi:%' OR ch.preview LIKE 'linux:%' THEN CASE WHEN length(ch.preview)<=131072 THEN ch.preview ELSE '' END ELSE substr(ch.preview,1,800) END,
+            CASE WHEN NOT dc_search_visible(ch.tags,ch.content,ch.preview,ch.html_content,ch.ocr_text) THEN '' WHEN ch.preview LIKE 'dpapi:%' OR ch.preview LIKE 'linux:%' THEN CASE WHEN length(ch.preview)<=131072 THEN ch.preview ELSE '' END ELSE substr(ch.preview,1,800) END,
             ch.is_pinned,ch.tags,ch.use_count,ch.is_external,ch.pinned_order,ch.source_app_path,ch.content_kinds,ch.ocr_status
             {filter} ORDER BY {order} LIMIT ?3 OFFSET ?4");
         let items = {
@@ -212,6 +212,25 @@ mod tests {
                 .total,
             0
         );
+    }
+    #[test]
+    fn protected_tag_pages_keep_only_metadata_and_never_search_hidden_fields() {
+        let (repository, connection) = repository();
+        connection.lock().unwrap().execute_batch("UPDATE clipboard_history SET tags='[\"work\",\"sensitive\"]',content='synthetic hidden body',preview='synthetic hidden preview',html_content='<b>hidden</b>' WHERE id=145;").unwrap();
+        let page = repository.get_page("work", "", "time", 60, 0).unwrap();
+        assert_eq!(page.total, 145);
+        let protected = page.items.iter().find(|entry| entry.id == 145).unwrap();
+        assert!(protected.tags.iter().any(|tag| tag == "sensitive"));
+        assert!(protected.content.is_empty() && protected.preview.is_empty() && protected.html_content.is_none());
+        let ordinary = page.items.iter().find(|entry| entry.id == 144).unwrap();
+        assert!(ordinary.preview.contains("entry 144"));
+        assert_eq!(repository.get_page("work", "synthetic hidden", "time", 60, 0).unwrap().total, 0);
+        assert_eq!(repository.get_page("work", "entry 144", "time", 60, 0).unwrap().total, 1);
+        use base64::Engine;
+        let envelope = format!("linux:{}", base64::engine::general_purpose::STANDARD.encode([0_u8; 28]));
+        connection.lock().unwrap().execute("UPDATE clipboard_history SET tags='[\"work\"]',content=?1,preview=?1 WHERE id=145", [&envelope]).unwrap();
+        let page = repository.get_page("work", "", "time", 1, 0).unwrap();
+        assert!(page.items[0].content.is_empty() && page.items[0].preview.is_empty());
     }
     #[test]
     fn removing_tag_keeps_history_other_tags_and_original_content() {

@@ -226,7 +226,7 @@ impl Host {
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
-            methods.extend(["desktop.history.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
+            methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
             if self.actions.can_copy() {methods.push("desktop.clipboard.copy");}
             if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
         }
@@ -333,6 +333,7 @@ impl Host {
             }
             Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
+            Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),

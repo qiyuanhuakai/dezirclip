@@ -75,6 +75,8 @@
 .tag-history-row--managing { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; cursor: pointer; }
 .tag-history-selection { width: 15px; height: 15px; margin: 0; accent-color: var(--dc-accent); cursor: pointer; }
 .tag-history-row-content { min-width: 0; }
+.tag-history-reveal { display: block; margin: 0 0 4px auto; border: 1px solid var(--border-dark); border-radius: var(--surface-dialog-radius, 4px); background: var(--bg-panel); color: var(--text-primary); padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.tag-history-reveal:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 2px; }
 .tag-history-row--managing .tag-history-row-content { pointer-events: none; }
 .tag-history-row--managing .item-actions { display: none; }
 .tag-manager .tag-manager-picker-trigger { flex: 1; width: auto; min-width: 0; height: 27px; padding: 3px 6px; justify-content: flex-start; text-align: left; }

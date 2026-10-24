@@ -94,6 +94,32 @@ pub(crate) fn entry(mut entry: api::ClipboardEntry, compact: bool) -> DesktopEnt
 }
 
 impl Host {
+    pub fn tag_page_owned(&self, request: DesktopTagPageParams) -> Result<DesktopTagItemsPage, WireErrorCode> {
+        value("DesktopTagPageParams", &request)?;
+        if request.service_instance_id != self.snapshot()?.service_instance_id { return Err(WireErrorCode::PrivacyBlocked); }
+        let now = crate::router::now_ms()?;
+        let permit = self.history.privacy().authorize_read(api::PrivacyAccessIntent::InteractiveRead,
+            api::SensitiveAccess::Denied, Some(request.expected_epoch), now).map_err(blocked)?;
+        let page = self.history.tag_page(&request.tag, &request.query, &request.sort_by,
+            usize::from(request.limit), request.offset as usize).map_err(|_| WireErrorCode::Unavailable)?;
+        let items = self.history.entries_metadata_for_gui(&page.items, true, now).map_err(blocked)?;
+        let result = DesktopTagItemsPage { items: items.into_iter().map(|row| entry(row, true)).collect(),
+            total: page.total as u64, has_more: page.has_more, next_offset: page.next_offset.map(|offset| offset as u32) };
+        self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(blocked)?;
+        value("DesktopTagItemsPage", &result)?;
+        Ok(result)
+    }
+
+    pub(crate) fn desktop_tag_page(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
+        let request: DesktopTagPageParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+        self.desktop_permission(session, &request.service_instance_id)?;
+        let permit = self.history.privacy().authorize_read(api::PrivacyAccessIntent::InteractiveRead,
+            api::SensitiveAccess::Denied, Some(request.expected_epoch), crate::router::now_ms()?).map_err(blocked)?;
+        let result = self.tag_page_owned(request)?;
+        self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(blocked)?;
+        self.authorized_snapshot(session, &permit, &result)
+    }
+
     pub(crate) fn desktop(&self, session: &Session, method: Method, parameters: Value) -> Result<Value, WireErrorCode> {
         session.require(Permission::DesktopHistory)?;
         if session.role() != ClientRole::Desktop { return Err(WireErrorCode::PermissionDenied); }
@@ -184,6 +210,44 @@ mod tests {
     fn get(host:&Host,session:&Session,id:i64,reveal:bool)->Response {
         let state=host.snapshot().unwrap();
         call(host,session,Method::DesktopHistoryGet,serde_json::json!({"id":id,"reveal":reveal,"expected_epoch":state.privacy_epoch,"service_instance_id":state.service_instance_id}))
+    }
+    #[test]
+    fn tag_pages_are_owner_scoped_metadata_and_keep_content_search_private() {
+        let host = crate::router::tests::synthetic_host();
+        let ordinary = insert(&host, "ordinary searchable tag text", false);
+        host.history.update_entry_tags(ordinary, vec!["work".into()]).unwrap();
+        let protected = insert(&host, "private tag secret", true);
+        host.history.update_entry_tags(protected, vec!["work".into(), "sensitive".into()]).unwrap();
+        let state = host.snapshot().unwrap();
+        let request = DesktopTagPageParams { tag: "work".into(), query: String::new(), sort_by: "time".into(),
+            limit: 1, offset: 0, service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch };
+        for role in [ClientRole::Desktop, ClientRole::Surface, ClientRole::Mcp, ClientRole::Cli] {
+            let ungranted = session(&host, role, false);
+            assert_eq!(call(&host, &ungranted, Method::DesktopTagsPage, serde_json::to_value(&request).unwrap()).error.unwrap().code, WireErrorCode::PermissionDenied);
+        }
+        let desktop = session(&host, ClientRole::Desktop, true);
+        let descriptor: BodySnapshot = serde_json::from_value(call(&host, &desktop, Method::DesktopTagsPage, serde_json::to_value(&request).unwrap()).result.unwrap()).unwrap();
+        let chunk = host.snapshots.read(&desktop, state.clone(), SnapshotReadParams { snapshot_id: descriptor.snapshot_id,
+            offset: 0, expected_epoch: state.privacy_epoch, service_instance_id: state.service_instance_id.clone() }).unwrap();
+        let bytes = base64::engine::general_purpose::STANDARD.decode(chunk.data_base64).unwrap();
+        let page: DesktopTagItemsPage = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(page.total, 2);
+        assert!(page.has_more);
+        assert_eq!(page.next_offset, Some(1));
+        assert_eq!(page.items[0].id, protected);
+        assert!(page.items[0].content.is_empty() && page.items[0].preview.is_empty());
+        assert!(!String::from_utf8(bytes).unwrap().contains("private tag secret"));
+        let mut query = request.clone(); query.query = "searchable".into();
+        let ordinary_page = host.tag_page_owned(query.clone()).unwrap();
+        assert_eq!(ordinary_page.total, 1);
+        assert_eq!(ordinary_page.items[0].id, ordinary);
+        assert!(ordinary_page.items[0].preview.contains("ordinary searchable"));
+        query.query = "private tag secret".into();
+        assert_eq!(host.tag_page_owned(query).unwrap().total, 0);
+        let mut stale = request.clone(); stale.service_instance_id = "replaced-owner".into();
+        assert_eq!(host.tag_page_owned(stale).unwrap_err(), WireErrorCode::PrivacyBlocked);
+        let mut stale = request; stale.expected_epoch += 1;
+        assert_eq!(host.tag_page_owned(stale).unwrap_err(), WireErrorCode::PrivacyBlocked);
     }
     #[test]
     fn desktop_grants_do_not_follow_claimed_roles_or_cli_control_and_sensitive_reveal_is_explicit() {
