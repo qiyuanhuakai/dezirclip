@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ComponentType, type ReactNode } 
 import { FolderOpen } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { ToolsPathStatus, type CliInfo } from "./ToolsPathStatus";
+import { displayPath } from "../../utils/displayPath";
 
 interface LabelWithHintProps {
     readonly label: string;
@@ -101,13 +102,13 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
 
     return (
         <>
-            <div className="setting-item">
+            <div className="setting-item settings-section-title">
                 <LabelWithHint label={t("dzc_cli")} hintKey="dzc_cli" />
             </div>
             {cliInfo?.cli_path && (
                 <div className="setting-item setting-item--detail">
                     <div className="item-label-group"><span className="item-label">{t("cli_path")}</span></div>
-                    <span style={{ fontSize: "12px", opacity: 0.7, maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cliInfo.cli_path}</span>
+                    <span className="tools-path-text" title={displayPath(cliInfo.cli_path)}>{displayPath(cliInfo.cli_path)}</span>
                 </div>
             )}
             {cliInfo?.cli_version && (
@@ -124,7 +125,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                 <>
                     <div className="setting-item setting-item--detail">
                         <div className="item-label-group"><span className="item-label">{t("cli_path_active_path")}</span></div>
-                        <span className="tools-path-text" title={cliInfo.path_cli_path ?? undefined}>{cliInfo.path_cli_path}</span>
+                        <span className="tools-path-text" title={cliInfo.path_cli_path ? displayPath(cliInfo.path_cli_path) : undefined}>{cliInfo.path_cli_path ? displayPath(cliInfo.path_cli_path) : ""}</span>
                     </div>
                     {cliInfo.path_cli_version && (
                         <div className="setting-item setting-item--detail">
@@ -139,7 +140,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
                     <span className="tools-note">{pathStatusText()}{pathStatusDetail ? ` ${pathStatusDetail}` : ""}</span>
                 </div>
             )}
-            <div className="setting-item">
+            <div className="setting-item settings-section-title">
                 <LabelWithHint label={t("agent_skill")} hintKey="agent_skill" />
             </div>
             {[
@@ -148,7 +149,7 @@ const ToolsCliSection = ({ t, LabelWithHint }: ToolsCliSectionProps) => {
             ].map(skill => (
                 <div key={skill.id} className="setting-item setting-item--detail tools-action-row">
                     <div className="item-label-group"><span className="item-label">{t(skill.label)}</span>
-                        <span className="tools-path-text" title={skill.path ?? undefined}>{skill.path || skill.id}</span>
+                        <span className="tools-path-text" title={skill.path ? displayPath(skill.path) : undefined}>{skill.path ? displayPath(skill.path) : skill.id}</span>
                     </div>
                     <button type="button" className="setting-btn setting-btn--compact" disabled={!skill.path}
                         onClick={() => void handleOpenSkillFolder(skill.id)} title={t("open_skill_folder")}

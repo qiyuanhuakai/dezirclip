@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import UpdateSettingsSection from "./UpdateSettingsSection";
+import SettingsDisclosure from "../SettingsDisclosure";
 
 interface BuildInfo {
     readonly component_version: string;
@@ -47,8 +48,7 @@ const BuildInfoSection = ({ t }: { readonly t: (key: string) => string }) => {
                 </button>
             </div>}
             {!failed && !info && <p className="update-note" role="status">{t("build_info_loading")}</p>}
-            {info && <details className="about-build-details">
-                <summary>{t("build_details")}</summary>
+            {info && <SettingsDisclosure className="about-build-details" title={t("build_details")}>
                 <dl>
                     {[
                         [t("build_identifier"), info.build_id ?? "—"],
@@ -62,7 +62,7 @@ const BuildInfoSection = ({ t }: { readonly t: (key: string) => string }) => {
                         <dt>{label}</dt><dd>{value}</dd>
                     </div>)}
                 </dl>
-            </details>}
+            </SettingsDisclosure>}
         </section>
     );
 };

@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from "react";
+import SettingsDisclosure from "../SettingsDisclosure";
 import { Download, ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import { checkForUpdate, getUpdaterSnapshot, installAvailableUpdate, openUpdateRelease, saveUpdatePreference, subscribeUpdater } from "../../utils/updaterClient";
 
@@ -99,10 +100,9 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                     }}>{t("updater_confirm_install")}</button>
                 </div>
             </div>}
-            {available && <details className="update-release-notes">
-                <summary>{t("updater_release_notes")}</summary>
+            {available && <SettingsDisclosure className="update-release-notes" title={t("updater_release_notes")}>
                 <pre>{available.notes || t("updater_no_notes")}</pre>
-            </details>}
+            </SettingsDisclosure>}
         </section>
     );
 };

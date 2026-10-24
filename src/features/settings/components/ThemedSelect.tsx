@@ -19,6 +19,7 @@ interface ThemedSelectProps {
   searchable?: boolean;
   noOptionsMessage?: string;
   isDisabled?: boolean;
+  inputId?: string;
 }
 
 const ThemedSelect = ({
@@ -29,7 +30,8 @@ const ThemedSelect = ({
   placeholder,
   searchable = false,
   noOptionsMessage,
-  isDisabled = false
+  isDisabled = false,
+  inputId
 }: ThemedSelectProps) => {
   const selected = options.find((option) => option.value === value) ?? null;
 
@@ -82,6 +84,7 @@ const ThemedSelect = ({
       }}
     >
       <Select
+        inputId={inputId}
         classNamePrefix="dezirclip-select"
         options={options}
         value={selected}

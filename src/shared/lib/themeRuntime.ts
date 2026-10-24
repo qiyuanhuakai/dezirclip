@@ -1,6 +1,7 @@
 import { getCustomThemes, loadCachedCustomThemes, subscribeCustomThemes } from "./themeCatalog";
 import { resolveThemeSelection, type BuiltinTheme } from "./themePackage";
 import { applyImportedThemeCss } from "./themeStylesheet";
+import "../../styles/theme-core/custom-theme-fonts.shared.css";
 
 export type ThemeMode = "light" | "dark";
 export type ThemeColorMode = "light" | "dark" | "system";
@@ -58,6 +59,9 @@ export const applyThemeClass = (root: HTMLElement, body: HTMLElement, theme: str
   // Every classList write on <html>/<body> invalidates style for the whole
   // document, so converge only when the DOM is not already in the target state.
   for (const element of [root, body]) {
+    if (custom) {
+      if (element.dataset.themeFontBase !== base) element.dataset.themeFontBase = base;
+    } else if (element.dataset.themeFontBase !== undefined) delete element.dataset.themeFontBase;
     const present = Array.from(element.classList).filter(name => name.startsWith("theme-"));
     if (present.length === wanted.length && wanted.every(name => element.classList.contains(name))) continue;
     clearThemeClasses(element);

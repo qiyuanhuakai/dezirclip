@@ -22,8 +22,8 @@
   --radius-pill: 9999px;
   --spacing-md: 16px;
   --spacing-sm: 8px;
-  --font-main: "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Courier New", Courier, monospace, sans-serif;
-  --font-mono: "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Consolas", "Courier New", monospace;
+  --font-main: var(--custom-theme-font-main, "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Courier New", Courier, monospace, sans-serif);
+  --font-mono: var(--custom-theme-font-mono, "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Consolas", "Courier New", monospace);
   --font-size-xs: 11px;
   --font-size-sm: 12px;
   --font-size-md: 14px;
