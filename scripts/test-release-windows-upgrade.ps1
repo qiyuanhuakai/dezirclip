@@ -93,6 +93,8 @@ $profileDirectory = Join-Path $fixture 'profile'
 $database = Join-Path $profileDirectory 'clipboard.db'
 $marker = $inputs.marker
 $controller = Join-Path $PSScriptRoot 'release-windows-upgrade.mjs'
+$webviewPolicy = Join-Path $fixture 'final-webview-policy.json'
+$webviewPolicyRestored = $false
 $checkNames = @('original_installer_hash', 'candidate_signature_and_hash', 'actual_old_install', 'actual_old_profile_created',
     'actual_upgrade_same_directory', 'installed_three_role_bytes', 'actual_three_role_build_info', 'history_and_schema24',
     'frozen_preferences_preserved', 'windows_settings_preserved', 'explorer_not_restarted', 'controlled_processes_exited',
@@ -402,6 +404,12 @@ print(json.dumps(result))
     $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop()
     $guiInput = Join-Path $fixture 'final-gui-input.json'; $guiEvidence = Join-Path $fixture 'final-gui-evidence.json'
     Save-Json $guiInput @{ expectedVersion = $version; expectedBuildInfo = $raw.roles.cli; profileDirectory = $profileDirectory; marker = $marker; acquireOwnership = $false; verifyCapture = $false }
+    $webviewProfile = Join-Path $fixture 'webview-profile'
+    [System.IO.Directory]::CreateDirectory((Resolve-OwnedPath $webviewProfile)) | Out-Null
+    $webviewHelper = Join-Path $PSScriptRoot 'release_windows_webview.py'
+    Invoke-OwnedCommand (Resolve-ApplicationPath 'python') @('-B', $webviewHelper, 'configure', '--source', $ExpectedSource, '--root', $fixture,
+        '--profile', $webviewProfile, '--port', $port.ToString(), '--state', $webviewPolicy) 'configure-final-webview' 60000 | Write-Output
+    $raw.webview_policy = 'final-webview-policy.json'
     $gui = Start-OwnedProcess (Join-Path $installDirectory 'dezirclip.exe') @() 'actual-final-gui' '' @{ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = ('--remote-debugging-port=' + $port) }
     try {
         $identity = [ordered]@{ expected_path = Join-Path $installDirectory 'dezirclip.exe'; verified = $false; attempts = @() }
@@ -424,6 +432,8 @@ print(json.dumps(result))
         }
         Save-Json (Join-Path $fixture 'final-gui-process-identity.json') $identity
         if (-not $identity.verified) { throw 'Actual installed GUI image identity was unavailable.' }
+        Invoke-OwnedCommand (Resolve-ApplicationPath 'python') @('-B', $webviewHelper, 'inspect', '--source', $ExpectedSource, '--root', $fixture,
+            '--state', $webviewPolicy, '--pid', $gui.Process.Id.ToString(), '--executable', $identity.expected_path) 'inspect-final-webview-token' 60000 | Write-Output
         Invoke-OwnedCommand (Resolve-ApplicationPath 'node') @((Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs'), $port.ToString(), $guiEvidence, $guiInput) 'actual-final-gui-bridge' 180000 | Write-Output
         $observed = Read-OwnedJson $guiEvidence 8388608
         if ($observed.result -cne 'passed' -or $observed.gui.oldMarkerId -ne $oldProfile.marker.id -or -not $observed.gui.oldHistoryRendered -or
@@ -444,6 +454,9 @@ print(json.dumps(result))
         Save-Raw
         if (-not $portFree) { throw 'The owned GUI process tree did not release its private CDP port.' }
     }
+    Invoke-OwnedCommand (Resolve-ApplicationPath 'python') @('-B', $webviewHelper, 'restore', '--source', $ExpectedSource,
+        '--root', $fixture, '--state', $webviewPolicy) 'restore-final-webview' 60000 | Write-Output
+    $webviewPolicyRestored = $true
     $raw.installed = @(Assert-InstalledFiles)
     Pass-Check 'actual_three_role_build_info' $raw.roles
     $afterGui = Invoke-ProfileCheck 'check' 'after-gui-profile-check'
@@ -479,6 +492,16 @@ finally {
     foreach ($entry in $controlled) {
         try { Stop-OwnedProcess $entry; Close-OwnedProcess $entry }
         catch { if (-not $failure) { $failure = $_ }; $raw.cleanup += @{ process = $entry.Record.label; error = $_.Exception.ToString() } }
+    }
+    if (-not $webviewPolicyRestored -and (Test-Path -LiteralPath $webviewPolicy -PathType Leaf)) {
+        try {
+            Invoke-OwnedCommand (Resolve-ApplicationPath 'python') @('-B', (Join-Path $PSScriptRoot 'release_windows_webview.py'), 'restore',
+                '--source', $ExpectedSource, '--root', $fixture, '--state', $webviewPolicy) 'restore-final-webview-after-failure' 60000 | Write-Output
+            $webviewPolicyRestored = $true
+        } catch {
+            if (-not $failure) { $failure = $_ }
+            $raw.cleanup += @{ webview_policy = 'final-webview-policy.json'; error = $_.Exception.ToString() }
+        }
     }
     foreach ($created in $redirects) {
         try {

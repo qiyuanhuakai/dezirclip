@@ -12,7 +12,7 @@ import tempfile
 import textwrap
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import release_identities as identity
@@ -24,7 +24,8 @@ from release_identity_packages import remove_owned_tree
 from release_identity_linux import flatpak_bindings
 from release_identity_linux import sandbox_info
 from release_identity_linux import (inspector_address,network_namespace_value,flatpak_command,
-    flatpak_launcher_source,flatpak_inner_source,validate_flatpak_transport)
+    flatpak_launcher_source,flatpak_inner_source,validate_flatpak_transport,
+    desktop_build_info,retain_webview_failure,WEBVIEW_DIAGNOSTIC_SCRIPT)
 
 REVISION='a'*40
 DIGEST='b'*64
@@ -365,6 +366,112 @@ class FlatpakAutomationTransport(unittest.TestCase):
         for changed in [dict(inner,inspector='127.0.0.1:54321'),dict(inner,kind='other')]:
             with self.assertRaises(ValueError):validate_flatpak_transport(outer,changed,'net:[2]','net:[1]')
         with self.assertRaises(ValueError):validate_flatpak_transport(dict(outer,product_acceptance_claimed=True),inner,'net:[2]','net:[1]')
+
+
+class WebViewFailureDiagnostics(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory(prefix='dezirclip-webview-pure-')
+        self.addCleanup(temporary.cleanup);self.root=Path(temporary.name)
+        self.plan={'source_revision':REVISION,'target':'linux-x86_64'}
+        self.driver=MagicMock();self.driver.route='session/synthetic-session';self.driver.port=12345
+        self.driver.__enter__.return_value=self.driver
+        self.driver.__exit__.return_value=False
+        self.request=MagicMock(side_effect=[['synthetic-window'],'synthetic-window'])
+
+    def fail_enter(self):
+        original=RuntimeError('Actual Desktop WebView did not initialize')
+        self.driver.__enter__.side_effect=original
+        return original
+
+    def retained(self):
+        return json.loads((self.root/'desktop-webview-failure.log').read_text(encoding='utf-8'))
+
+    def test_success_keeps_original_build_info_and_context_cleanup_without_diagnostics(self):
+        self.driver.invoke.return_value=info('desktop',self.plan['target'])
+        result=desktop_build_info(self.driver,self.root,self.plan,self.request)
+        self.assertEqual(result,self.driver.invoke.return_value)
+        self.driver.invoke.assert_called_once_with('get_build_info')
+        self.driver.__exit__.assert_called_once();self.driver.close.assert_not_called()
+        self.driver.execute.assert_not_called();self.request.assert_not_called()
+        self.assertFalse((self.root/'desktop-webview-failure.log').exists())
+
+    def test_failed_enter_retains_only_metadata_and_rethrows_the_original_exception(self):
+        original=self.fail_enter()
+        self.driver.execute.return_value={'url':'tauri://localhost/index.html','readyState':'complete',
+            'invokeType':'undefined','bodyTextLength':0,'rootChildElementCount':0,
+            'body':'synthetic content omitted','environment':{'token':'synthetic content omitted'}}
+        with self.assertRaises(RuntimeError) as caught:
+            desktop_build_info(self.driver,self.root,self.plan,self.request)
+        self.assertIs(caught.exception,original)
+        record=self.retained()
+        self.assertEqual(record['page'],{key:self.driver.execute.return_value[key] for key in
+            ('url','readyState','invokeType','bodyTextLength','rootChildElementCount')})
+        self.assertEqual(record['window_handles'],['synthetic-window'])
+        self.assertEqual(record['current_window_handle'],'synthetic-window')
+        self.assertEqual(record['diagnostic_errors'],{})
+        self.assertFalse(record['product_acceptance_claimed'])
+        self.assertEqual(record['status'],'diagnostic_only')
+        self.assertNotIn('synthetic content omitted',json.dumps(record))
+        self.driver.execute.assert_called_once_with(WEBVIEW_DIAGNOSTIC_SCRIPT)
+        self.assertEqual(self.request.call_args_list[0].args,(12345,'session/synthetic-session/window/handles'))
+        self.assertEqual(self.request.call_args_list[1].args,(12345,'session/synthetic-session/window'))
+        self.driver.close.assert_called_once();self.driver.__exit__.assert_not_called()
+
+    def test_collection_and_cleanup_errors_never_replace_the_failed_enter_exception(self):
+        original=self.fail_enter();self.driver.execute.side_effect=ValueError('synthetic page body omitted')
+        self.request.side_effect=[OSError('synthetic response omitted'),RuntimeError('synthetic response omitted')]
+        self.driver.close.side_effect=OSError('synthetic cleanup failed')
+        with self.assertRaises(RuntimeError) as caught:
+            desktop_build_info(self.driver,self.root,self.plan,self.request)
+        self.assertIs(caught.exception,original)
+        record=self.retained()
+        self.assertEqual(record['diagnostic_errors'],{'page':'ValueError','window_handles':'OSError',
+                                                     'current_window_handle':'RuntimeError'})
+        self.assertNotIn('omitted',json.dumps(record))
+        self.driver.close.assert_called_once()
+
+    def test_retention_failure_does_not_replace_original_exception_or_skip_cleanup(self):
+        original=self.fail_enter()
+        with patch('release_identity_linux.retain_webview_failure',side_effect=OSError('synthetic disk failure')):
+            with self.assertRaises(RuntimeError) as caught:
+                desktop_build_info(self.driver,self.root,self.plan,self.request)
+        self.assertIs(caught.exception,original);self.driver.close.assert_called_once()
+
+    def test_metadata_bounds_exclude_document_content_and_limit_handles(self):
+        self.driver.execute.return_value={'url':'data:text/html,synthetic document omitted','readyState':'x'*200,
+            'invokeType':'x'*200,'bodyTextLength':True,'rootChildElementCount':-1,'html':'synthetic document omitted'}
+        self.request.side_effect=[['x'*1000]*30,'x'*1000]
+        retain_webview_failure(self.driver,self.root,self.plan,RuntimeError(),self.request)
+        record=self.retained();page=record['page']
+        self.assertEqual(page['url'],'data:[omitted]');self.assertEqual(len(page['readyState']),32)
+        self.assertEqual(len(page['invokeType']),16);self.assertIsNone(page['bodyTextLength'])
+        self.assertIsNone(page['rootChildElementCount']);self.assertEqual(len(record['window_handles']),16)
+        self.assertTrue(record['window_handles_truncated'])
+        self.assertTrue(all(len(handle)==256 for handle in record['window_handles']))
+        self.assertEqual(len(record['current_window_handle']),256)
+        self.assertLessEqual((self.root/'desktop-webview-failure.log').stat().st_size,16*1024)
+        self.assertNotIn('synthetic document omitted',json.dumps(record))
+        (self.root/'desktop-webview-failure.log').unlink()
+        self.driver.execute.return_value['url']='tauri://localhost/'+('界\n"\\'*3000)
+        self.request.side_effect=[['界\n"\\'*1000]*30,'界\n"\\'*1000]
+        retain_webview_failure(self.driver,self.root,self.plan,RuntimeError(),self.request)
+        record=self.retained()
+        self.assertNotIn('\n',record['page']['url'])
+        self.assertLessEqual(len(record['page']['url'].encode('utf-8')),2048)
+        self.assertTrue(all(len(handle.encode('utf-8'))<=256 for handle in record['window_handles']))
+        self.assertLessEqual((self.root/'desktop-webview-failure.log').stat().st_size,16*1024)
+
+    def test_missing_session_does_not_query_and_post_enter_failure_uses_context_exit(self):
+        self.driver.route=None
+        retain_webview_failure(self.driver,self.root,self.plan,RuntimeError(),self.request)
+        self.driver.execute.assert_not_called();self.request.assert_not_called()
+        self.assertFalse(self.retained()['session_established'])
+        (self.root/'desktop-webview-failure.log').unlink()
+        original=ValueError('synthetic build metadata refusal');self.driver.invoke.side_effect=original
+        with self.assertRaises(ValueError) as caught:
+            desktop_build_info(self.driver,self.root,self.plan,self.request)
+        self.assertIs(caught.exception,original);self.driver.__exit__.assert_called_once()
+        self.driver.close.assert_not_called();self.assertFalse((self.root/'desktop-webview-failure.log').exists())
 
 
 if __name__=='__main__':unittest.main()

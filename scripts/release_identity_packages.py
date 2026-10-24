@@ -98,7 +98,7 @@ def windows_info(members,logs,target,revision):
     with sqlite3.connect(database) as connection:
         require(connection.execute('SELECT COUNT(*) FROM clipboard_history').fetchone()==(0,),'Receipt profile must be empty')
         connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',{'app.silent_start':'false','app.idle_destroy_enabled':'false','app.update_auto_check':'false','app.ocr_enabled':'false','app.classification_enabled':'false','app.sequential_mode':'false'}.items())
-    raw=run(['node',ROOT/'scripts/release-identity-desktop.mjs',members['desktop'],logs/'desktop-profile'],logs,'desktop',env,timeout=120)
+    raw=run(['node',ROOT/'scripts/release-identity-desktop.mjs',members['desktop'],logs/'desktop-profile',sys.executable,revision],logs,'desktop',env,timeout=180)
     result['desktop']=validate_info(json_output(raw),'desktop',target,revision);return result
 
 def native_info(args,members,extracted,logs,flatpak=False):

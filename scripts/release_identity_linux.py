@@ -103,6 +103,76 @@ def validate_flatpak_transport(outer,inner,private,outside):
             'host_network_shared':False,'product_acceptance_claimed':False}
 
 
+WEBVIEW_DIAGNOSTIC_SCRIPT = '''
+return {
+  url: /^(data|javascript):/i.test(window.location.href) ? window.location.protocol + "[omitted]" : window.location.href.slice(0, 2048),
+  readyState: document.readyState,
+  invokeType: typeof window.__TAURI_INTERNALS__?.invoke,
+  bodyTextLength: document.body ? document.body.innerText.length : null,
+  rootChildElementCount: document.getElementById("root")?.childElementCount ?? null
+};
+'''
+
+
+def diagnostic_text(value,limit):
+    if not isinstance(value,str):return None
+    value=re.sub(r'[\x00-\x1f\x7f]','',value)
+    return value.encode('utf-8',errors='replace')[:limit].decode('utf-8',errors='ignore')
+
+
+def retain_webview_failure(driver,root,plan,error,request):
+    record={'schema_version':1,'kind':'linux_webview_failure_diagnostics','status':'diagnostic_only',
+            'source_revision':plan['source_revision'],'target':plan['target'],
+            'original_error_type':diagnostic_text(type(error).__name__,80),'product_acceptance_claimed':False,
+            'session_established':bool(driver.route),'page':None,'window_handles':None,
+            'current_window_handle':None,'diagnostic_errors':{}}
+    if driver.route:
+        try:
+            page=driver.execute(WEBVIEW_DIAGNOSTIC_SCRIPT)
+            require(isinstance(page,dict),'WebView metadata object required')
+            record['page']={key:diagnostic_text(page.get(key),limit)
+                            for key,limit in (('url',2048),('readyState',32),('invokeType',16))}
+            if record['page']['url'] and re.match(r'(?i)^(data|javascript):',record['page']['url']):
+                record['page']['url']=record['page']['url'].split(':',1)[0]+':[omitted]'
+            for key in ('bodyTextLength','rootChildElementCount'):
+                value=page.get(key)
+                record['page'][key]=value if type(value) is int and 0<=value<=2**53-1 else None
+        except Exception as failure:record['diagnostic_errors']['page']=diagnostic_text(type(failure).__name__,80)
+        try:
+            handles=request(driver.port,driver.route+'/window/handles')
+            require(isinstance(handles,list) and all(isinstance(value,str) for value in handles),
+                    'WebDriver window handle list required')
+            record['window_handles']=[diagnostic_text(value,256) for value in handles[:16]]
+            record['window_handles_truncated']=len(handles)>16
+        except Exception as failure:record['diagnostic_errors']['window_handles']=diagnostic_text(type(failure).__name__,80)
+        try:
+            handle=request(driver.port,driver.route+'/window')
+            require(isinstance(handle,str),'Current WebDriver window handle required')
+            record['current_window_handle']=diagnostic_text(handle,256)
+        except Exception as failure:record['diagnostic_errors']['current_window_handle']=diagnostic_text(type(failure).__name__,80)
+    encoded=json.dumps(record,indent=2,ensure_ascii=False)+'\n'
+    require(len(encoded.encode('utf-8'))<=16*1024,'WebView diagnostic bound exceeded')
+    with (root/'desktop-webview-failure.log').open('x',encoding='utf-8') as output:
+        output.write(encoded);output.flush();os.fsync(output.fileno())
+
+
+def desktop_build_info(driver,root,plan,request):
+    entered=False
+    try:
+        with driver:
+            entered=True
+            return validate_info(driver.invoke('get_build_info'),'desktop',plan['target'],plan['source_revision'])
+    except Exception as error:
+        if not entered:
+            try:retain_webview_failure(driver,root,plan,error,request)
+            except Exception:pass
+        raise
+    finally:
+        if not entered:
+            try:driver.close()
+            except Exception:pass
+
+
 def flatpak_bindings(extracted,logs):
     require(extracted.resolve().is_relative_to(logs.resolve()),'Owned Flatpak extraction required')
     mountpoint=extracted/'var'
@@ -155,7 +225,7 @@ def sandbox_info(args,members,extracted,logs,flatpak):
 
 def inside():
     import release_identity_guard
-    from native_capture import Driver
+    from native_capture import Driver, request
     root=Path('/evidence');plan=json.loads(Path('/fixture-bin/plan.json').read_text())
     probe=release_identity_guard.probe()
     private=Path(os.environ['DZC_QA_FIXTURE_ROOT'])
@@ -180,8 +250,8 @@ def inside():
         if plan['flatpak']:
             launcher=root/'desktop-launcher';launcher.write_text(flatpak_launcher_source());launcher.chmod(0o700);executable=str(launcher)
             inner=root/'flatpak-desktop-inner.sh';inner.write_text(flatpak_inner_source(current_network_namespace()));inner.chmod(0o700)
-        with Driver(root,executable) as driver:
-            result['desktop']=validate_info(driver.invoke('get_build_info'),'desktop',plan['target'],plan['source_revision'])
+        driver=Driver(root,executable)
+        result['desktop']=desktop_build_info(driver,root,plan,request)
     observed={'status':'passed','credential_probe':probe,'build_info':result}
     if plan['flatpak'] and 'desktop' in plan['members']:
         outer=json.loads((root/'flatpak-transport-outer.log').read_text())
