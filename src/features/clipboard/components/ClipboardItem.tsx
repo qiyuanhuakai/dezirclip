@@ -1224,7 +1224,9 @@ const ClipboardItem = ({
                 });
         };
         onTransformItem?.(kind);
-        const transform = (entry: ClipboardEntry) => invoke<string>("transform_text", { text: entry.content, kind })
+        const transform = (entry: ClipboardEntry) => {
+            if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
+            return invoke<string>("transform_text", { text: entry.content, kind })
             .then((result) => {
                 if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 if (result) {
@@ -1237,6 +1239,7 @@ const ClipboardItem = ({
                 const msg = err instanceof Error ? err.message : String(err);
                 onTransformItemError?.(kind, msg);
             });
+        };
         if (loadFullItem) {
             void loadFullItem().then(transform).catch((error: unknown) => {
                 onTransformItemError?.(kind, error instanceof Error ? error.message : String(error));

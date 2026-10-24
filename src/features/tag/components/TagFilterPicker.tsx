@@ -1,8 +1,10 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Tag } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { getTagColor } from '../../../shared/lib/utils';
+import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
+import { invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { matchesTagName } from '../../../shared/lib/tagQuery';
 
 export interface TagFilterPickerHandle {
     handleInputKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
@@ -22,22 +24,24 @@ interface TagFilterPickerProps {
 }
 
 export default function TagFilterPicker({ ref, id, tags, colors, query, theme, inputRef, t, onSelect, onClose }: TagFilterPickerProps) {
+    const privacy = usePrivacySession();
     const list = useRef<VirtuosoHandle>(null);
     const [active, setActive] = useState(-1);
     const [catalog, setCatalog] = useState<string[] | null>(null);
     const [catalogError, setCatalogError] = useState(false);
     const [revision, setRevision] = useState(0);
+    useEffect(() => subscribePrivacyInvalidation(() => { setCatalog(null); setActive(-1); }), []);
     useEffect(() => {
         let disposed = false;
-        void invoke<Record<string, number>>('get_all_tags_info').then(info => {
+        if (privacy.phase !== 'ready') return;
+        void invokePrivacyBound<Record<string, number>>('get_all_tags_info').then(info => {
             if (!disposed) { setCatalog(Object.keys(info).sort((a, b) => a.localeCompare(b))); setCatalogError(false); }
         }).catch(() => { if (!disposed) setCatalogError(true); });
         return () => { disposed = true; };
-    }, [revision]);
+    }, [revision, privacy.phase, privacy.generation]);
     const filtered = useMemo(() => {
-        const needle = query.replace(/^tag:/i, '').trim().toLocaleLowerCase();
-        return (catalog ?? tags).filter(tag => tag.toLocaleLowerCase().includes(needle));
-    }, [catalog, tags, query]);
+        return privacy.phase === 'ready' ? (catalog ?? tags).filter(tag => matchesTagName(tag, query)) : [];
+    }, [catalog, tags, query, privacy.phase]);
     useEffect(() => { setActive(-1); list.current?.scrollToIndex(0); }, [filtered]);
     useEffect(() => {
         const input = inputRef.current;

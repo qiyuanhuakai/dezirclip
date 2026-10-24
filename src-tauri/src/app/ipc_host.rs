@@ -300,6 +300,25 @@ impl DesktopHost {
         let result:DesktopEntries=client.read_snapshot(body,"DesktopEntries").await.map_err(remote_error)?;
         result.entries.into_iter().map(|entry|hosted(entry,&instance)).collect::<Result<Vec<_>,_>>().map(Some)
     }
+    pub async fn tag_page(&self,tag:String,query:String,sort_by:String,limit:usize,offset:usize,epoch:u64)->Result<(dzc_core::api::TagItemsPage,String),String> {
+        let instance=self.instance()?;
+        self.check_queue_state(&instance,epoch)?;
+        let request=DesktopTagPageParams{tag,query,sort_by,limit:u16::try_from(limit).map_err(|_|failed())?,
+            offset:u32::try_from(offset).map_err(|_|failed())?,service_instance_id:instance.clone(),expected_epoch:epoch};
+        let page=if let Some(host)=self.embedded()? {
+            tauri::async_runtime::spawn_blocking(move||host.tag_page_owned(request).map_err(public_code)).await.map_err(|_|failed())??
+        }else {
+            let mut client=self.service_client().await?;
+            if client.hello.state.service_instance_id!=instance {return Err("ClipboardHostInstanceChanged".into());}
+            let descriptor:BodySnapshot=client.call(Method::DesktopTagsPage,request,"BodySnapshot").await.map_err(remote_error)?;
+            if descriptor.state.service_instance_id!=instance || descriptor.state.privacy_epoch!=epoch {return Err("PrivacyEpochChanged".into());}
+            client.read_snapshot::<DesktopTagItemsPage>(descriptor,"DesktopTagItemsPage").await.map_err(remote_error)?
+        };
+        self.check_queue_state(&instance,epoch)?;
+        let items=page.items.into_iter().map(|entry|hosted(entry,&instance).map(|entry|entry.entry)).collect::<Result<Vec<_>,_>>()?;
+        Ok((dzc_core::api::TagItemsPage{items,total:usize::try_from(page.total).map_err(|_|failed())?,
+            has_more:page.has_more,next_offset:page.next_offset.map(|offset|offset as usize)},instance))
+    }
     pub async fn entry(&self,id:i64,epoch:u64,reveal:bool,thumbnail:Option<u32>,expected:Option<&str>)->Result<Option<HostedEntry>,String> {
         if self.embedded()?.is_some() {return Ok(None);}
         self.check_instance(id,expected)?;

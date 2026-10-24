@@ -13,6 +13,7 @@ import { TagDialog } from './TagDialog';
 import { TagHistoryRow } from './TagHistoryRow';
 import { useSettingsLayout } from '../../settings/hooks/useSettingsLayout';
 import { emptyTagSelection, MAX_TAG_BATCH_IDS, selectAllTagEntries, tagEntrySelected, tagSelectionCount, toggleTagEntry, type TagBatchSelection } from '../utils/tagBatchSelection';
+import { matchesTagName } from '../../../shared/lib/tagQuery';
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -82,8 +83,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const mounted = useRef(true);
     const colors = tagColors ?? library.colors;
     const filteredTags = useMemo(() => {
-        const filter = tagSearch.trim().toLocaleLowerCase();
-        return library.tags.filter(tag => tag.name.toLocaleLowerCase().includes(filter));
+        return library.tags.filter(tag => matchesTagName(tag.name, tagSearch));
     }, [library.tags, tagSearch]);
     const notifyError = useCallback(() => { if (mounted.current) setActionError(true); }, []);
     const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
@@ -176,9 +176,9 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             setDialog({ kind: 'editItem', id: item.id, hostInstanceId: item.host_instance_id, protectedContent: true, expectedPrivacyEpoch: access.epoch });
             return;
         }
-        void invokePrivacyBound<string>('get_clipboard_content', { id: item.id, expectedHostInstanceId: item.host_instance_id }).then(content => {
-            if (!mounted.current || request !== detailSequence.current) return;
-            setDialogError(null); setValue(content); setDialog({ kind: 'editItem', id: item.id, hostInstanceId: item.host_instance_id, protectedContent: false, expectedPrivacyEpoch: access.epoch });
+        void invokePrivacyBound<ClipboardEntry>('get_privacy_entry', { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, reveal: false }).then(entry => {
+            if (!mounted.current || !access.isCurrent() || request !== detailSequence.current || entry.id !== item.id || entry.host_instance_id !== item.host_instance_id) return;
+            setDialogError(null); setValue(entry.content); setDialog({ kind: 'editItem', id: item.id, hostInstanceId: item.host_instance_id, protectedContent: false, expectedPrivacyEpoch: access.epoch });
         }).catch(() => { if (request === detailSequence.current) notifyError(); });
     }, [notifyError]);
     const deleteItem = useCallback((item: ClipboardEntry) => openDialog({ kind: 'deleteItem', item }), [openDialog]);

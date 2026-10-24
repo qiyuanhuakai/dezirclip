@@ -62,6 +62,7 @@
         "privacy.hotkey.get",
         "privacy.hotkey.set",
         "desktop.history.page",
+        "desktop.tags.page",
         "desktop.history.get",
         "desktop.snapshot.read",
         "desktop.capture.begin",
@@ -738,6 +739,25 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopPageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.page"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopTagPageParams"
               }
             }
           }

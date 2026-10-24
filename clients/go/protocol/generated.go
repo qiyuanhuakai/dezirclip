@@ -59,6 +59,23 @@ type DesktopPageParams struct {
     Query *string `json:"query,omitempty"`
 }
 
+type DesktopTagPageParams struct {
+    Tag string `json:"tag"`
+    Query string `json:"query"`
+    SortBy string `json:"sort_by"`
+    Limit uint16 `json:"limit"`
+    Offset uint32 `json:"offset"`
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+}
+
+type DesktopTagItemsPage struct {
+    Items []DesktopEntry `json:"items"`
+    Total uint64 `json:"total"`
+    HasMore bool `json:"has_more"`
+    NextOffset *uint32 `json:"next_offset,omitempty"`
+}
+
 type DesktopEntryParams struct {
     Id int64 `json:"id"`
     ServiceInstanceId string `json:"service_instance_id"`
@@ -216,6 +233,7 @@ const (
     MethodPrivacyHotkeyGet Method = "privacy.hotkey.get"
     MethodPrivacyHotkeySet Method = "privacy.hotkey.set"
     MethodDesktopHistoryPage Method = "desktop.history.page"
+    MethodDesktopTagsPage Method = "desktop.tags.page"
     MethodDesktopHistoryGet Method = "desktop.history.get"
     MethodDesktopSnapshotRead Method = "desktop.snapshot.read"
     MethodDesktopCaptureBegin Method = "desktop.capture.begin"
