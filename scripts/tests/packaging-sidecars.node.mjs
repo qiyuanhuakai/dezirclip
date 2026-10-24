@@ -16,6 +16,39 @@ import { nativeWriterTimeoutMs, waitForNativeProcess } from "./native-process-de
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 
+function releaseJob(workflow, name) {
+  const text = workflow.replaceAll("\r\n", "\n");
+  const section = text.split(`\n  ${name}:`);
+  assert.equal(section.length, 2, `one release job is required: ${name}`);
+  return section[1].split(/\n  [A-Za-z0-9_-]+:/)[0];
+}
+
+function assertReleaseSourceRouting(workflow) {
+  const create = releaseJob(workflow, "create-release");
+  assert.match(create, /^\s+source:\s*\$\{\{\s*steps\.recovery\.outputs\.source\s*\|\|\s*github\.sha\s*\}\}\s*$/m,
+    "ordinary tags retain their actual workflow source while recovery supplies the frozen product source");
+  assert.match(create, /^\s+tooling_source:\s*\$\{\{\s*github\.sha\s*\}\}\s*$/m,
+    "workflow tooling keeps its independent actual commit");
+  const recovery = create.split("- name: Resolve the fixed original release for recovery")[1]?.split("- name: Retain the actual recovery context")[0];
+  assert(recovery, "fixed recovery must resolve its original product identity");
+  assert.match(recovery, /^\s+source\s*=\s*["']037f40cf014cd4bb3dce4a0a0c5cbcaee23affae["']\s*$/m);
+  assert.match(recovery, /^\s+report\['authority'\]\s*=\s*authority\(source\)\s*$/m);
+  const output = recovery.split("\n").find(line => /^\s+stream\.write\(/.test(line));
+  assert(output?.includes("release_id=422045565") && output.includes("source=' + source + '")
+    && output.includes("tag=v0.2.0-alpha.2"), "recovery outputs must carry the authority-checked fixed release and product source");
+  const sections = Object.fromEntries(["collect-release-identities", "verify-final-windows-upgrade"].map(name => {
+    const section = releaseJob(workflow, name);
+    assert.match(section, /^\s+source:\s*\$\{\{\s*needs\.create-release\.outputs\.source\s*\}\}\s*$/m,
+      `${name} receives the resolved product source`);
+    assert.match(section, /^\s+tooling-source:\s*\$\{\{\s*needs\.create-release\.outputs\.tooling_source\s*\}\}\s*$/m,
+      `${name} receives the independent workflow tooling source`);
+    assert.match(section, /^\s+recovery:\s*\$\{\{\s*github\.event_name\s*==\s*'workflow_dispatch'\s*\}\}\s*$/m,
+      `${name} enters recovery only for dispatch`);
+    return [name, section];
+  }));
+  return { identities: sections["collect-release-identities"], upgrades: sections["verify-final-windows-upgrade"] };
+}
+
 function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = "release", portable = false, omitOutput = false } = {}) {
   const temporaryRoot = resolve(tmpdir());
   const directory = mkdtempSync(join(temporaryRoot, "dzc-sidecar-contract-"));
@@ -167,19 +200,46 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(rpmStep, /needs\.create-release\.outputs\.release_id/);
   assert.match(rpmStep, /--jq '\.draft'\)" = true/);
   assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
-  const identities = workflow.split("  collect-release-identities:")[1]?.split("\n  verify-publish-and-promote:")[0];
+  const { identities, upgrades } = assertReleaseSourceRouting(workflow);
   assert(identities, "publication requires the actual final-package identity workflow");
   assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
   assert.match(identities, /uses: \.\/\.github\/workflows\/release-identities\.yml/);
-  assert.match(identities, /source: \$\{\{ github\.sha \}\}/);
   assert.match(identities, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
-  const upgrades = workflow.split("  verify-final-windows-upgrade:")[1]?.split("\n  verify-publish-and-promote:")[0];
   assert(upgrades, "publication requires actual final signed NSIS installation and upgrade acceptance");
   assert.match(upgrades, /needs: \[create-release, publish-tauri\]/);
   assert.match(upgrades, /uses: \.\/\.github\/workflows\/release-windows-upgrade\.yml/);
-  assert.match(upgrades, /source: \$\{\{ github\.sha \}\}/);
   assert.match(upgrades, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
   assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade\]/);
+});
+
+test("release source routing rejects loss of the tag fallback, fixed recovery identity or independent tooling", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/release.yml"), "utf8").replaceAll("\r\n", "\n");
+  const mutateJob = (value, name, change) => {
+    const section = releaseJob(value, name);
+    const changed = change(section);
+    assert.notEqual(changed, section, "the contract mutation must change its intended job");
+    return value.replace(section, changed);
+  };
+  const changes = [
+    ["missing normal tag fallback", value => value.replace("steps.recovery.outputs.source || github.sha", "steps.recovery.outputs.source")],
+    ["workflow SHA overrides recovered product", value => value.replace("steps.recovery.outputs.source || github.sha", "github.sha || steps.recovery.outputs.source")],
+    ["missing fixed recovery product", value => value.replace("source = '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae'", "source = os.environ['GITHUB_SHA']")],
+    ["unchecked recovery output", value => value.replace("source=' + source + '", "source=' + os.environ['GITHUB_SHA'] + '")],
+    ["missing independent workflow source", value => value.replace("tooling_source: ${{ github.sha }}", "tooling_source: ${{ steps.recovery.outputs.source }}")],
+  ];
+  for (const name of ["collect-release-identities", "verify-final-windows-upgrade"]) {
+    changes.push([`${name} uses tooling SHA as product source`, value => mutateJob(value, name,
+      section => section.replace("source: ${{ needs.create-release.outputs.source }}", "source: ${{ github.sha }}"))]);
+    changes.push([`${name} loses independent tooling source`, value => mutateJob(value, name,
+      section => section.replace("tooling-source: ${{ needs.create-release.outputs.tooling_source }}", "tooling-source: ${{ needs.create-release.outputs.source }}"))]);
+    changes.push([`${name} loses recovery mode`, value => mutateJob(value, name,
+      section => section.replace("recovery: ${{ github.event_name == 'workflow_dispatch' }}", "recovery: false"))]);
+  }
+  for (const [name, change] of changes) {
+    const value = change(workflow);
+    assert.notEqual(value, workflow, name);
+    assert.throws(() => assertReleaseSourceRouting(value), undefined, name);
+  }
 });
 
 test("RPM metadata derives supported preview and stable versions without build metadata precedence", () => {

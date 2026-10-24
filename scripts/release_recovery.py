@@ -28,6 +28,7 @@ ALLOWED_FILES = frozenset({
     'scripts/release-windows-upgrade.mjs',
     'scripts/test-release-windows-upgrade.ps1',
     'scripts/tests/release-windows-upgrade.node.mjs',
+    'scripts/tests/packaging-sidecars.node.mjs',
     'docs/specs/v0.2-alpha2-release.md',
 })
 RELEASE_ID_ENV = ('DZC_RELEASE_ID', 'DZC_RECEIPT_RELEASE_ID', 'DZC_UPGRADE_RELEASE_ID')
