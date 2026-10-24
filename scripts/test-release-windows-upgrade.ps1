@@ -8,6 +8,14 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $version = '0.2.0-alpha.2'
 $repository = Split-Path -Parent $PSScriptRoot
+function Resolve-ApplicationPath([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Name) {
+    $application = Get-Command -Name $Name -CommandType Application -ErrorAction Stop | Select-Object -First 1
+    if ($application -isnot [System.Management.Automation.ApplicationInfo]) { throw 'A single application command is required.' }
+    $path = $application.Path
+    if ([string]::IsNullOrWhiteSpace($path) -or -not [System.IO.Path]::IsPathFullyQualified($path) -or
+        -not [System.IO.File]::Exists($path)) { throw 'The resolved application must be one existing absolute file.' }
+    return $path
+}
 if ($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or -not $env:RUNNER_TEMP -or
     $env:GITHUB_REPOSITORY -cne 'qiyuanhuakai/dezirclip') {
     throw 'Final release upgrade execution requires the exact tag on a disposable GitHub-hosted runner.'
@@ -18,7 +26,7 @@ if ($env:OS -cne 'Windows_NT' -or [System.Runtime.InteropServices.RuntimeInforma
 $workflowSource = $null
 if ($env:DZC_RELEASE_RECOVERY -and $env:DZC_RELEASE_RECOVERY -cnotin @('0', '1')) { throw 'Invalid release recovery mode.' }
 if ($env:DZC_RELEASE_RECOVERY -ceq '1') {
-    $authorityOutput = & python (Join-Path $PSScriptRoot 'release_recovery.py') authority $ExpectedSource
+    $authorityOutput = & (Resolve-ApplicationPath 'python') (Join-Path $PSScriptRoot 'release_recovery.py') authority $ExpectedSource
     if ($LASTEXITCODE -ne 0) { throw 'The independent release recovery authority refused this execution.' }
     $authority = ($authorityOutput -join "`n") | ConvertFrom-Json -Depth 20
     if ($authority.schema_version -ne 1 -or $authority.mode -cne 'recovery' -or $authority.source_revision -cne $ExpectedSource -or
@@ -192,7 +200,7 @@ function Invoke-Controller([string]$Command, [string]$Label, [switch]$Policy) {
     if ($Policy) { $arguments += $ExpectedPolicySha256 }
     # The sealer reads a frozen raw observation; its own original process is still awaited,
     # but cannot be part of the report it is currently validating.
-    return Invoke-OwnedCommand (Get-Command node -CommandType Application).Source $arguments $Label 120000 '' ($Command -cne 'seal')
+    return Invoke-OwnedCommand (Resolve-ApplicationPath 'node') $arguments $Label 120000 '' ($Command -cne 'seal')
 }
 function Assert-BuildInfo($Info, [string]$Role) {
     if ($Info.component -cne $Role -or $Info.component_version -cne $version -or $Info.source_revision -cne $ExpectedSource -or
@@ -263,7 +271,7 @@ function Assert-InstalledFiles {
     return $actual
 }
 function Invoke-ProfileCheck([string]$Operation, [string]$Label) {
-    $python = (Get-Command python -CommandType Application).Source
+    $python = Resolve-ApplicationPath 'python'
     $text = Invoke-OwnedCommand $python @('-I', '-B', (Join-Path $fixture 'profile-check.py'), $Operation, $fixture, (Join-Path $PSScriptRoot 'sqlite_history_fixture.py')) $Label
     return $text | ConvertFrom-Json -Depth 30
 }
@@ -416,7 +424,7 @@ print(json.dumps(result))
         }
         Save-Json (Join-Path $fixture 'final-gui-process-identity.json') $identity
         if (-not $identity.verified) { throw 'Actual installed GUI image identity was unavailable.' }
-        Invoke-OwnedCommand (Get-Command node -CommandType Application).Source @((Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs'), $port.ToString(), $guiEvidence, $guiInput) 'actual-final-gui-bridge' 180000 | Write-Output
+        Invoke-OwnedCommand (Resolve-ApplicationPath 'node') @((Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs'), $port.ToString(), $guiEvidence, $guiInput) 'actual-final-gui-bridge' 180000 | Write-Output
         $observed = Read-OwnedJson $guiEvidence 8388608
         if ($observed.result -cne 'passed' -or $observed.gui.oldMarkerId -ne $oldProfile.marker.id -or -not $observed.gui.oldHistoryRendered -or
             [System.IO.Path]::GetFullPath($observed.gui.dataPath).TrimEnd('\') -ine $profileDirectory.TrimEnd('\') -or @($observed.nativeClipboardWrites).Count -ne 0) { throw 'Actual final GUI did not confirm the original private profile and rendered marker.' }

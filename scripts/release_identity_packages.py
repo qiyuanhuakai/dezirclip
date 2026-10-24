@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import struct
+import sys
 from release_identities import ROOT, expected_assets, find_members, inspect_machine, json_output, require, run, safe_member, sha, validate_info
 
 def standalone(archive, root):
@@ -69,15 +70,26 @@ def unpack(archive,root,logs,target):
 def windows_environment(logs):
     allowed={'SYSTEMROOT','WINDIR','COMSPEC','PATH','PATHEXT','PROGRAMFILES','PROGRAMFILES(X86)','PROGRAMW6432','PROCESSOR_ARCHITECTURE','NUMBER_OF_PROCESSORS'}
     env={key:value for key,value in os.environ.items() if key.upper() in allowed};profile=logs/'profile'
-    for name,relative in [('USERPROFILE','home'),('HOME','home'),('APPDATA','roaming'),('LOCALAPPDATA','local'),('TEMP','temp'),('TMP','temp')]:
-        path=profile/relative;path.mkdir(parents=True,exist_ok=True);env[name]=str(path)
-    database=profile/'roaming/io.github.qiyuanhuakai.dezirclip/clipboard.db';database.parent.mkdir(parents=True,exist_ok=True)
+    from release_identity_windows_paths import profile_layout
+    for name,path in profile_layout(profile).items():
+        path.mkdir(mode=0o700,parents=True,exist_ok=True)
+        if name!='LOCALLOW':env[name]=str(path)
+    for name in ('GITHUB_ACTIONS','RUNNER_ENVIRONMENT','RUNNER_TEMP','GITHUB_REPOSITORY','GITHUB_REF','GITHUB_REF_NAME',
+                 'GITHUB_SHA','GITHUB_EVENT_NAME','GITHUB_WORKFLOW_REF','GITHUB_RUN_ID','GITHUB_RUN_ATTEMPT',
+                 'DZC_RELEASE_RECOVERY','DZC_RELEASE_TOOLING_SOURCE'):
+        if name in os.environ:env[name]=os.environ[name]
+    database=Path(env['APPDATA'])/'io.github.qiyuanhuakai.dezirclip/clipboard.db';database.parent.mkdir(parents=True,exist_ok=True)
     env['DEZIRCLIP_DB_PATH']=str(database);env['WEBVIEW2_USER_DATA_FOLDER']=str(profile/'webview')
-    env.update(GITHUB_ACTIONS='true',RUNNER_ENVIRONMENT='github-hosted',RUNNER_TEMP=os.environ['RUNNER_TEMP'])
+    return env
+
+def windows_preflight(logs,revision):
+    env=windows_environment(logs)
+    run([sys.executable,ROOT/'scripts/release_identity_windows_paths.py','--source',revision,'--profile',logs/'profile',
+         '--output',logs.parent/('windows-known-folders-'+logs.name+'.json')],logs,'known-folders',env,timeout=60)
     return env
 
 def windows_info(members,logs,target,revision):
-    env=windows_environment(logs)
+    env=windows_preflight(logs,revision)
     result={}
     for role,arguments in [('cli',['build-info','--json']),('service',['--build-info'])]:
         result[role]=validate_info(json_output(run([members[role],*arguments],logs,role,env)),role,target,revision)
@@ -107,7 +119,7 @@ def collect(args,report):
             standalone(archive,root);path=root/('dzc.exe' if args.target.startswith('windows-') else 'dzc');inspect_machine(path,args.target)
             binary_digest=sha(path)
             if args.target.startswith('windows-'):
-                info=validate_info(json_output(run([path,'build-info','--json'],logs,'cli',windows_environment(logs))),'cli',args.target,args.source)
+                info=validate_info(json_output(run([path,'build-info','--json'],logs,'cli',windows_preflight(logs,args.source))),'cli',args.target,args.source)
             else:
                 from release_identity_linux import sandbox_info
                 info=sandbox_info(args,{'cli':path},root,logs,False)['cli']
