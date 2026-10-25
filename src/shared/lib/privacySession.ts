@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
 import type { ClipboardEntry } from "../types";
@@ -21,6 +22,7 @@ let lifecycle = 0;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshRequest: Promise<void> | null = null;
 let viewSuspended = false;
+let visibilityRevision = 0;
 
 export function registerPrivacyReveal(entry: ClipboardEntry): void {
   if (model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
@@ -82,13 +84,31 @@ export async function refreshPrivacyState(): Promise<void> {
   return refreshRequest;
 }
 
-const onFocus = () => { viewSuspended = false; void refreshPrivacyState(); };
+const onFocus = () => {
+  visibilityRevision += 1;
+  if (document.hidden) { onHide(); return; }
+  viewSuspended = false;
+  void refreshPrivacyState();
+};
 const onHide = () => {
+  visibilityRevision += 1;
   viewSuspended = true;
   if (expiryTimer !== null) clearTimeout(expiryTimer);
   expiryTimer = null;
   revoke();
   publish({ phase: "loading" });
+};
+const onBlur = () => {
+  // Focus can move to the title bar or preview while the main window stays visible.
+  // Revoke explicit reveals immediately, then restore only a visible view's metadata.
+  onHide();
+  const revision = visibilityRevision;
+  const started = lifecycle;
+  void getCurrentWindow().isVisible().then(visible => {
+    if (started !== lifecycle || revision !== visibilityRevision || !visible || document.hidden) return;
+    viewSuspended = false;
+    void refreshPrivacyState();
+  }, () => undefined);
 };
 const onVisibility = () => { if (document.hidden) onHide(); else onFocus(); };
 export function subscribePrivacyState(observer: () => void): () => void {
@@ -96,13 +116,16 @@ export function subscribePrivacyState(observer: () => void): () => void {
   if (observers.size === 1) {
     const started = ++lifecycle;
     window.addEventListener("focus", onFocus);
-    window.addEventListener("blur", onHide);
+    window.addEventListener("blur", onBlur);
     window.addEventListener("pagehide", onHide);
     document.addEventListener("visibilitychange", onVisibility);
     const subscriptions = [listen<unknown>("privacy-state-changed", () => {
       if (started === lifecycle) void refreshPrivacyState();
     }), listen("privacy-view-hidden", () => { if (started === lifecycle) onHide(); }),
-      listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); })];
+      listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); }),
+      getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+        if (started === lifecycle) { if (focused) onFocus(); else onBlur(); }
+      })];
     void Promise.all(subscriptions).then(stops => {
       const stop = () => { stops.forEach(unlisten => unlisten()); };
       if (started !== lifecycle) { stop(); return; }
@@ -120,10 +143,11 @@ export function subscribePrivacyState(observer: () => void): () => void {
     observers.delete(observer);
     if (observers.size === 0) {
       lifecycle += 1;
+      visibilityRevision += 1;
       stopEvents?.();
       stopEvents = null;
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("blur", onHide);
+      window.removeEventListener("blur", onBlur);
       window.removeEventListener("pagehide", onHide);
       document.removeEventListener("visibilitychange", onVisibility);
       if (expiryTimer !== null) clearTimeout(expiryTimer);
