@@ -121,8 +121,8 @@ pub fn cancel_region_capture(app: &AppHandle) {
 fn park_selector_window(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(REGION_SELECT_LABEL) {
         crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
-        window.set_focusable(false).map_err(|error| error.to_string())?;
         window.hide().map_err(|error| error.to_string())?;
+        let _ = window.set_focusable(false);
         crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
     }
     Ok(())
@@ -514,15 +514,20 @@ pub async fn hide_region_select(app: AppHandle, session_token: Option<String>) -
     let _operation = REGION_WINDOW_OPERATION.lock().await;
     tauri::async_runtime::spawn_blocking(move || {
         {
-            let mut session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+            let session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
             // Keep ownership metadata after consuming the RAM frame. State
             // validation and native hide share the same window operation.
+            if session_token.as_deref().is_some_and(|token| session.owner.as_deref() != Some(token)) { return Ok(()); }
+        }
+        park_selector_window(&app)?;
+        let generation = {
+            let mut session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
             if !clear_region_slot(&mut session, session_token.as_deref()) { return Ok(()); }
             REGION_CAPTURE_GENERATION.fetch_add(1, Ordering::SeqCst);
-        }
-        let result = park_selector_window(&app);
-        publish_region_session(None, REGION_CAPTURE_GENERATION.load(Ordering::SeqCst));
-        result
+            REGION_CAPTURE_GENERATION.load(Ordering::SeqCst)
+        };
+        publish_region_session(None, generation);
+        Ok(())
     }).await.map_err(|error| error.to_string())?
 }
 
@@ -570,12 +575,18 @@ pub async fn capture_region(
     super::capability_cmd::require_desktop_interaction()?;
     if window.label() != REGION_SELECT_LABEL { return Err("RegionCaptureWindowRequired".into()); }
     let operation = REGION_WINDOW_OPERATION.lock().await;
+    {
+        let current = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+        if current.owner.as_deref() != Some(session_token.as_str()) || current.frame.as_ref().is_none_or(|frame| frame.token != session_token) {
+            return Err("RegionCaptureSessionExpired".into());
+        }
+    }
+    window.hide().map_err(|error| error.to_string())?;
+    let _ = window.set_focusable(false);
     let session = {
         let mut current = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
         take_region_capture(&mut current.frame, &session_token)?
     };
-    window.set_focusable(false).map_err(|error| error.to_string())?;
-    window.hide().map_err(|error| error.to_string())?;
     publish_region_session(None, session.generation);
     drop(operation);
     crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);

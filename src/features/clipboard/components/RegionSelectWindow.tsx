@@ -43,8 +43,10 @@ const MIN_SELECTION_SIZE = 10;
  * the capture reply, using its token so a new selection cannot be hidden.
  */
 const parkRegionSelectWindow = async (sessionToken?: string) => {
-  await invoke("hide_region_select", { sessionToken }).catch(() => undefined);
+  await invoke("hide_region_select", { sessionToken });
 };
+
+const reportHideFailure = (error: unknown) => console.warn("Region capture window could not be hidden", error);
 
 const normalizeRect = (sel: Selection) => {
   const x = Math.min(sel.startX, sel.endX);
@@ -217,9 +219,9 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     }).catch(error => {
       if (cancelled || backdrop.revision !== backdropRevision.current) return;
       console.warn("Region capture image could not be decoded", error);
-      void parkRegionSelectWindow(backdrop.session.token).finally(() => {
+      void parkRegionSelectWindow(backdrop.session.token).then(() => {
         if (!cancelled && backdrop.revision === backdropRevision.current) clearBackdrop();
-      });
+      }).catch(reportHideFailure);
     });
     return () => { cancelled = true; };
   }, [backdrop, clearBackdrop]);
@@ -230,9 +232,9 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     void invoke("present_region_capture", { sessionToken: token, generation }).catch(error => {
       if (backdrop.revision !== backdropRevision.current) return;
       console.warn("Region capture could not be presented", error);
-      void parkRegionSelectWindow(token).finally(() => {
+      void parkRegionSelectWindow(token).then(() => {
         if (backdrop.revision === backdropRevision.current) clearBackdrop();
-      });
+      }).catch(reportHideFailure);
     });
   }, [backdropReady, backdrop, clearBackdrop]);
 
@@ -318,7 +320,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         if (!disposed && requestRevision === backdropRevision.current) {
           clearBackdrop();
           console.warn("Region capture preview unavailable", error);
-          if (change?.token) void parkRegionSelectWindow(change.token);
+          if (change?.token) void parkRegionSelectWindow(change.token).catch(reportHideFailure);
         }
       }
     };
@@ -336,11 +338,13 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         const revision = backdropRevision.current;
         void parkRegionSelectWindow(session.token).then(() => {
           if (revision === backdropRevision.current) clearBackdrop();
-        });
+        }).catch(reportHideFailure);
         return;
       }
       clearBackdrop();
-      if (!document.hidden) void syncBackdrop();
+      // A valid unpresented session deliberately loads while hidden. Its
+      // resize may be the final monitor-size update that makes loading possible.
+      void syncBackdrop();
     };
     const visibility = () => { visibilityRevision.current += 1; if (document.hidden) clearBackdrop(); else void syncBackdrop(); };
     const focus = () => { visibilityRevision.current += 1; if (!document.hidden) void syncBackdrop(); };
@@ -463,7 +467,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     }
 
     if (captureGeneration === serverGeneration.current) clearSelection();
-    if (sessionToken) await parkRegionSelectWindow(sessionToken);
+    if (sessionToken) await parkRegionSelectWindow(sessionToken).catch(reportHideFailure);
   }, [dragging, onSelect, cancelFrame, clearSelection, clearBackdrop]);
 
   // ESC key handler
@@ -478,7 +482,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
         const revision = backdropRevision.current;
         void parkRegionSelectWindow(session?.token).then(() => {
           if (revision === backdropRevision.current) clearBackdrop();
-        });
+        }).catch(reportHideFailure);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
