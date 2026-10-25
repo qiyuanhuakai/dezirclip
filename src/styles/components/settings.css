@@ -245,15 +245,10 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-/* A row whose control is intrinsically wide — a filesystem path, an engine badge —
-   is unreadable at half a column: the label truncates and the value gets cut
-   mid-path. Those rows claim the whole row and let the short controls flow around
-   them. `:has()` keys off controls the groups already render, so most groups need
-   no opt-in; `.column` rows stack label-over-control and want the same room. */
-.settings-pane--cols-2 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group),
-.settings-pane--cols-3 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group),
-.settings-pane--cols-2 .group-content > .setting-item.column,
-.settings-pane--cols-3 .group-content > .setting-item.column {
+/* Long paths and composite editors need a full row. Label-over-control is
+   independent of width: ordinary selects, ranges and button groups share columns. */
+.settings-pane--cols-2 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group, .theme-manager, .data-path-header, textarea),
+.settings-pane--cols-3 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group, .theme-manager, .data-path-header, textarea) {
   grid-column: 1 / -1;
 }
 
@@ -664,6 +659,7 @@
 .settings-pane .group-content > .native-feature-reason,
 .settings-pane .group-content > .privacy-session-section,
 .settings-pane .group-content > .settings-section-title,
+.settings-pane .group-content > .wayland-capabilities,
 .settings-pane .group-content > .source-exclusion-setting {
   grid-column: 1 / -1;
 }
@@ -681,9 +677,9 @@
   min-width: 0;
 }
 
-.settings-pane .native-feature-boundary > .column,
+.settings-pane .native-feature-boundary > .hotkey-list-editor,
 .settings-pane .native-feature-boundary > .settings-section-title,
-.settings-pane .native-feature-boundary > .setting-item:has(.setting-btn-group, .data-panel, .capture-engine-badge, .tools-path-text),
+.settings-pane .native-feature-boundary > .setting-item:has(.setting-btn-group, .data-panel, .capture-engine-badge, .tools-path-text, .theme-manager, .data-path-header, textarea),
 .settings-row--wide,
 .privacy-session-section .hotkey-list-editor { grid-column: 1 / -1; }
 
