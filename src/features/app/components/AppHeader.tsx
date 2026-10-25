@@ -35,6 +35,7 @@ interface AppHeaderProps {
   showSearchBox: boolean;
   search: string;
   setSearch: (val: string) => void;
+  isComposing: boolean;
   setIsComposing: (val: boolean) => void;
   searchInputRef: RefObject<HTMLInputElement | null>;
   showTagFilter: boolean;
@@ -65,6 +66,7 @@ const AppHeader = ({
   showSearchBox,
   search,
   setSearch,
+  isComposing,
   setIsComposing,
   searchInputRef,
   showTagFilter,
@@ -80,6 +82,9 @@ const AppHeader = ({
 }: AppHeaderProps) => {
   const { desktopInteractions, failed, pending } = usePlatformCapabilities();
   const panelOnTop = showSettings || showTagManager || showEmojiPanel;
+  useEffect(() => {
+    if (panelOnTop) setIsComposing(false);
+  }, [panelOnTop, setIsComposing]);
   const searchBoxVisible = showSearchBox || search.trim().length > 0;
   // The whole search box sits behind a panel guard, so closing a panel remounts
   // it and replays the height reveal. That reveal animates height, which re-lays
@@ -231,6 +236,7 @@ const AppHeader = ({
                     setEditingTagsId(null);
                   }}
                   onBlur={() => {
+                    setIsComposing(false);
                     blurTimer.current = setTimeout(() => {
                       blurTimer.current = null;
                       if (document.activeElement?.closest('.dc-tag-filter-picker')) return;
@@ -242,7 +248,7 @@ const AppHeader = ({
                 />
                 {tagFilterVisible && (
                   <Suspense fallback={<div className="dc-tag-filter-picker" id={tagFilterId} role="listbox" aria-label={t('tags')}><div className="dc-tag-filter-empty">{t('common_loading')}</div></div>}>
-                    <TagFilterPicker ref={tagFilter} id={tagFilterId} tags={allTags} colors={tagColors} query={search} theme={theme}
+                    <TagFilterPicker ref={tagFilter} id={tagFilterId} tags={allTags} colors={tagColors} query={search} isComposing={isComposing} theme={theme}
                       inputRef={searchInputRef} t={t} onClose={() => {
                         setShowTagFilter(false);
                         if (document.activeElement !== searchInputRef.current) setSearchIsFocused(false);
