@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createMainWindowResume, type PreparedResume } from "../lib/mainWindowResume";
 import { prepareMainWindowResume } from "../lib/privacySession";
@@ -18,6 +17,7 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
   phaseRef.current = phase;
   useEffect(() => {
     if (!settingsLoaded) return;
+    const currentWindow = getCurrentWindow();
     let disposed = false;
     const controller = createMainWindowResume({
       prepare: prepareMainWindowResume,
@@ -44,7 +44,7 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
         if (disposed || query !== queryRevision) return;
         if (id !== null) start(id);
         else if (allowVisibleRecovery && !nativeActiveRef.current && !visibleRecoveryPending.current) {
-          void getCurrentWindow().isVisible().then(visible => {
+          void currentWindow.isVisible().then(visible => {
             if (!visible || disposed || query !== queryRevision || nativeActiveRef.current || visibleRecoveryPending.current) return;
             received = true;
             queryRevision += 1;
@@ -60,16 +60,16 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
       if (!disposed && !nativeActiveRef.current && !visibleRecoveryPending.current && phaseRef.current !== "idle") queryPending(true);
     };
     const subscriptions = [
-      listen<number>("main-window-prepare-show", event => start(event.payload)),
-      listen("privacy-view-hidden", () => {
+      currentWindow.listen<number>("main-window-prepare-show", event => start(event.payload)),
+      currentWindow.listen("privacy-view-hidden", () => {
         if (disposed) return;
         queryRevision += 1;
         nativeActiveRef.current = false;
         visibleRecoveryPending.current = false;
         controller.cancel(); setPrepared(null); setPhase("preparing");
       }),
-      listen("privacy-view-shown", shown),
-      getCurrentWindow().onFocusChanged(event => { if (event.payload) shown(); })
+      currentWindow.listen("privacy-view-shown", shown),
+      currentWindow.onFocusChanged(event => { if (event.payload) shown(); })
     ];
     void Promise.all(subscriptions).then(() => queryPending(), () => {
       if (disposed) return;
