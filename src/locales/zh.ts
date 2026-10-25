@@ -588,4 +588,8 @@ export const zh = {
         build_date: "构建日期",
         platform_windows: "Windows",
         platform_linux: "Linux",
+        clipboard_preview_loading: "正在读取预览…",
+        clipboard_preview_unavailable: "暂时无法读取文字预览",
+        clipboard_preview_empty: "暂无文字预览",
+        clipboard_image_preview_unavailable: "图片预览不可用",
 };

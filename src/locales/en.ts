@@ -585,4 +585,8 @@ export const en = {
         build_date: "Build Date",
         platform_windows: "Windows",
         platform_linux: "Linux",
+        clipboard_preview_loading: "Loading preview…",
+        clipboard_preview_unavailable: "Text preview is currently unavailable",
+        clipboard_preview_empty: "No text preview available",
+        clipboard_image_preview_unavailable: "Image preview unavailable",
 };
