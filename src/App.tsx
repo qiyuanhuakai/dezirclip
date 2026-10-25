@@ -533,10 +533,16 @@ const App = () => {
   // whenever a setting changed would re-run those instead.
   const appSettingsRef = useRef(appSettings);
   appSettingsRef.current = appSettings;
+  const backgroundSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const backgroundSaveGeneration = useRef(0);
 
   const saveAppSetting = useCallback(async (type: string, path: string) => {
     const key = `app.${type}`;
     if (appSettingsRef.current[key] === path) return;
+    const backgroundGeneration = type === "custom_background" ? ++backgroundSaveGeneration.current : 0;
+    if (type === "custom_background") {
+      appSettingsRef.current = { ...appSettingsRef.current, [key]: path };
+    }
     setAppSettings(prev => ({ ...prev, [key]: path }));
 
     // Sync theme-related settings to localStorage for instant startup (prevents flash)
@@ -549,11 +555,30 @@ const App = () => {
     }
 
     try {
-      await invoke("save_setting", { key, value: path });
+      if (type === "custom_background") {
+        const request = backgroundSaveQueue.current.then(() => invoke<void>("save_setting", { key, value: path }));
+        backgroundSaveQueue.current = request.catch(() => undefined);
+        await request;
+      } else {
+        await invoke("save_setting", { key, value: path });
+      }
     } catch (err) {
       console.error("保存设置失败", err);
+      if (type === "custom_background") {
+        pushToast(t("custom_background_save_failed"));
+        if (backgroundGeneration !== backgroundSaveGeneration.current) return;
+        let persisted = "";
+        try {
+          const settings = await invoke<Record<string, string>>("get_settings");
+          persisted = settings[key] || "";
+        } catch (readError) { console.error("Failed to reload saved background", readError); }
+        if (backgroundGeneration !== backgroundSaveGeneration.current) return;
+        appSettingsRef.current = { ...appSettingsRef.current, [key]: persisted };
+        setAppSettings(prev => ({ ...prev, [key]: persisted }));
+        setCustomBackground(persisted);
+      }
     }
-  }, [setAppSettings]);
+  }, [setAppSettings, setCustomBackground, pushToast, t]);
 
   const saveSetting = useCallback((key: string, val: string) => {
     if (appSettingsRef.current[key] === val) return;

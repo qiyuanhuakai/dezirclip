@@ -307,6 +307,7 @@ export const en = {
         tag_manager_enabled: "Tag manager",
         tag_manager_enabled_hint: "Hide the tag manager entry when disabled.",
         custom_background: "Custom Background",
+        custom_background_save_failed: "Could not save the background image. Please try again.",
         choose_background: "Choose Background",
         change_background: "Change Background",
         clear_background: "Clear Background",

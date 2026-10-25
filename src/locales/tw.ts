@@ -305,6 +305,7 @@ export const tw = {
         tag_manager_enabled: "標籤管理頁開關",
         tag_manager_enabled_hint: "關閉後隱藏標籤管理入口",
         custom_background: "自定義背景",
+        custom_background_save_failed: "背景圖片未能儲存，請重試。",
         choose_background: "選擇背景",
         change_background: "更換背景",
         clear_background: "清除背景",

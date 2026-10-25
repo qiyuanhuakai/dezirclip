@@ -105,3 +105,4 @@ pub mod attachments;
 pub mod local_file;
 pub mod update_support;
 pub mod user_resource;
+pub mod capture_visibility;

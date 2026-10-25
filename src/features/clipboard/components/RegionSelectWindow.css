@@ -30,11 +30,38 @@ body.region-select #root::before {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: var(--surface-overlay-bg);
-  cursor: crosshair;
+  background: #111;
+  cursor: wait;
   user-select: none;
   -webkit-user-select: none;
   z-index: 9999;
+}
+
+.region-select-window.is-ready {
+  cursor: crosshair;
+}
+
+.region-select-window__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.region-select-window:not(.is-ready) .region-select-window__backdrop {
+  visibility: hidden;
+}
+
+.region-select-window::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--surface-overlay-bg);
+  pointer-events: none;
+  z-index: 1;
 }
 
 /* ── Selection rectangle ────────────────────────────────────── */
@@ -52,6 +79,7 @@ body.region-select #root::before {
   position: absolute;
   border: 2px dashed var(--accent-color);
   pointer-events: none;
+  z-index: 2;
 }
 
 /* ── Dimension label ────────────────────────────────────────── */
