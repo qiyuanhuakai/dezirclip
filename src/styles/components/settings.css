@@ -7,15 +7,15 @@
   min-width: 0;
 }
 
-.about-build h4 { margin: 8px 0; font-size: var(--font-size-md); }
-.about-app-version { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin: 12px 0; }
-.about-app-version strong { font-size: var(--font-size-lg); }
-.about-build-details summary { cursor: pointer; font-size: var(--font-size-sm); color: var(--text-secondary); }
-.about-build-details dl { margin: 12px 0 0; font-size: var(--font-size-sm); }
-.about-build-details dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; padding: 6px 0; }
-.about-build-details dt { color: var(--text-secondary); }
-.about-build-details dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
+.about-app-version { gap: 12px; }
+.about-build-details dl { margin: 8px 0 0; font-size: var(--font-size-sm); }
+.about-build-details .setting-item { flex-direction: column; align-items: flex-start; gap: 6px; }
+.about-build-details .settings-row--wide { flex-direction: row; align-items: baseline; }
+.about-build-details dt { color: var(--text-primary); font-weight: 700; }
+.about-build-details dd { margin: 0; }
 .about-build-error p { color: var(--text-secondary); }
+.settings-value { min-width: 0; color: var(--text-secondary); font-size: var(--font-size-sm); overflow-wrap: anywhere; user-select: text; }
+.settings-description { margin: 6px 0; color: var(--text-secondary); font-size: var(--font-size-sm); line-height: 1.6; }
 
 .update-settings {
   grid-column: 1 / -1;
@@ -203,6 +203,7 @@
 }
 
 .settings-pane {
+  --settings-columns: 1;
   flex: 1 1 0;
   min-width: 0;
   overflow-y: auto;
@@ -237,21 +238,17 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.settings-pane--cols-2 { --settings-columns: 2; }
+.settings-pane--cols-3 { --settings-columns: 3; }
+
 .settings-pane--cols-3 .group-content {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-/* A row whose control is intrinsically wide — a filesystem path, an engine badge —
-   is unreadable at half a column: the label truncates and the value gets cut
-   mid-path. Those rows claim the whole row and let the short controls flow around
-   them. `:has()` keys off controls the groups already render, so most groups need
-   no opt-in; `.column` rows stack label-over-control and want the same room. */
-.settings-pane--cols-2 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text),
-.settings-pane--cols-3 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text),
-.settings-pane--cols-2 .group-content > .setting-item.column,
-.settings-pane--cols-3 .group-content > .setting-item.column,
-.settings-pane--cols-2 .group-content > .setting-item--detail,
-.settings-pane--cols-3 .group-content > .setting-item--detail {
+/* Long paths and composite editors need a full row. Label-over-control is
+   independent of width: ordinary selects, ranges and button groups share columns. */
+.settings-pane--cols-2 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group, .theme-manager, .data-path-header, textarea),
+.settings-pane--cols-3 .group-content > .setting-item:has(.data-panel, .capture-engine-badge, .tools-path-text, .setting-btn-group, .theme-manager, .data-path-header, textarea) {
   grid-column: 1 / -1;
 }
 
@@ -656,26 +653,50 @@
   user-select: text;
 }
 
-/* Native capability boundaries remain intact rather than splitting their
-   controls into a different grid track from their section heading. */
+/* A real fieldset retains its disabled/inert boundary and shares the pane's
+   columns so its short settings do not become one stretched vertical list. */
 .settings-pane .group-content > .native-feature-boundary,
 .settings-pane .group-content > .native-feature-reason,
 .settings-pane .group-content > .privacy-session-section,
 .settings-pane .group-content > .settings-section-title,
+.settings-pane .group-content > .wayland-capabilities,
 .settings-pane .group-content > .source-exclusion-setting {
   grid-column: 1 / -1;
 }
 
-.settings-pane .privacy-session-section {
-  border-radius: var(--surface-control-radius, 6px);
-  margin: 10px 0;
+.settings-pane .native-feature-boundary,
+.settings-section-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--settings-columns, 1), minmax(0, 1fr));
+  align-items: start;
+  column-gap: 20px;
 }
 
-.privacy-session-hotkey .hotkey-recorder {
-  flex: 1 1 100%;
+.settings-pane .native-feature-boundary > *,
+.settings-section-grid > * {
   min-width: 0;
-  margin-left: 0;
 }
+
+.settings-pane .native-feature-boundary > .hotkey-list-editor,
+.settings-pane .native-feature-boundary > .settings-section-title,
+.settings-pane .native-feature-boundary > .setting-item:has(.setting-btn-group, .data-panel, .capture-engine-badge, .tools-path-text, .theme-manager, .data-path-header, textarea),
+.settings-row--wide,
+.privacy-session-section .hotkey-list-editor { grid-column: 1 / -1; }
+
+.hotkey-list-editor > .hotkey-recorder {
+  align-self: stretch;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+.hotkey-list-editor .hotkey-recorder > .item-label-group { flex: 1 1 160px; }
+.hotkey-list { display: flex; flex-wrap: wrap; gap: 8px 16px; width: 100%; }
+.hotkey-binding { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.hotkey-binding-value { cursor: default; flex-wrap: wrap; min-width: 0; }
+.hotkey-list-editor .hotkey-binding-value .key-cap { cursor: default; }
+.hotkey-recording-error { flex-basis: 100%; margin: 4px 0; color: var(--color-error); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
 
 .hotkey-recorder .key-group {
   flex-wrap: wrap;

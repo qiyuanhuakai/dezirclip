@@ -1,5 +1,7 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useHotkeyRecording } from "../../../shared/hooks/useHotkeyRecording";
+import { hotkeyChord } from "../utils/hotkeyChord";
 
 interface HotkeyRecorderProps {
     readonly t: (key: string) => string;
@@ -9,23 +11,18 @@ interface HotkeyRecorderProps {
     readonly setRecording: (val: boolean) => void;
     readonly onHotkeyChange: (val: string) => void;
     readonly disabled?: boolean;
+    readonly placeholder?: string;
 }
-
-const buildHotkey = (e: React.KeyboardEvent): string | null => {
-    const key = e.key === " " ? "Space" : e.key.toUpperCase();
-    if (["CONTROL", "SHIFT", "ALT", "META"].includes(key)) return null;
-    const modifiers = [];
-    if (e.ctrlKey) modifiers.push("Ctrl");
-    if (e.shiftKey) modifiers.push("Shift");
-    if (e.altKey) modifiers.push("Alt");
-    if (e.metaKey) modifiers.push("Win");
-    return [...modifiers, key].join("+");
-};
-
-const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange, disabled = false }: HotkeyRecorderProps) => {
+const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange, disabled = false, placeholder }: HotkeyRecorderProps) => {
+    const [recordingError, setRecordingError] = useState<string | null>(null);
+    const { record, cancel } = useHotkeyRecording({ recording: recording && !disabled, onRecorded: onHotkeyChange,
+        onCancelled: () => setRecording(false),
+        onError: error => setRecordingError(t("hotkey_register_failed") + String(error)),
+    });
     const parts = hotkey ? hotkey.split("+") : [];
     const startRecording = () => {
         if (disabled) return;
+        setRecordingError(null);
         setRecording(true);
         invoke("focus_clipboard_window").catch(console.error);
     };
@@ -35,22 +32,20 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
             if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 e.stopPropagation();
-                setRecording(true);
-                invoke("focus_clipboard_window").catch(console.error);
+                startRecording();
             }
             return;
         }
         e.preventDefault();
         e.stopPropagation();
         if (e.key === "Escape") {
-            setRecording(false);
+            cancel();
             return;
         }
-        const newHotkey = buildHotkey(e);
+        const newHotkey = hotkeyChord(e);
         if (!newHotkey) return;
-        onHotkeyChange(newHotkey);
-        setRecording(false);
-    }, [disabled, onHotkeyChange, recording, setRecording]);
+        record(newHotkey);
+    }, [cancel, disabled, record, recording, setRecording]);
 
     return <div className="setting-item setting-item--detail hotkey-recorder">
         <div className="item-label-group"><span className="item-label">{t(labelKey)}</span></div>
@@ -63,12 +58,14 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
             tabIndex={disabled ? -1 : 0}
             onClick={event => { startRecording(); event.currentTarget.focus(); }}
             onKeyDown={handleKeyDown}
+            onMouseDown={event => { if (recording && !disabled && event.button === 1) { event.preventDefault(); record("MouseMiddle"); } }}
             onBlur={() => setRecording(false)}
         >
             {recording && !disabled ? <div className="key-cap key-cap--placeholder">{t("waiting_for_input")}</div>
                 : parts.length > 0 ? parts.map((part, index) => <div key={`${part}-${index}`} className="key-cap">{part}</div>)
-                    : <div className="key-cap key-cap--placeholder key-cap--unset">{t("not_set")}</div>}
+                    : <div className={`key-cap key-cap--placeholder ${placeholder ? "" : "key-cap--unset"}`}>{placeholder || t("not_set")}</div>}
         </div>
+        {recordingError && <p className="hotkey-recording-error" role="alert">{recordingError}</p>}
     </div>;
 };
 

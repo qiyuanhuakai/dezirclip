@@ -1,6 +1,6 @@
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { useHotkeyRecording } from "./useHotkeyRecording";
 
 type HotkeyMode = "main" | "sequential" | "rich" | "search";
 
@@ -37,7 +37,6 @@ export const useHotkeyConfig = ({
   searchHotkey,
   setSearchHotkey,
   sequentialMode,
-  isRecording,
   setIsRecording,
   isRecordingSequential,
   setIsRecordingSequential,
@@ -312,46 +311,21 @@ export const useHotkeyConfig = ({
     ]
   );
 
-  useEffect(() => {
-    invoke("set_recording_mode", {
-      enabled: isRecording || isRecordingSequential || isRecordingRich
-        || isRecordingSearch
-    }).catch(console.error);
-
-    if (isRecording || isRecordingSequential || isRecordingRich || isRecordingSearch) {
-      const unlisten = listen<string>("hotkey-recorded", (event) => {
-        if (isRecording) addMainHotkey(event.payload);
-        if (isRecordingSequential) updateSequentialHotkey(event.payload);
-        if (isRecordingRich) updateRichPasteHotkey(event.payload);
-        if (isRecordingSearch) updateSearchHotkey(event.payload);
-      });
-
-      const unlistenCancel = listen("recording-cancelled", () => {
-        setIsRecording(false);
-        setIsRecordingSequential(false);
-        setIsRecordingRich(false);
-        setIsRecordingSearch(false);
-      });
-
-      return () => {
-        unlisten.then((f) => f());
-        unlistenCancel.then((f) => f());
-      };
-    }
-  }, [
-    isRecording,
-    isRecordingSequential,
-    isRecordingRich,
-    isRecordingSearch,
-    setIsRecording,
-    setIsRecordingSequential,
-    setIsRecordingRich,
-    setIsRecordingSearch,
-    addMainHotkey,
-    updateSequentialHotkey,
-    updateRichPasteHotkey,
-    updateSearchHotkey
-  ]);
+  // Main shortcuts use the shared editor; these inline recorders use the same native session.
+  useHotkeyRecording({
+    recording: isRecordingSequential || isRecordingRich || isRecordingSearch,
+    onRecorded: hotkey => {
+      if (isRecordingSequential) void updateSequentialHotkey(hotkey);
+      if (isRecordingRich) void updateRichPasteHotkey(hotkey);
+      if (isRecordingSearch) void updateSearchHotkey(hotkey);
+    },
+    onCancelled: () => {
+      setIsRecordingSequential(false);
+      setIsRecordingRich(false);
+      setIsRecordingSearch(false);
+    },
+    onError: error => pushToast(t("hotkey_register_failed") + resolveHotkeyErrorMessage(error), 5000),
+  });
 
   return {
     checkHotkeyConflict,
