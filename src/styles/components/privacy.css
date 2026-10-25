@@ -45,3 +45,7 @@
 .privacy-manual-confirm { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.6; }
 .privacy-manual-confirm input { flex: none; margin-top: 4px; }
 .privacy-manual-hint { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.main-resume-content { display: flex; flex: 1; min-height: 0; position: relative; }
+.main-resume-page { display: contents; }
+.main-resume-content[data-pending="true"] > .main-resume-page { visibility: hidden; pointer-events: none; }
+.main-resume-content > .empty-state { position: absolute; inset: 0; z-index: 1; }

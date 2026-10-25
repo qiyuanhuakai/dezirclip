@@ -249,6 +249,19 @@ export function beginPrivacyAccess() {
   return { epoch, isCurrent: () => fence.isCurrent(token) && model.phase === "ready" };
 }
 
+/** Prepare a fresh protected list for an explicit native show request, while still hidden. */
+export async function prepareMainWindowResume(requestIsCurrent: () => boolean) {
+  if (getCurrentWindow().label !== "main" || !requestIsCurrent()) throw new Error("PrivacyStateUnavailable");
+  const started = lifecycle;
+  viewSuspended = false;
+  activeView = false;
+  await refreshPrivacyState();
+  if (!requestIsCurrent() || started !== lifecycle || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
+  const access = beginPrivacyAccess();
+  if (!access) throw new Error("PrivacyStateUnavailable");
+  return access;
+}
+
 export async function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");

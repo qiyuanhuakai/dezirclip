@@ -8,6 +8,7 @@ pub mod history_cmd;
 pub mod hotkey_cmd;
 pub mod image_preview_cmd;
 pub mod import_cmd;
+pub mod main_resume_cmd;
 pub mod ocr_cmd;
 pub mod privacy_cmd;
 pub mod privacy_feedback_cmd;

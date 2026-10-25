@@ -21,6 +21,7 @@ import { useSearchScroll } from "./shared/hooks/useSearchScroll";
 import { useSettingsApply } from "./shared/hooks/useSettingsApply";
 import { useSettingsInit } from "./shared/hooks/useSettingsInit";
 import { useMainWindowPaintSignal } from "./shared/hooks/useMainWindowPaintSignal";
+import { useMainWindowResume } from "./shared/hooks/useMainWindowResume";
 import { useSettingsPostInit } from "./shared/hooks/useSettingsPostInit";
 import { useSettingsSync } from "./shared/hooks/useSettingsSync";
 import { useTagColors } from "./shared/hooks/useTagColors";
@@ -233,6 +234,10 @@ const App = () => {
     hasMore,
     setIsLoadingMore
   });
+  const filteredHistory = useFilteredHistory({ history, debouncedSearch, search, typeFilter });
+  const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, filteredHistory.length,
+    !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel);
+  const mainResumePending = mainResume.phase === "preparing" || mainResume.phase === "prepared" || mainResume.phase === "failed" || privacyState.phase !== "ready";
 
   const t = useCallback((key: string) => {
     const k = key as keyof typeof translations['zh'];
@@ -344,8 +349,8 @@ const App = () => {
     closeConfirm();
   }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm]);
   useEffect(() => {
-    if (privacyState.phase === "ready") void fetchHistory(true);
-  }, [privacyState.phase, privacyState.generation, fetchHistory]);
+    if (privacyState.phase === "ready" && mainResume.phase === "idle") void fetchHistory(true);
+  }, [privacyState.phase, privacyState.generation, mainResume.phase, fetchHistory]);
 
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
@@ -665,13 +670,6 @@ const App = () => {
   };
   */
 
-  const filteredHistory = useFilteredHistory({
-    history,
-    debouncedSearch,
-    search,
-    typeFilter
-  });
-
   const effectiveHasMore = hasMore && filteredHistory.length >= PAGE_SIZE;
 
   const { pinnedItems, unpinnedItems, handlePinnedReorder } = usePinnedSort({
@@ -875,7 +873,17 @@ const App = () => {
           className="main-content"
           style={{ overflowY: (showSettings || effectiveShowTagManager) ? 'auto' : 'hidden' }}
         >
-          <AppMainContent {...appMainContentProps} />
+          <div className="main-resume-content" data-pending={mainResumePending} data-resume-mode={mainResume.mode}>
+          {mainResumePending && (
+            <div className="empty-state" role="status" aria-busy={mainResume.phase !== "failed" && privacyState.phase !== "unavailable"}>
+              <p>{t(mainResume.phase === "failed" || privacyState.phase === "unavailable" ? "main_window_resume_failed" : "main_window_resume_pending")}</p>
+              {mainResume.phase === "failed" && <button type="button" onClick={mainResume.retry}>{t("privacy_retry")}</button>}
+            </div>
+          )}
+          <div className="main-resume-page" aria-hidden={mainResumePending} inert={mainResumePending}>
+            <AppMainContent {...appMainContentProps} />
+          </div>
+          </div>
         </main>
       </WheelHotZone>
 

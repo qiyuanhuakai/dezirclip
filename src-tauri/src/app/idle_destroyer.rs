@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::thread::{Thread, ThreadId};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -8,6 +8,7 @@ use crate::app_state::SettingsState;
 use crate::global_state::{
     CLOSING_SINCE_MS, FRONTEND_CATCHUP_PENDING, IS_DESTROYED, LAST_HIDDEN_TIMESTAMP,
     MAIN_WINDOW_PAINTED, RECREATE_PENDING, SHOW_DEADLINE_MS, SHOW_PENDING, SHOW_REQUEST_ID,
+    IS_HIDDEN, CURRENT_DOCK, LAST_SHOW_TIMESTAMP,
     WINDOW_LIFECYCLE,
 };
 use crate::infrastructure::webview_environment;
@@ -48,6 +49,68 @@ pub const FIRST_PAINT_TIMEOUT_MS: u64 = 1_500;
 /// the boot itself; the watcher only runs while a show is actually pending, and
 /// recreates are rare.
 const FIRST_PAINT_POLL: Duration = Duration::from_millis(8);
+static RESUME_REQUIRED_REQUEST: AtomicU64 = AtomicU64::new(0);
+static RESUME_READY_REQUEST: AtomicU64 = AtomicU64::new(0);
+static EDGE_SHOW_PENDING: AtomicBool = AtomicBool::new(false);
+
+pub fn should_queue_edge_resume(show_pending: bool, edge_pending: bool) -> bool {
+    !show_pending && !edge_pending
+}
+fn try_begin_edge_show() -> bool {
+    should_queue_edge_resume(show_is_pending(), EDGE_SHOW_PENDING.load(Ordering::Acquire))
+        && EDGE_SHOW_PENDING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
+}
+
+fn arm_main_window_resume(request: u64) {
+    RESUME_READY_REQUEST.store(0, Ordering::Release);
+    RESUME_REQUIRED_REQUEST.store(request, Ordering::Release);
+    SHOW_DEADLINE_MS.store(now_ms().saturating_add(FIRST_PAINT_TIMEOUT_MS), Ordering::SeqCst);
+}
+
+pub fn main_view_needs_resume(native_visible: bool, app_hidden: bool) -> bool {
+    !native_visible || app_hidden
+}
+
+/// Edge polling keeps its current request until presentation instead of restarting its deadline.
+pub fn show_main_window_from_edge(app: &AppHandle, position: Option<tauri::PhysicalPosition<i32>>, force_topmost: bool, reason: &'static str) {
+    if !try_begin_edge_show() { return; }
+    let handle = app.clone();
+    show_main_window_when_ready(app, move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            crate::app::webview_memory::restore_window_memory(&window, reason);
+            if let Some(position) = position { let _ = window.set_position(position); }
+            if force_topmost { let _ = window.set_always_on_top(true); }
+            IS_HIDDEN.store(false, Ordering::Relaxed);
+            CURRENT_DOCK.store(0, Ordering::Relaxed);
+            LAST_SHOW_TIMESTAMP.store(now_ms(), Ordering::Relaxed);
+            show_main_window_now(&handle);
+        }
+        EDGE_SHOW_PENDING.store(false, Ordering::Release);
+    });
+}
+
+pub fn resume_request_matches(request: u64, current: u64, required: u64) -> bool {
+    request != 0 && request == current && request == required
+}
+
+pub fn resume_presentation_ready(painted: bool, needs_resume: bool, request: u64, ready_request: u64) -> bool {
+    painted && (!needs_resume || (request != 0 && request == ready_request))
+}
+
+pub fn pending_main_window_resume() -> Option<u64> {
+    let required = RESUME_REQUIRED_REQUEST.load(Ordering::Acquire);
+    (resume_request_matches(required, SHOW_REQUEST_ID.load(Ordering::Acquire), required)
+        && RESUME_READY_REQUEST.load(Ordering::Acquire) != required).then_some(required)
+}
+
+pub fn mark_main_window_resume_ready(request: u64) -> bool {
+    if !resume_request_matches(request, SHOW_REQUEST_ID.load(Ordering::Acquire), RESUME_REQUIRED_REQUEST.load(Ordering::Acquire)) {
+        return false;
+    }
+    RESUME_READY_REQUEST.store(request, Ordering::Release);
+    MAIN_WINDOW_PAINTED.store(true, Ordering::Release);
+    true
+}
 
 /// Pure decision: may a rebuilt main window be put on screen yet?
 ///
@@ -197,6 +260,7 @@ pub fn mark_frontend_catchup_pending() {
 /// whatever was there when the window went down.
 pub fn notify_main_window_shown(app: &AppHandle) {
     mark_shown();
+    EDGE_SHOW_PENDING.store(false, Ordering::Release);
     let _ = app.emit_to("main", "privacy-view-shown", ());
     if !FRONTEND_CATCHUP_PENDING.swap(false, Ordering::SeqCst) {
         return;
@@ -677,6 +741,9 @@ pub fn show_is_pending() -> bool {
 pub fn cancel_pending_show() {
     SHOW_REQUEST_ID.fetch_add(1, Ordering::AcqRel);
     SHOW_PENDING.store(false, Ordering::SeqCst);
+    RESUME_REQUIRED_REQUEST.store(0, Ordering::Release);
+    RESUME_READY_REQUEST.store(0, Ordering::Release);
+    EDGE_SHOW_PENDING.store(false, Ordering::Release);
 }
 
 /// What a waiting watcher should do on one poll.
@@ -724,15 +791,21 @@ pub fn watcher_action(
 /// on screen yet swallow the foreground app's arrow keys — the global hook gates
 /// on `NAVIGATION_ENABLED` and `IS_HIDDEN`, not on visibility.
 ///
-/// Windows that were not just rebuilt are unaffected: `MAIN_WINDOW_PAINTED`
-/// starts `true`, so they show synchronously as before.
+/// Hidden windows also prepare a fresh privacy-bound history page before being
+/// presented. The request ID prevents a late page from completing a newer show.
 pub fn show_main_window_when_ready<F>(app: &AppHandle, show: F)
 where
     F: FnOnce() + Send + 'static,
 {
     let request = begin_show_request();
+    let needs_resume = app.get_webview_window("main")
+        .is_some_and(|window| main_view_needs_resume(window.is_visible().unwrap_or(false), IS_HIDDEN.load(Ordering::Acquire)));
+    if needs_resume {
+        arm_main_window_resume(request);
+        let _ = app.emit_to("main", "main-window-prepare-show", request);
+    }
     if ready_to_show(
-        MAIN_WINDOW_PAINTED.load(Ordering::Acquire),
+        resume_presentation_ready(MAIN_WINDOW_PAINTED.load(Ordering::Acquire), needs_resume, request, RESUME_READY_REQUEST.load(Ordering::Acquire)),
         now_ms(),
         SHOW_DEADLINE_MS.load(Ordering::SeqCst),
     ) {
@@ -744,7 +817,7 @@ where
     let handle = app.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(FIRST_PAINT_POLL);
-        let painted = MAIN_WINDOW_PAINTED.load(Ordering::Acquire);
+        let painted = resume_presentation_ready(MAIN_WINDOW_PAINTED.load(Ordering::Acquire), needs_resume, request, RESUME_READY_REQUEST.load(Ordering::Acquire));
         match watcher_action(
             painted,
             now_ms(),
@@ -1357,7 +1430,7 @@ mod tests {
     /// tests in parallel. Without this, one test's `cancel_pending_show()` can
     /// land between another's read and its assert — a failure that says nothing
     /// about the code, and worse, a green run that was luck.
-    fn serialise_show_state() -> std::sync::MutexGuard<'static, ()> {
+    pub(super) fn serialise_show_state() -> std::sync::MutexGuard<'static, ()> {
         // Poisoning is recovered from rather than propagated: one test failing
         // must not turn every later one into a failure that says nothing.
         SHOW_STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner())
@@ -1631,5 +1704,70 @@ mod tests {
             .filter(|line| line.contains(".show()") && !line.contains("show_window"))
             .count();
         assert_eq!(raw_shows, 1, "idle_destroyer.rs should show main in exactly one place");
+    }
+}
+
+#[cfg(test)]
+mod resume_state_tests {
+    use super::{resume_presentation_ready, resume_request_matches, watcher_action, WatcherAction};
+    #[test]
+    fn edge_resume_state_is_single_flight_and_cancellation_invalidates_its_ack() {
+        use std::sync::atomic::Ordering;
+        let _serial = super::tests::serialise_show_state();
+        super::cancel_pending_show();
+        assert!(super::main_view_needs_resume(true, true));
+        assert!(super::main_view_needs_resume(false, false));
+        assert!(!super::main_view_needs_resume(true, false));
+        assert!(super::try_begin_edge_show());
+        let request = super::begin_show_request();
+        super::arm_main_window_resume(request);
+        for _ in 0..10 {
+            assert!(!super::try_begin_edge_show());
+            assert_eq!(super::SHOW_REQUEST_ID.load(Ordering::Acquire), request);
+        }
+        assert!(!super::mark_main_window_resume_ready(request - 1));
+        assert!(super::mark_main_window_resume_ready(request));
+        assert!(super::resume_presentation_ready(true, true, request, super::RESUME_READY_REQUEST.load(Ordering::Acquire)));
+        super::cancel_pending_show();
+        assert!(!super::mark_main_window_resume_ready(request));
+        assert_eq!(super::watcher_action(true, 10, 1500, request, super::SHOW_REQUEST_ID.load(Ordering::Acquire)), super::WatcherAction::Abort);
+        assert!(super::try_begin_edge_show());
+        let next = super::begin_show_request();
+        super::arm_main_window_resume(next);
+        assert!(!super::mark_main_window_resume_ready(request));
+        assert!(super::mark_main_window_resume_ready(next));
+        super::cancel_pending_show();
+    }
+    #[test]
+    fn edge_polling_does_not_replace_an_in_flight_resume() {
+        assert!(super::should_queue_edge_resume(false, false));
+        assert!(!super::should_queue_edge_resume(true, false));
+        assert!(!super::should_queue_edge_resume(false, true));
+        assert!(!super::should_queue_edge_resume(true, true));
+        let source = include_str!("setup.rs");
+        assert_eq!(source.matches("::show_main_window_from_edge(").count(), 4);
+        let helper = include_str!("idle_destroyer.rs").split("pub fn show_main_window_from_edge").nth(1).unwrap().split("pub fn resume_request_matches").next().unwrap();
+        assert!(helper.find("window.set_position(position)").unwrap() < helper.find("show_main_window_now(&handle)").unwrap());
+    }
+    #[test]
+    fn old_paint_cannot_present_a_new_hidden_resume() {
+        assert!(!resume_presentation_ready(true, true, 8, 7));
+        assert!(!resume_presentation_ready(true, true, 8, 0));
+        assert!(resume_presentation_ready(true, true, 8, 8));
+        assert!(resume_presentation_ready(true, false, 8, 0));
+    }
+    #[test]
+    fn cancelled_and_superseded_requests_cannot_acknowledge() {
+        assert!(!resume_request_matches(0, 0, 0));
+        assert!(!resume_request_matches(7, 8, 8));
+        assert!(!resume_request_matches(8, 8, 0));
+        assert!(resume_request_matches(8, 8, 8));
+    }
+    #[test]
+    fn resume_deadline_keeps_cancel_safety_and_only_falls_back_on_its_own_request() {
+        assert_eq!(watcher_action(false, 1499, 1500, 8, 8), WatcherAction::KeepWaiting);
+        assert_eq!(watcher_action(false, 1500, 1500, 8, 8), WatcherAction::Show);
+        assert_eq!(watcher_action(false, 1500, 1500, 8, 9), WatcherAction::Abort);
+        assert_eq!(watcher_action(true, 10, 1500, 8, 9), WatcherAction::Abort);
     }
 }
