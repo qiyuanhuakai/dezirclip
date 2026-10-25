@@ -1,6 +1,17 @@
 use std::path::PathBuf;
 use tauri_plugin_updater::UpdaterExt;
 
+fn candidate_contract(package: &str) -> Result<(String, &'static str), Box<dyn std::error::Error>> {
+    let package: serde_json::Value = serde_json::from_str(package)?;
+    let version = package["version"]
+        .as_str()
+        .filter(|version| !version.is_empty())
+        .ok_or("package release version missing")?
+        .to_string();
+    let wrong_version = if version == "1.0.0" { "2.0.0" } else { "1.0.0" };
+    Ok((version, wrong_version))
+}
+
 fn validate_isolation(root: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("DEZIRCLIP_ACCEPTANCE_INSIDE").as_deref() != Ok("1")
         || PathBuf::from(std::env::var("DEZIRCLIP_ACCEPTANCE_ROOT")?).canonicalize()? != root
@@ -45,8 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("only the disposable AppImage fixture is allowed".into());
     }
     validate_isolation(root)?;
+    let (version, mismatched_version) = candidate_contract(include_str!("../../../package.json"))?;
     let target = directory.join("current.AppImage");
-    let candidate_path = directory.join("DezirClip_0.2.0-alpha.2_amd64.AppImage");
+    let candidate_name = format!("DezirClip_{version}_amd64.AppImage");
+    let candidate_path = directory.join(&candidate_name);
     for input in [
         target.clone(),
         candidate_path.clone(),
@@ -83,9 +96,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .configure_client(|_| panic!("offline fixture must not make network requests"))
         .build()?;
     let manifest = serde_json::json!({
-        "version": "0.2.0-alpha.2",
+        "version": version,
         "platforms": { "linux-x86_64": {
-            "url": "https://example.invalid/DezirClip_0.2.0-alpha.2_amd64.AppImage",
+            "url": format!("https://example.invalid/{candidate_name}"),
             "signature": signature.trim(),
         }},
     });
@@ -124,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "tampered bytes changed installed file"
     );
     let mut wrong_version = manifest.clone();
-    wrong_version["version"] = "0.2.0-alpha.3".into();
+    wrong_version["version"] = mismatched_version.into();
     let mismatched = updater
         .restore_update(wrong_version)?
         .ok_or("mismatched update missing")?;
@@ -162,4 +175,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "executable_permissions_preserved": true, "namespace_isolation_verified": true, "network_requests": 0})
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::candidate_contract;
+
+    #[test]
+    fn candidate_uses_the_compiled_package_and_a_distinct_valid_negative_version() {
+        let (actual, wrong) = candidate_contract(include_str!("../../../package.json")).unwrap();
+        let package: serde_json::Value = serde_json::from_str(include_str!("../../../package.json")).unwrap();
+        assert_eq!(Some(actual.as_str()), package["version"].as_str());
+        assert_ne!(actual, wrong);
+        assert!(matches!(wrong, "1.0.0" | "2.0.0"));
+        assert!(wrong.split('.').next().unwrap().parse::<u64>().unwrap() > 0);
+        assert_eq!(candidate_contract(r#"{"version":"1.0.0"}"#).unwrap().1, "2.0.0");
+        assert_eq!(candidate_contract(r#"{"version":"0.2.0-alpha.3"}"#).unwrap().1, "1.0.0");
+    }
+
+    #[test]
+    fn missing_or_nonstring_package_version_is_rejected() {
+        for package in ["{}", r#"{"version":null}"#, r#"{"version":3}"#, r#"{"version":""}"#, "not JSON"] {
+            assert!(candidate_contract(package).is_err());
+        }
+    }
 }

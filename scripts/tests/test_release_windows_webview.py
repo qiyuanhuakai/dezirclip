@@ -218,6 +218,10 @@ class ReleaseWebViewPolicy(unittest.TestCase):
         self.assertLess(text.index('context = authority(args.source)'), text.index('api = NativeWindows()'))
         self.assertIn("os.environ.get('GITHUB_ACTIONS') == 'true'", text)
         self.assertIn("os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'", text)
+        self.assertIn("sys.platform == 'win32'", text)
+        self.assertNotIn('args.source == SOURCE', text)
+        self.assertFalse(any(isinstance(node, ast.ImportFrom) and node.module == 'release_recovery'
+                             and any(alias.name == 'SOURCE' for alias in node.names) for node in tree.body))
         self.assertIn('GetTokenInformation', source)
         self.assertNotIn('IsInRole', source)
         self.assertFalse(any(isinstance(node, ast.Import) and any(alias.name in ('winreg', 'ctypes') for alias in node.names) for node in tree.body))

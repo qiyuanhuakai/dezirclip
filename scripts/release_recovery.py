@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from release_version import release_version
 
 
 VERSION = '0.2.0-alpha.2'
@@ -61,13 +62,14 @@ def _release_id(environment, recovery):
     return next(iter(identities), None)
 
 
-def _context(expected_source, environment):
+def _context(expected_source, environment, version=None):
     require(isinstance(expected_source, str) and REVISION.fullmatch(expected_source), 'Exact source revision required')
     require(environment.get('GITHUB_ACTIONS') == 'true'
             and environment.get('RUNNER_ENVIRONMENT') == 'github-hosted'
             and environment.get('GITHUB_REPOSITORY') == REPOSITORY,
             'Release receipts require the same repository on a disposable GitHub runner')
     recovery = environment.get('DZC_RELEASE_RECOVERY') == '1'
+    tag = TAG if recovery else 'v' + (release_version() if version is None else version)
     tooling = environment.get('DZC_RELEASE_TOOLING_SOURCE') or expected_source
     require(isinstance(tooling, str) and REVISION.fullmatch(tooling), 'Exact workflow tooling revision required')
     if recovery:
@@ -82,8 +84,8 @@ def _context(expected_source, environment):
                     for name in ('GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')),
                 'Recovery requires its actual run and attempt identities')
     else:
-        require(environment.get('GITHUB_REF') == 'refs/tags/' + TAG,
-                'Ordinary receipts require the final alpha.2 tag')
+        require(environment.get('GITHUB_REF') == 'refs/tags/' + tag,
+                'Ordinary receipts require the current checkout release tag')
         require(tooling == expected_source, 'Ordinary tag tooling must match the product source')
     require(environment.get('GITHUB_SHA') == tooling, 'Actual workflow source differs from its declared tooling source')
     return {
@@ -91,7 +93,7 @@ def _context(expected_source, environment):
         'mode': 'recovery' if recovery else 'tag',
         'source_revision': expected_source,
         'workflow_source_revision': tooling,
-        'tag': TAG,
+        'tag': tag,
         'release_id': _release_id(environment, recovery),
         'run_id': environment.get('GITHUB_RUN_ID') or None,
         'run_attempt': environment.get('GITHUB_RUN_ATTEMPT') or None,
@@ -142,8 +144,9 @@ def _git(root, *arguments, ancestor=False):
 
 
 def authority(expected_source, root=None):
-    context = _context(expected_source, os.environ)
     root = Path(root).resolve() if root is not None else ROOT
+    version = None if os.environ.get('DZC_RELEASE_RECOVERY') == '1' else release_version(root)
+    context = _context(expected_source, os.environ, version)
     head = _git(root, 'rev-parse', 'HEAD').strip()
     status = _git(root, 'status', '--porcelain=v1', '--untracked-files=no')
     if context['mode'] == 'tag':

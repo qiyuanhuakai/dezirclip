@@ -169,6 +169,11 @@ print(json.dumps(proof))
                     self.assertEqual(destination.read_bytes(),b'')
                     source_bind=command.index(str(source))
                     self.assertEqual(command[source_bind-1:source_bind+2],['--ro-bind',str(source),'/fixture-bin'])
+                    self.assertEqual((source/'release_version.py').read_bytes(),(identity.ROOT/'scripts/release_version.py').read_bytes())
+                    self.assertEqual((source/'package.json').read_bytes(),(identity.ROOT/'package.json').read_bytes())
+                    manifest_bind=command.index(str(source/'package.json'))
+                    self.assertEqual(command[manifest_bind-1:manifest_bind+2],['--ro-bind',str(source/'package.json'),'/package.json'])
+                    self.assertEqual(command.count('/package.json'),1)
                     driver_bind=command.index('/usr/bin/WebKitWebDriver')
                     self.assertGreater(driver_bind,source_bind)
                     self.assertEqual(command[driver_bind-1:driver_bind+2],['--ro-bind','/usr/bin/WebKitWebDriver','/fixture-bin/WebKitWebDriver'])
@@ -239,6 +244,22 @@ print(json.dumps(proof))
     def test_exact_four_standalone_and_ten_distinct_containers(self):
         assets=[asset for target in identity.TARGETS for group in identity.expected_assets(target) for asset in ([group] if isinstance(group,str) else group)]
         self.assertEqual(len(assets),14);self.assertEqual(len(set(assets)),14)
+
+    def test_alpha3_catalog_uses_current_version_and_rpm_release(self):
+        with patch.object(identity, 'VERSION', '0.2.0-alpha.3'):
+            for target in identity.TARGETS:
+                standalone, containers = identity.expected_assets(target)
+                self.assertIn('0.2.0-alpha.3', standalone)
+                self.assertTrue(all('0.2.0-alpha.3' in name or '0.2.0-0.alpha.3.' in name
+                                    for name in containers))
+                if target.startswith('linux-'):
+                    arch = 'aarch64' if target.endswith('aarch64') else 'x86_64'
+                    self.assertIn(f'DezirClip-0.2.0-0.alpha.3.{arch}.rpm', containers)
+                for role in identity.ROLES:
+                    identity.validate_info(info(role,target),role,target,REVISION)
+                    stale=info(role,target);stale['component_version']='0.2.0-alpha.2'
+                    with self.assertRaises(ValueError):
+                        identity.validate_info(stale,role,target,REVISION)
 
     def test_actual_schema_inventory_source_and_types_are_required(self):
         for target in identity.TARGETS:

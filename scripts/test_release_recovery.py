@@ -3,14 +3,16 @@ import unittest
 from release_recovery import (
     RELEASE_ID, SOURCE, TAG, WORKFLOW_REF, _changes, _checkout, _context,
 )
+from release_version import release_version
 
 
 TOOLING = 'b' * 40
 
 
-def normal():
+def normal(version=None):
     return {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted',
-            'GITHUB_REPOSITORY': 'qiyuanhuakai/dezirclip', 'GITHUB_REF': 'refs/tags/' + TAG,
+            'GITHUB_REPOSITORY': 'qiyuanhuakai/dezirclip',
+            'GITHUB_REF': 'refs/tags/v' + (release_version() if version is None else version),
             'GITHUB_SHA': SOURCE}
 
 
@@ -29,7 +31,7 @@ class AuthorityContextTests(unittest.TestCase):
     def test_ordinary_tag_keeps_existing_minimal_context(self):
         value = _context(SOURCE, normal())
         self.assertEqual(value, {'schema_version': 1, 'mode': 'tag', 'source_revision': SOURCE,
-                                'workflow_source_revision': SOURCE, 'tag': TAG, 'release_id': None,
+                                'workflow_source_revision': SOURCE, 'tag': 'v' + release_version(), 'release_id': None,
                                 'run_id': None, 'run_attempt': None})
 
     def test_ordinary_tag_keeps_actual_optional_run_values(self):
@@ -37,6 +39,23 @@ class AuthorityContextTests(unittest.TestCase):
                        'DZC_RECEIPT_RELEASE_ID': '123'}
         value = _context(SOURCE, environment)
         self.assertEqual((value['release_id'], value['run_id'], value['run_attempt']), (123, '42', '2'))
+
+    def test_alpha3_ordinary_context_binds_current_version_and_actual_source(self):
+        environment = {**normal('0.2.0-alpha.3'), 'GITHUB_SHA': TOOLING,
+                       'DZC_RELEASE_VERSION': '0.2.0-alpha.2'}
+        value = _context(TOOLING, environment, '0.2.0-alpha.3')
+        self.assertEqual((value['tag'], value['source_revision'], value['workflow_source_revision']),
+                         ('v0.2.0-alpha.3', TOOLING, TOOLING))
+        for field, invalid in [('GITHUB_REF', 'refs/tags/v0.2.0-alpha.2'),
+                               ('GITHUB_SHA', SOURCE), ('DZC_RELEASE_TOOLING_SOURCE', SOURCE)]:
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                _context(TOOLING, {**environment, field: invalid}, '0.2.0-alpha.3')
+
+    def test_alpha3_does_not_expand_fixed_alpha2_recovery(self):
+        value = _context(SOURCE, recovery(), '0.2.0-alpha.3')
+        self.assertEqual((value['tag'], value['release_id']), (TAG, RELEASE_ID))
+        with self.assertRaises(ValueError):
+            _context(TOOLING, recovery(), '0.2.0-alpha.3')
 
     def test_ordinary_tag_rejects_false_authority_and_wrong_source(self):
         wrong = {'GITHUB_ACTIONS': 'false', 'RUNNER_ENVIRONMENT': 'self-hosted',
@@ -133,6 +152,7 @@ class ImmutableCheckoutTests(unittest.TestCase):
     def test_product_and_unlisted_receipt_changes_are_rejected(self):
         paths = ['src/App.tsx', 'src-tauri/tauri.conf.json', 'src-tauri/src/main.rs', 'Cargo.toml',
                  'Cargo.lock', 'crates/dzc-core/src/lib.rs', 'scripts/unreviewed-receipt.py',
+                 'scripts/release_version.py', 'scripts/tests/test_release_version.py',
                  '.github/workflows/unknown.yml', '../scripts/release_recovery.py']
         for path in paths:
             with self.subTest(path=path), self.assertRaises(ValueError):

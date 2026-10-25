@@ -3,17 +3,19 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { makeManifest, verifyTauriSignature } from './updater-release.mjs';
+import { makeManifest, parseVersion, verifyTauriSignature } from './updater-release.mjs';
 
-export const version = '0.2.0-alpha.2';
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export const version = parseVersion(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version).value;
 const repository = 'qiyuanhuakai/dezirclip';
 const filename = 'DezirClip_' + version + '_x64-setup.exe';
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const maximum = 512 * 1024 * 1024;
 export const oldPackages = Object.freeze({
   LegacyToAlpha2: { version: '0.1.20', sha256: 'd20033124c74bea451301716afb46623607602bae37647748ae7d25ab7dd4b8e' },
   PublishedAlphaToAlpha2: { version: '0.2.0-alpha.1', sha256: '31d8b88064e1185c9f74b5fdd327902b9bc860e523b9a5ac0d71620ec7adbb87',
     source_revision: '90ba9960744b6cd57caaaf597f68533a7e41be45' },
+  PublishedAlpha2ToRelease: { version: '0.2.0-alpha.2', sha256: '9e96fcd49e4e36c903edd19a1424856383e229ea131f455fbabdcf816622db05',
+    source_revision: '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae' },
 });
 export const updaterNames = ['x64-setup.exe', 'arm64-setup.exe', 'amd64.AppImage', 'aarch64.AppImage']
   .flatMap(suffix => ['DezirClip_' + version + '_' + suffix, 'DezirClip_' + version + '_' + suffix + '.sig']);
@@ -61,6 +63,8 @@ export function assertAuthority(env, source, releaseId, platform, arch, native =
   requireValue(/^[a-f0-9]{40}$/.test(source) && /^[1-9]\d*$/.test(releaseId), 'Final source/release identity is invalid');
   requireValue(!env.DZC_RELEASE_RECOVERY || ['0', '1'].includes(env.DZC_RELEASE_RECOVERY), 'Invalid release recovery mode');
   if (env.DZC_RELEASE_RECOVERY === '1') {
+    requireValue(version === '0.2.0-alpha.2' && source === '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae'
+      && releaseId === '422045565', 'Recovery remains limited to the original alpha.2 product and draft release');
     requireValue(env.GITHUB_EVENT_NAME === 'workflow_dispatch'
       && env.GITHUB_REF === 'refs/heads/master'
       && env.GITHUB_WORKFLOW_REF === repository + '/.github/workflows/release.yml@refs/heads/master'
@@ -363,6 +367,20 @@ export function validateInfo(info, role, source) {
   requireValue(Array.isArray(info.linked_components) && info.linked_components.length === names.length
     && names.every(name => info.linked_components.filter(item => item?.component === name && item.version === version).length === 1), 'Actual installed linked inventory differs');
 }
+export function validateHistoricalInfo(info, scenario) {
+  const old = oldPackages[scenario];
+  requireValue(old?.source_revision, 'A pinned historical BuildInfo source is required');
+  const alpha2 = scenario === 'PublishedAlpha2ToRelease';
+  const names = ['dzc-core', 'dzc-platform', 'dzc-protocol', ...(alpha2 ? ['dzc-host'] : [])];
+  requireValue(info?.component === 'cli' && info.component_version === old.version && info.source_revision === old.source_revision
+    && info.build_id === old.version + '@' + old.source_revision && info.source_state === 'verified_checkout'
+    && info.database_schema_version === (alpha2 ? 24 : 21) && info.target === 'x86_64-pc-windows-msvc'
+    && Array.isArray(info.linked_components) && info.linked_components.length === names.length
+    && names.every(name => info.linked_components.filter(item => item?.component === name && item.version === old.version).length === 1),
+  'Actual historical CLI source/schema/inventory differs');
+  if (alpha2) requireValue(info.metadata_version === 1 && ['local_git', 'explicit_checkout'].includes(info.revision_origin)
+    && info.protocol_version?.major === 1 && info.protocol_version?.minor === 0, 'Actual historical alpha.2 metadata/protocol differs');
+}
 export function validateNative(report, inputs, extracted) {
   requireValue(report?.schema_version === 1 && report.kind === 'release_windows_upgrade_native' && report.status === 'passed'
     && report.failure === null && report.version === version && report.source_revision === inputs.source_revision
@@ -402,8 +420,10 @@ export function validateNative(report, inputs, extracted) {
   const oldProfile = evidence('actual_old_profile_created');
   requireValue(equal(oldProfile.actual, report.old_profile) && oldProfile.backup_sha256 === report.old_profile_backup_sha256
     && /^[a-f0-9]{64}$/.test(oldProfile.backup_sha256) && report.old_profile.status === 'passed'
-    && Number.isInteger(report.old_profile.schema_version) && report.old_profile.schema_version > 0 && report.old_profile.schema_version <= 21
-    && (inputs.scenario !== 'PublishedAlphaToAlpha2' || report.old_profile.schema_version === 21), 'Actual original profile and backup are missing');
+    && Number.isInteger(report.old_profile.schema_version)
+    && (inputs.scenario === 'PublishedAlpha2ToRelease' ? report.old_profile.schema_version === 24
+      : report.old_profile.schema_version > 0 && report.old_profile.schema_version <= 21
+        && (inputs.scenario !== 'PublishedAlphaToAlpha2' || report.old_profile.schema_version === 21)), 'Actual original profile and backup are missing');
   const frozen = report.old_profile.frozen_preferences;
   requireValue(Object.keys(frozen ?? {}).sort().join(',') === ['app.classification_enabled', 'app.hidden_filter_chips', 'app.ocr_enabled', 'app.quick_paste_hotkey', 'app.screenshot_enabled'].join(','), 'All five frozen preferences are required');
   const marker = report.old_profile.marker;
@@ -438,7 +458,7 @@ export function validateNative(report, inputs, extracted) {
     'seed-owned-old-profile', 'install-final-release-upgrade', 'final-cli-build-info', 'final-service-build-info', 'final-cli-retained-history',
     'upgraded-profile-check', 'configure-final-webview', 'actual-final-gui', 'inspect-final-webview-token',
     'actual-final-gui-bridge', 'restore-final-webview', 'after-gui-profile-check', 'uninstall-actual-final-release',
-    'uninstalled-profile-check', ...(inputs.scenario === 'PublishedAlphaToAlpha2' ? ['old-cli-build-info'] : [])];
+    'uninstalled-profile-check', ...(inputs.old.source_revision ? ['old-cli-build-info'] : [])];
   requireValue(equal(report.processes.map(item => item.label).sort(), labels.sort()), 'A required actual native process observation is missing');
   requireValue(report.gui_process_identity?.verified === true && report.gui_exit?.original_process_exited === true
     && report.gui_exit.cdp_port_released === true && Array.isArray(report.cleanup) && report.cleanup.every(item => !item.error), 'GUI identity, shutdown or cleanup is incomplete');
@@ -470,7 +490,7 @@ function observedReport(source, releaseId, directory, expectedHash, context) {
     'profile-check.py', 'upgraded-profile.json', 'final-gui-evidence.json', 'final-gui-input.json', 'final-gui-process-identity.json',
     'nsis-listing.txt', 'windows-settings-original.json', 'windows-settings-before-upgrade.json', 'windows-settings-after-upgrade.json',
     'windows-settings-after-uninstall.json', 'explorer-before-upgrade.json', 'explorer-after-upgrade.json', 'explorer-after-uninstall.json'];
-  if (inputs.scenario === 'PublishedAlphaToAlpha2') files.push('old-build-info.json');
+  if (inputs.old.source_revision) files.push('old-build-info.json');
   const evidence_files = files.map(name => {
     const bytes = regular(owned(join(directory, name)));
     return { name, bytes: bytes.length, sha256: sha256(bytes) };
@@ -505,14 +525,10 @@ function observedReport(source, releaseId, directory, expectedHash, context) {
   ];
   for (const [name, expected] of comparisons) requireValue(equal(JSON.parse(regular(join(directory, name), 8 * 1024 * 1024)), expected), 'Retained evidence differs from its native observation: ' + name);
   requireValue(regular(join(directory, 'old-cli-version.stdout.log')).toString('utf8').trim() === 'dzc ' + inputs.old.version, 'Original historical CLI stdout differs');
-  if (inputs.scenario === 'PublishedAlphaToAlpha2') {
+  if (inputs.old.source_revision) {
     const oldInfo = JSON.parse(regular(join(directory, 'old-build-info.json')));
-    requireValue(equal(oldInfo, JSON.parse(regular(join(directory, 'old-cli-build-info.stdout.log'))))
-      && oldInfo.component === 'cli' && oldInfo.component_version === inputs.old.version && oldInfo.source_revision === inputs.old.source_revision
-      && oldInfo.build_id === inputs.old.version + '@' + inputs.old.source_revision && oldInfo.source_state === 'verified_checkout'
-      && oldInfo.database_schema_version === 21 && oldInfo.target === 'x86_64-pc-windows-msvc'
-      && Array.isArray(oldInfo.linked_components) && oldInfo.linked_components.length === 3
-      && ['dzc-core', 'dzc-platform', 'dzc-protocol'].every(name => oldInfo.linked_components.filter(item => item.component === name && item.version === inputs.old.version).length === 1), 'Actual historical alpha.1 stdout/source/schema/inventory differs');
+    requireValue(equal(oldInfo, JSON.parse(regular(join(directory, 'old-cli-build-info.stdout.log')))), 'Actual historical CLI stdout differs');
+    validateHistoricalInfo(oldInfo, inputs.scenario);
   }
   return { schema_version: 1, kind: 'release_windows_upgrade_report', status: 'passed', version, source_revision: source,
     ...workflowFields(context), release_id: Number(releaseId), scenario: inputs.scenario, policy_sha256: expectedHash, old: inputs.old,
@@ -525,8 +541,8 @@ function seal(source, releaseId, directory) {
   save(join(directory, 'report.json'), observedReport(source, releaseId, directory, inputs.policy_sha256, context));
 }
 export function combine(reports, source, releaseId, expectedPolicy) {
-  requireValue(/^[a-f0-9]{64}$/.test(expectedPolicy) && reports.length === 2
-    && new Set(reports.map(item => item.value.scenario)).size === 2, 'Both published upgrade scenarios are required');
+  requireValue(/^[a-f0-9]{64}$/.test(expectedPolicy) && reports.length === Object.keys(oldPackages).length
+    && new Set(reports.map(item => item.value.scenario)).size === Object.keys(oldPackages).length, 'All pinned published upgrade scenarios are required');
   for (const { value: report, sha256: digest } of reports) requireValue(report?.schema_version === 1
     && report.kind === 'release_windows_upgrade_report' && Object.hasOwn(oldPackages, report.scenario) && report.status === 'passed'
     && report.version === version && report.source_revision === source && report.release_id === Number(releaseId)
@@ -538,9 +554,9 @@ export function combine(reports, source, releaseId, expectedPolicy) {
     validateAssets(report.signed_assets);
     for (const role of Object.keys(roleFiles)) validateInfo(report.roles?.[role], role, source);
   }
-  requireValue(equal(reports[0].value.signed_assets, reports[1].value.signed_assets), 'Scenarios observed different release asset identities');
+  requireValue(reports.every(item => equal(reports[0].value.signed_assets, item.value.signed_assets)), 'Scenarios observed different release asset identities');
   const workflowSource = workflowIdentity(reports[0].value);
-  requireValue(workflowIdentity(reports[1].value) === workflowSource, 'Scenarios observed different workflow source identities');
+  requireValue(reports.every(item => workflowIdentity(item.value) === workflowSource), 'Scenarios observed different workflow source identities');
   return { schema_version: 1, kind: 'windows_upgrade', status: 'passed', version, source_revision: source,
     ...(workflowSource ? { workflow_source_revision: workflowSource } : {}), release_id: Number(releaseId), policy_sha256: expectedPolicy, signed_assets: reports[0].value.signed_assets,
     checks: reports.map(({ value: report, sha256: digest }) => ({ name: report.scenario, status: 'passed', report_sha256: digest,

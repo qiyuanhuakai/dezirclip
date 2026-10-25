@@ -74,14 +74,20 @@ class UpgradeSourceContract(unittest.TestCase):
     def test_historical_package_and_actual_database_identity_are_required(self):
         for required in ('d20033124c74bea451301716afb46623607602bae37647748ae7d25ab7dd4b8e',
                          '31d8b88064e1185c9f74b5fdd327902b9bc860e523b9a5ac0d71620ec7adbb87',
-                         '90ba9960744b6cd57caaaf597f68533a7e41be45', '$oldInfo.database_schema_version -ne 21',
-                         '@($oldInfo.linked_components).Count -ne 3', 'original_installer_hash', 'old-cli-create-profile'):
+                         '90ba9960744b6cd57caaaf597f68533a7e41be45',
+                         '9e96fcd49e4e36c903edd19a1424856383e229ea131f455fbabdcf816622db05',
+                         '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae', '$oldInfo.database_schema_version -ne $oldSchema',
+                         '@($oldInfo.linked_components).Count -ne $oldLinked.Count', 'original_installer_hash', 'old-cli-create-profile'):
             self.assertIn(required, SOURCE)
         self.assertIn("assert database.is_file() and not database.is_symlink()", PROFILE)
         self.assertIn("assert version==21", PROFILE)
         self.assertIn("assert version==24", PROFILE)
         self.assertIn("assert entry_id==before['marker']['id']", PROFILE)
         self.assertIn('connection.backup(backup)', PROFILE)
+        self.assertIn("$oldSchema = if ($inputs.scenario -ceq 'PublishedAlpha2ToRelease') { 24 } else { 21 }", SOURCE)
+        self.assertIn("if ($inputs.scenario -ceq 'PublishedAlpha2ToRelease') { $oldLinked += 'dzc-host' }", SOURCE)
+        self.assertIn("if inputs['scenario']=='PublishedAlpha2ToRelease': assert version==24", PROFILE)
+        self.assertIn('assert 0<version<=21', PROFILE)
 
     def test_embedded_python_parses_and_limits_mutation_to_seed(self):
         parents = {child: parent for parent in ast.walk(TREE) for child in ast.iter_child_nodes(parent)}
@@ -114,14 +120,20 @@ class UpgradeSourceContract(unittest.TestCase):
         self.assertNotIn('pull_request:', WORKFLOW)
         self.assertNotIn('\n  push:', WORKFLOW)
         self.assertIn('contents: read', WORKFLOW)
-        self.assertIn('scenario: [LegacyToAlpha2, PublishedAlphaToAlpha2]', WORKFLOW)
+        self.assertIn('scenario: [LegacyToAlpha2, PublishedAlphaToAlpha2, PublishedAlpha2ToRelease]', WORKFLOW)
         self.assertIn("python-version: '3.13.15'", WORKFLOW)
         self.assertIn('sqlite3.sqlite_version_info < (3, 50, 4)', WORKFLOW)
         self.assertEqual(WORKFLOW.count('GH_TOKEN:'), 2)
         native = WORKFLOW.split('- name: Execute the actual final NSIS upgrade and uninstall', 1)[1].split('- name: Preserve original native observations', 1)[0]
         self.assertNotIn('GH_TOKEN', native)
-        self.assertIn('pattern: release-windows-upgrade-*ToAlpha2-attempt-', WORKFLOW)
+        self.assertIn('pattern: release-windows-upgrade-*To*-attempt-', WORKFLOW)
         self.assertIn('if: always()', WORKFLOW)
+
+    def test_candidate_version_is_from_package_and_recovery_stays_fixed(self):
+        self.assertIn("(Join-Path $repository 'package.json')", SOURCE)
+        self.assertNotIn("$version = '0.2.0-alpha.2'", SOURCE)
+        self.assertIn("if ($version -cne '0.2.0-alpha.2'", SOURCE)
+        self.assertIn("$ExpectedReleaseId -cne '422045565'", SOURCE)
 
 
 if __name__ == '__main__':

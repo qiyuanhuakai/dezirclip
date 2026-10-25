@@ -23,6 +23,7 @@ MARKER = 'Synthetic clipboard acceptance; no production key or user profile.\n'
 OLD_RELEASES = {
     '0.1.20': 'da4abe1af820226ccf0cb8c40c8d7512b5ae3d7de89babcd1acecfd1ece9f0f0',
     '0.2.0-alpha.1': '660d8d73d9b719b5c7b92f471024a715eb61fa471b56cba7364edfa1c2464628',
+    '0.2.0-alpha.2': '2f1d91a027b447a2bfe259f29c896b62abda2a24bd5d1fda22bd831e376f81af',
 }
 NAMESPACES = ('user', 'pid', 'net')
 
@@ -47,8 +48,7 @@ def configure_headless_fixture(database):
             'scope': 'Existing user settings selected only in a synthetic headless Xvfb profile; product defaults are unchanged.'}
 
 
-def verify_build_set(cli_info, desktop_info, service_info, expected_revision):
-    version = '0.2.0-alpha.2'
+def verify_build_set(cli_info, desktop_info, service_info, expected_revision, version):
     components = [('cli', cli_info), ('desktop', desktop_info), ('service', service_info)]
     for role, info in components:
         names = ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')
@@ -82,27 +82,32 @@ def verify_build_set(cli_info, desktop_info, service_info, expected_revision):
             'service_started': False}
 
 
-def verify_previous_alpha(info):
-    revision = '90ba9960744b6cd57caaaf597f68533a7e41be45'
-    version = '0.2.0-alpha.1'
+def verify_previous_alpha(info, version='0.2.0-alpha.1'):
+    contracts = {
+        '0.2.0-alpha.1': ('90ba9960744b6cd57caaaf597f68533a7e41be45', 21,
+                          ('dzc-core', 'dzc-platform', 'dzc-protocol')),
+        '0.2.0-alpha.2': ('037f40cf014cd4bb3dce4a0a0c5cbcaee23affae', 24,
+                          ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')),
+    }
+    require(version in contracts, 'Unknown published alpha baseline.')
+    revision, schema, names = contracts[version]
     require(isinstance(info, dict) and info.get('component') == 'cli'
             and info.get('component_version') == version,
-            'The previous alpha must be the published alpha.1 CLI.')
+            'The previous alpha must be the selected published CLI.')
     require(info.get('source_revision') == revision and info.get('build_id') == version + '@' + revision
             and info.get('source_state') == 'verified_checkout',
             'Previous alpha source identity differs from the published release.')
     require(type(info.get('metadata_version')) is int and info['metadata_version'] == 1
-            and type(info.get('database_schema_version')) is int and info['database_schema_version'] == 21,
+            and type(info.get('database_schema_version')) is int and info['database_schema_version'] == schema,
             'Previous alpha metadata or database schema differs.')
     protocol = info.get('protocol_version')
     require(isinstance(protocol, dict) and protocol == {'major': 1, 'minor': 0}
             and all(type(protocol.get(key)) is int for key in ('major', 'minor')),
             'Previous alpha protocol differs.')
-    linked = [{'component': name, 'version': version}
-              for name in ('dzc-core', 'dzc-platform', 'dzc-protocol')]
+    linked = [{'component': name, 'version': version} for name in names]
     require(info.get('target') == 'x86_64-unknown-linux-gnu' and info.get('linked_components') == linked,
             'Previous alpha component set differs.')
-    return {'source_revision': revision, 'database_schema_version': 21, 'verified': True}
+    return {'source_revision': revision, 'database_schema_version': schema, 'verified': True}
 
 
 def digest(path):
@@ -135,6 +140,8 @@ if INSIDE:
     require(all(namespaces()[name] != HOST_NAMESPACES[name] for name in NAMESPACES),
             'The fixture requires private user, PID and network namespaces.')
 else:
+    from release_version import release_version
+    CANDIDATE_VERSION = release_version(SCRIPT.parent.parent)
     parser = argparse.ArgumentParser(description='Verify copied AppImages in isolated user, PID, network and desktop sessions.')
     parser.add_argument('--old-appimage', type=Path, required=True)
     parser.add_argument('--previous-release', choices=tuple(OLD_RELEASES), default='0.1.20')
@@ -151,8 +158,8 @@ else:
     DRIVER = options.webkit_driver.resolve(strict=True)
     require(digest(SOURCE) == OLD_RELEASES[options.previous_release],
             'The old AppImage must match the selected, pinned official release SHA256.')
-    require(CANDIDATE.name == 'DezirClip_0.2.0-alpha.2_amd64.AppImage',
-            'Only the explicit alpha.2 candidate is accepted.')
+    require(CANDIDATE.name == f'DezirClip_{CANDIDATE_VERSION}_amd64.AppImage',
+            'Only the current checkout version candidate is accepted.')
     if options.source_revision:
         require(re.fullmatch('[0-9a-fA-F]{40}', options.source_revision), 'Use a full source commit label.')
     decoded_key = base64.b64decode(PUBLIC_KEY.read_text().strip(), validate=True).splitlines()
@@ -216,7 +223,7 @@ def request(port, route, data=None, method=None):
     except HTTPError as error:
         raise RuntimeError(error.read().decode()) from error
 
-def inside(mode):
+def inside(mode, candidate_version):
     os.environ['DEZIRCLIP_DB_PATH'] = str(SCENARIO / 'profile/data/io.github.qiyuanhuakai.dezirclip/clipboard.db')
     if mode == 'old':
         cli = extract('old')
@@ -224,22 +231,23 @@ def inside(mode):
         previous = os.environ['DEZIRCLIP_ACCEPTANCE_PREVIOUS_RELEASE']
         require(previous in OLD_RELEASES and version.strip() == 'dzc ' + previous,
                 f'Unexpected old CLI version: {version}')
-        if previous == '0.2.0-alpha.1':
+        if previous != '0.1.20':
             info = json.loads(subprocess.check_output([cli, 'build-info', '--json'], text=True))
-            verify_previous_alpha(info)
+            previous_info = verify_previous_alpha(info, previous)
             (SCENARIO / 'old-cli-build-info.json').write_text(json.dumps(info, indent=2))
         run([cli, 'add', 'nativeappimagefixturemarker'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if previous == '0.2.0-alpha.1':
+        if previous != '0.1.20':
             with closing(sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH'])) as connection:
                 schema = connection.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0]
-            require(schema == 21, 'Published alpha.1 must seed the actual schema 21 database.')
+            require(schema == previous_info['database_schema_version'],
+                    'Published alpha must seed its actual pinned database schema.')
         settings = configure_headless_fixture(Path(os.environ['DEZIRCLIP_DB_PATH']))
         (SCENARIO / 'headless-settings.json').write_text(json.dumps(settings, indent=2))
         print(json.dumps({'old_version': version.strip(), 'history_seeded': True}))
         return
     cli = extract(mode)
     version = subprocess.check_output([cli, '--version'], text=True)
-    require(version.strip() == 'dzc 0.2.0-alpha.2', f'Unexpected candidate CLI version: {version}')
+    require(version.strip() == 'dzc ' + candidate_version, f'Unexpected candidate CLI version: {version}')
     history = subprocess.check_output([cli, 'search', 'nativeappimagefixturemarker', '--metadata', '--json'], text=True)
     require('nativeappimagefixturemarker' in history, 'Candidate CLI did not preserve synthetic old history.')
     (SCENARIO / 'new-history.json').write_text(history)
@@ -297,7 +305,7 @@ def inside(mode):
             desktop_info = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("get_build_info").then(done).catch(e=>done({error:String(e)}));', 'args': []})
             (SCENARIO / (mode + '-desktop-build-info.json')).write_text(json.dumps(desktop_info, indent=2))
             build_set = verify_build_set(cli_info, desktop_info, service_info,
-                                         os.environ.get('DEZIRCLIP_ACCEPTANCE_SOURCE_REVISION', ''))
+                                         os.environ.get('DEZIRCLIP_ACCEPTANCE_SOURCE_REVISION', ''), candidate_version)
             (SCENARIO / (mode + '-build-set.json')).write_text(json.dumps(build_set, indent=2))
             support = request(port, route + '/execute/async', {'script': 'const done=arguments[arguments.length-1]; window.__TAURI_INTERNALS__.invoke("get_update_support").then(done).catch(e=>done({error:String(e)}));', 'args': []})
             expected = 'app_image_read_only' if mode == 'new-read-only' else 'app_image'
@@ -338,9 +346,11 @@ def outside():
     inputs = {'old': SOURCE, 'candidate': CANDIDATE, 'signature': signature,
               'public_key': PUBLIC_KEY, 'helper': HELPER, 'webdriver': DRIVER}
     tool_sources = [SCRIPT, *(SCRIPT.parent / 'native-updater-fixture' / name
-                             for name in ('Cargo.toml', 'Cargo.lock', 'src/main.rs'))]
+                             for name in ('Cargo.toml', 'Cargo.lock', 'src/main.rs')),
+                    SCRIPT.parent / 'release_version.py', SCRIPT.parent.parent / 'package.json']
     report = {'schema_version': 1, 'started_at': datetime.now(timezone.utc).isoformat(),
               'source_revision_label': options.source_revision, 'previous_release': options.previous_release,
+              'candidate_version': CANDIDATE_VERSION,
               'status': 'running',
               'host': platform.platform(), 'python': sys.version,
               'inputs': {}, 'tool_sources': {}, 'host_namespaces': HOST_NAMESPACES,
@@ -354,16 +364,16 @@ def outside():
 
     save_report()
     commands = [
-        ('old', ['/usr/bin/python3', '/fixture-bin/acceptance.py', 'old'], False),
+        ('old', ['/usr/bin/python3', '/fixture-bin/acceptance.py', 'old', CANDIDATE_VERSION], False),
         ('read-only', ['/fixture-bin/updater', str(SCENARIO), '--read-only'], True),
         ('replace', ['/fixture-bin/updater', str(SCENARIO)], False),
-        ('new', ['/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24', '/usr/bin/dbus-run-session', '--', '/usr/bin/python3', '/fixture-bin/acceptance.py', 'new'], False),
-        ('new-read-only', ['/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24', '/usr/bin/dbus-run-session', '--', '/usr/bin/python3', '/fixture-bin/acceptance.py', 'new-read-only'], False),
+        ('new', ['/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24', '/usr/bin/dbus-run-session', '--', '/usr/bin/python3', '/fixture-bin/acceptance.py', 'new', CANDIDATE_VERSION], False),
+        ('new-read-only', ['/usr/bin/xvfb-run', '-a', '-s', '-screen 0 1280x900x24', '/usr/bin/dbus-run-session', '--', '/usr/bin/python3', '/fixture-bin/acceptance.py', 'new-read-only', CANDIDATE_VERSION], False),
     ]
     try:
         report['inputs'] = {name: {'path': str(path), 'bytes': path.stat().st_size, 'sha256': digest(path)}
                             for name, path in inputs.items()}
-        report['tool_sources'] = {str(path.relative_to(SCRIPT.parent)): digest(path) for path in tool_sources}
+        report['tool_sources'] = {os.path.relpath(path, SCRIPT.parent): digest(path) for path in tool_sources}
         for source, destination in [(SOURCE, SCENARIO / 'current.AppImage'),
                                     (CANDIDATE, SCENARIO / CANDIDATE.name),
                                     (signature, SCENARIO / (CANDIDATE.name + '.sig')),
@@ -402,7 +412,7 @@ def outside():
         for name, path in inputs.items():
             require(digest(path) == report['inputs'][name]['sha256'], f'Original input changed during acceptance: {name}')
         for path in tool_sources:
-            require(digest(path) == report['tool_sources'][str(path.relative_to(SCRIPT.parent))],
+            require(digest(path) == report['tool_sources'][os.path.relpath(path, SCRIPT.parent)],
                     f'Tool source changed during acceptance: {path.name}')
         report['status'] = 'passed'
     except BaseException as error:
@@ -417,7 +427,9 @@ def outside():
 
 
 if INSIDE:
-    require(len(sys.argv) == 2 and sys.argv[1] in {'old', 'new', 'new-read-only'}, 'Unknown inside scenario.')
-    inside(sys.argv[1])
+    require(len(sys.argv) == 3 and sys.argv[1] in {'old', 'new', 'new-read-only'}, 'Unknown inside scenario.')
+    require(re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:alpha|beta|rc)\.(?:0|[1-9][0-9]*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?', sys.argv[2]),
+            'Inside candidate version must match the explicit release version contract.')
+    inside(sys.argv[1], sys.argv[2])
 else:
     outside()
