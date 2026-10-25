@@ -51,6 +51,7 @@ import { useOverlays } from "./shared/hooks/useOverlays";
 import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import { usePrivacySession } from "./shared/hooks/usePrivacySession";
+import { usePreviewPreferences } from "./shared/hooks/usePreviewPreferences";
 import { beginPrivacyAccess, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "./shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
@@ -63,6 +64,7 @@ const SCROLL_TOP_BUTTON_THRESHOLD_PX = 200;
 
 const App = () => {
   const privacyState = usePrivacySession();
+  const { preferences: previewPreferences } = usePreviewPreferences();
   const appState = useAppState();
   const {
     showSettings,
@@ -740,6 +742,7 @@ const App = () => {
     privacyProtection,
     revealedIds,
     isKeyboardMode,
+    previewKeyboardEnabled: previewPreferences.keyboardEnabled,
     selectedIndex,
     isWindowPinned,
     editingTagsId,

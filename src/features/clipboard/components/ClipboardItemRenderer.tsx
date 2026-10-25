@@ -29,6 +29,7 @@ export interface ClipboardItemRendererProps {
     item: ClipboardEntry;
     index: number;
     isSelected: boolean;
+    previewFromKeyboard?: boolean;
     windowPinned: boolean;
     isSensitiveHidden: boolean;
     isRevealed: boolean;
@@ -70,6 +71,7 @@ const ClipboardItemRenderer = ({
     item,
     index,
     isSelected,
+    previewFromKeyboard = false,
     windowPinned,
     isSensitiveHidden,
     isRevealed,
@@ -275,6 +277,7 @@ const ClipboardItemRenderer = ({
             id={`clipboard-item-${itemId}`}
             item={isRevealed && detail ? detail : sensitive ? concealSensitiveEntry(item) : resourcePreview ?? item}
             isSelected={isSelected}
+            previewFromKeyboard={previewFromKeyboard}
             windowPinned={windowPinned}
             isSensitiveHidden={isSensitiveHidden || (sensitive && !detail)}
             isRevealed={isRevealed && !!detail}
