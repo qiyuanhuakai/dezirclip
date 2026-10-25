@@ -77,6 +77,10 @@ const CompactPreviewWindow = () => {
     const payloadRef = useRef<PreviewPayload | null>(null);
     payloadRef.current = payload;
     const lastRequest = useRef<PreviewRequest | null>(null);
+    const notifyPayloadInvalidated = () => {
+        const requestId = lastRequest.current?.requestId;
+        if (requestId) void emitTo("main", "compact-preview-failed", { requestId }).catch(() => undefined);
+    };
     const [concealed, setConcealed] = useState(false);
     const [presented, setPresented] = useState(false);
     const [pinPending, setPinPending] = useState(false);
@@ -100,6 +104,7 @@ const CompactPreviewWindow = () => {
     const [previewListenerReady, setPreviewListenerReady] = useState(false);
     useEffect(() => subscribePrivacyInvalidation(scope => {
         if (pinned && scope === "reveal" && payloadRef.current && !payloadRef.current.protectedContent) return;
+        notifyPayloadInvalidated();
         payloadSequence.current += 1;
         setPreviewRequest(null);
         setPayload(null);
@@ -110,9 +115,12 @@ const CompactPreviewWindow = () => {
         if (!previewRequest) return;
         const { value: request, sequence } = previewRequest;
         let disposed = false;
+        let releasePreparation: (() => void) | null = null;
         void (async () => {
             const access = await prepareOwnedPreview(request.privacyEpoch,
                 () => !disposed && sequence === payloadSequence.current, request.allowSensitive);
+            releasePreparation = access.release;
+            if (disposed) { releasePreparation(); return; }
             if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
             const fullContent = pinned || request.allowSensitive;
             const entry = await invokePrivacyBound<ClipboardEntry>(fullContent ? "get_privacy_entry" : "get_history_resource_preview",
@@ -133,7 +141,7 @@ const CompactPreviewWindow = () => {
             if (pinned) { setConcealed(true); setActionFailed(true); }
             void emitTo("main", "compact-preview-failed", { requestId: request.requestId }).catch(() => undefined);
         });
-        return () => { disposed = true; };
+        return () => { disposed = true; releasePreparation?.(); };
     }, [previewRequest]);
     useEffect(() => {
         if (previewListenerReady) void emitTo("main", "compact-preview-mounted", { label: getCurrentWindow().label }).catch(() => undefined);
@@ -197,6 +205,7 @@ const CompactPreviewWindow = () => {
             if (!disposed) { setPayload(null); setPreviewRequest({ value: request, sequence }); }
         });
         const clear = () => {
+            notifyPayloadInvalidated();
             payloadSequence.current += 1;
             setPreviewRequest(null);
             setPayload(null);
@@ -219,6 +228,7 @@ const CompactPreviewWindow = () => {
         void Promise.all(subscriptions).then(() => { if (!disposed) setPreviewListenerReady(true); }).catch(() => undefined);
         return () => {
             disposed = true;
+            notifyPayloadInvalidated();
             payloadSequence.current += 1;
             subscriptions.forEach(subscription => { void subscription.then(stop => stop(), () => undefined); });
         };

@@ -19,17 +19,25 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
     const deadline = setTimeout(() => rejectLayout(new Error("PinnedPreviewTimeout")), 8000);
     let owned: InstanceType<typeof WebviewWindow> | null = null;
     let finished = false;
+    let invalidated = false;
+    const requireCurrent = () => { if (invalidated || !valid()) throw new Error("PreviewRequestExpired"); };
     const retainStop = (stop: () => void) => { if (finished) stop(); else stops.push(stop); };
     try {
         stops.push(await getCurrentWindow().listen<{ label: string }>("compact-preview-mounted", event => {
             if (event.payload?.label === label) { mounted = true; notifyMounted(); }
         }));
+        requireCurrent();
         stops.push(await getCurrentWindow().listen<PreviewLayout>("compact-preview-layout", event => {
             if (event.payload?.requestId === requestId) reportLayout(event.payload);
         }));
+        requireCurrent();
         stops.push(await getCurrentWindow().listen<{ requestId: string }>("compact-preview-failed", event => {
-            if (event.payload?.requestId === requestId) rejectLayout(new Error("PinnedPreviewUnavailable"));
+            if (event.payload?.requestId === requestId) {
+                invalidated = true;
+                rejectLayout(new Error("PinnedPreviewUnavailable"));
+            }
         }));
+        requireCurrent();
         owned = new WebviewWindow(label, {
             url: "index.html?window=compact-preview&pinned=true", title: "DezirClip",
             width: request.maxWidth, height: request.maxHeight,
@@ -49,15 +57,20 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
         await Promise.race([
             created, prepared.then(() => {})
         ]);
-        if (!valid()) throw new Error("PreviewRequestExpired");
+        requireCurrent();
         if (!mounted) await emitTo(label, "compact-preview-probe", null);
+        requireCurrent();
         await Promise.race([ready, prepared.then(() => {})]);
-        if (!valid()) throw new Error("PreviewRequestExpired");
+        requireCurrent();
         await emitTo(label, "compact-preview-update", { ...request, requestId, pinned: true });
+        requireCurrent();
         const measured = await prepared;
-        if (!valid() || !Number.isFinite(measured.width) || !Number.isFinite(measured.height)) throw new Error("PreviewRequestExpired");
+        requireCurrent();
+        if (!Number.isFinite(measured.width) || !Number.isFinite(measured.height)) throw new Error("PreviewRequestExpired");
         const monitor = await currentMonitor();
+        requireCurrent();
         const scale = monitor?.scaleFactor ?? await window.scaleFactor();
+        requireCurrent();
         const area = monitor?.workArea ?? { position: { x: 0, y: 0 }, size: { width: 1920, height: 1080 } };
         const size = new PhysicalSize(Math.round(Math.max(Math.min(320, request.maxWidth), Math.min(request.maxWidth, measured.width)) * scale),
             Math.round(Math.max(Math.min(180, request.maxHeight), Math.min(request.maxHeight, measured.height)) * scale));
@@ -65,13 +78,15 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
             Math.max(area.position.x, Math.min(origin.x, area.position.x + area.size.width - size.width)),
             Math.max(area.position.y, Math.min(origin.y, area.position.y + area.size.height - size.height)));
         await window.setPosition(position);
+        requireCurrent();
         await window.setSize(size);
-        if (!valid()) throw new Error("PreviewRequestExpired");
+        requireCurrent();
         await window.setAlwaysOnTop(true);
-        if (!valid()) throw new Error("PreviewRequestExpired");
+        requireCurrent();
         await window.show();
-        if (!valid()) throw new Error("PreviewRequestExpired");
+        requireCurrent();
         await emitTo(label, "compact-preview-presented", { requestId });
+        requireCurrent();
     } catch (error) {
         if (owned) await owned.close().catch(() => undefined);
         throw error;

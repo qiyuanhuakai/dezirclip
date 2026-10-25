@@ -1,5 +1,5 @@
 export interface ResumeAuthority { instanceId: string; epoch: number }
-export interface ResumeAccess { epoch: number; isCurrent: () => boolean }
+export interface ResumeAccess { epoch: number; isCurrent: () => boolean; release?: () => void }
 export interface PreparedResume { requestId: number | null; authority: ResumeAuthority; isCurrent: () => boolean; isRequestCurrent: () => boolean }
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
@@ -20,17 +20,20 @@ export function createMainWindowResume(deps: {
   failed: (requestId: number | null) => void;
 }) {
   let revision = 0;
-  let active: { id: number | null } | null = null;
+  let active: { id: number | null; access?: ResumeAccess } | null = null;
   let latest = 0;
-  const cancel = () => { revision += 1; active = null; };
+  const cancel = () => { revision += 1; active?.access?.release?.(); active = null; };
   const run = async (requestId: number | null) => {
-      const owner = { id: requestId };
+      active?.access?.release?.();
+      const owner: { id: number | null; access?: ResumeAccess } = { id: requestId };
       active = owner;
       const request = ++revision;
       const current = () => revision === request && active === owner;
       deps.pending(requestId);
       try {
         const access = await deps.prepare(current);
+        owner.access = access;
+        if (!current()) { access.release?.(); return; }
         const authorized = () => current() && access.isCurrent();
         const before = readResumeAuthority(await deps.readAuthority());
         if (!authorized() || before.epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
@@ -39,6 +42,7 @@ export function createMainWindowResume(deps: {
         if (!authorized() || after.epoch !== before.epoch || after.instanceId !== before.instanceId) throw new Error("ClipboardHostInstanceChanged");
         deps.prepared({ requestId, authority: after, isCurrent: authorized, isRequestCurrent: current });
       } catch {
+        owner.access?.release?.();
         if (current()) { active = null; deps.failed(requestId); }
       }
   };
