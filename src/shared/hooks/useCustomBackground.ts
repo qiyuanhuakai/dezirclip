@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { resolveBuiltinTheme } from "../lib/themeRuntime";
@@ -8,13 +8,21 @@ interface UseCustomBackgroundOptions {
   customBackground: string;
   customBackgroundOpacity: number;
   theme: string;
+  onError: () => void;
 }
 
 export const useCustomBackground = ({
   customBackground,
   customBackgroundOpacity,
-  theme
+  theme,
+  onError
 }: UseCustomBackgroundOptions) => {
+  const reportError = useRef(onError);
+  reportError.current = onError;
+  useEffect(() => {
+    const opacity = Number.isFinite(customBackgroundOpacity) ? Math.min(100, Math.max(0, customBackgroundOpacity)) / 100 : 0.45;
+    document.documentElement.style.setProperty("--custom-bg-opacity", String(opacity));
+  }, [customBackgroundOpacity]);
   useEffect(() => {
     const root = document.documentElement;
     const body = document.body;
@@ -23,15 +31,23 @@ export const useCustomBackground = ({
     let stopBackgroundChanges: UnlistenFn | undefined;
     const apply = () => {
       const current = ++generation;
-      root.style.setProperty("--custom-bg-opacity", (customBackgroundOpacity / 100).toString());
       root.style.removeProperty("--custom-bg-image");
       body.classList.remove("has-custom-bg");
       if (customBackground && ["mica", "acrylic", "liquid-glass"].includes(resolveBuiltinTheme(theme))) {
-        void invoke<string>("get_custom_background_resource", { expectedPath: customBackground }).then(src => {
-          if (disposed || current !== generation || !/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src)) return;
+        void invoke<string>("get_custom_background_resource", { expectedPath: customBackground }).then(async src => {
+          if (disposed || current !== generation) return;
+          if (!/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src)) throw new Error("CustomBackgroundInvalidImage");
+          const image = new Image();
+          image.src = src;
+          await image.decode();
+          if (disposed || current !== generation) return;
           root.style.setProperty("--custom-bg-image", `url("${src}")`);
           body.classList.add("has-custom-bg");
-        }).catch(() => undefined);
+        }).catch((error: unknown) => {
+          if (disposed || current !== generation || error === "CustomBackgroundPending") return;
+          console.warn("Custom background could not be loaded");
+          reportError.current();
+        });
       }
     };
     const stop = subscribeCustomThemes(apply);
@@ -49,5 +65,5 @@ export const useCustomBackground = ({
       stop();
       stopBackgroundChanges?.();
     };
-  }, [customBackground, theme, customBackgroundOpacity]);
+  }, [customBackground, theme]);
 };

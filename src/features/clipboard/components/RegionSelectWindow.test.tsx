@@ -25,6 +25,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 const mockInvoke = vi.mocked(invoke);
+const originalDecode = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, "decode");
 let imageWidth = 1024;
 let imageHeight = 768;
 let sessionGeneration = 1;
@@ -65,7 +66,7 @@ describe("RegionSelectWindow", () => {
         const scale = await mockScaleFactor();
         imageWidth = Math.round(window.innerWidth * scale);
         imageHeight = Math.round(window.innerHeight * scale);
-        return { token: sessionGeneration === 1 ? "synthetic-session" : "synthetic-session-2", ...await mockOuterPosition(), scale, width: imageWidth, height: imageHeight, generation: sessionGeneration };
+        return { token: sessionGeneration === 1 ? "synthetic-session" : "synthetic-session-2", ...await mockOuterPosition(), scale, width: imageWidth, height: imageHeight, generation: sessionGeneration, presented: false };
       }
       if (command === "get_region_capture_frame") return new Uint8Array([137, 80, 78, 71]).buffer;
       return undefined;
@@ -79,6 +80,7 @@ describe("RegionSelectWindow", () => {
   // on what the user would see, and keeps the `waitFor` assertions below on
   // real timers.
   beforeAll(() => {
+    Object.defineProperty(HTMLImageElement.prototype, "decode", { configurable: true, value: () => Promise.resolve() });
     vi.spyOn(HTMLImageElement.prototype, "getBoundingClientRect").mockImplementation(() => new DOMRect(0, 0, window.innerWidth, window.innerHeight));
     vi.stubGlobal("Image", class {
       src = "";
@@ -98,6 +100,8 @@ describe("RegionSelectWindow", () => {
   });
 
   afterAll(() => {
+    if (originalDecode) Object.defineProperty(HTMLImageElement.prototype, "decode", originalDecode);
+    else Reflect.deleteProperty(HTMLImageElement.prototype, "decode");
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -218,7 +222,7 @@ describe("RegionSelectWindow", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     // The backend owns the hide so it can drop the fullscreen window's memory
     // target; hiding from here would leave that surface allocated.
-    expect(mockInvoke).toHaveBeenCalledWith("hide_region_select", { sessionToken: undefined });
+    expect(mockInvoke).toHaveBeenCalledWith("hide_region_select", { sessionToken: "synthetic-session" });
   });
 
   it("small selection is ignored (below MIN_SELECTION_SIZE)", async () => {
@@ -259,7 +263,7 @@ describe("RegionSelectWindow", () => {
     });
 
     // Cancel with ESC
-    act(() => {
+    await act(async () => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
     expect(onCancel).toHaveBeenCalledTimes(1);
