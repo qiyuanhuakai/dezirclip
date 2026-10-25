@@ -7,7 +7,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { assertAuthority, checkNames, combine, httpFailureDetails, inspectPe, mainWebviewTargets, nsisMembers, oldPackages, prepareFailure, releaseAssets,
-  safeFailureText, sha256, updaterNames, validateAssets, validateHistoricalInfo, validateInfo, validateNative, validateRecoveryAuthority, verifyDownloads, version } from '../release-windows-upgrade.mjs';
+  safeFailureText, sha256, updaterNames, validateAssets, validateHistoricalInfo, validateInfo, validateNative, validateNativeGuiVersion, validateRecoveryAuthority, verifyDownloads, version } from '../release-windows-upgrade.mjs';
+
+test('native GUI bridge accepts the managed release and binds it to verified CLI metadata', () => {
+  for (const expectedVersion of new Set([version, '0.2.0-alpha.1', '0.2.0-alpha.2'])) {
+    assert.doesNotThrow(() => validateNativeGuiVersion(expectedVersion, { component_version: expectedVersion }));
+    assert.throws(() => validateNativeGuiVersion(expectedVersion, { component_version: '0.0.0' }), /verified packaged CLI/);
+    assert.throws(() => validateNativeGuiVersion(expectedVersion, null), /verified packaged CLI/);
+  }
+  for (const unexpected of [null, 3, '', 'vv' + version, version + '-unmanaged']) {
+    assert.throws(() => validateNativeGuiVersion(unexpected, { component_version: unexpected }), /managed release/);
+  }
+});
 
 // Synthetic report observations test pure rejection contracts. Application
 // discovery extracts only its helper and never starts its empty fixture files.

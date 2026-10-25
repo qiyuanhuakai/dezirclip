@@ -7,6 +7,16 @@ import { makeManifest, parseVersion, verifyTauriSignature } from './updater-rele
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const version = parseVersion(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version).value;
+export function validateNativeGuiVersion(expectedVersion, expectedBuildInfo) {
+  // Ordinary installer CI builds these two synthetic labels with release:set-version.
+  // Final-package acceptance instead follows the same canonical current version.
+  if (![version, '0.2.0-alpha.1', '0.2.0-alpha.2'].includes(expectedVersion)) {
+    throw new Error('Native GUI version must match the managed release or an explicit installer fixture');
+  }
+  if (expectedBuildInfo?.component_version !== expectedVersion) {
+    throw new Error('Native GUI expectation differs from its independently verified packaged CLI');
+  }
+}
 const repository = 'qiyuanhuakai/dezirclip';
 const filename = 'DezirClip_' + version + '_x64-setup.exe';
 const maximum = 512 * 1024 * 1024;
