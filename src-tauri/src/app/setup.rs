@@ -639,15 +639,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
             if !settings.edge_docking.load(Ordering::Relaxed) {
                 if IS_HIDDEN.load(Ordering::Relaxed) {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        crate::app::webview_memory::restore_window_memory(
-                            &window,
-                            "edge-docking-disabled-show",
+                    if app_handle.get_webview_window("main").is_some() {
+                        crate::app::idle_destroyer::show_main_window_from_edge(
+                            &app_handle, None, false, "edge-docking-disabled-show",
                         );
-                        let _ = window.show();
-                        crate::app::idle_destroyer::notify_main_window_shown(&app_handle);
-                        IS_HIDDEN.store(false, Ordering::Relaxed);
-                        CURRENT_DOCK.store(0, Ordering::Relaxed);
                     }
                 }
                 continue;
@@ -788,43 +783,15 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         };
 
                         if dock_actual != DockPosition::None {
-                            crate::app::webview_memory::restore_window_memory(
-                                &window,
-                                "edge-dock-show",
+                            let target = match dock_actual {
+                                DockPosition::Top => Some(tauri::PhysicalPosition::new(rect.left, screen_top)),
+                                DockPosition::Left => Some(tauri::PhysicalPosition::new(screen_left, rect.top)),
+                                DockPosition::Right => Some(tauri::PhysicalPosition::new(screen_right - (rect.right - rect.left), rect.top)),
+                                _ => None,
+                            };
+                            crate::app::idle_destroyer::show_main_window_from_edge(
+                                &app_handle, target, false, "edge-dock-show",
                             );
-                            let _ = window.show();
-                            crate::app::idle_destroyer::notify_main_window_shown(&app_handle);
-                            match dock_actual {
-                                DockPosition::Top => {
-                                    let _ = window.set_position(tauri::Position::Physical(
-                                        tauri::PhysicalPosition {
-                                            x: rect.left,
-                                            y: screen_top,
-                                        },
-                                    ));
-                                }
-                                DockPosition::Left => {
-                                    let _ = window.set_position(tauri::Position::Physical(
-                                        tauri::PhysicalPosition {
-                                            x: screen_left,
-                                            y: rect.top,
-                                        },
-                                    ));
-                                }
-                                DockPosition::Right => {
-                                    let w = rect.right - rect.left;
-                                    let _ = window.set_position(tauri::Position::Physical(
-                                        tauri::PhysicalPosition {
-                                            x: screen_right - w,
-                                            y: rect.top,
-                                        },
-                                    ));
-                                }
-                                _ => {}
-                            }
-
-                            IS_HIDDEN.store(false, Ordering::Relaxed);
-                            CURRENT_DOCK.store(0, Ordering::Relaxed);
                         }
                     }
                 } else if dock != DockPosition::None {
@@ -962,14 +929,10 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
             if !settings.edge_docking.load(Ordering::Relaxed) {
                 if IS_HIDDEN.load(Ordering::Relaxed) {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        crate::app::webview_memory::restore_window_memory(
-                            &window,
-                            "linux-edge-docking-disabled-show",
+                    if app_handle.get_webview_window("main").is_some() {
+                        crate::app::idle_destroyer::show_main_window_from_edge(
+                            &app_handle, None, false, "linux-edge-docking-disabled-show",
                         );
-                        let _ = window.show();
-                        IS_HIDDEN.store(false, Ordering::Relaxed);
-                        CURRENT_DOCK.store(0, Ordering::Relaxed);
                     }
                 }
                 continue;
@@ -1102,38 +1065,15 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         };
 
                         if dock_actual != DockPosition::None {
-                            crate::app::webview_memory::restore_window_memory(
-                                &window,
-                                "linux-edge-dock-show",
+                            let target = match dock_actual {
+                                DockPosition::Top => Some(PhysicalPosition::new(rect_left, screen_top)),
+                                DockPosition::Left => Some(PhysicalPosition::new(screen_left, rect_top)),
+                                DockPosition::Right => Some(PhysicalPosition::new(screen_right - (rect_right - rect_left), rect_top)),
+                                _ => None,
+                            };
+                            crate::app::idle_destroyer::show_main_window_from_edge(
+                                &app_handle, target, true, "linux-edge-dock-show",
                             );
-                            let _ = window.show();
-                            let _ = window.set_always_on_top(true);
-                            match dock_actual {
-                                DockPosition::Top => {
-                                    let _ = window
-                                        .set_position(PhysicalPosition::new(rect_left, screen_top));
-                                }
-                                DockPosition::Left => {
-                                    let _ = window
-                                        .set_position(PhysicalPosition::new(screen_left, rect_top));
-                                }
-                                DockPosition::Right => {
-                                    let w = rect_right - rect_left;
-                                    let _ = window.set_position(PhysicalPosition::new(
-                                        screen_right - w,
-                                        rect_top,
-                                    ));
-                                }
-                                _ => {}
-                            }
-
-                            IS_HIDDEN.store(false, Ordering::Relaxed);
-                            CURRENT_DOCK.store(0, Ordering::Relaxed);
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis() as u64;
-                            LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
                         }
                     }
                 } else if dock != DockPosition::None {

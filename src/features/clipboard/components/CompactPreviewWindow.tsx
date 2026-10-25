@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState, useRef } from "react";
-import { emitTo, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize, currentMonitor } from "@tauri-apps/api/window";
+import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
+import { emitTo } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
     AppWindow,
     Clock
 } from "lucide-react";
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { getConciseTime } from "../../../shared/lib/utils";
-import type { Locale } from "../../../shared/types";
+import type { PreviewRequest } from "./compactPreviewProtocol";
 import { isRamImageSource, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
@@ -16,27 +16,25 @@ import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
-import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { prepareOwnedPreview, invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
 import type { ClipboardEntry } from "../../../shared/types";
+import { isPinnedPreviewLabel } from "../../../shared/lib/previewWindowLabels";
+import { usePreviewPreferences } from "../../../shared/hooks/usePreviewPreferences";
+import { savePreviewPreference } from "../../../shared/lib/previewPreferenceClient";
+import { PreviewToolbar, PreviewResizeHandles, type PreviewZoom } from "./PreviewToolbar";
+import { PreviewImage } from "./PreviewImage";
+import { translations } from "../../../locales";
 
-type PreviewPayload = {
-    privacyEpoch: number;
-    protectedContent?: boolean;
+type PreviewPayload = PreviewRequest & {
+    protectedContent: boolean;
     contentType: string;
     content: string;
     preview?: string;
     htmlContent?: string;
     sourceApp?: string;
     timestamp?: number;
-    language?: Locale;
-    theme?: string;
-    colorMode?: "light" | "dark";
-    richTextSnapshotPreview?: boolean;
-    clipboardItemFontSize?: number;
-    clipboardTagFontSize?: number;
 };
-type PreviewRequest = Omit<PreviewPayload, "contentType" | "content" | "preview" | "htmlContent" | "sourceApp" | "timestamp"> & { id: number; allowSensitive?: boolean; expectedHostInstanceId?: string };
 
 import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
@@ -70,40 +68,84 @@ const applyTheme = (payload: PreviewPayload) => {
 };
 
 const CompactPreviewWindow = () => {
+    const pinned = isPinnedPreviewLabel(getCurrentWindow().label);
     const privacyState = usePrivacySession();
     const [storedPayload, setPayload] = useState<PreviewPayload | null>(null);
     const [previewRequest, setPreviewRequest] = useState<{ value: PreviewRequest; sequence: number } | null>(null);
     const payload = privacyState.phase === "ready" && storedPayload?.privacyEpoch === privacyState.snapshot?.privacy_epoch ? storedPayload : null;
     const payloadSequence = useRef(0);
+    const payloadRef = useRef<PreviewPayload | null>(null);
+    payloadRef.current = payload;
+    const lastRequest = useRef<PreviewRequest | null>(null);
+    const notifyPayloadInvalidated = () => {
+        const requestId = lastRequest.current?.requestId;
+        if (requestId) void emitTo("main", "compact-preview-failed", { requestId }).catch(() => undefined);
+    };
+    const [concealed, setConcealed] = useState(false);
+    const [presented, setPresented] = useState(false);
+    const [pinPending, setPinPending] = useState(false);
+    const [actionFailed, setActionFailed] = useState(false);
+    const { preferences, reload: reloadPreferences } = usePreviewPreferences();
+    const [opacityDraft, setOpacityDraft] = useState<number | null>(null);
+    const opacityRevision = useRef(0);
+    const opacity = opacityDraft ?? preferences.opacity;
+    const [zoom, setZoom] = useState<PreviewZoom>("fit");
+    const [fitZoom, setFitZoom] = useState(1);
+    useEffect(() => { document.documentElement.style.setProperty("--preview-surface-opacity", String(opacity / 100)); }, [opacity]);
+    const saveOpacity = (value: number) => {
+        const revision = ++opacityRevision.current;
+        setOpacityDraft(value);
+        void savePreviewPreference("opacity", value).then(reloadPreferences).then(() => {
+            if (revision === opacityRevision.current) { setOpacityDraft(null); setActionFailed(false); }
+        }, () => {
+            if (revision === opacityRevision.current) { setOpacityDraft(null); setActionFailed(true); }
+        });
+    };
     const [previewListenerReady, setPreviewListenerReady] = useState(false);
-    useEffect(() => subscribePrivacyInvalidation(() => {
+    useEffect(() => subscribePrivacyInvalidation(scope => {
+        if (pinned && scope === "reveal" && payloadRef.current && !payloadRef.current.protectedContent) return;
+        notifyPayloadInvalidated();
         payloadSequence.current += 1;
         setPreviewRequest(null);
         setPayload(null);
+        if (pinned && lastRequest.current) setConcealed(true);
         clearRichTextSnapshots();
     }), []);
     useEffect(() => {
-        if (!previewRequest || privacyState.phase !== "ready") return;
-        const request = previewRequest.value;
-        const sequence = previewRequest.sequence;
-        const access = beginPrivacyAccess();
-        if (!access || access.epoch !== request.privacyEpoch) return;
+        if (!previewRequest) return;
+        const { value: request, sequence } = previewRequest;
         let disposed = false;
-        void invokePrivacyBound<ClipboardEntry>(request.allowSensitive === true ? "get_privacy_entry" : "get_history_resource_preview",
-            { id: request.id, expectedHostInstanceId: request.expectedHostInstanceId, expectedEpoch: request.privacyEpoch, maxDimension: 560 })
-            .then(entry => {
-                if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
-                const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
-                    protectedContent: isSensitiveEntry(entry),
-                    preview: entry.preview, htmlContent: entry.html_content, sourceApp: entry.source_app, timestamp: entry.timestamp };
-                setPayload(next);
-                applyTheme(next);
-            }).catch(() => { if (!disposed && sequence === payloadSequence.current) setPayload(null); });
-        return () => { disposed = true; };
-    }, [previewRequest, privacyState.phase, privacyState.generation]);
+        let releasePreparation: (() => void) | null = null;
+        void (async () => {
+            const access = await prepareOwnedPreview(request.privacyEpoch,
+                () => !disposed && sequence === payloadSequence.current, request.allowSensitive);
+            releasePreparation = access.release;
+            if (disposed) { releasePreparation(); return; }
+            if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
+            const fullContent = pinned || request.allowSensitive;
+            const entry = await invokePrivacyBound<ClipboardEntry>(fullContent ? "get_privacy_entry" : "get_history_resource_preview",
+                { id: request.id, expectedHostInstanceId: request.expectedHostInstanceId, expectedEpoch: request.privacyEpoch,
+                    ...(fullContent ? { reveal: request.allowSensitive } : { maxDimension: 560 }) });
+            if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
+            const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
+                protectedContent: isSensitiveEntry(entry), preview: entry.preview, htmlContent: entry.html_content,
+                sourceApp: entry.source_app, timestamp: entry.timestamp };
+            applyTheme(next);
+            setConcealed(false);
+            setZoom("fit");
+            setActionFailed(false);
+            setPayload(next);
+        })().catch(() => {
+            if (disposed || sequence !== payloadSequence.current) return;
+            setPayload(null);
+            if (pinned) { setConcealed(true); setActionFailed(true); }
+            void emitTo("main", "compact-preview-failed", { requestId: request.requestId }).catch(() => undefined);
+        });
+        return () => { disposed = true; releasePreparation?.(); };
+    }, [previewRequest]);
     useEffect(() => {
-        if (privacyState.phase === "ready" && previewListenerReady) void emitTo("main", "compact-preview-mounted", true).catch(() => undefined);
-    }, [privacyState.phase, previewListenerReady]);
+        if (previewListenerReady) void emitTo("main", "compact-preview-mounted", { label: getCurrentWindow().label }).catch(() => undefined);
+    }, [previewListenerReady]);
     // The hover card can be opened before the main window has ever rendered, so
     // the appearance comes from the backend rather than from local state.
     useBackendAppearance();
@@ -115,9 +157,9 @@ const CompactPreviewWindow = () => {
     const metaRef = useRef<HTMLDivElement | null>(null);
     const contentRef = useRef<HTMLDivElement | null>(null);
     const dividerRef = useRef<HTMLDivElement | null>(null);
-    const requestResizeRef = useRef<() => void>(() => {});
+    const requestResizeRef = useRef<(() => void) | null>(null);
     const previewBoundsRef = useRef({ width: 560, height: 560, mediaWidth: 520, mediaHeight: 360 });
-    const lastSentSizeRef = useRef<{ width: number; height: number } | null>(null);
+    const lastSentSizeRef = useRef<{ requestId: string; width: number; height: number } | null>(null);
     const richPreviewData = useMemo(() => getRichPreviewData(payload), [payload?.contentType, payload?.htmlContent]);
     const richImageFallbackSrc = richPreviewData.imageSrc;
     const richTextSnapshotHtml = richPreviewData.cleanHtml || payload?.htmlContent || "";
@@ -134,179 +176,94 @@ const CompactPreviewWindow = () => {
     const useSnapshotPreviewImage = !effectiveRichImageFallbackSrc && !!effectiveRichTextSnapshotSrc;
 
     useEffect(() => {
+        document.body.classList.add("compact-preview");
+        document.body.classList.toggle("pinned-preview", pinned);
         compactPreviewLog("window mounted", { label: getCurrentWindow().label });
-        getCurrentWindow()
-            .setAlwaysOnTop(true)
-            .then(() => compactPreviewLog("setAlwaysOnTop(true) success"))
-            .catch((err) => {
-                console.error(err);
-                compactPreviewLog("setAlwaysOnTop(true) failed", err);
-            });
-        (async () => {
-            try {
-                const monitor = await currentMonitor();
-                const fallbackWidth = 1280;
-                const fallbackHeight = 720;
-                const monitorWidth = monitor?.size.width ?? fallbackWidth;
-                const monitorHeight = monitor?.size.height ?? fallbackHeight;
-                const maxWidth = Math.max(320, Math.min(560, Math.floor(monitorWidth * 0.6)));
-                const maxHeight = Math.max(240, Math.min(560, Math.floor(monitorHeight * 0.6)));
-                const mediaMaxWidth = Math.max(260, Math.min(520, maxWidth));
-                const mediaMaxHeight = Math.max(200, Math.min(360, maxHeight - 120));
-                const minWidth = Math.max(300, Math.min(380, Math.floor(maxWidth * 0.62)));
-                compactPreviewLog("resolved monitor bounds", {
-                    monitorPos: monitor?.position,
-                    monitorSize: monitor?.size,
-                    maxWidth,
-                    maxHeight,
-                    mediaMaxWidth,
-                    mediaMaxHeight,
-                    minWidth
-                });
-
-                previewBoundsRef.current = {
-                    width: maxWidth,
-                    height: maxHeight,
-                    mediaWidth: mediaMaxWidth,
-                    mediaHeight: mediaMaxHeight
-                };
-
-                const root = document.documentElement;
-                root.style.setProperty("--preview-max-width", `${maxWidth}px`);
-                root.style.setProperty("--preview-max-height", `${maxHeight}px`);
-                root.style.setProperty("--preview-media-max-width", `${mediaMaxWidth}px`);
-                root.style.setProperty("--preview-media-max-height", `${mediaMaxHeight}px`);
-                root.style.setProperty("--preview-min-width", `${minWidth}px`);
-
-                await getCurrentWindow().setSize(new LogicalSize(maxWidth, maxHeight));
-                compactPreviewLog("initial size set", { width: maxWidth, height: maxHeight });
-            } catch (err) {
-                console.error("Failed to initialize preview bounds:", err);
-                compactPreviewLog("initialize preview bounds failed", err);
-            } finally {
-                compactPreviewLog("trigger initial resize request");
-                requestResizeRef.current?.();
-            }
-        })();
-        compactPreviewLog("listen compact-preview-update");
         let disposed = false;
-        const unlisten = listen<PreviewRequest>("compact-preview-update", (event) => {
+        const unlisten = getCurrentWindow().listen<PreviewRequest>("compact-preview-update", (event) => {
             const request = event.payload;
-            if (!Number.isSafeInteger(request.id) || request.id === 0 || !Number.isSafeInteger(request.privacyEpoch) || request.privacyEpoch < 0) return;
+            if (!request || typeof request.requestId !== "string" || !Number.isSafeInteger(request.id) || request.id === 0
+                || !Number.isSafeInteger(request.privacyEpoch) || request.privacyEpoch < 0
+                || !Number.isFinite(request.maxWidth) || request.maxWidth <= 0 || request.maxWidth > 560
+                || !Number.isFinite(request.maxHeight) || request.maxHeight <= 0 || request.maxHeight > 560) return;
+            if (!!request.pinned !== pinned) return;
             const sequence = ++payloadSequence.current;
+            lastRequest.current = request;
+            setPinPending(false);
+            setActionFailed(false);
+            setConcealed(false);
+            lastSentSizeRef.current = null;
+            const mediaWidth = Math.min(520, request.maxWidth);
+            const mediaHeight = Math.max(1, Math.min(360, request.maxHeight - 80));
+            previewBoundsRef.current = { width: request.maxWidth, height: request.maxHeight, mediaWidth, mediaHeight };
+            const root = document.documentElement;
+            root.style.setProperty("--preview-max-width", `${request.maxWidth}px`);
+            root.style.setProperty("--preview-max-height", `${request.maxHeight}px`);
+            root.style.setProperty("--preview-media-max-width", `${mediaWidth}px`);
+            root.style.setProperty("--preview-media-max-height", `${mediaHeight}px`);
+            root.style.setProperty("--preview-min-width", `${Math.min(320, request.maxWidth)}px`);
             if (!disposed) { setPayload(null); setPreviewRequest({ value: request, sequence }); }
         });
-        const unlistenClear = listen("compact-preview-clear", () => {
+        const clear = () => {
+            notifyPayloadInvalidated();
             payloadSequence.current += 1;
             setPreviewRequest(null);
             setPayload(null);
+            lastSentSizeRef.current = null;
             clearRichTextSnapshots();
+        };
+        const unlistenClear = getCurrentWindow().listen("compact-preview-clear", clear);
+        const unlistenProbe = getCurrentWindow().listen("compact-preview-probe", () => {
+            void Promise.all([unlisten, unlistenClear]).then(() => {
+                if (!disposed) return emitTo("main", "compact-preview-mounted", { label: getCurrentWindow().label });
+            }).catch(() => undefined);
         });
-        void Promise.all([unlisten, unlistenClear]).then(() => { if (!disposed) setPreviewListenerReady(true); }).catch(() => undefined);
+        const unlistenPresented = getCurrentWindow().listen<{ requestId: string }>("compact-preview-presented", event => {
+            if (event.payload?.requestId === lastRequest.current?.requestId) setPresented(true);
+        });
+        const unlistenPinFailure = getCurrentWindow().listen<{ requestId: string }>("compact-preview-pin-failed", event => {
+            if (event.payload?.requestId === lastRequest.current?.requestId) { setPinPending(false); setActionFailed(true); }
+        });
+        const subscriptions = [unlisten, unlistenClear, unlistenProbe, unlistenPresented, unlistenPinFailure];
+        void Promise.all(subscriptions).then(() => { if (!disposed) setPreviewListenerReady(true); }).catch(() => undefined);
         return () => {
             disposed = true;
+            notifyPayloadInvalidated();
             payloadSequence.current += 1;
-            compactPreviewLog("window unmount cleanup");
-            unlisten.then((f) => f());
-            unlistenClear.then((f) => f(), () => undefined);
+            subscriptions.forEach(subscription => { void subscription.then(stop => stop(), () => undefined); });
         };
     }, []);
 
-    useEffect(() => {
-        if (!payload) {
-            compactPreviewLog("skip resize effect: payload empty");
-            return;
-        }
-        let raf = 0;
-        let timerA: number | null = null;
-        let timerB: number | null = null;
-        let timerC: number | null = null;
+    useLayoutEffect(() => {
+        if (!payload || (pinned && presented)) { requestResizeRef.current = null; return; }
+        let disposed = false;
         const updateSize = () => {
-            if (raf) {
-                window.cancelAnimationFrame(raf);
-            }
-            raf = window.requestAnimationFrame(() => {
-                raf = 0;
-                const container = containerRef.current;
-                if (!container) {
-                    compactPreviewLog("skip measure: container missing");
-                    return;
-                }
-
-                const bounds = previewBoundsRef.current;
-                const maxWidth = bounds.width;
-                const maxHeight = bounds.height;
-                const minWidth =
-                    payload.contentType === "image" || payload.contentType === "video"
-                        ? 260
-                        : Math.min(bounds.width, 320);
-
-                const measuredWidth = Math.max(container.offsetWidth, container.scrollWidth);
-                const measuredHeight = Math.max(container.offsetHeight, container.scrollHeight);
-                const width = Math.min(Math.max(Math.ceil(measuredWidth), minWidth), maxWidth);
-                const height = Math.min(Math.max(Math.ceil(measuredHeight), 80), maxHeight);
-                if (width < 40 || height < 40) {
-                    compactPreviewLog("skip emit: measured size too small", {
-                        measuredWidth,
-                        measuredHeight,
-                        width,
-                        height
-                    });
-                    return;
-                }
-
-                const last = lastSentSizeRef.current;
-                if (last && Math.abs(last.width - width) <= 1 && Math.abs(last.height - height) <= 1) {
-                    return;
-                }
-                lastSentSizeRef.current = { width, height };
-                compactPreviewLog("emit compact-preview-resize", {
-                    measuredWidth,
-                    measuredHeight,
-                    width,
-                    height,
-                    minWidth,
-                    maxWidth,
-                    maxHeight
-                });
-
-                emitTo("main", "compact-preview-resize", { width, height }).catch((err) => {
-                    console.error(err);
-                    compactPreviewLog("emit compact-preview-resize failed", err);
-                });
-                getCurrentWindow()
-                    .setSize(new LogicalSize(width, height))
-                    .catch((err) => {
-                        console.error(err);
-                        compactPreviewLog("setSize in preview failed", err);
-                    });
-            });
+            if (disposed) return;
+            const container = containerRef.current;
+            if (!container) return;
+            // Decode media before the first presentation. Hidden WebViews may suspend animation frames.
+            if (Array.from(container.querySelectorAll("img")).some(image => !image.complete)) return;
+            if (Array.from(container.querySelectorAll("video")).some(video => video.readyState < 1 && !video.error)) return;
+            const bounds = previewBoundsRef.current;
+            const width = Math.min(Math.max(Math.ceil(container.scrollWidth), Math.min(320, bounds.width)), bounds.width);
+            const height = Math.min(Math.max(Math.ceil(container.offsetHeight), 80), bounds.height);
+            const last = lastSentSizeRef.current;
+            if (last?.requestId === payload.requestId && last.width === width && last.height === height) return;
+            lastSentSizeRef.current = { requestId: payload.requestId, width, height };
+            void emitTo("main", "compact-preview-layout", { requestId: payload.requestId, width, height }).catch(() => undefined);
         };
-
         requestResizeRef.current = updateSize;
-        compactPreviewLog("resize effect start", { contentType: payload.contentType });
         updateSize();
         const observer = new ResizeObserver(updateSize);
         if (containerRef.current) observer.observe(containerRef.current);
         if (contentRef.current) observer.observe(contentRef.current);
-        if (metaRef.current) observer.observe(metaRef.current);
-        if (dividerRef.current) observer.observe(dividerRef.current);
-        compactPreviewLog("ResizeObserver attached");
-
-        // Async render safety net: rich text/media/font loading may settle later.
-        timerA = window.setTimeout(updateSize, 50);
-        timerB = window.setTimeout(updateSize, 180);
-        timerC = window.setTimeout(updateSize, 420);
-
+        void document.fonts.ready.then(updateSize);
         return () => {
-            if (raf) cancelAnimationFrame(raf);
-            if (timerA) window.clearTimeout(timerA);
-            if (timerB) window.clearTimeout(timerB);
-            if (timerC) window.clearTimeout(timerC);
+            disposed = true;
+            requestResizeRef.current = null;
             observer.disconnect();
-            compactPreviewLog("resize effect cleanup");
         };
-    }, [payload]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, pinned, presented]);
 
     useEffect(() => {
         setSnapshotFailed(false);
@@ -347,10 +304,13 @@ const CompactPreviewWindow = () => {
         if (!payload) return null;
         if (payload.contentType === "image") {
             const src = isRamImageSource(payload.content) ? payload.content : undefined;
+            if (pinned && src) return <PreviewImage src={src} zoom={zoom} onZoomChange={setZoom}
+                onFitZoom={setFitZoom} onLoad={() => requestResizeRef.current?.()} />;
             return (
                 <img
                     src={src}
                     alt="preview"
+                    onError={() => requestResizeRef.current?.()}
                     onLoad={() => {
                         compactPreviewLog("image loaded, request resize");
                         requestResizeRef.current?.();
@@ -371,6 +331,7 @@ const CompactPreviewWindow = () => {
                     preload="metadata"
                     muted
                     playsInline
+                    onError={() => requestResizeRef.current?.()}
                     onLoadedMetadata={(e) => {
                         compactPreviewLog("video metadata loaded", {
                             duration: e.currentTarget.duration
@@ -466,19 +427,41 @@ const CompactPreviewWindow = () => {
             );
         }
         return payload.content || payload.preview || "";
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, pinned, zoom]);
 
+    const request = payload ?? lastRequest.current;
+    const language = request?.language ?? "zh";
+    const text = translations[language];
+    const close = () => {
+        if (pinned) void getCurrentWindow().close().catch(() => setActionFailed(true));
+        else if (request) void emitTo("main", "compact-preview-failed", { requestId: request.requestId }).catch(() => setActionFailed(true));
+    };
+    const restore = () => {
+        if (!lastRequest.current || privacyState.phase !== "ready" || !privacyState.snapshot) return;
+        setActionFailed(false);
+        const next = { ...lastRequest.current, privacyEpoch: privacyState.snapshot.privacy_epoch };
+        lastRequest.current = next;
+        setPreviewRequest({ value: next, sequence: ++payloadSequence.current });
+    };
+    const pointer = (inside: boolean) => {
+        if (!pinned && request) void emitTo("main", "compact-preview-pointer", { requestId: request.requestId, inside }).catch(() => undefined);
+    };
+    if (!payload && (!pinned || !concealed)) return null;
     return (
-        <div className="compact-preview-root">
+        <div className="compact-preview-root" onMouseEnter={() => pointer(true)} onMouseLeave={() => pointer(false)}>
             <div
                 ref={containerRef}
                 className={`compact-popover-portal compact-preview-window ${payload?.theme || ""} ${payload?.contentType === "image" ? "compact-preview-image" : ""} ${payload?.contentType === "image" || payload?.contentType === "video" || !!effectiveRichImageFallbackSrc ? "compact-preview-media" : ""} ${payload?.colorMode === "dark" ? "dark-mode" : ""}`}
-                style={{
-                    display: "flex",
-                    flexDirection: "column"
-                }}
             >
-                <div ref={metaRef} className="popover-meta">
+                <PreviewToolbar pinned={pinned} pinPending={pinPending} opacity={opacity} image={pinned && payload?.contentType === "image"}
+                    zoom={zoom} fitZoom={fitZoom} language={language} onOpacityChange={saveOpacity} onZoomChange={setZoom}
+                    onClose={close} onPin={() => {
+                        if (!payload || pinPending) return;
+                        setPinPending(true); setActionFailed(false);
+                        void emitTo("main", "compact-preview-pin", { requestId: payload.requestId }).catch(() => { setPinPending(false); setActionFailed(true); });
+                    }} onDrag={() => { if (pinned) void getCurrentWindow().startDragging().catch(() => setActionFailed(true)); }} />
+                {actionFailed && <div className="preview-action-status" role="status">{text.privacy_action_failed}</div>}
+                {payload && <div ref={metaRef} className="popover-meta">
                     <div className="meta-row">
                         {getIcon(payload?.contentType || "text")}
                         <span>{payload?.contentType || "text"}</span>
@@ -497,10 +480,16 @@ const CompactPreviewWindow = () => {
                                 : "-"}
                         </span>
                     </div>
-                </div>
+                </div>}
                 <div ref={dividerRef} className="popover-divider" />
-                <div ref={contentRef} className="popover-content" data-privacy-protected={payload?.protectedContent ? "true" : undefined}
-                    onDragStart={event => { if (payload?.protectedContent) event.preventDefault(); }}>{content}</div>
+                <div ref={contentRef} className={`popover-content${pinned && payload?.contentType === "image" ? " pinned-image-content" : ""}`} data-privacy-protected={payload?.protectedContent ? "true" : undefined}
+                    onDragStart={event => { if (payload?.protectedContent) event.preventDefault(); }}>
+                    {payload ? content : <div className="preview-concealed"><p>{text.privacy_sensitive_hidden}</p>
+                        <button type="button" className="btn-secondary" onClick={restore} disabled={privacyState.phase !== "ready"}>{text.privacy_retry}</button></div>}
+                </div>
+                {pinned && <PreviewResizeHandles language={language} onResize={direction => {
+                    void getCurrentWindow().startResizeDragging(direction).catch(() => setActionFailed(true));
+                }} />}
             </div>
         </div>
     );

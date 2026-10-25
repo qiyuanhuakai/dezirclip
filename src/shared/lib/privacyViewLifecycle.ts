@@ -1,4 +1,5 @@
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
+import { isPinnedPreviewLabel } from "./previewWindowLabels";
 
 export type PrivacyInvalidationScope = "all" | "reveal";
 
@@ -14,5 +15,5 @@ export function privacyBlurScope(visible: boolean, focused: boolean, ownedWindow
 }
 
 export function sharesPrivacyFocusLifecycle(label: string): boolean {
-  return label === "main" || label === "compact-preview" || label === "quick-paste";
+  return label === "main" || label === "compact-preview" || label === "quick-paste" || isPinnedPreviewLabel(label);
 }

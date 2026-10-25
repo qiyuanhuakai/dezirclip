@@ -6,7 +6,7 @@ interface UseAppActionsOptions {
   openConfirm: (opts: { title: string; message: string; onConfirm: () => void }) => void;
   closeConfirm: () => void;
   pushToast: (msg: string, duration?: number) => number;
-  fetchHistory: (reset?: boolean) => Promise<void>;
+  fetchHistory: (reset?: boolean) => Promise<unknown>;
 }
 
 export const useAppActions = ({

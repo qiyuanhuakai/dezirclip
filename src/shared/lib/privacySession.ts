@@ -7,6 +7,8 @@ import type { ClipboardEntry } from "../types";
 import { entryInstanceArgs } from "./historyIdentity";
 import { privacyBlurScope, samePrivacyAuthority, sharesPrivacyFocusLifecycle } from "./privacyViewLifecycle";
 import type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
+import { isPinnedPreviewLabel } from "./previewWindowLabels";
+import { createHiddenPreparationGate } from "./hiddenPreparation";
 export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
 export interface PrivacyViewState {
@@ -29,6 +31,7 @@ let viewSuspended = false;
 let visibilityRevision = 0;
 let activeView = true;
 let nativeBlurPending = false;
+const hiddenPreparation = createHiddenPreparationGate();
 
 export function registerPrivacyReveal(entry: ClipboardEntry): void {
   if (model.phase !== "ready" || !activeView) throw new Error("PrivacyStateUnavailable");
@@ -47,6 +50,7 @@ const publish = (next: Partial<PrivacyViewState>) => {
   observers.forEach(observer => observer());
 };
 const revoke = (scope: PrivacyInvalidationScope = "all") => {
+  hiddenPreparation.revoke();
   fence.revoke();
   invalidators.forEach(invalidate => { try { invalidate(scope); } catch { /* The request fence remains revoked. */ } });
 };
@@ -93,7 +97,20 @@ export async function refreshPrivacyState(): Promise<void> {
 const onFocus = () => {
   if (nativeBlurPending) { nativeBlurPending = false; revokeApplicationReveals(); }
   const revision = ++visibilityRevision;
-  if (document.hidden) { onHide(); return; }
+  if (document.hidden) { onDomHidden(); return; }
+  const preparing = hiddenPreparation.current();
+  if (preparing) {
+    const started = lifecycle;
+    void getCurrentWindow().isVisible().then(visible => {
+      if (started !== lifecycle || revision !== visibilityRevision || !visible || document.hidden
+        || hiddenPreparation.current() !== preparing) return;
+      hiddenPreparation.revoke();
+      viewSuspended = false;
+      activeView = true;
+      void refreshPrivacyState();
+    }, () => undefined);
+    return;
+  }
   if (viewSuspended) {
     const started = lifecycle;
     void getCurrentWindow().isVisible().then(visible => {
@@ -117,6 +134,20 @@ const onHide = () => {
   expiryTimer = null;
   revoke();
   publish({ phase: "loading" });
+};
+const onDomHidden = () => {
+  if (!hiddenPreparation.current()) onHide();
+};
+const releaseVisiblePreparation = async (lease: { isCurrent: () => boolean; release: () => void }) => {
+  if (document.hidden) return;
+  const started = lifecycle;
+  const revision = visibilityRevision;
+  const visible = await getCurrentWindow().isVisible();
+  if (visible && !document.hidden && started === lifecycle && revision === visibilityRevision && lease.isCurrent()) {
+    lease.release();
+    viewSuspended = false;
+    activeView = true;
+  }
 };
 const revokeApplicationReveals = () => {
   activeView = false;
@@ -142,7 +173,7 @@ const onBlur = (event?: Event | boolean) => {
       if (started !== lifecycle || revision !== visibilityRevision) return;
       if (nativeBlur) nativeBlurPending = false;
       const scope = privacyBlurScope(visible && !document.hidden, focused || !nativeBlur, ownedFocused);
-      if (scope === "all") onHide();
+      if (scope === "all") { if (nativeBlur) onHide(); else onDomHidden(); }
       else if (scope === "reveal") revokeApplicationReveals();
     }, () => {
       if (started === lifecycle && revision === visibilityRevision) {
@@ -152,7 +183,7 @@ const onBlur = (event?: Event | boolean) => {
     });
 };
 const invalidatePrivacyState = () => { revoke(); publish({ phase: "loading" }); };
-const onVisibility = () => { if (document.hidden) onHide(); else onFocus(); };
+const onVisibility = () => { if (document.hidden) onDomHidden(); else onFocus(); };
 export function subscribePrivacyState(observer: () => void): () => void {
   observers.add(observer);
   if (observers.size === 1) {
@@ -163,8 +194,8 @@ export function subscribePrivacyState(observer: () => void): () => void {
     document.addEventListener("visibilitychange", onVisibility);
     const subscriptions = [listen<unknown>("privacy-state-changed", () => {
       if (started === lifecycle) { invalidatePrivacyState(); void refreshPrivacyState(); }
-    }), listen("privacy-view-hidden", () => { if (started === lifecycle) onHide(); }),
-      listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); }),
+    }), getCurrentWindow().listen("privacy-view-hidden", () => { if (started === lifecycle) onHide(); }),
+      getCurrentWindow().listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); }),
       listen("clipboard-host-changed", () => {
         if (started === lifecycle) { invalidatePrivacyState(); void refreshPrivacyState(); }
       }), listen("clipboard-host-unavailable", () => {
@@ -249,13 +280,74 @@ export function beginPrivacyAccess() {
   return { epoch, isCurrent: () => fence.isCurrent(token) && model.phase === "ready" };
 }
 
-export async function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
+/** An owner-authorized preview can prepare offscreen without pretending it received focus. */
+export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurrent: () => boolean, allowSensitive: boolean) {
+  const current = getCurrentWindow();
+  const pinned = isPinnedPreviewLabel(current.label);
+  if (current.label !== "compact-preview" && !pinned) throw new Error("PrivacyStateUnavailable");
+  const token = fence.capture();
+  const started = lifecycle;
+  visibilityRevision += 1;
+  const lease = hiddenPreparation.begin("preview", () => requestIsCurrent()
+    && started === lifecycle && fence.isCurrent(token));
+  try {
+  // A pinned window can explicitly reveal again without reopening the clipboard panel.
+  const owner = pinned && await current.isVisible() ? current
+    : (await getAllWindows()).find(window => window.label === "main");
+  if (!owner || !(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
+    || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token)) {
+    throw new Error("PrivacyStateUnavailable");
+  }
+  viewSuspended = false;
+  activeView = true;
+  await refreshPrivacyState();
+  if (!(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
+    || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token) || model.phase !== "ready"
+    || model.snapshot?.privacy_epoch !== expectedEpoch) throw new Error("PrivacyEpochChanged");
+  await releaseVisiblePreparation(lease);
+  if (!requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+  const access = beginPrivacyAccess();
+  if (!access) throw new Error("PrivacyStateUnavailable");
+  return { ...access, release: lease.release };
+  } catch (error) {
+    lease.release();
+    throw error;
+  }
+}
+
+/** Prepare a fresh protected list for an explicit native show request, while still hidden. */
+export async function prepareMainWindowResume(requestIsCurrent: () => boolean) {
+  if (getCurrentWindow().label !== "main" || !requestIsCurrent()) throw new Error("PrivacyStateUnavailable");
+  const started = lifecycle;
+  const token = fence.capture();
+  visibilityRevision += 1;
+  const lease = hiddenPreparation.begin("main", () => requestIsCurrent()
+    && started === lifecycle && fence.isCurrent(token));
+  viewSuspended = false;
+  activeView = false;
+  try {
+  await refreshPrivacyState();
+  await releaseVisiblePreparation(lease);
+  if (!requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token) || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
+  const access = beginPrivacyAccess();
+  if (!access) throw new Error("PrivacyStateUnavailable");
+  return { ...access, release: lease.release };
+  } catch (error) {
+    lease.release();
+    throw error;
+  }
+}
+
+export async function getPrivacyEntry(id: number, hostInstanceId?: string, requestIsCurrent?: () => boolean): Promise<ClipboardEntry> {
+  const checkRequest = () => { if (requestIsCurrent && !requestIsCurrent()) throw new Error("PrivacyReadSuperseded"); };
+  checkRequest();
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");
   const token = fence.capture();
   const current = getCurrentWindow();
   if (current.label === "main") {
     const focused = await current.isFocused();
+    checkRequest();
     if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
     if (!focused) {
       if (!activationRequest) {
@@ -270,8 +362,11 @@ export async function getPrivacyEntry(id: number, hostInstanceId?: string): Prom
       await refreshPrivacyState();
     }
   }
+  checkRequest();
   if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
-  return invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch, ...entryInstanceArgs(hostInstanceId) });
+  const entry = await invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch, ...entryInstanceArgs(hostInstanceId) });
+  checkRequest();
+  return entry;
 }
 
 export type PrivacyFeedbackAction = "not_sensitive" | "exact_exception" | "ignore_source" | "protect_source";
@@ -286,22 +381,34 @@ export async function submitPrivacyFeedback(id: number, action: PrivacyFeedbackA
 }
 
 export async function refreshPrivacyAfterConfirmation(expectedEpoch?: number): Promise<void> {
-  await invoke("activate_window_focus");
-  await new Promise<void>((resolve, reject) => {
-    const finish = (error?: Error) => {
-      clearTimeout(timeout);
-      observers.delete(check);
-      window.removeEventListener("focus", check);
-      if (error) reject(error); else resolve();
-    };
-    const check = () => {
-      if (viewSuspended || document.hidden || !document.hasFocus() || model.phase !== "ready") return;
-      finish(expectedEpoch === undefined || model.snapshot?.privacy_epoch === expectedEpoch ? undefined : new Error("PrivacyEpochChanged"));
-    };
-    const timeout = setTimeout(() => finish(new Error("PrivacyStateUnavailable")), 2000);
-    observers.add(check);
-    window.addEventListener("focus", check);
-    void refreshPrivacyState();
-    check();
-  });
+  const token = fence.capture();
+  const started = lifecycle;
+  const current = getCurrentWindow();
+  const deadline = Date.now() + 2000;
+  const wait = async <T>(request: Promise<T>): Promise<T> => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    return Promise.race([
+      request,
+      new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("PrivacyStateUnavailable")), Math.max(1, deadline - Date.now())); }),
+    ]).finally(() => { if (timeout !== null) clearTimeout(timeout); });
+  };
+  await wait(invoke("activate_window_focus"));
+  for (;;) {
+    if (started !== lifecycle || !fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+    const revision = visibilityRevision;
+    const [visible, focused] = await wait(Promise.all([current.isVisible(), current.isFocused()]));
+    if (started !== lifecycle || !fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+    if (revision === visibilityRevision && visible && focused && !document.hidden) {
+      viewSuspended = false;
+      activeView = true;
+      await wait(refreshPrivacyState());
+      if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+      if (model.phase !== "ready" || viewSuspended || !activeView) throw new Error("PrivacyStateUnavailable");
+      if (expectedEpoch !== undefined && model.snapshot?.privacy_epoch !== expectedEpoch) throw new Error("PrivacyEpochChanged");
+      if (revision !== visibilityRevision) continue;
+      return;
+    }
+    if (Date.now() >= deadline || document.hidden) throw new Error("PrivacyStateUnavailable");
+    await new Promise<void>(resolve => setTimeout(resolve, 25));
+  }
 }

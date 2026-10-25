@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { hideCompactPreviewGlobal } from "../../features/clipboard/components/compactPreviewController";
 
 interface UseNavigationSyncOptions {
   showSettings: boolean;
@@ -16,6 +17,7 @@ export const useNavigationSync = ({
   searchTagPickerOpen
 }: UseNavigationSyncOptions) => {
   useEffect(() => {
+    void hideCompactPreviewGlobal();
     const shouldDisableNavigation = showSettings || showTagManager || showEmojiPanel || searchTagPickerOpen;
     if (shouldDisableNavigation) {
       invoke("set_navigation_enabled", { enabled: false }).catch(console.error);

@@ -21,6 +21,7 @@ import { useSearchScroll } from "./shared/hooks/useSearchScroll";
 import { useSettingsApply } from "./shared/hooks/useSettingsApply";
 import { useSettingsInit } from "./shared/hooks/useSettingsInit";
 import { useMainWindowPaintSignal } from "./shared/hooks/useMainWindowPaintSignal";
+import { useMainWindowResume } from "./shared/hooks/useMainWindowResume";
 import { useSettingsPostInit } from "./shared/hooks/useSettingsPostInit";
 import { useSettingsSync } from "./shared/hooks/useSettingsSync";
 import { useTagColors } from "./shared/hooks/useTagColors";
@@ -51,6 +52,7 @@ import { useOverlays } from "./shared/hooks/useOverlays";
 import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import { usePrivacySession } from "./shared/hooks/usePrivacySession";
+import { usePreviewPreferences } from "./shared/hooks/usePreviewPreferences";
 import { beginPrivacyAccess, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "./shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
@@ -63,6 +65,7 @@ const SCROLL_TOP_BUTTON_THRESHOLD_PX = 200;
 
 const App = () => {
   const privacyState = usePrivacySession();
+  const { preferences: previewPreferences } = usePreviewPreferences();
   const appState = useAppState();
   const {
     showSettings,
@@ -209,7 +212,7 @@ const App = () => {
   const effectiveShowEmojiPanel = showEmojiPanel && emojiPanelEnabled;
   const effectiveShowTagManager = showTagManager && tagManagerEnabled;
 
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 300, !isComposing);
   const searchInputRef = useInputFocus<HTMLInputElement>();
   const tagColors = useTagColors();
   const { toasts: progressToasts, dismiss: dismissProgress } = useProgress();
@@ -218,7 +221,7 @@ const App = () => {
   const showScrollTopRef = useRef(false);
   const [qrEntry, setQrEntry] = useState<ClipboardEntry | null>(null);
   const PAGE_SIZE = HISTORY_PAGE_SIZE;
-  const { fetchHistory, loadMoreHistory } = useHistoryFetch({
+  const { fetchHistory, loadMoreHistory, appliedSearch } = useHistoryFetch({
     debouncedSearch,
     typeFilter,
     persistentLimitEnabled,
@@ -233,6 +236,12 @@ const App = () => {
     hasMore,
     setIsLoadingMore
   });
+  // Local matching must use the same settled query as the backend request.
+  const filteredHistory = useFilteredHistory({ history, debouncedSearch, search: debouncedSearch, typeFilter });
+  const searchResultsReady = !isComposing && search === debouncedSearch && search === appliedSearch;
+  const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, filteredHistory.length,
+    !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel);
+  const mainResumePending = mainResume.phase === "preparing" || mainResume.phase === "prepared" || mainResume.phase === "failed" || privacyState.phase !== "ready";
 
   const t = useCallback((key: string) => {
     const k = key as keyof typeof translations['zh'];
@@ -343,9 +352,12 @@ const App = () => {
     clearRichTextSnapshots();
     closeConfirm();
   }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm]);
+  // Search changes have their own trigger; this refresh belongs to privacy/resume transitions.
+  const fetchHistoryRef = useRef(fetchHistory);
+  fetchHistoryRef.current = fetchHistory;
   useEffect(() => {
-    if (privacyState.phase === "ready") void fetchHistory(true);
-  }, [privacyState.phase, privacyState.generation, fetchHistory]);
+    if (privacyState.phase === "ready" && mainResume.phase === "idle") void fetchHistoryRef.current(true);
+  }, [privacyState.phase, privacyState.generation, mainResume.phase]);
 
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
@@ -665,13 +677,6 @@ const App = () => {
   };
   */
 
-  const filteredHistory = useFilteredHistory({
-    history,
-    debouncedSearch,
-    search,
-    typeFilter
-  });
-
   const effectiveHasMore = hasMore && filteredHistory.length >= PAGE_SIZE;
 
   const { pinnedItems, unpinnedItems, handlePinnedReorder } = usePinnedSort({
@@ -694,6 +699,7 @@ const App = () => {
 
   const copyFromKeyboard = useCallback((id: number, content: string, contentType: string,
     pasteWithFormat = false, pasteImageAsBase64 = false) => {
+    if (!searchResultsReady) return Promise.resolve();
     const entry = filteredHistory.find(item => item.id === id);
     const access = beginPrivacyAccess();
     const epoch = entry && isSensitiveEntry(entry) ? privacyRevealEpoch(entry) : undefined;
@@ -702,7 +708,7 @@ const App = () => {
       return Promise.resolve();
     }
     return copyToClipboard(id, content, contentType, pasteWithFormat, pasteImageAsBase64, epoch ?? undefined, undefined, entry.host_instance_id);
-  }, [filteredHistory, revealedIds, copyToClipboard, pushToast, t]);
+  }, [searchResultsReady, filteredHistory, revealedIds, copyToClipboard, pushToast, t]);
 
   useKeyboardNavigation({
     filteredHistory,
@@ -714,6 +720,7 @@ const App = () => {
     showTagManager: effectiveShowTagManager,
     chatMode: false,
     searchTagPickerOpen,
+    searchResultsReady,
     editingTagsId,
     arrowKeySelection,
     richPasteHotkey,
@@ -740,6 +747,8 @@ const App = () => {
     privacyProtection,
     revealedIds,
     isKeyboardMode,
+    previewKeyboardEnabled: previewPreferences.keyboardEnabled && !showSettings && !effectiveShowTagManager
+      && !effectiveShowEmojiPanel && !searchTagPickerOpen && searchResultsReady,
     selectedIndex,
     isWindowPinned,
     editingTagsId,
@@ -807,6 +816,7 @@ const App = () => {
     showSearchBox,
     search,
     setSearch,
+    isComposing,
     setIsComposing,
     searchInputRef,
     showTagFilter,
@@ -875,7 +885,17 @@ const App = () => {
           className="main-content"
           style={{ overflowY: (showSettings || effectiveShowTagManager) ? 'auto' : 'hidden' }}
         >
-          <AppMainContent {...appMainContentProps} />
+          <div className="main-resume-content" data-pending={mainResumePending} data-resume-mode={mainResume.mode}>
+          {mainResumePending && (
+            <div className="empty-state" role="status" aria-busy={mainResume.phase !== "failed" && privacyState.phase !== "unavailable"}>
+              <p>{t(mainResume.phase === "failed" || privacyState.phase === "unavailable" ? "main_window_resume_failed" : "main_window_resume_pending")}</p>
+              {mainResume.phase === "failed" && <button type="button" onClick={mainResume.retry}>{t("privacy_retry")}</button>}
+            </div>
+          )}
+          <div className="main-resume-page" aria-hidden={mainResumePending} inert={mainResumePending}>
+            <AppMainContent {...appMainContentProps} />
+          </div>
+          </div>
         </main>
       </WheelHotZone>
 

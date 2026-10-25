@@ -35,6 +35,27 @@ impl UpdateChannel {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateCheckStatus {
+    Available,
+    Current,
+    Ahead,
+    Unpublished,
+}
+
+pub fn summarize_channel_versions(current: &Version, versions: &[Version]) -> (UpdateCheckStatus, Option<String>) {
+    let Some(latest) = versions.iter().max_by(|left, right| left.cmp_precedence(right)) else {
+        return (UpdateCheckStatus::Unpublished, None);
+    };
+    let status = match latest.cmp_precedence(current) {
+        std::cmp::Ordering::Greater => UpdateCheckStatus::Available,
+        std::cmp::Ordering::Equal => UpdateCheckStatus::Current,
+        std::cmp::Ordering::Less => UpdateCheckStatus::Ahead,
+    };
+    (status, Some(latest.to_string()))
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateInstallation {
@@ -90,6 +111,40 @@ mod tests {
             assert_eq!(UpdateChannel::Stable.accepts(&version(current), &version(candidate)), stable);
             assert_eq!(UpdateChannel::Preview.accepts(&version(current), &version(candidate)), preview);
         }
+    }
+
+    #[test]
+    fn update_results_distinguish_equal_ahead_newer_and_unpublished_channels() {
+        let current = Version::parse("0.2.0-alpha.3").unwrap();
+        assert_eq!(summarize_channel_versions(&current, &[]), (UpdateCheckStatus::Unpublished, None));
+        for (offered, expected) in [
+            ("0.2.0-alpha.2", UpdateCheckStatus::Ahead),
+            ("0.2.0-alpha.3", UpdateCheckStatus::Current),
+            ("0.2.0-alpha.4", UpdateCheckStatus::Available),
+            ("0.2.0-alpha.10", UpdateCheckStatus::Available),
+        ] {
+            assert_eq!(summarize_channel_versions(&current, &[Version::parse(offered).unwrap()]),
+                (expected, Some(offered.to_string())));
+        }
+    }
+
+    #[test]
+    fn missing_auxiliary_index_does_not_hide_a_published_channel_version() {
+        let current = Version::parse("0.2.0-alpha.3").unwrap();
+        let preview = Version::parse("0.2.0-alpha.2").unwrap();
+        assert_eq!(summarize_channel_versions(&current, &[preview.clone()]),
+            (UpdateCheckStatus::Ahead, Some(preview.to_string())));
+        assert_eq!(summarize_channel_versions(&current, &[preview, Version::parse("0.2.0").unwrap()]),
+            (UpdateCheckStatus::Available, Some("0.2.0".to_string())));
+    }
+
+    #[test]
+    fn update_result_ignores_build_metadata_and_serializes_explicit_states() {
+        let current = Version::parse("0.2.0+installed").unwrap();
+        let offered = Version::parse("0.2.0+repacked").unwrap();
+        assert_eq!(summarize_channel_versions(&current, &[offered]),
+            (UpdateCheckStatus::Current, Some("0.2.0+repacked".to_string())));
+        assert_eq!(serde_json::to_string(&UpdateCheckStatus::Unpublished).unwrap(), "\"unpublished\"");
     }
 
     #[test]

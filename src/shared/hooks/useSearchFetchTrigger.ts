@@ -13,7 +13,7 @@ export const useSearchFetchTrigger = ({
   typeFilter,
   fetchHistory
 }: UseSearchFetchTriggerOptions) => {
-  // Both effects exist to react to a change, and the app already asks for the
+  // This effect reacts to changes; the app already asks for the
   // first page on mount. Firing on the initial value as well meant the page was
   // fetched four times over on every startup -- and once more on every wake
   // after the idle destroyer rebuilt the webview -- when one fetch returns the
@@ -22,20 +22,12 @@ export const useSearchFetchTrigger = ({
   // The comparison is against the previously seen value rather than a run
   // counter, so React's development double-invocation of effects does not turn
   // the first run into a fetch on the replay.
-  const prevSearchRef = useRef<string | null>(null);
+  const previousRef = useRef<{ search: string; type: string | null | undefined } | null>(null);
   useEffect(() => {
-    const previous = prevSearchRef.current;
-    prevSearchRef.current = debouncedSearch;
     if (isComposing) return;
-    if (previous === null || previous === debouncedSearch) return;
+    const previous = previousRef.current;
+    previousRef.current = { search: debouncedSearch, type: typeFilter };
+    if (previous === null || (previous.search === debouncedSearch && previous.type === typeFilter)) return;
     fetchHistory(true);
-  }, [debouncedSearch, isComposing, fetchHistory]);
-
-  const prevTypeFilterRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    const previous = prevTypeFilterRef.current;
-    prevTypeFilterRef.current = typeFilter;
-    if (previous === undefined || previous === typeFilter) return;
-    fetchHistory(true);
-  }, [typeFilter, fetchHistory]);
+  }, [debouncedSearch, isComposing, typeFilter, fetchHistory]);
 };

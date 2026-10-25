@@ -11,6 +11,7 @@ interface UseClipboardItemRendererOptions {
   privacyProtection: boolean;
   revealedIds: Set<number>;
   isKeyboardMode: boolean;
+  previewKeyboardEnabled?: boolean;
   selectedIndex: number;
   isWindowPinned: boolean;
   editingTagsId: number | null;
@@ -54,6 +55,7 @@ type RenderItemContent = (
 export const useClipboardItemRenderer = ({
   revealedIds,
   isKeyboardMode,
+  previewKeyboardEnabled = false,
   selectedIndex,
   isWindowPinned,
   editingTagsId,
@@ -89,6 +91,7 @@ export const useClipboardItemRenderer = ({
           item={item}
           index={index}
           isSelected={isKeyboardMode && index === selectedIndex}
+          previewFromKeyboard={previewKeyboardEnabled && isKeyboardMode && index === selectedIndex}
           windowPinned={isWindowPinned}
           isSensitiveHidden={!!isSensitiveHidden}
           isRevealed={revealedIds.has(item.id)}
@@ -120,6 +123,7 @@ export const useClipboardItemRenderer = ({
     [
       revealedIds,
       isKeyboardMode,
+      previewKeyboardEnabled,
       selectedIndex,
       isWindowPinned,
       editingTagsId,

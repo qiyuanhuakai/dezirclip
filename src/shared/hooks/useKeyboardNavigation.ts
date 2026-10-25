@@ -18,6 +18,7 @@ interface UseKeyboardNavigationOptions {
   showSettings: boolean;
   showTagManager: boolean;
   searchTagPickerOpen: boolean;
+  searchResultsReady: boolean;
   chatMode: boolean;
   editingTagsId: number | null;
   arrowKeySelection: boolean;
@@ -42,6 +43,7 @@ export const useKeyboardNavigation = ({
   showSettings,
   showTagManager,
   searchTagPickerOpen,
+  searchResultsReady,
   chatMode,
   editingTagsId,
   arrowKeySelection,
@@ -57,6 +59,8 @@ export const useKeyboardNavigation = ({
   const showSettingsRef = useRef(showSettings);
   const showTagManagerRef = useRef(showTagManager);
   const searchTagPickerOpenRef = useRef(searchTagPickerOpen);
+  const searchResultsReadyRef = useRef(searchResultsReady);
+  searchResultsReadyRef.current = searchResultsReady;
   const chatModeRef = useRef(chatMode);
   const editingTagsIdRef = useRef(editingTagsId);
   const arrowKeySelectionRef = useRef(arrowKeySelection);
@@ -72,6 +76,9 @@ export const useKeyboardNavigation = ({
     searchTagPickerOpenRef.current = searchTagPickerOpen;
     if (searchTagPickerOpen) setIsKeyboardMode(false);
   }, [searchTagPickerOpen, setIsKeyboardMode]);
+  useEffect(() => {
+    if (!searchResultsReady) setIsKeyboardMode(false);
+  }, [searchResultsReady, setIsKeyboardMode]);
   useEffect(() => { chatModeRef.current = chatMode; }, [chatMode]);
   useEffect(() => { editingTagsIdRef.current = editingTagsId; }, [editingTagsId]);
   useEffect(() => { arrowKeySelectionRef.current = arrowKeySelection; }, [arrowKeySelection]);
@@ -122,6 +129,14 @@ export const useKeyboardNavigation = ({
               }
           }
           return;
+      }
+
+      if (!searchResultsReadyRef.current) {
+        if (["Enter", "ArrowDown", "ArrowUp"].includes(e.key) || matchesHotkey(e, richPasteHotkeyRef.current)) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
       }
 
       if (isEditable) {
@@ -213,6 +228,7 @@ export const useKeyboardNavigation = ({
       if (showSettings || showTagManager || searchTagPickerOpenRef.current || chatMode || editingTagsId !== null) return;
 
       const action = event.payload;
+      if (action !== "escape" && !searchResultsReadyRef.current) return;
       const history = filteredHistoryRef.current;
       const currentIndex = selectedIndexRef.current;
       const isNavMode = isKeyboardModeRef.current;
@@ -239,7 +255,7 @@ export const useKeyboardNavigation = ({
         if (!isNavMode) return;
         if (currentIndex >= 0 && currentIndex < history.length) {
           const item = history[currentIndex];
-          copyToClipboard(item.id, item.content, item.content_type, false);
+          copyToClipboardRef.current(item.id, item.content, item.content_type, false);
         }
       } else if (action === "escape") {
         setSearch("");

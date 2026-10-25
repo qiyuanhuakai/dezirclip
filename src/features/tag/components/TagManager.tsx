@@ -16,6 +16,7 @@ import { emptyTagSelection, MAX_TAG_BATCH_IDS, selectAllTagEntries, tagEntrySele
 import { matchesTagName } from '../../../shared/lib/tagQuery';
 import { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -47,6 +48,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const privacyActive = privacy.phase === 'ready' && privacy.snapshot?.session.active === true;
     const { selectedTag, selectTag, refresh } = library;
     const [tagSearch, setTagSearch] = useState('');
+    const [tagSearchComposing, setTagSearchComposing] = useState(false);
+    const debouncedTagSearch = useDebounce(tagSearch, 300, !tagSearchComposing);
     const { split } = useSettingsLayout();
     const [collapsed, setCollapsed] = useState(false);
     const [pickerOpen, setPickerOpen] = useState(false);
@@ -89,9 +92,10 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const mounted = useRef(true);
     const colors = tagColors ?? library.colors;
     const filteredTags = useMemo(() => {
-        return library.tags.filter(tag => matchesTagName(tag.name, tagSearch));
-    }, [library.tags, tagSearch]);
+        return library.tags.filter(tag => matchesTagName(tag.name, debouncedTagSearch));
+    }, [library.tags, debouncedTagSearch]);
     const notifyError = useCallback(() => { if (mounted.current) setActionError(true); }, []);
+    const clearRevealError = useCallback(() => { if (mounted.current) setActionError(false); }, []);
     const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
     const excludeBulkReveal = useCallback((id: number) => setBulkRevealExcluded(previous => new Set(previous).add(id)), []);
     useEffect(() => subscribePrivacyInvalidation(() => {
@@ -352,7 +356,10 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             {collapsed ? <button type="button" className="btn-icon tag-manager-rail-search-toggle" title={t('tag_search_label')} aria-label={t('tag_search_label')}
                 onClick={() => { setCollapsed(false); requestAnimationFrame(() => tagSearchInput.current?.focus()); }}><Search size={15} /></button>
                 : <div className="search-container tag-manager-rail-search"><Search className="search-icon" size={13} /><input ref={tagSearchInput} className="search-input"
-                    value={tagSearch} onChange={event => setTagSearch(event.target.value)} placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} /></div>}
+                    value={tagSearch} onChange={event => setTagSearch(event.target.value)}
+                    onCompositionStart={() => setTagSearchComposing(true)}
+                    onCompositionEnd={event => { setTagSearch(event.currentTarget.value); setTagSearchComposing(false); }}
+                    onBlur={() => setTagSearchComposing(false)} placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} /></div>}
             <div className="tag-manager-tag-list" aria-busy={library.metadataLoading}>
                 {renderTagList(false)}
             </div>
@@ -376,6 +383,9 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     <div className="tag-manager-picker-tools">
                         <div className="search-container tag-manager-picker-search"><Search className="search-icon" size={13} />
                             <input ref={tagSearchInput} className="search-input" value={tagSearch} onChange={event => { focusSequence.current += 1; setTagSearch(event.target.value); }}
+                                onCompositionStart={() => setTagSearchComposing(true)}
+                                onCompositionEnd={event => { setTagSearch(event.currentTarget.value); setTagSearchComposing(false); }}
+                                onBlur={() => setTagSearchComposing(false)}
                                 placeholder={t('tag_search_label')} aria-label={t('tag_search_label')} role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls={tagListId} />
                         </div>
                         <button type="button" className="btn-icon" title={t('tag_create')} aria-label={t('tag_create')} onClick={() => openDialog({ kind: 'createTag' })}><Plus size={16} /></button>
@@ -392,6 +402,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     disabled={busy || !selectedTag || library.loading || library.error || library.total === 0 || privacy.phase !== 'ready'}
                     aria-pressed={revealAll} title={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')} aria-label={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')}
                     onClick={() => {
+                        clearRevealError();
                         clearRichTextSnapshots(); void hideCompactPreviewGlobal();
                         setBulkRevealExcluded(new Set());
                         setRevealedScope(revealAll ? null : revealScope);
@@ -426,6 +437,9 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
             <div className="search-container tag-manager-search"><Search className="search-icon" size={14} />
                 <input ref={searchInput} className="search-input" value={library.query} maxLength={256} disabled={!selectedTag}
                     onChange={event => library.setQuery(event.target.value)} placeholder={t('tag_content_search')} aria-label={t('tag_content_search')}
+                    onCompositionStart={() => library.setIsComposing(true)}
+                    onCompositionEnd={event => { library.setQuery(event.currentTarget.value); library.setIsComposing(false); }}
+                    onBlur={() => library.setIsComposing(false)}
                     onKeyDown={event => {
                         if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
                         if (event.key === 'Escape' && library.query) { event.stopPropagation(); library.setQuery(''); }
@@ -451,7 +465,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                             bulkRevealExcluded={bulkRevealExcluded.has(item.id)} onExcludeBulkReveal={excludeBulkReveal}
                             managementMode={managementMode} selectedForDeletion={managementMode && Number.isSafeInteger(item.id) && item.id > 0 && tagEntrySelected(selection, item.id)} onToggleSelection={toggleEntry}
                             richTextSnapshotPreview={richTextSnapshotPreview} theme={theme} language={language} t={t} tagColors={colors}
-                            onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} />}
+                            onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} onRevealAction={clearRevealError} />}
                         components={{ Footer: () => library.loadingMore ? <div className="tag-manager-loading"><LoaderCircle size={15} className="tag-manager-spinner" /></div> : null }} /></div>
                         : <div className="tag-manager-empty">{t(library.error || library.metadataError ? 'tag_load_failed' : !selectedTag ? 'tag_library_empty' : library.query ? 'tag_no_matching_entries' : 'tag_no_entries')}</div>}
             </div>

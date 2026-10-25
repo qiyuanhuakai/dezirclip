@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { ClipboardEntry } from '../../../shared/types';
 import type { TagInfo, TagItemsPage, TagSort } from '../types';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 
 const EMPTY_PAGE: TagItemsPage = { items: [], total: 0, has_more: false, next_offset: null };
@@ -15,7 +16,8 @@ export function useTagLibrary() {
     const [colors, setColors] = useState<Record<string, string>>({});
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
     const [query, setQueryState] = useState('');
-    const [debouncedQuery, setDebouncedQuery] = useState('');
+    const [isComposing, setIsComposing] = useState(false);
+    const debouncedQuery = useDebounce(query, 300, !isComposing);
     const [sortBy, setSortState] = useState<TagSort>('time');
     const [page, setPage] = useState<TagItemsPage>(EMPTY_PAGE);
     const [loading, setLoading] = useState(false);
@@ -129,11 +131,6 @@ export function useTagLibrary() {
     }, [revision, metadataRevision, selectTag, privacy.phase, privacy.snapshot?.privacy_epoch]);
 
     useEffect(() => {
-        const timer = setTimeout(() => setDebouncedQuery(query), 180);
-        return () => clearTimeout(timer);
-    }, [query]);
-
-    useEffect(() => {
         const request = ++generation.current;
         publishPage(EMPTY_PAGE);
         setError(false);
@@ -144,7 +141,7 @@ export function useTagLibrary() {
             return;
         }
         setLoading(true);
-        if (query !== debouncedQuery) return;
+        if (isComposing || query !== debouncedQuery) return;
         void invokePrivacyBound<TagItemsPage>('get_tag_items_page', {
             tag: selectedTag, query: debouncedQuery, sortBy, limit: PAGE_SIZE, offset: 0, expectedEpoch: access.epoch,
         }).then(next => {
@@ -154,7 +151,7 @@ export function useTagLibrary() {
         }).finally(() => {
             if (mounted.current && request === generation.current) setLoading(false);
         });
-    }, [selectedTag, query, debouncedQuery, sortBy, revision, publishPage, privacy.phase, privacy.snapshot?.privacy_epoch]);
+    }, [selectedTag, query, debouncedQuery, isComposing, sortBy, revision, publishPage, privacy.phase, privacy.snapshot?.privacy_epoch]);
 
     const setQuery = useCallback((value: string) => {
         invalidatePage();
@@ -192,7 +189,7 @@ export function useTagLibrary() {
     }, [publishPage]);
 
     return {
-        tags, colors, selectedTag, selectTag, query, setQuery, sortBy, setSortBy, contentRevision: revision,
+        tags, colors, selectedTag, selectTag, query, setQuery, setIsComposing, sortBy, setSortBy, contentRevision: revision,
         items: page.items, total: page.total, hasMore: page.has_more,
         loading, loadingMore, metadataLoading, metadataError, error, loadMore, refresh, refreshMetadata,
     };

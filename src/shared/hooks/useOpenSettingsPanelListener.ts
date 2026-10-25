@@ -1,5 +1,6 @@
 import { startTransition, useEffect } from "react";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { settingsNavigation } from "../lib/settingsNavigation";
 
 interface UseOpenSettingsPanelListenerOptions {
   readonly setShowSettings: (val: boolean) => void;
@@ -16,8 +17,9 @@ export const useOpenSettingsPanelListener = ({
     let disposed = false;
     let unlisten: UnlistenFn | null = null;
 
-    listen("open-settings-panel", () => {
+    listen<unknown>("open-settings-panel", event => {
       startTransition(() => {
+        settingsNavigation.request(event.payload);
         setShowTagManager(false);
         setShowEmojiPanel(false);
         setShowSettings(true);

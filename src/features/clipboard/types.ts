@@ -16,6 +16,7 @@ export interface ClipboardItemProps {
   t: (key: string) => string;
   tagColors?: Record<string, string>;
   richTextSnapshotPreview?: boolean;
+  previewFromKeyboard?: boolean;
 
   onSelect: () => void;
   onCopy: (withFormat?: boolean, pasteImageAsBase64?: boolean) => void;

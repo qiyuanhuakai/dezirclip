@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import type { ClipboardEntry } from "../../../shared/types";
 import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
 import { translations } from "../../../locales";
+import { emit } from "@tauri-apps/api/event";
+import { PRIVACY_RULES_DESTINATION } from "../../../shared/lib/settingsNavigation";
 const privacyActions: PrivacyFeedbackAction[] = ["not_sensitive", "exact_exception", "ignore_source", "protect_source"];
 
 const SUBMENU_CLOSE_DELAY_MS = 120;
@@ -165,6 +167,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
           items.push({ key: `privacy:${action}`, label: translations[language][key] });
         }
       }
+      if (entry && entry.id !== 0 && onPrivacyFeedback) {
+        items.push({ key: "privacyManage", label: translations[language].privacy_rules_manage });
+      }
       return items;
     }, [entry?.is_pinned, entry?.content_type, entry?.id, ocrRunning, ocrText, onEdit, editLabel, onPrivacyFeedback, language]);
 
@@ -181,6 +186,9 @@ const ItemContextMenu = forwardRef<HTMLDivElement, ItemContextMenuProps>(
         const privacyAction = privacyActions.find(action => key === `privacy:${action}`);
         if (privacyAction) onPrivacyFeedback?.(privacyAction);
         switch (key) {
+          case "privacyManage":
+            void emit("open-settings-panel", { destination: PRIVACY_RULES_DESTINATION }).catch(console.error);
+            break;
           case "copy":
             onCopy?.(false);
             break;
@@ -372,7 +380,7 @@ return createPortal(
                 }
               }}
 	            >
-	              <span className="item-context-menu__item-label">{item.label}</span>
+	              <span className="item-context-menu__item-label" title={item.label}>{item.label}</span>
 	              {item.hasSubmenu && (
 	                <span className="item-context-menu__item-arrow">▶</span>
 	              )}

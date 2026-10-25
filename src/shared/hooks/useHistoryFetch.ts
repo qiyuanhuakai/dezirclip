@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
@@ -41,9 +41,11 @@ export const useHistoryFetch = ({
   const lastRequestedOffsetRef = useRef<number | null>(null);
   const currentOffsetRef = useRef(currentOffset);
   const historyLengthRef = useRef(historyLength);
-  useEffect(() => subscribePrivacyInvalidation(() => {
+  const [appliedSearch, setAppliedSearch] = useState<string | null>(null);
+  useEffect(() => subscribePrivacyInvalidation((scope) => {
     fetchSeqRef.current += 1;
     lastRequestedOffsetRef.current = null;
+    if (scope === "all") setAppliedSearch(null);
   }), []);
 
   useEffect(() => {
@@ -59,6 +61,7 @@ export const useHistoryFetch = ({
       try {
         if (reset) {
           lastRequestedOffsetRef.current = null;
+          setAppliedSearch(null);
         }
 
         const baseOffset = reset
@@ -76,7 +79,7 @@ export const useHistoryFetch = ({
           const page = selectedTag ? await invokePrivacyBound<TagItemsPage>("get_tag_items_page", {
             tag: selectedTag, query: "", sortBy: "time", limit: Math.min(pageSize, 100), offset: baseOffset, expectedEpoch: access.epoch
           }) : { items: [], has_more: false, next_offset: null };
-          if (seq !== fetchSeqRef.current) return;
+          if (seq !== fetchSeqRef.current) return false;
           setHistory(previous => reset ? reuseUnchangedEntries(previous, page.items) : [
             ...previous, ...page.items.filter(item => !previous.some(existing => existing.id === item.id
               && existing.host_instance_id === item.host_instance_id))
@@ -92,10 +95,10 @@ export const useHistoryFetch = ({
             });
           } catch (e) {
             console.error("Search failed, falling back", e);
-            data = [];
+            throw e;
           }
 
-          if (seq !== fetchSeqRef.current) return;
+          if (seq !== fetchSeqRef.current) return false;
           // Search results are not paginated; always replace list and stop infinite loading.
           setHistory((prev) => reuseUnchangedEntries(prev, data));
           setCurrentOffset(data.length);
@@ -108,7 +111,7 @@ export const useHistoryFetch = ({
             content_type: typeFilter || undefined
           });
 
-          if (seq !== fetchSeqRef.current) return;
+          if (seq !== fetchSeqRef.current) return false;
 
           const hasMoreNow = rawData.length > pageSize;
           const data = hasMoreNow ? rawData.slice(0, pageSize) : rawData;
@@ -138,10 +141,13 @@ export const useHistoryFetch = ({
             setHasMore(hasMoreNow);
           }
         }
+        setAppliedSearch(debouncedSearch);
+        return true;
       } catch (err) {
-        if (seq !== fetchSeqRef.current) return;
+        if (seq !== fetchSeqRef.current) return false;
         console.error("无法获取历史记录", err);
         setHasMore(false);
+        return false;
       }
     },
     [
@@ -155,7 +161,7 @@ export const useHistoryFetch = ({
   );
 
   const loadMoreHistory = useCallback(async () => {
-    if (loadingRef.current || isLoadingMore || !hasMore) return;
+    if (loadingRef.current || isLoadingMore || !hasMore || appliedSearch !== debouncedSearch) return;
     if (debouncedSearch.trim() && parseTagFilter(debouncedSearch) === null) return;
 
     const effectiveOffset = Math.min(currentOffsetRef.current, historyLengthRef.current);
@@ -170,8 +176,8 @@ export const useHistoryFetch = ({
       loadingRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [debouncedSearch, fetchHistory, hasMore, isLoadingMore, setIsLoadingMore]);
+  }, [appliedSearch, debouncedSearch, fetchHistory, hasMore, isLoadingMore, setIsLoadingMore]);
 
-  return { fetchHistory, loadMoreHistory };
+  return { fetchHistory, loadMoreHistory, appliedSearch };
 };
 

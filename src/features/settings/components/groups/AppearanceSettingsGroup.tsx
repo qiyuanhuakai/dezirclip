@@ -4,12 +4,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { open, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Locale } from "../../../../shared/types";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import ThemedSelect from "../ThemedSelect";
 import { shouldRequestSystemFonts } from "../../utils/systemFontLoading";
 import ThemeManager from "../ThemeManager";
 import { resolveBuiltinTheme } from "../../../../shared/lib/themeRuntime";
 import { getCustomThemes, subscribeCustomThemes } from "../../../../shared/lib/themeCatalog";
+import { usePreviewPreferences } from "../../../../shared/hooks/usePreviewPreferences";
+import { savePreviewPreference } from "../../../../shared/lib/previewPreferenceClient";
 
 interface LabelWithHintProps {
     label: string;
@@ -112,6 +114,25 @@ const AppearanceSettingsGroup = ({
     saveAppSetting
 }: AppearanceSettingsGroupProps) => {
     useSyncExternalStore(subscribeCustomThemes, getCustomThemes);
+    const { preferences: previewPreferences, ready: previewReady, error: previewLoadError, reload: reloadPreviewPreferences } = usePreviewPreferences();
+    const [previewSaving, setPreviewSaving] = useState(false);
+    const [previewSaveError, setPreviewSaveError] = useState(false);
+    const [draftPreviewOpacity, setDraftPreviewOpacity] = useState<number | null>(null);
+    const previewSaveVersion = useRef(0);
+    const savePreview = async (save: () => Promise<void>) => {
+        const request = ++previewSaveVersion.current;
+        setPreviewSaving(true);
+        setPreviewSaveError(false);
+        try { await save(); }
+        catch { if (request === previewSaveVersion.current) setPreviewSaveError(true); }
+        finally {
+            await reloadPreviewPreferences();
+            if (request === previewSaveVersion.current) {
+                setPreviewSaving(false);
+                setDraftPreviewOpacity(null);
+            }
+        }
+    };
     const [systemFonts, setSystemFonts] = useState<SystemFont[]>([]);
     const [systemFontsLoaded, setSystemFontsLoaded] = useState(false);
     useEffect(() => {
@@ -325,6 +346,38 @@ const AppearanceSettingsGroup = ({
                         }}
                     />
                 </div>
+
+                <h4 className="settings-section-title">{t("preview_settings")}</h4>
+                <NativeFeatureBoundary t={t}>
+                    <div className="setting-item">
+                        <div className="item-label-group">
+                            <label className="item-label" htmlFor="preview-keyboard-enabled">{t("preview_keyboard_enabled")}</label>
+                            <span className="hint">{t("preview_keyboard_enabled_hint")}</span>
+                        </div>
+                        <label className="switch">
+                            <input id="preview-keyboard-enabled" className="cb" type="checkbox"
+                                checked={previewPreferences.keyboardEnabled} disabled={!previewReady || previewSaving}
+                                onChange={event => { const value = event.target.checked; void savePreview(() => savePreviewPreference("keyboardEnabled", value)); }} />
+                            <div className="toggle"><div className="left" /><div className="right" /></div>
+                        </label>
+                    </div>
+                    <div className="setting-item column">
+                        <div className="item-label-group">
+                            <label className="item-label" htmlFor="preview-opacity">{t("preview_opacity")}</label>
+                            <span className="hint">{draftPreviewOpacity ?? previewPreferences.opacity}%</span>
+                        </div>
+                        <input id="preview-opacity" type="range" min="0" max="100"
+                            aria-label={t("preview_opacity")} value={draftPreviewOpacity ?? previewPreferences.opacity}
+                            disabled={!previewReady}
+                            onChange={event => {
+                                const value = Number(event.target.value);
+                                setDraftPreviewOpacity(value);
+                                void savePreview(() => savePreviewPreference("opacity", value));
+                            }} style={buildRangeStyle(draftPreviewOpacity ?? previewPreferences.opacity, 0, 100)} />
+                        <span className="hint">{t("preview_opacity_hint")}</span>
+                    </div>
+                    {(previewSaveError || previewLoadError) && <p className="hint" role="alert">{t("preview_preferences_failed")}</p>}
+                </NativeFeatureBoundary>
 
                 {(['mica', 'acrylic', 'liquid-glass'].includes(resolveBuiltinTheme(theme))) && (
                     <>
