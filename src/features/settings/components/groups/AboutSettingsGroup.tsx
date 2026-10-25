@@ -36,10 +36,12 @@ const BuildInfoSection = ({ t }: { readonly t: (key: string) => string }) => {
 
     return (
         <section className="about-build" aria-labelledby="about-build-title">
-            <h4 id="about-build-title">{t("build_info")}</h4>
-            <div className="about-app-version">
-                <strong>DezirClip</strong>
-                <span>{info ? `v${info.component_version}` : "—"}</span>
+            <div className="setting-item settings-section-title">
+                <div className="item-label-group"><span className="item-label" id="about-build-title">{t("build_info")}</span></div>
+            </div>
+            <div className="setting-item about-app-version">
+                <div className="item-label-group"><span className="item-label">DezirClip</span></div>
+                <span className="settings-value">{info ? `v${info.component_version}` : "—"}</span>
             </div>
             {failed && <div className="about-build-error" role="alert">
                 <p>{t("build_info_unavailable")}</p>
@@ -49,7 +51,7 @@ const BuildInfoSection = ({ t }: { readonly t: (key: string) => string }) => {
             </div>}
             {!failed && !info && <p className="update-note" role="status">{t("build_info_loading")}</p>}
             {info && <SettingsDisclosure className="about-build-details" title={t("build_details")}>
-                <dl>
+                <dl className="settings-section-grid">
                     {[
                         [t("build_identifier"), info.build_id ?? "—"],
                         [t("build_source_revision"), info.source_revision ?? "—"],
@@ -58,8 +60,8 @@ const BuildInfoSection = ({ t }: { readonly t: (key: string) => string }) => {
                         [t("build_protocol"), `${info.protocol_version.major}.${info.protocol_version.minor}`],
                         [t("build_database_schema"), String(info.database_schema_version)],
                         ...info.linked_components.map(item => [item.component, item.version]),
-                    ].map(([label, value]) => <div key={label}>
-                        <dt>{label}</dt><dd>{value}</dd>
+                    ].map(([label, value], index) => <div className={`setting-item${index < 2 || index === 3 ? " settings-row--wide" : ""}`} key={label}>
+                        <dt className="item-label-group">{label}</dt><dd className="settings-value">{value}</dd>
                     </div>)}
                 </dl>
             </SettingsDisclosure>}

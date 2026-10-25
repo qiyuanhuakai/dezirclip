@@ -3,10 +3,11 @@ import { useEffect, useState } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ask, message } from "@tauri-apps/plugin-dialog";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";
 import { resolveRichTextSnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshotCache";
 import { setRichTextSnapshotCacheLimit as applySnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshot";
+import HotkeyListEditor from "../HotkeyListEditor";
 import { PrivacySessionSection } from "./PrivacySessionSection";
 
 interface LabelWithHintProps {
@@ -765,82 +766,10 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                     </div>
 
                     <NativeFeatureBoundary t={props.t}>
-                    <div className="setting-item no-border column">
-                        <div className="item-label-group">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span className="item-label">{props.t('global_hotkey')}</span>
-                            </div>
-
-                            <div
-                                className={`key-group ${props.isRecording ? 'recording' : ''}`}
-                                onClick={(e) => { props.setIsRecording(true); invoke("focus_clipboard_window").catch(console.error); e.currentTarget.focus(); }}
-                                tabIndex={0}
-                                onKeyDown={(e) => {
-                                    if (!props.isRecording) return;
-                                    e.preventDefault();
-                                    e.stopPropagation();
-
-                                    if (e.key === 'Escape') {
-                                        props.setIsRecording(false);
-                                        return;
-                                    }
-
-                                    const modifiers = [];
-                                    if (e.ctrlKey) modifiers.push('Ctrl');
-                                    if (e.shiftKey) modifiers.push('Shift');
-                                    if (e.altKey) modifiers.push('Alt');
-                                    if (e.metaKey) modifiers.push('Win');
-
-                                    const key = e.key.toUpperCase();
-                                    if (['CONTROL', 'SHIFT', 'ALT', 'META'].includes(key)) return;
-
-                                    const newHotkey = [...modifiers, key].join('+');
-                                    props.addMainHotkey(newHotkey);
-                                }}
-                                onMouseDown={(e) => {
-                                    if (!props.isRecording) return;
-                                    e.preventDefault();
-                                    if (e.button === 1) {
-                                        props.addMainHotkey('MouseMiddle', { skipAvailabilityCheck: true });
-                                    }
-                                }}
-                            >
-                                <div className="key-cap" style={{ width: '12em' }}>
-                                    {props.isRecording ? props.t('waiting_for_input') : `+ ${props.t('global_hotkey')}`}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {props.mainHotkeys.map((item, idx) => (
-                                <div key={`${item}-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <div className="key-group" style={{ flex: 1, cursor: 'default' }}>
-                                        {item.split('+').map((k, i) => (
-                                            <div key={i} className="key-cap">{k}</div>
-                                        ))}
-                                    </div>
-                                    {(!isWinVHotkey(item) || !props.registryWinVEnabled) && (
-                                        <button
-                                            type="button"
-                                            className="btn-icon btn-icon-scalable btn-icon-size-hotkey"
-                                            onClick={() => props.removeMainHotkey(item)}
-                                            aria-label={`${props.t('delete')} ${item}`}
-                                            title={`${props.t('delete')} ${item}`}
-                                        >
-                                            <X size={14} strokeWidth={2.6} />
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-
-                            {props.mainHotkeys.length === 0 && !props.isRecording && (
-                                <div className="key-group" style={{ cursor: 'default' }}>
-                                    <div className="key-cap" style={{ width: '8em', opacity: 0.5 }}>{props.t('not_set')}</div>
-                                </div>
-                            )}
-
-                        </div>
-                    </div>
+                    <HotkeyListEditor t={props.t} labelKey="global_hotkey" hotkeys={props.mainHotkeys}
+                        recording={props.isRecording} setRecording={props.setIsRecording}
+                        onAdd={props.addMainHotkey} onRemove={props.removeMainHotkey}
+                        canRemove={item => !isWinVHotkey(item) || !props.registryWinVEnabled} />
 
                     <div className="setting-item">
                         <props.LabelWithHint
