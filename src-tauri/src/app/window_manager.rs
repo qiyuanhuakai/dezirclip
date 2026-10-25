@@ -612,24 +612,17 @@ pub fn notify_main_window_painted(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.set_focusable(true);
-
-        #[cfg(windows)]
-        {
-            if let Ok(hwnd_raw) = window.hwnd() {
-                unsafe {
-                    let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
-                    let next = ex_style & !(WS_EX_NOACTIVATE.0 as isize);
-                    let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, next);
-                }
-                let _ = window.set_focus();
-                WindowExt::force_focus_window(HWND(hwnd_raw.0));
-                return Ok(());
-            }
-        }
-        let _ = window.set_focus();
+    let window = app_handle.get_webview_window("main").ok_or("MainWindowUnavailable")?;
+    window.set_focusable(true).map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    {
+        let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+        WindowExt::allow_activation(HWND(hwnd.0))?;
+        window.set_focus().map_err(|error| error.to_string())?;
+        WindowExt::force_focus_window(HWND(hwnd.0));
     }
+    #[cfg(not(windows))]
+    window.set_focus().map_err(|error| error.to_string())?;
     Ok(())
 }
 

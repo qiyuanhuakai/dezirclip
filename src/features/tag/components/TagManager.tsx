@@ -92,6 +92,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         return library.tags.filter(tag => matchesTagName(tag.name, tagSearch));
     }, [library.tags, tagSearch]);
     const notifyError = useCallback(() => { if (mounted.current) setActionError(true); }, []);
+    const clearRevealError = useCallback(() => { if (mounted.current) setActionError(false); }, []);
     const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
     const excludeBulkReveal = useCallback((id: number) => setBulkRevealExcluded(previous => new Set(previous).add(id)), []);
     useEffect(() => subscribePrivacyInvalidation(() => {
@@ -392,6 +393,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     disabled={busy || !selectedTag || library.loading || library.error || library.total === 0 || privacy.phase !== 'ready'}
                     aria-pressed={revealAll} title={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')} aria-label={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')}
                     onClick={() => {
+                        clearRevealError();
                         clearRichTextSnapshots(); void hideCompactPreviewGlobal();
                         setBulkRevealExcluded(new Set());
                         setRevealedScope(revealAll ? null : revealScope);
@@ -451,7 +453,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                             bulkRevealExcluded={bulkRevealExcluded.has(item.id)} onExcludeBulkReveal={excludeBulkReveal}
                             managementMode={managementMode} selectedForDeletion={managementMode && Number.isSafeInteger(item.id) && item.id > 0 && tagEntrySelected(selection, item.id)} onToggleSelection={toggleEntry}
                             richTextSnapshotPreview={richTextSnapshotPreview} theme={theme} language={language} t={t} tagColors={colors}
-                            onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} />}
+                            onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} onRevealAction={clearRevealError} />}
                         components={{ Footer: () => library.loadingMore ? <div className="tag-manager-loading"><LoaderCircle size={15} className="tag-manager-spinner" /></div> : null }} /></div>
                         : <div className="tag-manager-empty">{t(library.error || library.metadataError ? 'tag_load_failed' : !selectedTag ? 'tag_library_empty' : library.query ? 'tag_no_matching_entries' : 'tag_no_entries')}</div>}
             </div>

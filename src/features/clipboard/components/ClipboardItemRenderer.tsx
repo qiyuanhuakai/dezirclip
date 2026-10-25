@@ -106,16 +106,22 @@ const ClipboardItemRenderer = ({
     const setResourcePreview = (value: ClipboardEntry | null) => setResourceState(value ? { source: item, value } : null);
     const mounted = useRef(false);
     const detailGeneration = useRef(0);
+    const pendingReveal = useRef<number | null>(null);
+    const [revealPending, setRevealPending] = useState(false);
     const currentItem = useRef(item);
     currentItem.current = item;
     const sensitive = isSensitiveEntry(item);
     useEffect(() => {
         mounted.current = true;
-        const stop = subscribePrivacyInvalidation(() => { detailGeneration.current += 1; setDetail(null); setResourcePreview(null); });
+        const stop = subscribePrivacyInvalidation(() => {
+            detailGeneration.current += 1; pendingReveal.current = null; setRevealPending(false); setDetail(null); setResourcePreview(null);
+        });
         return () => { mounted.current = false; detailGeneration.current += 1; forgetPrivacyReveal(currentItem.current); stop(); };
     }, []);
     useEffect(() => {
         detailGeneration.current += 1;
+        pendingReveal.current = null;
+        setRevealPending(false);
         setDetail(null);
         setRevealedIds(previous => {
             if (!previous.has(item.id)) return previous;
@@ -127,7 +133,8 @@ const ClipboardItemRenderer = ({
         const generation = detailGeneration.current;
         const access = beginPrivacyAccess();
         if (!access) return Promise.reject(new Error("PrivacyStateUnavailable"));
-        const request = sensitive ? getPrivacyEntry(item.id, item.host_instance_id)
+        const request = sensitive ? getPrivacyEntry(item.id, item.host_instance_id, () => mounted.current && access.isCurrent()
+            && detailGeneration.current === generation && currentItem.current === requestedItem)
             : invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, reveal: false });
         return request.then(value => {
             if (!mounted.current || !access.isCurrent() || detailGeneration.current !== generation || currentItem.current !== requestedItem
@@ -169,8 +176,11 @@ const ClipboardItemRenderer = ({
     const onToggleReveal = useCallback(
         (e: MouseEvent) => {
             e.stopPropagation();
+            const hiding = isRevealed || pendingReveal.current !== null;
             const generation = ++detailGeneration.current;
-            if (isRevealed) {
+            pendingReveal.current = null;
+            setRevealPending(false);
+            if (hiding) {
                 forgetPrivacyReveal(item);
                 clearRichTextSnapshots();
                 void hideCompactPreviewGlobal();
@@ -180,12 +190,17 @@ const ClipboardItemRenderer = ({
             }
             const access = beginPrivacyAccess();
             if (!access) return;
+            pendingReveal.current = generation;
+            setRevealPending(true);
             void loadFullItem().then(value => {
                 if (!mounted.current || !access.isCurrent() || currentItem.current !== item || detailGeneration.current !== generation) return;
                 registerPrivacyReveal(item);
                 setDetail(value);
                 setRevealedIds(previous => new Set(previous).add(itemId));
-            }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation) onTransformError(item, "privacy_read", t("privacy_action_failed")); });
+            }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation) onTransformError(item, "privacy_read", t("privacy_action_failed")); })
+                .finally(() => {
+                    if (mounted.current && pendingReveal.current === generation) { pendingReveal.current = null; setRevealPending(false); }
+                });
         },
         [setRevealedIds, itemId, isRevealed, item, loadFullItem, onTransformError, t]
     );
@@ -280,7 +295,7 @@ const ClipboardItemRenderer = ({
             previewFromKeyboard={previewFromKeyboard}
             windowPinned={windowPinned}
             isSensitiveHidden={isSensitiveHidden || (sensitive && !detail)}
-            isRevealed={isRevealed && !!detail}
+            isRevealed={revealPending || (isRevealed && !!detail)}
             isEditingTags={isEditingTags}
             tagInput={tagInput}
             tagColors={tagColors}

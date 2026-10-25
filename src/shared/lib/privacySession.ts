@@ -275,13 +275,16 @@ export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurren
   return access;
 }
 
-export async function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
+export async function getPrivacyEntry(id: number, hostInstanceId?: string, requestIsCurrent?: () => boolean): Promise<ClipboardEntry> {
+  const checkRequest = () => { if (requestIsCurrent && !requestIsCurrent()) throw new Error("PrivacyReadSuperseded"); };
+  checkRequest();
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");
   const token = fence.capture();
   const current = getCurrentWindow();
   if (current.label === "main") {
     const focused = await current.isFocused();
+    checkRequest();
     if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
     if (!focused) {
       if (!activationRequest) {
@@ -296,8 +299,11 @@ export async function getPrivacyEntry(id: number, hostInstanceId?: string): Prom
       await refreshPrivacyState();
     }
   }
+  checkRequest();
   if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
-  return invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch, ...entryInstanceArgs(hostInstanceId) });
+  const entry = await invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch, ...entryInstanceArgs(hostInstanceId) });
+  checkRequest();
+  return entry;
 }
 
 export type PrivacyFeedbackAction = "not_sensitive" | "exact_exception" | "ignore_source" | "protect_source";
@@ -312,22 +318,34 @@ export async function submitPrivacyFeedback(id: number, action: PrivacyFeedbackA
 }
 
 export async function refreshPrivacyAfterConfirmation(expectedEpoch?: number): Promise<void> {
-  await invoke("activate_window_focus");
-  await new Promise<void>((resolve, reject) => {
-    const finish = (error?: Error) => {
-      clearTimeout(timeout);
-      observers.delete(check);
-      window.removeEventListener("focus", check);
-      if (error) reject(error); else resolve();
-    };
-    const check = () => {
-      if (viewSuspended || document.hidden || !document.hasFocus() || model.phase !== "ready") return;
-      finish(expectedEpoch === undefined || model.snapshot?.privacy_epoch === expectedEpoch ? undefined : new Error("PrivacyEpochChanged"));
-    };
-    const timeout = setTimeout(() => finish(new Error("PrivacyStateUnavailable")), 2000);
-    observers.add(check);
-    window.addEventListener("focus", check);
-    void refreshPrivacyState();
-    check();
-  });
+  const token = fence.capture();
+  const started = lifecycle;
+  const current = getCurrentWindow();
+  const deadline = Date.now() + 2000;
+  const wait = async <T>(request: Promise<T>): Promise<T> => {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    return Promise.race([
+      request,
+      new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("PrivacyStateUnavailable")), Math.max(1, deadline - Date.now())); }),
+    ]).finally(() => { if (timeout !== null) clearTimeout(timeout); });
+  };
+  await wait(invoke("activate_window_focus"));
+  for (;;) {
+    if (started !== lifecycle || !fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+    const revision = visibilityRevision;
+    const [visible, focused] = await wait(Promise.all([current.isVisible(), current.isFocused()]));
+    if (started !== lifecycle || !fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+    if (revision === visibilityRevision && visible && focused && !document.hidden) {
+      viewSuspended = false;
+      activeView = true;
+      await wait(refreshPrivacyState());
+      if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+      if (model.phase !== "ready" || viewSuspended || !activeView) throw new Error("PrivacyStateUnavailable");
+      if (expectedEpoch !== undefined && model.snapshot?.privacy_epoch !== expectedEpoch) throw new Error("PrivacyEpochChanged");
+      if (revision !== visibilityRevision) continue;
+      return;
+    }
+    if (Date.now() >= deadline || document.hidden) throw new Error("PrivacyStateUnavailable");
+    await new Promise<void>(resolve => setTimeout(resolve, 25));
+  }
 }
