@@ -30,6 +30,13 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
     const deadline = setTimeout(() => invalidate(new Error("PinnedPreviewTimeout")), 8000);
     const owned: { window: InstanceType<typeof WebviewWindow> | null } = { window: null };
     let finished = false;
+    let creationSettled = false;
+    const creationStops: Array<() => void> = [];
+    const settleCreation = () => {
+        creationSettled = true;
+        creationStops.splice(0).forEach(stop => stop());
+    };
+    const retainCreationStop = (stop: () => void) => { if (creationSettled) stop(); else creationStops.push(stop); };
     const requireCurrent = () => { if (invalidated || !valid()) throw new Error("PreviewRequestExpired"); };
     const retainStop = (stop: () => void) => { if (finished) stop(); else stops.push(stop); };
     try {
@@ -58,8 +65,15 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
         const window = owned.window;
         // Creation events are local to this object and can arrive before a native listener registers.
         const created = new Promise<void>((resolve, reject) => {
-            void window.once("tauri://created", () => resolve()).then(retainStop, reject);
-            void window.once("tauri://error", () => reject(new Error("PinnedPreviewCreateFailed"))).then(retainStop, reject);
+            void window.once("tauri://created", () => {
+                settleCreation();
+                if (finished || invalidated || !valid()) void window.close().catch(() => undefined);
+                resolve();
+            }).then(retainCreationStop, reject);
+            void window.once("tauri://error", () => {
+                settleCreation();
+                reject(new Error("PinnedPreviewCreateFailed"));
+            }).then(retainCreationStop, reject);
         });
         void created.catch(() => undefined);
         void window.once("tauri://destroyed", () => invalidate(new Error("PinnedPreviewClosed")))
