@@ -123,11 +123,16 @@ const ClipboardItemRenderer = ({
     const loadFullItem = useCallback(() => {
         const requestedItem = currentItem.current;
         const generation = detailGeneration.current;
-        return getPrivacyEntry(item.id, item.host_instance_id).then(value => {
-            if (!mounted.current || detailGeneration.current !== generation || currentItem.current !== requestedItem) throw new Error("PrivacyReadSuperseded");
+        const access = beginPrivacyAccess();
+        if (!access) return Promise.reject(new Error("PrivacyStateUnavailable"));
+        const request = sensitive ? getPrivacyEntry(item.id, item.host_instance_id)
+            : invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, reveal: false });
+        return request.then(value => {
+            if (!mounted.current || !access.isCurrent() || detailGeneration.current !== generation || currentItem.current !== requestedItem
+                || !matchesEntryIdentity(value, item.id, item.host_instance_id)) throw new Error("PrivacyReadSuperseded");
             return value;
         });
-    }, [item.id, item.host_instance_id]);
+    }, [item.id, item.host_instance_id, sensitive]);
     useEffect(() => {
         let disposed = false;
         setResourcePreview(null);
@@ -296,7 +301,7 @@ const ClipboardItemRenderer = ({
             onQRCode={onQRCodeForItem}
             onTransformItemError={onTransformItemError}
             onTransformItemSuccess={onTransformItemSuccess}
-            loadFullItem={sensitive ? loadFullItem : undefined}
+            loadFullItem={loadFullItem}
         />
     );
 };

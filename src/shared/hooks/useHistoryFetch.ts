@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
-import { invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
+import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
 import { HISTORY_SEARCH_LIMIT } from "../../features/app/constants/pagination";
 import { reuseUnchangedEntries } from "../lib/reuseUnchanged";
+import { parseTagFilter } from "../lib/tagQuery";
+import type { TagItemsPage } from "../../features/tag/types";
 
 interface UseHistoryFetchOptions {
   debouncedSearch: string;
@@ -67,15 +69,25 @@ export const useHistoryFetch = ({
 
         const hasSearch = debouncedSearch && debouncedSearch.trim().length > 0;
 
-        if (hasSearch) {
-          let term = debouncedSearch;
-          if (term.startsWith("tag:")) {
-            term = term.slice(4);
-          }
+        const selectedTag = hasSearch ? parseTagFilter(debouncedSearch) : null;
+        if (selectedTag !== null) {
+          const access = beginPrivacyAccess();
+          if (!access) throw new Error("PrivacyStateUnavailable");
+          const page = selectedTag ? await invokePrivacyBound<TagItemsPage>("get_tag_items_page", {
+            tag: selectedTag, query: "", sortBy: "time", limit: Math.min(pageSize, 100), offset: baseOffset, expectedEpoch: access.epoch
+          }) : { items: [], has_more: false, next_offset: null };
+          if (seq !== fetchSeqRef.current) return;
+          setHistory(previous => reset ? reuseUnchangedEntries(previous, page.items) : [
+            ...previous, ...page.items.filter(item => !previous.some(existing => existing.id === item.id
+              && existing.host_instance_id === item.host_instance_id))
+          ]);
+          setCurrentOffset(page.next_offset ?? baseOffset + page.items.length);
+          setHasMore(page.has_more);
+        } else if (hasSearch) {
 
           try {
             data = await invokePrivacyBound<ClipboardEntry[]>("search_clipboard_history", {
-              searchTerm: term,
+              searchTerm: debouncedSearch,
               limit: HISTORY_SEARCH_LIMIT
             });
           } catch (e) {
@@ -144,7 +156,7 @@ export const useHistoryFetch = ({
 
   const loadMoreHistory = useCallback(async () => {
     if (loadingRef.current || isLoadingMore || !hasMore) return;
-    if (debouncedSearch && debouncedSearch.trim().length > 0) return;
+    if (debouncedSearch.trim() && parseTagFilter(debouncedSearch) === null) return;
 
     const effectiveOffset = Math.min(currentOffsetRef.current, historyLengthRef.current);
     if (lastRequestedOffsetRef.current === effectiveOffset) return;

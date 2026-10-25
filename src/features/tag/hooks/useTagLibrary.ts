@@ -4,7 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { ClipboardEntry } from '../../../shared/types';
 import type { TagInfo, TagItemsPage, TagSort } from '../types';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
-import { invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 
 const EMPTY_PAGE: TagItemsPage = { items: [], total: 0, has_more: false, next_offset: null };
 const PAGE_SIZE = 60;
@@ -136,14 +136,15 @@ export function useTagLibrary() {
         publishPage(EMPTY_PAGE);
         setError(false);
         setLoadingMore(false);
-        if (!selectedTag || privacy.phase !== 'ready') {
+        const access = beginPrivacyAccess();
+        if (!selectedTag || privacy.phase !== 'ready' || !access) {
             setLoading(false);
             return;
         }
         setLoading(true);
         if (query !== debouncedQuery) return;
         void invokePrivacyBound<TagItemsPage>('get_tag_items_page', {
-            tag: selectedTag, query: debouncedQuery, sortBy, limit: PAGE_SIZE, offset: 0,
+            tag: selectedTag, query: debouncedQuery, sortBy, limit: PAGE_SIZE, offset: 0, expectedEpoch: access.epoch,
         }).then(next => {
             if (mounted.current && request === generation.current) publishPage(next);
         }).catch(() => {
@@ -166,14 +167,15 @@ export function useTagLibrary() {
     const loadMore = useCallback(() => {
         const current = pageRef.current;
         const active = requestState.current;
-        if (!active.selectedTag || active.loading || active.error || !current.has_more || current.next_offset === null) return;
+        const access = beginPrivacyAccess();
+        if (!access || !active.selectedTag || active.loading || active.error || !current.has_more || current.next_offset === null) return;
         const request = generation.current;
         const key = `${request}:${current.next_offset}`;
         if (pending.current.has(key)) return;
         pending.current.add(key);
         setLoadingMore(true);
         void invokePrivacyBound<TagItemsPage>('get_tag_items_page', {
-            tag: active.selectedTag, query: active.debouncedQuery, sortBy: active.sortBy, limit: PAGE_SIZE, offset: current.next_offset,
+            tag: active.selectedTag, query: active.debouncedQuery, sortBy: active.sortBy, limit: PAGE_SIZE, offset: current.next_offset, expectedEpoch: access.epoch,
         }).then(next => {
             if (!mounted.current || request !== generation.current) return;
             const known = new Set(pageRef.current.items.map(item => item.id));

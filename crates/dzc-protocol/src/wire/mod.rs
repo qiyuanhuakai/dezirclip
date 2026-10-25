@@ -120,4 +120,19 @@ mod tests {
         assert_eq!(error["code"], "permission_denied");
         assert_eq!(error["message"], "Local request failed");
     }
+    #[test]
+    fn tag_page_requests_require_bounded_owner_and_epoch_metadata() {
+        let valid = serde_json::json!({"request_id":"tag-fixture","method":"desktop.tags.page","params":{
+            "tag":"密码","query":"","sort_by":"time","limit":60,"offset":0,"service_instance_id":"original-owner","expected_epoch":3}});
+        assert!(validate("Request", &valid).is_ok());
+        for (field, value) in [("limit", serde_json::json!(101)), ("offset", serde_json::json!(-1)),
+            ("tag", serde_json::json!("")), ("sort_by", serde_json::json!("body")), ("reveal", serde_json::json!(true))] {
+            let mut invalid = valid.clone(); invalid["params"][field] = value;
+            assert!(validate("Request", &invalid).is_err(), "{field}");
+        }
+        for field in ["expected_epoch", "service_instance_id"] {
+            let mut invalid = valid.clone(); invalid["params"].as_object_mut().unwrap().remove(field);
+            assert!(validate("Request", &invalid).is_err());
+        }
+    }
 }
