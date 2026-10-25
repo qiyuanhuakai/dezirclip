@@ -50,6 +50,9 @@ pub struct FrozenScreenFrame {
 }
 
 impl FrozenScreenFrame {
+    pub fn png_bytes(&self) -> Result<Vec<u8>, ScreenshotError> {
+        encode_png(&self.pixels)
+    }
     pub(crate) fn from_pixels(rect: MonitorRect, pixels: xcap::image::RgbaImage) -> Result<Self, ScreenshotError> {
         if rect.width == 0 || rect.height == 0 || pixels.dimensions() != (rect.width, rect.height) {
             return Err(ScreenshotError::RegionOutOfBounds);
@@ -273,6 +276,18 @@ pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frozen_preview_and_region_use_the_same_original_pixels() {
+        let rect = MonitorRect { x: -3, y: 2, width: 4, height: 3, is_primary: false };
+        let frame = FrozenScreenFrame::from_pixels(rect,
+            xcap::image::RgbaImage::from_fn(4, 3, |x, y| xcap::image::Rgba([x as u8 * 40, y as u8 * 40, 17, 255]))).unwrap();
+        let preview = xcap::image::load_from_memory(&frame.png_bytes().unwrap()).unwrap().to_rgba8();
+        let captured = frame.crop(-2, 3, 2, 2).unwrap();
+        let crop = xcap::image::load_from_memory(&captured.png_bytes).unwrap().to_rgba8();
+        assert_eq!(preview.dimensions(), (4, 3));
+        for y in 0..2 { for x in 0..2 { assert_eq!(crop.get_pixel(x, y), preview.get_pixel(x + 1, y + 1)); } }
+    }
 
     #[test]
     fn frozen_region_crops_original_pixels_with_negative_monitor_origin() {

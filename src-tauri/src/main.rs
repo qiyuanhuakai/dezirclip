@@ -309,6 +309,7 @@ fn main() {
             app::commands::screenshot_cmd::capture_full_screen,
             app::commands::screenshot_cmd::capture_region,
             app::commands::screenshot_cmd::get_region_capture_session,
+            app::commands::screenshot_cmd::get_region_capture_frame,
             app::commands::screenshot_cmd::hide_region_select,
             app::commands::screenshot_cmd::show_region_selector,
             #[cfg(target_os = "windows")]

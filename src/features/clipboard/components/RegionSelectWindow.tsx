@@ -1,5 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
 import "./RegionSelectWindow.css";
@@ -23,7 +25,14 @@ type RegionSelectWindowProps = {
   onCancel?: () => void;
 };
 
-type RegionCaptureSession = { token: string; x: number; y: number; scale: number };
+type RegionCaptureSession = { token: string; x: number; y: number; width: number; height: number; scale: number; generation: number };
+type RegionSessionChange = { token: string | null; generation: number };
+type RegionBackdrop = { url: string; session: RegionCaptureSession; revision: number };
+
+const matchesFrameLayout = (session: RegionCaptureSession) =>
+  Number.isFinite(session.scale) && session.scale > 0 &&
+  Math.abs(window.innerWidth * session.scale - session.width) <= 1 &&
+  Math.abs(window.innerHeight * session.scale - session.height) <= 1;
 
 const MIN_SELECTION_SIZE = 10;
 /**
@@ -51,18 +60,27 @@ const meetsMinimum = (rect: CaptureRect) =>
 export const toPhysicalCaptureRect = (
   rect: CaptureRect,
   origin: { x: number; y: number },
-  scale: number
-): CaptureRect => ({
-  x: Math.round(origin.x + rect.x * scale),
-  y: Math.round(origin.y + rect.y * scale),
-  width: Math.round(rect.width * scale),
-  height: Math.round(rect.height * scale),
-});
+  scale: number | { x: number; y: number }
+): CaptureRect => {
+  const scaleX = typeof scale === "number" ? scale : scale.x;
+  const scaleY = typeof scale === "number" ? scale : scale.y;
+  const x = Math.round(origin.x + rect.x * scaleX);
+  const y = Math.round(origin.y + rect.y * scaleY);
+  return {
+    x,
+    y,
+    width: Math.round(origin.x + (rect.x + rect.width) * scaleX) - x,
+    height: Math.round(origin.y + (rect.y + rect.height) * scaleY) - y,
+  };
+};
 
 const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [dragging, setDragging] = useState(false);
   const [boxVisible, setBoxVisible] = useState(false);
+  const [backdrop, setBackdrop] = useState<RegionBackdrop | null>(null);
+  const [backdropReady, setBackdropReady] = useState(false);
+  const [listenersReady, setListenersReady] = useState(false);
 
   const boxRef = useRef<HTMLDivElement | null>(null);
   const dimsRef = useRef<HTMLDivElement | null>(null);
@@ -81,8 +99,17 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
   const framePending = useRef(false);
   const pendingRef = useRef<{ x: number; y: number } | null>(null);
   const visibleRef = useRef(false);
-  const capturePending = useRef(false);
-  const activeSession = useRef<Promise<RegionCaptureSession | null> | null>(null);
+  const capturePending = useRef<RegionCaptureSession | null>(null);
+  const activeSession = useRef<RegionCaptureSession | null>(null);
+  const readySession = useRef<RegionCaptureSession | null>(null);
+  const pendingSession = useRef<RegionCaptureSession | null>(null);
+  const backdropRevision = useRef(0);
+  const serverGeneration = useRef(-1);
+  const visibilityRevision = useRef(0);
+  const announcedSession = useRef<string | null>(null);
+  const objectUrl = useRef<string | null>(null);
+  const decodingImage = useRef<HTMLImageElement | null>(null);
+  const displayedImage = useRef<HTMLImageElement | null>(null);
 
   // The capture overlay is usually opened straight from a hotkey, long before
   // the main window has ever rendered, so theme and colour mode come from the
@@ -161,10 +188,160 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     setSelection(null);
   }, [cancelFrame]);
 
+  const clearBackdrop = useCallback(() => {
+    backdropRevision.current += 1;
+    readySession.current = null;
+    pendingSession.current = null;
+    activeSession.current = null;
+    if (decodingImage.current) decodingImage.current.src = "";
+    decodingImage.current = null;
+    displayedImage.current?.removeAttribute("src");
+    if (objectUrl.current) URL.revokeObjectURL(objectUrl.current);
+    objectUrl.current = null;
+    setBackdrop(null);
+    setBackdropReady(false);
+    setDragging(false);
+    clearSelection();
+  }, [clearSelection]);
+
+  useLayoutEffect(() => {
+    if (!backdrop || backdrop.revision !== backdropRevision.current || objectUrl.current !== backdrop.url || !matchesFrameLayout(backdrop.session)) return;
+    readySession.current = backdrop.session;
+    pendingSession.current = null;
+    setBackdropReady(true);
+  }, [backdrop]);
+
+  useEffect(() => {
+    let disposed = false;
+    const cleanups: UnlistenFn[] = [];
+    const readNativeVisible = async (revision: number): Promise<boolean | null> => {
+      while (!disposed && revision === backdropRevision.current) {
+        const request = visibilityRevision.current;
+        try {
+          const visible = await getCurrentWindow().isVisible();
+          if (disposed || revision !== backdropRevision.current) return null;
+          if (request === visibilityRevision.current) return visible;
+        } catch (error) {
+          if (disposed || revision !== backdropRevision.current) return null;
+          if (request === visibilityRevision.current) throw error;
+        }
+      }
+      return null;
+    };
+    const syncBackdrop = async (change?: RegionSessionChange) => {
+      if (disposed) return;
+      if (change) {
+        if (!Number.isSafeInteger(change.generation) || change.generation < serverGeneration.current) return;
+        serverGeneration.current = change.generation;
+        if (change.token === null) { clearBackdrop(); return; }
+        announcedSession.current = change.token;
+        if (readySession.current?.token === change.token && readySession.current.generation === change.generation && matchesFrameLayout(readySession.current)) return;
+        clearBackdrop();
+      }
+      const initialRevision = backdropRevision.current;
+      let requestRevision = initialRevision;
+      try {
+        const visible = await readNativeVisible(initialRevision);
+        if (disposed || initialRevision !== backdropRevision.current) return;
+        if (visible === null) return;
+        if (!visible) { clearBackdrop(); return; }
+        const session = await invoke<RegionCaptureSession>("get_region_capture_session");
+        if (disposed || initialRevision !== backdropRevision.current || session.generation < serverGeneration.current) return;
+        serverGeneration.current = session.generation;
+        announcedSession.current = session.token;
+        if (change && (session.token !== change.token || session.generation !== change.generation)) return;
+        if (!matchesFrameLayout(session)) { clearBackdrop(); return; }
+        if (readySession.current?.token === session.token && readySession.current.generation === session.generation) return;
+        if (pendingSession.current?.token === session.token && pendingSession.current.generation === session.generation) return;
+        clearBackdrop();
+        const revision = backdropRevision.current;
+        requestRevision = revision;
+        pendingSession.current = session;
+        const bytes = await invoke<ArrayBuffer | number[]>("get_region_capture_frame", { sessionToken: session.token });
+        if (disposed || revision !== backdropRevision.current || session.generation !== serverGeneration.current) return;
+        const data = bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes).buffer;
+        const url = URL.createObjectURL(new Blob([data], { type: "image/png" }));
+        objectUrl.current = url;
+        const image = new Image();
+        decodingImage.current = image;
+        image.src = url;
+        try { await image.decode(); }
+        catch (error) {
+          URL.revokeObjectURL(url);
+          if (disposed || revision !== backdropRevision.current) return;
+          throw error;
+        }
+        if (disposed || revision !== backdropRevision.current || objectUrl.current !== url || session.generation !== serverGeneration.current) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        if (image.naturalWidth !== session.width || image.naturalHeight !== session.height || !matchesFrameLayout(session)) {
+          clearBackdrop();
+          return;
+        }
+        const stillVisible = await readNativeVisible(revision);
+        if (disposed || revision !== backdropRevision.current || objectUrl.current !== url || session.generation !== serverGeneration.current) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        if (stillVisible === null) return;
+        if (!stillVisible) { clearBackdrop(); return; }
+        decodingImage.current = null;
+        setBackdrop({ url, session, revision });
+      } catch (error) {
+        if (!disposed && requestRevision === backdropRevision.current) {
+          clearBackdrop();
+          console.warn("Region capture preview unavailable", error);
+        }
+      }
+    };
+    const resize = () => { visibilityRevision.current += 1; clearBackdrop(); if (!document.hidden) void syncBackdrop(); };
+    const visibility = () => { visibilityRevision.current += 1; if (document.hidden) clearBackdrop(); else void syncBackdrop(); };
+    const focus = () => { visibilityRevision.current += 1; if (!document.hidden) void syncBackdrop(); };
+    const hide = () => clearBackdrop();
+    const nativeFocus = (focused: boolean) => {
+      if (focused) { focus(); return; }
+      const revision = backdropRevision.current;
+      const request = ++visibilityRevision.current;
+      void getCurrentWindow().isVisible().then(visible => {
+        if (!disposed && revision === backdropRevision.current && request === visibilityRevision.current && !visible) clearBackdrop();
+      }).catch(() => { if (!disposed && revision === backdropRevision.current && request === visibilityRevision.current) clearBackdrop(); });
+    };
+    window.addEventListener("resize", resize);
+    window.addEventListener("focus", focus);
+    window.addEventListener("pagehide", hide);
+    document.addEventListener("visibilitychange", visibility);
+    void (async () => {
+      const registrations = [
+        () => listen<RegionSessionChange>("region-capture-session-changed", event => { void syncBackdrop(event.payload); }),
+        () => getCurrentWindow().onFocusChanged(event => nativeFocus(event.payload)),
+        () => getCurrentWindow().onScaleChanged(resize),
+      ];
+      try {
+        for (const register of registrations) {
+          const unlisten = await register();
+          if (disposed) { unlisten(); return; }
+          cleanups.push(unlisten);
+        }
+        setListenersReady(true);
+        void syncBackdrop();
+      } catch (error) { if (!disposed) console.warn("Region capture preview listeners unavailable", error); }
+    })();
+    return () => {
+      disposed = true;
+      for (const cleanup of cleanups) cleanup();
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("focus", focus);
+      window.removeEventListener("pagehide", hide);
+      document.removeEventListener("visibilitychange", visibility);
+      clearBackdrop();
+    };
+  }, [clearBackdrop]);
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (capturePending.current) return;
-      activeSession.current = invoke<RegionCaptureSession>("get_region_capture_session").catch(() => null);
+      if (!readySession.current || capturePending.current?.generation === readySession.current.generation || !matchesFrameLayout(readySession.current)) return;
+      activeSession.current = readySession.current;
       e.preventDefault();
       const start = {
         startX: e.clientX,
@@ -192,7 +369,7 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
   );
 
   const handleMouseUp = useCallback(async () => {
-    if (!dragging || capturePending.current) return;
+    if (!dragging || (capturePending.current && capturePending.current.generation === activeSession.current?.generation)) return;
     setDragging(false);
     // Flush the position queued for the next frame so a release between two
     // frames still captures the rectangle the user actually saw.
@@ -215,33 +392,41 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     }
 
     let sessionToken: string | undefined;
+    let captureGeneration: number | undefined;
     try {
-      capturePending.current = true;
-      const session = await activeSession.current;
-      if (!session) throw new Error("RegionCaptureSessionExpired");
+      const session = activeSession.current;
+      if (!session || readySession.current !== session || !matchesFrameLayout(session)) throw new Error("RegionCaptureSessionExpired");
+      capturePending.current = session;
+      captureGeneration = session.generation;
       sessionToken = session.token;
-      const captureRect = toPhysicalCaptureRect(rect, session, session.scale);
+      const imageBox = displayedImage.current?.getBoundingClientRect();
+      if (!imageBox || imageBox.width <= 0 || imageBox.height <= 0) throw new Error("RegionCaptureLayoutUnavailable");
+      const captureRect = toPhysicalCaptureRect({ ...rect, x: rect.x - imageBox.left, y: rect.y - imageBox.top }, session, {
+        x: session.width / imageBox.width,
+        y: session.height / imageBox.height,
+      });
       clearSelection();
+      clearBackdrop();
       await invoke("capture_region", { ...captureRect, sessionToken: session.token });
       await parkRegionSelectWindow(session.token);
-      onSelect?.(captureRect);
+      if (announcedSession.current === sessionToken) onSelect?.(captureRect);
       return;
     } catch (err) {
       console.error("Failed to capture selected region", err);
     } finally {
-      capturePending.current = false;
+      if (capturePending.current?.token === sessionToken) capturePending.current = null;
     }
 
-    clearSelection();
+    if (captureGeneration === serverGeneration.current) clearSelection();
     if (sessionToken) await parkRegionSelectWindow(sessionToken);
-  }, [dragging, onSelect, cancelFrame, clearSelection]);
+  }, [dragging, onSelect, cancelFrame, clearSelection, clearBackdrop]);
 
   // ESC key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (capturePending.current) return;
+      if (capturePending.current?.generation === serverGeneration.current) return;
       if (e.key === "Escape") {
-        clearSelection();
+        clearBackdrop();
         setDragging(false);
         onCancel?.();
         parkRegionSelectWindow().catch(() => undefined);
@@ -249,18 +434,20 @@ const RegionSelectWindow = ({ onSelect, onCancel }: RegionSelectWindowProps) => 
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel, clearSelection]);
+  }, [onCancel, clearBackdrop]);
 
-  useAuxiliaryWindowReady(true);
+  useAuxiliaryWindowReady(listenersReady);
 
   return (
     <div
-      className="region-select-window"
+      className={`region-select-window${backdropReady ? " is-ready" : ""}`}
       data-testid="region-select-overlay"
+      data-ready={backdropReady}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
+      {backdrop && <img ref={displayedImage} className="region-select-window__backdrop" src={backdrop.url} alt="" draggable={false} />}
       {selection && boxVisible && (
         <div
           className="region-select-window__selection"
