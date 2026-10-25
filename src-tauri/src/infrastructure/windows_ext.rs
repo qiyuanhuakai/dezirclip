@@ -1,4 +1,4 @@
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::{GetLastError, SetLastError, HWND, RECT, WIN32_ERROR};
 use windows::Win32::System::Threading::AttachThreadInput;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_LWIN,
@@ -7,6 +7,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, GetForegroundWindow, GetWindowRect, GetWindowThreadProcessId, IsIconic,
     IsWindowVisible, MessageBoxW, SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOPMOST,
+    GetWindowLongPtrW, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE,
     MB_ICONERROR, MB_OK, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE,
 };
 
@@ -14,6 +15,20 @@ use windows::Win32::UI::WindowsAndMessaging::{
 pub struct WindowExt;
 
 impl WindowExt {
+    pub fn allow_activation(hwnd: HWND) -> Result<(), String> {
+        unsafe {
+            SetLastError(WIN32_ERROR(0));
+            let style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+            let error = GetLastError();
+            if style == 0 && error.0 != 0 { return Err(format!("MainWindowActivationFailed: {}", error.0)); }
+            SetLastError(WIN32_ERROR(0));
+            let previous = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style & !(WS_EX_NOACTIVATE.0 as isize));
+            let error = GetLastError();
+            if previous == 0 && error.0 != 0 { return Err(format!("MainWindowActivationFailed: {}", error.0)); }
+        }
+        Ok(())
+    }
+
     /// 获取当前前台窗口句柄
     pub fn get_foreground_window() -> HWND {
         unsafe { GetForegroundWindow() }

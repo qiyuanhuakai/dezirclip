@@ -27,6 +27,7 @@ interface TagHistoryRowProps {
     onDelete: (item: ClipboardEntry) => void;
     onQRCode: (item: ClipboardEntry) => void;
     onError: () => void;
+    onRevealAction: () => void;
     onChanged: () => void;
     managementMode?: boolean;
     selectedForDeletion?: boolean;
@@ -37,7 +38,7 @@ interface TagHistoryRowProps {
 }
 
 export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinned,
-    richTextSnapshotPreview, theme, language, t, tagColors, onSelect, onEdit, onDelete, onQRCode, onError, onChanged,
+    richTextSnapshotPreview, theme, language, t, tagColors, onSelect, onEdit, onDelete, onQRCode, onError, onRevealAction, onChanged,
     managementMode = false, selectedForDeletion = false, onToggleSelection, revealAll = false,
     bulkRevealExcluded = false, onExcludeBulkReveal }: TagHistoryRowProps) {
     const [detailState, setDetailState] = useState<{ source: ClipboardEntry; value: ClipboardEntry; bulkReveal: boolean } | null>(null);
@@ -49,6 +50,8 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     const fullItem = useRef<Promise<ClipboardEntry> | null>(null);
     const mounted = useRef(false);
     const detailGeneration = useRef(0);
+    const pendingReveal = useRef<number | null>(null);
+    const [revealPending, setRevealPending] = useState(false);
     const currentItem = useRef(item);
     currentItem.current = item;
     const managing = useRef(managementMode);
@@ -62,7 +65,8 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             const requestedItem = currentItem.current;
             const access = beginPrivacyAccess();
             if (!access) return Promise.reject(new Error('PrivacyStateUnavailable'));
-            const read = sensitive ? getPrivacyEntry(item.id, item.host_instance_id)
+            const read = sensitive ? getPrivacyEntry(item.id, item.host_instance_id, () => mounted.current && access.isCurrent()
+                && detailGeneration.current === generation && currentItem.current === requestedItem)
                 : invokePrivacyBound<ClipboardEntry>('get_privacy_entry', { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, reveal: false });
             const request: Promise<ClipboardEntry> = read.then(value => {
                 if (fullItem.current === request) fullItem.current = null;
@@ -85,6 +89,8 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     useEffect(() => () => forgetPrivacyReveal(item), [item]);
     useEffect(() => subscribePrivacyInvalidation(() => {
         detailGeneration.current += 1;
+        pendingReveal.current = null;
+        setRevealPending(false);
         fullItem.current = null;
         setDetail(null);
         setTagInput('');
@@ -93,6 +99,8 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
 
     useEffect(() => {
         detailGeneration.current += 1;
+        pendingReveal.current = null;
+        setRevealPending(false);
         fullItem.current = null;
         forgetPrivacyReveal(currentItem.current);
         setDetail(null);
@@ -102,6 +110,8 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     useEffect(() => {
         let disposed = false;
         detailGeneration.current += 1;
+        pendingReveal.current = null;
+        setRevealPending(false);
         fullItem.current = null;
         setDetail(null);
         if (!sensitive && !compactMode && item.content_type === 'rich_text' && !item.html_content) {
@@ -117,18 +127,26 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         let disposed = false;
         const generation = ++detailGeneration.current;
         fullItem.current = null;
+        pendingReveal.current = null;
+        setRevealPending(false);
         forgetPrivacyReveal(item);
         setDetail(null);
         if (revealAll && !bulkRevealExcluded) {
             const access = beginPrivacyAccess();
-            if (access) void loadFullItem().then(next => {
-                if (disposed || !mounted.current || !access.isCurrent() || currentItem.current !== item
-                    || detailGeneration.current !== generation) return;
-                registerPrivacyReveal(item);
-                setDetail(next);
-            }).catch(() => {
-                if (!disposed && mounted.current && access.isCurrent() && detailGeneration.current === generation) onError();
-            });
+            if (access) {
+                pendingReveal.current = generation;
+                setRevealPending(true);
+                void loadFullItem().then(next => {
+                    if (disposed || !mounted.current || !access.isCurrent() || currentItem.current !== item
+                        || detailGeneration.current !== generation) return;
+                    registerPrivacyReveal(item);
+                    setDetail(next);
+                }).catch(() => {
+                    if (!disposed && mounted.current && access.isCurrent() && detailGeneration.current === generation) onError();
+                }).finally(() => {
+                    if (mounted.current && pendingReveal.current === generation) { pendingReveal.current = null; setRevealPending(false); }
+                });
+            }
         }
         return () => { disposed = true; };
     }, [revealAll, bulkRevealExcluded, managementMode, compactMode, item, sensitive, loadFullItem, onError]);
@@ -171,21 +189,32 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     const toggleReveal = (event: MouseEvent) => {
         event.stopPropagation();
         if (managing.current) return;
+        onRevealAction();
+        const hiding = !!detail || pendingReveal.current !== null;
         const generation = ++detailGeneration.current;
         fullItem.current = null;
-        if (detail) {
+        pendingReveal.current = null;
+        setRevealPending(false);
+        if (hiding) {
             if (revealAll) onExcludeBulkReveal?.(item.id);
             forgetPrivacyReveal(item);
             clearRichTextSnapshots(); void hideCompactPreviewGlobal(); setDetail(null);
             return;
         }
         const access = beginPrivacyAccess();
-        if (access) void loadFullItem().then(next => {
-            if (mounted.current && access.isCurrent() && currentItem.current === item && detailGeneration.current === generation && !managing.current) {
-                registerPrivacyReveal(item);
-                setDetail(next);
-            }
-        }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation && !managing.current) onError(); });
+        if (access) {
+            pendingReveal.current = generation;
+            setRevealPending(true);
+            void loadFullItem().then(next => {
+                if (mounted.current && access.isCurrent() && currentItem.current === item && detailGeneration.current === generation && !managing.current) {
+                    registerPrivacyReveal(item);
+                    setDetail(next);
+                }
+            }).catch(() => { if (mounted.current && access.isCurrent() && detailGeneration.current === generation && !managing.current) onError(); })
+                .finally(() => {
+                    if (mounted.current && pendingReveal.current === generation) { pendingReveal.current = null; setRevealPending(false); }
+                });
+        }
     };
 
     return <div className={`tag-history-row${managementMode ? ' tag-history-row--managing' : ''}`} data-entry-index={index} data-entry-id={item.id} tabIndex={0}
@@ -209,7 +238,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             }} />}
         <div className="tag-history-row-content" inert={managementMode}>
         <ClipboardItem key={managementMode ? 'selection' : 'content'} item={rendered} isSelected={managementMode ? selectedForDeletion : selected} windowPinned={isWindowPinned}
-            isSensitiveHidden={sensitive && !detail} isRevealed={!!detail} isEditingTags={editingTags}
+            isSensitiveHidden={sensitive && !detail} isRevealed={revealPending || !!detail} isEditingTags={editingTags}
             tagInput={tagInput} theme={theme} language={language} t={t} tagColors={tagColors}
             compactMode={compactMode} richTextSnapshotPreview={richTextSnapshotPreview} disableLayout
             onSelect={() => { if (!managing.current) onSelect(item.id); }} onCopy={copy}
