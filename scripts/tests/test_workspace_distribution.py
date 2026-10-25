@@ -40,13 +40,15 @@ class WorkspaceDistributionTests(unittest.TestCase):
             directory = Path(temporary)
             for name in ["Cargo.toml", "Cargo.lock", "package.json", "src-tauri/tauri.conf.json",
                          "src-tauri/Cargo.toml", "crates/dzc-core/Cargo.toml", "crates/dzc-platform/Cargo.toml", "crates/dzc-protocol/Cargo.toml",
-                         "crates/dzc-host/Cargo.toml", "crates/dzc-service/Cargo.toml", "scripts/set-release-version.mjs"]:
+                         "crates/dzc-host/Cargo.toml", "crates/dzc-service/Cargo.toml", "scripts/set-release-version.mjs",
+                         "scripts/updater-release.mjs"]:
                 target = directory / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / name, target)
             version = "0.2.0-alpha.99"
-            subprocess.run(["node", "scripts/set-release-version.mjs", "v" + version], cwd=directory,
-                           check=True, capture_output=True)
+            result = subprocess.run(["node", "scripts/set-release-version.mjs", "v" + version], cwd=directory,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
             workspace = tomllib.loads((directory / "Cargo.toml").read_text(encoding="utf-8"))
             self.assertEqual(workspace["workspace"]["package"]["version"], version)
             for member in workspace["workspace"]["members"]:
@@ -63,7 +65,8 @@ class WorkspaceDistributionTests(unittest.TestCase):
     def test_missing_lock_rejects_version_change_before_touching_manifests(self):
         with tempfile.TemporaryDirectory(prefix="dzc-workspace-version-incomplete-") as temporary:
             directory = Path(temporary)
-            for name in ["Cargo.toml", "package.json", "src-tauri/tauri.conf.json", "scripts/set-release-version.mjs"]:
+            for name in ["Cargo.toml", "package.json", "src-tauri/tauri.conf.json", "scripts/set-release-version.mjs",
+                         "scripts/updater-release.mjs"]:
                 target = directory / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(ROOT / name, target)
@@ -71,6 +74,7 @@ class WorkspaceDistributionTests(unittest.TestCase):
             result = subprocess.run(["node", "scripts/set-release-version.mjs", "0.2.0-alpha.1"],
                                     cwd=directory, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"Missing release-version target(s): Cargo.lock", result.stderr)
             self.assertEqual((directory / "Cargo.toml").read_bytes(), previous)
 
 
