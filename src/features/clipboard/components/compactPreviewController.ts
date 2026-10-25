@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo, listen } from "@tauri-apps/api/event";
+import { emitTo } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { beginPrivacyAccess, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
@@ -108,15 +108,15 @@ async function ensureListeners() {
         subscribePrivacyInvalidation(close);
         window.addEventListener("scroll", close, true);
         await Promise.all([
-            listen<{ label: string }>("compact-preview-mounted", event => {
+            getCurrentWindow().listen<{ label: string }>("compact-preview-mounted", event => {
                 if (event.payload?.label === COMPACT_PREVIEW_LABEL) mountedWaiters.forEach(resolve => resolve());
             }),
-            listen<PreviewLayout>("compact-preview-layout", event => { void present(event.payload); }),
-            listen<{ requestId: string }>("compact-preview-failed", event => {
+            getCurrentWindow().listen<PreviewLayout>("compact-preview-layout", event => { void present(event.payload); }),
+            getCurrentWindow().listen<{ requestId: string }>("compact-preview-failed", event => {
                 const id = sessions.current();
                 if (id !== null && sessions.get(id)?.requestId === event.payload?.requestId) close();
             }),
-            listen<{ requestId: string; inside: boolean }>("compact-preview-pointer", event => {
+            getCurrentWindow().listen<{ requestId: string; inside: boolean }>("compact-preview-pointer", event => {
                 const id = sessions.current();
                 const value = id === null ? null : sessions.get(id);
                 if (!value || event.payload?.requestId !== value.requestId) return;
@@ -124,7 +124,7 @@ async function ensureListeners() {
                 if (value.pointerInside && leaveTimer !== null) { clearTimeout(leaveTimer); leaveTimer = null; }
                 else if (!value.isHovered()) leaveCompactPreview(value.owner);
             }),
-            listen<{ requestId: string }>("compact-preview-pin", event => {
+            getCurrentWindow().listen<{ requestId: string }>("compact-preview-pin", event => {
                 const id = sessions.current();
                 const value = id === null ? null : sessions.get(id);
                 if (!value?.window || !value.request || value.pinning || event.payload?.requestId !== value.requestId) return;

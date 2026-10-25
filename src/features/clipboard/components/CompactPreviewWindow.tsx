@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
-import { emitTo, listen } from "@tauri-apps/api/event";
+import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
     AppWindow,
@@ -172,7 +172,7 @@ const CompactPreviewWindow = () => {
         document.body.classList.toggle("pinned-preview", pinned);
         compactPreviewLog("window mounted", { label: getCurrentWindow().label });
         let disposed = false;
-        const unlisten = listen<PreviewRequest>("compact-preview-update", (event) => {
+        const unlisten = getCurrentWindow().listen<PreviewRequest>("compact-preview-update", (event) => {
             const request = event.payload;
             if (!request || typeof request.requestId !== "string" || !Number.isSafeInteger(request.id) || request.id === 0
                 || !Number.isSafeInteger(request.privacyEpoch) || request.privacyEpoch < 0
@@ -203,16 +203,16 @@ const CompactPreviewWindow = () => {
             lastSentSizeRef.current = null;
             clearRichTextSnapshots();
         };
-        const unlistenClear = listen("compact-preview-clear", clear);
-        const unlistenProbe = listen("compact-preview-probe", () => {
+        const unlistenClear = getCurrentWindow().listen("compact-preview-clear", clear);
+        const unlistenProbe = getCurrentWindow().listen("compact-preview-probe", () => {
             void Promise.all([unlisten, unlistenClear]).then(() => {
                 if (!disposed) return emitTo("main", "compact-preview-mounted", { label: getCurrentWindow().label });
             }).catch(() => undefined);
         });
-        const unlistenPresented = listen<{ requestId: string }>("compact-preview-presented", event => {
+        const unlistenPresented = getCurrentWindow().listen<{ requestId: string }>("compact-preview-presented", event => {
             if (event.payload?.requestId === lastRequest.current?.requestId) setPresented(true);
         });
-        const unlistenPinFailure = listen<{ requestId: string }>("compact-preview-pin-failed", event => {
+        const unlistenPinFailure = getCurrentWindow().listen<{ requestId: string }>("compact-preview-pin-failed", event => {
             if (event.payload?.requestId === lastRequest.current?.requestId) { setPinPending(false); setActionFailed(true); }
         });
         const subscriptions = [unlisten, unlistenClear, unlistenProbe, unlistenPresented, unlistenPinFailure];

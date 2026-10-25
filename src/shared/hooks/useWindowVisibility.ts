@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const useWindowVisibility = () => {
@@ -16,8 +15,8 @@ export const useWindowVisibility = () => {
     };
     const subscriptions = [
       getCurrentWindow().onFocusChanged(readVisibility),
-      listen("privacy-view-hidden", () => { revision += 1; isWindowVisibleRef.current = false; }),
-      listen("privacy-view-shown", readVisibility),
+      getCurrentWindow().listen("privacy-view-hidden", () => { revision += 1; isWindowVisibleRef.current = false; }),
+      getCurrentWindow().listen("privacy-view-shown", readVisibility),
     ];
     subscriptions.forEach(subscription => {
       void subscription.catch(() => { if (active) isWindowVisibleRef.current = false; });

@@ -1,5 +1,5 @@
-import { emitTo, listen } from "@tauri-apps/api/event";
-import { currentMonitor, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { emitTo } from "@tauri-apps/api/event";
+import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import type { PreviewLayout, PreviewRequest } from "./compactPreviewProtocol";
 
 /** A pinned preview owns its WebView and survives the main WebView's idle destruction. */
@@ -21,13 +21,13 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
     let finished = false;
     const retainStop = (stop: () => void) => { if (finished) stop(); else stops.push(stop); };
     try {
-        stops.push(await listen<{ label: string }>("compact-preview-mounted", event => {
+        stops.push(await getCurrentWindow().listen<{ label: string }>("compact-preview-mounted", event => {
             if (event.payload?.label === label) { mounted = true; notifyMounted(); }
         }));
-        stops.push(await listen<PreviewLayout>("compact-preview-layout", event => {
+        stops.push(await getCurrentWindow().listen<PreviewLayout>("compact-preview-layout", event => {
             if (event.payload?.requestId === requestId) reportLayout(event.payload);
         }));
-        stops.push(await listen<{ requestId: string }>("compact-preview-failed", event => {
+        stops.push(await getCurrentWindow().listen<{ requestId: string }>("compact-preview-failed", event => {
             if (event.payload?.requestId === requestId) rejectLayout(new Error("PinnedPreviewUnavailable"));
         }));
         owned = new WebviewWindow(label, {
