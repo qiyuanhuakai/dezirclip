@@ -164,8 +164,8 @@ export function subscribePrivacyState(observer: () => void): () => void {
     document.addEventListener("visibilitychange", onVisibility);
     const subscriptions = [listen<unknown>("privacy-state-changed", () => {
       if (started === lifecycle) { invalidatePrivacyState(); void refreshPrivacyState(); }
-    }), listen("privacy-view-hidden", () => { if (started === lifecycle) onHide(); }),
-      listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); }),
+    }), getCurrentWindow().listen("privacy-view-hidden", () => { if (started === lifecycle) onHide(); }),
+      getCurrentWindow().listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); }),
       listen("clipboard-host-changed", () => {
         if (started === lifecycle) { invalidatePrivacyState(); void refreshPrivacyState(); }
       }), listen("clipboard-host-unavailable", () => {

@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     isVisible: async () => true,
+    listen: async () => vi.fn(),
     onFocusChanged: async () => vi.fn(),
   }),
 }));
