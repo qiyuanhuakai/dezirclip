@@ -2,13 +2,11 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
-import { invokePrivacyBound, refreshPrivacyState, setPrivacySession } from "../../../../shared/lib/privacySession";
+import { refreshPrivacyState, setPrivacySession } from "../../../../shared/lib/privacySession";
 import "../../../../styles/components/privacy.css";
 import ThemedSelect from "../ThemedSelect";
 import HotkeyListEditor from "../HotkeyListEditor";
-import SettingsDisclosure from "../SettingsDisclosure";
 
-interface PrivacyRule { id: string; kind: string; source_app: string | null; created_at_ms: number }
 export function PrivacySessionSection({ t, appSettings }: {
   t: (key: string) => string; appSettings: Record<string, string>;
 }) {
@@ -17,26 +15,13 @@ export function PrivacySessionSection({ t, appSettings }: {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [hotkey, setHotkey] = useState(appSettings["app.privacy_session_hotkey"] || "");
-  const [rules, setRules] = useState<PrivacyRule[]>([]);
-  const [rulesFailed, setRulesFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
   const [recording, setRecording] = useState(false);
   const ready = state.phase === "ready";
   const disabled = !ready || state.pending || busy;
   const active = state.snapshot?.session.active === true && ready;
 
   useEffect(() => { setHotkey(appSettings["app.privacy_session_hotkey"] || ""); }, [appSettings["app.privacy_session_hotkey"]]);
-  useEffect(() => {
-    let disposed = false;
-    setRules([]);
-    if (ready) {
-      setRulesFailed(false);
-      void invokePrivacyBound<PrivacyRule[]>("get_privacy_rules").then(value => {
-        if (!disposed) setRules(value);
-      }).catch(() => { if (!disposed) setRulesFailed(true); });
-    }
-    return () => { disposed = true; };
-  }, [ready, state.generation, attempt]);
+
 
   const changeSession = async (enabled: boolean) => {
     setError(null);
@@ -61,15 +46,7 @@ export function PrivacySessionSection({ t, appSettings }: {
     }
     finally { setBusy(false); }
   };
-  const removeRule = async (ruleId: string) => {
-    const epoch = state.snapshot?.privacy_epoch;
-    if (epoch === undefined) return;
-    setError(null);
-    setBusy(true);
-    try { await invoke("remove_privacy_rule", { ruleId, expectedEpoch: epoch }); }
-    catch { setError(t("privacy_action_failed")); }
-    finally { await refreshPrivacyState(); setBusy(false); }
-  };
+
 
   return <section className="privacy-session-section" aria-labelledby="privacy-session-heading">
     <div className="setting-item settings-section-title">
@@ -104,15 +81,7 @@ export function PrivacySessionSection({ t, appSettings }: {
       recording={recording} setRecording={setRecording} disabled={disabled}
       onAdd={saveHotkey} onRemove={() => saveHotkey("")} />
     </div>
-    <SettingsDisclosure className="privacy-rule-list" title={t("privacy_rules_title")}>
-      <p>{t("privacy_rules_hint")}</p>
-      {rulesFailed ? <button type="button" className="setting-btn" onClick={() => setAttempt(value => value + 1)}>{t("privacy_retry")}</button>
-        : rules.length === 0 ? <p>{t("privacy_rules_empty")}</p>
-          : <ul>{rules.map(rule => <li key={rule.id}>
-            <span>{t(`privacy_rule_${rule.kind}`)}{rule.source_app ? ` · ${rule.source_app}` : ""}</span>
-            <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void removeRule(rule.id); }}>{t("privacy_rule_remove")}</button>
-          </li>)}</ul>}
-    </SettingsDisclosure>
+
     {error && <p role="alert" className="privacy-action-error">{error}</p>}
   </section>;
 }

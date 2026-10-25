@@ -9,6 +9,7 @@ import { resolveRichTextSnapshotCacheLimit } from "../../../../shared/lib/richTe
 import { setRichTextSnapshotCacheLimit as applySnapshotCacheLimit } from "../../../../shared/lib/richTextSnapshot";
 import HotkeyListEditor from "../HotkeyListEditor";
 import { PrivacySessionSection } from "./PrivacySessionSection";
+import PrivacyRulesManager from "./PrivacyRulesManager";
 
 interface LabelWithHintProps {
     label: string;
@@ -645,6 +646,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
 
                     </NativeFeatureBoundary>
                     <PrivacySessionSection t={props.t} appSettings={props.appSettings} />
+                    <PrivacyRulesManager t={props.t} />
                     <div className="setting-item">
                         <props.LabelWithHint
                             label={props.t('privacy_protection')}
@@ -680,6 +682,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             onBlur={() => props.saveAppSetting('excluded_source_apps', excludedSourceAppsDraft)}
                             spellCheck={false}
                         />
+                        <p className="settings-description">{props.t("privacy_rules_legacy_exclusions_hint")}</p>
                     </div>
 
                     <div className="setting-item column">
@@ -749,6 +752,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 labelStyle={{ fontWeight: 400 }}
                             />
                         </div>
+                        <p className="settings-description">{props.t("privacy_rules_custom_patterns_hint")}</p>
                         {props.privacyRulesOpen && (
                             <textarea
                                 className="search-input"
