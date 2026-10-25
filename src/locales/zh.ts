@@ -635,4 +635,8 @@ export const zh = {
         preview_toolbar_fit_label: "适应",
         preview_toolbar_actual: "原始大小（100%）",
         preview_toolbar_resize: "调整预览窗口大小",
+        clipboard_preview_loading: "正在读取预览…",
+        clipboard_preview_unavailable: "暂时无法读取文字预览",
+        clipboard_preview_empty: "暂无文字预览",
+        clipboard_image_preview_unavailable: "图片预览不可用",
 };

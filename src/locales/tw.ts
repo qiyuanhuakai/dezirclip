@@ -631,4 +631,8 @@ export const tw = {
         preview_toolbar_fit_label: "配合",
         preview_toolbar_actual: "原始大小（100%）",
         preview_toolbar_resize: "調整預覽視窗大小",
+        clipboard_preview_loading: "正在讀取預覽…",
+        clipboard_preview_unavailable: "暫時無法讀取文字預覽",
+        clipboard_preview_empty: "暫無文字預覽",
+        clipboard_image_preview_unavailable: "圖片預覽無法使用",
 };

@@ -30,6 +30,7 @@ import type { ClipboardEntry } from "../../../shared/types";
 import { getConciseTime, getTagColor } from "../../../shared/lib/utils";
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
+import { hasHistoryPreviewText, type HistoryPreviewContent, type HistoryPreviewPhase } from "../../../shared/lib/historyPreview";
 import { useImagePreview } from "../../../shared/hooks/useImagePreview";
 import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
@@ -193,6 +194,8 @@ const ClipboardItem = ({
     windowPinned,
     isSensitiveHidden,
     isRevealed,
+    previewState,
+    previewContent,
     showSensitiveVisibilityControl = true,
     isEditingTags,
     tagInput,
@@ -224,6 +227,8 @@ const ClipboardItem = ({
     onEdit,
 }: ClipboardItemProps & {
     showSensitiveVisibilityControl?: boolean;
+    previewState?: HistoryPreviewPhase;
+    previewContent?: HistoryPreviewContent;
     compactMode?: boolean;
     className?: string;
     onQRCode?: () => void;
@@ -233,6 +238,8 @@ const ClipboardItem = ({
     loadFullItem?: () => Promise<ClipboardEntry>;
     onEdit?: () => void;
 }) => {
+    const displayPreview = previewContent?.preview ?? item.preview;
+    const displayHtml = previewContent?.html_content ?? item.html_content;
     const tagInputRef = useRef<HTMLInputElement>(null);
     const itemRootRef = useRef<HTMLDivElement>(null);
     const keyboardPreviewRef = useRef(previewFromKeyboard);
@@ -296,6 +303,11 @@ const ClipboardItem = ({
         item.content_type === "image" && !isSensitiveHidden && !(item.is_external && item.file_preview_exists === false),
         item.host_instance_id
     );
+    const imageGeneration = contentIdentity.current.generation;
+    const [imageFailure, setImageFailure] = useState<{ source: string; generation: number } | null>(null);
+    const imageFailed = !!imagePreview.src && imageFailure?.source === imagePreview.src && imageFailure.generation === imageGeneration;
+    const emptyPreviewLabel = t(previewState === "loading" ? "clipboard_preview_loading"
+        : previewState === "error" ? "clipboard_preview_unavailable" : "clipboard_preview_empty");
     const isComposing = useRef(false);
     const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
     const richSnapshotFallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -330,14 +342,14 @@ const ClipboardItem = ({
     );
     const windowLabelRef = useRef<string>(getCurrentWindow().label);
     const richTextFallback = useMemo(() => {
-        if (item.content_type !== "rich_text" || !item.html_content) return null;
-        const { cleanHtml, imagePayload } = extractRichImageFallback(item.html_content);
+        if (item.content_type !== "rich_text" || !displayHtml) return null;
+        const { cleanHtml, imagePayload } = extractRichImageFallback(displayHtml);
         return {
-            cleanHtml: cleanHtml || item.html_content,
+            cleanHtml: cleanHtml || displayHtml,
             imageSrc: resolveRichImageSrc(imagePayload)
         };
-    }, [item.content_type, item.html_content]);
-    const richTextCleanHtml = richTextFallback?.cleanHtml || item.html_content || "";
+    }, [item.content_type, displayHtml]);
+    const richTextCleanHtml = richTextFallback?.cleanHtml || displayHtml || "";
     const richTextSnapshotDisplayMaxHeight = compactMode ? 40 : 64;
     const richTextSnapshotRenderMaxHeight = compactMode ? 100 : 200;
     const snapshotPreviewEnabled = !!richTextSnapshotPreview;
@@ -346,7 +358,7 @@ const ClipboardItem = ({
         snapshotPreviewEnabled &&
         !snapshotFailed &&
         item.content_type === "rich_text" &&
-        !!item.html_content &&
+        !!displayHtml &&
         !!richTextCleanHtml &&
         !useRichImageFallback;
     useEffect(() => {
@@ -455,7 +467,7 @@ const ClipboardItem = ({
     useEffect(() => {
         setSnapshotFailed(false);
         setRichImageFallbackFailed(false);
-    }, [item.id, item.html_content, richTextSnapshotPreview, compactMode]);
+    }, [item.id, displayHtml, richTextSnapshotPreview, compactMode]);
 
     useEffect(() => {
         if (richSnapshotFallbackTimerRef.current) {
@@ -1106,20 +1118,21 @@ const ClipboardItem = ({
                             </div>
                         ) : imagePreview.pending ? (
                             <div className="image-preview image-preview-pending" aria-hidden="true" />
-                        ) : imagePreview.src ? (
+                        ) : imagePreview.src && !imageFailed ? (
                             <img
+                                key={imageGeneration}
                                 src={imagePreview.src}
                                 alt={t('image_preview')}
                                 className="image-preview"
                                 loading="lazy"
                                 style={isSensitiveHidden ? { filter: 'blur(8px)' } : {}}
-                                onError={(e) => {
-                                    // Fallback for load errors even if backend said it exists (e.g. deleted after fetch)
-                                    e.currentTarget.style.display = 'none';
-                                    e.currentTarget.parentElement?.classList.add('image-load-error');
+                                onError={() => {
+                                    if (imagePreview.src) setImageFailure({ source: imagePreview.src, generation: imageGeneration });
                                 }}
                             />
-                        ) : <div className="image-preview" aria-label={t('common_loading')}><File size={24} /></div>}
+                        ) : <div className="image-preview image-preview-unavailable" role="status">
+                            <ImageOff size={20} /><span>{t("clipboard_image_preview_unavailable")}</span>
+                        </div>}
                         {isSensitiveHidden && (
                             <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 'bold', opacity: 0.5, fontSize: '10px' }}>
                                 SENSITIVE
@@ -1147,7 +1160,7 @@ const ClipboardItem = ({
                     </div>
                 ) : item.content_type === "file" ? (
                     renderFilePreview()
-                ) : item.content_type === "rich_text" && item.html_content && !isSensitiveHidden ? (
+                ) : item.content_type === "rich_text" && displayHtml && !isSensitiveHidden ? (
                     richTextPreviewSrc ? (
                         <img
                             ref={richSnapshotImgRef}
@@ -1195,8 +1208,8 @@ const ClipboardItem = ({
                     ) : (
                         <HtmlContent
                             className="rich-text-preview"
-                            htmlContent={richTextCleanHtml || item.html_content}
-                            fallbackText={item.preview}
+                            htmlContent={richTextCleanHtml || displayHtml}
+                            fallbackText={hasHistoryPreviewText(displayPreview) ? displayPreview : emptyPreviewLabel}
                             preview={true}
                             style={{
                                 maxHeight: `${richTextSnapshotDisplayMaxHeight}px`,
@@ -1222,7 +1235,9 @@ const ClipboardItem = ({
                                 </span>}
                             </div>
                         )
-                        : item.preview
+                        : hasHistoryPreviewText(displayPreview) ? displayPreview : <div className="history-preview-placeholder" role="status">
+                            <FileText size={14} aria-hidden="true" /><span>{emptyPreviewLabel}</span>
+                        </div>
                 )}
             </div>
 

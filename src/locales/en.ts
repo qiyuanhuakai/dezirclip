@@ -632,4 +632,8 @@ export const en = {
         preview_toolbar_fit_label: "Fit",
         preview_toolbar_actual: "Actual size (100%)",
         preview_toolbar_resize: "Resize preview window",
+        clipboard_preview_loading: "Loading preview…",
+        clipboard_preview_unavailable: "Text preview is currently unavailable",
+        clipboard_preview_empty: "No text preview available",
+        clipboard_image_preview_unavailable: "Image preview unavailable",
 };

@@ -51,6 +51,7 @@
 
 /* Clipboard Item Content Preview */
 .content-preview{
+  min-height: 1.35em;
   font-size: var(--clipboard-item-font-size);
   /* Slightly reduced from 14px */
   line-height: 1.35;
@@ -91,6 +92,31 @@
 .history-item.compact .image-preview.image-preview-pending{
   width: 78px;
   height: 44px;
+}
+
+.history-preview-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 1.35em;
+  color: var(--text-secondary);
+}
+.history-preview-placeholder svg { flex-shrink: 0; }
+.image-preview.image-preview-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+  min-width: 120px;
+  padding: 6px;
+  box-sizing: border-box;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.history-item.compact .image-preview.image-preview-unavailable {
+  min-height: 44px;
+  min-width: 96px;
 }
 
 /* Clipboard Item Video Cards */

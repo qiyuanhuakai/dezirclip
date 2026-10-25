@@ -8,6 +8,8 @@ import { concealSensitiveEntry, isSensitiveEntry } from "../../../shared/lib/pri
 import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
 import type { PrivacyMetadataIntent } from "../../../shared/lib/privacyMetadataIntent";
 import { matchesEntryIdentity } from "../../../shared/lib/historyIdentity";
+import { projectHistoryPreview, shouldLoadHistoryPreview, type HistoryPreviewContent, type HistoryPreviewPhase } from "../../../shared/lib/historyPreview";
+import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
 
 /**
  * Binds a clipboard row to its handlers.
@@ -101,9 +103,11 @@ const ClipboardItemRenderer = ({
     const [detailState, setDetailState] = useState<{ source: ClipboardEntry; value: ClipboardEntry } | null>(null);
     const detail = detailState?.source === item ? detailState.value : null;
     const setDetail = (value: ClipboardEntry | null) => setDetailState(value ? { source: item, value } : null);
-    const [resourceState, setResourceState] = useState<{ source: ClipboardEntry; value: ClipboardEntry } | null>(null);
-    const resourcePreview = resourceState?.source === item ? resourceState.value : null;
-    const setResourcePreview = (value: ClipboardEntry | null) => setResourceState(value ? { source: item, value } : null);
+    const privacy = usePrivacySession();
+    const [resourceState, setResourceState] = useState<{ source: ClipboardEntry; epoch: number; phase: HistoryPreviewPhase; value: HistoryPreviewContent | null } | null>(null);
+    const resource = privacy.phase === "ready" && resourceState?.source === item && resourceState.epoch === privacy.snapshot?.privacy_epoch ? resourceState : null;
+    const resourcePreview = resource?.phase === "ready" ? resource.value : null;
+    const needsResource = shouldLoadHistoryPreview(item, compactMode);
     const mounted = useRef(false);
     const detailGeneration = useRef(0);
     const pendingReveal = useRef<number | null>(null);
@@ -113,8 +117,9 @@ const ClipboardItemRenderer = ({
     const sensitive = isSensitiveEntry(item);
     useEffect(() => {
         mounted.current = true;
-        const stop = subscribePrivacyInvalidation(() => {
-            detailGeneration.current += 1; pendingReveal.current = null; setRevealPending(false); setDetail(null); setResourcePreview(null);
+        const stop = subscribePrivacyInvalidation(scope => {
+            detailGeneration.current += 1; pendingReveal.current = null; setRevealPending(false); setDetail(null);
+            if (scope !== "reveal") setResourceState(null);
         });
         return () => { mounted.current = false; detailGeneration.current += 1; forgetPrivacyReveal(currentItem.current); stop(); };
     }, []);
@@ -144,14 +149,27 @@ const ClipboardItemRenderer = ({
     }, [item.id, item.host_instance_id, sensitive]);
     useEffect(() => {
         let disposed = false;
-        setResourcePreview(null);
+        const epoch = privacy.snapshot?.privacy_epoch;
+        if (!needsResource) { setResourceState(null); return; }
+        if (privacy.phase !== "ready" || epoch === undefined) return;
+        // A normal focus change does not discard an ordinary preview from the same source and epoch.
+        if (resourceState?.source === item && resourceState.epoch === epoch && resourceState.phase === "ready") return;
         const access = beginPrivacyAccess();
-        if (access && !sensitive && !compactMode && item.content_type === "rich_text" && !item.html_content) {
+        if (access) {
+            setResourceState({ source: item, epoch, phase: "loading", value: null });
             void invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, maxDimension: 480 })
-                .then(value => { if (!disposed && access.isCurrent()) setResourcePreview(value); }).catch(() => undefined);
+                .then(value => {
+                    if (disposed || !mounted.current || !access.isCurrent() || currentItem.current !== item) return;
+                    if (!matchesEntryIdentity(value, item.id, item.host_instance_id) || isSensitiveEntry(value)) throw new Error("PrivacyReadSuperseded");
+                    setResourceState({ source: item, epoch, phase: "ready", value: projectHistoryPreview(value) });
+                }).catch(() => {
+                    if (!disposed && mounted.current && access.isCurrent() && currentItem.current === item) {
+                        setResourceState({ source: item, epoch, phase: "error", value: null });
+                    }
+                });
         }
         return () => { disposed = true; };
-    }, [item, compactMode, sensitive]);
+    }, [item, needsResource, privacy.phase, privacy.snapshot?.privacy_epoch, privacy.generation]);
     const itemId = item.id;
     const itemContent = item.content;
     const itemContentType = item.content_type;
@@ -290,12 +308,14 @@ const ClipboardItemRenderer = ({
     return (
         <ClipboardItem
             id={`clipboard-item-${itemId}`}
-            item={isRevealed && detail ? detail : sensitive ? concealSensitiveEntry(item) : resourcePreview ?? item}
+            item={isRevealed && detail ? detail : sensitive ? concealSensitiveEntry(item) : item}
             isSelected={isSelected}
             previewFromKeyboard={previewFromKeyboard}
             windowPinned={windowPinned}
             isSensitiveHidden={isSensitiveHidden || (sensitive && !detail)}
             isRevealed={revealPending || (isRevealed && !!detail)}
+            previewState={needsResource ? resource?.phase ?? "loading" : undefined}
+            previewContent={resourcePreview ?? undefined}
             isEditingTags={isEditingTags}
             tagInput={tagInput}
             tagColors={tagColors}
