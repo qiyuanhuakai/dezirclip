@@ -138,6 +138,17 @@ const onHide = () => {
 const onDomHidden = () => {
   if (!hiddenPreparation.current()) onHide();
 };
+const releaseVisiblePreparation = async (lease: { isCurrent: () => boolean; release: () => void }) => {
+  if (document.hidden) return;
+  const started = lifecycle;
+  const revision = visibilityRevision;
+  const visible = await getCurrentWindow().isVisible();
+  if (visible && !document.hidden && started === lifecycle && revision === visibilityRevision && lease.isCurrent()) {
+    lease.release();
+    viewSuspended = false;
+    activeView = true;
+  }
+};
 const revokeApplicationReveals = () => {
   activeView = false;
   revoke("reveal");
@@ -276,6 +287,7 @@ export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurren
   if (current.label !== "compact-preview" && !pinned) throw new Error("PrivacyStateUnavailable");
   const token = fence.capture();
   const started = lifecycle;
+  visibilityRevision += 1;
   const lease = hiddenPreparation.begin("preview", () => requestIsCurrent()
     && started === lifecycle && fence.isCurrent(token));
   try {
@@ -292,6 +304,8 @@ export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurren
   if (!(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
     || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token) || model.phase !== "ready"
     || model.snapshot?.privacy_epoch !== expectedEpoch) throw new Error("PrivacyEpochChanged");
+  await releaseVisiblePreparation(lease);
+  if (!requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
   const access = beginPrivacyAccess();
   if (!access) throw new Error("PrivacyStateUnavailable");
   return { ...access, release: lease.release };
@@ -306,12 +320,14 @@ export async function prepareMainWindowResume(requestIsCurrent: () => boolean) {
   if (getCurrentWindow().label !== "main" || !requestIsCurrent()) throw new Error("PrivacyStateUnavailable");
   const started = lifecycle;
   const token = fence.capture();
+  visibilityRevision += 1;
   const lease = hiddenPreparation.begin("main", () => requestIsCurrent()
     && started === lifecycle && fence.isCurrent(token));
   viewSuspended = false;
   activeView = false;
   try {
   await refreshPrivacyState();
+  await releaseVisiblePreparation(lease);
   if (!requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token) || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
   const access = beginPrivacyAccess();
   if (!access) throw new Error("PrivacyStateUnavailable");

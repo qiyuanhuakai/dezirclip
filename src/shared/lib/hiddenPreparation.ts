@@ -8,7 +8,10 @@ export function createHiddenPreparationGate() {
     begin(mode: "main" | "preview", valid: () => boolean) {
       const owner = { mode, current: valid };
       active = owner;
-      return { release: () => { if (active === owner) active = null; } };
+      return {
+        isCurrent: () => current() === owner,
+        release: () => { if (active === owner) active = null; }
+      };
     },
     current,
     revoke: () => { active = null; }

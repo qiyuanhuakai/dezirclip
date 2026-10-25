@@ -17,44 +17,53 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
     const ready = new Promise<void>(resolve => { notifyMounted = resolve; });
     const prepared = new Promise<PreviewLayout>((resolve, reject) => { reportLayout = resolve; rejectLayout = reject; });
     void prepared.catch(() => undefined);
-    const deadline = setTimeout(() => rejectLayout(new Error("PinnedPreviewTimeout")), 8000);
-    let owned: InstanceType<typeof WebviewWindow> | null = null;
-    let finished = false;
+    let rejectCancellation: (error: Error) => void = () => {};
+    const cancelled = new Promise<never>((_resolve, reject) => { rejectCancellation = reject; });
+    void cancelled.catch(() => undefined);
     let invalidated = false;
+    const invalidate = (error: Error) => {
+        if (invalidated) return;
+        invalidated = true;
+        rejectLayout(error);
+        rejectCancellation(error);
+    };
+    const deadline = setTimeout(() => invalidate(new Error("PinnedPreviewTimeout")), 8000);
+    const owned: { window: InstanceType<typeof WebviewWindow> | null } = { window: null };
+    let finished = false;
     const requireCurrent = () => { if (invalidated || !valid()) throw new Error("PreviewRequestExpired"); };
     const retainStop = (stop: () => void) => { if (finished) stop(); else stops.push(stop); };
     try {
-        stops.push(await getCurrentWindow().listen<{ label: string }>("compact-preview-mounted", event => {
+        await Promise.race([(async () => {
+        retainStop(await getCurrentWindow().listen<{ label: string }>("compact-preview-mounted", event => {
             if (event.payload?.label === label) { mounted = true; notifyMounted(); }
         }));
         requireCurrent();
-        stops.push(await getCurrentWindow().listen<PreviewLayout>("compact-preview-layout", event => {
+        retainStop(await getCurrentWindow().listen<PreviewLayout>("compact-preview-layout", event => {
             if (event.payload?.requestId === requestId) reportLayout(event.payload);
         }));
         requireCurrent();
-        stops.push(await getCurrentWindow().listen<{ requestId: string }>("compact-preview-failed", event => {
+        retainStop(await getCurrentWindow().listen<{ requestId: string }>("compact-preview-failed", event => {
             if (event.payload?.requestId === requestId) {
-                invalidated = true;
-                rejectLayout(new Error("PinnedPreviewUnavailable"));
+                invalidate(new Error("PinnedPreviewUnavailable"));
             }
         }));
         requireCurrent();
-        owned = new WebviewWindow(label, {
+        owned.window = new WebviewWindow(label, {
             url: "index.html?window=compact-preview&pinned=true", title: "DezirClip",
             width: request.maxWidth, height: request.maxHeight,
             minWidth: Math.min(240, request.maxWidth), minHeight: Math.min(160, request.maxHeight),
             decorations: false, transparent: true, resizable: true, skipTaskbar: true,
             alwaysOnTop: true, visible: false, focus: false, focusable: true, shadow: false
         });
-        const window = owned;
+        const window = owned.window;
         // Creation events are local to this object and can arrive before a native listener registers.
         const created = new Promise<void>((resolve, reject) => {
             void window.once("tauri://created", () => resolve()).then(retainStop, reject);
             void window.once("tauri://error", () => reject(new Error("PinnedPreviewCreateFailed"))).then(retainStop, reject);
         });
         void created.catch(() => undefined);
-        void window.once("tauri://destroyed", () => rejectLayout(new Error("PinnedPreviewClosed")))
-            .then(retainStop, rejectLayout);
+        void window.once("tauri://destroyed", () => invalidate(new Error("PinnedPreviewClosed")))
+            .then(retainStop, invalidate);
         await Promise.race([
             created, prepared.then(() => {})
         ]);
@@ -87,10 +96,13 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
         requireCurrent();
         await window.show();
         requireCurrent();
+        await emitTo(label, "privacy-view-shown", null);
+        requireCurrent();
         await emitTo(label, "compact-preview-presented", { requestId });
         requireCurrent();
+        })(), cancelled]);
     } catch (error) {
-        if (owned) await owned.close().catch(() => undefined);
+        if (owned.window) await owned.window.close().catch(() => undefined);
         throw error;
     } finally {
         finished = true;
