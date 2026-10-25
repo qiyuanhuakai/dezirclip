@@ -72,14 +72,35 @@ const applyTheme = (payload: PreviewPayload) => {
 const CompactPreviewWindow = () => {
     const privacyState = usePrivacySession();
     const [storedPayload, setPayload] = useState<PreviewPayload | null>(null);
+    const [previewRequest, setPreviewRequest] = useState<{ value: PreviewRequest; sequence: number } | null>(null);
     const payload = privacyState.phase === "ready" && storedPayload?.privacyEpoch === privacyState.snapshot?.privacy_epoch ? storedPayload : null;
     const payloadSequence = useRef(0);
     const [previewListenerReady, setPreviewListenerReady] = useState(false);
     useEffect(() => subscribePrivacyInvalidation(() => {
         payloadSequence.current += 1;
+        setPreviewRequest(null);
         setPayload(null);
         clearRichTextSnapshots();
     }), []);
+    useEffect(() => {
+        if (!previewRequest || privacyState.phase !== "ready") return;
+        const request = previewRequest.value;
+        const sequence = previewRequest.sequence;
+        const access = beginPrivacyAccess();
+        if (!access || access.epoch !== request.privacyEpoch) return;
+        let disposed = false;
+        void invokePrivacyBound<ClipboardEntry>(request.allowSensitive === true ? "get_privacy_entry" : "get_history_resource_preview",
+            { id: request.id, expectedHostInstanceId: request.expectedHostInstanceId, expectedEpoch: request.privacyEpoch, maxDimension: 560 })
+            .then(entry => {
+                if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
+                const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
+                    protectedContent: isSensitiveEntry(entry),
+                    preview: entry.preview, htmlContent: entry.html_content, sourceApp: entry.source_app, timestamp: entry.timestamp };
+                setPayload(next);
+                applyTheme(next);
+            }).catch(() => { if (!disposed && sequence === payloadSequence.current) setPayload(null); });
+        return () => { disposed = true; };
+    }, [previewRequest, privacyState.phase, privacyState.generation]);
     useEffect(() => {
         if (privacyState.phase === "ready" && previewListenerReady) void emitTo("main", "compact-preview-mounted", true).catch(() => undefined);
     }, [privacyState.phase, previewListenerReady]);
@@ -173,21 +194,11 @@ const CompactPreviewWindow = () => {
             const request = event.payload;
             if (!Number.isSafeInteger(request.id) || request.id === 0 || !Number.isSafeInteger(request.privacyEpoch) || request.privacyEpoch < 0) return;
             const sequence = ++payloadSequence.current;
-            void (async () => {
-                const access = beginPrivacyAccess();
-                if (!access || access.epoch !== request.privacyEpoch || disposed) return;
-                const entry = await invokePrivacyBound<ClipboardEntry>(request.allowSensitive === true ? "get_privacy_entry" : "get_history_resource_preview",
-                    { id: request.id, expectedHostInstanceId: request.expectedHostInstanceId, expectedEpoch: request.privacyEpoch, maxDimension: 560 });
-                if (disposed || sequence !== payloadSequence.current || !access.isCurrent()) return;
-                const next: PreviewPayload = { ...request, contentType: entry.content_type, content: entry.content,
-                    protectedContent: isSensitiveEntry(entry),
-                    preview: entry.preview, htmlContent: entry.html_content, sourceApp: entry.source_app, timestamp: entry.timestamp };
-                setPayload(next);
-                applyTheme(next);
-            })().catch(() => { if (!disposed && sequence === payloadSequence.current) setPayload(null); });
+            if (!disposed) { setPayload(null); setPreviewRequest({ value: request, sequence }); }
         });
         const unlistenClear = listen("compact-preview-clear", () => {
             payloadSequence.current += 1;
+            setPreviewRequest(null);
             setPayload(null);
             clearRichTextSnapshots();
         });

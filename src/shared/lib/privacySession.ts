@@ -1,10 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { emit, listen } from "@tauri-apps/api/event";
+import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
 import type { ClipboardEntry } from "../types";
 import { entryInstanceArgs } from "./historyIdentity";
+import { privacyBlurScope, samePrivacyAuthority, sharesPrivacyFocusLifecycle } from "./privacyViewLifecycle";
+import type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
+export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
 export interface PrivacyViewState {
   phase: "loading" | "ready" | "unavailable";
@@ -16,16 +19,19 @@ const fence = createPrivacyFence();
 const reveals = new WeakMap<ClipboardEntry, ReturnType<typeof fence.capture>>();
 let model: PrivacyViewState = { phase: "loading", snapshot: null, pending: false, generation: 0 };
 const observers = new Set<() => void>();
-const invalidators = new Set<() => void>();
+const invalidators = new Set<(scope: PrivacyInvalidationScope) => void>();
 let stopEvents: (() => void) | null = null;
 let lifecycle = 0;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 let refreshRequest: Promise<void> | null = null;
+let activationRequest: Promise<void> | null = null;
 let viewSuspended = false;
 let visibilityRevision = 0;
+let activeView = true;
+let nativeBlurPending = false;
 
 export function registerPrivacyReveal(entry: ClipboardEntry): void {
-  if (model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
+  if (model.phase !== "ready" || !activeView) throw new Error("PrivacyStateUnavailable");
   reveals.set(entry, fence.capture());
 }
 export function forgetPrivacyReveal(entry: ClipboardEntry): void { reveals.delete(entry); }
@@ -40,11 +46,11 @@ const publish = (next: Partial<PrivacyViewState>) => {
   model = { ...model, ...next, generation: fence.current() };
   observers.forEach(observer => observer());
 };
-const revoke = () => {
+const revoke = (scope: PrivacyInvalidationScope = "all") => {
   fence.revoke();
-  invalidators.forEach(invalidate => { try { invalidate(); } catch { /* The request fence remains revoked. */ } });
+  invalidators.forEach(invalidate => { try { invalidate(scope); } catch { /* The request fence remains revoked. */ } });
 };
-export function subscribePrivacyInvalidation(invalidate: () => void): () => void {
+export function subscribePrivacyInvalidation(invalidate: (scope: PrivacyInvalidationScope) => void): () => void {
   invalidators.add(invalidate);
   return () => { invalidators.delete(invalidate); };
 }
@@ -53,20 +59,20 @@ const scheduleExpiry = () => {
   expiryTimer = null;
   const session = model.snapshot?.session;
   if (model.phase === "ready" && session?.active && session.expires_at_ms !== null) {
-    expiryTimer = setTimeout(() => { void refreshPrivacyState(); },
+    expiryTimer = setTimeout(() => { invalidatePrivacyState(); void refreshPrivacyState(); },
       Math.min(2_147_000_000, Math.max(1, session.expires_at_ms - Date.now() + 50)));
   }
 };
 const accept = (value: unknown) => {
   const snapshot = parsePrivacySnapshot(value);
+  if (model.phase === "ready" && model.snapshot && !samePrivacyAuthority(model.snapshot, snapshot)) revoke();
   publish({ phase: "ready", snapshot });
   scheduleExpiry();
 };
 
 export async function refreshPrivacyState(): Promise<void> {
-  revoke();
-  publish({ phase: "loading" });
   if (viewSuspended) return;
+  if (model.phase !== "ready") publish({ phase: "loading" });
   if (refreshRequest) return refreshRequest;
   refreshRequest = (async () => {
     for (;;) {
@@ -76,7 +82,7 @@ export async function refreshPrivacyState(): Promise<void> {
         const value = await invoke<unknown>("get_privacy_status");
         if (fence.isCurrent(token)) { accept(value); return; }
       } catch {
-        if (fence.isCurrent(token)) { publish({ phase: "unavailable", snapshot: null }); return; }
+        if (fence.isCurrent(token)) { revoke(); publish({ phase: "unavailable", snapshot: null }); return; }
       }
       if (observers.size === 0) return;
     }
@@ -85,31 +91,67 @@ export async function refreshPrivacyState(): Promise<void> {
 }
 
 const onFocus = () => {
-  visibilityRevision += 1;
+  if (nativeBlurPending) { nativeBlurPending = false; revokeApplicationReveals(); }
+  const revision = ++visibilityRevision;
   if (document.hidden) { onHide(); return; }
+  if (viewSuspended) {
+    const started = lifecycle;
+    void getCurrentWindow().isVisible().then(visible => {
+      if (started !== lifecycle || revision !== visibilityRevision || !visible || document.hidden) return;
+      viewSuspended = false;
+      activeView = true;
+      void refreshPrivacyState();
+    }, () => undefined);
+    return;
+  }
   viewSuspended = false;
+  activeView = true;
   void refreshPrivacyState();
 };
 const onHide = () => {
+  nativeBlurPending = false;
   visibilityRevision += 1;
   viewSuspended = true;
+  activeView = false;
   if (expiryTimer !== null) clearTimeout(expiryTimer);
   expiryTimer = null;
   revoke();
   publish({ phase: "loading" });
 };
-const onBlur = () => {
-  // Focus can move to the title bar or preview while the main window stays visible.
-  // Revoke explicit reveals immediately, then restore only a visible view's metadata.
-  onHide();
-  const revision = visibilityRevision;
-  const started = lifecycle;
-  void getCurrentWindow().isVisible().then(visible => {
-    if (started !== lifecycle || revision !== visibilityRevision || !visible || document.hidden) return;
-    viewSuspended = false;
-    void refreshPrivacyState();
-  }, () => undefined);
+const revokeApplicationReveals = () => {
+  activeView = false;
+  revoke("reveal");
+  publish({});
+  void emit("privacy-application-blurred", { source: getCurrentWindow().label }).catch(() => undefined);
 };
+const onBlur = (event?: Event | boolean) => {
+  const nativeBlur = event === true;
+  if (nativeBlur) nativeBlurPending = true;
+  const revision = nativeBlur ? ++visibilityRevision : visibilityRevision;
+  const started = lifecycle;
+  const current = getCurrentWindow();
+  void (async () => {
+    const visible = await current.isVisible();
+    const focused = nativeBlur && visible && !document.hidden ? await current.isFocused() : false;
+    const windows = nativeBlur && visible && !focused && !document.hidden ? await getAllWindows() : [];
+    const ownedFocused = (await Promise.all(windows.filter(window => window.label !== current.label
+      && sharesPrivacyFocusLifecycle(window.label))
+      .map(window => window.isFocused().catch(() => false)))).some(Boolean);
+    return { visible, focused, ownedFocused };
+  })().then(({ visible, focused, ownedFocused }) => {
+      if (started !== lifecycle || revision !== visibilityRevision) return;
+      if (nativeBlur) nativeBlurPending = false;
+      const scope = privacyBlurScope(visible && !document.hidden, focused || !nativeBlur, ownedFocused);
+      if (scope === "all") onHide();
+      else if (scope === "reveal") revokeApplicationReveals();
+    }, () => {
+      if (started === lifecycle && revision === visibilityRevision) {
+        if (nativeBlur) { nativeBlurPending = false; revokeApplicationReveals(); }
+        else onHide();
+      }
+    });
+};
+const invalidatePrivacyState = () => { revoke(); publish({ phase: "loading" }); };
 const onVisibility = () => { if (document.hidden) onHide(); else onFocus(); };
 export function subscribePrivacyState(observer: () => void): () => void {
   observers.add(observer);
@@ -120,11 +162,23 @@ export function subscribePrivacyState(observer: () => void): () => void {
     window.addEventListener("pagehide", onHide);
     document.addEventListener("visibilitychange", onVisibility);
     const subscriptions = [listen<unknown>("privacy-state-changed", () => {
-      if (started === lifecycle) void refreshPrivacyState();
+      if (started === lifecycle) { invalidatePrivacyState(); void refreshPrivacyState(); }
     }), listen("privacy-view-hidden", () => { if (started === lifecycle) onHide(); }),
       listen("privacy-view-shown", () => { if (started === lifecycle) onFocus(); }),
+      listen("clipboard-host-changed", () => {
+        if (started === lifecycle) { invalidatePrivacyState(); void refreshPrivacyState(); }
+      }), listen("clipboard-host-unavailable", () => {
+        if (started === lifecycle) { revoke(); publish({ phase: "unavailable", snapshot: null }); }
+      }),
+      listen<{ source: string }>("privacy-application-blurred", event => {
+        if (started !== lifecycle || !sharesPrivacyFocusLifecycle(event.payload?.source)
+          || event.payload.source === getCurrentWindow().label) return;
+        activeView = false;
+        revoke("reveal");
+        publish({});
+      }),
       getCurrentWindow().onFocusChanged(({ payload: focused }) => {
-        if (started === lifecycle) { if (focused) onFocus(); else onBlur(); }
+        if (started === lifecycle) { if (focused) onFocus(); else onBlur(true); }
       })];
     void Promise.all(subscriptions).then(stops => {
       const stop = () => { stops.forEach(unlisten => unlisten()); };
@@ -154,6 +208,9 @@ export function subscribePrivacyState(observer: () => void): () => void {
       expiryTimer = null;
       revoke();
       viewSuspended = false;
+      activeView = true;
+      nativeBlurPending = false;
+      activationRequest = null;
       model = { phase: "loading", snapshot: null, pending: false, generation: fence.current() };
     }
   };
@@ -178,7 +235,7 @@ export async function setPrivacySession(enabled: boolean, durationMs: number | n
 }
 
 export async function invokePrivacyBound<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
+  if (model.phase !== "ready" || (command === "get_privacy_entry" && args?.reveal !== false && !activeView)) throw new Error("PrivacyStateUnavailable");
   const token = fence.capture();
   const result = await invoke<T>(command, args);
   if (!fence.isCurrent(token) || model.phase !== "ready") throw new Error("PrivacyEpochChanged");
@@ -192,9 +249,28 @@ export function beginPrivacyAccess() {
   return { epoch, isCurrent: () => fence.isCurrent(token) && model.phase === "ready" };
 }
 
-export function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
+export async function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
   const epoch = model.snapshot?.privacy_epoch;
-  if (model.phase !== "ready" || epoch === undefined) return Promise.reject(new Error("PrivacyStateUnavailable"));
+  if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");
+  const token = fence.capture();
+  const current = getCurrentWindow();
+  if (current.label === "main") {
+    const focused = await current.isFocused();
+    if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+    if (!focused) {
+      if (!activationRequest) {
+        const request = refreshPrivacyAfterConfirmation(epoch).finally(() => {
+          if (activationRequest === request) activationRequest = null;
+        });
+        activationRequest = request;
+      }
+      await activationRequest;
+    } else if (!activeView) {
+      activeView = true;
+      await refreshPrivacyState();
+    }
+  }
+  if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
   return invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch, ...entryInstanceArgs(hostInstanceId) });
 }
 

@@ -52,7 +52,7 @@ import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import { usePrivacySession } from "./shared/hooks/usePrivacySession";
 import { beginPrivacyAccess, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
-import { isSensitiveEntry } from "./shared/lib/privacyRuntime";
+import { concealSensitiveEntry, isSensitiveEntry } from "./shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
 import { PrivacyStatusBanner } from "./shared/components/PrivacyStatusBanner";
 import type { ClipboardEntry } from "./shared/types";
@@ -334,8 +334,8 @@ const App = () => {
 
 
   const { toasts, pushToast, confirmDialog, openConfirm, closeConfirm } = useOverlays();
-  useEffect(() => subscribePrivacyInvalidation(() => {
-    setHistory([]);
+  useEffect(() => subscribePrivacyInvalidation((scope) => {
+    setHistory(previous => scope === "all" ? [] : previous.map(item => isSensitiveEntry(item) ? concealSensitiveEntry(item) : item));
     setRevealedIds(new Set());
     setQrEntry(null);
     setEditingTagsId(null);
