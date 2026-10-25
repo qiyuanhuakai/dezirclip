@@ -12,3 +12,7 @@ export function privacyBlurScope(visible: boolean, focused: boolean, ownedWindow
   if (!visible) return "all";
   return focused || ownedWindowFocused ? null : "reveal";
 }
+
+export function sharesPrivacyFocusLifecycle(label: string): boolean {
+  return label === "main" || label === "compact-preview" || label === "quick-paste";
+}

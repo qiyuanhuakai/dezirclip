@@ -5,7 +5,7 @@ import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
 import type { ClipboardEntry } from "../types";
 import { entryInstanceArgs } from "./historyIdentity";
-import { privacyBlurScope, samePrivacyAuthority } from "./privacyViewLifecycle";
+import { privacyBlurScope, samePrivacyAuthority, sharesPrivacyFocusLifecycle } from "./privacyViewLifecycle";
 import type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
@@ -29,7 +29,6 @@ let viewSuspended = false;
 let visibilityRevision = 0;
 let activeView = true;
 let nativeBlurPending = false;
-const ownedWindowLabels = ["main", "compact-preview", "quick-paste", "region-select"];
 
 export function registerPrivacyReveal(entry: ClipboardEntry): void {
   if (model.phase !== "ready" || !activeView) throw new Error("PrivacyStateUnavailable");
@@ -136,7 +135,7 @@ const onBlur = (event?: Event | boolean) => {
     const focused = nativeBlur && visible && !document.hidden ? await current.isFocused() : false;
     const windows = nativeBlur && visible && !focused && !document.hidden ? await getAllWindows() : [];
     const ownedFocused = (await Promise.all(windows.filter(window => window.label !== current.label
-      && ownedWindowLabels.includes(window.label))
+      && sharesPrivacyFocusLifecycle(window.label))
       .map(window => window.isFocused().catch(() => false)))).some(Boolean);
     return { visible, focused, ownedFocused };
   })().then(({ visible, focused, ownedFocused }) => {
@@ -172,7 +171,7 @@ export function subscribePrivacyState(observer: () => void): () => void {
         if (started === lifecycle) { revoke(); publish({ phase: "unavailable", snapshot: null }); }
       }),
       listen<{ source: string }>("privacy-application-blurred", event => {
-        if (started !== lifecycle || !ownedWindowLabels.includes(event.payload?.source)
+        if (started !== lifecycle || !sharesPrivacyFocusLifecycle(event.payload?.source)
           || event.payload.source === getCurrentWindow().label) return;
         activeView = false;
         revoke("reveal");
