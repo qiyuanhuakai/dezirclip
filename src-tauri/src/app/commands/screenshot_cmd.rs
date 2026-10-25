@@ -58,6 +58,7 @@ struct RegionCapture {
     ticket: Option<FrozenCaptureTicket>,
     host_instance: String,
     privacy_epoch: u64,
+    presented: bool,
 }
 
 #[derive(Serialize)]
@@ -69,6 +70,7 @@ pub struct RegionCaptureSession {
     width: u32,
     height: u32,
     generation: u64,
+    presented: bool,
 }
 
 fn publish_region_session(token: Option<String>, generation: u64) {
@@ -119,8 +121,9 @@ pub fn cancel_region_capture(app: &AppHandle) {
 fn park_selector_window(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(REGION_SELECT_LABEL) {
         crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
-        window.set_focusable(false).map_err(|error| error.to_string())?;
         window.hide().map_err(|error| error.to_string())?;
+        crate::infrastructure::capture_visibility::confirm_hidden_selector(&window)?;
+        let _ = window.set_focusable(false);
         crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
     }
     Ok(())
@@ -140,17 +143,79 @@ fn check_region_generation(generation: u64) -> Result<(), String> {
     Ok(())
 }
 
+fn region_presentation_authority<'a>(slot: &'a RegionCaptureSlot, token: &str, generation: u64) -> Result<&'a RegionCapture, String> {
+    let session = slot.frame.as_ref().ok_or("RegionCaptureSessionExpired")?;
+    if slot.owner.as_deref() != Some(token) || session.token != token || session.generation != generation {
+        return Err("RegionCaptureSessionExpired".into());
+    }
+    Ok(session)
+}
+
 #[tauri::command]
 pub fn get_region_capture_session(window: tauri::WebviewWindow) -> Result<RegionCaptureSession, String> {
     if window.label() != REGION_SELECT_LABEL { return Err("RegionCaptureWindowRequired".into()); }
-    let (token, rect, generation) = {
+    let (token, rect, generation, presented) = {
         let session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
         let session = session.frame.as_ref().ok_or("RegionCaptureSessionExpired")?;
-        (session.token.clone(), session.rect, session.generation)
+        (session.token.clone(), session.rect, session.generation, session.presented)
     };
     let scale = window.scale_factor().map_err(|_| "RegionCaptureUnavailable")?;
     if !scale.is_finite() || scale <= 0.0 { return Err("RegionCaptureUnavailable".into()); }
-    Ok(RegionCaptureSession { token, x: rect.x, y: rect.y, scale, width: rect.width, height: rect.height, generation })
+    Ok(RegionCaptureSession { token, x: rect.x, y: rect.y, scale, width: rect.width, height: rect.height, generation, presented })
+}
+
+/// The mounted acknowledgement only permits preparing a session. Show it once
+/// that session's PNG has decoded and committed to the hidden document.
+#[tauri::command]
+pub async fn present_region_capture(app: AppHandle, window: tauri::WebviewWindow, session_token: String, generation: u64) -> Result<(), String> {
+    if window.label() != REGION_SELECT_LABEL { return Err("RegionCaptureWindowRequired".into()); }
+    let _operation = REGION_WINDOW_OPERATION.lock().await;
+    let (instance, epoch) = {
+        let slot = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+        let session = region_presentation_authority(&slot, &session_token, generation)?;
+        check_region_generation(generation)?;
+        (session.host_instance.clone(), session.privacy_epoch)
+    };
+    if super::privacy_cmd::get_privacy_status(app.clone()).await?.privacy_epoch != epoch { return Err("PrivacyEpochChanged".into()); }
+    if app.state::<crate::app::ipc_host::DesktopHost>().instance()? != instance { return Err("ClipboardHostInstanceChanged".into()); }
+    tauri::async_runtime::spawn_blocking(move || {
+        {
+            let slot = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+            region_presentation_authority(&slot, &session_token, generation)?;
+            check_region_generation(generation)?;
+        }
+        crate::app::webview_memory::restore_window_memory(&window, "region-select-show");
+        let hide_failed_presentation = || {
+            let hidden = window.hide().map_err(|error| error.to_string())
+                .and_then(|_| crate::infrastructure::capture_visibility::confirm_hidden_selector(&window));
+            if let Err(error) = hidden {
+                crate::warn!("[screenshot] Failed to hide region selector after presentation failed: {error}");
+                return;
+            }
+            if check_region_generation(generation).is_ok() { clear_region_capture(); }
+        };
+        let result = window.show().and_then(|_| window.set_focus())
+            .map_err(|error| format!("Failed to show region selector: {error}"))
+            .and_then(|_| window.is_visible().map_err(|error| error.to_string()))
+            .and_then(|visible| if visible { Ok(()) } else { Err("RegionCaptureNotVisible".into()) });
+        if result.is_err() || check_region_generation(generation).is_err() {
+            hide_failed_presentation();
+            result?;
+            return Err("RegionCaptureSessionExpired".into());
+        }
+        let committed = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable".to_string()).and_then(|mut slot| {
+            region_presentation_authority(&slot, &session_token, generation)?;
+            check_region_generation(generation)?;
+            slot.frame.as_mut().ok_or_else(|| "RegionCaptureSessionExpired".to_string())?.presented = true;
+            Ok(())
+        });
+        if committed.is_err() {
+            hide_failed_presentation();
+            return committed;
+        }
+        publish_region_session(Some(session_token), generation);
+        Ok(())
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -449,23 +514,12 @@ pub async fn show_region_selector(app: AppHandle) -> Result<(), String> {
                 session.owner = Some(token.clone());
                 session.frame = Some(RegionCapture { token, generation, rect, frame, preview,
                     ticket, host_instance,
-                    privacy_epoch: privacy.privacy_epoch });
+                    privacy_epoch: privacy.privacy_epoch, presented: false });
             }
-            crate::app::webview_memory::restore_window_memory(window, "region-select-show");
-            let result = window
-                .show()
-                .and_then(|_| window.set_focus())
-                .map_err(|e| format!("Failed to show region selector: {e}"));
-            if result.is_err() { clear_region_capture(); let _ = window.hide(); }
-            if generation != REGION_CAPTURE_GENERATION.load(Ordering::SeqCst) {
-                let _ = window.hide();
-                return Err("RegionCaptureSessionExpired".into());
-            }
-            if result.is_ok() {
-                let token = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?.owner.clone();
-                publish_region_session(token, generation);
-            }
-            result
+            check_region_generation(generation)?;
+            let token = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?.owner.clone();
+            publish_region_session(token, generation);
+            Ok(())
         })
     })
     .await
@@ -481,14 +535,20 @@ pub async fn hide_region_select(app: AppHandle, session_token: Option<String>) -
     let _operation = REGION_WINDOW_OPERATION.lock().await;
     tauri::async_runtime::spawn_blocking(move || {
         {
-            let mut session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+            let session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
             // Keep ownership metadata after consuming the RAM frame. State
             // validation and native hide share the same window operation.
+            if session_token.as_deref().is_some_and(|token| session.owner.as_deref() != Some(token)) { return Ok(()); }
+        }
+        park_selector_window(&app)?;
+        let generation = {
+            let mut session = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
             if !clear_region_slot(&mut session, session_token.as_deref()) { return Ok(()); }
             REGION_CAPTURE_GENERATION.fetch_add(1, Ordering::SeqCst);
-        }
-        publish_region_session(None, REGION_CAPTURE_GENERATION.load(Ordering::SeqCst));
-        park_selector_window(&app)
+            REGION_CAPTURE_GENERATION.load(Ordering::SeqCst)
+        };
+        publish_region_session(None, generation);
+        Ok(())
     }).await.map_err(|error| error.to_string())?
 }
 
@@ -536,13 +596,20 @@ pub async fn capture_region(
     super::capability_cmd::require_desktop_interaction()?;
     if window.label() != REGION_SELECT_LABEL { return Err("RegionCaptureWindowRequired".into()); }
     let operation = REGION_WINDOW_OPERATION.lock().await;
+    {
+        let current = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+        if current.owner.as_deref() != Some(session_token.as_str()) || current.frame.as_ref().is_none_or(|frame| frame.token != session_token) {
+            return Err("RegionCaptureSessionExpired".into());
+        }
+    }
+    window.hide().map_err(|error| error.to_string())?;
+    crate::infrastructure::capture_visibility::confirm_hidden_selector(&window)?;
+    let _ = window.set_focusable(false);
     let session = {
         let mut current = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
         take_region_capture(&mut current.frame, &session_token)?
     };
     publish_region_session(None, session.generation);
-    window.set_focusable(false).map_err(|error| error.to_string())?;
-    window.hide().map_err(|error| error.to_string())?;
     drop(operation);
     crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
     let current = super::privacy_cmd::get_privacy_status(app.clone()).await?;
@@ -611,7 +678,23 @@ mod tests {
         RegionCapture { token: token.into(), generation: 0, rect,
             frame: FrozenScreenFrame::from_pixels(rect, xcap::image::RgbaImage::new(1, 1)).unwrap(),
             preview: Arc::new(zeroize::Zeroizing::new(Vec::new())),
-            ticket: None, host_instance: "synthetic-host".into(), privacy_epoch: 7 }
+            ticket: None, host_instance: "synthetic-host".into(), privacy_epoch: 7, presented: false }
+    }
+
+    #[test]
+    fn frozen_presentation_requires_the_same_owner_generation_and_retained_frame() {
+        let mut slot = RegionCaptureSlot { frame: Some(frozen_session("new-session")), owner: Some("new-session".into()) };
+        let session = region_presentation_authority(&slot, "new-session", 0).unwrap();
+        assert!(!session.presented);
+        assert_eq!(session.privacy_epoch, 7);
+        assert_eq!(session.host_instance, "synthetic-host");
+        assert!(region_presentation_authority(&slot, "old-session", 0).is_err());
+        assert!(region_presentation_authority(&slot, "new-session", 1).is_err());
+        slot.owner = Some("different-owner".into());
+        assert!(region_presentation_authority(&slot, "new-session", 0).is_err());
+        slot.owner = Some("new-session".into());
+        slot.frame = None;
+        assert!(region_presentation_authority(&slot, "new-session", 0).is_err());
     }
 
     #[test]

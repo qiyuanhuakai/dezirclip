@@ -488,7 +488,8 @@ const App = () => {
 
   useMainWindowPaintSignal(settingsLoaded);
 
-  useCustomBackground({ customBackground, customBackgroundOpacity, theme });
+  useCustomBackground({ customBackground, customBackgroundOpacity, theme,
+    onError: () => pushToast(t("custom_background_load_failed")) });
 
   useClipboardEvents({
     onUpdated: (updatedItem) => {

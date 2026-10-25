@@ -308,6 +308,7 @@ export const tw = {
         tag_manager_enabled_hint: "關閉後隱藏標籤管理入口",
         custom_background: "自定義背景",
         custom_background_save_failed: "背景圖片未能儲存，請重試。",
+        custom_background_load_failed: "背景圖片無法讀取或解碼，請重新選擇有效的圖片。",
         choose_background: "選擇背景",
         change_background: "更換背景",
         clear_background: "清除背景",
