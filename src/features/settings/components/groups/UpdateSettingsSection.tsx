@@ -20,6 +20,8 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
     const busy = ["checking", "downloading", "verified", "installing"].includes(state.phase);
     const disabled = !state.ready || busy || state.saving;
     const available = state.available;
+    const channelVersion = state.channelVersion ?? available?.version;
+    const selectedChannelName = t(state.channel === "stable" ? "updater_channel_stable_name" : "updater_channel_preview_name");
     const confirming = confirmationId !== null && confirmationId === available?.id;
     const percent = state.total && state.total > 0 ? Math.min(100, Math.floor(state.downloaded / state.total * 100)) : null;
     const installPhase = ["downloading", "verified", "installing"].includes(state.phase);
@@ -51,12 +53,13 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
                     ))}
                 </div>
             </div>
+            <p className="update-note">{t("updater_selected_channel")} <strong>{selectedChannelName}</strong></p>
             <p className="update-note">{t(state.channel === "stable" ? "updater_stable_hint" : "updater_preview_hint")}</p>
             <div className="update-version-row">
                 <span>{t("updater_current_version")}</span><strong>{state.currentVersion ? `v${state.currentVersion}` : "—"}</strong>
             </div>
-            {available && <div className="update-version-row">
-                <span>{t("updater_available_version")}</span><strong>v{available.version}</strong>
+            {channelVersion && <div className="update-version-row">
+                <span>{t("updater_channel_version")}</span><strong>v{channelVersion}</strong>
             </div>}
             <div className="setting-btn-group update-actions">
                 <button type="button" className="setting-btn" disabled={disabled}
@@ -75,10 +78,13 @@ const UpdateSettingsSection = ({ t }: { t: (key: string) => string }) => {
             <p className="update-note">{t(supportKey(state.support?.reason))}</p>
             <div className="update-status" role="status" aria-live="polite">
                 {state.phase === "current" && <p>{t("updater_current")}</p>}
+                {state.phase === "ahead" && <p>{t("updater_ahead")}</p>}
+                {state.phase === "unpublished" && <p>{t("updater_unpublished")}</p>}
                 {state.phase === "idle" && <p className="update-note">{t("updater_not_checked")}</p>}
                 {state.phase === "available" && <p>{t("updater_found")}</p>}
                 {state.checkedAt && <p className="update-note">{t("updater_checked_at")} {new Date(state.checkedAt).toLocaleTimeString()}</p>}
-                {state.unpublishedChannels.length > 0 && <p className="update-note">{t("updater_missing_channel")} {state.unpublishedChannels.join(" / ")}</p>}
+                {state.channel === "preview" && state.phase !== "unpublished" && state.unpublishedChannels.includes("preview")
+                    && <p className="update-note">{t("updater_preview_index_missing")}</p>}
                 {installPhase && <>
                     <p>{t(state.phase === "downloading" ? "updater_downloading" : state.phase === "verified" ? "updater_verified" : "updater_installing")}
                         {state.phase === "downloading" && (percent === null ? ` ${(state.downloaded / 1048576).toFixed(1)} MiB` : ` ${percent}%`)}</p>
