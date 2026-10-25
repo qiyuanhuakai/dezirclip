@@ -25,6 +25,7 @@ permissions:
 env:
   DZC_RELEASE_RECOVERY: ${{ inputs.recovery && '1' || '0' }}
   DZC_RELEASE_TOOLING_SOURCE: ${{ inputs.tooling-source || inputs.source }}
+  DZC_RECEIPT_RELEASE_ID: ${{ inputs.release-id }}
 
 jobs:
   native:

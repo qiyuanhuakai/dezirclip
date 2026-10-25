@@ -55,8 +55,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: node scripts/updater-release.mjs preflight "$GITHUB_REF_NAME"
 
+      - name: Require synchronized source versions matching the release tag
+        if: github.event_name == 'push'
+        run: node scripts/set-release-version.mjs --check "$GITHUB_REF_NAME"
+
       - name: Verify updater release logic
-        run: node --test scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
+        run: node --test scripts/tests/set-release-version.node.mjs scripts/tests/updater-release.node.mjs scripts/tests/release-windows-upgrade.node.mjs
 
       - name: Resolve the fixed original release for recovery
         if: github.event_name == 'workflow_dispatch'

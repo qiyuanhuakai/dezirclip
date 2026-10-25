@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import release_identity_inputs as inputs
 from release_identity_merge import workflow_identity
+from release_recovery import _context
 
 
 SOURCE = '0' * 40
@@ -64,6 +66,21 @@ class InputDiagnosticsTests(unittest.TestCase):
 
 
 class ActualIdentitySelectionTests(unittest.TestCase):
+    def test_release_id_is_inherited_by_native_and_merge_authority_without_a_token(self):
+        workflow = (inputs.ROOT / '.github/workflows/release-identities.yml').read_text(encoding='utf-8')
+        global_environment = workflow.split('\nenv:\n', 1)[1].split('\njobs:', 1)[0]
+        self.assertIn('  DZC_RECEIPT_RELEASE_ID: ${{ inputs.release-id }}\n', global_environment + '\n')
+        self.assertNotIn('GH_TOKEN', global_environment)
+        aliases = re.findall(r'^\s*DZC_RECEIPT_RELEASE_ID:\s*(.+)$', workflow, re.MULTILINE)
+        self.assertTrue(aliases)
+        self.assertTrue(all(value.strip() == '${{ inputs.release-id }}' for value in aliases))
+        context = _context(SOURCE, {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted',
+                                  'GITHUB_REPOSITORY': 'qiyuanhuakai/dezirclip',
+                                  'GITHUB_REF': 'refs/tags/v' + inputs.VERSION, 'GITHUB_SHA': SOURCE,
+                                  'DZC_RECEIPT_RELEASE_ID': '123456', 'GITHUB_RUN_ID': '123',
+                                  'GITHUB_RUN_ATTEMPT': '1'})
+        self.assertEqual(context['release_id'], 123456)
+
     def test_diagnostics_cannot_create_the_fresh_native_output(self):
         with tempfile.TemporaryDirectory(prefix='dezirclip-input-path-test-') as temporary:
             boundary = Path(temporary).resolve()

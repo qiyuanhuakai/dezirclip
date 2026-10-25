@@ -1,5 +1,13 @@
 # 签名更新与发布通道
 
+## 统一版本管理
+
+发布前在仓库根目录运行 `pnpm run release:set-version v0.2.0-alpha.3`（替换为本次版本）。继续使用既有脚本统一更新 `package.json`、Tauri 配置、Cargo workspace 版本及 `Cargo.lock` 中全部本地成员；不逐个编辑版本，也不重写第三方依赖的锁定版本。脚本先读取全部目标并校验所需版本字段及成员清单，再写入改动；JSON 损坏、版本字段不完整或缺少成员时，在写入前失败。同一版本重复执行不会改动原文件格式。它检查版本管理所需的 TOML 结构，完整 Cargo 配置仍由 Cargo 检查。
+
+`pnpm run release:set-version --check` 只读核对所有目标是否与 `package.json` 一致；`pnpm run release:set-version --check v0.2.0-alpha.3` 进一步核对指定版本或标签。普通 CI 执行前者，正式发布创建草稿前执行后者，版本漏改或 tag 不匹配时直接失败。独立 CLI 等只有 Node 的构建环境直接调用同一个 `scripts/set-release-version.mjs`。
+
+身份采集、Windows 升级、AppImage 候选和 helper 均从同一份受版本控制的 `package.json` 获取候选版本。旧版升级基线的包哈希、源码和 schema 是独立的历史身份约束，不随版本脚本重写；增加新基线仍须绑定真实已发布制品。
+
 桌面更新使用官方 Tauri 2 Updater。v0.2 的首批原位更新制品仅包含 Windows NSIS 和 Linux AppImage，支持 x86_64 与 aarch64。`dzc-core`、独立 CLI、MCP 和捕获服务不因此联网，也不增加后台进程。P1-A 提供后端与发布门槛，P1-C 在“常规设置 → 软件更新”接入自动检查偏好、通道、手动检查及确认安装界面。
 
 ## 组件构建身份与 Host 生命周期
