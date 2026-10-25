@@ -233,7 +233,7 @@ async function present(layout: PreviewLayout) {
                 if (value.shown) return;
                 if (!(await getCurrentWindow().isVisible()) || !sessions.get(id)) return;
                 setIgnoreBlurSafe(true);
-                await value.window!.show();
+                await invoke("show_compact_preview_without_activation");
                 if (!sessions.get(id)) return;
                 await emitTo(COMPACT_PREVIEW_LABEL, "privacy-view-shown", null);
                 if (!sessions.get(id)) return;

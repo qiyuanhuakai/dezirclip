@@ -3,6 +3,7 @@ pub mod cli_path;
 pub mod data_paths;
 pub mod image_preview_file;
 pub mod process_memory;
+pub mod preview_activation;
 #[cfg(any(target_os = "windows", test))]
 pub(crate) mod paste_input;
 pub mod repository;

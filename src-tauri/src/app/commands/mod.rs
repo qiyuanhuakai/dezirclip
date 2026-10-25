@@ -12,6 +12,7 @@ pub mod main_resume_cmd;
 pub mod ocr_cmd;
 pub mod privacy_cmd;
 pub mod privacy_feedback_cmd;
+pub mod preview_cmd;
 pub mod qr_cmd;
 pub mod quick_paste_cmd;
 pub mod screenshot_cmd;

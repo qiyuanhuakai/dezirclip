@@ -179,6 +179,7 @@ fn main() {
             app::window_manager::notify_main_window_painted,
             app::commands::main_resume_cmd::get_main_window_resume_request,
             app::commands::main_resume_cmd::complete_main_window_resume,
+            app::commands::preview_cmd::show_compact_preview_without_activation,
             app::commands::notify_auxiliary_window_ready,
             app::hooks::set_recording_mode,
             services::content_handler::open_content,
