@@ -40,7 +40,7 @@ import { sameListById } from "../../../shared/lib/sameListById";
 import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
 import type { CompactPreviewRect } from "./compactPreviewPosition";
-import { COMPACT_PREVIEW_LABEL, hideCompactPreviewGlobal, showCompactPreview as requestCompactPreview,
+import { COMPACT_PREVIEW_LABEL, hideCompactPreviewGlobal, leaveCompactPreview, showCompactPreview as requestCompactPreview,
     holdNativeDialogBlur, setIgnoreBlurSafe, type CompactPreviewAnchor } from "./compactPreviewController";
 export { hideCompactPreviewGlobal } from "./compactPreviewController";
 import { resolveContextMenuPoint } from "./contextMenuPosition";
@@ -189,6 +189,7 @@ const getFileIcon = (filePath: string) => {
 const ClipboardItem = ({
     item,
     isSelected,
+    previewFromKeyboard = false,
     windowPinned,
     isSensitiveHidden,
     isRevealed,
@@ -233,6 +234,9 @@ const ClipboardItem = ({
     onEdit?: () => void;
 }) => {
     const tagInputRef = useRef<HTMLInputElement>(null);
+    const itemRootRef = useRef<HTMLDivElement>(null);
+    const keyboardPreviewRef = useRef(previewFromKeyboard);
+    keyboardPreviewRef.current = previewFromKeyboard;
     const hiddenRef = useRef(isSensitiveHidden);
     hiddenRef.current = isSensitiveHidden;
     const contentIdentity = useRef({ item, hidden: isSensitiveHidden, generation: 0 });
@@ -409,7 +413,7 @@ const ClipboardItem = ({
 
     const previewOwner = useRef({});
     const hideCompactPreview = () => hideCompactPreviewGlobal(previewOwner.current);
-    const showCompactPreview = (anchor: CompactPreviewAnchor) => {
+    const showCompactPreview = (anchor: CompactPreviewAnchor, fromKeyboard = false) => {
         const generation = contentIdentity.current.generation;
         const rootStyle = getComputedStyle(document.documentElement);
         const fontSize = (name: string) => {
@@ -423,11 +427,25 @@ const ClipboardItem = ({
             colorMode: document.documentElement.classList.contains("dark-mode") ? "dark" : "light",
             clipboardItemFontSize: fontSize("--clipboard-item-font-size"),
             clipboardTagFontSize: fontSize("--clipboard-tag-font-size")
-        }, () => !hiddenRef.current && hoverAnchorRef.current !== null
-            && contentIdentity.current.generation === generation);
+        }, () => fromKeyboard ? keyboardPreviewRef.current : hoverAnchorRef.current !== null,
+            () => !hiddenRef.current && contentIdentity.current.generation === generation
+                && (!fromKeyboard || keyboardPreviewRef.current));
     };
 
     useEffect(() => { void hideCompactPreviewGlobal(previewOwner.current); }, [item]);
+    useEffect(() => {
+        if (!previewFromKeyboard || isSensitiveHidden) return;
+        const timer = setTimeout(() => {
+            const node = itemRootRef.current;
+            if (!node?.isConnected) return;
+            const rect = node.getBoundingClientRect();
+            const clientX = rect.right - 16;
+            const clientY = Math.max(0, Math.min(window.innerHeight, rect.top + rect.height / 2));
+            void showCompactPreview({ clientX, clientY, screenX: window.screenX + clientX,
+                screenY: window.screenY + clientY, itemRect: toCompactPreviewRect(rect) }, true);
+        }, 200);
+        return () => { clearTimeout(timer); void hideCompactPreviewGlobal(previewOwner.current); };
+    }, [previewFromKeyboard, isSensitiveHidden, item]);
 
     // Sync local state when prop changes (e.g. when editor opens)
     useEffect(() => {
@@ -824,6 +842,7 @@ const ClipboardItem = ({
 
     return (
         <motion.div
+            ref={itemRootRef}
             id={id}
             data-test-clipboard-item
             layout={!disableLayout}
@@ -961,7 +980,7 @@ const ClipboardItem = ({
                 hoverAnchorThrottle.cancel();
                 hoverAnchorRef.current = null;
                 compactPreviewLog("mouseleave hide preview", { itemId: item.id });
-                hideCompactPreview();
+                leaveCompactPreview(previewOwner.current);
             }}
         >
             <div className="item-meta">

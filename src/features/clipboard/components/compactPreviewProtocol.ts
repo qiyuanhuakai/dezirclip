@@ -2,6 +2,7 @@ import type { Locale } from "../../../shared/types";
 
 export const COMPACT_PREVIEW_LABEL = "compact-preview";
 export type PreviewRequest = {
+    pinned?: boolean;
     requestId: string;
     id: number;
     privacyEpoch: number;

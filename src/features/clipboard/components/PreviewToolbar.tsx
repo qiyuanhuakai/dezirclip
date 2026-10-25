@@ -9,6 +9,7 @@ export type PreviewResizeDirection = Parameters<TauriWindow["startResizeDragging
 
 export interface PreviewToolbarProps {
     pinned: boolean;
+    pinPending?: boolean;
     opacity: number;
     image: boolean;
     zoom: PreviewZoom;
@@ -23,7 +24,7 @@ export interface PreviewToolbarProps {
 
 const boundedZoom = (value: number) => Math.min(8, Math.max(0.1, Number.isFinite(value) ? value : 1));
 
-export function PreviewToolbar({ pinned, opacity, image, zoom, fitZoom = 1, language,
+export function PreviewToolbar({ pinned, pinPending = false, opacity, image, zoom, fitZoom = 1, language,
     onPin, onClose, onOpacityChange, onZoomChange, onDrag }: PreviewToolbarProps) {
     const text = translations[language];
     const opacityId = useId();
@@ -37,8 +38,8 @@ export function PreviewToolbar({ pinned, opacity, image, zoom, fitZoom = 1, lang
     };
     return <header className="preview-toolbar">
         <div className="preview-toolbar-title-row">
-            <div className="preview-toolbar-drag" data-tauri-drag-region={onDrag ? undefined : "true"}
-                onPointerDown={drag} title={text.preview_toolbar_drag}>
+            <div className="preview-toolbar-drag" data-tauri-drag-region={pinned && !onDrag ? "true" : undefined}
+                onPointerDown={pinned ? drag : undefined} title={pinned ? text.preview_toolbar_drag : undefined}>
                 <GripHorizontal size={14} aria-hidden="true" />
                 <span>{text.preview_toolbar_title}</span>
             </div>
@@ -46,7 +47,7 @@ export function PreviewToolbar({ pinned, opacity, image, zoom, fitZoom = 1, lang
                 <button type="button" className={`btn-icon preview-toolbar-button${pinned ? " active" : ""}`}
                     title={pinned ? text.preview_toolbar_pinned : text.preview_toolbar_pin}
                     aria-label={pinned ? text.preview_toolbar_pinned : text.preview_toolbar_pin}
-                    aria-pressed={pinned} disabled={pinned} onClick={() => onPin(true)}><Pin size={14} /></button>
+                    aria-pressed={pinned} disabled={pinned || pinPending} onClick={() => onPin(true)}><Pin size={14} /></button>
                 <button type="button" className="btn-icon preview-toolbar-button" title={text.preview_toolbar_close}
                     aria-label={text.preview_toolbar_close} onClick={onClose}><X size={14} /></button>
             </div>

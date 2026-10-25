@@ -7,6 +7,7 @@ import { compactPreviewLog } from "../../../shared/lib/compactPreviewLog";
 import { createPreviewSessionQueue } from "./compactPreviewSession";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
 import { COMPACT_PREVIEW_LABEL, type PreviewRequest, type PreviewLayout } from "./compactPreviewProtocol";
+import { openPinnedPreview } from "./pinnedPreviewController";
 
 export { COMPACT_PREVIEW_LABEL } from "./compactPreviewProtocol";
 export type CompactPreviewAnchor = {
@@ -15,6 +16,11 @@ export type CompactPreviewAnchor = {
 };
 type RequestOptions = Omit<PreviewRequest, "requestId" | "privacyEpoch" | "maxWidth" | "maxHeight">;
 type Session = {
+    owner: object;
+    request: PreviewRequest | null;
+    isHovered: () => boolean;
+    pointerInside: boolean;
+    pinning: boolean;
     requestId: string;
     window: WebviewWindow | null;
     anchor: CompactPreviewAnchor;
@@ -32,6 +38,7 @@ let creating: Promise<WebviewWindow> | null = null;
 let listeners: Promise<void> | null = null;
 let requestTimer: { id: number; handle: ReturnType<typeof setTimeout> } | null = null;
 const mountedWaiters = new Set<() => void>();
+let leaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 let lastIgnoreBlur: boolean | null = null;
 let requestedIgnoreBlur = false;
@@ -74,10 +81,25 @@ export function hideCompactPreviewGlobal(owner?: object): Promise<void> {
     const owned = owner === undefined || sessions.owns(owner);
     const result = sessions.cancel(clearWindow, owner);
     if (owned) {
+        if (leaveTimer !== null) clearTimeout(leaveTimer);
+        leaveTimer = null;
         stopRequestTimer();
         setIgnoreBlurSafe(false);
     }
     return result.catch(error => { compactPreviewLog("preview hide failed", error); });
+}
+export function leaveCompactPreview(owner: object): void {
+    if (!sessions.owns(owner)) return;
+    const id = sessions.current();
+    const value = id === null ? null : sessions.get(id);
+    if (!value?.shown) { void hideCompactPreviewGlobal(owner); return; }
+    if (leaveTimer !== null) clearTimeout(leaveTimer);
+    leaveTimer = setTimeout(() => {
+        leaveTimer = null;
+        if (id !== null && sessions.get(id) === value && !value.pointerInside && !value.isHovered() && !value.pinning) {
+            void hideCompactPreviewGlobal(owner);
+        }
+    }, 500);
 }
 async function ensureListeners() {
     if (listeners) return listeners;
@@ -86,11 +108,36 @@ async function ensureListeners() {
         subscribePrivacyInvalidation(close);
         window.addEventListener("scroll", close, true);
         await Promise.all([
-            listen("compact-preview-mounted", () => { mountedWaiters.forEach(resolve => resolve()); }),
+            listen<{ label: string }>("compact-preview-mounted", event => {
+                if (event.payload?.label === COMPACT_PREVIEW_LABEL) mountedWaiters.forEach(resolve => resolve());
+            }),
             listen<PreviewLayout>("compact-preview-layout", event => { void present(event.payload); }),
             listen<{ requestId: string }>("compact-preview-failed", event => {
                 const id = sessions.current();
                 if (id !== null && sessions.get(id)?.requestId === event.payload?.requestId) close();
+            }),
+            listen<{ requestId: string; inside: boolean }>("compact-preview-pointer", event => {
+                const id = sessions.current();
+                const value = id === null ? null : sessions.get(id);
+                if (!value || event.payload?.requestId !== value.requestId) return;
+                value.pointerInside = event.payload.inside;
+                if (value.pointerInside && leaveTimer !== null) { clearTimeout(leaveTimer); leaveTimer = null; }
+                else if (!value.isHovered()) leaveCompactPreview(value.owner);
+            }),
+            listen<{ requestId: string }>("compact-preview-pin", event => {
+                const id = sessions.current();
+                const value = id === null ? null : sessions.get(id);
+                if (!value?.window || !value.request || value.pinning || event.payload?.requestId !== value.requestId) return;
+                value.pinning = true;
+                void value.window.innerPosition().then(position => openPinnedPreview(value.request!, position,
+                    () => id !== null && sessions.get(id) === value)).then(() => {
+                        if (id !== null && sessions.get(id) === value) return hideCompactPreviewGlobal(value.owner);
+                    }).catch(error => {
+                        value.pinning = false;
+                        compactPreviewLog("pin preview failed", error);
+                        void emitTo(COMPACT_PREVIEW_LABEL, "compact-preview-pin-failed", { requestId: value.requestId }).catch(() => undefined);
+                        if (!value.pointerInside && !value.isHovered()) leaveCompactPreview(value.owner);
+                    });
             }),
             getCurrentWindow().onMoved(close), getCurrentWindow().onResized(close),
             ...["tauri://hide", "tauri://close-requested", "tauri://destroyed"].map(name => getCurrentWindow().listen(name, close))
@@ -140,8 +187,7 @@ async function ensureWindow(): Promise<WebviewWindow> {
         }
         const owned = window;
         await owned.hide();
-        const platform = await invoke<{ is_linux: boolean }>("get_platform_info");
-        if (!platform.is_linux) await owned.setIgnoreCursorEvents(true);
+        await owned.setIgnoreCursorEvents(false);
         await owned.once("tauri://destroyed", () => {
             if (preview === owned) { preview = null; void hideCompactPreviewGlobal(); }
         });
@@ -193,14 +239,16 @@ async function present(layout: PreviewLayout) {
         if (sessions.current() === id) await hideCompactPreviewGlobal();
     }
 }
-export async function showCompactPreview(owner: object, anchor: CompactPreviewAnchor, options: RequestOptions, stillHovered: () => boolean) {
+export async function showCompactPreview(owner: object, anchor: CompactPreviewAnchor, options: RequestOptions,
+    stillHovered: () => boolean, sourceIsCurrent: () => boolean = stillHovered) {
     const access = beginPrivacyAccess();
     if (!access || !stillHovered()) return;
     stopRequestTimer();
-    const value: Session = { requestId: "", window: null, anchor, scale: 1, origin: { x: 0, y: 0 },
+    const value: Session = { owner, request: null, isHovered: stillHovered, pointerInside: false, pinning: false,
+        requestId: "", window: null, anchor, scale: 1, origin: { x: 0, y: 0 },
         mainSize: { width: 0, height: 0 }, workArea: { position: { x: 0, y: 0 }, size: { width: 1280, height: 720 } },
         maxWidth: 560, maxHeight: 560, shown: false };
-    const id = sessions.begin(owner, value, () => access.isCurrent() && stillHovered());
+    const id = sessions.begin(owner, value, () => access.isCurrent() && sourceIsCurrent());
     value.requestId = `${pageId}:${id}`;
     requestTimer = { id, handle: setTimeout(() => { if (sessions.current() === id) void hideCompactPreviewGlobal(); }, 6000) };
     try {
@@ -217,6 +265,7 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
         value.maxHeight = Math.max(1, Math.min(560, Math.floor(value.workArea.size.height / scale - 20)));
         const request: PreviewRequest = { ...options, requestId: value.requestId, privacyEpoch: access.epoch,
             maxWidth: value.maxWidth, maxHeight: value.maxHeight };
+        value.request = request;
         await sessions.run(id, [
             async () => { setIgnoreBlurSafe(false); await clearWindow(); },
             async () => { await window.setSize(new PhysicalSize(Math.ceil(value.maxWidth * scale), Math.ceil(value.maxHeight * scale))); },

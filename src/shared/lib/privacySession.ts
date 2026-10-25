@@ -7,6 +7,7 @@ import type { ClipboardEntry } from "../types";
 import { entryInstanceArgs } from "./historyIdentity";
 import { privacyBlurScope, samePrivacyAuthority, sharesPrivacyFocusLifecycle } from "./privacyViewLifecycle";
 import type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
+import { isPinnedPreviewLabel } from "./previewWindowLabels";
 export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
 export interface PrivacyViewState {
@@ -251,10 +252,14 @@ export function beginPrivacyAccess() {
 
 /** An owner-authorized preview can prepare offscreen without pretending it received focus. */
 export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurrent: () => boolean, allowSensitive: boolean) {
-  if (getCurrentWindow().label !== "compact-preview") throw new Error("PrivacyStateUnavailable");
+  const current = getCurrentWindow();
+  const pinned = isPinnedPreviewLabel(current.label);
+  if (current.label !== "compact-preview" && !pinned) throw new Error("PrivacyStateUnavailable");
   const token = fence.capture();
   const started = lifecycle;
-  const owner = (await getAllWindows()).find(window => window.label === "main");
+  // A pinned window can explicitly reveal again without reopening the clipboard panel.
+  const owner = pinned && await current.isVisible() ? current
+    : (await getAllWindows()).find(window => window.label === "main");
   if (!owner || !(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
     || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token)) {
     throw new Error("PrivacyStateUnavailable");

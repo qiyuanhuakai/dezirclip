@@ -742,7 +742,8 @@ const App = () => {
     privacyProtection,
     revealedIds,
     isKeyboardMode,
-    previewKeyboardEnabled: previewPreferences.keyboardEnabled,
+    previewKeyboardEnabled: previewPreferences.keyboardEnabled && !showSettings && !effectiveShowTagManager
+      && !effectiveShowEmojiPanel && !searchTagPickerOpen,
     selectedIndex,
     isWindowPinned,
     editingTagsId,

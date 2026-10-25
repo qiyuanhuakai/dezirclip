@@ -84,11 +84,14 @@
           "windows": [
             "main",
             "compact-preview",
+            "pinned-preview-*",
             "quick-paste",
             "region-select"
           ],
           "permissions": [
             "core:window:allow-start-dragging",
+            "core:window:allow-start-resize-dragging",
+            "core:window:allow-close",
             "core:window:allow-hide",
             "core:window:allow-show",
             "core:window:allow-set-focus",
