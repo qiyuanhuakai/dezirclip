@@ -8,6 +8,7 @@ import { createPreviewSessionQueue } from "./compactPreviewSession";
 import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
 import { COMPACT_PREVIEW_LABEL, type PreviewRequest, type PreviewLayout } from "./compactPreviewProtocol";
 import { openPinnedPreview } from "./pinnedPreviewController";
+import { previewPhysicalPosition } from "./previewPhysicalPosition";
 
 export { COMPACT_PREVIEW_LABEL } from "./compactPreviewProtocol";
 export type CompactPreviewAnchor = {
@@ -220,7 +221,10 @@ async function present(layout: PreviewLayout) {
     try {
         await sessions.run(id, [
             async value => { await value.window!.setSize(size); },
-            async value => { await value.window!.setPosition(new PhysicalPosition(target.x, target.y)); },
+            async value => {
+                const position = previewPhysicalPosition(target);
+                await value.window!.setPosition(new PhysicalPosition(position.x, position.y));
+            },
             async value => {
                 if (value.shown) return;
                 await value.window!.setAlwaysOnTop(true);

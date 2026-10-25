@@ -1,6 +1,7 @@
 import { emitTo } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import type { PreviewLayout, PreviewRequest } from "./compactPreviewProtocol";
+import { previewPhysicalPosition } from "./previewPhysicalPosition";
 
 /** A pinned preview owns its WebView and survives the main WebView's idle destruction. */
 export async function openPinnedPreview(request: PreviewRequest, origin: PhysicalPosition, valid: () => boolean): Promise<void> {
@@ -61,10 +62,11 @@ export async function openPinnedPreview(request: PreviewRequest, origin: Physica
         const area = monitor?.workArea ?? { position: { x: 0, y: 0 }, size: { width: 1920, height: 1080 } };
         const size = new PhysicalSize(Math.round(Math.max(Math.min(320, request.maxWidth), Math.min(request.maxWidth, measured.width)) * scale),
             Math.round(Math.max(Math.min(180, request.maxHeight), Math.min(request.maxHeight, measured.height)) * scale));
-        const position = new PhysicalPosition(
-            Math.max(area.position.x, Math.min(origin.x, area.position.x + area.size.width - size.width)),
-            Math.max(area.position.y, Math.min(origin.y, area.position.y + area.size.height - size.height)));
-        await window.setPosition(position);
+        const position = previewPhysicalPosition({
+            x: Math.max(area.position.x, Math.min(origin.x, area.position.x + area.size.width - size.width)),
+            y: Math.max(area.position.y, Math.min(origin.y, area.position.y + area.size.height - size.height))
+        });
+        await window.setPosition(new PhysicalPosition(position.x, position.y));
         await window.setSize(size);
         if (!valid()) throw new Error("PreviewRequestExpired");
         await window.setAlwaysOnTop(true);
