@@ -131,7 +131,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             });
         }
         return () => { disposed = true; };
-    }, [revealAll, bulkRevealExcluded, managementMode, item, sensitive, loadFullItem, onError]);
+    }, [revealAll, bulkRevealExcluded, managementMode, compactMode, item, sensitive, loadFullItem, onError]);
 
     const copy = (pasteWithFormat = false, pasteImageAsBase64 = false) => {
         if (managing.current) return;
