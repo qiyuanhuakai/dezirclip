@@ -172,6 +172,8 @@ export const zh = {
         tag_sensitive_target: "请在记录上逐条标记敏感内容，以确保内容经过加密。",
         tag_mode_simple: "简洁模式",
         tag_mode_detailed: "复杂模式",
+        tag_reveal_all: "显示此标签的所有内容",
+        tag_hide_all: "隐藏所有受保护内容",
         tag_actions: "标签操作",
         tag_sensitive_delete_title: "删除敏感标签及全部内容？",
         tag_sensitive_delete_hint: "此操作会永久删除此标签下的所有剪贴板内容。",

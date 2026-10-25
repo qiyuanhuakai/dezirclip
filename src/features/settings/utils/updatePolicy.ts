@@ -1,11 +1,13 @@
+import { defaultUpdateChannel } from './defaultUpdateChannel';
+
 export type UpdateChannel = "stable" | "preview";
 export const AUTO_UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const AUTO_UPDATE_DELAY_MS = 15_000;
 export const updateAttemptKey = (channel: UpdateChannel) => `dezirclip.update.lastAttempt.${channel}`;
 
-export const readUpdatePreferences = (settings: Record<string, string>) => ({
+export const readUpdatePreferences = (settings: Record<string, string>, version = '') => ({
     autoCheck: settings["app.update_auto_check"] === "true",
-    channel: settings["app.update_channel"] === "preview" ? "preview" as const : "stable" as const,
+    channel: defaultUpdateChannel(version, settings["app.update_channel"]),
 });
 
 export const automaticCheckDue = (stored: string | null, now: number): boolean => {

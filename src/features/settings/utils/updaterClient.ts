@@ -84,11 +84,11 @@ const scheduleAutomaticCheck = () => {
 export const initializeUpdates = async (settings: Record<string, string>) => {
     if (initialized) return;
     initialized = true;
-    updateSnapshot(readUpdatePreferences(settings));
     const [version, support] = await Promise.allSettled([
         getVersion(), invoke<UpdateSupport>("get_update_support"),
     ]);
     updateSnapshot({ ready: true,
+        ...readUpdatePreferences(settings, version.status === "fulfilled" ? version.value : ""),
         currentVersion: version.status === "fulfilled" ? version.value : "",
         support: support.status === "fulfilled" ? support.value : null,
         errorKey: version.status === "rejected" || support.status === "rejected" ? "updater_error_unavailable" : null,

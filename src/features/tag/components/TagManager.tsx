@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useStat
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, EyeOff, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { errorMessage } from '../../../shared/lib/errorMessage';
 import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
@@ -14,6 +14,8 @@ import { TagHistoryRow } from './TagHistoryRow';
 import { useSettingsLayout } from '../../settings/hooks/useSettingsLayout';
 import { emptyTagSelection, MAX_TAG_BATCH_IDS, selectAllTagEntries, tagEntrySelected, tagSelectionCount, toggleTagEntry, type TagBatchSelection } from '../utils/tagBatchSelection';
 import { matchesTagName } from '../../../shared/lib/tagQuery';
+import { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
+import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
 
 const QrCodeDialog = lazy(() => import('../../clipboard/components/QrCodeDialog'));
 
@@ -50,6 +52,10 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const [pickerOpen, setPickerOpen] = useState(false);
     const [pickerActiveTag, setPickerActiveTag] = useState<string | null>(null);
     const [managementMode, setManagementMode] = useState(false);
+    const revealScope = JSON.stringify([selectedTag, library.query, library.sortBy, library.contentRevision, privacy.generation]);
+    const [revealedScope, setRevealedScope] = useState<string | null>(null);
+    const [bulkRevealExcluded, setBulkRevealExcluded] = useState(() => new Set<number>());
+    const revealAll = privacy.phase === 'ready' && revealedScope === revealScope;
     const selectionContext = JSON.stringify([selectedTag, library.query]);
     const selectionScope = JSON.stringify([selectedTag, library.query, library.contentRevision, library.total]);
     const [entrySelection, setEntrySelection] = useState(() => ({ context: selectionContext, scope: selectionScope, selection: emptyTagSelection() as TagBatchSelection }));
@@ -87,6 +93,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     }, [library.tags, tagSearch]);
     const notifyError = useCallback(() => { if (mounted.current) setActionError(true); }, []);
     const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
+    const excludeBulkReveal = useCallback((id: number) => setBulkRevealExcluded(previous => new Set(previous).add(id)), []);
     useEffect(() => subscribePrivacyInvalidation(() => {
         detailSequence.current += 1;
         setQrEntry(null);
@@ -94,6 +101,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         setValue('');
         setConfirmPersistence(false);
         setMenuOpen(false);
+        setRevealedScope(null);
     }), []);
 
     useEffect(() => {
@@ -101,6 +109,7 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
         return () => { mounted.current = false; detailSequence.current += 1; focusSequence.current += 1; };
     }, []);
     useEffect(() => { detailSequence.current += 1; setActionError(false); setSelectedId(null); setMenuOpen(false); }, [selectedTag, library.query, library.sortBy]);
+    useEffect(() => { setRevealedScope(null); }, [selectedTag, library.query, library.sortBy, library.contentRevision]);
     useEffect(() => {
         const hadSelection = entrySelection.selection.mode === 'all' || entrySelection.selection.ids.length > 0;
         if (entrySelection.context !== selectionContext) setBatchFeedback(null);
@@ -379,6 +388,16 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                     aria-label={t(compactMode ? 'tag_mode_detailed' : 'tag_mode_simple')} aria-pressed={compactMode}>
                     {compactMode ? <List size={16} /> : <ListCollapse size={16} />}
                 </button>
+                <button type="button" className={`btn-icon${revealAll ? ' active' : ''}`}
+                    disabled={busy || !selectedTag || library.loading || library.error || library.total === 0 || privacy.phase !== 'ready'}
+                    aria-pressed={revealAll} title={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')} aria-label={t(revealAll ? 'tag_hide_all' : 'tag_reveal_all')}
+                    onClick={() => {
+                        clearRichTextSnapshots(); void hideCompactPreviewGlobal();
+                        setBulkRevealExcluded(new Set());
+                        setRevealedScope(revealAll ? null : revealScope);
+                    }}>
+                    {revealAll ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
                 <button ref={manageButton} type="button" className={`btn-icon${managementMode ? ' active' : ''}`}
                     disabled={busy || (!managementMode && !selectedTag)} aria-pressed={managementMode} onClick={toggleManagement}
                     title={t(managementMode ? 'tag_manage_done' : 'tag_manage')} aria-label={t(managementMode ? 'tag_manage_done' : 'tag_manage')}>
@@ -428,6 +447,8 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
                         computeItemKey={(_, item) => item.id} endReached={library.loadMore} increaseViewportBy={100}
                         itemContent={(index, item) => <TagHistoryRow key={`${item.id}:${library.contentRevision}:${detailRevision}`} item={item} index={index} selected={selectedId === item.id}
                             compactMode={compactMode} isWindowPinned={isWindowPinned}
+                            revealAll={revealAll}
+                            bulkRevealExcluded={bulkRevealExcluded.has(item.id)} onExcludeBulkReveal={excludeBulkReveal}
                             managementMode={managementMode} selectedForDeletion={managementMode && Number.isSafeInteger(item.id) && item.id > 0 && tagEntrySelected(selection, item.id)} onToggleSelection={toggleEntry}
                             richTextSnapshotPreview={richTextSnapshotPreview} theme={theme} language={language} t={t} tagColors={colors}
                             onSelect={setSelectedId} onEdit={editItem} onDelete={deleteItem} onQRCode={setQrEntry} onChanged={changed} onError={notifyError} />}
