@@ -221,7 +221,7 @@ const App = () => {
   const showScrollTopRef = useRef(false);
   const [qrEntry, setQrEntry] = useState<ClipboardEntry | null>(null);
   const PAGE_SIZE = HISTORY_PAGE_SIZE;
-  const { fetchHistory, loadMoreHistory } = useHistoryFetch({
+  const { fetchHistory, loadMoreHistory, appliedSearch } = useHistoryFetch({
     debouncedSearch,
     typeFilter,
     persistentLimitEnabled,
@@ -238,6 +238,7 @@ const App = () => {
   });
   // Local matching must use the same settled query as the backend request.
   const filteredHistory = useFilteredHistory({ history, debouncedSearch, search: debouncedSearch, typeFilter });
+  const searchResultsReady = !isComposing && search === debouncedSearch && search === appliedSearch;
   const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, filteredHistory.length,
     !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel);
   const mainResumePending = mainResume.phase === "preparing" || mainResume.phase === "prepared" || mainResume.phase === "failed" || privacyState.phase !== "ready";
@@ -698,6 +699,7 @@ const App = () => {
 
   const copyFromKeyboard = useCallback((id: number, content: string, contentType: string,
     pasteWithFormat = false, pasteImageAsBase64 = false) => {
+    if (!searchResultsReady) return Promise.resolve();
     const entry = filteredHistory.find(item => item.id === id);
     const access = beginPrivacyAccess();
     const epoch = entry && isSensitiveEntry(entry) ? privacyRevealEpoch(entry) : undefined;
@@ -706,7 +708,7 @@ const App = () => {
       return Promise.resolve();
     }
     return copyToClipboard(id, content, contentType, pasteWithFormat, pasteImageAsBase64, epoch ?? undefined, undefined, entry.host_instance_id);
-  }, [filteredHistory, revealedIds, copyToClipboard, pushToast, t]);
+  }, [searchResultsReady, filteredHistory, revealedIds, copyToClipboard, pushToast, t]);
 
   useKeyboardNavigation({
     filteredHistory,
@@ -718,6 +720,7 @@ const App = () => {
     showTagManager: effectiveShowTagManager,
     chatMode: false,
     searchTagPickerOpen,
+    searchResultsReady,
     editingTagsId,
     arrowKeySelection,
     richPasteHotkey,
@@ -745,7 +748,7 @@ const App = () => {
     revealedIds,
     isKeyboardMode,
     previewKeyboardEnabled: previewPreferences.keyboardEnabled && !showSettings && !effectiveShowTagManager
-      && !effectiveShowEmojiPanel && !searchTagPickerOpen,
+      && !effectiveShowEmojiPanel && !searchTagPickerOpen && searchResultsReady,
     selectedIndex,
     isWindowPinned,
     editingTagsId,

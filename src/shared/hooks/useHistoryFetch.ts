@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
@@ -41,9 +41,11 @@ export const useHistoryFetch = ({
   const lastRequestedOffsetRef = useRef<number | null>(null);
   const currentOffsetRef = useRef(currentOffset);
   const historyLengthRef = useRef(historyLength);
-  useEffect(() => subscribePrivacyInvalidation(() => {
+  const [appliedSearch, setAppliedSearch] = useState<string | null>(null);
+  useEffect(() => subscribePrivacyInvalidation((scope) => {
     fetchSeqRef.current += 1;
     lastRequestedOffsetRef.current = null;
+    if (scope === "all") setAppliedSearch(null);
   }), []);
 
   useEffect(() => {
@@ -59,6 +61,7 @@ export const useHistoryFetch = ({
       try {
         if (reset) {
           lastRequestedOffsetRef.current = null;
+          setAppliedSearch(null);
         }
 
         const baseOffset = reset
@@ -138,6 +141,7 @@ export const useHistoryFetch = ({
             setHasMore(hasMoreNow);
           }
         }
+        setAppliedSearch(debouncedSearch);
         return true;
       } catch (err) {
         if (seq !== fetchSeqRef.current) return false;
@@ -157,7 +161,7 @@ export const useHistoryFetch = ({
   );
 
   const loadMoreHistory = useCallback(async () => {
-    if (loadingRef.current || isLoadingMore || !hasMore) return;
+    if (loadingRef.current || isLoadingMore || !hasMore || appliedSearch !== debouncedSearch) return;
     if (debouncedSearch.trim() && parseTagFilter(debouncedSearch) === null) return;
 
     const effectiveOffset = Math.min(currentOffsetRef.current, historyLengthRef.current);
@@ -172,8 +176,8 @@ export const useHistoryFetch = ({
       loadingRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [debouncedSearch, fetchHistory, hasMore, isLoadingMore, setIsLoadingMore]);
+  }, [appliedSearch, debouncedSearch, fetchHistory, hasMore, isLoadingMore, setIsLoadingMore]);
 
-  return { fetchHistory, loadMoreHistory };
+  return { fetchHistory, loadMoreHistory, appliedSearch };
 };
 
