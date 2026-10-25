@@ -20,6 +20,8 @@ export const tw = {
         privacy_session_hotkey_clear: "清除快捷鍵",
         privacy_session_hotkey_hint: "可嘗試 Ctrl+Alt+P；留空表示不註冊。儲存前會檢查衝突與目前系統能力。",
         privacy_retry: "重新讀取",
+        main_window_resume_pending: "正在還原剪貼簿…",
+        main_window_resume_failed: "剪貼簿尚未還原，暫未顯示歷史紀錄。請重試。",
         privacy_action_failed: "操作未能確認。請重新讀取狀態後再試。",
         privacy_manual_confirm: "隱私工作階段仍在進行，我確認將此項目儲存至歷史。",
         privacy_manual_hint: "此操作僅儲存目前手動新增的記錄，自動擷取繼續暫停。",

@@ -4,6 +4,8 @@ export const privacyStatusZh = {
         privacy_state_unavailable: "无法确认隐私状态，请重新读取；当前窗口暂不读取历史。",
         privacy_session_end: "结束隐私会话",
         privacy_retry: "重新读取",
+        main_window_resume_pending: "正在恢复剪贴板…",
+        main_window_resume_failed: "剪贴板尚未恢复，暂未显示历史记录。请重试。",
 };
 
 export const zh = {
