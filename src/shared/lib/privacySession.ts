@@ -249,6 +249,27 @@ export function beginPrivacyAccess() {
   return { epoch, isCurrent: () => fence.isCurrent(token) && model.phase === "ready" };
 }
 
+/** An owner-authorized preview can prepare offscreen without pretending it received focus. */
+export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurrent: () => boolean, allowSensitive: boolean) {
+  if (getCurrentWindow().label !== "compact-preview") throw new Error("PrivacyStateUnavailable");
+  const token = fence.capture();
+  const started = lifecycle;
+  const owner = (await getAllWindows()).find(window => window.label === "main");
+  if (!owner || !(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
+    || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token)) {
+    throw new Error("PrivacyStateUnavailable");
+  }
+  viewSuspended = false;
+  activeView = true;
+  await refreshPrivacyState();
+  if (!(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
+    || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token) || model.phase !== "ready"
+    || model.snapshot?.privacy_epoch !== expectedEpoch) throw new Error("PrivacyEpochChanged");
+  const access = beginPrivacyAccess();
+  if (!access) throw new Error("PrivacyStateUnavailable");
+  return access;
+}
+
 export async function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");

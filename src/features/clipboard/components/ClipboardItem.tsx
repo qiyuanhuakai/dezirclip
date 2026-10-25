@@ -1,8 +1,7 @@
 import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
-import { emitTo, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import {
     Pin,
     PinOff,
@@ -40,7 +39,10 @@ import { createFrameThrottle } from "../../../shared/lib/frameThrottle";
 import { sameListById } from "../../../shared/lib/sameListById";
 import { ItemContextMenu } from "./ItemContextMenu";
 import type { TransformKindDto } from "./ItemContextMenu";
-import { pickPreviewPosition, type CompactPreviewRect } from "./compactPreviewPosition";
+import type { CompactPreviewRect } from "./compactPreviewPosition";
+import { COMPACT_PREVIEW_LABEL, hideCompactPreviewGlobal, showCompactPreview as requestCompactPreview,
+    holdNativeDialogBlur, setIgnoreBlurSafe, type CompactPreviewAnchor } from "./compactPreviewController";
+export { hideCompactPreviewGlobal } from "./compactPreviewController";
 import { resolveContextMenuPoint } from "./contextMenuPosition";
 import { beginPrivacyAccess, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, submitPrivacyFeedback, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import type { PrivacyFeedbackAction } from "../../../shared/lib/privacySession";
@@ -48,162 +50,12 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { capturePrivacyMetadataIntent } from "../../../shared/lib/privacyMetadataIntent";
 import type { PrivacyMetadataIntent } from "../../../shared/lib/privacyMetadataIntent";
 
-const COMPACT_PREVIEW_LABEL = "compact-preview";
 const CONTEXT_MENU_OPEN_EVENT = "dezirclip:context-menu-open";
-
-let linuxChecked = false;
-let isLinuxPlatform = false;
-
-const checkLinuxPlatform = async (): Promise<boolean> => {
-    if (linuxChecked) return isLinuxPlatform;
-    try {
-        const info = await invoke<{ is_linux: boolean }>("get_platform_info");
-        isLinuxPlatform = !!info?.is_linux;
-    } catch {
-        isLinuxPlatform = false;
-    }
-    linuxChecked = true;
-    return isLinuxPlatform;
-};
-
 import { compactPreviewLog, richPreviewFailureLog } from "../../../shared/lib/compactPreviewLog";
 
-type CompactPreviewAnchor = {
-    clientX: number;
-    clientY: number;
-    screenX: number;
-    screenY: number;
-    itemRect: CompactPreviewRect | null;
-};
-
-let compactPreviewWindow: WebviewWindow | null = null;
-let compactPreviewCreating = false;
-let compactPreviewReady: Promise<WebviewWindow | null> | null = null;
-let compactPreviewMounted = false;
-let compactPreviewMountedPromise: Promise<boolean> | null = null;
-let compactPreviewResizeListener: Promise<() => void> | null = null;
-let compactPreviewPendingShow = false;
-let compactPreviewPendingAnchor: CompactPreviewAnchor | null = null;
-let compactPreviewPendingTimer: ReturnType<typeof setTimeout> | null = null;
-let compactPreviewLifecycleListenersReady: Promise<void> | null = null;
-
-const loadWebviewWindowModule = async () => import("@tauri-apps/api/webviewWindow");
-
-// The backend flag only ever holds the value we last asked for, so repeating
-// the same ask is a wasted cross-process round trip. Scrolling mounts and
-// unmounts rows constantly and every teardown used to re-send `false`.
-let lastIgnoreBlur: boolean | null = null;
-let requestedIgnoreBlur = false;
-let nativeDialogBlurHolds = 0;
-
-// Whether the preview window is believed to be on screen. `null` means unknown,
-// which is what a failed request leaves behind.
-//
-// The window is on screen only between a show and the next hide, but it is asked
-// to hide on every row click and on every row unmount -- and a virtual list
-// unmounts rows continuously while it scrolls, so the ask arrives far more often
-// than the thing it is asking about. Telling the backend to hide a window that
-// is already hidden is a full cross-process round trip each time, and the
-// `isVisible()` that followed only fed a debug log. Same idea as
-// `setIgnoreBlurSafe` below: remember the state we last asked for and skip the
-// ask when it has not changed.
-let lastPreviewVisible: boolean | null = false;
-
-const setIgnoreBlurSafe = (ignore: boolean) => {
-    requestedIgnoreBlur = ignore;
-    ignore = ignore || nativeDialogBlurHolds > 0;
-    if (lastIgnoreBlur === ignore) return;
-    lastIgnoreBlur = ignore;
-    compactPreviewLog("set_ignore_blur", { ignore });
-    invoke("set_ignore_blur", { ignore }).catch(() => {
-        // The backend state is unknown after a failure, so let the next caller
-        // with the same value try again rather than trusting a memo that the
-        // backend never acknowledged.
-        lastIgnoreBlur = null;
-    });
-};
-
-const holdNativeDialogBlur = async (): Promise<() => void> => {
-    nativeDialogBlurHolds += 1;
-    try {
-        await invoke("set_ignore_blur", { ignore: true });
-        lastIgnoreBlur = true;
-    } catch (error) {
-        nativeDialogBlurHolds -= 1;
-        setIgnoreBlurSafe(requestedIgnoreBlur);
-        throw error;
-    }
-    return () => {
-        nativeDialogBlurHolds -= 1;
-        setIgnoreBlurSafe(requestedIgnoreBlur);
-    };
-};
-
-// The main window's own geometry, as opposed to anything about the preview.
-//
-// Placing the preview needs three reads that describe the window the preview is
-// being placed next to: its scale factor, where its frame sits, and how big its
-// frame is. None of them changes while the user moves the pointer from one row
-// to the next, yet each one is a full cross-process round trip, and the hover
-// path asks for all three on every row the pointer passes over.
-//
-// The values are kept next to the browser's own view of the frame. `screenX`,
-// `screenY`, `outerWidth`, `outerHeight` and `devicePixelRatio` move, resize and
-// rescale with the window, and reading them costs nothing, so comparing them
-// says whether the cached values are still current without asking the backend
-// whether the window moved. They are only ever compared, never used as
-// geometry: they are in CSS pixels and the cached values are physical.
-//
-// `currentMonitor()` is deliberately not cached: the monitor's work area can
-// change without the window moving at all, and nothing reports that.
-//
-// `outerSize()` is deliberately not cached either, and not because it is
-// stable. The window permission set does not include `outer-size`, so the call
-// is refused and resolves to null on every single hover, which is what has
-// always happened: `avoidRect` has therefore never been anything but null and
-// the preview has never actually avoided the main window. Caching a value that
-// cannot exist is not an option either, so it is left as a plain read and the
-// gap is reported rather than papered over.
-type MainWindowGeometry = {
-    scale: number;
-    outer: PhysicalPosition | null;
-    frameMarker: string;
-};
-
-let mainWindowGeometry: MainWindowGeometry | null = null;
-
-const mainWindowFrameMarker = () =>
-    [
-        window.screenX,
-        window.screenY,
-        window.outerWidth,
-        window.outerHeight,
-        window.devicePixelRatio
-    ].join(",");
-
-const readMainWindowGeometry = async (): Promise<MainWindowGeometry> => {
-    // The marker is read before the round trips, so a window that moved while
-    // they were in flight is caught by the next caller rather than remembered.
-    const frameMarker = mainWindowFrameMarker();
-    if (mainWindowGeometry && mainWindowGeometry.frameMarker === frameMarker) {
-        return mainWindowGeometry;
-    }
-    const appWindow = getCurrentWindow();
-    const [scale, outer] = await Promise.all([
-        appWindow.scaleFactor(),
-        appWindow.outerPosition().catch(() => null)
-    ]);
-    const geometry: MainWindowGeometry = { scale, outer, frameMarker };
-    // A read that failed is not a value worth keeping. Before this cache the
-    // path asked the backend again on every hover, so a transient failure cost
-    // that one hover and nothing more. Caching the failure instead would keep
-    // the preview anchored to where the window used to be, until the frame
-    // marker happened to change.
-    if (outer) {
-        mainWindowGeometry = geometry;
-    }
-    return geometry;
-};
+const toCompactPreviewRect = (rect: DOMRect): CompactPreviewRect => ({
+    left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom
+});
 
 // `list_transform_kinds` answers from a compile-time table, so one fetch for
 // the whole app is enough. Every mounted row used to ask for its own copy.
@@ -269,387 +121,6 @@ const subscribeOcrComplete = (
     return () => {
         ocrSubscribers.delete(entry);
     };
-};
-
-const clearCompactPreviewPendingState = () => {
-    compactPreviewLog("clear pending state");
-    if (compactPreviewPendingTimer) {
-        clearTimeout(compactPreviewPendingTimer);
-        compactPreviewPendingTimer = null;
-    }
-    compactPreviewPendingShow = false;
-    compactPreviewPendingAnchor = null;
-};
-
-type CompactPreviewPhysicalAnchor = {
-    readonly x: number;
-    readonly y: number;
-    readonly itemRect: CompactPreviewRect | null;
-};
-
-const scaleRect = (rect: CompactPreviewRect, offset: { readonly x: number; readonly y: number }, scale: number): CompactPreviewRect => ({
-    left: Math.round(offset.x + rect.left * scale),
-    top: Math.round(offset.y + rect.top * scale),
-    right: Math.round(offset.x + rect.right * scale),
-    bottom: Math.round(offset.y + rect.bottom * scale)
-});
-
-const toCompactPreviewRect = (rect: DOMRect): CompactPreviewRect => ({
-    left: rect.left,
-    top: rect.top,
-    right: rect.right,
-    bottom: rect.bottom
-});
-
-const resolveAnchorPhysical = (
-    anchor: CompactPreviewAnchor,
-    scale: number,
-    appOuter: PhysicalPosition | null
-): CompactPreviewPhysicalAnchor => {
-    // The caller already read the main window's outer position for the avoid
-    // rect. This used to read it a second time, one line apart, for the same
-    // window in the same instant -- a second cross-process round trip per preview
-    // show, and the hover timer re-runs the whole path for every row the
-    // pointer passes over. Sharing the one read also means the anchor and the
-    // avoid rect come from one snapshot instead of two slightly different moments.
-    if (appOuter) {
-        return {
-            x: Math.round(appOuter.x + anchor.clientX * scale),
-            y: Math.round(appOuter.y + anchor.clientY * scale),
-            itemRect: anchor.itemRect ? scaleRect(anchor.itemRect, appOuter, scale) : null
-        };
-    }
-    return {
-        x: Math.round(anchor.screenX * scale),
-        y: Math.round(anchor.screenY * scale),
-        itemRect: anchor.itemRect
-            ? {
-                  left: Math.round(anchor.screenX * scale + (anchor.itemRect.left - anchor.clientX) * scale),
-                  top: Math.round(anchor.screenY * scale + (anchor.itemRect.top - anchor.clientY) * scale),
-                  right: Math.round(anchor.screenX * scale + (anchor.itemRect.right - anchor.clientX) * scale),
-                  bottom: Math.round(anchor.screenY * scale + (anchor.itemRect.bottom - anchor.clientY) * scale)
-              }
-            : null
-    };
-};
-
-const placeAndShowPendingCompactPreview = async (
-    widthLogical: number,
-    heightLogical: number,
-    options?: { keepPending?: boolean }
-) => {
-    if (!compactPreviewPendingShow || !compactPreviewWindow || !compactPreviewPendingAnchor) {
-        compactPreviewLog("skip place/show: pending state not ready", {
-            pendingShow: compactPreviewPendingShow,
-            hasWindow: !!compactPreviewWindow,
-            hasAnchor: !!compactPreviewPendingAnchor
-        });
-        return;
-    }
-
-    const { scale, outer: mainOuter } = await readMainWindowGeometry();
-    const mainSize = await getCurrentWindow().outerSize().catch(() => null);
-    const monitor = await currentMonitor();
-    const monitorPos = monitor?.position || { x: 0, y: 0 };
-    const monitorSize = monitor?.size || { width: 1920, height: 1080 };
-    const margin = Math.round(10 * scale);
-    const offset = Math.round(12 * scale);
-
-    const widthPx = Math.round(widthLogical * scale);
-    const heightPx = Math.round(heightLogical * scale);
-    const anchorPx = resolveAnchorPhysical(compactPreviewPendingAnchor, scale, mainOuter);
-    const avoidRect =
-        mainOuter && mainSize
-            ? {
-                  left: mainOuter.x,
-                  top: mainOuter.y,
-                  right: mainOuter.x + mainSize.width,
-                  bottom: mainOuter.y + mainSize.height
-              }
-            : null;
-
-    const target = pickPreviewPosition({
-        anchorX: anchorPx.x,
-        anchorY: anchorPx.y,
-        anchorRect: anchorPx.itemRect,
-        widthPx,
-        heightPx,
-        monitorPos,
-        monitorSize,
-        margin,
-        offset,
-        avoidRect
-    });
-    compactPreviewLog("place/show target resolved", {
-        widthLogical,
-        heightLogical,
-        widthPx,
-        heightPx,
-        anchorPx,
-        target,
-        avoidRect,
-        scale
-    });
-
-    setIgnoreBlurSafe(true);
-    try {
-        await compactPreviewWindow.setPosition(new PhysicalPosition(target.x, target.y));
-        await compactPreviewWindow.show();
-        await emitTo(COMPACT_PREVIEW_LABEL, "privacy-view-shown", null);
-        lastPreviewVisible = true;
-        // Force top-most z-order refresh so preview is not occluded by the main top-most window.
-        try {
-            await compactPreviewWindow.setAlwaysOnTop(false);
-            await compactPreviewWindow.setAlwaysOnTop(true);
-            compactPreviewLog("refresh always-on-top stacking done");
-        } catch (stackErr) {
-            compactPreviewLog("refresh always-on-top stacking failed", stackErr);
-        }
-        // No `isVisible()` here: the answer only ever reached this log line, and
-        // asking costs a full cross-process round trip on a path the hover timer
-        // re-runs for every row the pointer passes over.
-        compactPreviewLog("preview window shown", { target });
-    } catch (err) {
-        setIgnoreBlurSafe(false);
-        compactPreviewLog("preview show failed", err);
-        throw err;
-    }
-    if (options?.keepPending) {
-        compactPreviewLog("keep pending state after place/show", { widthLogical, heightLogical });
-    } else {
-        clearCompactPreviewPendingState();
-    }
-};
-
-export const hideCompactPreviewGlobal = async () => {
-    const previewWindow = compactPreviewWindow;
-    compactPreviewLog("hide preview requested", { hasWindow: !!previewWindow });
-    clearCompactPreviewPendingState();
-    setIgnoreBlurSafe(false);
-
-    if (!previewWindow) return;
-    await emitTo(COMPACT_PREVIEW_LABEL, "privacy-view-hidden", null).catch(() => undefined);
-    await previewWindow.emit("compact-preview-clear", null).catch(() => undefined);
-    if (lastPreviewVisible === false) return;
-    lastPreviewVisible = false;
-
-    try {
-        await previewWindow.hide();
-        compactPreviewLog("preview window hidden", { skippedVisibilityProbe: true });
-    } catch (err) {
-        // The state is unknown after a failure, so let the next caller try again
-        // rather than trusting a memo the backend never acknowledged.
-        lastPreviewVisible = null;
-        console.error("Failed to hide compact preview window:", err);
-        compactPreviewLog("hide preview failed, reset window reference", err);
-        compactPreviewWindow = null;
-        compactPreviewMounted = false;
-        compactPreviewMountedPromise = null;
-    }
-};
-
-const waitForCompactPreviewMounted = async (): Promise<boolean> => {
-    if (compactPreviewMounted) {
-        compactPreviewLog("mounted already true, skip wait");
-        return true;
-    }
-    if (!compactPreviewMountedPromise) {
-        compactPreviewLog("waiting compact preview mounted event...");
-        compactPreviewMountedPromise = new Promise(async (resolve) => {
-            const timeout = setTimeout(() => {
-                compactPreviewLog("wait compact-preview-mounted timeout");
-                resolve(false);
-            }, 1200);
-            try {
-                const unlisten = await listen("compact-preview-mounted", () => {
-                    compactPreviewMounted = true;
-                    clearTimeout(timeout);
-                    unlisten();
-                    compactPreviewLog("received compact-preview-mounted");
-                    resolve(true);
-                });
-            } catch (err) {
-                clearTimeout(timeout);
-                console.error("Failed to listen for compact preview ready:", err);
-                compactPreviewLog("listen compact-preview-mounted failed", err);
-                resolve(false);
-            }
-        });
-    }
-    return compactPreviewMountedPromise;
-};
-
-const ensureCompactPreviewResizeListener = async (): Promise<void> => {
-    if (compactPreviewResizeListener) {
-        await compactPreviewResizeListener;
-        return;
-    }
-    compactPreviewLog("register compact-preview-resize listener");
-    compactPreviewResizeListener = listen<{ width: number; height: number }>(
-        "compact-preview-resize",
-        async (event) => {
-            const { width, height } = event.payload || {};
-            if (!width || !height) {
-                compactPreviewLog("ignore compact-preview-resize with invalid payload", event.payload);
-                return;
-            }
-            compactPreviewLog("received compact-preview-resize", { width, height });
-
-            try {
-                await placeAndShowPendingCompactPreview(width, height);
-            } catch (err) {
-                console.error("Failed to resize compact preview window:", err);
-                compactPreviewLog("resize handling failed", err);
-            }
-        }
-    );
-    await compactPreviewResizeListener;
-};
-
-const ensureCompactPreviewLifecycleListeners = async (): Promise<void> => {
-    if (compactPreviewLifecycleListenersReady) {
-        await compactPreviewLifecycleListenersReady;
-        return;
-    }
-
-    compactPreviewLifecycleListenersReady = (async () => {
-        subscribePrivacyInvalidation(() => { void hideCompactPreviewGlobal(); });
-        const lifecycleEvents = ["tauri://hide", "tauri://close-requested", "tauri://destroyed"];
-        await Promise.all(
-            lifecycleEvents.map(async (eventName) => {
-                try {
-                    compactPreviewLog("bind lifecycle listener", eventName);
-                    await listen(eventName, () => {
-                        compactPreviewLog("lifecycle event -> hide preview", eventName);
-                        void hideCompactPreviewGlobal();
-                    });
-                } catch (err) {
-                    console.error(`Failed to bind compact preview lifecycle listener: ${eventName}`, err);
-                    compactPreviewLog("bind lifecycle listener failed", { eventName, err });
-                }
-            })
-        );
-    })();
-
-    await compactPreviewLifecycleListenersReady;
-};
-
-const tryReuseExistingCompactPreviewWindow = async (): Promise<WebviewWindow | null> => {
-    try {
-        const { WebviewWindow } = await loadWebviewWindowModule();
-        const existing = await WebviewWindow.getByLabel(COMPACT_PREVIEW_LABEL);
-        if (!existing) {
-            compactPreviewLog("no existing compact preview window by label");
-            return null;
-        }
-
-        const visible = await existing.isVisible().catch(() => null);
-        compactPreviewLog("reuse compact preview window by label", { visible });
-        // A window that is already on screen must not skip its next hide.
-        lastPreviewVisible = visible;
-        compactPreviewWindow = existing;
-        compactPreviewMounted = true;
-        compactPreviewMountedPromise = Promise.resolve(true);
-        try {
-            if (!(await checkLinuxPlatform())) {
-                await existing.setIgnoreCursorEvents(true);
-            }
-        } catch {}
-        try {
-            await existing.setAlwaysOnTop(true);
-        } catch {}
-        return existing;
-    } catch (err) {
-        compactPreviewLog("reuse compact preview window by label failed", err);
-        return null;
-    }
-};
-
-const ensureCompactPreviewWindow = async (): Promise<WebviewWindow | null> => {
-    if (compactPreviewWindow) {
-        compactPreviewMounted = true;
-        compactPreviewMountedPromise = Promise.resolve(true);
-        compactPreviewLog("reuse existing compact preview window");
-        return compactPreviewWindow;
-    }
-    if (compactPreviewReady) return compactPreviewReady;
-    if (compactPreviewCreating) return null;
-    const reusedBeforeCreate = await tryReuseExistingCompactPreviewWindow();
-    if (reusedBeforeCreate) {
-        return reusedBeforeCreate;
-    }
-    compactPreviewLog("create compact preview window start");
-    compactPreviewCreating = true;
-    compactPreviewReady = (async () => {
-        try {
-            const { WebviewWindow } = await loadWebviewWindowModule();
-            const previewWindow = new WebviewWindow(COMPACT_PREVIEW_LABEL, {
-                url: "index.html?window=compact-preview",
-                decorations: false,
-                transparent: true,
-                resizable: false,
-                skipTaskbar: true,
-                alwaysOnTop: true,
-                visible: false,
-                focus: false,
-                focusable: false,
-                shadow: false
-            });
-
-            compactPreviewMounted = false;
-            compactPreviewMountedPromise = null;
-            compactPreviewLog("compact preview window instance created, waiting tauri://created");
-
-            const created = await new Promise<boolean>((resolve) => {
-                const timeout = setTimeout(() => resolve(false), 1500);
-                previewWindow.once("tauri://created", () => {
-                    clearTimeout(timeout);
-                    compactPreviewLog("compact preview tauri://created");
-                    resolve(true);
-                });
-                previewWindow.once("tauri://error", (event) => {
-                    clearTimeout(timeout);
-                    compactPreviewLog("compact preview tauri://error", event.payload);
-                    resolve(false);
-                });
-            });
-
-            if (!created) {
-                compactPreviewLog("compact preview create timeout/failure, try reuse by label");
-                const reusedAfterFailedCreate = await tryReuseExistingCompactPreviewWindow();
-                if (reusedAfterFailedCreate) {
-                    return reusedAfterFailedCreate;
-                }
-                return null;
-            }
-
-            try {
-                await previewWindow.setSize(new PhysicalSize(1, 1));
-            } catch (err) {
-                console.error("Failed to initialize compact preview size:", err);
-            }
-
-            try {
-                if (!(await checkLinuxPlatform())) {
-                    await previewWindow.setIgnoreCursorEvents(true);
-                }
-            } catch (err) {
-                console.error("Failed to enable ignore cursor events:", err);
-            }
-
-            compactPreviewWindow = previewWindow;
-            compactPreviewLog("compact preview window ready");
-            return previewWindow;
-        } catch (err) {
-            console.error("Failed to create compact preview window:", err);
-            compactPreviewLog("create compact preview window failed", err);
-            return null;
-        } finally {
-            compactPreviewCreating = false;
-            compactPreviewReady = null;
-        }
-    })();
-    return compactPreviewReady;
 };
 
 const getIcon = (type: string) => getContentTypeIcon(type);
@@ -936,136 +407,27 @@ const ClipboardItem = ({
         };
     }, [item.source_app_path]);
 
-    const hideCompactPreview = async () => {
-        await hideCompactPreviewGlobal();
+    const previewOwner = useRef({});
+    const hideCompactPreview = () => hideCompactPreviewGlobal(previewOwner.current);
+    const showCompactPreview = (anchor: CompactPreviewAnchor) => {
+        const generation = contentIdentity.current.generation;
+        const rootStyle = getComputedStyle(document.documentElement);
+        const fontSize = (name: string) => {
+            const value = parseInt(rootStyle.getPropertyValue(name));
+            return Number.isFinite(value) ? value : undefined;
+        };
+        return requestCompactPreview(previewOwner.current, anchor, {
+            id: item.id, expectedHostInstanceId: item.host_instance_id,
+            allowSensitive: isSensitiveEntry(item) && isRevealed,
+            language, theme, richTextSnapshotPreview,
+            colorMode: document.documentElement.classList.contains("dark-mode") ? "dark" : "light",
+            clipboardItemFontSize: fontSize("--clipboard-item-font-size"),
+            clipboardTagFontSize: fontSize("--clipboard-tag-font-size")
+        }, () => !hiddenRef.current && hoverAnchorRef.current !== null
+            && contentIdentity.current.generation === generation);
     };
 
-    const showCompactPreview = async (anchor: CompactPreviewAnchor) => {
-        const access = beginPrivacyAccess();
-        if (hiddenRef.current || !access) return;
-        compactPreviewLog("show preview requested", {
-            itemId: item.id,
-            contentType: item.content_type,
-            anchor
-        });
-        let previewWindow = await ensureCompactPreviewWindow();
-        if (!previewWindow) {
-            compactPreviewLog("show preview aborted: window unavailable");
-            return;
-        }
-        await ensureCompactPreviewLifecycleListeners();
-        await ensureCompactPreviewResizeListener();
-        compactPreviewLog("preview listeners ready");
-        const mounted = await waitForCompactPreviewMounted();
-        compactPreviewLog("mounted state before emit", { mounted });
-        if (!mounted) {
-            compactPreviewLog("mounted wait returned false; continue with fallback timer");
-        }
-
-        try {
-            if (hiddenRef.current || !access.isCurrent()) return;
-            const rootStyle = getComputedStyle(document.documentElement);
-            const clipboardItemFontSizeRaw = parseInt(
-                rootStyle.getPropertyValue("--clipboard-item-font-size")
-            );
-            const clipboardTagFontSizeRaw = parseInt(
-                rootStyle.getPropertyValue("--clipboard-tag-font-size")
-            );
-            const clipboardItemFontSize = Number.isFinite(clipboardItemFontSizeRaw)
-                ? clipboardItemFontSizeRaw
-                : undefined;
-            const clipboardTagFontSize = Number.isFinite(clipboardTagFontSizeRaw)
-                ? clipboardTagFontSizeRaw
-                : undefined;
-            const colorMode = document.documentElement.classList.contains("dark-mode") ? "dark" : "light";
-
-            compactPreviewPendingShow = true;
-            compactPreviewPendingAnchor = anchor;
-            compactPreviewLog("emit compact-preview-update", {
-                itemId: item.id,
-                contentType: item.content_type,
-                hasHtml: !!item.html_content
-            });
-            await previewWindow.emit("compact-preview-update", {
-                id: item.id,
-                privacyEpoch: access.epoch,
-                expectedHostInstanceId: item.host_instance_id,
-                allowSensitive: isSensitiveEntry(item) && isRevealed,
-                language,
-                theme,
-                colorMode,
-                richTextSnapshotPreview,
-                clipboardItemFontSize,
-                clipboardTagFontSize
-            });
-            compactPreviewLog("emit compact-preview-update done");
-            if (compactPreviewPendingTimer) {
-                clearTimeout(compactPreviewPendingTimer);
-            }
-            compactPreviewPendingTimer = setTimeout(async () => {
-                if (!access.isCurrent() || !compactPreviewPendingShow || !compactPreviewWindow || !compactPreviewPendingAnchor) {
-                    compactPreviewLog("fallback timer canceled: pending state changed");
-                    return;
-                }
-                try {
-                    compactPreviewLog("fallback timer place/show with default size");
-                    await placeAndShowPendingCompactPreview(320, 220, { keepPending: true });
-                } catch (fallbackErr) {
-                    console.error("Failed to show compact preview window (fallback):", fallbackErr);
-                    compactPreviewLog("fallback place/show failed", fallbackErr);
-                }
-            }, 200);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            if (message.includes("window not found")) {
-                compactPreviewLog("window not found, recreate flow");
-                compactPreviewWindow = null;
-                compactPreviewMounted = false;
-                compactPreviewMountedPromise = null;
-                previewWindow = await ensureCompactPreviewWindow();
-                if (!previewWindow) return;
-                try {
-                    if (hiddenRef.current || !access.isCurrent()) return;
-                    compactPreviewPendingShow = true;
-                    compactPreviewPendingAnchor = anchor;
-                    compactPreviewLog("emit compact-preview-update after recreate");
-                    await previewWindow.emit("compact-preview-update", {
-                        id: item.id,
-                        privacyEpoch: access.epoch,
-                        expectedHostInstanceId: item.host_instance_id,
-                        allowSensitive: isSensitiveEntry(item) && isRevealed,
-                        language,
-                        theme,
-                        richTextSnapshotPreview,
-                        colorMode: document.documentElement.classList.contains("dark-mode") ? "dark" : "light"
-                    });
-                    compactPreviewLog("emit compact-preview-update after recreate done");
-                    if (compactPreviewPendingTimer) {
-                        clearTimeout(compactPreviewPendingTimer);
-                    }
-                    compactPreviewPendingTimer = setTimeout(async () => {
-                        if (!access.isCurrent() || !compactPreviewPendingShow || !compactPreviewWindow || !compactPreviewPendingAnchor) {
-                            compactPreviewLog("recreate fallback canceled: pending state changed");
-                            return;
-                        }
-                        try {
-                            compactPreviewLog("recreate fallback place/show with default size");
-                            await placeAndShowPendingCompactPreview(320, 220, { keepPending: true });
-                        } catch (fallbackErr) {
-                            console.error("Failed to show compact preview window (fallback):", fallbackErr);
-                            compactPreviewLog("recreate fallback failed", fallbackErr);
-                        }
-                    }, 200);
-                } catch (retryErr) {
-                    console.error("Failed to show compact preview window:", retryErr);
-                    compactPreviewLog("recreate flow failed", retryErr);
-                }
-                return;
-            }
-            console.error("Failed to show compact preview window:", err);
-            compactPreviewLog("show preview failed", err);
-        }
-    };
+    useEffect(() => { void hideCompactPreviewGlobal(previewOwner.current); }, [item]);
 
     // Sync local state when prop changes (e.g. when editor opens)
     useEffect(() => {
@@ -1123,7 +485,7 @@ const ClipboardItem = ({
         return () => {
             if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
             hoverAnchorRef.current = null;
-            void hideCompactPreviewGlobal();
+            void hideCompactPreviewGlobal(previewOwner.current);
         };
     }, []);
 
@@ -1552,7 +914,7 @@ const ClipboardItem = ({
                 // synchronous reads drop to zero, and the layout count does not
                 // move, so the gain is getting the reads off the handler's
                 // synchronous path rather than fewer layouts. The hover timer
-                // does not fire for a second, so a frame's delay changes nothing
+                // does not fire immediately, so a frame's delay changes nothing
                 // about what the preview is placed against.
                 hoverAnchorThrottle.schedule({
                     clientX: e.clientX,
@@ -1572,12 +934,12 @@ const ClipboardItem = ({
                     if (!anchor) return;
                     compactPreviewLog("mouseenter timer fired, show preview", { itemId: item.id });
                     showCompactPreview(anchor);
-                }, 1000); // 1s delay
+                }, 300);
             }}
             onMouseMove={(e) => {
                 if (!compactMode) return;
                 if (contextMenuState) return;
-                // The anchor is only read a second later, when the preview
+                // The anchor is only read when the hover delay ends, when the preview
                 // timer fires, so the newest position in the frame is exactly
                 // as good as the newest position in the event queue. Measuring
                 // on every event was a forced synchronous layout per event, on
