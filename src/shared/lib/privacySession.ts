@@ -253,16 +253,25 @@ export function beginPrivacyAccess() {
 export async function getPrivacyEntry(id: number, hostInstanceId?: string): Promise<ClipboardEntry> {
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) throw new Error("PrivacyStateUnavailable");
+  const token = fence.capture();
   const current = getCurrentWindow();
-  if (current.label === "main" && !await current.isFocused()) {
-    if (!activationRequest) {
-      const request = refreshPrivacyAfterConfirmation(epoch).finally(() => {
-        if (activationRequest === request) activationRequest = null;
-      });
-      activationRequest = request;
+  if (current.label === "main") {
+    const focused = await current.isFocused();
+    if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+    if (!focused) {
+      if (!activationRequest) {
+        const request = refreshPrivacyAfterConfirmation(epoch).finally(() => {
+          if (activationRequest === request) activationRequest = null;
+        });
+        activationRequest = request;
+      }
+      await activationRequest;
+    } else if (!activeView) {
+      activeView = true;
+      await refreshPrivacyState();
     }
-    await activationRequest;
   }
+  if (!fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
   return invokePrivacyBound<ClipboardEntry>("get_privacy_entry", { id, expectedEpoch: epoch, ...entryInstanceArgs(hostInstanceId) });
 }
 
