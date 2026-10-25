@@ -6,8 +6,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$version = '0.2.0-alpha.2'
 $repository = Split-Path -Parent $PSScriptRoot
+$version = (Get-Content -LiteralPath (Join-Path $repository 'package.json') -Raw | ConvertFrom-Json).version
+if ($version -isnot [string] -or $version -cnotmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw 'The candidate package version is invalid.' }
 function Resolve-ApplicationPath([Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Name) {
     $application = Get-Command -Name $Name -CommandType Application -ErrorAction Stop | Select-Object -First 1
     if ($application -isnot [System.Management.Automation.ApplicationInfo]) { throw 'A single application command is required.' }
@@ -26,6 +27,8 @@ if ($env:OS -cne 'Windows_NT' -or [System.Runtime.InteropServices.RuntimeInforma
 $workflowSource = $null
 if ($env:DZC_RELEASE_RECOVERY -and $env:DZC_RELEASE_RECOVERY -cnotin @('0', '1')) { throw 'Invalid release recovery mode.' }
 if ($env:DZC_RELEASE_RECOVERY -ceq '1') {
+    if ($version -cne '0.2.0-alpha.2' -or $ExpectedSource -cne '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae' -or
+        $ExpectedReleaseId -cne '422045565') { throw 'Recovery remains limited to the original alpha.2 product and draft release.' }
     $authorityOutput = & (Resolve-ApplicationPath 'python') (Join-Path $PSScriptRoot 'release_recovery.py') authority $ExpectedSource
     if ($LASTEXITCODE -ne 0) { throw 'The independent release recovery authority refused this execution.' }
     $authority = ($authorityOutput -join "`n") | ConvertFrom-Json -Depth 20
@@ -76,6 +79,7 @@ $inputs = Read-OwnedJson $inputPath
 $expectedOld = @{
     LegacyToAlpha2 = @{ version = '0.1.20'; sha256 = 'd20033124c74bea451301716afb46623607602bae37647748ae7d25ab7dd4b8e' }
     PublishedAlphaToAlpha2 = @{ version = '0.2.0-alpha.1'; sha256 = '31d8b88064e1185c9f74b5fdd327902b9bc860e523b9a5ac0d71620ec7adbb87'; source_revision = '90ba9960744b6cd57caaaf597f68533a7e41be45' }
+    PublishedAlpha2ToRelease = @{ version = '0.2.0-alpha.2'; sha256 = '9e96fcd49e4e36c903edd19a1424856383e229ea131f455fbabdcf816622db05'; source_revision = '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae' }
 }
 if ($inputs.schema_version -ne 1 -or $inputs.kind -cne 'release_windows_upgrade_inputs' -or $inputs.version -cne $version -or
     $inputs.source_revision -cne $ExpectedSource -or $inputs.release_id.ToString() -cne $ExpectedReleaseId -or
@@ -86,8 +90,9 @@ if ($workflowSource) {
     if (-not $inputWorkflow -or $inputWorkflow.Value -cne $workflowSource) { throw 'Staged inputs belong to another recovery workflow source.' }
 } elseif ($inputWorkflow) { throw 'A normal tag run cannot consume recovery workflow inputs.' }
 $old = $expectedOld[$inputs.scenario]
+$oldHasBuildInfo = $old.ContainsKey('source_revision')
 if ($inputs.old.version -cne $old.version -or $inputs.old.sha256 -cne $old.sha256) { throw 'The historical package identity is not the pinned published installer.' }
-if ($inputs.scenario -ceq 'PublishedAlphaToAlpha2' -and $inputs.old.source_revision -cne $old.source_revision) { throw 'The historical alpha.1 source differs.' }
+if ($oldHasBuildInfo -and $inputs.old.source_revision -cne $old.source_revision) { throw 'The historical published source differs.' }
 $installDirectory = Join-Path $fixture 'installed'
 $profileDirectory = Join-Path $fixture 'profile'
 $database = Join-Path $profileDirectory 'clipboard.db'
@@ -314,12 +319,19 @@ try {
     if (Test-Path -LiteralPath $database) { throw 'Historical profile must be created by the actual old CLI.' }
     Invoke-OwnedCommand (Join-Path $installDirectory 'dzc.exe') @('add', $marker) 'old-cli-create-profile' | Write-Output
     Resolve-OwnedPath $database -File | Out-Null
-    if ($inputs.scenario -ceq 'PublishedAlphaToAlpha2') {
+    if ($oldHasBuildInfo) {
         $oldInfo = (Invoke-OwnedCommand (Join-Path $installDirectory 'dzc.exe') @('build-info', '--json') 'old-cli-build-info') | ConvertFrom-Json -Depth 20
+        $oldSchema = if ($inputs.scenario -ceq 'PublishedAlpha2ToRelease') { 24 } else { 21 }
+        $oldLinked = @('dzc-core', 'dzc-platform', 'dzc-protocol')
+        if ($inputs.scenario -ceq 'PublishedAlpha2ToRelease') { $oldLinked += 'dzc-host' }
         if ($oldInfo.component -cne 'cli' -or $oldInfo.component_version -cne $old.version -or $oldInfo.source_revision -cne $old.source_revision -or
             $oldInfo.build_id -cne ($old.version + '@' + $old.source_revision) -or $oldInfo.source_state -cne 'verified_checkout' -or
-            $oldInfo.database_schema_version -ne 21 -or $oldInfo.target -cne 'x86_64-pc-windows-msvc' -or @($oldInfo.linked_components).Count -ne 3) { throw 'Actual published alpha.1 CLI source/schema/inventory differs.' }
-        foreach ($name in @('dzc-core', 'dzc-platform', 'dzc-protocol')) { if (@($oldInfo.linked_components | Where-Object { $_.component -ceq $name -and $_.version -ceq $old.version }).Count -ne 1) { throw 'Historical alpha.1 linked inventory differs.' } }
+            $oldInfo.database_schema_version -ne $oldSchema -or $oldInfo.target -cne 'x86_64-pc-windows-msvc' -or
+            @($oldInfo.linked_components).Count -ne $oldLinked.Count) { throw 'Actual published historical CLI source/schema/inventory differs.' }
+        foreach ($name in $oldLinked) { if (@($oldInfo.linked_components | Where-Object { $_.component -ceq $name -and $_.version -ceq $old.version }).Count -ne 1) { throw 'Historical linked inventory differs.' } }
+        if ($inputs.scenario -ceq 'PublishedAlpha2ToRelease' -and ($oldInfo.metadata_version -ne 1 -or
+            $oldInfo.revision_origin -cnotin @('local_git', 'explicit_checkout') -or $oldInfo.protocol_version.major -ne 1 -or
+            $oldInfo.protocol_version.minor -ne 0)) { throw 'Historical alpha.2 metadata/protocol differs.' }
         Save-Json (Join-Path $fixture 'old-build-info.json') $oldInfo
     }
     $profileProgram = @'
@@ -343,8 +355,11 @@ with connection:
     entry_id = rows[0][0]
     if operation=='seed':
         assert not (fixture/'old-profile-backup.db').exists()
-        assert isinstance(version,int) and 0<version<=21
-        if inputs['scenario']=='PublishedAlphaToAlpha2': assert version==21
+        assert isinstance(version,int)
+        if inputs['scenario']=='PublishedAlpha2ToRelease': assert version==24
+        else:
+            assert 0<version<=21
+            if inputs['scenario']=='PublishedAlphaToAlpha2': assert version==21
         connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',frozen.items())
         connection.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',{'app.update_auto_check':'false','app.silent_start':'false','app.idle_destroy_enabled':'false','app.sequential_mode':'false'}.items())
         connection.execute('UPDATE clipboard_history SET is_pinned=1,tags=? WHERE id=?',(json.dumps(['releaseupgradetag']),entry_id))

@@ -10,12 +10,13 @@ import struct
 import subprocess
 import sys
 import threading
+from release_version import release_version, rpm_parts
 
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS = {'linux-x86_64': 'x86_64-unknown-linux-gnu', 'linux-aarch64': 'aarch64-unknown-linux-gnu',
            'windows-x86_64': 'x86_64-pc-windows-msvc', 'windows-aarch64': 'aarch64-pc-windows-msvc'}
 ROLES = {'desktop': 'dezirclip', 'cli': 'dzc', 'service': 'dzc-service'}
-VERSION = '0.2.0-alpha.2'
+VERSION = release_version(ROOT)
 FIELDS = {'metadata_version', 'component', 'component_version', 'build_id', 'source_revision', 'source_state',
           'revision_origin', 'target', 'protocol_version', 'database_schema_version', 'linked_components'}
 
@@ -54,9 +55,10 @@ def expected_assets(target):
         arch = 'arm64' if target.endswith('aarch64') else 'x64'
         return standalone, [f'DezirClip_{VERSION}_{arch}-setup.exe']
     arm = target.endswith('aarch64')
+    rpm_version, rpm_release = rpm_parts(VERSION)
     return standalone, [f'DezirClip_{VERSION}_{"aarch64" if arm else "amd64"}.AppImage',
                         f'DezirClip_{VERSION}_{"arm64" if arm else "amd64"}.deb',
-                        f'DezirClip-0.2.0-0.alpha.2.{"aarch64" if arm else "x86_64"}.rpm',
+                        f'DezirClip-{rpm_version}-{rpm_release}.{"aarch64" if arm else "x86_64"}.rpm',
                         f'DezirClip-{VERSION}-{target}.flatpak']
 
 def native_target(target, machine=None, system=None):

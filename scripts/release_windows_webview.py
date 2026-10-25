@@ -1,4 +1,4 @@
-"""Temporary per-app WebView2 policy for disposable alpha.2 release QA only."""
+"""Temporary per-app WebView2 policy for disposable release QA only."""
 import argparse
 import base64
 import hashlib
@@ -8,7 +8,7 @@ from pathlib import Path
 import stat
 import sys
 
-from release_recovery import SOURCE, authority
+from release_recovery import authority
 
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = r'SOFTWARE\Policies\Microsoft\Edge\WebView2'
@@ -393,8 +393,8 @@ def main():
     parser.add_argument('--executable', type=Path)
     args = parser.parse_args()
     require(sys.platform == 'win32' and os.environ.get('GITHUB_ACTIONS') == 'true'
-            and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and args.source == SOURCE,
-            'WebView QA policy requires the actual disposable alpha.2 Windows job')
+            and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted',
+            'WebView QA policy requires the actual disposable Windows release job')
     context = authority(args.source)
     temporary = Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
     root = owned(args.root, temporary, exists=True)

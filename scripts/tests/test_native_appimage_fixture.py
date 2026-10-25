@@ -1,10 +1,14 @@
 import ast
 from contextlib import closing
+from functools import partial
+import json
 from pathlib import Path
 import re
 import sqlite3
 import tempfile
 import unittest
+
+VERSION = json.loads((Path(__file__).resolve().parents[2] / 'package.json').read_text(encoding='utf-8'))['version']
 
 
 def load_fixture_function(name='configure_headless_fixture'):
@@ -62,11 +66,11 @@ class HeadlessFixtureTests(unittest.TestCase):
 
 class BuildSetTests(unittest.TestCase):
     def setUp(self):
-        self.verify = load_fixture_function('verify_build_set')
+        self.verify = partial(load_fixture_function('verify_build_set'), version=VERSION)
         self.revision = 'a' * 40
 
     def component(self, role):
-        version = '0.2.0-alpha.2'
+        version = VERSION
         names = ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')
         if role == 'service':
             names += ('dzc-service',)
@@ -148,6 +152,61 @@ class PreviousAlphaTests(unittest.TestCase):
                              ('linked_components', [])]:
             with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
                 verify({**original, field: value})
+
+    def test_published_alpha2_keeps_its_exact_source_schema_and_host_inventory(self):
+        verify = load_fixture_function('verify_previous_alpha')
+        version = '0.2.0-alpha.2'
+        revision = '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae'
+        original = {'component': 'cli', 'component_version': version,
+                    'source_revision': revision, 'build_id': version + '@' + revision,
+                    'source_state': 'verified_checkout', 'metadata_version': 1,
+                    'database_schema_version': 24, 'protocol_version': {'major': 1, 'minor': 0},
+                    'target': 'x86_64-unknown-linux-gnu',
+                    'linked_components': [{'component': name, 'version': version}
+                                          for name in ('dzc-core', 'dzc-platform', 'dzc-protocol', 'dzc-host')]}
+        result = verify(original, version)
+        self.assertEqual(result, {'source_revision': revision, 'database_schema_version': 24, 'verified': True})
+        changes = [('component', 'desktop'), ('component_version', VERSION),
+                   ('source_revision', 'a' * 40), ('build_id', None),
+                   ('source_state', 'modified_checkout'), ('metadata_version', True),
+                   ('database_schema_version', 21), ('database_schema_version', True),
+                   ('target', 'aarch64-unknown-linux-gnu'),
+                   ('protocol_version', {'major': True, 'minor': 0}),
+                   ('linked_components', original['linked_components'][:-1]),
+                   ('linked_components', original['linked_components'] + original['linked_components'][-1:])]
+        for field, value in changes:
+            with self.subTest(field=field, value=value), self.assertRaises(RuntimeError):
+                verify({**original, field: value}, version)
+        with self.assertRaisesRegex(RuntimeError, 'Unknown'):
+            verify(original, '0.2.0-alpha.0')
+
+    def test_old_release_hashes_include_the_real_public_alpha2_bytes(self):
+        source = Path(__file__).resolve().parents[1] / 'test-native-appimage.py'
+        tree = ast.parse(source.read_text(encoding='utf-8'))
+        constants = {node.targets[0].id: ast.literal_eval(node.value)
+                     for node in tree.body if isinstance(node, ast.Assign)
+                     and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
+                     and node.targets[0].id == 'OLD_RELEASES'}
+        self.assertEqual(constants['OLD_RELEASES'], {
+            '0.1.20': 'da4abe1af820226ccf0cb8c40c8d7512b5ae3d7de89babcd1acecfd1ece9f0f0',
+            '0.2.0-alpha.1': '660d8d73d9b719b5c7b92f471024a715eb61fa471b56cba7364edfa1c2464628',
+            '0.2.0-alpha.2': '2f1d91a027b447a2bfe259f29c896b62abda2a24bd5d1fda22bd831e376f81af',
+        })
+
+    def test_outer_package_version_is_explicit_in_each_inner_command_and_hashed(self):
+        source = (Path(__file__).resolve().parents[1] / 'test-native-appimage.py').read_text(encoding='utf-8')
+        tree = ast.parse(source)
+        outside = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'outside')
+        commands = next(node.value for node in outside.body if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == 'commands' for target in node.targets))
+        for row in commands.elts:
+            label = ast.literal_eval(row.elts[0])
+            if label in ('old', 'new', 'new-read-only'):
+                arguments = row.elts[1].elts
+                self.assertIsInstance(arguments[-1], ast.Name)
+                self.assertEqual(arguments[-1].id, 'CANDIDATE_VERSION')
+        self.assertIn('CANDIDATE_VERSION = release_version(SCRIPT.parent.parent)', source)
+        self.assertIn("SCRIPT.parent / 'release_version.py', SCRIPT.parent.parent / 'package.json'", source)
 
 
 if __name__ == '__main__':

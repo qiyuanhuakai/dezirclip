@@ -197,8 +197,9 @@ def sandbox_info(args,members,extracted,logs,flatpak):
     guard=release_identity_guard.install()
     require(args.preseed_helper and args.preseed_helper.is_file(),'Explicit native QA preseed helper required')
     source=logs/'sources';source.mkdir()
-    for name in ('release_identities.py','release_identity_linux.py','release_identity_guard.py','release_identity_secret_service.py'):
+    for name in ('release_identities.py','release_version.py','release_identity_linux.py','release_identity_guard.py','release_identity_secret_service.py'):
         shutil.copy2(ROOT/'scripts'/name,source/name)
+    shutil.copy2(ROOT/'package.json',source/'package.json')
     shutil.copy2(ROOT/'scripts/performance/native_capture.py',source/'native_capture.py')
     shutil.copy2(args.preseed_helper,source/'ss-preseed');(source/'ss-preseed').chmod(0o700)
     # The later file bind needs an existing destination in the read-only tree.
@@ -209,6 +210,7 @@ def sandbox_info(args,members,extracted,logs,flatpak):
     if (extracted/'AppRun').is_file():plan['desktop_launcher']='/package/AppRun'
     (source/'plan.json').write_text(json.dumps(plan))
     cmd=['bwrap','--unshare-user','--unshare-pid','--unshare-net','--unshare-ipc','--unshare-uts','--die-with-parent','--new-session','--clearenv','--ro-bind','/usr','/usr','--symlink','usr/bin','/bin','--symlink','usr/sbin','/sbin','--ro-bind','/lib','/lib','--ro-bind','/etc','/etc','--dev','/dev','--proc','/proc','--tmpfs','/tmp','--tmpfs','/run','--dir','/run/fixture','--chmod','0700','/run/fixture','--dir','/q','--dir','/home/fixture','--bind',str(logs),'/evidence','--ro-bind',str(source),'/fixture-bin','--ro-bind',str(extracted),'/package','--ro-bind','/usr/bin/WebKitWebDriver','/fixture-bin/WebKitWebDriver']
+    cmd+=['--ro-bind',str(source/'package.json'),'/package.json']
     if Path('/lib64').exists():cmd+=['--ro-bind','/lib64','/lib64']
     if flatpak:cmd+=['--ro-bind','/var/lib/flatpak','/var/lib/flatpak',*flatpak_bindings(extracted,logs)]
     env={'HOME':'/home/fixture','XDG_RUNTIME_DIR':'/run/fixture','PATH':'/usr/bin:/bin','LANG':'C.UTF-8','TZ':'UTC','GDK_BACKEND':'x11','NO_AT_BRIDGE':'1','TAURI_WEBVIEW_AUTOMATION':'true','WEBKIT_DISABLE_DMABUF_RENDERER':'1','WEBKIT_DISABLE_COMPOSITING_MODE':'1','DEZIRCLIP_DISABLE_LINUX_SERVICES':'window_tracker,edge_docking,mouse_hotkey','TIEZ_DISABLE_LINUX_SERVICES':'window_tracker,edge_docking,mouse_hotkey'}

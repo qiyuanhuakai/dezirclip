@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { assertAuthority, checkNames, combine, httpFailureDetails, inspectPe, mainWebviewTargets, nsisMembers, oldPackages, prepareFailure, releaseAssets,
-  safeFailureText, sha256, updaterNames, validateAssets, validateInfo, validateNative, validateRecoveryAuthority, verifyDownloads, version } from '../release-windows-upgrade.mjs';
+  safeFailureText, sha256, updaterNames, validateAssets, validateHistoricalInfo, validateInfo, validateNative, validateRecoveryAuthority, verifyDownloads, version } from '../release-windows-upgrade.mjs';
 
 // Synthetic report observations test pure rejection contracts. Application
 // discovery extracts only its helper and never starts its empty fixture files.
@@ -81,7 +81,7 @@ function nativeFixture(scenario = 'LegacyToAlpha2') {
     candidate: clone(identities.find(item => item.name === assetName('x64-setup.exe'))),
     signature: clone(identities.find(item => item.name === assetName('x64-setup.exe.sig'))) };
   const marker = { id: 7, content: inputs.marker, content_type: 'text', is_pinned: 1, tags: JSON.stringify(['releaseupgradetag']) };
-  const oldProfile = { status: 'passed', schema_version: scenario === 'PublishedAlphaToAlpha2' ? 21 : 17,
+  const oldProfile = { status: 'passed', schema_version: scenario === 'PublishedAlpha2ToRelease' ? 24 : scenario === 'PublishedAlphaToAlpha2' ? 21 : 17,
     marker: clone(marker), frozen_preferences: clone(frozen) };
   const migrated = { ...clone(oldProfile), schema_version: 24 };
   const extracted = ['desktop', 'cli', 'service'].map((role, index) => ({ role,
@@ -100,7 +100,7 @@ function nativeFixture(scenario = 'LegacyToAlpha2') {
     'seed-owned-old-profile', 'install-final-release-upgrade', 'final-cli-build-info', 'final-service-build-info', 'final-cli-retained-history',
     'upgraded-profile-check', 'configure-final-webview', 'actual-final-gui', 'inspect-final-webview-token',
     'actual-final-gui-bridge', 'restore-final-webview', 'after-gui-profile-check', 'uninstall-actual-final-release',
-    'uninstalled-profile-check', ...(scenario === 'PublishedAlphaToAlpha2' ? ['old-cli-build-info'] : [])];
+    'uninstalled-profile-check', ...(inputs.old.source_revision ? ['old-cli-build-info'] : [])];
   const processes = labels.map((label, index) => ({ label, pid: 100 + index,
     original_handle_retained: true, exited: true, status: 'passed', exit_code: label === 'actual-final-gui' ? -1 : 0,
     ...(label === 'actual-final-gui' ? { terminated_original_tree: true } : {}) }));
@@ -176,6 +176,11 @@ function recoveryReceipt() {
 }
 test('pure recovery context validation retains actual dispatch fields without executing its independent authority', () => {
   const env = recoveryEnvironment();
+  if (version !== '0.2.0-alpha.2') {
+    assert.throws(() => assertAuthority(env, recoverySource, recoveryReleaseId, 'win32', 'x64', true), /original alpha.2/);
+    assert.throws(() => validateRecoveryAuthority(recoveryReceipt(), env, recoverySource, recoveryReleaseId), /original alpha.2/);
+    return;
+  }
   assert.doesNotThrow(() => assertAuthority(env, recoverySource, recoveryReleaseId, 'win32', 'x64', true));
   assert.equal(validateRecoveryAuthority(recoveryReceipt(), env, recoverySource, recoveryReleaseId).workflow_source_revision, workflowSource);
   for (const [key, value] of Object.entries({ GITHUB_ACTIONS: 'false', RUNNER_ENVIRONMENT: 'self-hosted',
@@ -310,7 +315,7 @@ test('synthetic BuildInfo distinguishes desktop/CLI four and Service five linked
   assert.throws(() => validateInfo(buildInfo('cli'), 'desktop', source));
 });
 
-test('synthetic raw observations accept both historical scenarios only as pure validation data', () => {
+test('synthetic raw observations accept all three historical scenarios only as pure validation data', () => {
   for (const scenario of Object.keys(oldPackages)) assert.doesNotThrow(() => verify(nativeFixture(scenario)));
 });
 
@@ -410,16 +415,80 @@ function sealedScenario(scenario) {
   const value = { ...report, kind: 'release_windows_upgrade_report', raw_native_sha256: 'e'.repeat(64) };
   return { value, sha256: sha256(Buffer.from(JSON.stringify(value, null, 2) + '\n')) };
 }
-test('synthetic aggregation binds both distinct scenarios, source, release, policy and original report-byte hashes', () => {
+test('synthetic aggregation binds all three distinct scenarios, source, release, policy and original report-byte hashes', () => {
   const reports = Object.keys(oldPackages).map(sealedScenario);
   const combined = combine(reports, source, releaseId, policyHash);
   assert.deepEqual(combined.checks.map(item => item.report_sha256), reports.map(item => item.sha256));
   assert.deepEqual(combined.signed_assets, identities);
+  assert.equal(combined.checks.length, 3);
   for (const change of [value => value.pop(), value => { value[1].value.scenario = value[0].value.scenario; },
     value => { value[1].value.source_revision = 'f'.repeat(40); }, value => { value[1].value.release_id++; },
     value => { value[1].value.policy_sha256 = 'f'.repeat(64); }, value => { value[1].sha256 = 'invalid'; },
     value => { value[1].value.signed_assets[0].sha256 = 'f'.repeat(64); }, value => { value[1].value.status = 'failed'; }]) {
     const value = clone(reports); change(value); assert.throws(() => combine(value, source, releaseId, policyHash));
+  }
+});
+
+test('candidate version comes from the canonical package and published historical bytes stay pinned', () => {
+  const packageVersion = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
+  assert.equal(version, packageVersion);
+  assert.deepEqual(Object.keys(oldPackages), ['LegacyToAlpha2', 'PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease']);
+  assert.equal(oldPackages.LegacyToAlpha2.version, '0.1.20');
+  assert.equal(oldPackages.PublishedAlphaToAlpha2.version, '0.2.0-alpha.1');
+  assert.deepEqual(oldPackages.PublishedAlpha2ToRelease, { version: '0.2.0-alpha.2',
+    sha256: '9e96fcd49e4e36c903edd19a1424856383e229ea131f455fbabdcf816622db05',
+    source_revision: '037f40cf014cd4bb3dce4a0a0c5cbcaee23affae' });
+});
+
+function historicalInfo(scenario) {
+  const old = oldPackages[scenario];
+  return { metadata_version: 1, component: 'cli', component_version: old.version, source_revision: old.source_revision,
+    build_id: old.version + '@' + old.source_revision, source_state: 'verified_checkout', revision_origin: 'explicit_checkout',
+    database_schema_version: scenario === 'PublishedAlpha2ToRelease' ? 24 : 21,
+    target: 'x86_64-pc-windows-msvc', protocol_version: { major: 1, minor: 0 },
+    linked_components: ['dzc-core', 'dzc-platform', 'dzc-protocol', ...(scenario === 'PublishedAlpha2ToRelease' ? ['dzc-host'] : [])]
+      .map(component => ({ component, version: old.version })) };
+}
+test('historical alpha1 and alpha2 BuildInfo retain their distinct pinned sources, schemas and linked inventory', () => {
+  for (const scenario of ['PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease']) {
+    assert.doesNotThrow(() => validateHistoricalInfo(historicalInfo(scenario), scenario));
+    for (const change of [info => { info.source_revision = source; }, info => { info.build_id = version + '@' + source; },
+      info => { info.component_version = version; }, info => { info.database_schema_version = 23; },
+      info => { info.linked_components.pop(); }, info => { info.linked_components[0].version = version; }]) {
+      const info = historicalInfo(scenario); change(info);
+      assert.throws(() => validateHistoricalInfo(info, scenario));
+    }
+  }
+  for (const change of [info => { info.metadata_version = 2; }, info => { info.revision_origin = 'unknown'; },
+    info => { info.protocol_version.major = 2; }, info => { info.protocol_version.minor = 1; }]) {
+    const info = historicalInfo('PublishedAlpha2ToRelease'); change(info);
+    assert.throws(() => validateHistoricalInfo(info, 'PublishedAlpha2ToRelease'));
+  }
+  assert.throws(() => validateHistoricalInfo(historicalInfo('PublishedAlphaToAlpha2'), 'LegacyToAlpha2'));
+});
+
+test('historical alpha2 schema24 admission never widens legacy or alpha1 schema guards', () => {
+  for (const [scenario, rejected] of [['LegacyToAlpha2', [0, 24]], ['PublishedAlphaToAlpha2', [17, 24]],
+    ['PublishedAlpha2ToRelease', [17, 21, 23, 25]]]) {
+    for (const schema of rejected) {
+      const fixture = nativeFixture(scenario);
+      fixture.report.old_profile.schema_version = schema;
+      evidence(fixture.report, 'actual_old_profile_created').actual.schema_version = schema;
+      assert.throws(() => verify(fixture));
+    }
+  }
+});
+
+test('third upgrade scenario cannot omit its real old BuildInfo process or diverge from shared signed assets', () => {
+  const fixture = nativeFixture('PublishedAlpha2ToRelease');
+  fixture.report.processes = fixture.report.processes.filter(item => item.label !== 'old-cli-build-info');
+  evidence(fixture.report, 'controlled_processes_exited').count--;
+  assert.throws(() => verify(fixture));
+  for (const change of [value => { value[2].value.signed_assets[0].sha256 = 'f'.repeat(64); },
+    value => { value[2].value.workflow_source_revision = 'f'.repeat(40); },
+    value => { value[2].value.old.sha256 = 'f'.repeat(64); }]) {
+    const reports = Object.keys(oldPackages).map(sealedScenario); change(reports);
+    assert.throws(() => combine(reports, source, releaseId, policyHash));
   }
 });
 
