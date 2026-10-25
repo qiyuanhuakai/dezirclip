@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import {
     Pin,
     PinOff,
@@ -395,6 +395,7 @@ const placeAndShowPendingCompactPreview = async (
     try {
         await compactPreviewWindow.setPosition(new PhysicalPosition(target.x, target.y));
         await compactPreviewWindow.show();
+        await emitTo(COMPACT_PREVIEW_LABEL, "privacy-view-shown", null);
         lastPreviewVisible = true;
         // Force top-most z-order refresh so preview is not occluded by the main top-most window.
         try {
@@ -427,6 +428,7 @@ export const hideCompactPreviewGlobal = async () => {
     setIgnoreBlurSafe(false);
 
     if (!previewWindow) return;
+    await emitTo(COMPACT_PREVIEW_LABEL, "privacy-view-hidden", null).catch(() => undefined);
     await previewWindow.emit("compact-preview-clear", null).catch(() => undefined);
     if (lastPreviewVisible === false) return;
     lastPreviewVisible = false;
