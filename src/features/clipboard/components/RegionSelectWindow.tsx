@@ -4,6 +4,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { useAuxiliaryWindowReady } from "../../../shared/hooks/useAuxiliaryWindowReady";
+import { matchesRegionFrameLayout } from "../../../shared/lib/regionFrameLayout";
 import "./RegionSelectWindow.css";
 
 type Selection = {
@@ -30,9 +31,8 @@ type RegionSessionChange = { token: string | null; generation: number };
 type RegionBackdrop = { url: string; session: RegionCaptureSession; revision: number };
 
 const matchesFrameLayout = (session: RegionCaptureSession) =>
-  Number.isFinite(session.scale) && session.scale > 0 &&
-  Math.abs(window.innerWidth * session.scale - session.width) <= 1 &&
-  Math.abs(window.innerHeight * session.scale - session.height) <= 1;
+  matchesRegionFrameLayout({ frameWidth: session.width, frameHeight: session.height, scale: session.scale,
+    viewportWidth: window.innerWidth, viewportHeight: window.innerHeight });
 
 const MIN_SELECTION_SIZE = 10;
 /**
