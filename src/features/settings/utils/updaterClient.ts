@@ -12,9 +12,13 @@ interface UpdateSupport {
 }
 
 interface AvailableUpdate { id: string; version: string; notes: string | null; releaseUrl: string }
+type UpdateCheckStatus = "available" | "current" | "ahead" | "unpublished";
+
 interface UpdateCheck {
     currentVersion: string;
     channel: UpdateChannel;
+    channelVersion: string | null;
+    status: UpdateCheckStatus;
     support: UpdateSupport;
     available: AvailableUpdate | null;
     unpublishedChannels: UpdateChannel[];
@@ -28,10 +32,11 @@ type UpdateProgress =
 export interface UpdaterSnapshot {
     ready: boolean;
     currentVersion: string;
+    channelVersion: string | null;
     autoCheck: boolean;
     channel: UpdateChannel;
     saving: boolean;
-    phase: "idle" | "checking" | "available" | "current" | "downloading" | "verified" | "installing" | "error";
+    phase: "idle" | "checking" | UpdateCheckStatus | "downloading" | "verified" | "installing" | "error";
     support: UpdateSupport | null;
     available: AvailableUpdate | null;
     unpublishedChannels: UpdateChannel[];
@@ -42,7 +47,7 @@ export interface UpdaterSnapshot {
     errorKey: string | null;
 }
 
-let snapshot: UpdaterSnapshot = { ready: false, currentVersion: "", autoCheck: false,
+let snapshot: UpdaterSnapshot = { ready: false, currentVersion: "", channelVersion: null, autoCheck: false,
     channel: "stable", saving: false, phase: "idle", support: null, available: null,
     unpublishedChannels: [], downloaded: 0, total: null, verified: false, checkedAt: null, errorKey: null };
 const subscribers = new Set<() => void>();
@@ -103,7 +108,7 @@ export const saveUpdatePreference = async (key: "autoCheck" | "channel", value: 
         await invoke("save_setting", { key: key === "autoCheck" ? "app.update_auto_check" : "app.update_channel", value: String(value) });
         if (key === "autoCheck" && typeof value === "boolean") updateSnapshot({ autoCheck: value });
         if (key === "channel" && (value === "stable" || value === "preview")) {
-            updateSnapshot({ channel: value, phase: "idle", available: null, unpublishedChannels: [], checkedAt: null });
+            updateSnapshot({ channel: value, phase: "idle", channelVersion: null, available: null, unpublishedChannels: [], checkedAt: null });
         }
     } catch { updateSnapshot({ errorKey: "updater_error_settings" }); }
     finally { updateSnapshot({ saving: false }); scheduleAutomaticCheck(); }
@@ -119,13 +124,13 @@ export const checkForUpdate = async (automatic = false) => {
     }
     clearTimeout(automaticTimer);
     checking = true;
-    updateSnapshot({ phase: "checking", errorKey: null, available: null,
+    updateSnapshot({ phase: "checking", errorKey: null, channelVersion: null, available: null,
         unpublishedChannels: [], downloaded: 0, total: null, verified: false });
     try {
         const result = await invoke<UpdateCheck>("check_for_update", { channel });
         updateSnapshot({ currentVersion: result.currentVersion, support: result.support,
-            available: result.available, unpublishedChannels: result.unpublishedChannels,
-            phase: result.available ? "available" : "current", checkedAt: Date.now() });
+            channelVersion: result.channelVersion, available: result.available, unpublishedChannels: result.unpublishedChannels,
+            phase: result.status, checkedAt: Date.now() });
     } catch (error: unknown) { updateSnapshot({ phase: "error", errorKey: updateErrorKey(error) }); }
     finally { checking = false; }
 };

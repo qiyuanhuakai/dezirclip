@@ -1,4 +1,4 @@
-use crate::domain::update::{expected_asset_name, UpdateChannel, UpdateSupport, RELEASES_URL};
+use crate::domain::update::{expected_asset_name, summarize_channel_versions, UpdateChannel, UpdateCheckStatus, UpdateSupport, RELEASES_URL};
 use crate::infrastructure::update_support::installation_support;
 use base64::Engine;
 use semver::Version;
@@ -40,6 +40,8 @@ pub struct AvailableUpdate {
 pub struct UpdateCheck {
     current_version: String,
     channel: UpdateChannel,
+    channel_version: Option<String>,
+    status: UpdateCheckStatus,
     support: UpdateSupport,
     available: Option<AvailableUpdate>,
     unpublished_channels: Vec<UpdateChannel>,
@@ -90,6 +92,7 @@ pub async fn check_for_update(
     };
     let mut candidate: Option<Update> = None;
     let mut unpublished_channels = Vec::new();
+    let mut channel_versions = Vec::new();
     for index in indexes {
         let Some(manifest) = fetch_manifest(&client, *index).await? else {
             unpublished_channels.push(*index);
@@ -103,6 +106,7 @@ pub async fn check_for_update(
         }
         // The official updater retains version, platform, signature and installation checks.
         let update = updater.restore_update(manifest).map_err(|_| "update_invalid_manifest")?;
+        channel_versions.push(manifest_version);
         if let Some(mut update) = update {
             update.timeout = Some(Duration::from_secs(600));
             validate_download(&update)?;
@@ -114,9 +118,7 @@ pub async fn check_for_update(
             }
         }
     }
-    if unpublished_channels.len() == indexes.len() {
-        return Err("update_channel_not_published".into());
-    }
+    let (status, channel_version) = summarize_channel_versions(&app.package_info().version, &channel_versions);
     let available = if let Some(update) = candidate {
         validate_download(&update)?;
         let id = uuid::Uuid::new_v4().to_string();
@@ -129,7 +131,7 @@ pub async fn check_for_update(
         *pending = Some(PendingUpdate { id, update });
         Some(result)
     } else { None };
-    Ok(UpdateCheck { current_version: app.package_info().version.to_string(), channel,
+    Ok(UpdateCheck { current_version: app.package_info().version.to_string(), channel, channel_version, status,
         support: installation_support(), available, unpublished_channels })
 }
 
