@@ -168,6 +168,8 @@ export const en = {
         tag_sensitive_target: "Mark records as sensitive individually so their content is encrypted.",
         tag_mode_simple: "Simple mode",
         tag_mode_detailed: "Detailed mode",
+        tag_reveal_all: "Show all content in this tag",
+        tag_hide_all: "Hide all protected content",
         tag_actions: "Tag actions",
         tag_sensitive_delete_title: "Delete sensitive tag and all its contents?",
         tag_sensitive_delete_hint: "This permanently deletes every clipboard entry with this tag.",

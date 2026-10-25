@@ -48,10 +48,12 @@ export function useTagLibrary() {
         setError(false);
         setLoadingMore(false);
     }, [publishPage]);
-    useEffect(() => subscribePrivacyInvalidation(() => {
+    useEffect(() => subscribePrivacyInvalidation((scope: 'all' | 'reveal' = 'all') => {
+        if (scope === 'reveal') return;
         invalidatePage();
         metadataGeneration.current += 1;
         setTags([]);
+        setRevision(value => value + 1);
     }), [invalidatePage]);
 
     const selectTag = useCallback((name: string | null) => {
@@ -124,7 +126,7 @@ export function useTagLibrary() {
         }).finally(() => {
             if (mounted.current && request === metadataGeneration.current) setMetadataLoading(false);
         });
-    }, [revision, metadataRevision, selectTag, privacy.phase, privacy.generation]);
+    }, [revision, metadataRevision, selectTag, privacy.phase, privacy.snapshot?.privacy_epoch]);
 
     useEffect(() => {
         const timer = setTimeout(() => setDebouncedQuery(query), 180);
@@ -152,7 +154,7 @@ export function useTagLibrary() {
         }).finally(() => {
             if (mounted.current && request === generation.current) setLoading(false);
         });
-    }, [selectedTag, query, debouncedQuery, sortBy, revision, publishPage, privacy.phase, privacy.generation]);
+    }, [selectedTag, query, debouncedQuery, sortBy, revision, publishPage, privacy.phase, privacy.snapshot?.privacy_epoch]);
 
     const setQuery = useCallback((value: string) => {
         invalidatePage();

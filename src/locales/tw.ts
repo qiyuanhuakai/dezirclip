@@ -168,6 +168,8 @@ export const tw = {
         tag_sensitive_target: "請在記錄上逐筆標記敏感內容，以確保內容經過加密。",
         tag_mode_simple: "簡潔模式",
         tag_mode_detailed: "複雜模式",
+        tag_reveal_all: "顯示此標籤的所有內容",
+        tag_hide_all: "隱藏所有受保護內容",
         tag_actions: "標籤操作",
         tag_sensitive_delete_title: "刪除敏感標籤及全部內容？",
         tag_sensitive_delete_hint: "此操作會永久刪除此標籤下的所有剪貼簿內容。",

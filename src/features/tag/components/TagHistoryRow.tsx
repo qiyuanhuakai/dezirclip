@@ -31,14 +31,18 @@ interface TagHistoryRowProps {
     managementMode?: boolean;
     selectedForDeletion?: boolean;
     onToggleSelection?: (id: number) => void;
+    revealAll?: boolean;
+    bulkRevealExcluded?: boolean;
+    onExcludeBulkReveal?: (id: number) => void;
 }
 
 export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinned,
     richTextSnapshotPreview, theme, language, t, tagColors, onSelect, onEdit, onDelete, onQRCode, onError, onChanged,
-    managementMode = false, selectedForDeletion = false, onToggleSelection }: TagHistoryRowProps) {
-    const [detailState, setDetailState] = useState<{ source: ClipboardEntry; value: ClipboardEntry } | null>(null);
-    const detail = detailState?.source === item ? detailState.value : null;
-    const setDetail = (value: ClipboardEntry | null) => setDetailState(value ? { source: item, value } : null);
+    managementMode = false, selectedForDeletion = false, onToggleSelection, revealAll = false,
+    bulkRevealExcluded = false, onExcludeBulkReveal }: TagHistoryRowProps) {
+    const [detailState, setDetailState] = useState<{ source: ClipboardEntry; value: ClipboardEntry; bulkReveal: boolean } | null>(null);
+    const detail = detailState?.source === item && detailState.bulkReveal === revealAll ? detailState.value : null;
+    const setDetail = (value: ClipboardEntry | null) => setDetailState(value ? { source: item, value, bulkReveal: revealAll } : null);
     const [editingTags, setEditingTags] = useState(false);
     const [tagInput, setTagInput] = useState('');
     const [tagBusy, setTagBusy] = useState(false);
@@ -62,7 +66,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
                 : invokePrivacyBound<ClipboardEntry>('get_privacy_entry', { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, reveal: false });
             const request: Promise<ClipboardEntry> = read.then(value => {
                 if (fullItem.current === request) fullItem.current = null;
-                if (!mounted.current || managing.current || !access.isCurrent() || detailGeneration.current !== generation || currentItem.current !== requestedItem
+                if (!mounted.current || !access.isCurrent() || detailGeneration.current !== generation || currentItem.current !== requestedItem
                     || !matchesEntryIdentity(value, item.id, item.host_instance_id)) throw new Error('PrivacyReadSuperseded');
                 return value;
             }, error => {
@@ -108,6 +112,27 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         return () => { disposed = true; };
     }, [item, compactMode, loadFullItem, onError, sensitive]);
 
+    useEffect(() => {
+        if (!sensitive) return;
+        let disposed = false;
+        const generation = ++detailGeneration.current;
+        fullItem.current = null;
+        forgetPrivacyReveal(item);
+        setDetail(null);
+        if (revealAll && !bulkRevealExcluded) {
+            const access = beginPrivacyAccess();
+            if (access) void loadFullItem().then(next => {
+                if (disposed || !mounted.current || !access.isCurrent() || currentItem.current !== item
+                    || detailGeneration.current !== generation) return;
+                registerPrivacyReveal(item);
+                setDetail(next);
+            }).catch(() => {
+                if (!disposed && mounted.current && access.isCurrent() && detailGeneration.current === generation) onError();
+            });
+        }
+        return () => { disposed = true; };
+    }, [revealAll, bulkRevealExcluded, managementMode, compactMode, item, sensitive, loadFullItem, onError]);
+
     const copy = (pasteWithFormat = false, pasteImageAsBase64 = false) => {
         if (managing.current) return;
         if (capabilities.pending || capabilities.failed
@@ -149,6 +174,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         const generation = ++detailGeneration.current;
         fullItem.current = null;
         if (detail) {
+            if (revealAll) onExcludeBulkReveal?.(item.id);
             forgetPrivacyReveal(item);
             clearRichTextSnapshots(); void hideCompactPreviewGlobal(); setDetail(null);
             return;
@@ -182,10 +208,8 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
                 if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); onToggleSelection?.(item.id); }
             }} />}
         <div className="tag-history-row-content" inert={managementMode}>
-        {sensitive && !managementMode && <button type="button" className="tag-history-reveal" onClick={toggleReveal}
-            aria-pressed={!!detail}>{t(detail ? 'hide' : 'reveal')}</button>}
         <ClipboardItem key={managementMode ? 'selection' : 'content'} item={rendered} isSelected={managementMode ? selectedForDeletion : selected} windowPinned={isWindowPinned}
-            isSensitiveHidden={sensitive && !detail} isRevealed={!!detail} showSensitiveVisibilityControl={false} isEditingTags={editingTags}
+            isSensitiveHidden={sensitive && !detail} isRevealed={!!detail} isEditingTags={editingTags}
             tagInput={tagInput} theme={theme} language={language} t={t} tagColors={tagColors}
             compactMode={compactMode} richTextSnapshotPreview={richTextSnapshotPreview} disableLayout
             onSelect={() => { if (!managing.current) onSelect(item.id); }} onCopy={copy}
