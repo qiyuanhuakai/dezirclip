@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import type { LabelWithHintProps, SettingsPanelProps } from "./SettingsPanel.types";
 import SettingsGroups from "./SettingsGroups";
@@ -6,12 +6,37 @@ import SettingsRail from "./SettingsRail";
 import SettingsFooter from "./SettingsFooter";
 import { useSettingsLayout } from "../hooks/useSettingsLayout";
 import { DEFAULT_SETTINGS_GROUP, type SettingsGroupId } from "../utils/settingsLayout";
+import { settingsNavigation } from "../../../shared/lib/settingsNavigation";
 
 const SettingsPanel = (props: SettingsPanelProps) => {
     const { t, appSettings, handleResetSettings } = props;
 
     const layout = useSettingsLayout();
     const [activeGroup, setActiveGroup] = useState<SettingsGroupId>(DEFAULT_SETTINGS_GROUP);
+    const [navigationRevision, setNavigationRevision] = useState(0);
+
+    useEffect(() => {
+        const apply = () => {
+            const request = settingsNavigation.take();
+            if (!request) return;
+            setActiveGroup("clipboard");
+            if (props.collapsedGroups.clipboard) props.toggleGroup("clipboard");
+            setNavigationRevision(request.id);
+        };
+        const stop = settingsNavigation.subscribe(apply);
+        apply();
+        return stop;
+    }, [props.collapsedGroups, props.toggleGroup]);
+
+    useEffect(() => {
+        if (navigationRevision === 0) return;
+        const frame = requestAnimationFrame(() => {
+            const target = document.getElementById("privacy-rule-manager");
+            target?.scrollIntoView({ block: "start", behavior: "auto" });
+            target?.focus({ preventScroll: true });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [navigationRevision]);
 
     const [privacyKindsOpen, setPrivacyKindsOpen] = useState(false);
     const [privacyRulesOpen, setPrivacyRulesOpen] = useState(false);

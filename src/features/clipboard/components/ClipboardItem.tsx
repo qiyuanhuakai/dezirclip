@@ -748,7 +748,9 @@ const ClipboardItem = ({
             const hint = decision.reason === "scan_incomplete" ? t("privacy_scan_incomplete")
                 : decision.reason === "suspected_sensitive" ? t("privacy_scan_suspected") : "";
             const prompt = t(action === "not_sensitive" ? "privacy_feedback_unprotect_confirm"
-                : action === "exact_exception" ? "privacy_feedback_exact_confirm" : "privacy_feedback_confirm");
+                : action === "exact_exception" ? "privacy_feedback_exact_confirm"
+                : action === "ignore_source" ? "privacy_feedback_ignore_confirm" : "privacy_feedback_protect_confirm")
+                .replace("{source}", item.source_app?.trim() || t("privacy_source_unknown"));
             const confirmed = await ask(hint ? `${hint}\n\n${prompt}` : prompt, { title: t("privacy_feedback_title"), kind: "warning" });
             await refreshPrivacyAfterConfirmation(confirmed ? access.epoch : undefined);
             if (!confirmed) return;
