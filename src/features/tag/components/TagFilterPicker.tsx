@@ -5,6 +5,7 @@ import { getTagColor } from '../../../shared/lib/utils';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
 import { invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { matchesTagName } from '../../../shared/lib/tagQuery';
+import { useDebounce } from '../../../shared/hooks/useDebounce';
 
 export interface TagFilterPickerHandle {
     handleInputKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
@@ -16,6 +17,7 @@ interface TagFilterPickerProps {
     tags: string[];
     colors: Record<string, string>;
     query: string;
+    isComposing: boolean;
     theme: string;
     inputRef: RefObject<HTMLInputElement | null>;
     t: (key: string) => string;
@@ -23,13 +25,14 @@ interface TagFilterPickerProps {
     onClose: () => void;
 }
 
-export default function TagFilterPicker({ ref, id, tags, colors, query, theme, inputRef, t, onSelect, onClose }: TagFilterPickerProps) {
+export default function TagFilterPicker({ ref, id, tags, colors, query, isComposing, theme, inputRef, t, onSelect, onClose }: TagFilterPickerProps) {
     const privacy = usePrivacySession();
     const list = useRef<VirtuosoHandle>(null);
     const [active, setActive] = useState(-1);
     const [catalog, setCatalog] = useState<string[] | null>(null);
     const [catalogError, setCatalogError] = useState(false);
     const [revision, setRevision] = useState(0);
+    const debouncedQuery = useDebounce(query, 300, !isComposing);
     useEffect(() => subscribePrivacyInvalidation(() => { setCatalog(null); setActive(-1); }), []);
     useEffect(() => {
         let disposed = false;
@@ -40,8 +43,9 @@ export default function TagFilterPicker({ ref, id, tags, colors, query, theme, i
         return () => { disposed = true; };
     }, [revision, privacy.phase, privacy.generation]);
     const filtered = useMemo(() => {
-        return privacy.phase === 'ready' ? (catalog ?? tags).filter(tag => matchesTagName(tag, query)) : [];
-    }, [catalog, tags, query, privacy.phase]);
+        return privacy.phase === 'ready' ? (catalog ?? tags).filter(tag => matchesTagName(tag, debouncedQuery)) : [];
+    }, [catalog, tags, debouncedQuery, privacy.phase]);
+    useEffect(() => { setActive(-1); }, [query]);
     useEffect(() => { setActive(-1); list.current?.scrollToIndex(0); }, [filtered]);
     useEffect(() => {
         const input = inputRef.current;

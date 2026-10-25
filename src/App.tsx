@@ -212,7 +212,7 @@ const App = () => {
   const effectiveShowEmojiPanel = showEmojiPanel && emojiPanelEnabled;
   const effectiveShowTagManager = showTagManager && tagManagerEnabled;
 
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 300, !isComposing);
   const searchInputRef = useInputFocus<HTMLInputElement>();
   const tagColors = useTagColors();
   const { toasts: progressToasts, dismiss: dismissProgress } = useProgress();
@@ -236,7 +236,8 @@ const App = () => {
     hasMore,
     setIsLoadingMore
   });
-  const filteredHistory = useFilteredHistory({ history, debouncedSearch, search, typeFilter });
+  // Local matching must use the same settled query as the backend request.
+  const filteredHistory = useFilteredHistory({ history, debouncedSearch, search: debouncedSearch, typeFilter });
   const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, filteredHistory.length,
     !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel);
   const mainResumePending = mainResume.phase === "preparing" || mainResume.phase === "prepared" || mainResume.phase === "failed" || privacyState.phase !== "ready";
@@ -350,9 +351,12 @@ const App = () => {
     clearRichTextSnapshots();
     closeConfirm();
   }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm]);
+  // Search changes have their own trigger; this refresh belongs to privacy/resume transitions.
+  const fetchHistoryRef = useRef(fetchHistory);
+  fetchHistoryRef.current = fetchHistory;
   useEffect(() => {
-    if (privacyState.phase === "ready" && mainResume.phase === "idle") void fetchHistory(true);
-  }, [privacyState.phase, privacyState.generation, mainResume.phase, fetchHistory]);
+    if (privacyState.phase === "ready" && mainResume.phase === "idle") void fetchHistoryRef.current(true);
+  }, [privacyState.phase, privacyState.generation, mainResume.phase]);
 
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
@@ -809,6 +813,7 @@ const App = () => {
     showSearchBox,
     search,
     setSearch,
+    isComposing,
     setIsComposing,
     searchInputRef,
     showTagFilter,
