@@ -122,6 +122,7 @@ fn park_selector_window(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window(REGION_SELECT_LABEL) {
         crate::app::auxiliary_windows::record_activity(REGION_SELECT_LABEL);
         window.hide().map_err(|error| error.to_string())?;
+        crate::infrastructure::capture_visibility::confirm_hidden_selector(&window)?;
         let _ = window.set_focusable(false);
         crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
     }
@@ -179,18 +180,31 @@ pub async fn present_region_capture(app: AppHandle, window: tauri::WebviewWindow
     if app.state::<crate::app::ipc_host::DesktopHost>().instance()? != instance { return Err("ClipboardHostInstanceChanged".into()); }
     tauri::async_runtime::spawn_blocking(move || {
         {
-            let mut slot = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
+            let slot = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
             region_presentation_authority(&slot, &session_token, generation)?;
             check_region_generation(generation)?;
-            slot.frame.as_mut().ok_or("RegionCaptureSessionExpired")?.presented = true;
         }
         crate::app::webview_memory::restore_window_memory(&window, "region-select-show");
-        let result = window.show().and_then(|_| window.set_focus()).map_err(|error| format!("Failed to show region selector: {error}"));
+        let result = window.show().and_then(|_| window.set_focus())
+            .map_err(|error| format!("Failed to show region selector: {error}"))
+            .and_then(|_| window.is_visible().map_err(|error| error.to_string()))
+            .and_then(|visible| if visible { Ok(()) } else { Err("RegionCaptureNotVisible".into()) });
         if result.is_err() || check_region_generation(generation).is_err() {
             let _ = window.hide();
             if check_region_generation(generation).is_ok() { clear_region_capture(); }
             result?;
             return Err("RegionCaptureSessionExpired".into());
+        }
+        let committed = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable".to_string()).and_then(|mut slot| {
+            region_presentation_authority(&slot, &session_token, generation)?;
+            check_region_generation(generation)?;
+            slot.frame.as_mut().ok_or_else(|| "RegionCaptureSessionExpired".to_string())?.presented = true;
+            Ok(())
+        });
+        if committed.is_err() {
+            let _ = window.hide();
+            if check_region_generation(generation).is_ok() { clear_region_capture(); }
+            return committed;
         }
         publish_region_session(Some(session_token), generation);
         Ok(())
@@ -582,6 +596,7 @@ pub async fn capture_region(
         }
     }
     window.hide().map_err(|error| error.to_string())?;
+    crate::infrastructure::capture_visibility::confirm_hidden_selector(&window)?;
     let _ = window.set_focusable(false);
     let session = {
         let mut current = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?;
