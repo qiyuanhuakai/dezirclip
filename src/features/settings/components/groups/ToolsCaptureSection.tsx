@@ -2,6 +2,7 @@ import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Camera } from "lucide-react";
+import HotkeyRecorder from "../HotkeyRecorder";
 
 interface LabelWithHintProps {
     readonly label: string;
@@ -23,70 +24,6 @@ interface ToolsCaptureSectionProps {
     readonly setOcrEnabled: (val: boolean) => void;
     readonly saveAppSetting: (key: string, val: string) => void;
 }
-
-interface HotkeyRecorderProps {
-    readonly t: (key: string) => string;
-    readonly labelKey: string;
-    readonly hotkey: string;
-    readonly recording: boolean;
-    readonly setRecording: (val: boolean) => void;
-    readonly onHotkeyChange: (val: string) => void;
-}
-
-const buildHotkey = (e: React.KeyboardEvent): string | null => {
-    const key = e.key.toUpperCase();
-    if (["CONTROL", "SHIFT", "ALT", "META"].includes(key)) return null;
-    const modifiers = [];
-    if (e.ctrlKey) modifiers.push("Ctrl");
-    if (e.shiftKey) modifiers.push("Shift");
-    if (e.altKey) modifiers.push("Alt");
-    if (e.metaKey) modifiers.push("Win");
-    return [...modifiers, key].join("+");
-};
-
-const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange }: HotkeyRecorderProps) => {
-    const parts = hotkey ? hotkey.split("+") : [];
-    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-        if (!recording) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.key === "Escape") {
-            setRecording(false);
-            return;
-        }
-        const newHotkey = buildHotkey(e);
-        if (!newHotkey) return;
-        onHotkeyChange(newHotkey);
-        setRecording(false);
-    }, [onHotkeyChange, recording, setRecording]);
-
-    return (
-        <div className="setting-item setting-item--detail">
-            <div className="item-label-group">
-                <span className="item-label">{t(labelKey)}</span>
-
-            </div>
-            <div
-                className={`key-group ${recording ? "recording" : ""}`}
-                onClick={(e) => {
-                    setRecording(true);
-                    invoke("focus_clipboard_window").catch(console.error);
-                    e.currentTarget.focus();
-                }}
-                tabIndex={0}
-                onKeyDown={handleKeyDown}
-            >
-                {recording ? (
-                    <div className="key-cap" style={{ width: "8em" }}>{t("waiting_for_input")}</div>
-                ) : parts.length > 0 ? (
-                    parts.map((part, index) => <div key={`${part}-${index}`} className="key-cap">{part}</div>)
-                ) : (
-                    <div className="key-cap" style={{ width: "8em", opacity: 0.5 }}>{t("not_set")}</div>
-                )}
-            </div>
-        </div>
-    );
-};
 
 interface OcrEngineInfo {
     readonly available: boolean;
@@ -175,7 +112,7 @@ const ToolsCaptureSection = ({
 
     return (
         <>
-            <div className="setting-item"><div className="item-label-group"><span className="item-label">{t("capture_settings")}</span></div></div>
+            <div className="setting-item settings-section-title"><div className="item-label-group"><span className="item-label">{t("capture_settings")}</span></div></div>
             <NativeFeatureBoundary t={t}>
             <div className="setting-item">
                 <LabelWithHint label={t("screenshot_enabled")} hintKey="screenshot_enabled" />

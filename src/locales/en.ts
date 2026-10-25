@@ -17,6 +17,7 @@ export const en = {
         privacy_session_renew: "Update duration",
         privacy_session_end: "End privacy session",
         privacy_session_hotkey: "Toggle privacy session shortcut",
+        privacy_session_hotkey_clear: "Clear shortcut",
         privacy_session_hotkey_hint: "Try Ctrl+Alt+P, or leave empty to disable. Saving checks conflicts and current platform support.",
         privacy_retry: "Refresh state",
         privacy_action_failed: "The operation could not be confirmed. Refresh state and try again.",

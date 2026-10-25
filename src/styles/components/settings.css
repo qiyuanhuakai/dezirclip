@@ -649,11 +649,79 @@
 }
 
 .tools-path-text {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
 }
+
+/* Native capability boundaries remain intact rather than splitting their
+   controls into a different grid track from their section heading. */
+.settings-pane .group-content > .native-feature-boundary,
+.settings-pane .group-content > .native-feature-reason,
+.settings-pane .group-content > .privacy-session-section,
+.settings-pane .group-content > .settings-section-title,
+.settings-pane .group-content > .source-exclusion-setting {
+  grid-column: 1 / -1;
+}
+
+.settings-pane .privacy-session-section {
+  border-radius: var(--surface-control-radius, 6px);
+  margin: 10px 0;
+}
+
+.privacy-session-hotkey .hotkey-recorder {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin-left: 0;
+}
+
+.hotkey-recorder .key-group {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.hotkey-recorder .key-group[aria-disabled="true"] { opacity: 0.55; cursor: default; }
+.hotkey-recorder .key-group:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 4px; }
+.key-cap--placeholder { min-width: 8em; }
+.key-cap--unset { opacity: 0.5; }
+
+.settings-disclosure-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.settings-disclosure-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: var(--select-control-border, 1px solid var(--border-dark));
+  border-radius: var(--select-control-radius, 4px);
+  background: var(--select-control-bg, var(--bg-element));
+  box-shadow: var(--select-control-shadow, none);
+}
+
+.settings-disclosure-toggle:hover .settings-disclosure-chevron { background: var(--bg-input); }
+.settings-disclosure-toggle:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 3px; }
+.privacy-kind-option { display: inline-flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 12px; cursor: pointer; }
+.privacy-kind-option .switch { flex: none; }
+.privacy-kind-option .switch:has(input:focus-visible) { outline: 2px solid var(--accent-color); outline-offset: 4px; }
+.tools-action-row > .item-label-group { flex: 1; }
+.tools-action-row > .setting-btn { flex: none; }
 
 .setting-item {
   display: flex;

@@ -1,0 +1,23 @@
+/* Custom themes inherit only their preset's font defaults. Their own font
+   declarations and the user's explicit font preferences remain authoritative. */
+:root[data-theme-font-base="mica"],
+:root[data-theme-font-base="acrylic"] {
+  --custom-theme-font-main: "Segoe UI Variable Text", "Segoe UI", "Inter", "Noto Sans", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --custom-theme-font-mono: "Cascadia Code", "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Consolas", monospace;
+}
+
+:root[data-theme-font-base="macos"],
+:root[data-theme-font-base="liquid-glass"] {
+  --custom-theme-font-main: "SF Pro Text", "SF Pro Display", "PingFang SC", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+  --custom-theme-font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", "Noto Sans Mono", "Consolas", monospace;
+}
+
+:root[data-theme-font-base="scifi"] {
+  --custom-theme-font-main: "Orbitron", "Rajdhani", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+  --custom-theme-font-mono: "JetBrains Mono", "Cascadia Code", "Noto Sans Mono", "Consolas", monospace;
+}
+
+:root[data-theme-font-base="retro"] {
+  --custom-theme-font-main: "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Courier New", Courier, monospace, sans-serif;
+  --custom-theme-font-mono: "Cascadia Mono", "JetBrains Mono", "Noto Sans Mono", "Consolas", "Courier New", monospace;
+}
