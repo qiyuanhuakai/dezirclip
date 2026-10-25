@@ -185,13 +185,21 @@ pub async fn present_region_capture(app: AppHandle, window: tauri::WebviewWindow
             check_region_generation(generation)?;
         }
         crate::app::webview_memory::restore_window_memory(&window, "region-select-show");
+        let hide_failed_presentation = || {
+            let hidden = window.hide().map_err(|error| error.to_string())
+                .and_then(|_| crate::infrastructure::capture_visibility::confirm_hidden_selector(&window));
+            if let Err(error) = hidden {
+                crate::warn!("[screenshot] Failed to hide region selector after presentation failed: {error}");
+                return;
+            }
+            if check_region_generation(generation).is_ok() { clear_region_capture(); }
+        };
         let result = window.show().and_then(|_| window.set_focus())
             .map_err(|error| format!("Failed to show region selector: {error}"))
             .and_then(|_| window.is_visible().map_err(|error| error.to_string()))
             .and_then(|visible| if visible { Ok(()) } else { Err("RegionCaptureNotVisible".into()) });
         if result.is_err() || check_region_generation(generation).is_err() {
-            let _ = window.hide();
-            if check_region_generation(generation).is_ok() { clear_region_capture(); }
+            hide_failed_presentation();
             result?;
             return Err("RegionCaptureSessionExpired".into());
         }
@@ -202,8 +210,7 @@ pub async fn present_region_capture(app: AppHandle, window: tauri::WebviewWindow
             Ok(())
         });
         if committed.is_err() {
-            let _ = window.hide();
-            if check_region_generation(generation).is_ok() { clear_region_capture(); }
+            hide_failed_presentation();
             return committed;
         }
         publish_region_session(Some(session_token), generation);
