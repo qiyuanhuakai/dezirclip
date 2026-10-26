@@ -3,8 +3,8 @@ use dzc_core::api::{ClipboardEntry, CoreErrorCode, HistoryQuery, HistoryService}
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let history = HistoryService::open(std::path::Path::new(":memory:"))?;
     use dzc_core::capture::*;
-    use std::{sync::Mutex,collections::VecDeque};
-    let session=Mutex::new(VecDeque::new());
+    use std::collections::VecDeque;
+    let session=dzc_core::api::SessionHistoryStore::new(VecDeque::new());
     let context=CaptureContext {source:CaptureSource {app_name:"headless-example".into(),process_path:None},timestamp:2,
         settings:CaptureSettings {persistent:true,deduplicate:true,..Default::default()},session:&session,paused:false,sequential_echo:None};
     let directory=std::env::temp_dir();

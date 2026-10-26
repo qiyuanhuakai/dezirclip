@@ -22,6 +22,14 @@ must then be discarded. Neither side retries a paste automatically.
 `RuntimeState` is the existing Wire type, with its exact field names and safe
 integer bounds: `service_instance_id`, `privacy_epoch`, `history_revision`,
 `event_sequence`. Do not introduce a second epoch or revision representation.
+Within one Host instance, `history_revision` is a monotonic observation of both
+the persistent database revision and the versioned RAM queue. Every mutable RAM
+guard advances its version while holding that queue's lock, including edits,
+reordering and rollback. Surface pagination holds a read guard across both state
+observations and the query; it does not depend on a later capture notification.
+Unchanged reads do not advance the version. Counters outside the safe integer
+range fail closed. Core's database-only `RuntimeSnapshot` remains a separate
+type and is never compared as a Surface/Host state token.
 
 ## Initialization and version identity
 

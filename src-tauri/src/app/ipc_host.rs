@@ -11,7 +11,7 @@ enum Mode { Starting, Embedded(Arc<Host>), Remote(String), Unavailable }
 #[derive(Clone,Copy)]
 enum RestoreMode {Embedded,Service{no_capture:bool}}
 struct Inner { mode:Mutex<Mode>, history:HistoryService, directory:PathBuf, database:PathBuf,
-    session:Arc<Mutex<std::collections::VecDeque<ClipboardEntry>>>, closing:AtomicBool,writer:Mutex<Option<dzc_platform::runtime::EmbeddedClipboardWriter>>,
+    session:Arc<dzc_core::api::SessionHistoryStore>, closing:AtomicBool,writer:Mutex<Option<dzc_platform::runtime::EmbeddedClipboardWriter>>,
     server:Mutex<Option<ServerTask>>,restore:Mutex<Option<RestoreMode>> }
 struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::Receiver<()>}
 #[derive(Clone)]
@@ -651,7 +651,7 @@ mod tests {
             let original=dzc_host::controller::start(&database,&executable,true).await.unwrap();
             assert!(!original.capture_owner);
             let bridge=DesktopHost(Arc::new(Inner{mode:Mutex::new(Mode::Remote(original.state.service_instance_id.clone())),history,
-                directory,database:database.clone(),session:Arc::new(Mutex::new(Default::default())),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
+                directory,database:database.clone(),session:Arc::new(dzc_core::api::SessionHistoryStore::default()),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
             bridge.prepare_update().await.unwrap();
             assert!(dzc_host::controller::status(&database).await.is_err());
             assert!(matches!(*bridge.0.restore.lock().unwrap(),Some(RestoreMode::Service{no_capture:true})));

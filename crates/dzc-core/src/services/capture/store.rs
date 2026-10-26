@@ -325,7 +325,7 @@ mod tests {
         (directory, state)
     }
 
-    fn context(session: &Mutex<VecDeque<ClipboardEntry>>) -> CaptureContext<'_> {
+    fn context(session: &crate::api::SessionHistoryStore) -> CaptureContext<'_> {
         CaptureContext {
             source: CaptureSource {
                 app_name: "Editor".into(),
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn real_capture_deduplicates_stable_html_assets_and_preserves_existing_ocr() {
         let (directory, state) = database();
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = context(&session);
         let store = state.capture_store(&directory);
         let CaptureOutcome::Stored(first) =
@@ -504,7 +504,7 @@ mod tests {
                 )
                 .unwrap();
             state.conn.lock().unwrap().execute_batch("CREATE TRIGGER inspect_planned_capture BEFORE INSERT ON clipboard_history BEGIN SELECT CASE WHEN fixture_no_early_assets()=0 THEN RAISE(ABORT,'premature synthetic materialization') END; END;").unwrap();
-            let session = Mutex::new(VecDeque::new());
+            let session = crate::api::SessionHistoryStore::new(VecDeque::new());
             let mut context = context(&session);
             context.settings.capture_rich_text = true;
             context.settings.deduplicate = false;
@@ -615,7 +615,7 @@ mod tests {
         state.conn.lock().unwrap().execute_batch("PRAGMA foreign_keys=ON;
             CREATE TABLE reject_commit(history_id INTEGER REFERENCES clipboard_history(id) DEFERRABLE INITIALLY DEFERRED);
             CREATE TRIGGER reject_capture AFTER INSERT ON clipboard_history BEGIN INSERT INTO reject_commit VALUES(-12345); END;").unwrap();
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = context(&session);
         let store = state.capture_store(&directory);
         let mut events = Events::default();
@@ -650,7 +650,7 @@ mod tests {
     fn dedup_inherits_manual_protection_before_materializing_new_html_resources() {
         let (directory, state) = database();
         state.conn.lock().unwrap().execute("INSERT INTO clipboard_history(content_type,content,preview,source_app,timestamp,tags) VALUES('text','ordinary capture','ordinary','test',1,'[\"sensitive\"]')", []).unwrap();
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = context(&session);
         let store = state.capture_store(&directory);
         let mut events = Events::default();
@@ -682,7 +682,7 @@ mod tests {
     #[test]
     fn real_attachment_budget_rejection_creates_no_files_or_rows() {
         let (directory, state) = database();
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = context(&session);
         let store = state.capture_store(&directory);
         let source = directory.join("source.png");
@@ -732,7 +732,7 @@ mod tests {
         let (directory, state) = database();
         let source = directory.join("synthetic.txt");
         std::fs::write(&source, b"synthetic session private bytes").unwrap();
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = false;
         let store = state.capture_store(&directory);
@@ -804,7 +804,7 @@ mod tests {
             "<img src='file://{}'>",
             source.to_string_lossy().replace('\\', "/")
         );
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = false;
         let store = state.capture_store(&directory);
@@ -870,7 +870,7 @@ mod tests {
             .status()
             .unwrap()
             .success());
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = false;
         let store = state.capture_store(&directory);
@@ -913,7 +913,7 @@ mod tests {
         let (directory, state) = database();
         let other = crate::api::HistoryService::open(&directory.join("clipboard.db")).unwrap();
         let store = state.capture_store(&directory);
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = context(&session);
         let now = chrono::Utc::now().timestamp_millis();
         let old_ticket = store.capture_ticket(now).unwrap().unwrap();
@@ -1006,7 +1006,7 @@ mod tests {
     fn unleased_automatic_frame_cannot_acquire_a_new_epoch_at_commit_time() {
         let (directory, state) = database();
         let store = state.capture_store(&directory);
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = context(&session);
         let outcome = CaptureEngine::capture_frame(&context, rich_frame(), &store, &mut ());
         assert!(matches!(outcome, CaptureOutcome::Failed(CaptureFailure { ref code, .. }) if code == "PrivacyCaptureTicketMissing"));
@@ -1029,7 +1029,7 @@ mod tests {
         for prefix in ["-----BEGIN PRIVATE KEY-----\nY29udGVudA==\n-----END PRIVATE KEY-----\n", "-----BEGIN PRIVATE KEY-----\nmissing terminator\n", "-----BEGIN PRIVATE KEY-----\n%%%invalid%%%\n-----END PRIVATE KEY-----\n"] {
             let (directory, state) = database();
             let store = state.capture_store(&directory);
-            let session = Mutex::new(VecDeque::new());
+            let session = crate::api::SessionHistoryStore::new(VecDeque::new());
             let mut context = context(&session);
             context.settings.privacy_protection = true;
             let text = format!("{prefix}{valid}");
@@ -1056,7 +1056,7 @@ mod tests {
         CLOCK_CALLS.with(|calls|calls.set(0));
         crate::privacy::with_scan_clock(clock, || {
             let (directory,state)=database();let store=state.capture_store(&directory);
-            let session=Mutex::new(VecDeque::new());let context=context(&session);
+            let session=crate::api::SessionHistoryStore::new(VecDeque::new());let context=context(&session);
             let mut der=vec![0x30,46,2,1,0,0x30,5,6,3,0x2b,0x65,0x70,4,34,4,32];der.extend([7;32]);
             let text=format!("-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",base64::engine::general_purpose::STANDARD.encode(der));
             let frame=CaptureFrame{data:CaptureData::Text(text),metadata:Default::default()};

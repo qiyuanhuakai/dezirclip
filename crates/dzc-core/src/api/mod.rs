@@ -5,6 +5,8 @@ mod clipboard_payload;
 mod error;
 mod history;
 mod summary;
+mod session_history;
+pub use session_history::{SessionHistoryStore,SessionHistoryGuard};
 pub(crate) mod privacy_session;
 
 pub use crate::domain::models::ClipboardEntry;

@@ -102,7 +102,7 @@ pub fn capture(
     input: &ClipboardEntry,
     directory: &Path,
 ) -> (i64, BTreeMap<String, f64>) {
-    let session = Mutex::new(VecDeque::new());
+    let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
     let sensitive = app::database::has_sensitive_tag(&input.tags);
     #[cfg(feature = "privacy-policy")]
     {
@@ -247,7 +247,7 @@ mod tests {
             actual: history.capture_store(&directory),
             times: RefCell::new(BTreeMap::new()),
         };
-        let session = Mutex::new(VecDeque::new());
+        let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
         let context = CaptureContext {
             source: CaptureSource { app_name: "synthetic session timer".into(), process_path: None },
             timestamp: 100_000,

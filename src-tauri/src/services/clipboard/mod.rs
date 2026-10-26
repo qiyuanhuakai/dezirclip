@@ -154,7 +154,7 @@ mod tests {
             tag_repo: SqliteTagRepository::new(connection.clone()),
             conn: connection,
         };
-        let session = Mutex::new(VecDeque::new());
+        let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = CaptureContext {
             source: CaptureSource {
                 app_name: "Editor".into(),
@@ -243,7 +243,7 @@ mod tests {
         let directory = std::env::temp_dir().join(format!("dzc-generated-ticket-{}", uuid::Uuid::new_v4()));
         let history = HistoryService::open(&directory.join("synthetic.db")).unwrap();
         let store = history.capture_store(&directory);
-        let session = Mutex::new(VecDeque::new());
+        let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
         let context = CaptureContext { source: CaptureSource { app_name: "generated fixture".into(), process_path: None }, timestamp: 1,
             settings: CaptureSettings { persistent: true, ..Default::default() }, session: &session, paused: false, sequential_echo: None };
         let now = chrono::Utc::now().timestamp_millis();

@@ -505,7 +505,6 @@ mod tests {
     use super::*;
     use std::cell::Cell;
     use std::collections::VecDeque;
-    use std::sync::Mutex;
 
     struct Store {
         preparations: Cell<usize>,
@@ -596,7 +595,7 @@ mod tests {
     }
 
     fn context(
-        session: &Mutex<VecDeque<crate::domain::models::ClipboardEntry>>,
+        session: &crate::api::SessionHistoryStore,
     ) -> CaptureContext<'_> {
         CaptureContext {
             source: CaptureSource {
@@ -613,7 +612,7 @@ mod tests {
 
     #[test]
     fn pause_and_excluded_source_never_read_a_payload() {
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         for paused in [false, true] {
             let mut context = context(&session);
             context.paused = paused;
@@ -638,7 +637,7 @@ mod tests {
 
     #[test]
     fn enabled_formats_are_requested_once_and_errors_have_no_success_event() {
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.capture_rich_text = true;
         let failure = CaptureFailure {
@@ -668,7 +667,7 @@ mod tests {
 
     #[test]
     fn echo_skips_read_and_store_resource_failure_has_no_commit() {
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = true;
         context.sequential_echo = Some("queue echo".into());
@@ -711,7 +710,7 @@ mod tests {
 
     #[test]
     fn failed_commit_has_no_stored_removal_or_ocr_event() {
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = true;
         context.settings.ocr_enabled = true;
@@ -744,7 +743,7 @@ mod tests {
 
     #[test]
     fn attachment_budget_rejection_propagates_without_commit_or_success_event() {
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = true;
         let store = Store {
@@ -790,7 +789,7 @@ mod tests {
                 self.events.push(event);
             }
         }
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.persistent = true;
         context.settings.ocr_enabled = true;
@@ -831,10 +830,11 @@ mod tests {
 
     #[test]
     fn session_reuse_preserves_manual_fields_and_equal_timestamps_get_unique_ids() {
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         let store = Store::default();
         for _ in 0..3 {
+            let before=session.revision().unwrap();
             assert!(matches!(
                 CaptureEngine::capture_frame(
                     &context,
@@ -844,6 +844,7 @@ mod tests {
                 ),
                 CaptureOutcome::Stored(_)
             ));
+            assert!(session.revision().unwrap()>before);
         }
         let ids: std::collections::HashSet<i64> = session
             .lock()
@@ -862,6 +863,7 @@ mod tests {
             entry.use_count = 4;
         }
         context.settings.deduplicate = true;
+        let before=session.revision().unwrap();
         let CaptureOutcome::Stored(capture) = CaptureEngine::capture_frame(
             &context,
             frame(CaptureData::Text("same".into())),
@@ -874,6 +876,7 @@ mod tests {
         assert_eq!(capture.entry.pinned_order, 9);
         assert_eq!(capture.entry.use_count, 5);
         assert_eq!(capture.entry.tags, vec!["work", "sensitive"]);
+        assert!(session.revision().unwrap()>before);
         assert_eq!(session.lock().unwrap().len(), 1);
         assert_eq!(store.preparations.get(), 0);
         assert_eq!(store.commits.get(), 0);
@@ -909,7 +912,7 @@ mod tests {
                 )))
             }
         }
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let mut context = context(&session);
         context.settings.excluded_source_apps = vec!["Editor.exe".into()];
         let mut reader = HintedReader {

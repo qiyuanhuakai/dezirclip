@@ -832,7 +832,7 @@ mod transition_tests {
         assert_eq!(id, 1);
         let directory = std::env::temp_dir();
         let store = repo.capture_store(&directory);
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = CaptureContext {
             source: CaptureSource {
                 app_name: "fixture".into(),

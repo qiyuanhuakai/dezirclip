@@ -170,13 +170,13 @@ impl Host {
     }
 
     fn desktop_page(&self, page: DesktopPageParams, permit: &PrivacyReadPermit, now: i64) -> Result<Vec<api::ClipboardEntry>, WireErrorCode> {
-        let mut owned_session=self.session.lock().map_err(|_|WireErrorCode::Unavailable)?;
-        let original=owned_session.make_contiguous();
-        let mut session=self.history.entries_metadata_for_gui(original,true,now).map_err(blocked)?;
+        let owned_session=self.session.lock().map_err(|_|WireErrorCode::Unavailable)?;
+        let original:Vec<_>=owned_session.iter().cloned().collect();
+        let mut session=self.history.entries_metadata_for_gui(&original,true,now).map_err(blocked)?;
         session.retain(|entry|page.kind.as_ref().is_none_or(|kind|kind==&entry.content_type));
         if let Some(query) = page.query.as_deref().filter(|query| !query.is_empty()) {
             let restricted = self.history.privacy().authorize_read(api::PrivacyAccessIntent::RestrictedSummary, api::SensitiveAccess::Denied, Some(permit.epoch()), now).map_err(blocked)?;
-            let found = self.history.search_summaries_for_session_authorized(original, &api::SearchRequest { query: query.into(), mode: api::SummarySearchMode::Contains,
+            let found = self.history.search_summaries_for_session_authorized(&original, &api::SearchRequest { query: query.into(), mode: api::SummarySearchMode::Contains,
                 page: api::SummaryQuery {limit:1000, offset:0, kind:page.kind.clone(), tag:None, pinned:false} }, &restricted, now).map_err(blocked)?;
             session.retain(|entry| found.entries.iter().any(|summary| summary.id == entry.id));
         }

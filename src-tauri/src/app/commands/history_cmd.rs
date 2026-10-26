@@ -563,7 +563,7 @@ mod capture_summary_tests {
     #[test]
     fn session_summary_is_bounded_preserves_metadata_and_does_not_mutate_source() {
         let repository = repository();
-        let session = SessionHistory(Mutex::new(VecDeque::from([entry(-1)])).into());
+        let session = SessionHistory(dzc_core::api::SessionHistoryStore::new(VecDeque::from([entry(-1)])).into());
         let summary = captured_entry_summary(&repository, &session, -1).unwrap();
         assert_eq!(summary.id, -1);
         assert!(summary.content.chars().count() < 2100);
@@ -601,7 +601,7 @@ mod capture_summary_tests {
         let id = repository
             .save_with_conn(&connection.lock().unwrap(), &image, Some(&directory))
             .unwrap();
-        let session = SessionHistory(Mutex::new(VecDeque::new()).into());
+        let session = SessionHistory(dzc_core::api::SessionHistoryStore::new(VecDeque::new()).into());
         let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
         let summary = captured_entry_summary(&history, &session, id).unwrap();
         assert_eq!(summary.id, id);
@@ -625,7 +625,7 @@ mod capture_summary_tests {
             .unwrap()
             .execute_batch("DROP TABLE clipboard_history")
             .unwrap();
-        let session = SessionHistory(Mutex::new(VecDeque::new()).into());
+        let session = SessionHistory(dzc_core::api::SessionHistoryStore::new(VecDeque::new()).into());
         let history=dzc_core::api::HistoryService::from_legacy_connection(connection.clone());
         let error = captured_entry_summary(&history, &session, 1)
             .unwrap_err()

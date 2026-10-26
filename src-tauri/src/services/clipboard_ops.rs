@@ -1153,7 +1153,7 @@ mod tests {
         assert!(std::env::var_os("DISPLAY").is_none());
         let history = HistoryService::open(&runtime.join("gui-write-intent.db")).unwrap();
         let store = history.capture_store(&runtime);
-        let session = Mutex::new(VecDeque::new());
+        let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
         let context = CaptureContext { source: CaptureSource::default(), timestamp: 12345,
             settings: CaptureSettings { persistent: true, ..Default::default() }, session: &session, paused: false, sequential_echo: None };
         for (id, text) in [(0, "synthetic conversion text"), (0, "synthetic OCR text"), (7, "synthetic existing history copy")] {

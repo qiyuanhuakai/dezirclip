@@ -105,11 +105,10 @@ mod tests {
     use super::*;
     use crate::services::capture::{CaptureSettings, CaptureSource};
     use std::collections::VecDeque;
-    use std::sync::Mutex;
 
     #[test]
     fn discovery_preserves_original_text_html_and_preview_contract() {
-        let session = Mutex::new(VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(VecDeque::new());
         let context = CaptureContext {
             source: CaptureSource::default(),
             timestamp: 1,
