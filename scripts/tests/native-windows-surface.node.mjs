@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented } from './native-windows-surface.mjs';
+import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented, verifyNativePanel, verifyMainDestroyed } from './native-windows-surface.mjs';
 
 const source = 'a'.repeat(40);
 const expected = { component_version: '0.2.0-alpha.5', source_revision: source, source_state: 'verified_checkout',
@@ -73,4 +73,21 @@ test('two visible native windows and an unexpected warm process are rejected', (
   assert.throws(() => verifyPresented({ ...status, visible: false }, observation, helper));
   assert.throws(() => verifyPresented(status, { ...observation, processes: [...observation.processes,
     { ...observation.processes[0], pid: 21 }] }, helper));
+});
+
+test('main destruction requires a live original Desktop and actual HWND absence, not merely hiding', () => {
+  const destroyed = { processes: [{ pid: 10, running: true }], windows: [] };
+  assert.doesNotThrow(() => verifyMainDestroyed(destroyed, 10, 50));
+  for (const window of [{ pid: 10, hwnd: 50, visible: false, title: 'DezirClip' },
+    { pid: 10, hwnd: 51, visible: false, title: 'DezirClip' }]) {
+    assert.throws(() => verifyMainDestroyed({ ...destroyed, windows: [window] }, 10, 50));
+  }
+  assert.throws(() => verifyMainDestroyed({ ...destroyed, processes: [] }, 10, 50));
+});
+
+test('a destroyed-main run validates the native helper independently without synthesizing supervisor state', () => {
+  assert.equal(verifyNativePanel(observation, helper).pid, 20);
+  assert.equal(verifyNativePanel(observation, helper, 20).hwnd, 30);
+  assert.throws(() => verifyNativePanel(observation, helper, 21));
+  assert.throws(() => verifyNativePanel({ ...observation, foreground: { pid: 10 } }, helper));
 });

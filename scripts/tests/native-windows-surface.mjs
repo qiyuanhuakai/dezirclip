@@ -70,17 +70,25 @@ export function verifyPresented(status, observation, helper, expectedPid = null)
   assert.equal(typeof status.session_id, 'string');
   assert(status.session_id.length > 0);
   if (expectedPid !== null) assert.equal(status.managed_pid, expectedPid, 'Warm show must reuse the actual process');
-  const process = observation.processes.filter(item => item.pid === status.managed_pid && item.running);
+  return { ...verifyNativePanel(observation, helper, status.managed_pid), session_id: status.session_id };
+}
+
+export function verifyNativePanel(observation, helper, expectedPid = null) {
+  const process = observation.processes.filter(item => item.running && normalized(item.image) === normalized(helper));
   assert.equal(process.length, 1);
-  assert.equal(normalized(process[0].image), normalized(helper));
-  assert.equal(observation.processes.filter(item => item.running && normalized(item.image) === normalized(helper)).length, 1,
-    'There must be exactly one live managed helper across the observed application tree');
-  const visible = observation.windows.filter(item => item.pid === status.managed_pid && item.visible);
+  if (expectedPid !== null) assert.equal(process[0].pid, expectedPid, 'Warm show must reuse the actual process');
+  const visible = observation.windows.filter(item => item.pid === process[0].pid && item.visible);
   assert.equal(visible.length, 1, 'Exactly one actual native Surface window must be visible');
-  assert.equal(observation.foreground?.pid, status.managed_pid, 'The actual Surface must own foreground');
+  assert.equal(observation.foreground?.pid, process[0].pid, 'The actual Surface must own foreground');
   assert(visible[0].rect?.width > 0 && visible[0].rect?.height > 0);
   return { pid: process[0].pid, creation_time_100ns: process[0].creation_time_100ns,
-    session_id: status.session_id, hwnd: visible[0].hwnd, rect: visible[0].rect };
+    hwnd: visible[0].hwnd, rect: visible[0].rect };
+}
+
+export function verifyMainDestroyed(observation, desktopPid, originalHwnd) {
+  assert(observation.processes.some(item => item.pid === desktopPid && item.running), 'Original Desktop must remain alive');
+  assert(!observation.windows.some(item => item.pid === desktopPid && (item.hwnd === originalHwnd || item.title === 'DezirClip')),
+    'The original main HWND must be destroyed and no replacement main may exist');
 }
 
 function regular(file) {
@@ -495,7 +503,52 @@ export async function runSurfaceAcceptance(args, env = process.env) {
     report.desktop_build_info_after = await bridge.invoke('get_build_info');
     assert.deepEqual(report.desktop_build_info_after, report.desktop_build_info_before);
     report.actual_data_path_after = await bridge.invoke('get_data_path'); assert.equal(normalized(report.actual_data_path_after), normalized(dataPath));
-    report.managed_status_after = await bridge.invoke('get_quick_paste_surface_status'); assert.equal(report.managed_status_after.managed_pid, null);
+    report.managed_status_before_idle_destroy = await bridge.invoke('get_quick_paste_surface_status');
+    assert.equal(report.managed_status_before_idle_destroy.managed_pid, null);
+    await stage('main_idle_destroy_then_actual_native_cold_and_warm_show', async () => {
+      await bridge.invoke('focus_clipboard_window');
+      const before = await native.request('observe');
+      const main = before.windows.filter(window => window.pid === desktop.child.pid && window.title === 'DezirClip');
+      assert.equal(main.length, 1, 'Bind the actual original main HWND before idle destruction');
+      await bridge.invoke('save_setting', { key: 'app.quick_paste_renderer', value: 'mygo' });
+      await bridge.invoke('set_idle_destroy_seconds', { seconds: 5 });
+      await bridge.invoke('set_idle_destroy_enabled', { enabled: true });
+      await bridge.invoke('hide_window_cmd');
+      const destroyed = await poll('Actual idle destruction of the original main HWND', async () => {
+        const observed = await native.request('observe');
+        try { verifyMainDestroyed(observed, desktop.child.pid, main[0].hwnd); return observed; } catch { return null; }
+      }, 30000);
+      // The main bridge is now gone. Observe only original native processes,
+      // windows and foreground; no fabricated supervisor status substitutes.
+      bridge.close();
+      const activateWithoutMain = async (expectedPid = null) => {
+        await native.request('activate-target'); await native.request('keys', { role: 'target', key: 'hotkey' });
+        return poll('Actual native Surface while main is destroyed', async () => {
+          const observed = await native.request('observe');
+          try {
+            verifyMainDestroyed(observed, desktop.child.pid, main[0].hwnd);
+            return { ...verifyNativePanel(observed, helper, expectedPid), observation: observed };
+          } catch { return null; }
+        });
+      };
+      const escapeWithoutMain = async pid => {
+        await native.request('keys', { role: 'surface', key: 'escape' });
+        return poll('Native Escape hides and restores target without main', async () => {
+          const observed = await native.request('observe');
+          verifyMainDestroyed(observed, desktop.child.pid, main[0].hwnd);
+          return !observed.windows.some(window => window.pid === pid && window.visible)
+            && observed.foreground.hwnd === observed.target_hwnd ? observed : null;
+        });
+      };
+      const cold = await activateWithoutMain();
+      const coldHidden = await escapeWithoutMain(cold.pid);
+      const warm = await activateWithoutMain(cold.pid);
+      assert.equal(warm.hwnd, cold.hwnd); assert.equal(warm.creation_time_100ns, cold.creation_time_100ns);
+      const warmHidden = await escapeWithoutMain(warm.pid);
+      assert.deepEqual(canarySnapshot(canary.directory), canary);
+      return { original_main: main[0], destroyed, cold, coldHidden, warm, warmHidden,
+        inspection: 'Independent actual Win32 process/window/foreground observations after the main CDP bridge was destroyed.' };
+    });
     assert(sourceInputs.every(item => regular(item.path).sha256 === item.sha256));
     for (const input of report.input_bytes) assert.deepEqual(regular(input.source), { bytes: input.bytes, sha256: input.sha256 });
     for (const input of report.input_bytes) assert.deepEqual(regular(input.path), { bytes: input.bytes, sha256: input.sha256 });

@@ -166,10 +166,7 @@ fn appearance(app: &AppHandle) -> (String, SurfaceTheme) {
     )
 }
 fn geometry(app: &AppHandle) -> Result<(SurfacePhysicalRect, f64), String> {
-    let main = app
-        .get_webview_window("main")
-        .ok_or("SurfaceGeometryUnavailable")?;
-    let cursor = main.cursor_position().map_err(error)?;
+    let cursor = app.cursor_position().map_err(error)?;
     let monitor = app
         .monitor_from_point(cursor.x, cursor.y)
         .map_err(error)?

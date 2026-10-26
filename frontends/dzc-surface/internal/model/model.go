@@ -57,10 +57,14 @@ func (m *Model) Clear() {
 	m.Sequence++
 	m.Display, m.RawQuery, m.AppliedQuery, m.PendingAction, m.Error = "", "", "", "", ""
 	m.State = protocol.RuntimeState{}
-	m.Entries = nil
+	m.clearResults()
 	m.Visible, m.Loading, m.Composing, m.HasMore = false, false, false, false
 	m.ShowNotice = false
-	m.Selected, m.NextOffset = 0, 0
+}
+
+func (m *Model) clearResults() {
+	m.Entries, m.HasMore, m.NextOffset = nil, false, 0
+	m.Selected, m.AppliedQuery = 0, ""
 }
 
 func (m *Model) Edit(query string, composing bool) bool {
@@ -69,16 +73,29 @@ func (m *Model) Edit(query string, composing bool) bool {
 	}
 	m.Sequence++
 	m.RawQuery, m.Composing = query, composing
-	m.Entries, m.HasMore, m.NextOffset = nil, false, 0
-	m.Selected, m.AppliedQuery, m.Error = 0, "", ""
+	m.clearResults()
+	m.Error = ""
 	m.Loading = true
 	return true
 }
 
 func (m *Model) Begin(offset uint32) Ticket {
 	m.Sequence++
+	if offset == 0 {
+		m.clearResults()
+	}
 	m.Loading, m.Error = true, ""
 	return Ticket{m.Session, m.Display, m.RawQuery, m.Sequence, m.State, offset}
+}
+
+func (m *Model) Fail(t Ticket, message string) bool {
+	if !m.Current(t) {
+		return false
+	}
+	m.Sequence++
+	m.clearResults()
+	m.Loading, m.Error = false, message
+	return true
 }
 
 func (m *Model) Current(t Ticket) bool {

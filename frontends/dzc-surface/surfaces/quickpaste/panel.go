@@ -341,11 +341,9 @@ func (p *Panel) connectDisplay(ctx context.Context, show protocol.SurfaceShow, b
 				}
 				if nextState.HistoryRevision != p.model.State.HistoryRevision {
 					p.cancelQuery()
-					p.model.Sequence++
-					p.model.Entries = nil
-					p.model.Selected = 0
-					p.model.HasMore = false
 					p.model.State = nextState
+					p.model.Begin(0)
+					p.list = ui.ListState{}
 					if !p.model.Composing {
 						p.scheduleQuery()
 					}
@@ -372,6 +370,9 @@ func (p *Panel) query(offset uint32) {
 	}
 	p.cancelQuery()
 	ticket := p.model.Begin(offset)
+	if offset == 0 {
+		p.list = ui.ListState{}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	p.queryCancel = cancel
 	endpoint, grant := p.init.Endpoint, p.init.Grant
@@ -396,10 +397,9 @@ func (p *Panel) query(offset uint32) {
 				return
 			}
 			if err != nil {
-				p.model.Loading = false
-				p.model.Entries = nil
-				p.model.HasMore = false
-				p.model.Error = p.word("read_failed")
+				if p.model.Fail(ticket, p.word("read_failed")) {
+					p.list = ui.ListState{}
+				}
 				return
 			}
 			if !p.model.Apply(ticket, page) {
@@ -413,6 +413,7 @@ func (p *Panel) edit(query string, composing bool) {
 	if !p.model.Edit(query, composing) {
 		return
 	}
+	p.list = ui.ListState{}
 	p.cancelQuery()
 	p.debounceUntil = time.Now().Add(300 * time.Millisecond)
 	if composing {

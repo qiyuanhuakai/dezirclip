@@ -143,6 +143,104 @@ func TestMalformedPaginationDoesNotMutateRows(t *testing.T) {
 	}
 }
 
+func hundredRows(t *testing.T) Model {
+	t.Helper()
+	var view Model
+	view.Show("session", "display", state())
+	for offset := 0; offset < 100; offset += PageSize {
+		entries := make([]protocol.EntrySummary, PageSize)
+		for i := range entries {
+			entries[i] = row(int64(offset + i + 1))
+		}
+		next := uint32(offset + len(entries))
+		ticket := view.Begin(uint32(offset))
+		if !view.Apply(ticket, protocol.SurfacePage{Entries: entries, State: state(), HasMore: true, NextOffset: &next}) {
+			t.Fatal("initial pagination rejected")
+		}
+	}
+	view.Selected = 75
+	return view
+}
+
+func firstPage() protocol.SurfacePage {
+	entries := make([]protocol.EntrySummary, PageSize)
+	for i := range entries {
+		entries[i] = row(int64(i + 1))
+	}
+	next := uint32(PageSize)
+	return protocol.SurfacePage{Entries: entries, State: state(), HasMore: true, NextOffset: &next}
+}
+
+func TestPaginationFailureRetryRestoresKeyboardSelection(t *testing.T) {
+	view := hundredRows(t)
+	failed := view.Begin(100)
+	if view.CanSelect() || !view.Fail(failed, "read_failed") {
+		t.Fatal("failed page was not fenced")
+	}
+	if len(view.Entries) != 0 || view.Selected != 0 || view.HasMore || view.NextOffset != 0 || view.AppliedQuery != "" || view.Loading || view.Error != "read_failed" || view.CanSelect() {
+		t.Fatal("failure retained an actionable page or old selection")
+	}
+	retry := view.Begin(0)
+	if view.CanSelect() || view.Error != "" || !view.Loading {
+		t.Fatal("retry was selectable before receiving its page")
+	}
+	if !view.Apply(retry, firstPage()) || view.Selected != 0 || !view.CanSelect() {
+		t.Fatal("first-page retry did not recover a valid selected row")
+	}
+	view.Move(1)
+	if view.Selected != 1 || view.Entries[view.Selected].Id != 2 || !view.CanSelect() {
+		t.Fatal("keyboard navigation remained stuck after retry")
+	}
+}
+
+func TestFirstPageReloadResetsResultsBeforeDelivery(t *testing.T) {
+	view := hundredRows(t)
+	view.ShowNotice = true
+	ticket := view.Begin(0)
+	if len(view.Entries) != 0 || view.Selected != 0 || view.NextOffset != 0 || view.HasMore || !view.Loading || view.CanSelect() || !view.ShowNotice {
+		t.Fatal("first-page reload retained old page state or erased its notice")
+	}
+	if !view.Apply(ticket, firstPage()) || view.Selected != 0 || len(view.Entries) != PageSize || !view.CanSelect() {
+		t.Fatal("reloaded page did not replace the previous result set")
+	}
+}
+
+func TestFailedOrStaleRequestCannotChangeRetriedResults(t *testing.T) {
+	view := hundredRows(t)
+	old := view.Begin(100)
+	if !view.Fail(old, "read_failed") || view.Apply(old, protocol.SurfacePage{State: state()}) {
+		t.Fatal("a failed request became current again")
+	}
+	failedFirst := view.Begin(0)
+	if !view.Fail(failedFirst, "read_failed") || view.Apply(failedFirst, firstPage()) {
+		t.Fatal("a late first-page success revived a failed request")
+	}
+	latest := view.Begin(0)
+	if !view.Apply(latest, firstPage()) {
+		t.Fatal("retry page rejected")
+	}
+	view.Selected = 8
+	if view.Fail(old, "late_failure") || view.Selected != 8 || len(view.Entries) != PageSize || view.Loading || view.Error != "" || !view.CanSelect() {
+		t.Fatal("an old failure cleared the current retry results")
+	}
+}
+
+func TestAppendingPagePreservesCurrentSelection(t *testing.T) {
+	var view Model
+	view.Show("session", "display", state())
+	if !view.Apply(view.Begin(0), firstPage()) {
+		t.Fatal("first page rejected")
+	}
+	view.Selected = 25
+	more := view.Begin(PageSize)
+	if view.Selected != 25 || view.CanSelect() {
+		t.Fatal("append reset the selection or allowed a pending action")
+	}
+	if !view.Apply(more, protocol.SurfacePage{Entries: []protocol.EntrySummary{row(51)}, State: state()}) || view.Selected != 25 || !view.CanSelect() {
+		t.Fatal("successful append lost the existing keyboard selection")
+	}
+}
+
 func TestMaskedSummaryNeverUsesProtectedPreview(t *testing.T) {
 	entry := row(1)
 	entry.PrivacyVisibility = "masked"
