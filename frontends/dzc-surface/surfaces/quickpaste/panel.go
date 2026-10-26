@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -47,6 +48,45 @@ type Panel struct {
 	debounce       *time.Timer
 	debounceUntil  time.Time
 	actionDeadline *time.Timer
+	diagnostics    atomic.Uint32
+}
+
+func (p *Panel) diagnosticAllowed() bool {
+	for {
+		count := p.diagnostics.Load()
+		if count >= 64 {
+			return false
+		}
+		if p.diagnostics.CompareAndSwap(count, count+1) {
+			return true
+		}
+	}
+}
+
+func (p *Panel) diagnosticRecord(fields map[string]any) {
+	if !p.diagnosticAllowed() {
+		return
+	}
+	data, err := json.Marshal(fields)
+	if err != nil || len(data)+len("[surface-input] \n") > 512 {
+		return
+	}
+	_, _ = os.Stderr.Write(append(append([]byte("[surface-input] "), data...), '\n'))
+}
+
+func (p *Panel) diagnosticStage(stage string) {
+	p.diagnosticRecord(map[string]any{"stage": stage})
+}
+
+// Read model fields only on the UI thread; the writer records fixed stages.
+func (p *Panel) diagnosticGate(stage string) {
+	if p.model.Selected < -1 || p.model.Selected > model.MaxVisibleEntries || len(p.model.Entries) > model.MaxVisibleEntries {
+		return
+	}
+	p.diagnosticRecord(map[string]any{"stage": stage, "visible": p.model.Visible,
+		"input_current": p.search == p.model.RawQuery, "query_current": p.model.RawQuery == p.model.AppliedQuery,
+		"loading": p.model.Loading, "composing": p.model.Composing, "pending": p.model.PendingAction != "",
+		"selected": p.model.Selected, "count": len(p.model.Entries), "selectable": p.model.CanSelect()})
 }
 
 func Run() error {
@@ -89,7 +129,18 @@ func (p *Panel) readLoop() {
 
 func (p *Panel) writeLoop() {
 	for next := range p.out {
+		paste := next.message.Type == protocol.SurfaceControlTypePaste
+		if paste {
+			p.diagnosticStage("write_begin")
+		}
 		err := control.Write(os.Stdout, next.message, control.ChildToParent)
+		if paste {
+			if err == nil {
+				p.diagnosticStage("write_done")
+			} else {
+				p.diagnosticStage("write_failed")
+			}
+		}
 		next.done <- err
 		if err != nil {
 			p.window.Update(func() { p.stopLocal(); mygo.App.Quit() })
@@ -238,6 +289,11 @@ func (p *Panel) receive(message protocol.SurfaceControlMessage) {
 		if p.init == nil || !decode(message.Payload, "SurfacePasteResult", &result) || result.SurfaceSessionId != p.init.SurfaceSessionId {
 			p.fail(message.RequestId, "action_result_rejected")
 			return
+		}
+		if result.Performed {
+			p.diagnosticStage("result_performed")
+		} else {
+			p.diagnosticStage("result_not_performed")
 		}
 		if result.DisplayRequestId == p.model.Display && result.ActionId == p.model.PendingAction {
 			if p.actionDeadline != nil {
@@ -442,17 +498,21 @@ func (p *Panel) scheduleQuery() {
 }
 
 func (p *Panel) paste() {
+	p.diagnosticGate("attempt")
 	// Read the current native input binding, not a value captured by an old frame.
 	if p.search != p.model.RawQuery {
+		p.diagnosticGate("input_changed")
 		p.edit(p.search, p.model.Composing)
 		return
 	}
 	if !p.model.CanSelect() {
+		p.diagnosticGate("selection_unavailable")
 		return
 	}
 	action := p.nextID()
 	p.model.PendingAction = action
 	row := p.model.Entries[p.model.Selected]
+	p.diagnosticStage("dispatch_requested")
 	p.send(action, protocol.SurfaceControlTypePaste, protocol.SurfacePaste{SurfaceSessionId: p.model.Session, DisplayRequestId: p.model.Display, ActionId: action, EntryId: row.Id, State: p.model.State}, nil)
 	display := p.model.Display
 	p.actionDeadline = time.AfterFunc(5*time.Second, func() {
@@ -552,6 +612,10 @@ func (p *Panel) view(c *ui.Context) {
 	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(t.Background).Children(func() {
 		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
+			if key.Key == ui.KeyEnter {
+				p.diagnosticRecord(map[string]any{"stage": "enter_gate", "visible": p.model.Visible,
+					"same_display": p.model.Display == display, "modifiers_clear": key.Mods == 0, "native_text_current": key.Text() == p.search})
+			}
 			if !p.model.Visible || p.model.Display != display {
 				return true
 			}

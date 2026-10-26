@@ -98,6 +98,27 @@ export function mainBridgeReady(snapshot) {
     ]).length === 1;
 }
 
+export function pasteDiagnosticDue(attempt, recorded) {
+  assert(Number.isSafeInteger(attempt) && attempt > 0 && Number.isSafeInteger(recorded) && recorded >= 0);
+  return recorded < 16 && (attempt === 1 || attempt % 8 === 0);
+}
+
+export function pasteDiagnosticObservation(attempt, statusResult, nativeResult, expectedPid) {
+  const result = { stage: 'post-enter-paste-pending', attempt, expected_pid: expectedPid };
+  if (statusResult.status === 'fulfilled') result.status = statusResult.value;
+  else result.status_error = String(statusResult.reason?.message ?? statusResult.reason).slice(0, 2048);
+  if (nativeResult.status === 'fulfilled') {
+    const observed = nativeResult.value;
+    const pids = new Set([expectedPid, result.status?.managed_pid].filter(pid => Number.isSafeInteger(pid) && pid > 0));
+    result.foreground = observed.foreground;
+    result.target_hwnd = observed.target_hwnd;
+    result.edit_hwnd = observed.edit_hwnd;
+    result.helper_windows = observed.windows.filter(window => pids.has(window.pid)).slice(0, 32);
+    result.helper_processes = observed.processes.filter(process => pids.has(process.pid)).slice(0, 8);
+  } else result.native_error = String(nativeResult.reason?.message ?? nativeResult.reason).slice(0, 2048);
+  return result;
+}
+
 function regular(file) {
   const stat = lstatSync(file);
   assert(stat.isFile() && !stat.isSymbolicLink(), 'A regular source file is required');
@@ -233,11 +254,11 @@ class NativeChannel extends LoggedProcess {
       this.pending.clear();
     });
   }
-  request(operation, args = {}) {
+  request(operation, args = {}, milliseconds = 15000) {
     assert(!this.overflow || operation === 'stop', 'Native raw observation log exceeded bound');
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error('Native operation timed out: ' + operation)); }, 15000);
+      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error('Native operation timed out: ' + operation)); }, milliseconds);
       this.pending.set(id, { resolve, reject, timeout });
       this.child.stdin.write(JSON.stringify({ id, operation, ...args }) + '\n');
     });
@@ -300,16 +321,16 @@ class Bridge {
       this.pending.set(id, { resolve, reject, timeout }); this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
-  async invoke(name, args = {}) {
-    const result = await this.command('Runtime.evaluate', { expression: `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(name)},${JSON.stringify(args)})`, awaitPromise: true, returnByValue: true });
+  async invoke(name, args = {}, milliseconds = 20000) {
+    const result = await this.command('Runtime.evaluate', { expression: `window.__TAURI_INTERNALS__.invoke(${JSON.stringify(name)},${JSON.stringify(args)})`, awaitPromise: true, returnByValue: true }, milliseconds);
     if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
     return result.result?.value;
   }
   close() { this.socket?.close(); }
 }
 
-async function poll(label, action, milliseconds = 12000) {
-  const deadline = performance.now() + milliseconds;
+async function poll(label, action, milliseconds = 12000, absoluteDeadline = null) {
+  const deadline = absoluteDeadline ?? performance.now() + milliseconds;
   let last;
   do { try { const value = await action(); if (value) return value; } catch (error) { last = error; } await delay(120); } while (performance.now() < deadline);
   throw new Error(label + ' timed out' + (last ? ': ' + last.message : ''));
@@ -468,7 +489,23 @@ export async function runSurfaceAcceptance(args, env = process.env) {
           && !result.elements.some(item => item.name === other && !item.offscreen) ? result : null;
       }, 15000);
       const selectedAt = performance.now(); await native.request('keys', { role: 'surface', key: 'enter' });
-      await poll('Actual selected text pasted into the native target', async () => (await native.request('target-text')).text === body);
+      const pasteDeadline = performance.now() + 12000;
+      let pasteAttempt = 0, pasteDiagnostics = 0;
+      await poll('Actual selected text pasted into the native target', async () => {
+        // The exact original target text remains the only success predicate.
+        if ((await native.request('target-text')).text === body) return true;
+        const attempt = ++pasteAttempt;
+        if (pasteDiagnosticDue(attempt, pasteDiagnostics) && performance.now() < pasteDeadline) {
+          const budget = Math.max(1, Math.min(200, pasteDeadline - performance.now()));
+          const [status, observed] = await Promise.allSettled([
+            bridge.invoke('get_quick_paste_surface_status', {}, budget),
+            native.request('observe', {}, budget),
+          ]);
+          report.observations.push(pasteDiagnosticObservation(attempt, status, observed, first.pid));
+          pasteDiagnostics++;
+        }
+        return false;
+      }, 12000, pasteDeadline);
       const after = await native.request('observe'); assert.equal(after.foreground.hwnd, after.target_hwnd);
       assert.equal(await bridge.invoke('is_quick_paste_visible'), false);
       const history = await bridge.invoke('get_clipboard_history', { limit: 150, offset: 0, contentType: null });

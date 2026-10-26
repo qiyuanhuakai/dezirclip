@@ -1,6 +1,7 @@
 //! Experimental Quick Paste is a managed read-only child, never a second Host.
 mod identity;
 mod state;
+mod diagnostics;
 use super::ipc_host::{DesktopHost, SurfaceAccess};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use crate::infrastructure::surface_focus::{ManagedChild, Target};
@@ -74,6 +75,7 @@ struct Managed {
     event_pending: AtomicBool,
     dismiss_pending: AtomicBool,
     request_revision: AtomicU64,
+    diagnostic_lines: AtomicU64,
 }
 pub struct SurfaceRequest {
     revision: u64,
@@ -120,6 +122,10 @@ fn diagnostic_code(value: &str) -> &str {
         | "SurfaceExitUnconfirmed" | "SurfaceHelperNotInstalled" | "SurfaceVerifiedBuildRequired"
         | "SurfaceShutdownUnacknowledged" | "SurfaceGrantRevocationUnconfirmed" | "SurfaceTransportClosed"
         | "SurfaceFocusGrantDenied" | "SurfaceFocusUnavailable" | "SurfaceActivationUnavailable"
+        | "SurfaceSelectionChanged" | "SurfaceActionRepeated" | "SurfaceCopyFailed" | "SurfacePasteFailed"
+        | "SurfaceHostDeadline" | "ClipboardHostInstanceChanged" | "ClipboardHostUnavailable"
+        | "ClipboardHostPermissionDenied" | "ClipboardHostBusy" | "ClipboardRecordUnavailable"
+        | "PrivacyStateUnavailable" | "PrivacyEpochChanged" | "PrivacySessionActive" | "SensitiveAccessDenied"
         | "host_unavailable" | "host_handshake_rejected" | "state_changed"
         | "show_failed" | "show_rejected" | "resync_required" | "initialize_rejected"
         | "hide_rejected" | "shutdown_rejected" | "action_timeout" => value,
@@ -262,6 +268,13 @@ fn geometry(app: &AppHandle) -> Result<(SurfacePhysicalRect, f64), String> {
     ))
 }
 impl Managed {
+    fn trace(&self, stage: &'static str, outcome: Option<&str>) {
+        if self.diagnostic_lines.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+            |count| (count < 256).then_some(count + 1)).is_ok() {
+            eprintln!("[surface] stage={} pid={} elapsed_ms={} code={}", stage, self.pid,
+                self.created.elapsed().as_millis(), outcome.map(diagnostic_code).unwrap_or("ok"));
+        }
+    }
     async fn send(&self, message: &SurfaceControlMessage) -> Result<(), String> {
         let bytes = surface_control::encode(message, Direction::ParentToChild).map_err(error)?;
         tokio::time::timeout(TIMEOUT, async {
@@ -526,6 +539,7 @@ impl SurfaceSupervisor {
             event_pending: AtomicBool::new(false),
             dismiss_pending: AtomicBool::new(false),
             request_revision: AtomicU64::new(request.revision),
+            diagnostic_lines: AtomicU64::new(0),
         });
         request.bind(Some(process.clone()))?;
         *self.process.lock().map_err(error)? = Some(process.clone());
@@ -646,6 +660,7 @@ impl SurfaceSupervisor {
             )
             .await?;
         let shown: SurfaceShown = decode(response.payload)?;
+        process.trace("show_visibility_reply", None);
         self.valid(&process, revision)?;
         if shown.surface_session_id != process.id
             || !process.view.lock().map_err(error)?.matches(
@@ -662,6 +677,7 @@ impl SurfaceSupervisor {
         // Shown acknowledges native visibility. Public success also requires
         // actual foreground ownership within this same presentation deadline.
         let activation_target = target.clone();
+        process.trace("activation_prepare", None);
         let activation_process = process.clone();
         let activation_generation = self.revision.clone();
         let activation = tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
@@ -674,6 +690,7 @@ impl SurfaceSupervisor {
             .await.map_err(|_| "SurfaceFocusUnavailable".to_owned())??;
         self.valid(&process, revision)?;
         let activation_target = target.clone();
+        process.trace("activation_send", None);
         let activation_process = process.clone();
         let activation_generation = self.revision.clone();
         tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
@@ -683,6 +700,7 @@ impl SurfaceSupervisor {
         })).await.map_err(|_| "SurfaceFocusUnavailable".to_owned())?.map_err(error)??;
         self.valid(&process, revision)?;
         let focus_target = target.clone();
+        process.trace("activation_focus_wait", None);
         let focus_process = process.clone();
         let generation = self.revision.clone();
         tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
@@ -695,6 +713,7 @@ impl SurfaceSupervisor {
             .await.map_err(|_| "SurfaceFocusUnavailable".to_owned())??;
         self.valid(&process, revision)?;
         let focus_target = target.clone();
+        process.trace("activation_focus_recheck", None);
         let focus_process = process.clone();
         let generation = self.revision.clone();
         tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
@@ -922,9 +941,11 @@ impl SurfaceSupervisor {
         process: &Managed,
         request: &SurfacePaste,
     ) -> Result<(), String> {
+        process.trace("paste_serial_wait", None);
         let _serial = self.serial.lock().await;
         let revision = self.current_revision();
         self.valid(&process, revision)?;
+        process.trace("paste_host_state", None);
         let actual = process.access.state().await?;
         self.valid(&process, revision)?;
         let display =
@@ -933,6 +954,7 @@ impl SurfaceSupervisor {
                 .lock()
                 .map_err(error)?
                 .admit(&process.id, revision, &request, &actual)?;
+        process.trace("paste_admitted", None);
         self.mark_hidden(revision);
         let target = process
             .target
@@ -941,14 +963,18 @@ impl SurfaceSupervisor {
             .clone()
             .ok_or("SurfaceTargetUnavailable")?;
         self.hide_display(process, &display.id, "paste").await?;
+        process.trace("paste_hidden", None);
         self.valid(process, revision)?;
         process.access.check(&request.state).await?;
+        process.trace("paste_restore", None);
         self.restore_target(target.clone(), revision).await?;
+        process.trace("paste_copy", None);
         self.valid(&process, revision)?;
         process
             .access
             .copy(request.entry_id, &request.state)
             .await?;
+        process.trace("paste_copy_completed", None);
         process.access.check(&request.state).await?;
         self.valid(&process, revision)?;
         // No queued worker can outlive the last cancellation/focus check.
@@ -956,6 +982,7 @@ impl SurfaceSupervisor {
             return Err("SurfaceFocusChanged".into());
         }
         self.valid(&process, revision)?;
+        process.trace("paste_native_input", None);
         dzc_platform::runtime::NativePasteController
             .paste()
             .map_err(|_| "SurfacePasteFailed".to_owned())?;
@@ -968,6 +995,7 @@ impl SurfaceSupervisor {
         request: SurfacePaste,
     ) -> Result<(), String> {
         let performed = self.perform_action(&process, &request).await;
+        process.trace("paste_result", performed.as_ref().err().map(String::as_str));
         {
             let _serial = self.serial.lock().await;
             let revision = self.current_revision();
@@ -1070,6 +1098,7 @@ async fn read_stdout(
                 let app = app.clone();
                 if let Ok(request) = request {
                     if !process.event_pending.swap(true, Ordering::AcqRel) {
+                        process.trace("paste_received", None);
                         tauri::async_runtime::spawn(async move {
                             let manager = app.state::<SurfaceSupervisor>();
                             let outcome = manager
@@ -1136,6 +1165,7 @@ async fn read_stderr(
 ) {
     let mut total = 0usize;
     let mut bytes = [0; 1024];
+    let mut diagnostics = diagnostics::ChildInput::default();
     loop {
         match stream.read(&mut bytes).await {
             Ok(0) | Err(_) => return,
@@ -1146,6 +1176,11 @@ async fn read_stderr(
                         schedule_stop(&app, &process, "stderr_limit");
                     }
                     return;
+                }
+                if let Some(process) = process.upgrade() {
+                    diagnostics.feed(&bytes[..count], |message| {
+                        eprintln!("[surface-child] pid={} {}", process.pid, message);
+                    });
                 }
             }
         }
