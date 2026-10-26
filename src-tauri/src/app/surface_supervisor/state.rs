@@ -45,18 +45,23 @@ impl View {
             None
         }
     }
+    pub fn matches(&self, id: &str, revision: u64, state: &RuntimeState) -> bool {
+        self.display.as_ref().is_some_and(|display| {
+            display.id == id
+                && display.revision == revision
+                && dzc_host::same_surface_state(&display.state, state)
+        })
+    }
     pub fn presented(&mut self, id: &str, revision: u64, state: &RuntimeState) -> bool {
-        let Some(display) = self.display.as_mut() else {
-            return false;
-        };
-        if display.id != id
-            || display.revision != revision
-            || !dzc_host::same_surface_state(&display.state, state)
-        {
+        if !self.matches(id, revision, state) {
             return false;
         }
-        display.shown = true;
-        true
+        if let Some(display) = self.display.as_mut() {
+            display.shown = true;
+            true
+        } else {
+            false
+        }
     }
     pub fn admit(
         &mut self,
@@ -124,6 +129,25 @@ mod tests {
         assert!(!view.presented("display-1", 3, &state()));
         view.cancel();
         assert!(!view.presented("display-1", 2, &state()));
+    }
+    #[test]
+    fn a_matching_visibility_ack_stays_pending_until_native_focus_is_confirmed() {
+        let mut view = View::default();
+        view.show(display());
+        assert!(view.matches("display-1", 2, &state()));
+        assert!(!view.display.as_ref().unwrap().shown);
+        assert!(view.admit("child-1", 2, &action(), &state()).is_err());
+        assert!(!view.matches("display-1", 3, &state()));
+        let mut changed = state();
+        changed.privacy_epoch += 1;
+        assert!(!view.matches("display-1", 2, &changed));
+        assert!(view.presented("display-1", 2, &state()));
+        assert!(view.admit("child-1", 2, &action(), &state()).is_ok());
+        view.show(display());
+        assert!(view.matches("display-1", 2, &state()));
+        view.cancel();
+        assert!(!view.presented("display-1", 2, &state()));
+        assert!(view.admit("child-1", 2, &action(), &state()).is_err());
     }
     #[test]
     fn action_is_exactly_once_and_both_id_signs_require_original_owner_epoch_revision() {

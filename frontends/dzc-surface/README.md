@@ -12,6 +12,21 @@ the existing authenticated local Go IPC client. Only a `history_read` Surface
 grant is accepted. Rows are bounded metadata; selecting one sends its ID and
 the original state back to the Desktop. Paste and target restoration remain
 parent responsibilities.
+The private `shown` reply acknowledges native visibility only. Desktop keeps
+selection pending until the matching Host state, request generation and actual
+keyboard focus are confirmed within the original five-second presentation
+deadline. On Windows it grants foreground permission only to the exact live
+managed helper process for that request; a grant is not focus evidence. On X11
+the check requires the active helper window and actual input focus on that
+window or one of its bounded descendants. These checks do not measure a first
+interactive frame or establish that every window manager will grant focus.
+X11 activation uses local Unix sockets only. At the original request start,
+Desktop samples the X server clock with its own unmapped property probe;
+this is not the original keypress timestamp. The probe's 250 ms caller budget,
+including dispatch time, is deducted from the existing five seconds. After
+rechecking the original target, Host and unique managed window, Desktop sends
+at most one application-source activation request. The WM may refuse it;
+a target change cancels the display instead of forcing focus.
 An uncertain paste is never retried automatically. On the next explicit user
 activation, a parent `paste_unavailable` notice gets its own visible banner;
 query results cannot erase it, and hiding clears it with the display session.

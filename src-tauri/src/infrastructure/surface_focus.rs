@@ -1,5 +1,74 @@
 //! Request-bound native paste targets. No target handle crosses the child IPC.
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+#[derive(Clone, Copy)]
+enum Foreground {
+    Managed,
+    Target,
+    Owned,
+    Absent,
+    External,
+}
+fn focused(original_valid: bool, child_valid: bool, foreground: Foreground) -> Result<bool, String> {
+    if !original_valid { return Err("SurfaceTargetChanged".into()); }
+    if !child_valid { return Err("SurfaceProcessUnavailable".into()); }
+    match foreground {
+        Foreground::Managed => Ok(true),
+        Foreground::Target | Foreground::Owned | Foreground::Absent => Ok(false),
+        Foreground::External => Err("SurfaceFocusChanged".into()),
+    }
+}
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn input_focus_belongs_to(window: u32, focus: u32, mut parent: impl FnMut(u32) -> Option<u32>) -> bool {
+    if window <= 1 || focus <= 1 { return false; }
+    let mut seen = std::collections::HashSet::new();
+    let mut current = focus;
+    for _ in 0..32 {
+        if current == window { return true; }
+        if current <= 1 || !seen.insert(current) { return false; }
+        let Some(next) = parent(current) else { return false; };
+        current = next;
+    }
+    false
+}
+fn authorize_if(
+    pid: u32,
+    current: impl Fn() -> bool,
+    child_valid: impl Fn() -> bool,
+    context_current: impl Fn() -> bool,
+    grant: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if pid == 0 || pid == u32::MAX { return Err("SurfaceProcessUnavailable".into()); }
+    if !current() { return Err("SurfaceDisplayCancelled".into()); }
+    if !child_valid() { return Err("SurfaceProcessUnavailable".into()); }
+    if !context_current() { return Err("SurfaceFocusChanged".into()); }
+    grant()?;
+    if !current() { return Err("SurfaceDisplayCancelled".into()); }
+    if !child_valid() { return Err("SurfaceProcessUnavailable".into()); }
+    if !context_current() { return Err("SurfaceFocusChanged".into()); }
+    Ok(())
+}
+fn wait_for_focus(
+    deadline: Instant,
+    current: impl Fn() -> bool,
+    mut observe: impl FnMut() -> Result<bool, String>,
+    now: impl Fn() -> Instant,
+    sleep: impl Fn(Duration),
+) -> Result<(), String> {
+    loop {
+        if !current() { return Err("SurfaceDisplayCancelled".into()); }
+        if now() >= deadline { return Err("SurfaceFocusUnavailable".into()); }
+        if observe()? {
+            if !current() { return Err("SurfaceDisplayCancelled".into()); }
+            if now() >= deadline { return Err("SurfaceFocusUnavailable".into()); }
+            return Ok(());
+        }
+        let remaining = deadline.saturating_duration_since(now());
+        if remaining.is_zero() { return Err("SurfaceFocusUnavailable".into()); }
+        sleep(remaining.min(Duration::from_millis(20)));
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Process {
@@ -16,6 +85,15 @@ fn register(current: &mut Option<Process>, identity: Process) -> Result<(), Stri
 }
 fn matching(expected: Option<Process>, actual: Option<Process>) -> bool {
     expected.is_some() && expected == actual
+}
+fn presentation_budget(budget: Duration, capture_elapsed: Duration) -> Result<Duration, String> {
+    budget.checked_sub(capture_elapsed).filter(|remaining| !remaining.is_zero())
+        .ok_or_else(|| "SurfaceFocusUnavailable".into())
+}
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn application_activation_data(request_time: u32) -> Result<[u32; 5], String> {
+    if request_time == 0 { return Err("SurfaceActivationUnavailable".into()); }
+    Ok([1, request_time, 0, 0, 0])
 }
 pub struct ManagedChild(Process);
 impl ManagedChild {
@@ -58,14 +136,59 @@ pub fn configure_spawn(command: &mut std::process::Command) {
 }
 
 #[derive(Debug)]
+struct RequestClock { timestamp: u32, elapsed: Duration }
+pub struct ManagedActivation {
+    #[cfg(target_os = "linux")]
+    prepared: Option<crate::infrastructure::linux_api::surface_activation::Prepared>,
+}
+#[derive(Debug)]
 pub struct Target {
     window: usize,
     process: Process,
     thread: u32,
+    request_clock: std::sync::OnceLock<RequestClock>,
 }
 impl Target {
     pub fn capture() -> Result<Self, String> {
         native::capture()
+    }
+    pub async fn prepare_request_time(self: &std::sync::Arc<Self>, current: impl Fn() -> bool + Send + Sync + 'static) -> Result<(), String> {
+        if !current() { return Err("SurfaceDisplayCancelled".into()); }
+        #[cfg(target_os = "windows")]
+        { Ok(()) }
+        #[cfg(target_os = "linux")]
+        {
+            let started = Instant::now();
+            let deadline = started + Duration::from_millis(250);
+            let current: std::sync::Arc<dyn Fn() -> bool + Send + Sync> = std::sync::Arc::new(current);
+            let worker_current = current.clone();
+            let target = self.clone();
+            let worker = tauri::async_runtime::spawn_blocking(move || -> Result<u32, String> {
+                if !worker_current() { return Err("SurfaceDisplayCancelled".into()); }
+                if Instant::now() >= deadline { return Err("SurfaceActivationUnavailable".into()); }
+                let timestamp = crate::infrastructure::linux_api::surface_activation::request_time(deadline, worker_current.clone())?;
+                if !worker_current() { return Err("SurfaceDisplayCancelled".into()); }
+                if Instant::now() >= deadline { return Err("SurfaceActivationUnavailable".into()); }
+                if !target.presentation_current() { return Err("SurfaceFocusChanged".into()); }
+                Ok(timestamp)
+            });
+            let timestamp = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), worker).await
+                .map_err(|_| "SurfaceActivationUnavailable".to_owned())?
+                .map_err(|_| "SurfaceActivationUnavailable".to_owned())??;
+            if !current() { return Err("SurfaceDisplayCancelled".into()); }
+            if Instant::now() >= deadline { return Err("SurfaceActivationUnavailable".into()); }
+            let elapsed = started.elapsed();
+            if elapsed >= Duration::from_millis(250) { return Err("SurfaceActivationUnavailable".into()); }
+            self.request_clock.set(RequestClock { timestamp, elapsed }).map_err(|_| "SurfaceActivationUnavailable".to_owned())?;
+            Ok(())
+        }
+    }
+    pub fn presentation_deadline(&self, budget: Duration) -> Result<Instant, String> {
+        #[cfg(target_os = "linux")]
+        let elapsed = self.request_clock.get().ok_or("SurfaceActivationUnavailable")?.elapsed;
+        #[cfg(target_os = "windows")]
+        let elapsed = Duration::ZERO;
+        Ok(Instant::now() + presentation_budget(budget, elapsed)?)
     }
     pub fn restore_if(&self, current: impl Fn() -> bool) -> Result<(), String> {
         native::restore(self, &current)
@@ -76,23 +199,60 @@ impl Target {
     pub fn context_current(&self) -> bool {
         native::context_current(self)
     }
+    pub fn presentation_current(&self) -> bool {
+        native::presentation_current(self)
+    }
+    pub fn authorize_managed(&self, pid: u32, current: impl Fn() -> bool) -> Result<(), String> {
+        authorize_if(pid, current, || is_managed_child(pid), || self.presentation_current(), || native::authorize(pid))
+    }
+    pub fn wait_managed_focus(&self, pid: u32, deadline: Instant, current: impl Fn() -> bool) -> Result<(), String> {
+        wait_for_focus(deadline, current, || native::managed_focus(self, pid), Instant::now, std::thread::sleep)
+    }
+    pub fn prepare_managed_activation(&self, pid: u32, deadline: Instant, current: impl Fn() -> bool + Send + Sync + 'static) -> Result<ManagedActivation, String> {
+        #[cfg(target_os = "windows")]
+        { let _ = (pid, deadline, current); Ok(ManagedActivation {}) }
+        #[cfg(target_os = "linux")]
+        {
+            let current: std::sync::Arc<dyn Fn() -> bool + Send + Sync> = std::sync::Arc::new(current);
+            authorize_if(pid, || current(), || is_managed_child(pid), || self.presentation_current(), || Ok(()))?;
+            if native::managed_focus(self, pid)? { return Ok(ManagedActivation { prepared: None }); }
+            if Instant::now() >= deadline { return Err("SurfaceFocusUnavailable".into()); }
+            let timestamp = self.request_clock.get().ok_or("SurfaceActivationUnavailable")?.timestamp;
+            let prepared = crate::infrastructure::linux_api::surface_activation::prepare(pid, timestamp, deadline, current)?;
+            Ok(ManagedActivation { prepared: Some(prepared) })
+        }
+    }
+    pub fn activate_managed_once(&self, activation: ManagedActivation, pid: u32, deadline: Instant, current: impl Fn() -> bool) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        { let _ = (activation, pid, deadline, current); Ok(()) }
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(prepared) = activation.prepared {
+                if Instant::now() >= deadline { return Err("SurfaceFocusUnavailable".into()); }
+                prepared.send(|| authorize_if(pid, &current, || is_managed_child(pid), || self.presentation_current(), || Ok(())))?;
+            }
+            Ok(())
+        }
+    }
 }
 #[cfg(target_os = "windows")]
 fn process(pid: u32) -> Result<Process, String> {
     use windows::Win32::{
         Foundation::{CloseHandle, FILETIME},
-        System::Threading::{GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+        System::Threading::{GetProcessTimes, OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE},
     };
     unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE, false, pid)
             .map_err(|_| "SurfaceProcessUnavailable")?;
         let mut created = FILETIME::default();
         let mut exited = FILETIME::default();
         let mut kernel = FILETIME::default();
         let mut user = FILETIME::default();
         let result = GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user);
+        let running = WaitForSingleObject(handle, 0) == windows::Win32::Foundation::WAIT_TIMEOUT;
         let _ = CloseHandle(handle);
         result.map_err(|_| "SurfaceProcessUnavailable")?;
+        if !running { return Err("SurfaceProcessUnavailable".into()); }
         Ok(Process {
             pid,
             started: (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime),
@@ -104,6 +264,9 @@ fn process(pid: u32) -> Result<Process, String> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))
         .map_err(|_| "SurfaceProcessUnavailable")?;
     let fields = stat.rsplit_once(')').ok_or("SurfaceProcessUnavailable")?.1;
+    if matches!(fields.split_whitespace().next(), Some("Z" | "X")) {
+        return Err("SurfaceProcessUnavailable".into());
+    }
     let started = fields
         .split_whitespace()
         .nth(19)
@@ -119,7 +282,7 @@ mod native {
         Foundation::HWND,
         UI::WindowsAndMessaging::{
             GetForegroundWindow, GetWindowThreadProcessId, IsWindow, IsWindowVisible,
-            SetForegroundWindow,
+            AllowSetForegroundWindow, SetForegroundWindow,
         },
     };
     fn hwnd(window: usize) -> HWND {
@@ -163,6 +326,7 @@ mod native {
             window,
             process,
             thread,
+            request_clock: std::sync::OnceLock::new(),
         })
     }
     pub(super) fn is_current(target: &Target) -> bool {
@@ -178,6 +342,23 @@ mod native {
             GetWindowThreadProcessId(hwnd(window), Some(&mut pid));
         }
         window == target.window || ours(pid)
+    }
+    pub(super) fn presentation_current(target: &Target) -> bool {
+        valid(target) && (current() == 0 || context_current(target))
+    }
+    pub(super) fn authorize(pid: u32) -> Result<(), String> {
+        unsafe { AllowSetForegroundWindow(pid) }.map_err(|_| "SurfaceFocusGrantDenied".into())
+    }
+    pub(super) fn managed_focus(target: &Target, pid: u32) -> Result<bool, String> {
+        let window = current();
+        let mut actual = 0;
+        unsafe { GetWindowThreadProcessId(hwnd(window), Some(&mut actual)); }
+        let foreground = if window == 0 { Foreground::Absent }
+            else if actual == pid { Foreground::Managed }
+            else if window == target.window { Foreground::Target }
+            else if ours(actual) { Foreground::Owned }
+            else { Foreground::External };
+        focused(valid(target), is_managed_child(pid), foreground)
     }
     pub(super) fn restore(target: &Target, allowed: &dyn Fn() -> bool) -> Result<(), String> {
         if !allowed() {
@@ -233,11 +414,13 @@ mod native {
             window,
             process: identity(window)?,
             thread: 0,
+            request_clock: std::sync::OnceLock::new(),
         })
     }
     pub(super) fn is_current(target: &Target) -> bool {
         identity(target.window).ok() == Some(target.process)
             && tracker::surface_active_window().ok() == Some(target.window)
+            && tracker::surface_has_input_focus(target.window, target.process.pid).unwrap_or(false)
     }
     pub(super) fn context_current(target: &Target) -> bool {
         if identity(target.window).ok() != Some(target.process) {
@@ -247,6 +430,22 @@ mod native {
             return false;
         };
         window == target.window || tracker::surface_window_pid(window).is_ok_and(ours)
+    }
+    pub(super) fn presentation_current(target: &Target) -> bool {
+        identity(target.window).ok() == Some(target.process)
+            && (tracker::surface_active_window().ok() == Some(0) || context_current(target))
+    }
+    pub(super) fn authorize(_pid: u32) -> Result<(), String> { Ok(()) }
+    pub(super) fn managed_focus(target: &Target, pid: u32) -> Result<bool, String> {
+        let window = tracker::surface_active_window().unwrap_or(0);
+        let actual = tracker::surface_window_pid(window).ok();
+        let foreground = if window == 0 { Foreground::Absent }
+            else if actual == Some(pid) && tracker::surface_has_input_focus(window, pid).unwrap_or(false) { Foreground::Managed }
+            else if actual == Some(pid) { Foreground::Owned }
+            else if window == target.window { Foreground::Target }
+            else if actual.is_some_and(ours) { Foreground::Owned }
+            else { Foreground::External };
+        focused(identity(target.window).ok() == Some(target.process), is_managed_child(pid), foreground)
     }
     pub(super) fn restore(target: &Target, allowed: &dyn Fn() -> bool) -> Result<(), String> {
         if !allowed() {
@@ -277,6 +476,86 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn timestamp_capture_consumes_the_existing_presentation_budget() {
+        let budget = Duration::from_secs(5);
+        assert_eq!(presentation_budget(budget, Duration::from_millis(250)).unwrap(), Duration::from_millis(4750));
+        assert_eq!(presentation_budget(budget, Duration::ZERO).unwrap(), budget);
+        assert!(presentation_budget(budget, budget).is_err());
+        assert!(presentation_budget(budget, budget + Duration::from_nanos(1)).is_err());
+    }
+    #[test]
+    fn activation_is_an_application_request_with_only_the_captured_server_time() {
+        assert_eq!(application_activation_data(12345).unwrap(), [1, 12345, 0, 0, 0]);
+        assert_eq!(application_activation_data(u32::MAX).unwrap(), [1, u32::MAX, 0, 0, 0]);
+        assert_eq!(application_activation_data(0).unwrap_err(), "SurfaceActivationUnavailable");
+    }
+    #[test]
+    fn only_a_current_exact_child_and_original_context_receive_one_foreground_grant() {
+        for invalid in 0..6 {
+            let grants = std::cell::Cell::new(0);
+            let result = authorize_if(if invalid == 0 { 0 } else if invalid == 1 { u32::MAX } else { 10 },
+                || invalid != 2, || invalid != 3, || invalid != 4,
+                || { grants.set(grants.get() + 1); Ok(()) });
+            assert_eq!(result.is_ok(), invalid == 5);
+            assert_eq!(grants.get(), if invalid == 5 { 1 } else { 0 });
+        }
+    }
+    #[test]
+    fn grant_failure_or_a_post_grant_owner_change_never_retries_or_becomes_success() {
+        let current = std::cell::Cell::new(true);
+        let grants = std::cell::Cell::new(0);
+        assert_eq!(authorize_if(10, || current.get(), || true, || true, || {
+            grants.set(grants.get() + 1); current.set(false); Ok(())
+        }).unwrap_err(), "SurfaceDisplayCancelled");
+        assert_eq!(grants.get(), 1);
+        assert_eq!(authorize_if(10, || true, || true, || true,
+            || Err("SurfaceFocusGrantDenied".into())).unwrap_err(), "SurfaceFocusGrantDenied");
+    }
+    #[test]
+    fn native_visibility_or_transient_absence_is_not_a_focus_acknowledgement() {
+        for state in [Foreground::Target, Foreground::Owned, Foreground::Absent] {
+            assert!(!focused(true, true, state).unwrap());
+        }
+        assert!(focused(true, true, Foreground::Managed).unwrap());
+        assert_eq!(focused(true, true, Foreground::External).unwrap_err(), "SurfaceFocusChanged");
+        assert!(focused(false, true, Foreground::Managed).is_err());
+        assert!(focused(true, false, Foreground::Managed).is_err());
+    }
+    #[test]
+    fn a_cancelled_or_expired_focus_wait_never_queries_native_state() {
+        let target = Target { window: 1, process: Process { pid: 2, started: 3 }, thread: 4, request_clock: std::sync::OnceLock::new() };
+        assert_eq!(target.wait_managed_focus(10, Instant::now() + Duration::from_secs(5), || false).unwrap_err(), "SurfaceDisplayCancelled");
+        assert_eq!(target.wait_managed_focus(10, Instant::now(), || true).unwrap_err(), "SurfaceFocusUnavailable");
+    }
+    #[test]
+    fn focus_observed_at_or_after_the_original_deadline_is_rejected() {
+        let start = Instant::now();
+        let deadline = start + Duration::from_secs(5);
+        let clock = std::cell::Cell::new(start);
+        let calls = std::cell::Cell::new(0);
+        let result = wait_for_focus(deadline, || true, || {
+            calls.set(calls.get() + 1);
+            clock.set(deadline);
+            Ok(true)
+        }, || clock.get(), |_| panic!("a completed observation does not wait"));
+        assert_eq!(result.unwrap_err(), "SurfaceFocusUnavailable");
+        assert_eq!(calls.get(), 1);
+        assert!(wait_for_focus(deadline, || true, || Ok(true), || start, |_| panic!("already focused")).is_ok());
+    }
+    #[test]
+    fn input_focus_requires_a_bounded_real_descendant_not_an_active_window_hint() {
+        let parents = |window| match window { 8 => Some(7), 7 => Some(6), 6 => Some(0), _ => None };
+        assert!(input_focus_belongs_to(6, 6, |_| panic!("same window needs no parent read")));
+        assert!(input_focus_belongs_to(6, 8, parents));
+        assert!(!input_focus_belongs_to(6, 0, parents));
+        assert!(!input_focus_belongs_to(6, 1, parents));
+        assert!(!input_focus_belongs_to(6, 9, parents));
+        assert!(!input_focus_belongs_to(6, 8, |window| Some(if window == 8 { 7 } else { 8 })));
+        let calls = std::cell::Cell::new(0);
+        assert!(!input_focus_belongs_to(6, 100, |window| { calls.set(calls.get() + 1); Some(window + 1) }));
+        assert_eq!(calls.get(), 32);
+    }
     #[test]
     fn a_child_exemption_is_exact_and_scoped_to_its_live_process_identity() {
         let identity = Process {

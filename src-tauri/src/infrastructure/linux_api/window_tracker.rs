@@ -417,6 +417,30 @@ pub(crate) fn surface_window_pid(window:usize)->AppResult<u32> {
     let atom=conn.intern_atom(false,b"_NET_WM_PID").map_err(|e|AppError::Internal(e.to_string()))?.reply().map_err(|e|AppError::Internal(e.to_string()))?.atom;
     get_window_pid(&conn,u32::try_from(window).map_err(|e|AppError::Internal(e.to_string()))?,atom).map_err(|e|AppError::Internal(e.to_string()))
 }
+pub(crate) fn surface_has_input_focus(window: usize, pid: u32) -> AppResult<bool> {
+    let expected = u32::try_from(window).map_err(|e| AppError::Internal(e.to_string()))?;
+    if expected <= 1 || pid == 0 { return Ok(false); }
+    let (conn, screen) = x11rb::connect(None).map_err(|e| AppError::Internal(e.to_string()))?;
+    let active_atom = conn.intern_atom(false, b"_NET_ACTIVE_WINDOW")
+        .map_err(|e| AppError::Internal(e.to_string()))?.reply().map_err(|e| AppError::Internal(e.to_string()))?.atom;
+    let pid_atom = conn.intern_atom(false, b"_NET_WM_PID")
+        .map_err(|e| AppError::Internal(e.to_string()))?.reply().map_err(|e| AppError::Internal(e.to_string()))?.atom;
+    let root = conn.setup().roots[screen].root;
+    let active = || get_active_window_id(&conn, root, active_atom).ok() == Some(expected);
+    let owned = || get_window_pid(&conn, expected, pid_atom).ok() == Some(pid);
+    if !active() || !owned() { return Ok(false); }
+    let attributes = conn.get_window_attributes(expected).map_err(|e| AppError::Internal(e.to_string()))?
+        .reply().map_err(|e| AppError::Internal(e.to_string()))?;
+    if attributes.map_state != xproto::MapState::VIEWABLE { return Ok(false); }
+    let focus = conn.get_input_focus().map_err(|e| AppError::Internal(e.to_string()))?
+        .reply().map_err(|e| AppError::Internal(e.to_string()))?.focus;
+    if !crate::infrastructure::surface_focus::input_focus_belongs_to(expected, focus, |child| {
+        conn.query_tree(child).ok()?.reply().ok().map(|tree| tree.parent)
+    }) { return Ok(false); }
+    let after = conn.get_input_focus().map_err(|e| AppError::Internal(e.to_string()))?
+        .reply().map_err(|e| AppError::Internal(e.to_string()))?.focus;
+    Ok(after == focus && active() && owned())
+}
 
 pub fn get_clipboard_source_app_info() -> AppResult<ActiveAppInfo> {
     if dzc_platform::runtime::is_native_wayland() { return Ok(unknown_app_info()); }

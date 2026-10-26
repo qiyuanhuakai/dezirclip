@@ -37,6 +37,17 @@ const SURFACE_ENV_KEYS: &[&str] = &[
     "FONTCONFIG_FILE", "FONTCONFIG_PATH",
 ];
 type Reply = oneshot::Sender<SurfaceControlMessage>;
+struct PendingReply<'a> {
+    replies: &'a Mutex<HashMap<String, Reply>>,
+    request_id: &'a str,
+}
+impl Drop for PendingReply<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut replies) = self.replies.lock() {
+            replies.remove(self.request_id);
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct SurfaceSupervisor {
@@ -68,6 +79,23 @@ pub struct SurfaceRequest {
     revision: u64,
     owner: Option<Arc<Managed>>,
     display: Option<String>,
+    target: Option<Arc<Target>>,
+}
+pub struct SurfaceFallback {
+    revision: u64,
+    target: Option<Arc<Target>>,
+    original_tauri: bool,
+}
+impl SurfaceFallback {
+    pub fn original_tauri(revision: u64) -> Self {
+        Self { revision, target: None, original_tauri: true }
+    }
+    fn context_current(&self) -> bool {
+        self.original_tauri || self.target.as_ref().is_some_and(|target| target.presentation_current())
+    }
+    pub fn current(&self, app: &AppHandle) -> bool {
+        route_current(app, self.revision) && self.context_current()
+    }
 }
 impl SurfaceRequest {
     fn bind(&mut self, owner: Option<Arc<Managed>>) -> Result<(), String> {
@@ -91,6 +119,7 @@ fn diagnostic_code(value: &str) -> &str {
         | "SurfaceProcessAlreadyManaged" | "SurfaceProcessUnavailable" | "SurfaceProcessStateUnavailable"
         | "SurfaceExitUnconfirmed" | "SurfaceHelperNotInstalled" | "SurfaceVerifiedBuildRequired"
         | "SurfaceShutdownUnacknowledged" | "SurfaceGrantRevocationUnconfirmed" | "SurfaceTransportClosed"
+        | "SurfaceFocusGrantDenied" | "SurfaceFocusUnavailable" | "SurfaceActivationUnavailable"
         | "host_unavailable" | "host_handshake_rejected" | "state_changed"
         | "show_failed" | "show_rejected" | "resync_required" | "initialize_rejected"
         | "hide_rejected" | "shutdown_rejected" | "action_timeout" => value,
@@ -253,6 +282,17 @@ impl Managed {
         request: SurfaceControlMessage,
         expected: SurfaceControlType,
     ) -> Result<SurfaceControlMessage, String> {
+        self.exchange_until(request, expected, Instant::now() + TIMEOUT).await
+    }
+    async fn exchange_until(
+        &self,
+        request: SurfaceControlMessage,
+        expected: SurfaceControlType,
+        deadline: Instant,
+    ) -> Result<SurfaceControlMessage, String> {
+        if Instant::now() >= deadline {
+            return Err("SurfaceAcknowledgementTimeout".into());
+        }
         let (send, receive) = oneshot::channel();
         {
             let mut replies = self.replies.lock().map_err(error)?;
@@ -261,10 +301,11 @@ impl Managed {
             }
             replies.insert(request.request_id.clone(), send);
         }
-        let result = tokio::time::timeout(TIMEOUT, async {
+        let _pending = PendingReply { replies: &self.replies, request_id: &request.request_id };
+        let result = tokio::time::timeout(deadline.saturating_duration_since(Instant::now()), async {
             self.send(&request).await?;
             let response = receive.await.map_err(error)?;
-            if response.r#type != expected {
+            if response.r#type != expected || Instant::now() >= deadline {
                 return Err("SurfaceAcknowledgementRejected".into());
             }
             Ok(response)
@@ -272,9 +313,6 @@ impl Managed {
         .await
         .map_err(|_| "SurfaceAcknowledgementTimeout".to_owned())
         .and_then(|result| result);
-        if let Ok(mut replies) = self.replies.lock() {
-            replies.remove(&request.request_id);
-        }
         result
     }
     fn cancel(&self) {
@@ -374,7 +412,7 @@ impl SurfaceSupervisor {
         revision != u64::MAX && self.current_revision() == revision
     }
     pub fn begin_request(&self) -> Result<SurfaceRequest, String> {
-        let mut request = SurfaceRequest { revision: self.invalidate(), owner: None, display: None };
+        let mut request = SurfaceRequest { revision: self.invalidate(), owner: None, display: None, target: None };
         request.bind(self.current()?)?;
         Ok(request)
     }
@@ -535,6 +573,11 @@ impl SurfaceSupervisor {
         self.requested.fetch_max(revision, Ordering::AcqRel);
         // Capture before helper startup can create any native window.
         let target = Arc::new(Target::capture()?);
+        request.target = Some(target.clone());
+        let capture_generation = self.revision.clone();
+        target.prepare_request_time(move || {
+            revision != u64::MAX && capture_generation.load(Ordering::Acquire) == revision
+        }).await?;
         let (rect, scale) = geometry(app)?;
         let _serial = self.serial.lock().await;
         if !self.request_current(revision) { return Err("SurfaceDisplayCancelled".into()); }
@@ -567,7 +610,7 @@ impl SurfaceSupervisor {
         let (locale, theme) = appearance(app);
         let notice = self.pending_notice();
         let display = id();
-        *process.target.lock().map_err(error)? = Some(target);
+        *process.target.lock().map_err(error)? = Some(target.clone());
         process.view.lock().map_err(error)?.show(state::Display {
             id: display.clone(),
             state: state.clone(),
@@ -580,8 +623,11 @@ impl SurfaceSupervisor {
                 crate::app::window_manager::hide_window_cmd(app.clone()).map_err(error)?;
             }
         }
+        let focus_deadline = target.presentation_deadline(TIMEOUT)?;
+        target.authorize_managed(process.pid, || self.valid(&process, revision).is_ok())?;
+        eprintln!("[surface] focus-authorized pid={} revision={}", process.pid, revision);
         let response = process
-            .exchange(
+            .exchange_until(
                 message(
                     SurfaceControlType::Show,
                     SurfaceShow {
@@ -596,12 +642,13 @@ impl SurfaceSupervisor {
                     },
                 )?,
                 SurfaceControlType::Shown,
+                focus_deadline,
             )
             .await?;
         let shown: SurfaceShown = decode(response.payload)?;
         self.valid(&process, revision)?;
         if shown.surface_session_id != process.id
-            || !process.view.lock().map_err(error)?.presented(
+            || !process.view.lock().map_err(error)?.matches(
                 &shown.display_request_id,
                 revision,
                 &shown.state,
@@ -609,8 +656,58 @@ impl SurfaceSupervisor {
         {
             return Err("SurfaceStaleAcknowledgement".into());
         }
-        process.access.check(&shown.state).await?;
+        tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), process.access.check(&shown.state))
+            .await.map_err(|_| "SurfaceFocusUnavailable".to_owned())??;
         self.valid(&process, revision)?;
+        // Shown acknowledges native visibility. Public success also requires
+        // actual foreground ownership within this same presentation deadline.
+        let activation_target = target.clone();
+        let activation_process = process.clone();
+        let activation_generation = self.revision.clone();
+        let activation = tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
+            activation_target.prepare_managed_activation(activation_process.pid, focus_deadline, move || {
+                !activation_process.cancelled.load(Ordering::Acquire) && activation_generation.load(Ordering::Acquire) == revision
+            })
+        })).await.map_err(|_| "SurfaceFocusUnavailable".to_owned())?.map_err(error)??;
+        self.valid(&process, revision)?;
+        tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), process.access.check(&shown.state))
+            .await.map_err(|_| "SurfaceFocusUnavailable".to_owned())??;
+        self.valid(&process, revision)?;
+        let activation_target = target.clone();
+        let activation_process = process.clone();
+        let activation_generation = self.revision.clone();
+        tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
+            activation_target.activate_managed_once(activation, activation_process.pid, focus_deadline, move || {
+                !activation_process.cancelled.load(Ordering::Acquire) && activation_generation.load(Ordering::Acquire) == revision
+            })
+        })).await.map_err(|_| "SurfaceFocusUnavailable".to_owned())?.map_err(error)??;
+        self.valid(&process, revision)?;
+        let focus_target = target.clone();
+        let focus_process = process.clone();
+        let generation = self.revision.clone();
+        tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
+            focus_target.wait_managed_focus(focus_process.pid, focus_deadline, || {
+                !focus_process.cancelled.load(Ordering::Acquire) && generation.load(Ordering::Acquire) == revision
+            })
+        })).await.map_err(|_| "SurfaceFocusUnavailable".to_owned())?.map_err(error)??;
+        self.valid(&process, revision)?;
+        tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), process.access.check(&shown.state))
+            .await.map_err(|_| "SurfaceFocusUnavailable".to_owned())??;
+        self.valid(&process, revision)?;
+        let focus_target = target.clone();
+        let focus_process = process.clone();
+        let generation = self.revision.clone();
+        tokio::time::timeout(focus_deadline.saturating_duration_since(Instant::now()), tauri::async_runtime::spawn_blocking(move || {
+            focus_target.wait_managed_focus(focus_process.pid, focus_deadline, || {
+                !focus_process.cancelled.load(Ordering::Acquire) && generation.load(Ordering::Acquire) == revision
+            })
+        })).await.map_err(|_| "SurfaceFocusUnavailable".to_owned())?.map_err(error)??;
+        self.valid(&process, revision)?;
+        if Instant::now() >= focus_deadline { return Err("SurfaceFocusUnavailable".into()); }
+        if !process.view.lock().map_err(error)?.presented(&shown.display_request_id, revision, &shown.state) {
+            return Err("SurfaceStaleAcknowledgement".into());
+        }
+        eprintln!("[surface] focus-confirmed pid={} revision={}", process.pid, revision);
         self.visible.fetch_max(revision, Ordering::AcqRel);
         self.last_error.lock().map_err(error)?.take();
         if let Some(notice) = notice {
@@ -655,6 +752,7 @@ impl SurfaceSupervisor {
         request.bind(process.clone())?;
         if let Some(process) = process {
             process.request_revision.store(revision, Ordering::Release);
+            request.target = process.target.lock().map_err(error)?.clone();
             let display = process.view.lock().map_err(error)?.display.clone();
             if let Some(display) = display {
                 self.hide_display(&process, &display.id, "cancel").await?;
@@ -667,7 +765,7 @@ impl SurfaceSupervisor {
         }
         Ok(())
     }
-    pub async fn failed_request(&self, request: &SurfaceRequest, failure: &str, closing: bool) -> Result<Option<u64>, String> {
+    pub async fn failed_request(&self, request: &SurfaceRequest, failure: &str, closing: bool) -> Result<Option<SurfaceFallback>, String> {
         eprintln!("[surface] route-error revision={} current={} pid={} closing={} code={}", request.revision,
             self.current_revision(), request.owner.as_ref().map(|process| process.pid).unwrap_or(0), closing, diagnostic_code(failure));
         if failure == "SurfaceDisplayCancelled" { return Ok(None); }
@@ -677,7 +775,7 @@ impl SurfaceSupervisor {
             eprintln!("[surface] route-error-superseded revision={}", request.revision);
             return Ok(None);
         };
-        if failure == "SurfaceFocusChanged" {
+        if failure == "SurfaceFocusChanged" || request.target.as_ref().is_some_and(|target| !target.presentation_current()) {
             if let (Some(process), Some(display)) = (current.as_ref(), request.display.as_ref()) {
                 let owned_display = process.view.lock().map_err(error)?.display.as_ref()
                     .is_some_and(|current| &current.id == display);
@@ -696,7 +794,9 @@ impl SurfaceSupervisor {
         self.record_failure("renderer_unavailable");
         if current.is_some() { self.stop_current("disabled", true).await?; }
         if self.running() { return Err("SurfaceExitUnconfirmed".into()); }
-        Ok((!closing && self.request_current(ticket)).then_some(ticket))
+        Ok((!closing && self.request_current(ticket)).then(|| SurfaceFallback {
+            revision: ticket, target: request.target.clone(), original_tauri: false,
+        }))
     }
     async fn restore_target(&self, target: Arc<Target>, revision: u64) -> Result<(), String> {
         let generation = self.revision.clone();
@@ -1186,7 +1286,22 @@ pub fn hide_blocking(app: &AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod transition_tests {
     use super::*;
-    fn failed_route(supervisor: &SurfaceSupervisor, request: &SurfaceRequest, failure: &str, closing: bool) -> Result<Option<u64>, String> {
+    #[test]
+    fn a_dropped_pending_exchange_removes_its_sender_without_touching_other_requests() {
+        let replies = Mutex::new(HashMap::new());
+        let (first, _first_reply) = oneshot::channel();
+        let (second, _second_reply) = oneshot::channel();
+        replies.lock().unwrap().insert("first".into(), first);
+        replies.lock().unwrap().insert("second".into(), second);
+        {
+            let _pending = PendingReply { replies: &replies, request_id: "first" };
+            assert_eq!(replies.lock().unwrap().len(), 2);
+        }
+        let remaining = replies.lock().unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert!(remaining.contains_key("second"));
+    }
+    fn failed_route(supervisor: &SurfaceSupervisor, request: &SurfaceRequest, failure: &str, closing: bool) -> Result<Option<SurfaceFallback>, String> {
         tokio::runtime::Builder::new_current_thread().build().unwrap()
             .block_on(supervisor.failed_request(request, failure, closing))
     }
@@ -1219,9 +1334,10 @@ mod transition_tests {
         let supervisor = SurfaceSupervisor::default();
         let failed = supervisor.begin_request().unwrap();
         let ticket = failed_route(&supervisor, &failed, "SurfaceStartupUnavailable", false).unwrap().unwrap();
-        assert!(supervisor.request_current(ticket));
+        assert!(supervisor.request_current(ticket.revision));
+        assert!(!ticket.context_current());
         let next = supervisor.begin_request().unwrap();
-        assert!(!supervisor.request_current(ticket));
+        assert!(!supervisor.request_current(ticket.revision));
         assert!(supervisor.request_current(next.revision));
         assert!(failed_route(&supervisor, &failed, "SurfaceStartupUnavailable", false).unwrap().is_none());
     }
@@ -1236,7 +1352,7 @@ mod transition_tests {
     }
     #[test]
     fn failure_diagnostics_never_print_unknown_child_text() {
-        for code in ["SurfaceFocusChanged", "state_changed", "SurfaceHelperNotInstalled",
+        for code in ["SurfaceFocusChanged", "SurfaceActivationUnavailable", "state_changed", "SurfaceHelperNotInstalled",
             "SurfaceShutdownUnacknowledged", "SurfaceGrantRevocationUnconfirmed"] {
             assert_eq!(diagnostic_code(code), code);
         }

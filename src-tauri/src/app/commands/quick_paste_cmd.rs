@@ -169,7 +169,7 @@ pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
     let Some(ticket)=show_surface(&app,false).await? else {return Ok(());};
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, _created| {
-            show_quick_paste_window(&app, window,ticket)
+            show_quick_paste_window(&app, window,&ticket)
         })
     })
     .await
@@ -187,7 +187,7 @@ pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
             if !created && window.is_visible().unwrap_or(false) {
                 hide_quick_paste(app.clone())
             } else {
-                show_quick_paste_window(&app, window,ticket)
+                show_quick_paste_window(&app, window,&ticket)
             }
         })
     })
@@ -195,9 +195,9 @@ pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
     .map_err(|err| format!("Quick-paste toggle worker failed: {err}"))?
 }
 
-async fn show_surface(app:&AppHandle,toggle:bool)->Result<Option<u64>,String> {
+async fn show_surface(app:&AppHandle,toggle:bool)->Result<Option<crate::app::surface_supervisor::SurfaceFallback>,String> {
     use crate::app::surface_supervisor::{self,SurfaceSupervisor};
-    if !surface_supervisor::enabled(app) {return Ok(Some(surface_supervisor::route_ticket(app)));}
+    if !surface_supervisor::enabled(app) {return Ok(Some(surface_supervisor::SurfaceFallback::original_tauri(surface_supervisor::route_ticket(app))));}
     let manager=app.state::<SurfaceSupervisor>();
     let closing=toggle && manager.is_open();
     let mut request=manager.begin_request()?;
@@ -212,8 +212,8 @@ async fn show_surface(app:&AppHandle,toggle:bool)->Result<Option<u64>,String> {
     }
 }
 
-fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket:u64) -> Result<(), String> {
-    if !crate::app::surface_supervisor::route_current(app,ticket) {return Err("QuickPasteRequestCancelled".into());}
+fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket:&crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
+    if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
     if let Ok(cursor) = window.cursor_position() {
         let cursor_x = cursor.x.round() as i32;
@@ -249,11 +249,15 @@ fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket
     let _ = window.set_always_on_top(true);
     let _ = window.set_focusable(true);
     crate::app::webview_memory::restore_window_memory(window, "quick-paste-show");
-    if !crate::app::surface_supervisor::route_current(app,ticket) {return Err("QuickPasteRequestCancelled".into());}
+    if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
     window
         .show()
         .map_err(|e| format!("Failed to show quick-paste window: {e}"))?;
     let _ = window.set_always_on_top(true);
+    if !ticket.current(app) {
+        let _ = window.hide();
+        return Err("QuickPasteRequestCancelled".into());
+    }
     window
         .set_focus()
         .map_err(|e| format!("Failed to focus quick-paste window: {e}"))?;
