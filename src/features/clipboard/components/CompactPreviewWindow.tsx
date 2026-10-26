@@ -166,16 +166,16 @@ const CompactPreviewWindow = () => {
     const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
     const richPresentation = useMemo(() => richPreviewPresentation(richPreviewData.cleanHtml, effectiveRichImageFallbackSrc),
         [richPreviewData.cleanHtml, effectiveRichImageFallbackSrc]);
-    const richTextSnapshotHtml = (richPreviewData.cleanHtml || payload?.htmlContent || "")
-        + (richPresentation.appendFallback ? `<img src="${effectiveRichImageFallbackSrc}" alt="">` : "");
+    const richTextSnapshotHtml = richPreviewData.cleanHtml || payload?.htmlContent || "";
     const richTextSnapshotSrc = useMemo(() => {
         if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
         if (!payload.richTextSnapshotPreview) return null;
+        if (richPresentation.containsImages) return null;
         return getRichTextSnapshotDataUrl(richTextSnapshotHtml, {
             width: 560,
             maxHeight: 1200
         });
-    }, [payload?.contentType, payload?.htmlContent, payload?.richTextSnapshotPreview, richTextSnapshotHtml]);
+    }, [payload?.contentType, payload?.htmlContent, payload?.richTextSnapshotPreview, richTextSnapshotHtml, richPresentation.containsImages]);
     const effectiveRichTextSnapshotSrc = snapshotFailed ? null : richTextSnapshotSrc;
     const useSnapshotPreviewImage = !(effectiveRichImageFallbackSrc && !richPresentation.html) && !!effectiveRichTextSnapshotSrc;
 

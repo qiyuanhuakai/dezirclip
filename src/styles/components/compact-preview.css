@@ -89,6 +89,10 @@ body.compact-preview #root>* {
     object-fit: contain;
 }
 
+.compact-preview-root .compact-preview-media .popover-content > :is(img, video) {
+    max-height: var(--preview-media-max-height, 360px);
+}
+
 .compact-preview-root .popover-content {
     width: 100%;
     max-width: 100%;
@@ -110,6 +114,11 @@ body.compact-preview #root>* {
     max-width: 100%;
     height: auto;
     object-fit: contain;
+}
+
+body.compact-preview .compact-preview-root .rich-text-preview img {
+    max-height: none;
+    height: auto;
 }
 
 .compact-preview-root .rich-text-preview> :first-child {
