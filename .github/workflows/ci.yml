@@ -46,6 +46,15 @@ jobs:
       - name: Check synchronized release versions
         run: pnpm run release:set-version --check
 
+      - name: Check shared Surface design tokens
+        run: pnpm run surface:tokens --check
+
+      - name: Test independent Surface build identity
+        run: node --test scripts/tests/surface-build.node.mjs scripts/tests/mygo-surface-patch.node.mjs
+
+      - name: Test disposable native Surface fixture contracts
+        run: node --test scripts/tests/native-windows-surface.node.mjs
+
       - name: Check single-source local protocol generation
         run: python scripts/generate-protocol.py --check
 
@@ -213,11 +222,29 @@ jobs:
           workspaces: . -> target
 
       - name: Setup Go for local IPC compatibility
-        if: matrix.can_test
         uses: actions/setup-go@v6
         with:
           go-version: '1.27.3'
-          cache-dependency-path: clients/go/go.sum
+          cache-dependency-path: |
+            clients/go/go.sum
+            frontends/dzc-surface/go.sum
+
+      - name: Setup pnpm for native Surface acceptance
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js for Surface builds
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Prepare actual frontend for native Surface acceptance
+        if: matrix.can_test
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Test Go local protocol client
         if: matrix.can_test
@@ -225,6 +252,20 @@ jobs:
         env:
           GOTOOLCHAIN: local
         run: go test ./...
+
+      - name: Test experimental Surface control and selection
+        if: matrix.can_test
+        working-directory: frontends/dzc-surface
+        env:
+          GOTOOLCHAIN: local
+          CGO_ENABLED: '0'
+        run: go test ./...
+
+      - name: Build experimental Surface with matching source identity
+        env:
+          TAURI_ENV_TARGET_TRIPLE: ${{ matrix.rust_target }}
+          GOTOOLCHAIN: local
+        run: pnpm run surface:build
 
       - name: Test bounded native local IPC
         if: matrix.can_test
@@ -298,6 +339,38 @@ jobs:
           ], check=True)
           if hashlib.sha256(binary.read_bytes()).digest() != before:
               raise RuntimeError("backend check replaced the built CLI")
+
+      - name: Build actual Windows desktop with embedded frontend for Surface acceptance
+        if: runner.os == 'Windows' && matrix.can_test
+        run: cargo build --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
+
+      - name: Verify experimental Surface on disposable Windows desktop
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys, uuid
+          assert sys.platform == 'win32' and os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-surface-' + uuid.uuid4().hex)
+          helper = pathlib.Path('artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe')
+          subprocess.run(['node', 'scripts/tests/native-windows-surface.mjs',
+              '--desktop', 'target/debug/dezirclip.exe', '--helper', str(helper),
+              '--helper-proof', str(helper) + '.proof.json', '--python', sys.executable,
+              '--output-root', str(root)], check=True)
+
+      - name: Preserve original Windows Surface observations
+        if: always() && runner.os == 'Windows' && matrix.can_test
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-surface-${{ matrix.name }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/dezirclip-surface-*/*.json
+            ${{ runner.temp }}/dezirclip-surface-*/*.log
+            ${{ runner.temp }}/dezirclip-surface-*/*.png
+            !${{ runner.temp }}/dezirclip-surface-*/profile/**
+            !${{ runner.temp }}/dezirclip-surface-*/webview/**
+            !${{ runner.temp }}/dezirclip-surface-*/environment/**
+            !${{ runner.temp }}/dezirclip-surface-*/candidate/**
+          if-no-files-found: warn
 
       - name: Verify actual private Linux release receipt mounts
         if: runner.os == 'Linux'

@@ -16,6 +16,41 @@ struct Inner { mode:Mutex<Mode>, history:HistoryService, directory:PathBuf, data
 struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::Receiver<()>}
 #[derive(Clone)]
 pub struct DesktopHost(Arc<Inner>);
+pub(crate) struct SurfaceAccess {
+    bridge: DesktopHost,
+    client: tokio::sync::Mutex<Client>,
+    pub endpoint: String,
+    pub grant: String,
+    pub initial_state: RuntimeState,
+}
+impl SurfaceAccess {
+    pub async fn state(&self) -> Result<RuntimeState,String> {
+        if self.bridge.instance()? != self.initial_state.service_instance_id {return Err("ClipboardHostInstanceChanged".into());}
+        let state:RuntimeState=tokio::time::timeout(Duration::from_secs(5),async {
+            self.client.lock().await.call(Method::Health,serde_json::json!({}),"RuntimeState").await.map_err(remote_error)
+        }).await.map_err(|_|"SurfaceHostDeadline")??;
+        if state.service_instance_id!=self.initial_state.service_instance_id || self.bridge.instance()?!=state.service_instance_id {return Err("ClipboardHostInstanceChanged".into());}
+        Ok(state)
+    }
+    pub async fn check(&self,expected:&RuntimeState)->Result<(),String> {
+        if !dzc_host::same_surface_state(expected,&self.state().await?) {return Err("SurfaceSelectionChanged".into());} Ok(())
+    }
+    pub async fn copy(&self,entry_id:i64,expected:&RuntimeState)->Result<(),String> {
+        self.check(expected).await?;
+        let result:OperationResult=tokio::time::timeout(Duration::from_secs(5),async {
+            self.client.lock().await.call(Method::DesktopSurfaceCopy,
+                DesktopSurfaceCopyParams{entry_id,state:expected.clone()},"OperationResult").await.map_err(remote_error)
+        }).await.map_err(|_|"SurfaceHostDeadline")??;
+        if !result.performed {return Err("SurfaceCopyFailed".into());}
+        self.check(expected).await
+    }
+    pub async fn revoke(&self)->Result<(),String> {
+        let _:OperationResult=tokio::time::timeout(Duration::from_secs(5),async {
+            self.client.lock().await.call(Method::ServiceRevoke,GrantRevokeParams{grant:self.grant.clone()},"OperationResult").await.map_err(remote_error)
+        }).await.map_err(|_|"SurfaceHostDeadline")??;
+        Ok(())
+    }
+}
 pub(crate) struct ServiceQueueCopy {
     client:Client,
     pub instance:String,
@@ -178,6 +213,7 @@ fn emit(name:&str,value:impl Serialize+Clone) {
     if matches!(name, "privacy-state-changed" | "clipboard-host-unavailable") {
         if let Some(app) = app() { crate::app::commands::screenshot_cmd::cancel_region_capture(app); }
         else { crate::app::commands::screenshot_cmd::clear_region_capture(); }
+        if let Some(app)=app() {crate::app::surface_supervisor::invalidate(app,"host_changed");}
     }
     if let Some(app)=app() {let _=app.emit(name,value);}
 }
@@ -222,7 +258,10 @@ impl HostActions for DesktopActions {
     fn can_activate(&self)->bool {app().is_some()}
     fn activate(&self,_id:Option<i64>)->Result<(),WireErrorCode> {crate::app::window_manager::focus_clipboard_window(app().ok_or(WireErrorCode::Unavailable)?.clone()).map_err(|_|WireErrorCode::Unavailable)}
     fn dismiss(&self)->Result<(),WireErrorCode> {crate::app::window_manager::hide_window_cmd(app().ok_or(WireErrorCode::Unavailable)?.clone()).map_err(|_|WireErrorCode::Unavailable)}
-    fn stop_helpers(&self)->Result<(),WireErrorCode> {self.writer.stop().map_err(|_|WireErrorCode::Busy)}
+    fn stop_helpers(&self)->Result<(),WireErrorCode> {
+        if let Some(app)=app() {crate::app::surface_supervisor::stop_blocking(app,"exit",false).map_err(|_|WireErrorCode::Busy)?;}
+        self.writer.stop().map_err(|_|WireErrorCode::Busy)
+    }
     fn privacy_changed(&self,snapshot:&dzc_core::api::RuntimeSnapshot) {emit("privacy-state-changed",snapshot.clone());}
 }
 
@@ -242,7 +281,23 @@ impl DesktopHost {
         let host=Host::with_session(HostOptions{mode:HostMode::Embedded,history:history.clone(),directory:directory.clone(),actions:Arc::new(Actions)},session.clone()).unwrap();
         Self(Arc::new(Inner{mode:Mutex::new(Mode::Embedded(host)),history,database:PathBuf::from(":memory:"),directory,session,closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}))
     }
+    pub(crate) async fn surface_access(&self)->Result<SurfaceAccess,String> {
+        let original=self.instance()?;
+        let endpoint=dzc_host::controller::endpoint(&self.0.database).map_err(remote_error)?;
+        let mut client=Client::control(&endpoint,ClientRole::Desktop).await.map_err(remote_error)?;
+        if client.hello.state.service_instance_id!=original || self.instance()?!=original {return Err("ClipboardHostInstanceChanged".into());}
+        let capabilities:CapabilityReport=client.call(Method::Capabilities,serde_json::json!({}),"CapabilityReport").await.map_err(remote_error)?;
+        if !capabilities.methods.iter().any(|method|method=="desktop.surface.copy") {return Err("SurfaceHostVersionMismatch".into());}
+        let initial_state:RuntimeState=client.call(Method::Health,serde_json::json!({}),"RuntimeState").await.map_err(remote_error)?;
+        if initial_state.service_instance_id!=original || self.instance()?!=original {return Err("ClipboardHostInstanceChanged".into());}
+        let grant:GrantResult=client.call(Method::ServiceGrant,GrantIssueParams{role:ClientRole::Surface,
+            permissions:vec!["history_read".into()],lifetime_ms:600_000},"GrantResult").await.map_err(remote_error)?;
+        let access=SurfaceAccess{bridge:self.clone(),client:tokio::sync::Mutex::new(client),endpoint:endpoint.address().to_string_lossy().into_owned(),grant:grant.grant,initial_state};
+        if let Err(error)=access.check(&access.initial_state).await {let _=access.revoke().await;return Err(error);}
+        Ok(access)
+    }
     pub fn start(app:&AppHandle) {
+        app.manage(crate::app::surface_supervisor::SurfaceSupervisor::default());
         let directory=app.state::<AppDataDir>().0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         let bridge=Self(Arc::new(Inner {mode:Mutex::new(Mode::Starting),history:app.state::<DbState>().history_service(),database:directory.join("clipboard.db"),directory,
             session:app.state::<SessionHistory>().0.clone(),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
@@ -250,6 +305,7 @@ impl DesktopHost {
         tauri::async_runtime::spawn(async move {if bridge.initialize().await.is_err() {bridge.set_mode(Mode::Unavailable);emit("clipboard-host-unavailable",());}});
     }
     fn set_mode(&self,mode:Mode) {
+        if let Some(app)=app() {crate::app::surface_supervisor::invalidate(app,"host_changed");}
         crate::app::commands::screenshot_cmd::clear_region_capture();
         if let Ok(mut current)=self.0.mode.lock() {*current=mode;}
     }
@@ -543,6 +599,7 @@ impl DesktopHost {
         Ok(())
     }
     async fn prepare_update(&self)->Result<(),String> {
+        if let Some(app)=app() {app.state::<crate::app::surface_supervisor::SurfaceSupervisor>().stop("update",true).await?;}
         let remote=self.embedded()?.is_none();
         let desired=if remote {
             let mut client=self.service_client().await?;

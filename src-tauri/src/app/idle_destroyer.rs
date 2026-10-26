@@ -262,6 +262,7 @@ pub fn notify_main_window_shown(app: &AppHandle) {
     mark_shown();
     EDGE_SHOW_PENDING.store(false, Ordering::Release);
     let _ = app.emit_to("main", "privacy-view-shown", ());
+    crate::app::surface_supervisor::notify_main_shown(app);
     if !FRONTEND_CATCHUP_PENDING.swap(false, Ordering::SeqCst) {
         return;
     }
@@ -797,6 +798,7 @@ pub fn show_main_window_when_ready<F>(app: &AppHandle, show: F)
 where
     F: FnOnce() + Send + 'static,
 {
+    crate::app::surface_supervisor::invalidate(app,"disabled");
     let request = begin_show_request();
     let needs_resume = app.get_webview_window("main")
         .is_some_and(|window| main_view_needs_resume(window.is_visible().unwrap_or(false), IS_HIDDEN.load(Ordering::Acquire)));

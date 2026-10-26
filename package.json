@@ -14,6 +14,8 @@
     "preview": "vite preview",
     "tauri:prepare-sidecars": "node scripts/prepare-tauri-sidecars.mjs",
     "release:set-version": "node scripts/set-release-version.mjs",
+    "surface:tokens": "node scripts/generate-surface-tokens.mjs",
+    "surface:build": "node scripts/build-surface.mjs",
     "flatpak:prepare": "node scripts/prepare-flatpak-root.mjs",
     "flatpak:build": "flatpak-builder --user --force-clean --repo=flatpak/repo flatpak/build flatpak/io.github.qiyuanhuakai.dezirclip.yml",
     "flatpak:bundle": "flatpak build-bundle flatpak/repo DezirClip.flatpak io.github.qiyuanhuakai.dezirclip",

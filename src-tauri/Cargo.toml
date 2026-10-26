@@ -48,7 +48,7 @@ arboard = { workspace = true }
 argon2 = { workspace = true }
 aes-gcm = { workspace = true }
 image = { workspace = true }
-tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
+tokio = { workspace = true, features = ["rt", "time", "sync", "macros", "process", "io-util"] }
 tauri-plugin-dialog = { workspace = true, optional = true }
 tauri-plugin-global-shortcut = { workspace = true, optional = true }
 window-vibrancy = { workspace = true, optional = true }

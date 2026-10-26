@@ -18,5 +18,7 @@ pub async fn complete_main_window_resume(window: WebviewWindow, request_id: u64,
         return Err("ClipboardHostInstanceChanged".into());
     }
     bridge.check_queue_state(&expected_host_instance_id, expected_epoch)?;
-    Ok(crate::app::idle_destroyer::mark_main_window_resume_ready(request_id))
+    let ready=crate::app::idle_destroyer::mark_main_window_resume_ready(request_id);
+    if ready {crate::app::surface_supervisor::notify_main_shown(window.app_handle());}
+    Ok(ready)
 }

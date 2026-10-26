@@ -277,6 +277,11 @@ pub fn save_setting(
     key: String,
     value: String,
 ) -> AppResult<()> {
+    if key=="app.quick_paste_renderer" && !matches!(value.as_str(),"tauri"|"mygo") {return Err(AppError::Validation("InvalidQuickPasteRenderer".into()));}
+    if key=="app.quick_paste_renderer" || key=="app.quick_paste_enabled" && value=="false" {
+        crate::app::surface_supervisor::stop_blocking(&app_handle,"disabled",true).map_err(AppError::Validation)?;
+        if let Some(window)=app_handle.get_webview_window("quick-paste") {window.hide()?;}
+    }
     persist_setting_with_legacy(&db_state, &key, &value)?;
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
     if key == "app.custom_background" {

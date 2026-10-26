@@ -64,7 +64,7 @@ fn run_window_tracking_loop() -> Result<(), Box<dyn std::error::Error>> {
                                 if let Ok(window_pid) =
                                     get_window_pid(&conn, active_window, net_wm_pid_atom)
                                 {
-                                    if window_pid != 0 && window_pid != our_pid {
+                                    if window_pid != 0 && window_pid != our_pid && !crate::infrastructure::surface_focus::is_managed_child(window_pid) {
                                         if let Ok(mut hwnd) = LAST_ACTIVE_HWND.lock() {
                                             *hwnd = active_window as usize;
                                         }
@@ -404,6 +404,18 @@ pub fn restore_last_focus() -> AppResult<()> {
     }
 
     activate_window_focus(window_id as usize)
+}
+
+pub(crate) fn surface_last_target()->usize {LAST_ACTIVE_HWND.lock().map(|value|*value).unwrap_or(0)}
+pub(crate) fn surface_active_window()->AppResult<usize> {
+    let (conn,screen)=x11rb::connect(None).map_err(|e|AppError::Internal(e.to_string()))?;
+    let atom=conn.intern_atom(false,b"_NET_ACTIVE_WINDOW").map_err(|e|AppError::Internal(e.to_string()))?.reply().map_err(|e|AppError::Internal(e.to_string()))?.atom;
+    get_active_window_id(&conn,conn.setup().roots[screen].root,atom).map(|id|id as usize).map_err(|e|AppError::Internal(e.to_string()))
+}
+pub(crate) fn surface_window_pid(window:usize)->AppResult<u32> {
+    let (conn,_)=x11rb::connect(None).map_err(|e|AppError::Internal(e.to_string()))?;
+    let atom=conn.intern_atom(false,b"_NET_WM_PID").map_err(|e|AppError::Internal(e.to_string()))?.reply().map_err(|e|AppError::Internal(e.to_string()))?.atom;
+    get_window_pid(&conn,u32::try_from(window).map_err(|e|AppError::Internal(e.to_string()))?,atom).map_err(|e|AppError::Internal(e.to_string()))
 }
 
 pub fn get_clipboard_source_app_info() -> AppResult<ActiveAppInfo> {

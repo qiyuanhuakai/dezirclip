@@ -11,3 +11,4 @@ pub mod window_manager;
 pub mod updater;
 pub mod build_info;
 pub mod ipc_host;
+pub mod surface_supervisor;

@@ -606,12 +606,14 @@ pub fn set_navigation_mode(active: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn notify_main_window_painted(app: AppHandle) -> Result<(), String> {
     idle_destroyer::mark_main_window_painted();
+    crate::app::surface_supervisor::notify_main_shown(&app);
     crate::app::auxiliary_windows::schedule_prewarm(app);
     Ok(())
 }
 
 #[tauri::command]
 pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
+    crate::app::surface_supervisor::invalidate(&app_handle,"disabled");
     let window = app_handle.get_webview_window("main").ok_or("MainWindowUnavailable")?;
     window.set_focusable(true).map_err(|error| error.to_string())?;
     #[cfg(windows)]

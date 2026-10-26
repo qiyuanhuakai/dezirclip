@@ -165,9 +165,12 @@ fn record_dispatch(id: i64) {
 #[tauri::command]
 pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
     super::capability_cmd::require_desktop_interaction()?;
+    if !app.state::<crate::app_state::SettingsState>().quick_paste_enabled.load(Ordering::Acquire) {return Err("QuickPasteDisabled".into());}
+    if show_surface(&app,false).await? {return Ok(());}
+    let ticket=crate::app::surface_supervisor::route_ticket(&app);
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, _created| {
-            show_quick_paste_window(&app, window)
+            show_quick_paste_window(&app, window,ticket)
         })
     })
     .await
@@ -178,12 +181,15 @@ pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
 /// hotkey presses during creation still open and then close the overlay.
 pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
     super::capability_cmd::require_desktop_interaction()?;
+    if !app.state::<crate::app_state::SettingsState>().quick_paste_enabled.load(Ordering::Acquire) {return Err("QuickPasteDisabled".into());}
+    if show_surface(&app,true).await? {return Ok(());}
+    let ticket=crate::app::surface_supervisor::route_ticket(&app);
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, created| {
             if !created && window.is_visible().unwrap_or(false) {
                 hide_quick_paste(app.clone())
             } else {
-                show_quick_paste_window(&app, window)
+                show_quick_paste_window(&app, window,ticket)
             }
         })
     })
@@ -191,7 +197,26 @@ pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
     .map_err(|err| format!("Quick-paste toggle worker failed: {err}"))?
 }
 
-fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<(), String> {
+async fn show_surface(app:&AppHandle,toggle:bool)->Result<bool,String> {
+    use crate::app::surface_supervisor::{self,SurfaceSupervisor};
+    if !surface_supervisor::enabled(app) {return Ok(false);}
+    let manager=app.state::<SurfaceSupervisor>();
+    let closing=toggle && manager.is_open();
+    let result=if closing {manager.hide().await}else{manager.show(app).await};
+    if result.is_ok() {return Ok(true);}
+    if result.as_ref().is_err_and(|error|error=="SurfaceDisplayCancelled") {return Ok(true);}
+    if result.as_ref().is_err_and(|error|error=="SurfaceFocusChanged") {let _=manager.stop("disabled",true).await;return Ok(true);}
+    manager.record_failure("renderer_unavailable");
+    let _=manager.stop("disabled",true).await;
+    // A failed managed stop must not create a second, competing input surface.
+    if manager.running() {return Err("SurfaceExitUnconfirmed".into());}
+    if closing {return Ok(true);}
+    let _=app.emit("quick-paste-renderer-unavailable","mygo");
+    Ok(false)
+}
+
+fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket:u64) -> Result<(), String> {
+    if !crate::app::surface_supervisor::route_current(app,ticket) {return Err("QuickPasteRequestCancelled".into());}
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
     if let Ok(cursor) = window.cursor_position() {
         let cursor_x = cursor.x.round() as i32;
@@ -227,6 +252,7 @@ fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Re
     let _ = window.set_always_on_top(true);
     let _ = window.set_focusable(true);
     crate::app::webview_memory::restore_window_memory(window, "quick-paste-show");
+    if !crate::app::surface_supervisor::route_current(app,ticket) {return Err("QuickPasteRequestCancelled".into());}
     window
         .show()
         .map_err(|e| format!("Failed to show quick-paste window: {e}"))?;
@@ -251,6 +277,7 @@ fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Re
 /// global hotkey without worrying about a teardown race.
 #[tauri::command]
 pub fn hide_quick_paste(app: AppHandle) -> Result<(), String> {
+    crate::app::surface_supervisor::hide_blocking(&app)?;
     match app.get_webview_window(QUICK_PASTE_LABEL) {
         Some(window) => {
             crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
@@ -269,10 +296,17 @@ pub fn hide_quick_paste(app: AppHandle) -> Result<(), String> {
 /// window is missing (treated identically to "hidden").
 #[tauri::command]
 pub fn is_quick_paste_visible(app: AppHandle) -> bool {
+    if app.try_state::<crate::app::surface_supervisor::SurfaceSupervisor>().is_some_and(|manager|manager.visible()) {return true;}
     let raw = app
         .get_webview_window(QUICK_PASTE_LABEL)
         .and_then(|w| w.is_visible().ok());
     resolve_visibility_flag(raw)
+}
+
+#[tauri::command]
+pub fn get_quick_paste_surface_status(app:AppHandle,window:tauri::WebviewWindow)->Result<crate::app::surface_supervisor::SurfaceStatus,String> {
+    if window.label()!="main" {return Err("MainWindowRequired".into());}
+    app.state::<crate::app::surface_supervisor::SurfaceSupervisor>().status(&app)
 }
 
 /// Paste a stored entry by id. The actual clipboard write + keystroke

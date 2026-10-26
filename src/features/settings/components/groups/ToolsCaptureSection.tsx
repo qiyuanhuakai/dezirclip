@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type ComponentType, type ReactNode } 
 import { invoke } from "@tauri-apps/api/core";
 import { Camera } from "lucide-react";
 import HotkeyRecorder from "../HotkeyRecorder";
+import QuickPasteRendererSetting from "./QuickPasteRendererSetting";
 
 interface LabelWithHintProps {
     readonly label: string;
@@ -20,6 +21,7 @@ interface ToolsCaptureSectionProps {
     readonly quickPasteEnabled: boolean;
     readonly setQuickPasteEnabled: (val: boolean) => void;
     readonly quickPasteHotkey: string;
+    readonly quickPasteRenderer: string;
     readonly ocrEnabled: boolean;
     readonly setOcrEnabled: (val: boolean) => void;
     readonly saveAppSetting: (key: string, val: string) => void;
@@ -65,6 +67,7 @@ const ToolsCaptureSection = ({
     quickPasteEnabled,
     setQuickPasteEnabled,
     quickPasteHotkey: initialQuickPasteHotkey,
+    quickPasteRenderer,
     ocrEnabled,
     setOcrEnabled,
     saveAppSetting,
@@ -136,6 +139,7 @@ const ToolsCaptureSection = ({
                 <label className="switch"><input className="cb" type="checkbox" checked={quickPasteEnabled} onChange={(e) => { setQuickPasteEnabled(e.target.checked); saveAppSetting("quick_paste_enabled", String(e.target.checked)); }} /><div className="toggle"><div className="left" /><div className="right" /></div></label>
             </div>
             {quickPasteEnabled && <HotkeyRecorder t={t} labelKey="quick_paste_hotkey_label" hotkey={quickPasteHotkey} recording={isRecordingQuickPaste} setRecording={setIsRecordingQuickPaste} onHotkeyChange={updateQuickPasteHotkey} />}
+            {quickPasteEnabled && <QuickPasteRendererSetting t={t} renderer={quickPasteRenderer} />}
             </NativeFeatureBoundary>
             <div className="setting-item">
                 <LabelWithHint label={t("ocr_enabled")} hintKey="ocr_enabled" />

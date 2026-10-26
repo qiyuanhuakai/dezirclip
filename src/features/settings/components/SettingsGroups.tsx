@@ -270,6 +270,7 @@ const SettingsGroups = ({
                     quickPasteEnabled={quickPasteEnabled}
                     setQuickPasteEnabled={setQuickPasteEnabled}
                     quickPasteHotkey={settings.appSettings?.["app.quick_paste_hotkey"] || "Ctrl+Shift+V"}
+                    quickPasteRenderer={settings.appSettings?.["app.quick_paste_renderer"] || "tauri"}
                     ocrEnabled={ocrEnabled}
                     setOcrEnabled={setOcrEnabled}
                     saveAppSetting={saveAppSetting}
