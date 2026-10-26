@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented, verifyNativePanel, verifyMainDestroyed } from './native-windows-surface.mjs';
+import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented, verifyNativePanel, verifyMainDestroyed, mainBridgeReady } from './native-windows-surface.mjs';
 
 const source = 'a'.repeat(40);
 const expected = { component_version: '0.2.0-alpha.5', source_revision: source, source_state: 'verified_checkout',
@@ -90,4 +90,25 @@ test('a destroyed-main run validates the native helper independently without syn
   assert.equal(verifyNativePanel(observation, helper, 20).hwnd, 30);
   assert.throws(() => verifyNativePanel(observation, helper, 21));
   assert.throws(() => verifyNativePanel({ ...observation, foreground: { pid: 10 } }, helper));
+});
+
+test('a discovered main URL is not ready before the real Tauri IPC function and document exist', () => {
+  const loaded = { href: 'http://tauri.localhost/', ready_state: 'interactive', invoke_type: 'function' };
+  assert.equal(mainBridgeReady(loaded), true);
+  assert.equal(mainBridgeReady({ ...loaded, href: 'tauri://localhost/index.html', ready_state: 'complete' }), true);
+  for (const patch of [{ invoke_type: 'undefined' }, { invoke_type: 'object' }, { ready_state: 'loading' },
+    { href: 'about:blank' }, { href: 'http://localhost/' }, { href: 'https://example.com/' },
+    { href: 'http://tauri.localhost/?window=quick-paste' }, { href: 'http://user@tauri.localhost/' }]) {
+    assert.equal(mainBridgeReady({ ...loaded, ...patch }), false);
+  }
+  assert.equal(mainBridgeReady(undefined), false);
+});
+
+test('the observed initial navigation sequence waits for IPC rather than accepting its first main target', () => {
+  const snapshots = [
+    { href: 'about:blank', ready_state: 'complete', invoke_type: 'undefined' },
+    { href: 'http://tauri.localhost/', ready_state: 'loading', invoke_type: 'undefined' },
+    { href: 'http://tauri.localhost/', ready_state: 'interactive', invoke_type: 'function' },
+  ];
+  assert.equal(snapshots.findIndex(mainBridgeReady), 2);
 });

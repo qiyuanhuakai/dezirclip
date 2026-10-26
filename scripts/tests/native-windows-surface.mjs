@@ -91,6 +91,13 @@ export function verifyMainDestroyed(observation, desktopPid, originalHwnd) {
     'The original main HWND must be destroyed and no replacement main may exist');
 }
 
+export function mainBridgeReady(snapshot) {
+  return snapshot?.invoke_type === 'function' && ['interactive', 'complete'].includes(snapshot.ready_state)
+    && typeof snapshot.href === 'string' && mainWebviewTargets([
+      { type: 'page', url: snapshot.href, webSocketDebuggerUrl: 'observed-main-context' },
+    ]).length === 1;
+}
+
 function regular(file) {
   const stat = lstatSync(file);
   assert(stat.isFile() && !stat.isSymbolicLink(), 'A regular source file is required');
@@ -239,6 +246,7 @@ class NativeChannel extends LoggedProcess {
 
 class Bridge {
   async connect(port, observations) {
+    const started = performance.now(), deadline = started + 45000;
     const target = await poll('Actual main WebView', async () => {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1500) });
       assert.equal(response.status, 200);
@@ -246,14 +254,14 @@ class Bridge {
       observations.push({ stage: 'CDP-discovery', targets: value });
       assert(targets.length <= 1, 'More than one main WebView');
       return targets[0];
-    }, 45000);
+    }, Math.max(1, deadline - performance.now()));
     const url = new URL(target.webSocketDebuggerUrl);
     assert.equal(url.protocol, 'ws:'); assert(['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname));
     assert.equal(Number(url.port), port);
     this.socket = new WebSocket(url);
     this.pending = new Map(); this.sequence = 0;
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Actual CDP connection timed out')), 10000);
+      const timeout = setTimeout(() => reject(new Error('Actual CDP connection timed out')), Math.max(1, Math.min(10000, deadline - performance.now())));
       this.socket.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
       this.socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Actual CDP connection failed')); }, { once: true });
     });
@@ -262,11 +270,33 @@ class Bridge {
       if (pending) { this.pending.delete(response.id); clearTimeout(pending.timeout); response.error ? pending.reject(new Error(JSON.stringify(response.error))) : pending.resolve(response.result); }
     });
     this.socket.addEventListener('close', () => { for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(new Error('Actual CDP connection closed')); } this.pending.clear(); });
+    let readinessCount = 0;
+    await poll('Actual main Tauri IPC readiness', async () => {
+      assert(++readinessCount <= 384, 'Actual main readiness observation bound exceeded');
+      const observation = { stage: 'CDP-main-readiness', elapsed_ms_since_connect: performance.now() - started };
+      try {
+        const remaining = deadline - performance.now();
+        assert(remaining > 0, 'Actual main readiness deadline exceeded');
+        const result = await this.command('Runtime.evaluate', {
+          expression: '({href:location.href,ready_state:document.readyState,invoke_type:typeof window.__TAURI_INTERNALS__?.invoke})',
+          returnByValue: true,
+        }, Math.max(1, Math.min(2000, remaining)));
+        if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+        const snapshot = result.result?.value;
+        observation.snapshot = snapshot;
+        observations.push(observation);
+        return mainBridgeReady(snapshot) ? snapshot : null;
+      } catch (error) {
+        observation.error = String(error.message ?? error).slice(0, 2048);
+        observations.push(observation);
+        return null;
+      }
+    }, Math.max(1, deadline - performance.now()));
   }
-  command(method, params) {
+  command(method, params, milliseconds = 20000) {
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error('Actual CDP operation timed out')); }, 20000);
+      const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error('Actual CDP operation timed out')); }, milliseconds);
       this.pending.set(id, { resolve, reject, timeout }); this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
