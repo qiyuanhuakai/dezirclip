@@ -371,6 +371,50 @@ mod tests {
     }
 
     #[test]
+    fn real_capture_mixed_html_survives_summary_and_thumbnail_reads() {
+        use base64::Engine as _;
+        use crate::api::{HistoryQuery, PrivacyAccessIntent, SensitiveAccess};
+        let (directory, state) = database();
+        state.conn.lock().unwrap().execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.privacy_protection','false')", []).unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(2, 2, image::Rgba([31, 71, 113, 255])))
+            .write_to(&mut png, image::ImageFormat::Png).unwrap();
+        let data = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.into_inner()));
+        let html = format!("<p>Known mixed text</p><img src='{data}'><!--TIEZ_RICH_IMAGE:{data}-->");
+        let session = Mutex::new(VecDeque::new());
+        let context = context(&session);
+        let store = state.capture_store(&directory);
+        let frame = CaptureFrame { data: CaptureData::RichText { text: "Known mixed text".into(), html }, metadata: CaptureReadMetadata::default() };
+        let CaptureOutcome::Stored(captured) = authorized_frame(&context, frame, &store, &mut ()) else { panic!("mixed capture should commit"); };
+        let history = crate::api::HistoryService::open(&directory.join("clipboard.db")).unwrap();
+        let summaries = history.query(&HistoryQuery { limit: 50, metadata: true, ..Default::default() }).unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].id, captured.entry.id);
+        assert_eq!(summaries[0].content, "");
+        assert_eq!(summaries[0].html_content.as_deref(), Some(""));
+        let now = chrono::Utc::now().timestamp_millis();
+        let permit = history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied, None, now).unwrap();
+        for _ in 0..2 {
+            let preview = history.get_entry_thumbnail_authorized(captured.entry.id, &permit, now, 560).unwrap().unwrap();
+            assert_eq!(preview.content, "Known mixed text");
+            let html = preview.html_content.unwrap();
+            assert!(html.contains("<p>Known mixed text</p>"));
+            assert!(html.contains("<img src='data:image/png;base64,"));
+            assert!(html.contains("<!--TIEZ_RICH_IMAGE:data:image/png;base64,"));
+            assert!(!html.contains(directory.to_string_lossy().as_ref()));
+            let copy = history.privacy().authorize_selected_copy(captured.entry.id, None, SensitiveAccess::Denied, Some(permit.epoch()), now).unwrap();
+            let crate::ports::ClipboardPayload::Html { text, html } = history.clipboard_payload_authorized(captured.entry.id, &copy, now).unwrap()
+                else { panic!("mixed record must keep its authorized HTML export"); };
+            assert_eq!(text, "Known mixed text");
+            assert!(html.contains("<p>Known mixed text</p>"));
+            assert!(html.contains("<img src="));
+            history.increment_use_count(captured.entry.id).unwrap();
+        }
+        drop(store); drop(history); drop(state);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn real_capture_deduplicates_stable_html_assets_and_preserves_existing_ocr() {
         let (directory, state) = database();
         let session = Mutex::new(VecDeque::new());

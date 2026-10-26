@@ -11,6 +11,7 @@ import type { PreviewRequest } from "./compactPreviewProtocol";
 import { isRamImageSource, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getRichPreviewData } from "../../../shared/lib/richPreviewState";
+import { richPreviewPresentation } from "../../../shared/lib/richPreviewPresentation";
 import { applyModeClass, applyThemeClass } from "../../../shared/lib/themeRuntime";
 import { useBackendAppearance } from "../../../shared/hooks/useBackendAppearance";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
@@ -162,7 +163,11 @@ const CompactPreviewWindow = () => {
     const lastSentSizeRef = useRef<{ requestId: string; width: number; height: number } | null>(null);
     const richPreviewData = useMemo(() => getRichPreviewData(payload), [payload?.contentType, payload?.htmlContent]);
     const richImageFallbackSrc = richPreviewData.imageSrc;
-    const richTextSnapshotHtml = richPreviewData.cleanHtml || payload?.htmlContent || "";
+    const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
+    const richPresentation = useMemo(() => richPreviewPresentation(richPreviewData.cleanHtml, effectiveRichImageFallbackSrc),
+        [richPreviewData.cleanHtml, effectiveRichImageFallbackSrc]);
+    const richTextSnapshotHtml = (richPreviewData.cleanHtml || payload?.htmlContent || "")
+        + (richPresentation.appendFallback ? `<img src="${effectiveRichImageFallbackSrc}" alt="">` : "");
     const richTextSnapshotSrc = useMemo(() => {
         if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
         if (!payload.richTextSnapshotPreview) return null;
@@ -172,8 +177,7 @@ const CompactPreviewWindow = () => {
         });
     }, [payload?.contentType, payload?.htmlContent, payload?.richTextSnapshotPreview, richTextSnapshotHtml]);
     const effectiveRichTextSnapshotSrc = snapshotFailed ? null : richTextSnapshotSrc;
-    const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
-    const useSnapshotPreviewImage = !effectiveRichImageFallbackSrc && !!effectiveRichTextSnapshotSrc;
+    const useSnapshotPreviewImage = !(effectiveRichImageFallbackSrc && !richPresentation.html) && !!effectiveRichTextSnapshotSrc;
 
     useEffect(() => {
         document.body.classList.add("compact-preview");
@@ -245,7 +249,7 @@ const CompactPreviewWindow = () => {
             if (Array.from(container.querySelectorAll("img")).some(image => !image.complete)) return;
             if (Array.from(container.querySelectorAll("video")).some(video => video.readyState < 1 && !video.error)) return;
             const bounds = previewBoundsRef.current;
-            const width = Math.min(Math.max(Math.ceil(container.scrollWidth), Math.min(320, bounds.width)), bounds.width);
+            const width = Math.min(Math.max(Math.ceil(container.getBoundingClientRect().width), Math.min(320, bounds.width)), bounds.width);
             const height = Math.min(Math.max(Math.ceil(container.offsetHeight), 80), bounds.height);
             const last = lastSentSizeRef.current;
             if (last?.requestId === payload.requestId && last.width === width && last.height === height) return;
@@ -349,7 +353,7 @@ const CompactPreviewWindow = () => {
             );
         }
         if (payload.contentType === "rich_text" && payload.htmlContent) {
-            if (effectiveRichImageFallbackSrc) {
+            if (effectiveRichImageFallbackSrc && !richPresentation.html) {
                 compactPreviewLog("render rich_text as fallback image");
                 return (
                     <img
@@ -411,11 +415,12 @@ const CompactPreviewWindow = () => {
                 );
             }
             return (
-                <HtmlContent
+                <><HtmlContent
                     className="rich-text-preview"
                     htmlContent={richPreviewData.cleanHtml || payload.htmlContent}
                     fallbackText={payload.preview || payload.content}
                     preview={false}
+                    eager
                     style={{
                         // Keep a single scrollbar on .popover-content to avoid nested scrollbars.
                         maxHeight: "none",
@@ -423,11 +428,13 @@ const CompactPreviewWindow = () => {
                         fontSize: "var(--clipboard-item-font-size)",
                         lineHeight: "1.5"
                     }}
-                />
+                />{richPresentation.appendFallback && effectiveRichImageFallbackSrc && <img
+                    className="rich-text-fallback-image" src={effectiveRichImageFallbackSrc} alt=""
+                    onLoad={() => requestResizeRef.current?.()} onError={() => setRichImageFallbackFailed(true)} />}</>
             );
         }
         return payload.content || payload.preview || "";
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, pinned, zoom]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, richPreviewData.cleanHtml, richPresentation, pinned, zoom]);
 
     const request = payload ?? lastRequest.current;
     const language = request?.language ?? "zh";
@@ -451,7 +458,7 @@ const CompactPreviewWindow = () => {
         <div className="compact-preview-root" onMouseEnter={() => pointer(true)} onMouseLeave={() => pointer(false)}>
             <div
                 ref={containerRef}
-                className={`compact-popover-portal compact-preview-window ${payload?.theme || ""} ${payload?.contentType === "image" ? "compact-preview-image" : ""} ${payload?.contentType === "image" || payload?.contentType === "video" || !!effectiveRichImageFallbackSrc ? "compact-preview-media" : ""} ${payload?.colorMode === "dark" ? "dark-mode" : ""}`}
+                className={`compact-popover-portal compact-preview-window ${payload?.theme || ""} ${payload?.contentType === "image" ? "compact-preview-image" : ""} ${payload?.contentType === "image" || payload?.contentType === "video" || (!!effectiveRichImageFallbackSrc && !richPresentation.html) ? "compact-preview-media" : ""} ${payload?.colorMode === "dark" ? "dark-mode" : ""}`}
             >
                 <PreviewToolbar pinned={pinned} pinPending={pinPending} opacity={opacity} image={pinned && payload?.contentType === "image"}
                     zoom={zoom} fitZoom={fitZoom} language={language} onOpacityChange={saveOpacity} onZoomChange={setZoom}
