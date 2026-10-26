@@ -173,10 +173,14 @@ pub async fn search_clipboard_history(
     let limit = normalize_limit(limit);
     let bridge=app.state::<DesktopHost>();
     if let Some(entries)=bridge.page(limit,0,None,Some(search_term.clone())).await.map_err(AppError::Validation)? {return Ok(entries);}
-    let mut history = state.history_service().search(&search_term, limit)?;
+    search_embedded_history(&state.history_service(),&session,&bridge,&search_term,limit)
+}
+
+fn search_embedded_history(repository:&dzc_core::api::HistoryService,session:&SessionHistory,bridge:&DesktopHost,search_term:&str,limit:i32)->AppResult<Vec<HostedEntry>> {
+    let mut history = repository.search(search_term, limit)?;
 
     let term = search_term.to_lowercase();
-    let session_items = session.inner().0.lock().unwrap();
+    let session_items = session.0.lock().unwrap();
     for item in session_items.iter().rev() {
         let matches = item.content.to_lowercase().contains(&term)
             || item.source_app.to_lowercase().contains(&term)
@@ -188,13 +192,14 @@ pub async fn search_clipboard_history(
             }
         }
     }
+    drop(session_items);
 
     history.sort_by(|a, b| b.timestamp.cmp(&a.timestamp).then_with(|| b.id.cmp(&a.id)));
     if history.len() > limit as usize {
         history.truncate(limit as usize);
     }
 
-    state.history_service().entries_for_gui(&mut history,false,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    repository.entries_for_gui(&mut history,false,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
     history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
@@ -632,5 +637,27 @@ mod capture_summary_tests {
             .to_string();
         assert!(error.ends_with("CapturedEntryReadFailed"));
         assert!(!error.contains("clipboard_history"));
+    }
+    #[test]
+    fn embedded_nonempty_search_hosted_identity_and_following_capture_do_not_relock_ram() {
+        let history=repository();history.save(&entry(0),None).unwrap();
+        let session=SessionHistory(Arc::new(dzc_core::api::SessionHistoryStore::new(VecDeque::from([entry(-1)]))));
+        let bridge=DesktopHost::synthetic_fixture(history.clone(),session.0.clone());
+        let (send,receive)=std::sync::mpsc::channel();
+        let worker=std::thread::spawn(move|| {
+            // Identity remains readable while this caller owns the RAM guard.
+            let rows=session.0.lock().unwrap();let instance=bridge.instance().unwrap();
+            let tagged=bridge.hosted(rows[0].clone()).unwrap();assert_eq!(tagged.host_instance_id.as_deref(),Some(instance.as_str()));drop(rows);
+            let found=search_embedded_history(&history,&session,&bridge,"body",100).unwrap();
+            assert_eq!(found.len(),2);assert!(found.iter().any(|row|row.id<0));assert!(found.iter().any(|row|row.id>0));
+            assert!(found.iter().all(|row|row.host_instance_id.as_deref()==Some(instance.as_str())));
+            use dzc_core::capture::*;
+            let before=session.0.revision().unwrap();let directory=std::env::temp_dir();let store=history.capture_store(&directory);let now=chrono::Utc::now().timestamp_millis();
+            let context=CaptureContext{source:CaptureSource{app_name:"synthetic".into(),process_path:None},timestamp:now,settings:CaptureSettings::default(),session:&session.0,paused:false,sequential_echo:None};
+            let frame=CaptureFrame{data:CaptureData::Text("capture after embedded search".into()),metadata:CaptureReadMetadata{privacy_ticket:store.capture_ticket(now).unwrap(),..Default::default()}};
+            assert!(matches!(CaptureEngine::capture_frame(&context,frame,&store,&mut ()),CaptureOutcome::Stored(_)));
+            assert!(session.0.revision().unwrap()>before);send.send(()).unwrap();
+        });
+        receive.recv_timeout(std::time::Duration::from_secs(5)).expect("embedded search must release RAM and the Desktop mode lock");worker.join().unwrap();
     }
 }

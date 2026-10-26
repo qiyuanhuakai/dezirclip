@@ -101,6 +101,8 @@ impl Host {
         Ok(())
     }
     pub fn grants(&self) -> &GrantAuthority { &self.grants }
+    /// Immutable identity needs no history/database locks or state observation.
+    pub fn instance_id(&self)->&str {&self.instance}
     #[cfg(test)]
     pub(crate) fn waiting_subscriptions(&self) -> usize { self.events.waiters() }
     pub fn is_stopping(&self) -> bool { self.stop_requested.load(Ordering::Acquire) }
