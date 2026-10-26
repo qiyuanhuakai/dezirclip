@@ -390,13 +390,40 @@ export async function runSurfaceAcceptance(args, env = process.env) {
     assert(Number.isSafeInteger(id) && id !== 0 && Number.isSafeInteger(otherId) && id !== otherId);
     report.synthetic_entries = [{ id, content: body }, { id: otherId, content: other }];
     await bridge.invoke('save_setting', { key: 'app.quick_paste_renderer', value: 'mygo' });
+    await stage('mygo_releases_unused_tauri_webview', async () => {
+      return poll('Unused Tauri Quick Paste WebView released', async () => {
+        const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1500) });
+        assert.equal(response.status, 200);
+        const targets = await response.json(); assert(Array.isArray(targets));
+        report.observations.push({ stage: 'CDP-unused-tauri-overlay', targets });
+        assert.equal(mainWebviewTargets(targets).length, 1, 'The existing main WebView must remain alive');
+        const quickPasteTargets = targets.filter(target => {
+          try { return target.type === 'page' && new URL(target.url).searchParams.get('window') === 'quick-paste'; }
+          catch { return false; }
+        });
+        return quickPasteTargets.length === 0 ? { targets, unused_quick_paste_webview_count: 0 } : null;
+      });
+    });
     let first;
     const activateAndShow = async (expectedPid = null) => {
       await native.request('activate-target'); const started = performance.now();
       await native.request('keys', { role: 'target', key: 'hotkey' });
+      let attempts = 0;
       const evidence = await poll('Actual native Quick Paste', async () => {
-        const status = await bridge.invoke('get_quick_paste_surface_status'), observation = await native.request('observe');
-        try { return { ...verifyPresented(status, observation, helper, expectedPid), status, observation }; } catch { return null; }
+        let status, observation;
+        try {
+          status = await bridge.invoke('get_quick_paste_surface_status'); observation = await native.request('observe');
+          return { ...verifyPresented(status, observation, helper, expectedPid), status, observation };
+        } catch (error) {
+          assert(++attempts <= 128, 'Native show failure diagnostic bound exceeded');
+          report.observations.push({ stage: 'native-show-pending', expected_pid: expectedPid, attempt: attempts,
+            elapsed_ms: performance.now() - started, status, error: String(error.message ?? error).slice(0, 1024),
+            helper_processes: observation?.processes.filter(item => normalized(item.image) === normalized(helper))
+              .map(({ pid, running, exit_code, creation_time_100ns }) => ({ pid, running, exit_code, creation_time_100ns })),
+            helper_windows: observation?.windows.filter(window => observation.processes.some(item => item.pid === window.pid
+              && normalized(item.image) === normalized(helper))), foreground: observation?.foreground });
+          return null;
+        }
       });
       evidence.observed_hotkey_to_native_visible_ms = performance.now() - started;
       evidence.first_interactive_frame_measured = false; return evidence;

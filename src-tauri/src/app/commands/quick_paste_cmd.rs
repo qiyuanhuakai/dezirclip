@@ -166,8 +166,7 @@ fn record_dispatch(id: i64) {
 pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
     super::capability_cmd::require_desktop_interaction()?;
     if !app.state::<crate::app_state::SettingsState>().quick_paste_enabled.load(Ordering::Acquire) {return Err("QuickPasteDisabled".into());}
-    if show_surface(&app,false).await? {return Ok(());}
-    let ticket=crate::app::surface_supervisor::route_ticket(&app);
+    let Some(ticket)=show_surface(&app,false).await? else {return Ok(());};
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, _created| {
             show_quick_paste_window(&app, window,ticket)
@@ -182,8 +181,7 @@ pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
 pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
     super::capability_cmd::require_desktop_interaction()?;
     if !app.state::<crate::app_state::SettingsState>().quick_paste_enabled.load(Ordering::Acquire) {return Err("QuickPasteDisabled".into());}
-    if show_surface(&app,true).await? {return Ok(());}
-    let ticket=crate::app::surface_supervisor::route_ticket(&app);
+    let Some(ticket)=show_surface(&app,true).await? else {return Ok(());};
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, created| {
             if !created && window.is_visible().unwrap_or(false) {
@@ -197,22 +195,21 @@ pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
     .map_err(|err| format!("Quick-paste toggle worker failed: {err}"))?
 }
 
-async fn show_surface(app:&AppHandle,toggle:bool)->Result<bool,String> {
+async fn show_surface(app:&AppHandle,toggle:bool)->Result<Option<u64>,String> {
     use crate::app::surface_supervisor::{self,SurfaceSupervisor};
-    if !surface_supervisor::enabled(app) {return Ok(false);}
+    if !surface_supervisor::enabled(app) {return Ok(Some(surface_supervisor::route_ticket(app)));}
     let manager=app.state::<SurfaceSupervisor>();
     let closing=toggle && manager.is_open();
-    let result=if closing {manager.hide().await}else{manager.show(app).await};
-    if result.is_ok() {return Ok(true);}
-    if result.as_ref().is_err_and(|error|error=="SurfaceDisplayCancelled") {return Ok(true);}
-    if result.as_ref().is_err_and(|error|error=="SurfaceFocusChanged") {let _=manager.stop("disabled",true).await;return Ok(true);}
-    manager.record_failure("renderer_unavailable");
-    let _=manager.stop("disabled",true).await;
-    // A failed managed stop must not create a second, competing input surface.
-    if manager.running() {return Err("SurfaceExitUnconfirmed".into());}
-    if closing {return Ok(true);}
-    let _=app.emit("quick-paste-renderer-unavailable","mygo");
-    Ok(false)
+    let mut request=manager.begin_request()?;
+    let result=if closing {manager.hide_request(&mut request).await}else{manager.show_request(app,&mut request).await};
+    match result {
+        Ok(())=>Ok(None),
+        Err(error)=>{
+            let ticket=manager.failed_request(&request,&error,closing).await?;
+            if ticket.is_some() {let _=app.emit("quick-paste-renderer-unavailable","mygo");}
+            Ok(ticket)
+        }
+    }
 }
 
 fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket:u64) -> Result<(), String> {

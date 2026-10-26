@@ -137,6 +137,10 @@ fn can_prewarm(app: &AppHandle) -> bool {
         && app.get_webview_window("main").is_some()
 }
 
+fn uses_webview_overlay(label: &str, mygo_selected: bool) -> bool {
+    label != "quick-paste" || !mygo_selected
+}
+
 fn prewarm_enabled_windows(app: &AppHandle) {
     for label in ["quick-paste", "region-select"] {
         let enabled = app
@@ -146,7 +150,8 @@ fn prewarm_enabled_windows(app: &AppHandle) {
                 _ => settings.screenshot_enabled.load(Ordering::Relaxed),
             })
             .unwrap_or(false);
-        if !enabled || !can_prewarm(app) {
+        if !enabled || !can_prewarm(app)
+            || !uses_webview_overlay(label, crate::app::surface_supervisor::enabled(app)) {
             continue;
         }
         let _guard = match WINDOW_OPERATIONS.lock() {
@@ -155,6 +160,10 @@ fn prewarm_enabled_windows(app: &AppHandle) {
         };
         if !can_prewarm(app) {
             return;
+        }
+        // The selected renderer may change while creation waits for this lock.
+        if !uses_webview_overlay(label, crate::app::surface_supervisor::enabled(app)) {
+            continue;
         }
         if app.get_webview_window(label).is_none() {
             match build_window(app, label) {
@@ -250,6 +259,22 @@ pub fn destroy_windows(
             return;
         }
     };
+    destroy_windows_locked(app, labels, keep_visible, idle_grace_seconds);
+}
+
+/// Release a previously warmed fallback after selecting MyGo. A fallback
+/// already shown by a newer request keeps its normal idle lifetime.
+pub fn release_unused_quick_paste(app: AppHandle) {
+    std::thread::spawn(move || {
+        let Ok(_guard) = WINDOW_OPERATIONS.lock() else { return };
+        if crate::app::surface_supervisor::enabled(&app) {
+            destroy_windows_locked(&app, &["quick-paste"], true, 0);
+        }
+    });
+}
+
+// The caller holds WINDOW_OPERATIONS and runs off the main thread.
+fn destroy_windows_locked(app: &AppHandle, labels: &[&str], keep_visible: bool, idle_grace_seconds: u64) {
     for label in labels {
         let Some(window) = app.get_webview_window(label) else {
             continue;
@@ -289,8 +314,17 @@ pub fn destroy_windows(
 
 #[cfg(test)]
 mod tests {
-    use super::{append_instance_query, should_collect, wait_for_instance_ready, AuxiliaryInstance, Ordering};
+    use super::{append_instance_query, should_collect, uses_webview_overlay, wait_for_instance_ready, AuxiliaryInstance, Ordering};
     use std::time::Duration;
+
+    #[test]
+    fn mygo_does_not_prewarm_a_second_renderer_or_discard_a_visible_fallback() {
+        assert!(!uses_webview_overlay("quick-paste", true));
+        assert!(uses_webview_overlay("quick-paste", false));
+        assert!(uses_webview_overlay("region-select", true));
+        assert!(should_collect(false, false, 9_000, 9_001, 0));
+        assert!(!should_collect(true, false, 9_000, 9_001, 0));
+    }
 
     #[test]
     fn timeout_allows_late_acknowledgement_and_a_recreated_window_requires_a_new_one() {

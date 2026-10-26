@@ -284,6 +284,9 @@ pub fn save_setting(
     }
     persist_setting_with_legacy(&db_state, &key, &value)?;
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
+    if key == "app.quick_paste_renderer" && value == "mygo" {
+        crate::app::auxiliary_windows::release_unused_quick_paste(app_handle.clone());
+    }
     if key == "app.custom_background" {
         let _ = app_handle.emit("custom-background-changed", &value);
     }

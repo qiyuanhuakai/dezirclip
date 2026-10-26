@@ -29,6 +29,13 @@ use tokio::{
     sync::{oneshot, Mutex as AsyncMutex},
 };
 const TIMEOUT: Duration = Duration::from_secs(5);
+const FOCUS_CANCEL_REASON: &str = "cancel";
+const SURFACE_ENV_KEYS: &[&str] = &[
+    "SystemRoot", "WINDIR", "PATH", "TEMP", "TMP", "HOME", "USERPROFILE",
+    "LOCALAPPDATA", "APPDATA", "DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS", "LANG", "LC_ALL",
+    "FONTCONFIG_FILE", "FONTCONFIG_PATH",
+];
 type Reply = oneshot::Sender<SurfaceControlMessage>;
 
 #[derive(Default)]
@@ -55,6 +62,40 @@ struct Managed {
     process_identity: Mutex<Option<ManagedChild>>,
     event_pending: AtomicBool,
     dismiss_pending: AtomicBool,
+    request_revision: AtomicU64,
+}
+pub struct SurfaceRequest {
+    revision: u64,
+    owner: Option<Arc<Managed>>,
+    display: Option<String>,
+}
+impl SurfaceRequest {
+    fn bind(&mut self, owner: Option<Arc<Managed>>) -> Result<(), String> {
+        self.display = if let Some(process) = owner.as_ref() {
+            process.view.lock().map_err(error)?.display.as_ref().map(|display| display.id.clone())
+        } else {
+            None
+        };
+        self.owner = owner;
+        Ok(())
+    }
+}
+fn diagnostic_code(value: &str) -> &str {
+    match value {
+        "SurfaceFocusChanged" | "SurfaceDisplayCancelled" | "SurfaceFocusRestoreFailed"
+        | "SurfaceTargetChanged" | "SurfaceTargetUnavailable" | "SurfaceGeometryUnavailable"
+        | "SurfaceTransportUnavailable" | "SurfaceAcknowledgementRejected"
+        | "SurfaceAcknowledgementTimeout" | "SurfaceStaleAcknowledgement"
+        | "SurfaceRequestsBusy" | "SurfaceWriteTimeout" | "SurfaceReadTimeout"
+        | "SurfaceFrameTooLarge" | "SurfaceStartupUnavailable" | "SurfaceBuildMismatch"
+        | "SurfaceProcessAlreadyManaged" | "SurfaceProcessUnavailable" | "SurfaceProcessStateUnavailable"
+        | "SurfaceExitUnconfirmed" | "SurfaceHelperNotInstalled" | "SurfaceVerifiedBuildRequired"
+        | "SurfaceShutdownUnacknowledged" | "SurfaceGrantRevocationUnconfirmed" | "SurfaceTransportClosed"
+        | "host_unavailable" | "host_handshake_rejected" | "state_changed"
+        | "show_failed" | "show_rejected" | "resync_required" | "initialize_rejected"
+        | "hide_rejected" | "shutdown_rejected" | "action_timeout" => value,
+        _ => "unclassified",
+    }
 }
 #[derive(Serialize)]
 pub struct SurfaceStatus {
@@ -112,26 +153,7 @@ fn helper() -> Result<PathBuf, String> {
     Ok(path)
 }
 fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
-    [
-        "SystemRoot",
-        "WINDIR",
-        "PATH",
-        "TEMP",
-        "TMP",
-        "HOME",
-        "USERPROFILE",
-        "LOCALAPPDATA",
-        "APPDATA",
-        "DISPLAY",
-        "WAYLAND_DISPLAY",
-        "XDG_RUNTIME_DIR",
-        "DBUS_SESSION_BUS_ADDRESS",
-        "LANG",
-        "LC_ALL",
-        "FONTCONFIG_FILE",
-        "FONTCONFIG_PATH",
-    ]
-    .into_iter()
+    SURFACE_ENV_KEYS.iter().copied()
     .filter_map(|key| std::env::var_os(key).map(|value| (key.into(), value)))
     .collect()
 }
@@ -340,6 +362,22 @@ impl SurfaceSupervisor {
             .ok()
             .map(|_| next)
     }
+    fn claim_failure<T>(&self, revision: u64, owner: &Option<Arc<T>>, current: &Option<Arc<T>>) -> Option<u64> {
+        let matches = match (owner, current) {
+            (Some(owner), Some(current)) => Arc::ptr_eq(owner, current),
+            (None, None) => true,
+            _ => false,
+        };
+        if matches { self.claim_cancel(revision) } else { None }
+    }
+    fn request_current(&self, revision: u64) -> bool {
+        revision != u64::MAX && self.current_revision() == revision
+    }
+    pub fn begin_request(&self) -> Result<SurfaceRequest, String> {
+        let mut request = SurfaceRequest { revision: self.invalidate(), owner: None, display: None };
+        request.bind(self.current()?)?;
+        Ok(request)
+    }
     fn mark_hidden(&self, revision: u64) {
         let _ = self
             .visible
@@ -390,7 +428,7 @@ impl SurfaceSupervisor {
             Ok(())
         }
     }
-    async fn start(&self, app: &AppHandle) -> Result<Arc<Managed>, String> {
+    async fn start(&self, app: &AppHandle, request: &mut SurfaceRequest) -> Result<Arc<Managed>, String> {
         let expected = own_build()?;
         let executable = helper()?;
         let inspected = executable.clone();
@@ -449,7 +487,9 @@ impl SurfaceSupervisor {
             process_identity: Mutex::new(process_identity.ok()),
             event_pending: AtomicBool::new(false),
             dismiss_pending: AtomicBool::new(false),
+            request_revision: AtomicU64::new(request.revision),
         });
+        request.bind(Some(process.clone()))?;
         *self.process.lock().map_err(error)? = Some(process.clone());
         if let Some(stdout) = stdout {
             tauri::async_runtime::spawn(read_stdout(app.clone(), Arc::downgrade(&process), stdout));
@@ -458,7 +498,9 @@ impl SurfaceSupervisor {
             tauri::async_runtime::spawn(read_stderr(app.clone(), Arc::downgrade(&process), stderr));
         }
         if !initialized {
-            let _ = self.stop_current("disabled", true).await;
+            if self.stop_current("disabled", true).await.is_ok() {
+                request.bind(None)?;
+            }
             return Err("SurfaceStartupUnavailable".into());
         }
         let (locale, theme) = appearance(app);
@@ -488,13 +530,15 @@ impl SurfaceSupervisor {
         process.access.check(&ready.state).await?;
         Ok(process)
     }
-    pub async fn show(&self, app: &AppHandle) -> Result<(), String> {
-        let revision = self.invalidate();
+    pub async fn show_request(&self, app: &AppHandle, request: &mut SurfaceRequest) -> Result<(), String> {
+        let revision = request.revision;
         self.requested.fetch_max(revision, Ordering::AcqRel);
         // Capture before helper startup can create any native window.
         let target = Arc::new(Target::capture()?);
         let (rect, scale) = geometry(app)?;
         let _serial = self.serial.lock().await;
+        if !self.request_current(revision) { return Err("SurfaceDisplayCancelled".into()); }
+        request.bind(self.current()?)?;
         let existing = self.current()?;
         if let Some(process) = existing.as_ref() {
             let exhausted = process.view.lock().map_err(error)?.exhausted();
@@ -503,14 +547,17 @@ impl SurfaceSupervisor {
                 || exhausted
             {
                 self.stop_current("disabled", true).await?;
+                request.bind(None)?;
             }
         }
         let existing = self.current()?;
         let process = if let Some(process) = existing {
             process
         } else {
-            self.start(app).await?
+            self.start(app, request).await?
         };
+        request.bind(Some(process.clone()))?;
+        process.request_revision.store(revision, Ordering::Release);
         self.valid(&process, revision)?;
         let state = process.access.state().await?;
         self.valid(&process, revision)?;
@@ -527,6 +574,7 @@ impl SurfaceSupervisor {
             revision,
             shown: false,
         });
+        request.display = Some(display.clone());
         if let Some(main) = app.get_webview_window("main") {
             if main.is_visible().unwrap_or(false) {
                 crate::app::window_manager::hide_window_cmd(app.clone()).map_err(error)?;
@@ -596,20 +644,59 @@ impl SurfaceSupervisor {
         Ok(())
     }
     pub async fn hide(&self) -> Result<(), String> {
-        let revision = self.invalidate();
+        let mut request = self.begin_request()?;
+        self.hide_request(&mut request).await
+    }
+    pub async fn hide_request(&self, request: &mut SurfaceRequest) -> Result<(), String> {
+        let revision = request.revision;
         let _serial = self.serial.lock().await;
+        if !self.request_current(revision) { return Err("SurfaceDisplayCancelled".into()); }
         let process = self.current()?;
+        request.bind(process.clone())?;
         if let Some(process) = process {
-            let display = process.view.lock().map_err(error)?.cancel();
-            let target = process.target.lock().map_err(error)?.take();
+            process.request_revision.store(revision, Ordering::Release);
+            let display = process.view.lock().map_err(error)?.display.clone();
             if let Some(display) = display {
                 self.hide_display(&process, &display.id, "cancel").await?;
+                process.view.lock().map_err(error)?.cancel_matching(&display.id);
             }
+            let target = process.target.lock().map_err(error)?.take();
             if let Some(target) = target {
                 self.restore_target(target, revision).await?;
             }
         }
         Ok(())
+    }
+    pub async fn failed_request(&self, request: &SurfaceRequest, failure: &str, closing: bool) -> Result<Option<u64>, String> {
+        eprintln!("[surface] route-error revision={} current={} pid={} closing={} code={}", request.revision,
+            self.current_revision(), request.owner.as_ref().map(|process| process.pid).unwrap_or(0), closing, diagnostic_code(failure));
+        if failure == "SurfaceDisplayCancelled" { return Ok(None); }
+        let _serial = self.serial.lock().await;
+        let current = self.current()?;
+        let Some(ticket) = self.claim_failure(request.revision, &request.owner, &current) else {
+            eprintln!("[surface] route-error-superseded revision={}", request.revision);
+            return Ok(None);
+        };
+        if failure == "SurfaceFocusChanged" {
+            if let (Some(process), Some(display)) = (current.as_ref(), request.display.as_ref()) {
+                let owned_display = process.view.lock().map_err(error)?.display.as_ref()
+                    .is_some_and(|current| &current.id == display);
+                if owned_display {
+                    if let Err(error) = self.hide_display(process, display, FOCUS_CANCEL_REASON).await {
+                        self.stop_current("disabled", true).await?;
+                        return Err(error);
+                    }
+                    if process.view.lock().map_err(error)?.cancel_matching(display).is_some() {
+                        process.target.lock().map_err(error)?.take();
+                    }
+                }
+            }
+            return Ok(None);
+        }
+        self.record_failure("renderer_unavailable");
+        if current.is_some() { self.stop_current("disabled", true).await?; }
+        if self.running() { return Err("SurfaceExitUnconfirmed".into()); }
+        Ok((!closing && self.request_current(ticket)).then_some(ticket))
     }
     async fn restore_target(&self, target: Arc<Target>, revision: u64) -> Result<(), String> {
         let generation = self.revision.clone();
@@ -697,6 +784,15 @@ impl SurfaceSupervisor {
         self.invalidate();
         let _serial = self.serial.lock().await;
         self.stop_current(reason, revoke).await
+    }
+    async fn stop_matching(&self, process: &Arc<Managed>, reason: &str, unexpected: bool) -> Result<(), String> {
+        let _serial = self.serial.lock().await;
+        if !self.current()?.is_some_and(|current| Arc::ptr_eq(&current, process)) {
+            return Ok(());
+        }
+        self.mark_hidden(process.request_revision.load(Ordering::Acquire));
+        if unexpected { self.record_failure("renderer_unavailable"); }
+        self.stop_current(reason, true).await
     }
     async fn stop_owned(&self, reason: &str) -> Result<(), String> {
         // Called while the embedded Host may own its request lock. Do not wait
@@ -798,7 +894,7 @@ impl SurfaceSupervisor {
             .map_err(error)?,
         };
         if process.send(&response).await.is_err() {
-            let _ = self.stop("disabled", true).await;
+            let _ = self.stop_matching(&process, "disabled", true).await;
         }
         // A lost reply after a completed native input never changes success to
         // failure and never schedules an automatic second paste.
@@ -833,8 +929,9 @@ async fn read_stdout(
         };
         let message = match result {
             Ok(message) => message,
-            Err(_) => {
-                schedule_stop(&app, &process);
+            Err(failure) => {
+                eprintln!("[surface] stdout-error pid={} code={}", process.pid, diagnostic_code(&failure));
+                schedule_stop(&app, &process, "stdout_error");
                 return;
             }
         };
@@ -851,10 +948,15 @@ async fn read_stdout(
                 .lock()
                 .ok()
                 .and_then(|mut replies| replies.remove(&message.request_id));
+            if message.r#type == SurfaceControlType::Failed {
+                let failed = decode::<SurfaceFailed>(message.payload.clone()).ok();
+                eprintln!("[surface] child-failed pid={} matched_reply={} code={}", process.pid, reply.is_some(),
+                    diagnostic_code(failed.as_ref().map(|failed| failed.error_code.as_str()).unwrap_or("unclassified")));
+            }
             if let Some(reply) = reply {
                 let _ = reply.send(message);
             } else if message.r#type == SurfaceControlType::Failed {
-                schedule_stop(&app, &process);
+                schedule_stop(&app, &process, "unsolicited_failed");
                 return;
             }
             continue;
@@ -921,7 +1023,7 @@ async fn read_stdout(
                 }
             }
             _ => {
-                schedule_stop(&app, &process);
+                schedule_stop(&app, &process, "unexpected_message");
                 return;
             }
         }
@@ -941,7 +1043,7 @@ async fn read_stderr(
                 total += count;
                 if total > 64 * 1024 {
                     if let Some(process) = process.upgrade() {
-                        schedule_stop(&app, &process);
+                        schedule_stop(&app, &process, "stderr_limit");
                     }
                     return;
                 }
@@ -949,35 +1051,15 @@ async fn read_stderr(
         }
     }
 }
-fn schedule_stop(app: &AppHandle, process: &Arc<Managed>) {
+fn schedule_stop(app: &AppHandle, process: &Arc<Managed>, reason: &'static str) {
     let unexpected = !process.cancelled.load(Ordering::Acquire);
+    eprintln!("[surface] scheduled-stop pid={} unexpected={} reason={}", process.pid, unexpected, reason);
     process.cancel();
-    if let Some(manager) = app.try_state::<SurfaceSupervisor>() {
-        if manager
-            .current()
-            .ok()
-            .flatten()
-            .is_some_and(|current| Arc::ptr_eq(&current, process))
-        {
-            manager.invalidate();
-            if unexpected {
-                manager.record_failure("renderer_unavailable");
-            }
-        }
-    }
     let app = app.clone();
     let process = process.clone();
     tauri::async_runtime::spawn(async move {
         if let Some(manager) = app.try_state::<SurfaceSupervisor>() {
-            let _serial = manager.serial.lock().await;
-            let current = manager
-                .current()
-                .ok()
-                .flatten()
-                .is_some_and(|current| Arc::ptr_eq(&current, &process));
-            if current {
-                let _ = manager.stop_current("disabled", true).await;
-            }
+            let _ = manager.stop_matching(&process, "disabled", unexpected).await;
         }
     });
 }
@@ -1104,6 +1186,82 @@ pub fn hide_blocking(app: &AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod transition_tests {
     use super::*;
+    fn failed_route(supervisor: &SurfaceSupervisor, request: &SurfaceRequest, failure: &str, closing: bool) -> Result<Option<u64>, String> {
+        tokio::runtime::Builder::new_current_thread().build().unwrap()
+            .block_on(supervisor.failed_request(request, failure, closing))
+    }
+    #[test]
+    fn an_old_route_error_cannot_stop_or_hide_a_new_request() {
+        let supervisor = SurfaceSupervisor::default();
+        let old = supervisor.begin_request().unwrap();
+        let current = supervisor.begin_request().unwrap();
+        supervisor.requested.store(current.revision, Ordering::Release);
+        supervisor.visible.store(current.revision, Ordering::Release);
+        assert!(failed_route(&supervisor, &old, "SurfaceTransportUnavailable", true).unwrap().is_none());
+        assert!(supervisor.request_current(current.revision));
+        assert!(supervisor.visible() && supervisor.is_open());
+        assert!(supervisor.last_error.lock().unwrap().is_none());
+    }
+    #[test]
+    fn failed_route_cleanup_requires_the_exact_original_managed_owner() {
+        let supervisor = SurfaceSupervisor::default();
+        let revision = supervisor.invalidate();
+        let owner = Some(Arc::new(()));
+        let replacement = Some(Arc::new(()));
+        assert!(supervisor.claim_failure(revision, &owner, &replacement).is_none());
+        assert!(supervisor.claim_failure(revision, &None, &replacement).is_none());
+        assert!(supervisor.request_current(revision));
+        assert!(supervisor.claim_failure(revision, &owner, &owner).is_some());
+        assert!(supervisor.claim_failure(revision, &owner, &owner).is_none());
+    }
+    #[test]
+    fn a_fallback_keeps_its_claimed_ticket_after_a_new_request_starts() {
+        let supervisor = SurfaceSupervisor::default();
+        let failed = supervisor.begin_request().unwrap();
+        let ticket = failed_route(&supervisor, &failed, "SurfaceStartupUnavailable", false).unwrap().unwrap();
+        assert!(supervisor.request_current(ticket));
+        let next = supervisor.begin_request().unwrap();
+        assert!(!supervisor.request_current(ticket));
+        assert!(supervisor.request_current(next.revision));
+        assert!(failed_route(&supervisor, &failed, "SurfaceStartupUnavailable", false).unwrap().is_none());
+    }
+    #[test]
+    fn focus_change_or_closing_failure_never_requests_a_tauri_fallback() {
+        for (failure, closing) in [("SurfaceFocusChanged", false), ("SurfaceTransportUnavailable", true)] {
+            let supervisor = SurfaceSupervisor::default();
+            let request = supervisor.begin_request().unwrap();
+            assert!(failed_route(&supervisor, &request, failure, closing).unwrap().is_none());
+            assert!(!supervisor.visible() && !supervisor.is_open());
+        }
+    }
+    #[test]
+    fn failure_diagnostics_never_print_unknown_child_text() {
+        for code in ["SurfaceFocusChanged", "state_changed", "SurfaceHelperNotInstalled",
+            "SurfaceShutdownUnacknowledged", "SurfaceGrantRevocationUnconfirmed"] {
+            assert_eq!(diagnostic_code(code), code);
+        }
+        assert_eq!(diagnostic_code("known synthetic clipboard contents"), "unclassified");
+        assert_eq!(diagnostic_code("unknownbodywithoutspaces"), "unclassified");
+    }
+    #[test]
+    fn focus_cancellation_uses_the_actual_parent_to_child_hide_schema() {
+        let hide = |reason: &str| message(SurfaceControlType::Hide, SurfaceHide {
+            surface_session_id: "session".into(), display_request_id: "display".into(), reason: reason.into(),
+        }).unwrap();
+        assert!(surface_control::encode(&hide(FOCUS_CANCEL_REASON), Direction::ParentToChild).is_ok());
+        assert!(surface_control::encode(&hide("blur"), Direction::ParentToChild).is_err());
+    }
+    #[test]
+    fn the_surface_inherits_the_x11_authority_path_but_no_database_or_signing_environment() {
+        assert!(SURFACE_ENV_KEYS.contains(&"DISPLAY"));
+        assert!(SURFACE_ENV_KEYS.contains(&"XAUTHORITY"));
+        let unique: std::collections::HashSet<_> = SURFACE_ENV_KEYS.iter().collect();
+        assert_eq!(unique.len(), SURFACE_ENV_KEYS.len());
+        for excluded in ["DEZIRCLIP_DB_PATH", "GITHUB_TOKEN", "GH_TOKEN", "TAURI_SIGNING_PRIVATE_KEY",
+            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "SSH_AUTH_SOCK", "GIT_ASKPASS"] {
+            assert!(!SURFACE_ENV_KEYS.contains(&excluded));
+        }
+    }
     #[test]
     fn a_late_old_dismiss_cannot_claim_or_hide_the_new_show() {
         let supervisor = SurfaceSupervisor::default();
