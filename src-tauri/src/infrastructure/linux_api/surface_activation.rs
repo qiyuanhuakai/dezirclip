@@ -245,15 +245,100 @@ impl Prepared {
         let event = ClientMessageEvent::new(32, self.window, self.active_atom,
             crate::infrastructure::surface_focus::application_activation_data(self.timestamp)?);
         self.connection.send_event(false, self.root, EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY, event)
-            .map_err(|_| "SurfaceActivationUnavailable")?;
+            .map_err(|_| "SurfaceActivationUnavailable")?
+            .check().map_err(|_| "SurfaceActivationUnavailable")?;
         self.connection.flush().map_err(|_| "SurfaceActivationUnavailable")?;
         Ok(())
     }
 }
 
+fn restore_write(
+    deadline: Instant,
+    current: &dyn Fn() -> bool,
+    context: &mut impl FnMut() -> Result<(), String>,
+    now: impl Fn() -> Instant,
+    write: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    if !current() { return Err("SurfaceDisplayCancelled".into()); }
+    if now() >= deadline { return Err("SurfaceFocusRestoreFailed".into()); }
+    context()?;
+    if !current() { return Err("SurfaceDisplayCancelled".into()); }
+    if now() >= deadline { return Err("SurfaceFocusRestoreFailed".into()); }
+    write()
+}
+
+/// Original-target restoration keeps the existing action order. It is not a
+/// helper-show activation policy; each write is guarded on this bounded stream.
+pub(crate) fn restore_once(window: Window, deadline: Instant, current: Current,
+    mut context: impl FnMut() -> Result<(), String>) -> Result<(), String> {
+    active(deadline, current.as_ref()).map_err(|_| "SurfaceFocusRestoreFailed")?;
+    let (connection, screen) = connection(deadline, current.clone()).map_err(|_| "SurfaceFocusRestoreFailed")?;
+    let root = connection.setup().roots[screen].root;
+    let active_atom = atom(&connection, b"_NET_ACTIVE_WINDOW").map_err(|_| "SurfaceFocusRestoreFailed")?;
+    restore_write(deadline, current.as_ref(), &mut context, Instant::now, || {
+        let event = ClientMessageEvent::new(32, window, active_atom, [2, x11rb::CURRENT_TIME, window, 0, 0]);
+        connection.send_event(false, root, EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY, event)
+            .map_err(|_| "SurfaceFocusRestoreFailed")?.check().map_err(|_| "SurfaceFocusRestoreFailed")?;
+        Ok(())
+    })?;
+    restore_write(deadline, current.as_ref(), &mut context, Instant::now, || {
+        connection.configure_window(window, &x11rb::protocol::xproto::ConfigureWindowAux::new()
+            .stack_mode(x11rb::protocol::xproto::StackMode::ABOVE))
+            .map_err(|_| "SurfaceFocusRestoreFailed")?.check().map_err(|_| "SurfaceFocusRestoreFailed")?;
+        Ok(())
+    })?;
+    restore_write(deadline, current.as_ref(), &mut context, Instant::now, || {
+        connection.set_input_focus(x11rb::protocol::xproto::InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)
+            .map_err(|_| "SurfaceFocusRestoreFailed")?.check().map_err(|_| "SurfaceFocusRestoreFailed")?;
+        Ok(())
+    })?;
+    connection.flush().map_err(|_| "SurfaceFocusRestoreFailed")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn restoration_context_that_finishes_at_deadline_cannot_write() {
+        let start = Instant::now();
+        let deadline = start + std::time::Duration::from_secs(5);
+        let now = std::cell::Cell::new(start);
+        let contexts = std::cell::Cell::new(0);
+        let writes = std::cell::Cell::new(0);
+        assert_eq!(restore_write(deadline, &|| true, &mut || {
+            contexts.set(contexts.get() + 1); now.set(deadline); Ok(())
+        }, || now.get(), || { writes.set(writes.get() + 1); Ok(()) }).unwrap_err(), "SurfaceFocusRestoreFailed");
+        assert_eq!(contexts.get(), 1);
+        assert_eq!(writes.get(), 0);
+    }
+    #[test]
+    fn restoration_cancel_or_target_change_during_context_cannot_write() {
+        let now = Instant::now();
+        let current = std::cell::Cell::new(true);
+        let writes = std::cell::Cell::new(0);
+        assert_eq!(restore_write(now + std::time::Duration::from_secs(5), &|| current.get(), &mut || {
+            current.set(false); Ok(())
+        }, || now, || { writes.set(writes.get() + 1); Ok(()) }).unwrap_err(), "SurfaceDisplayCancelled");
+        assert_eq!(restore_write(now + std::time::Duration::from_secs(5), &|| true,
+            &mut || Err("SurfaceFocusChanged".into()), || now,
+            || { writes.set(writes.get() + 1); Ok(()) }).unwrap_err(), "SurfaceFocusChanged");
+        assert_eq!(writes.get(), 0);
+    }
+    #[test]
+    fn each_restoration_action_rechecks_its_context() {
+        let now = Instant::now();
+        let mut contexts = 0;
+        let mut writes = 0;
+        for action in 0..3 {
+            let result = restore_write(now + std::time::Duration::from_secs(5), &|| true, &mut || {
+                contexts += 1;
+                if action == 2 { Err("SurfaceTargetChanged".into()) } else { Ok(()) }
+            }, || now, || { writes += 1; Ok(()) });
+            assert_eq!(result.is_ok(), action < 2);
+        }
+        assert_eq!((contexts, writes), (3, 2));
+    }
     #[test]
     fn missing_client_can_wait_but_ambiguous_clients_are_rejected() {
         assert_eq!(unique_client([]).unwrap(), None);

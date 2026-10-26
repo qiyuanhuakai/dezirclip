@@ -4,7 +4,7 @@ mod state;
 mod diagnostics;
 use super::ipc_host::{DesktopHost, SurfaceAccess};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
-use crate::infrastructure::surface_focus::{ManagedChild, Target};
+use crate::infrastructure::surface_focus::{ManagedChild, RestoreForeground, Target};
 use dzc_core::{
     ports::PasteController,
     protocol::{
@@ -31,6 +31,16 @@ use tokio::{
 };
 const TIMEOUT: Duration = Duration::from_secs(5);
 const FOCUS_CANCEL_REASON: &str = "cancel";
+fn action_budget(deadline: Instant) -> Result<(), String> {
+    if Instant::now() >= deadline { Err("SurfaceActionTimeout".into()) } else { Ok(()) }
+}
+async fn action_until<T>(deadline: Instant, work: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+    action_budget(deadline)?;
+    let result = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), work)
+        .await.map_err(|_| "SurfaceActionTimeout".to_owned())?;
+    action_budget(deadline)?;
+    result
+}
 const SURFACE_ENV_KEYS: &[&str] = &[
     "SystemRoot", "WINDIR", "PATH", "TEMP", "TMP", "HOME", "USERPROFILE",
     "LOCALAPPDATA", "APPDATA", "DISPLAY", "XAUTHORITY", "WAYLAND_DISPLAY",
@@ -122,7 +132,7 @@ fn diagnostic_code(value: &str) -> &str {
         | "SurfaceExitUnconfirmed" | "SurfaceHelperNotInstalled" | "SurfaceVerifiedBuildRequired"
         | "SurfaceShutdownUnacknowledged" | "SurfaceGrantRevocationUnconfirmed" | "SurfaceTransportClosed"
         | "SurfaceFocusGrantDenied" | "SurfaceFocusUnavailable" | "SurfaceActivationUnavailable"
-        | "SurfaceSelectionChanged" | "SurfaceActionRepeated" | "SurfaceCopyFailed" | "SurfacePasteFailed"
+        | "SurfaceSelectionChanged" | "SurfaceActionRepeated" | "SurfaceActionTimeout" | "SurfaceCopyFailed" | "SurfacePasteFailed"
         | "SurfaceHostDeadline" | "ClipboardHostInstanceChanged" | "ClipboardHostUnavailable"
         | "ClipboardHostPermissionDenied" | "ClipboardHostBusy" | "ClipboardRecordUnavailable"
         | "PrivacyStateUnavailable" | "PrivacyEpochChanged" | "PrivacySessionActive" | "SensitiveAccessDenied"
@@ -268,6 +278,13 @@ fn geometry(app: &AppHandle) -> Result<(SurfacePhysicalRect, f64), String> {
     ))
 }
 impl Managed {
+    fn trace_restore(&self, foreground: RestoreForeground) {
+        if self.diagnostic_lines.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+            |count| (count < 256).then_some(count + 1)).is_ok() {
+            eprintln!("[surface] stage=restore_foreground pid={} elapsed_ms={} foreground={}", self.pid,
+                self.created.elapsed().as_millis(), foreground.label());
+        }
+    }
     fn trace(&self, stage: &'static str, outcome: Option<&str>) {
         if self.diagnostic_lines.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
             |count| (count < 256).then_some(count + 1)).is_ok() {
@@ -740,8 +757,13 @@ impl SurfaceSupervisor {
         display: &str,
         reason: &str,
     ) -> Result<(), String> {
+        self.hide_display_until(process, display, reason, Instant::now() + TIMEOUT).await
+    }
+    async fn hide_display_until(
+        &self, process: &Managed, display: &str, reason: &str, deadline: Instant,
+    ) -> Result<(), String> {
         let response = process
-            .exchange(
+            .exchange_until(
                 message(
                     SurfaceControlType::Hide,
                     SurfaceHide {
@@ -751,6 +773,7 @@ impl SurfaceSupervisor {
                     },
                 )?,
                 SurfaceControlType::Hidden,
+                deadline,
             )
             .await?;
         let hidden: SurfaceHidden = decode(response.payload)?;
@@ -764,8 +787,9 @@ impl SurfaceSupervisor {
         self.hide_request(&mut request).await
     }
     pub async fn hide_request(&self, request: &mut SurfaceRequest) -> Result<(), String> {
+        let deadline = Instant::now() + TIMEOUT;
         let revision = request.revision;
-        let _serial = self.serial.lock().await;
+        let _serial = action_until(deadline, async { Ok(self.serial.lock().await) }).await?;
         if !self.request_current(revision) { return Err("SurfaceDisplayCancelled".into()); }
         let process = self.current()?;
         request.bind(process.clone())?;
@@ -774,12 +798,14 @@ impl SurfaceSupervisor {
             request.target = process.target.lock().map_err(error)?.clone();
             let display = process.view.lock().map_err(error)?.display.clone();
             if let Some(display) = display {
-                self.hide_display(&process, &display.id, "cancel").await?;
+                self.hide_display_until(&process, &display.id, "cancel", deadline).await?;
+                self.valid(&process, revision)?;
+                action_budget(deadline)?;
                 process.view.lock().map_err(error)?.cancel_matching(&display.id);
             }
             let target = process.target.lock().map_err(error)?.take();
             if let Some(target) = target {
-                self.restore_target(target, revision).await?;
+                self.restore_target(process.clone(), target, revision, deadline).await?;
             }
         }
         Ok(())
@@ -817,23 +843,27 @@ impl SurfaceSupervisor {
             revision: ticket, target: request.target.clone(), original_tauri: false,
         }))
     }
-    async fn restore_target(&self, target: Arc<Target>, revision: u64) -> Result<(), String> {
+    async fn restore_target(&self, process: Arc<Managed>, target: Arc<Target>, revision: u64, deadline: Instant) -> Result<(), String> {
         let generation = self.revision.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            target.restore_if(|| {
-                revision != u64::MAX && generation.load(Ordering::Acquire) == revision
-            })
-        })
-        .await
-        .map_err(error)?
+        action_budget(deadline)?;
+        action_until(deadline, async move {
+            tauri::async_runtime::spawn_blocking(move || {
+                let restore_process = process.clone();
+                target.restore_if(deadline, move || {
+                    revision != u64::MAX && generation.load(Ordering::Acquire) == revision
+                        && !restore_process.cancelled.load(Ordering::Acquire)
+                }, |foreground| process.trace_restore(foreground))
+            }).await.map_err(error)?
+        }).await
     }
     async fn dismissed(
         &self,
         process: Arc<Managed>,
         request: SurfaceDismiss,
         revision: u64,
+        deadline: Instant,
     ) -> Result<(), String> {
-        let _serial = self.serial.lock().await;
+        let _serial = action_until(deadline, async { Ok(self.serial.lock().await) }).await?;
         if self.current_revision() != revision
             || !self
                 .current()?
@@ -859,7 +889,7 @@ impl SurfaceSupervisor {
             && state::restores_target(&request.reason, revision, self.current_revision())
         {
             if let Some(target) = target {
-                self.restore_target(target, revision).await?;
+                self.restore_target(process.clone(), target, revision, deadline).await?;
             }
         }
         Ok(())
@@ -938,15 +968,16 @@ impl SurfaceSupervisor {
     }
     async fn perform_action(
         &self,
-        process: &Managed,
+        process: &Arc<Managed>,
         request: &SurfacePaste,
+        deadline: Instant,
     ) -> Result<(), String> {
         process.trace("paste_serial_wait", None);
-        let _serial = self.serial.lock().await;
+        let _serial = action_until(deadline, async { Ok(self.serial.lock().await) }).await?;
         let revision = self.current_revision();
         self.valid(&process, revision)?;
         process.trace("paste_host_state", None);
-        let actual = process.access.state().await?;
+        let actual = action_until(deadline, process.access.state()).await?;
         self.valid(&process, revision)?;
         let display =
             process
@@ -962,27 +993,28 @@ impl SurfaceSupervisor {
             .map_err(error)?
             .clone()
             .ok_or("SurfaceTargetUnavailable")?;
-        self.hide_display(process, &display.id, "paste").await?;
+        self.hide_display_until(process, &display.id, "paste", deadline).await?;
+        action_budget(deadline)?;
         process.trace("paste_hidden", None);
         self.valid(process, revision)?;
-        process.access.check(&request.state).await?;
+        action_until(deadline, process.access.check(&request.state)).await?;
+        self.valid(process, revision)?;
         process.trace("paste_restore", None);
-        self.restore_target(target.clone(), revision).await?;
+        self.restore_target(process.clone(), target.clone(), revision, deadline).await?;
         process.trace("paste_copy", None);
         self.valid(&process, revision)?;
-        process
-            .access
-            .copy(request.entry_id, &request.state)
-            .await?;
+        action_until(deadline, process.access.copy(request.entry_id, &request.state)).await?;
+        self.valid(process, revision)?;
         process.trace("paste_copy_completed", None);
-        process.access.check(&request.state).await?;
+        action_until(deadline, process.access.check(&request.state)).await?;
         self.valid(&process, revision)?;
+        process.trace("paste_native_input", None);
         // No queued worker can outlive the last cancellation/focus check.
         if !target.is_current() {
             return Err("SurfaceFocusChanged".into());
         }
         self.valid(&process, revision)?;
-        process.trace("paste_native_input", None);
+        action_budget(deadline)?;
         dzc_platform::runtime::NativePasteController
             .paste()
             .map_err(|_| "SurfacePasteFailed".to_owned())?;
@@ -993,8 +1025,9 @@ impl SurfaceSupervisor {
         process: Arc<Managed>,
         request_id: String,
         request: SurfacePaste,
+        deadline: Instant,
     ) -> Result<(), String> {
-        let performed = self.perform_action(&process, &request).await;
+        let performed = self.perform_action(&process, &request, deadline).await;
         process.trace("paste_result", performed.as_ref().err().map(String::as_str));
         {
             let _serial = self.serial.lock().await;
@@ -1094,6 +1127,7 @@ async fn read_stdout(
         }
         match message.r#type {
             SurfaceControlType::Paste => {
+                let deadline = Instant::now() + TIMEOUT;
                 let request = decode::<SurfacePaste>(message.payload);
                 let app = app.clone();
                 if let Ok(request) = request {
@@ -1102,7 +1136,7 @@ async fn read_stdout(
                         tauri::async_runtime::spawn(async move {
                             let manager = app.state::<SurfaceSupervisor>();
                             let outcome = manager
-                                .action(process.clone(), message.request_id, request)
+                                .action(process.clone(), message.request_id, request, deadline)
                                 .await;
                             if outcome
                                 .as_ref()
@@ -1122,6 +1156,7 @@ async fn read_stdout(
                 }
             }
             SurfaceControlType::Dismiss => {
+                let deadline = Instant::now() + TIMEOUT;
                 if let Ok(request) = decode::<SurfaceDismiss>(message.payload) {
                     let expected = process.view.lock().ok().and_then(|view| {
                         view.display
@@ -1140,7 +1175,7 @@ async fn read_stdout(
                                 tauri::async_runtime::spawn(async move {
                                     let _ = app
                                         .state::<SurfaceSupervisor>()
-                                        .dismissed(process.clone(), request, revision)
+                                        .dismissed(process.clone(), request, revision, deadline)
                                         .await;
                                     process.dismiss_pending.store(false, Ordering::Release);
                                 });
@@ -1321,6 +1356,55 @@ pub fn hide_blocking(app: &AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod transition_tests {
     use super::*;
+    #[test]
+    fn an_expired_action_budget_does_not_poll_copy_or_queue_native_input() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let copied = std::cell::Cell::new(false);
+        let native_input = std::cell::Cell::new(false);
+        let result = runtime.block_on(async {
+            action_until(Instant::now(), async { copied.set(true); Ok(()) }).await?;
+            native_input.set(true);
+            Ok::<(), String>(())
+        });
+        assert_eq!(result.unwrap_err(), "SurfaceActionTimeout");
+        assert!(!copied.get() && !native_input.get());
+    }
+    #[test]
+    fn a_slow_copy_consumes_the_remaining_budget_and_never_reaches_native_input() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let native_input = std::cell::Cell::new(false);
+        let dropped = std::cell::Cell::new(false);
+        struct CopyPending<'a>(&'a std::cell::Cell<bool>);
+        impl Drop for CopyPending<'_> { fn drop(&mut self) { self.0.set(true); } }
+        let result = runtime.block_on(async {
+            let deadline = Instant::now() + Duration::from_millis(5);
+            action_until(deadline, async {
+                let _pending = CopyPending(&dropped);
+                std::future::pending::<Result<(), String>>().await
+            }).await?;
+            native_input.set(true);
+            Ok::<(), String>(())
+        });
+        assert_eq!(result.unwrap_err(), "SurfaceActionTimeout");
+        assert!(dropped.get());
+        assert!(!native_input.get());
+    }
+    #[test]
+    fn a_stage_completing_after_deadline_cannot_refresh_the_action_budget() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let native_input = std::cell::Cell::new(false);
+        let result = runtime.block_on(async {
+            let deadline = Instant::now() + Duration::from_millis(1);
+            action_until(deadline, async {
+                std::thread::sleep(Duration::from_millis(5));
+                Ok(())
+            }).await?;
+            native_input.set(true);
+            Ok::<(), String>(())
+        });
+        assert_eq!(result.unwrap_err(), "SurfaceActionTimeout");
+        assert!(!native_input.get());
+    }
     #[test]
     fn a_dropped_pending_exchange_removes_its_sender_without_touching_other_requests() {
         let replies = Mutex::new(HashMap::new());

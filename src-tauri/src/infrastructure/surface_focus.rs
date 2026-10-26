@@ -71,6 +71,60 @@ fn wait_for_focus(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RestoreForeground { None, Owned, Target, External }
+impl RestoreForeground {
+    pub fn label(self) -> &'static str {
+        match self { Self::None => "none", Self::Owned => "owned", Self::Target => "target", Self::External => "external" }
+    }
+}
+fn restore_until(
+    deadline: Instant,
+    current: impl Fn() -> bool,
+    valid: impl Fn() -> bool,
+    mut observe: impl FnMut() -> Result<RestoreForeground, String>,
+    mut activate: impl FnMut() -> Result<bool, String>,
+    mut diagnostic: impl FnMut(RestoreForeground),
+    now: impl Fn() -> Instant,
+    sleep: impl Fn(Duration),
+) -> Result<(), String> {
+    let check = || {
+        if !current() { return Err("SurfaceDisplayCancelled".to_owned()); }
+        if now() >= deadline { return Err("SurfaceFocusRestoreFailed".to_owned()); }
+        if !valid() { return Err("SurfaceTargetChanged".to_owned()); }
+        if !current() { return Err("SurfaceDisplayCancelled".to_owned()); }
+        if now() >= deadline { return Err("SurfaceFocusRestoreFailed".to_owned()); }
+        Ok(())
+    };
+    let mut activated = false;
+    let mut previous = None;
+    let mut diagnostics = 0;
+    loop {
+        check()?;
+        let foreground = observe()?;
+        check()?;
+        if previous != Some(foreground) && diagnostics < 16 {
+            diagnostic(foreground);
+            previous = Some(foreground);
+            diagnostics += 1;
+        }
+        check()?;
+        match foreground {
+            RestoreForeground::Target => return Ok(()),
+            RestoreForeground::External => return Err("SurfaceFocusChanged".into()),
+            RestoreForeground::Owned if !activated => {
+                check()?;
+                activated = activate()?;
+                check()?;
+            }
+            RestoreForeground::None | RestoreForeground::Owned => {}
+        }
+        let remaining = deadline.saturating_duration_since(now());
+        if remaining.is_zero() { return Err("SurfaceFocusRestoreFailed".into()); }
+        sleep(remaining.min(Duration::from_millis(20)));
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Process {
     pid: u32,
     started: u64,
@@ -190,8 +244,12 @@ impl Target {
         let elapsed = Duration::ZERO;
         Ok(Instant::now() + presentation_budget(budget, elapsed)?)
     }
-    pub fn restore_if(&self, current: impl Fn() -> bool) -> Result<(), String> {
-        native::restore(self, &current)
+    pub fn restore_if(&self, deadline: Instant, current: impl Fn() -> bool + Send + Sync + 'static,
+        diagnostic: impl FnMut(RestoreForeground)) -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        { native::restore(self, deadline, &current, diagnostic) }
+        #[cfg(target_os = "linux")]
+        { native::restore(self, deadline, std::sync::Arc::new(current), diagnostic) }
     }
     pub fn is_current(&self) -> bool {
         native::is_current(self)
@@ -360,33 +418,31 @@ mod native {
             else { Foreground::External };
         focused(valid(target), is_managed_child(pid), foreground)
     }
-    pub(super) fn restore(target: &Target, allowed: &dyn Fn() -> bool) -> Result<(), String> {
-        if !allowed() {
-            return Err("SurfaceDisplayCancelled".into());
-        }
-        if !valid(target) {
-            return Err("SurfaceTargetChanged".into());
-        }
-        let current = current();
+    fn restore_foreground(target: &Target) -> RestoreForeground {
+        let window = current();
+        if window == 0 { return RestoreForeground::None; }
+        if window == target.window { return RestoreForeground::Target; }
         let mut pid = 0;
-        unsafe {
-            GetWindowThreadProcessId(hwnd(current), Some(&mut pid));
-        }
-        if current != target.window && !ours(pid) {
-            return Err("SurfaceFocusChanged".into());
-        }
-        if !allowed() {
-            return Err("SurfaceDisplayCancelled".into());
-        }
-        if current != target.window
-            && !unsafe { SetForegroundWindow(hwnd(target.window)).as_bool() }
-        {
-            return Err("SurfaceFocusRestoreFailed".into());
-        }
-        if !is_current(target) {
-            return Err("SurfaceFocusRestoreFailed".into());
-        }
-        Ok(())
+        unsafe { GetWindowThreadProcessId(hwnd(window), Some(&mut pid)); }
+        if ours(pid) { RestoreForeground::Owned } else { RestoreForeground::External }
+    }
+    pub(super) fn restore(target: &Target, deadline: Instant, allowed: &dyn Fn() -> bool,
+        diagnostic: impl FnMut(RestoreForeground)) -> Result<(), String> {
+        restore_until(deadline, allowed, || valid(target), || Ok(restore_foreground(target)), || {
+            // Re-read immediately before the sole activation attempt.
+            match restore_foreground(target) {
+                RestoreForeground::External => return Err("SurfaceFocusChanged".into()),
+                RestoreForeground::None | RestoreForeground::Target => return Ok(false),
+                RestoreForeground::Owned => {}
+            }
+            if !allowed() { return Err("SurfaceDisplayCancelled".into()); }
+            if !valid(target) { return Err("SurfaceTargetChanged".into()); }
+            if Instant::now() >= deadline { return Err("SurfaceFocusRestoreFailed".into()); }
+            if !unsafe { SetForegroundWindow(hwnd(target.window)).as_bool() } {
+                return Err("SurfaceFocusRestoreFailed".into());
+            }
+            Ok(true)
+        }, diagnostic, Instant::now, std::thread::sleep)
     }
 }
 #[cfg(target_os = "linux")]
@@ -447,26 +503,26 @@ mod native {
             else { Foreground::External };
         focused(identity(target.window).ok() == Some(target.process), is_managed_child(pid), foreground)
     }
-    pub(super) fn restore(target: &Target, allowed: &dyn Fn() -> bool) -> Result<(), String> {
-        if !allowed() {
-            return Err("SurfaceDisplayCancelled".into());
-        }
-        if identity(target.window).ok() != Some(target.process) {
-            return Err("SurfaceTargetChanged".into());
-        }
-        let current = tracker::surface_active_window().map_err(|_| "SurfaceTargetUnavailable")?;
-        if current != target.window {
-            let pid =
-                tracker::surface_window_pid(current).map_err(|_| "SurfaceTargetUnavailable")?;
-            if !ours(pid) {
-                return Err("SurfaceFocusChanged".into());
+    pub(super) fn restore(target: &Target, deadline: Instant, allowed: std::sync::Arc<dyn Fn() -> bool + Send + Sync>,
+        mut diagnostic: impl FnMut(RestoreForeground)) -> Result<(), String> {
+        let window = u32::try_from(target.window).map_err(|_| "SurfaceTargetUnavailable")?;
+        crate::infrastructure::linux_api::surface_activation::restore_once(window, deadline, allowed.clone(), || {
+            if !allowed() { return Err("SurfaceDisplayCancelled".into()); }
+            if Instant::now() >= deadline { return Err("SurfaceFocusRestoreFailed".into()); }
+            if identity(target.window).ok() != Some(target.process) { return Err("SurfaceTargetChanged".into()); }
+            let current = tracker::surface_active_window().map_err(|_| "SurfaceTargetUnavailable")?;
+            diagnostic(if current == 0 { RestoreForeground::None } else if current == target.window {
+                RestoreForeground::Target
+            } else if tracker::surface_window_pid(current).is_ok_and(ours) { RestoreForeground::Owned }
+            else { RestoreForeground::External });
+            if current != target.window {
+                let pid = tracker::surface_window_pid(current).map_err(|_| "SurfaceTargetUnavailable")?;
+                if !ours(pid) { return Err("SurfaceFocusChanged".into()); }
             }
-        }
-        if !allowed() {
-            return Err("SurfaceDisplayCancelled".into());
-        }
-        tracker::activate_window_focus(target.window).map_err(|_| "SurfaceFocusRestoreFailed")?;
-        if !is_current(target) {
+            Ok(())
+        })?;
+        if !allowed() { return Err("SurfaceDisplayCancelled".into()); }
+        if Instant::now() >= deadline || !is_current(target) {
             return Err("SurfaceFocusRestoreFailed".into());
         }
         Ok(())
@@ -476,6 +532,90 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn restore_waits_through_absence_without_activating() {
+        let start = Instant::now();
+        let clock = std::cell::Cell::new(start);
+        let mut states = [RestoreForeground::None, RestoreForeground::Target].into_iter();
+        let mut observed = Vec::new();
+        restore_until(start + Duration::from_secs(5), || true, || true,
+            || Ok(states.next().unwrap()), || panic!("empty foreground cannot authorize activation"),
+            |state| observed.push(state), || clock.get(), |wait| clock.set(clock.get() + wait)).unwrap();
+        assert_eq!(observed, [RestoreForeground::None, RestoreForeground::Target]);
+    }
+    #[test]
+    fn restore_activates_once_then_waits_for_asynchronous_target_confirmation() {
+        let start = Instant::now();
+        let clock = std::cell::Cell::new(start);
+        let mut states = [RestoreForeground::Owned, RestoreForeground::None,
+            RestoreForeground::Owned, RestoreForeground::Target].into_iter();
+        let calls = std::cell::Cell::new(0);
+        restore_until(start + Duration::from_secs(5), || true, || true,
+            || Ok(states.next().unwrap()), || { calls.set(calls.get() + 1); Ok(true) }, |_| {},
+            || clock.get(), |wait| clock.set(clock.get() + wait)).unwrap();
+        assert_eq!(calls.get(), 1);
+    }
+    #[test]
+    fn an_activation_recheck_that_makes_no_write_does_not_consume_the_single_attempt() {
+        let start = Instant::now();
+        let clock = std::cell::Cell::new(start);
+        let calls = std::cell::Cell::new(0);
+        let mut states = [RestoreForeground::Owned, RestoreForeground::None,
+            RestoreForeground::Owned, RestoreForeground::Target].into_iter();
+        restore_until(start + Duration::from_secs(5), || true, || true,
+            || Ok(states.next().unwrap()), || {
+                calls.set(calls.get() + 1);
+                Ok(calls.get() == 2)
+            }, |_| {}, || clock.get(), |wait| clock.set(clock.get() + wait)).unwrap();
+        assert_eq!(calls.get(), 2);
+    }
+    #[test]
+    fn restore_rejects_external_or_changed_targets_without_activation() {
+        let start = Instant::now();
+        assert_eq!(restore_until(start + Duration::from_secs(5), || true, || true,
+            || Ok(RestoreForeground::External), || panic!("external focus is never replaced"), |_| {},
+            || start, |_| panic!("external focus cancels immediately")).unwrap_err(), "SurfaceFocusChanged");
+        assert_eq!(restore_until(start + Duration::from_secs(5), || true, || false,
+            || panic!("changed identity is rejected before observation"), || panic!("changed identity cannot activate"), |_| {},
+            || start, |_| panic!("changed identity cannot wait")).unwrap_err(), "SurfaceTargetChanged");
+    }
+    #[test]
+    fn restore_deadline_and_cancellation_prevent_late_activation_or_success() {
+        let start = Instant::now();
+        let deadline = start + Duration::from_millis(40);
+        for state in [RestoreForeground::Target, RestoreForeground::Owned] {
+            let clock = std::cell::Cell::new(start);
+            assert_eq!(restore_until(deadline, || true, || true, || {
+                clock.set(deadline); Ok(state)
+            }, || panic!("observation consumed the budget"), |_| {}, || clock.get(), |_| panic!("expired"))
+                .unwrap_err(), "SurfaceFocusRestoreFailed");
+        }
+        let cancelled = std::cell::Cell::new(false);
+        assert_eq!(restore_until(deadline, || !cancelled.get(), || true,
+            || Ok(RestoreForeground::Owned), || { cancelled.set(true); Ok(true) }, |_| {},
+            || start, |_| panic!("cancelled immediately after activation")).unwrap_err(), "SurfaceDisplayCancelled");
+        let clock = std::cell::Cell::new(start);
+        assert_eq!(restore_until(deadline, || true, || true,
+            || Ok(RestoreForeground::Owned), || { clock.set(deadline); Ok(true) }, |_| {},
+            || clock.get(), |_| panic!("activation consumed the budget")).unwrap_err(), "SurfaceFocusRestoreFailed");
+        assert_eq!(restore_until(deadline, || false, || true,
+            || panic!("cancelled before observation"), || panic!("cancelled before activation"), |_| {},
+            || start, |_| panic!("cancelled")).unwrap_err(), "SurfaceDisplayCancelled");
+    }
+    #[test]
+    fn absent_restore_is_bounded_and_diagnostics_only_record_limited_changes() {
+        let start = Instant::now();
+        let clock = std::cell::Cell::new(start);
+        let observations = std::cell::Cell::new(0);
+        let diagnostics = std::cell::Cell::new(0);
+        assert_eq!(restore_until(start + Duration::from_secs(1), || true, || true, || {
+            observations.set(observations.get() + 1);
+            Ok(if observations.get() % 2 == 0 { RestoreForeground::Owned } else { RestoreForeground::None })
+        }, || Ok(true), |_| diagnostics.set(diagnostics.get() + 1), || clock.get(), |wait| clock.set(clock.get() + wait))
+            .unwrap_err(), "SurfaceFocusRestoreFailed");
+        assert_eq!(diagnostics.get(), 16);
+        assert!(observations.get() > 16);
+    }
     #[test]
     fn timestamp_capture_consumes_the_existing_presentation_budget() {
         let budget = Duration::from_secs(5);
