@@ -10,6 +10,11 @@ impl Grant { pub fn token(&self) -> &str { &self.token } }
 #[derive(Default)]
 pub struct GrantAuthority { grants: Mutex<Vec<Grant>> }
 impl GrantAuthority {
+    /// Read-only Surface bootstrap delegated only through its private parent.
+    pub fn issue_surface_read(&self, lifetime: Duration) -> Result<Grant, WireErrorCode> {
+        if lifetime.is_zero() || lifetime > Duration::from_secs(600) { return Err(WireErrorCode::InvalidRequest); }
+        self.issue(ClientRole::Surface, vec![Permission::HistoryRead], lifetime)
+    }
     pub fn issue(&self, role: ClientRole, permissions: Vec<Permission>, lifetime: Duration) -> Result<Grant, WireErrorCode> {
         if lifetime.is_zero() || lifetime > Duration::from_secs(30 * 86400) { return Err(WireErrorCode::InvalidRequest); }
         self.issue_inner(role, permissions, Some(Instant::now() + lifetime))
@@ -64,6 +69,9 @@ impl Session {
     pub(crate) fn id(&self) -> &str { &self.id }
     pub fn role(&self) -> ClientRole { self.role }
     pub fn permissions(&self) -> &[Permission] { &self.permissions }
+    pub(crate) fn surface_reader(&self) -> bool {
+        self.role == ClientRole::Surface && self.grant.is_some() && self.permissions.contains(&Permission::HistoryRead)
+    }
     pub(crate) fn require(&self, permission: Permission) -> Result<(), WireErrorCode> {
         if self.permissions.contains(&permission) { Ok(()) } else { Err(WireErrorCode::PermissionDenied) }
     }

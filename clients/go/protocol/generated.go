@@ -246,6 +246,7 @@ const (
     MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"
     MethodDesktopPrivacyFeedback Method = "desktop.privacy.feedback"
     MethodDesktopPrivacyRemoveRule Method = "desktop.privacy.remove_rule"
+    MethodSurfaceHistoryPage Method = "surface.history.page"
 )
 
 type WireErrorCode string
@@ -269,6 +270,7 @@ const (
     WireErrorCodeSensitiveAccessDenied WireErrorCode = "sensitive_access_denied"
     WireErrorCodeManualPersistenceConfirmationRequired WireErrorCode = "manual_persistence_confirmation_required"
     WireErrorCodePrivacyDurationInvalid WireErrorCode = "privacy_duration_invalid"
+    WireErrorCodeHistoryRevisionChanged WireErrorCode = "history_revision_changed"
 )
 
 type WireError struct {
@@ -461,4 +463,150 @@ type PrivacyState struct {
 type PrivacySetParams struct {
     Active bool `json:"active"`
     DurationMs *uint64 `json:"duration_ms,omitempty"`
+}
+
+type SurfaceBuildIdentity struct {
+    ComponentVersion string `json:"component_version"`
+    SourceRevision string `json:"source_revision"`
+    BuildId string `json:"build_id"`
+    Target string `json:"target"`
+}
+
+type SurfaceTheme struct {
+    Mode string `json:"mode"`
+    Opacity float64 `json:"opacity"`
+}
+
+type SurfacePhysicalRect struct {
+    X int64 `json:"x"`
+    Y int64 `json:"y"`
+    Width uint32 `json:"width"`
+    Height uint32 `json:"height"`
+}
+
+type SurfacePageCapability struct {
+    Version uint16 `json:"version"`
+    MaxPageSize uint16 `json:"max_page_size"`
+    Build SurfaceBuildIdentity `json:"build"`
+}
+
+type SurfacePageParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    ExpectedHistoryRevision uint64 `json:"expected_history_revision"`
+    Limit uint16 `json:"limit"`
+    Offset uint32 `json:"offset"`
+    Query *string `json:"query,omitempty"`
+    Mode *SearchMode `json:"mode,omitempty"`
+    Kind *string `json:"kind,omitempty"`
+    Tag *string `json:"tag,omitempty"`
+    Pinned *bool `json:"pinned,omitempty"`
+}
+
+type SurfacePage struct {
+    Entries []EntrySummary `json:"entries"`
+    State RuntimeState `json:"state"`
+    HasMore bool `json:"has_more"`
+    NextOffset *uint32 `json:"next_offset,omitempty"`
+}
+
+type SurfaceInitialize struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    Endpoint string `json:"endpoint"`
+    Grant string `json:"grant"`
+    State RuntimeState `json:"state"`
+    Build SurfaceBuildIdentity `json:"build"`
+    Locale string `json:"locale"`
+    Theme SurfaceTheme `json:"theme"`
+}
+
+type SurfaceReady struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    Build SurfaceBuildIdentity `json:"build"`
+    State RuntimeState `json:"state"`
+}
+
+type SurfaceShow struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    DisplayRequestId string `json:"display_request_id"`
+    State RuntimeState `json:"state"`
+    Rect SurfacePhysicalRect `json:"rect"`
+    Scale float64 `json:"scale"`
+    Locale string `json:"locale"`
+    Theme SurfaceTheme `json:"theme"`
+}
+
+type SurfaceShown struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    DisplayRequestId string `json:"display_request_id"`
+    State RuntimeState `json:"state"`
+}
+
+type SurfaceHide struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    DisplayRequestId string `json:"display_request_id"`
+    Reason string `json:"reason"`
+}
+
+type SurfaceHidden struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    DisplayRequestId string `json:"display_request_id"`
+}
+
+type SurfacePaste struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    DisplayRequestId string `json:"display_request_id"`
+    ActionId string `json:"action_id"`
+    EntryId int64 `json:"entry_id"`
+    State RuntimeState `json:"state"`
+}
+
+type SurfacePasteResult struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    DisplayRequestId string `json:"display_request_id"`
+    ActionId string `json:"action_id"`
+    Performed bool `json:"performed"`
+    ErrorCode *string `json:"error_code"`
+}
+
+type SurfaceDismiss struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    DisplayRequestId string `json:"display_request_id"`
+}
+
+type SurfaceShutdown struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    Reason string `json:"reason"`
+}
+
+type SurfaceStopped struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+}
+
+type SurfaceFailed struct {
+    SurfaceSessionId string `json:"surface_session_id"`
+    ErrorCode string `json:"error_code"`
+}
+
+type SurfaceControlType string
+const (
+    SurfaceControlTypeInitialize SurfaceControlType = "initialize"
+    SurfaceControlTypeReady SurfaceControlType = "ready"
+    SurfaceControlTypeShow SurfaceControlType = "show"
+    SurfaceControlTypeShown SurfaceControlType = "shown"
+    SurfaceControlTypeHide SurfaceControlType = "hide"
+    SurfaceControlTypeHidden SurfaceControlType = "hidden"
+    SurfaceControlTypePaste SurfaceControlType = "paste"
+    SurfaceControlTypePasteResult SurfaceControlType = "paste-result"
+    SurfaceControlTypeDismiss SurfaceControlType = "dismiss"
+    SurfaceControlTypeShutdown SurfaceControlType = "shutdown"
+    SurfaceControlTypeStopped SurfaceControlType = "stopped"
+    SurfaceControlTypeFailed SurfaceControlType = "failed"
+)
+
+type SurfaceControlMessage struct {
+    ProtocolVersion ProtocolVersion `json:"protocol_version"`
+    RequestId string `json:"request_id"`
+    Type SurfaceControlType `json:"type"`
+    Payload json.RawMessage `json:"payload"`
 }

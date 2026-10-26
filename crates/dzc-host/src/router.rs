@@ -236,6 +236,12 @@ impl Host {
         }
         if can(Permission::SurfaceControl) && self.actions.can_activate() { methods.extend(["surface.activate", "surface.dismiss"]); }
         let mut platform = self.actions.platform_capabilities();
+        if session.surface_reader() {
+            methods.push("surface.history.page");
+            if let Some(platform) = platform.as_object_mut() {
+                platform.insert("surface_page_v1".into(), self.surface_capability());
+            }
+        }
         if let Some(platform) = platform.as_object_mut() {
             if can(Permission::DesktopHistory) && session.role()==ClientRole::Desktop {
                 platform.insert("desktop_generated_copy".into(),serde_json::json!({"supported":self.actions.can_copy(),"version":1}));
@@ -338,6 +344,7 @@ impl Host {
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
             Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),
+            Method::SurfaceHistoryPage => self.surface_page(session, params(request.params)?),
             Method::HistoryList | Method::SurfaceHistoryList => {
                 session.require(Permission::HistoryRead)?;
                 let query: HistoryPageParams = params(request.params)?;
@@ -412,7 +419,7 @@ impl Host {
             self.history.authorize_session_entry(entry, permit, now).map_err(privacy_error)
         } else { self.history.get_entry_authorized(id, permit, now).map_err(privacy_error)?.ok_or(WireErrorCode::NotFound) }
     }
-    fn history_page(&self, page: api::SummaryQuery, search: Option<api::SearchRequest>, permit: &api::PrivacyReadPermit, now: i64) -> Result<Vec<api::EntrySummary>, WireErrorCode> {
+    pub(crate) fn history_page(&self, page: api::SummaryQuery, search: Option<api::SearchRequest>, permit: &api::PrivacyReadPermit, now: i64) -> Result<Vec<api::EntrySummary>, WireErrorCode> {
         let session: Vec<_> = self.session.lock().map_err(unavailable)?.iter().cloned().collect();
         let all_session = api::SummaryQuery { limit: 1000, offset: 0, ..page.clone() };
         let mut entries = if let Some(query) = &search {
@@ -435,7 +442,7 @@ impl Host {
 fn summary_query(query: HistoryPageParams) -> api::SummaryQuery {
     api::SummaryQuery { limit: query.limit, offset: query.offset, kind: query.kind, tag: query.tag, pinned: query.pinned.unwrap_or(false) }
 }
-fn summary(entry: api::EntrySummary) -> EntrySummary {
+pub(crate) fn summary(entry: api::EntrySummary) -> EntrySummary {
     EntrySummary { id: entry.id, kind: entry.kind, preview: entry.preview, tags: entry.tags, pinned: entry.pinned,
         timestamp: entry.timestamp, source_app: entry.source_app, privacy_visibility: "ordinary".into() }
 }

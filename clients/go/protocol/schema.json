@@ -881,7 +881,8 @@
         "desktop.privacy.rules",
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
-        "desktop.privacy.remove_rule"
+        "desktop.privacy.remove_rule",
+        "surface.history.page"
       ]
     },
     "WireErrorCode": {
@@ -905,7 +906,8 @@
         "privacy_session_active",
         "sensitive_access_denied",
         "manual_persistence_confirmation_required",
-        "privacy_duration_invalid"
+        "privacy_duration_invalid",
+        "history_revision_changed"
       ]
     },
     "WireError": {
@@ -1824,6 +1826,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.page"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/SurfacePageParams"
+              }
+            }
+          }
         }
       ]
     },
@@ -2514,6 +2535,850 @@
         "active"
       ],
       "additionalProperties": true
+    },
+    "SurfaceBuildIdentity": {
+      "type": "object",
+      "properties": {
+        "component_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "source_revision": {
+          "type": "string",
+          "minLength": 40,
+          "maxLength": 40,
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "build_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "component_version",
+        "source_revision",
+        "build_id",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceTheme": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "light",
+            "dark"
+          ]
+        },
+        "opacity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "mode",
+        "opacity"
+      ],
+      "additionalProperties": false
+    },
+    "SurfacePhysicalRect": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i64"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i64"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768,
+          "x-rust-type": "u32"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "SurfacePageCapability": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1,
+          "x-rust-type": "u16"
+        },
+        "max_page_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "x-rust-type": "u16"
+        },
+        "build": {
+          "$ref": "#/$defs/SurfaceBuildIdentity"
+        }
+      },
+      "required": [
+        "version",
+        "max_page_size",
+        "build"
+      ],
+      "additionalProperties": false
+    },
+    "SurfacePageParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "expected_history_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "x-rust-type": "u16"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "x-rust-type": "u32"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 4096
+        },
+        "mode": {
+          "$ref": "#/$defs/SearchMode"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 256
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "expected_history_revision",
+        "limit",
+        "offset"
+      ],
+      "additionalProperties": false
+    },
+    "SurfacePage": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntrySummary"
+          },
+          "maxItems": 100
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "entries",
+        "state",
+        "has_more"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceInitialize": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "grant": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "build": {
+          "$ref": "#/$defs/SurfaceBuildIdentity"
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "theme": {
+          "$ref": "#/$defs/SurfaceTheme"
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "endpoint",
+        "grant",
+        "state",
+        "build",
+        "locale",
+        "theme"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceReady": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "build": {
+          "$ref": "#/$defs/SurfaceBuildIdentity"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "build",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceShow": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display_request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        },
+        "rect": {
+          "$ref": "#/$defs/SurfacePhysicalRect"
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 16
+        },
+        "locale": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "theme": {
+          "$ref": "#/$defs/SurfaceTheme"
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "display_request_id",
+        "state",
+        "rect",
+        "scale",
+        "locale",
+        "theme"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceShown": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display_request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "display_request_id",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceHide": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display_request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "cancel",
+            "paste",
+            "host_changed",
+            "privacy_changed",
+            "disabled",
+            "update"
+          ]
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "display_request_id",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceHidden": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display_request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "display_request_id"
+      ],
+      "additionalProperties": false
+    },
+    "SurfacePaste": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display_request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "action_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64",
+          "not": {
+            "const": 0
+          }
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "display_request_id",
+        "action_id",
+        "entry_id",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "SurfacePasteResult": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display_request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "action_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "performed": {
+          "type": "boolean"
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "display_request_id",
+        "action_id",
+        "performed",
+        "error_code"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceDismiss": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "display_request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "display_request_id"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceShutdown": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "disabled",
+            "update",
+            "exit",
+            "host_changed"
+          ]
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceStopped": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        }
+      },
+      "required": [
+        "surface_session_id"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceFailed": {
+      "type": "object",
+      "properties": {
+        "surface_session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "error_code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "surface_session_id",
+        "error_code"
+      ],
+      "additionalProperties": false
+    },
+    "SurfaceControlType": {
+      "type": "string",
+      "enum": [
+        "initialize",
+        "ready",
+        "show",
+        "shown",
+        "hide",
+        "hidden",
+        "paste",
+        "paste-result",
+        "dismiss",
+        "shutdown",
+        "stopped",
+        "failed"
+      ]
+    },
+    "SurfaceControlMessage": {
+      "type": "object",
+      "properties": {
+        "protocol_version": {
+          "$ref": "#/$defs/ProtocolVersion"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "type": {
+          "$ref": "#/$defs/SurfaceControlType"
+        },
+        "payload": {}
+      },
+      "required": [
+        "protocol_version",
+        "request_id",
+        "type",
+        "payload"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "initialize"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceInitialize"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ready"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceReady"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "show"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceShow"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "shown"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceShown"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "hide"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceHide"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "hidden"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceHidden"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "paste"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfacePaste"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "paste-result"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfacePasteResult"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "dismiss"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceDismiss"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "shutdown"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceShutdown"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "stopped"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceStopped"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/SurfaceFailed"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

@@ -26,8 +26,8 @@ def type_of(schema, language):
     if kind == "integer":
         native = schema.get("x-rust-type", "i64")
         return {"u16": "uint16", "u32": "uint32", "u64": "uint64", "i64": "int64"}.get(native, "int64")
-    return ({"string": "String", "boolean": "bool"}.get(kind, "serde_json::Value")
-            if language == "rust" else {"string": "string", "boolean": "bool"}.get(kind, "json.RawMessage"))
+    return ({"string": "String", "boolean": "bool", "number": "f64"}.get(kind, "serde_json::Value")
+            if language == "rust" else {"string": "string", "boolean": "bool", "number": "float64"}.get(kind, "json.RawMessage"))
 
 
 def outputs():
@@ -90,7 +90,8 @@ def outputs():
                 rt = "Option<" + rt + ">"
                 gt = "*" + gt
                 rust += ['    #[serde(default, skip_serializing_if = "Option::is_none")]']
-            rust += ["    pub " + field + ": " + rt + ","]
+            rust_field = "r#type" if field == "type" else field
+            rust += ["    pub " + rust_field + ": " + rt + ","]
             go += ["    " + pascal(field) + " " + gt + " `json:\"" + field + (",omitempty" if not required else "") + "\"`"]
         rust += ["}", ""]
         go += ["}", ""]

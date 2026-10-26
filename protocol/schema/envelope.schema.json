@@ -74,7 +74,8 @@
         "desktop.privacy.rules",
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
-        "desktop.privacy.remove_rule"
+        "desktop.privacy.remove_rule",
+        "surface.history.page"
       ]
     },
     "WireErrorCode": {
@@ -98,7 +99,8 @@
         "privacy_session_active",
         "sensitive_access_denied",
         "manual_persistence_confirmation_required",
-        "privacy_duration_invalid"
+        "privacy_duration_invalid",
+        "history_revision_changed"
       ]
     },
     "WireError": {
@@ -1014,6 +1016,25 @@
                     ]
                   }
                 ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "surface.history.page"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/surface.schema.json#/$defs/SurfacePageParams"
               }
             }
           }
