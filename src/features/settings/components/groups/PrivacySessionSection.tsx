@@ -4,14 +4,12 @@ import { emit } from "@tauri-apps/api/event";
 import { usePrivacySession } from "../../../../shared/hooks/usePrivacySession";
 import { refreshPrivacyState, setPrivacySession } from "../../../../shared/lib/privacySession";
 import "../../../../styles/components/privacy.css";
-import ThemedSelect from "../ThemedSelect";
-import HotkeyListEditor from "../HotkeyListEditor";
+import HotkeyRecorder from "../HotkeyRecorder";
 
 export function PrivacySessionSection({ t, appSettings }: {
   t: (key: string) => string; appSettings: Record<string, string>;
 }) {
   const state = usePrivacySession();
-  const [duration, setDuration] = useState("900000");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [hotkey, setHotkey] = useState(appSettings["app.privacy_session_hotkey"] || "");
@@ -24,9 +22,12 @@ export function PrivacySessionSection({ t, appSettings }: {
 
 
   const changeSession = async (enabled: boolean) => {
+    if (disabled) return;
     setError(null);
-    try { await setPrivacySession(enabled, enabled && duration !== "0" ? Number(duration) : null); }
+    setBusy(true);
+    try { await setPrivacySession(enabled, null); }
     catch { setError(t("privacy_action_failed")); }
+    finally { setBusy(false); }
   };
   const saveHotkey = async (value: string): Promise<boolean> => {
     if (disabled) return false;
@@ -50,37 +51,24 @@ export function PrivacySessionSection({ t, appSettings }: {
 
   return <section className="privacy-session-section" aria-labelledby="privacy-session-heading">
     <div className="setting-item settings-section-title">
-      <div className="item-label-group"><span className="item-label" id="privacy-session-heading">{t("privacy_session_title")}</span></div>
-      <span className="privacy-session-state settings-inline-note" role="status">
-        {t(ready ? active ? "privacy_session_active" : "privacy_session_inactive"
-          : state.phase === "loading" ? "privacy_state_loading" : "privacy_state_unavailable")}
-      </span>
+      <div className="item-label-group"><label className="item-label" id="privacy-session-heading" htmlFor="privacy-session-enabled">{t("privacy_session_title")}</label></div>
+      <label className="switch">
+        <input id="privacy-session-enabled" className="cb" type="checkbox" checked={active} disabled={disabled}
+          onChange={event => { void changeSession(event.target.checked); }} />
+        <div className="toggle"><div className="left" /><div className="right" /></div>
+      </label>
     </div>
     <p className="settings-description">{t("privacy_session_hint")}</p>
     {active && state.snapshot?.session.expires_at_ms !== null && state.snapshot?.session.expires_at_ms !== undefined
       && <p>{t("privacy_session_until")} {new Date(state.snapshot.session.expires_at_ms).toLocaleString()}</p>}
-    <div className="settings-section-grid">
-    <div className="setting-item privacy-session-duration">
-      <label htmlFor="privacy-session-duration">{t("privacy_session_duration")}</label>
-      <ThemedSelect inputId="privacy-session-duration" value={duration} isDisabled={disabled} onChange={setDuration}
-        options={[
-          { value: "300000", label: t("privacy_duration_5m") },
-          { value: "900000", label: t("privacy_duration_15m") },
-          { value: "3600000", label: t("privacy_duration_1h") },
-          { value: "0", label: t("privacy_duration_indefinite") },
-        ]} />
-    </div>
-    <div className="setting-item privacy-session-controls"><div className="setting-btn-group">
-      <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void changeSession(true); }}>
-        {t(active ? "privacy_session_renew" : "privacy_session_start")}</button>
-      {active && <button type="button" className="setting-btn" disabled={disabled} onClick={() => { void changeSession(false); }}>{t("privacy_session_end")}</button>}
-      {!ready && <button type="button" className="setting-btn" disabled={state.phase === "loading"}
-        onClick={() => { void refreshPrivacyState(); }}>{t("privacy_retry")}</button>}
-    </div></div>
-    <HotkeyListEditor t={t} labelKey="privacy_session_hotkey" hotkeys={hotkey ? [hotkey] : []}
+    {!ready && <div className="setting-item">
+      <span className="settings-inline-note" role="status">{t(state.phase === "loading" ? "privacy_state_loading" : "privacy_state_unavailable")}</span>
+      <button type="button" className="setting-btn" disabled={state.phase === "loading"}
+        onClick={() => { void refreshPrivacyState(); }}>{t("privacy_retry")}</button>
+    </div>}
+    <HotkeyRecorder t={t} labelKey="privacy_session_hotkey" hotkey={hotkey}
       recording={recording} setRecording={setRecording} disabled={disabled}
-      onAdd={saveHotkey} onRemove={() => saveHotkey("")} />
-    </div>
+      onHotkeyChange={value => { void saveHotkey(value); }} />
 
     {error && <p role="alert" className="privacy-action-error">{error}</p>}
   </section>;

@@ -326,7 +326,7 @@ pub fn get_system_default_app(content_type: String) -> AppResult<String> {
         "image" => ".png",
         "video" => ".mp4",
         "code" => ".txt",
-        "text" => ".txt",
+        "text" | "rich_text" => ".txt",
         "file" => ".txt",
         "link" | "url" => "http",
         _ => return Ok("系统默认".to_string()),
