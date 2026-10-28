@@ -623,8 +623,23 @@ export async function runSurfaceAcceptance(args, env = process.env) {
         return { ...observed, panel: verifyNativeTauriPanel(observed, desktop.child.pid) };
       });
       await bridge.invoke('hide_quick_paste');
+      const tauriHidden = await poll('Original Tauri panel is actually hidden before reuse', async () => {
+        const observed = await native.request('observe');
+        return !observed.windows.some(window => window.hwnd === tauri.panel.hwnd && window.visible) ? observed : null;
+      });
+      await native.request('activate-target'); await native.request('keys', { role: 'target', key: 'hotkey' });
+      const tauriWarm = await poll('Reused Tauri panel is visible and actually foreground', async () => {
+        if (!await bridge.invoke('is_quick_paste_visible')) return null;
+        const observed = await native.request('observe');
+        const panel = verifyNativeTauriPanel(observed, desktop.child.pid);
+        assert.equal(panel.hwnd, tauri.panel.hwnd, 'Warm Tauri show must reuse the original native window');
+        assert.deepEqual(panel.rect, tauri.panel.rect);
+        return { ...observed, panel };
+      });
+      await bridge.invoke('hide_quick_paste');
       assert.deepEqual(canarySnapshot(canary.directory), canary);
       return { managed_before_stop: managedBeforeStop, original_helper_exit: observation, actual_tauri_window: tauri,
+        actual_tauri_hidden_before_reuse: tauriHidden, actual_tauri_warm_window: tauriWarm,
         startup_canary_preserved_after_actual_helper_run: true };
     });
     await stage('missing_owned_helper_falls_back_to_real_tauri', async () => {

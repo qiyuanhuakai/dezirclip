@@ -102,12 +102,21 @@ pub struct SurfaceFallback {
     target: Option<Arc<Target>>,
     original_tauri: bool,
     deadline: Instant,
+    #[cfg(target_os = "linux")]
+    presentation: Option<Arc<crate::infrastructure::surface_focus::PresentationTarget>>,
 }
 impl SurfaceFallback {
-    pub fn original_tauri(revision: u64) -> Self {
-        Self { revision, target: None, original_tauri: true, deadline: Instant::now() + TIMEOUT }
+    pub fn original_tauri(revision: u64) -> Result<Self, String> {
+        let deadline = Instant::now() + TIMEOUT;
+        #[cfg(target_os = "linux")]
+        let presentation = if dzc_platform::runtime::is_native_wayland() { None }
+            else { Some(Arc::new(crate::infrastructure::surface_focus::PresentationTarget::capture()?)) };
+        Ok(Self { revision, target: None, original_tauri: true, deadline,
+            #[cfg(target_os = "linux")] presentation })
     }
     fn context_current(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Some(context) = &self.presentation { return context.current(); }
         self.original_tauri || self.target.as_ref().is_some_and(|target| target.presentation_current())
     }
     pub fn current(&self, app: &AppHandle) -> bool {
@@ -875,6 +884,7 @@ impl SurfaceSupervisor {
         if self.running() { return Err("SurfaceExitUnconfirmed".into()); }
         Ok((!closing && self.request_current(ticket)).then(|| SurfaceFallback {
             revision: ticket, target: request.target.clone(), original_tauri: false, deadline: Instant::now() + TIMEOUT,
+            #[cfg(target_os = "linux")] presentation: None,
         }))
     }
     async fn restore_target(&self, process: Arc<Managed>, target: Arc<Target>, revision: u64, deadline: Instant) -> Result<(), String> {

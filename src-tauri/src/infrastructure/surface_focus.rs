@@ -202,6 +202,22 @@ pub struct Target {
     thread: u32,
     request_clock: std::sync::OnceLock<RequestClock>,
 }
+/// Presentation-only context: it cannot be passed to the paste/restore APIs.
+#[cfg(target_os = "linux")]
+pub(crate) struct PresentationTarget {
+    origin: Option<Target>,
+    previous_external: Option<Target>,
+}
+#[cfg(target_os = "linux")]
+impl PresentationTarget {
+    pub(crate) fn capture() -> Result<Self, String> { native::capture_presentation() }
+    pub(crate) fn current(&self) -> bool { native::presentation_context_current(self) }
+}
+#[cfg(any(target_os = "linux", test))]
+fn presentation_context_allowed(origin_valid: bool, origin_current: bool, owned_current: bool,
+    absent: bool, previous_external_current: bool) -> bool {
+    origin_valid && (origin_current || owned_current || absent || previous_external_current)
+}
 impl Target {
     pub fn capture() -> Result<Self, String> {
         native::capture()
@@ -449,6 +465,9 @@ mod native {
 mod native {
     use super::*;
     use crate::infrastructure::linux_api::window_tracker as tracker;
+    fn presentation_identity(window: usize) -> Result<Process, String> {
+        process(tracker::surface_window_pid(window).map_err(|_| "SurfaceTargetUnavailable")?)
+    }
     fn identity(window: usize) -> Result<Process, String> {
         let pid = tracker::surface_window_pid(window).map_err(|_| "SurfaceTargetUnavailable")?;
         if ours(pid) {
@@ -472,6 +491,35 @@ mod native {
             thread: 0,
             request_clock: std::sync::OnceLock::new(),
         })
+    }
+    pub(super) fn capture_presentation() -> Result<PresentationTarget, String> {
+        // Snapshot the already remembered target before reading this request's
+        // foreground. capture() would reread foreground and could adopt a newly
+        // selected third-party window as a permitted handoff target.
+        let remembered = tracker::surface_last_target();
+        let window = tracker::surface_active_window().map_err(|_| "SurfaceTargetUnavailable")?;
+        if window == 0 { return Ok(PresentationTarget { origin: None, previous_external: None }); }
+        let process = presentation_identity(window)?;
+        // Only an owned-origin handoff may also return to the already recorded
+        // external target. Never learn a new external window while waiting.
+        let previous_external = if ours(process.pid) {
+            identity(remembered).ok().map(|process| Target { window: remembered, process, thread: 0,
+                request_clock: std::sync::OnceLock::new() })
+        } else { None };
+        if tracker::surface_active_window().ok() != Some(window)
+            || presentation_identity(window).ok() != Some(process) {
+            return Err("SurfaceFocusChanged".into());
+        }
+        Ok(PresentationTarget { origin: Some(Target { window, process, thread: 0,
+            request_clock: std::sync::OnceLock::new() }), previous_external })
+    }
+    pub(super) fn presentation_context_current(context: &PresentationTarget) -> bool {
+        let Ok(window) = tracker::surface_active_window() else { return false; };
+        presentation_context_allowed(context.origin.as_ref().map_or(true,
+            |origin| presentation_identity(origin.window).ok() == Some(origin.process)),
+            context.origin.as_ref().is_some_and(|origin| window == origin.window),
+            tracker::surface_window_pid(window).is_ok_and(ours), window == 0,
+            context.previous_external.as_ref().is_some_and(is_current))
     }
     pub(super) fn is_current(target: &Target) -> bool {
         identity(target.window).ok() == Some(target.process)
@@ -532,6 +580,15 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn presentation_context_keeps_owned_origin_and_rejects_unknown_external_focus() {
+        assert!(presentation_context_allowed(true, true, false, false, false));
+        assert!(presentation_context_allowed(true, false, true, false, false));
+        assert!(presentation_context_allowed(true, false, false, true, false));
+        assert!(presentation_context_allowed(true, false, false, false, true));
+        assert!(!presentation_context_allowed(true, false, false, false, false));
+        assert!(!presentation_context_allowed(false, true, true, true, true));
+    }
     #[test]
     fn restore_waits_through_absence_without_activating() {
         let start = Instant::now();
