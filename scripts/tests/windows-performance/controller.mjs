@@ -19,6 +19,22 @@ export const MEASURED = 30;
 export const LATENCY_POLL_MS = 10;
 export const ARM_ACTIVE_MS = 1020000;
 export const ARM_TOTAL_MS = 1080000;
+export const QUERY_SETUP_MS = 700;
+
+export function queryObservation(accessibility, panel, query, rows, selected = null) {
+  const matchesPanel = accessibility?.pid === panel.pid && accessibility?.hwnd === panel.hwnd;
+  const elements = Array.isArray(accessibility?.elements) ? accessibility.elements : [];
+  const visible = elements.filter(item => item.enabled && !item.offscreen);
+  const inputMatches = visible.some(item => item.control_type === 'ControlType.Edit' && item.value === query);
+  const bodies = rows.filter(row => visible.some(item => item.name === row.content)).map(row => row.content);
+  const resultsMatch = selected ? bodies.length === 1 && bodies[0] === selected.content : bodies.length >= 2;
+  return { status: matchesPanel && inputMatches && resultsMatch ? 'verified' : 'unverified',
+    query, input_value_verified: inputMatches, original_panel_verified: matchesPanel,
+    visible_fixture_rows: bodies.length, visible_fixture_contents: bodies,
+    minimum_visible_fixture_rows: selected ? 1 : 2,
+    stored_rows: rows.length, expected_matching_rows: selected ? 1 : null,
+    scope: 'Bounded UIA setup observation; not first-interactive-frame or search-ready latency.' };
+}
 
 export function dataset(token) {
   assert.match(token, /^[a-z]{8,24}$/);
@@ -95,11 +111,13 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
   const root = owned(path.join(cohortRoot, 'dezirclip-surface-' + randomUUID().replaceAll('-', '')), realpathSync(process.env.RUNNER_TEMP));
   assert(!existsSync(root)); mkdirSync(root);
   const report = { schema_version: 1, kind: 'phase6_windows_comparison_arm_v1', source_revision: expected.source_revision,
-    renderer, arm_index: armIndex, status: 'running', observations: [], trials: [], resources: {},
+    renderer, arm_index: armIndex, status: 'running', observations: [], trials: [], resources: {}, query_normalizations: [],
+    query_method: 'same-query-v3',
     limits: ['Native visible plus actual foreground is an observed polling endpoint, not first interactive frame.',
       'First invocation follows Desktop startup/settings; Tauri may be prebuilt while MyGo may start a new helper. Neither is whole-application cold startup.',
       'Activation proxy percentiles cannot establish the first-interactive-frame improvement threshold.',
       'Query gets a fixed 700 ms setup settle; no search-ready latency is measured.',
+      'Query qualification uses UIA before each trial and resources; resulting framework accessibility caches may affect the observed footprint.',
       'Main WebView remains constructed and hidden, idle destruction disabled for both renderers.',
       'Owned process cleanup can be forced; natural application shutdown is not measured.'],
     latency_poll_delay_ms: LATENCY_POLL_MS,
@@ -173,14 +191,14 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
     };
     let first = null, showIndex = 0;
     const inputRole = panel => renderer === 'mygo' ? { role: 'surface' } : { role: 'tauri', panel_hwnd: panel.hwnd };
-    const show = async () => {
+    const show = async (purpose = 'measured-show') => {
       const index = showIndex++; let previousSample = null;
       await request('activate-target');
       const input = await request('keys', { role: 'target', key: 'hotkey' });
       const result = await boundedPoll('Actual panel visible and foreground', async budget => {
         const observedAt = performance.now();
         const observation = await request('observe', {}, budget);
-        report.observations.push({ stage: 'show', show_index: index, observation,
+        report.observations.push({ stage: 'show', show_index: index, purpose, observation,
           observer_roundtrip_ms: performance.now() - observedAt,
           native_sample_interval_ms: previousSample === null ? null
             : Number(BigInt(observation.observed_monotonic_ns) - previousSample) / 1e6 });
@@ -189,20 +207,43 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
         return { panel, observation };
       }, activeDeadline, 12000, LATENCY_POLL_MS);
       first ??= result.panel;
-      return { ...result, native_visible_focus_ms: latencyMs(input, result.observation), input };
+      return { ...result, native_visible_focus_ms: latencyMs(input, result.observation), input, purpose };
     };
     const hidden = async panel => boundedPoll('Panel hidden and original target foreground', async budget => {
       const observation = await request('observe', {}, budget);
       return !observation.windows.some(window => window.hwnd === panel.hwnd && window.visible)
         && observation.foreground.hwnd === observation.target_hwnd ? observation : null;
     }, activeDeadline);
+    const observeQuery = async (panel, query, selected = null) => {
+      const accessibility = await request('accessibility', { pid: panel.pid, panel_hwnd: panel.hwnd }, 10000);
+      const observation = await request('observe');
+      verifyPanel(observation, renderer, report.desktop_original, helper, panel);
+      return { ...queryObservation(accessibility, panel, query, rows, selected), accessibility, observation_after: observation };
+    };
+    const normalizeQuery = async trial => {
+      const began = performance.now();
+      const setup = await show('query-normalization');
+      report.first_invocation ??= { ...setup, meaning: 'Unmeasured normalization invocation; not an application-cold or formal trial sample.' };
+      const select = await request('keys', { ...inputRole(setup.panel), key: 'select-all' });
+      const clear = await request('keys', { ...inputRole(setup.panel), key: 'backspace' });
+      await delay(QUERY_SETUP_MS);
+      const observed = await observeQuery(setup.panel, '');
+      const receipt = { trial, setup, select, clear, observed, setup_wait_ms: QUERY_SETUP_MS,
+        elapsed_ms: performance.now() - began, timing_sample: false };
+      report.query_normalizations.push(receipt);
+      assert.equal(observed.status, 'verified', 'Blank search state was not observed; setup remains unverified');
+      await request('keys', { ...inputRole(setup.panel), key: 'escape' });
+      receipt.hidden = await hidden(setup.panel);
+      receipt.elapsed_ms = performance.now() - began;
+    };
     for (let trial = 0; trial < WARMUPS + MEASURED; trial++) {
       assert(performance.now() < activeDeadline);
       await request('clear-target');
+      await normalizeQuery(trial);
       const shown = await show(), selected = rows[7];
       await request('keys', { ...inputRole(shown.panel), key: 'select-all' });
       await request('keys', { ...inputRole(shown.panel), text: selected.query });
-      await delay(700);
+      await delay(QUERY_SETUP_MS);
       const enter = await request('keys', { ...inputRole(shown.panel), key: 'enter' });
       const targetObservations = []; let previousTargetSample = null;
       const target = await boundedPoll('Single Enter pasted the complete selected text', async budget => {
@@ -245,7 +286,17 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
       else assert(!observation.windows.some(window => window.hwnd === panel.hwnd && window.visible));
       return { ...ledger.summarize(), raw: { path: output, ...regular(output) }, observation_after: observation };
     };
-    const visible = await show();
+    const visible = await show('resource-setup');
+    const resourceSetupStarted = performance.now();
+    const resourceQuery = rows[7];
+    const resourceSelect = await request('keys', { ...inputRole(visible.panel), key: 'select-all' });
+    const resourceInput = await request('keys', { ...inputRole(visible.panel), text: resourceQuery.query });
+    await delay(QUERY_SETUP_MS);
+    const resourceObservation = await observeQuery(visible.panel, resourceQuery.query, resourceQuery);
+    report.resource_query_setup = { query: resourceQuery.query, expected_content: resourceQuery.content,
+      select: resourceSelect, input: resourceInput, observed: resourceObservation,
+      setup_wait_ms: QUERY_SETUP_MS, elapsed_ms: performance.now() - resourceSetupStarted, timing_sample: false };
+    assert.equal(resourceObservation.status, 'verified', 'Resource query/result workload was not observed; resource comparison remains unverified');
     const mainWindows = visible.observation.windows.filter(window => window.pid === report.desktop_original.pid && window.title === 'DezirClip');
     assert.equal(mainWindows.length, 1, 'The same retained main window is required for both renderers');
     const mainHwnd = mainWindows[0].hwnd;

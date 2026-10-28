@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ARMS, WARMUPS, MEASURED, dataset, validateRows, verifyPanel, latencyMs,
-  remaining, validateResourceState, validateComparisonContext, runComparison } from './controller.mjs';
+  remaining, validateResourceState, validateComparisonContext, runComparison, queryObservation, QUERY_SETUP_MS } from './controller.mjs';
 import { ProcessLedger, percentile, SAMPLE_MS } from './process-sampler.mjs';
 
 const desktop = { pid: 10, image: 'C:/fixture/dezirclip.exe', creation_time_100ns: '100' };
@@ -14,6 +14,43 @@ const panelObservation = renderer => ({ processes: [processRow(), processRow(20,
   windows: [{ hwnd: 1, pid: 10, title: 'DezirClip', visible: false },
     { hwnd: 2, pid: renderer === 'tauri' ? 10 : 20, title: '', class_name: 'Tauri Window', visible: true,
       rect: { width: 480, height: 360 } }], foreground: { hwnd: 2, pid: renderer === 'tauri' ? 10 : 20 } });
+
+test('query setup requires observed input and matching visible fixture rows on the exact panel', () => {
+  assert.equal(QUERY_SETUP_MS, 700);
+  const rows = dataset('abcdefgh'), panel = { pid: 20, hwnd: 2 }, selected = rows[7];
+  const observed = query => ({ ...panel, elements: [
+    { control_type: 'ControlType.Edit', value: query, enabled: true, offscreen: false },
+    { name: selected.content, enabled: true, offscreen: false },
+  ] });
+  const blank = observed('');
+  blank.elements.push({ name: rows[0].content, enabled: true, offscreen: false });
+  assert.equal(queryObservation(blank, panel, '', rows).status, 'verified');
+  assert.equal(queryObservation(observed(selected.query), panel, selected.query, rows, selected).status, 'verified');
+  for (const patch of [{ hwnd: 3 }, { pid: 21 }, { elements: [] },
+    { elements: observed('').elements },
+    { elements: [...observed(selected.query).elements, { name: rows[0].content, enabled: true, offscreen: false }] }]) {
+    assert.equal(queryObservation({ ...observed(selected.query), ...patch }, panel, selected.query, rows, selected).status, 'unverified');
+  }
+  const hiddenInput = structuredClone(blank); hiddenInput.elements[0].offscreen = true;
+  assert.equal(queryObservation(hiddenInput, panel, '', rows).status, 'unverified');
+});
+
+test('blank input with one stale filtered row does not establish a cleared result list', () => {
+  const rows = dataset('abcdefgh'), panel = { pid: 20, hwnd: 2 };
+  const blank = { ...panel, elements: [
+    { control_type: 'ControlType.Edit', value: '', enabled: true, offscreen: false },
+    { name: rows[7].content, enabled: true, offscreen: false },
+  ] };
+  assert.equal(queryObservation(blank, panel, '', rows).status, 'unverified');
+  const duplicate = structuredClone(blank); duplicate.elements.push({ ...blank.elements[1] });
+  assert.equal(queryObservation(duplicate, panel, '', rows).visible_fixture_rows, 1);
+  assert.equal(queryObservation(duplicate, panel, '', rows).status, 'unverified');
+  const offscreen = structuredClone(blank);
+  offscreen.elements.push({ name: rows[0].content, enabled: true, offscreen: true });
+  assert.equal(queryObservation(offscreen, panel, '', rows).status, 'unverified');
+  offscreen.elements[2].offscreen = false;
+  assert.equal(queryObservation(offscreen, panel, '', rows).status, 'verified');
+});
 
 test('ABBA uses identical ten complete ordinary rows and preserves IDs within each arm', () => {
   assert.deepEqual(ARMS, ['tauri', 'mygo', 'mygo', 'tauri']);

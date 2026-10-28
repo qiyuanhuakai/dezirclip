@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 SOURCE = Path(__file__).with_name('windows-performance') / 'derive.py'
 SPEC = importlib.util.spec_from_file_location('performance_derivation', SOURCE)
@@ -44,6 +46,38 @@ class PerformanceDerivationTests(unittest.TestCase):
         for name in ('__init__', 'install_window_procedure', 'focus_snapshot', 'target_preflight', 'activate', 'process', 'bind', 'tree', 'cleanup'):
             with self.subTest(method=name):
                 self.assertEqual(original[name], generated[name])
+
+    def test_derived_tauri_accessibility_requires_the_explicit_original_foreground_panel(self):
+        source = derivation.derive_sources(self.controller, self.target, self.crash_events)['native-target.py']
+        namespace = {'__name__': 'derived_target_pure', '__file__': str(REPOSITORY / '.harness/unused/native-target.py')}
+        exec(compile(source, '<derived native target>', 'exec'), namespace)
+        native_class = namespace['Native']
+        panel = {'pid': 10, 'hwnd': 20, 'visible': True, 'class_name': 'Tauri Window', 'title': '',
+                 'rect': {'width': 480, 'height': 360}}
+        observation = {'windows': [panel], 'foreground': {'hwnd': 20, 'pid': 10}, 'processes': []}
+        native = native_class.__new__(native_class)
+        native.desktop = 10
+        native.observe = lambda: observation
+        native.process = lambda pid: {'running': True}
+        completed = SimpleNamespace(returncode=0, stdout=b'[]', stderr=b'')
+        with patch.dict(namespace['os'].environ, {}, clear=True), patch.object(namespace['subprocess'], 'run', return_value=completed) as reader:
+            self.assertEqual(native.accessibility(10, 20), {'pid': 10, 'hwnd': 20, 'elements': []})
+            reader.assert_called_once()
+            for changed in ('missing-hwnd', 'wrong-hwnd', 'other-foreground', 'extra-visible-window', 'wrong-size', 'titled-main', 'dead-desktop'):
+                with self.subTest(changed=changed):
+                    reader.reset_mock()
+                    modified = {**observation, 'windows': [{**panel, 'rect': dict(panel['rect'])}], 'foreground': dict(observation['foreground'])}
+                    hwnd = 20
+                    if changed == 'missing-hwnd': hwnd = None
+                    elif changed == 'wrong-hwnd': hwnd = 21
+                    elif changed == 'other-foreground': modified['foreground']['hwnd'] = 21
+                    elif changed == 'extra-visible-window': modified['windows'].append({**panel, 'hwnd': 21})
+                    elif changed == 'wrong-size': modified['windows'][0]['rect']['width'] = 481
+                    elif changed == 'titled-main': modified['windows'][0]['title'] = 'DezirClip'
+                    native.observe = lambda: modified
+                    native.process = lambda pid: {'running': changed != 'dead-desktop'}
+                    with self.assertRaises(RuntimeError): native.accessibility(10, hwnd)
+                    reader.assert_not_called()
 
     def test_generation_cannot_overwrite_an_existing_or_outside_directory(self):
         with tempfile.TemporaryDirectory() as temporary:

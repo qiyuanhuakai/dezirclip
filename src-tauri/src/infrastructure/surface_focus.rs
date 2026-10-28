@@ -218,6 +218,26 @@ fn presentation_context_allowed(origin_valid: bool, origin_current: bool, owned_
     absent: bool, previous_external_current: bool) -> bool {
     origin_valid && (origin_current || owned_current || absent || previous_external_current)
 }
+#[cfg(any(target_os = "linux", test))]
+fn present_once(timestamp: u32, deadline: Instant, current: impl Fn() -> bool,
+    now: impl Fn() -> Instant, present: impl FnOnce(u32) -> Result<(), String>) -> Result<(), String> {
+    if timestamp == 0 { return Err("SurfaceActivationUnavailable".into()); }
+    if !current() || now() >= deadline { return Err("SurfaceDisplayCancelled".into()); }
+    present(timestamp)
+}
+#[cfg(target_os = "linux")]
+pub(crate) fn present_tauri_with_time(window: &tauri::WebviewWindow, timestamp: u32,
+    deadline: Instant, current: impl Fn() -> bool) -> Result<(), String> {
+    use gtk::prelude::GtkWindowExt;
+    if window.label() != "quick-paste" || !gtk::is_initialized_main_thread() {
+        return Err("QuickPasteUiThreadRequired".into());
+    }
+    let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
+    present_once(timestamp, deadline, current, Instant::now, |timestamp| {
+        gtk_window.present_with_time(timestamp);
+        Ok(())
+    })
+}
 impl Target {
     pub fn capture() -> Result<Self, String> {
         native::capture()
@@ -259,6 +279,11 @@ impl Target {
         #[cfg(target_os = "windows")]
         let elapsed = Duration::ZERO;
         Ok(Instant::now() + presentation_budget(budget, elapsed)?)
+    }
+    #[cfg(target_os = "linux")]
+    pub(crate) fn request_timestamp(&self) -> Result<u32, String> {
+        self.request_clock.get().map(|clock| clock.timestamp).filter(|value| *value != 0)
+            .ok_or_else(|| "SurfaceActivationUnavailable".into())
     }
     pub fn restore_if(&self, deadline: Instant, current: impl Fn() -> bool + Send + Sync + 'static,
         diagnostic: impl FnMut(RestoreForeground)) -> Result<(), String> {
@@ -580,6 +605,55 @@ mod native {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn gtk_presentation_uses_the_original_server_timestamp_once() {
+        let start = Instant::now();
+        let calls = std::cell::Cell::new(0);
+        present_once(17, start + Duration::from_secs(1), || true, || start, |timestamp| {
+            assert_eq!(timestamp, 17);
+            calls.set(calls.get() + 1);
+            Ok(())
+        }).unwrap();
+        assert_eq!(calls.get(), 1);
+    }
+    #[test]
+    fn gtk_presentation_rejects_missing_expired_or_cancelled_requests_without_activation() {
+        let start = Instant::now();
+        for (timestamp, now, current) in [(0, start, true), (17, start + Duration::from_secs(1), true), (17, start, false)] {
+            let calls = std::cell::Cell::new(0);
+            assert!(present_once(timestamp, start + Duration::from_secs(1), || current, || now, |_| {
+                calls.set(calls.get() + 1);
+                Ok(())
+            }).is_err());
+            assert_eq!(calls.get(), 0);
+        }
+    }
+    #[test]
+    fn gtk_presentation_checks_expiry_after_context_observation() {
+        let start = Instant::now();
+        let clock = std::cell::Cell::new(start);
+        let calls = std::cell::Cell::new(0);
+        assert!(present_once(17, start + Duration::from_secs(1), || {
+            clock.set(start + Duration::from_secs(1));
+            true
+        }, || clock.get(), |_| {
+            calls.set(calls.get() + 1);
+            Ok(())
+        }).is_err());
+        assert_eq!(calls.get(), 0);
+    }
+    #[test]
+    fn gtk_presentation_failure_never_retries_or_replaces_the_captured_time() {
+        let start = Instant::now();
+        let calls = std::cell::Cell::new(0);
+        let result = present_once(17, start + Duration::from_secs(1), || true, || start, |timestamp| {
+            assert_eq!(timestamp, 17);
+            calls.set(calls.get() + 1);
+            Err("NativePresentationFailed".to_owned())
+        });
+        assert_eq!(result.unwrap_err(), "NativePresentationFailed");
+        assert_eq!(calls.get(), 1);
+    }
     #[test]
     fn presentation_context_keeps_owned_origin_and_rejects_unknown_external_focus() {
         assert!(presentation_context_allowed(true, true, false, false, false));

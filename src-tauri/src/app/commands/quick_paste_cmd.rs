@@ -196,7 +196,7 @@ pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
 
 async fn show_surface(app:&AppHandle,toggle:bool)->Result<Option<crate::app::surface_supervisor::SurfaceFallback>,String> {
     use crate::app::surface_supervisor::{self,SurfaceSupervisor};
-    if !surface_supervisor::enabled(app) {return Ok(Some(surface_supervisor::SurfaceFallback::original_tauri(surface_supervisor::route_ticket(app))?));}
+    if !surface_supervisor::enabled(app) {return Ok(Some(surface_supervisor::SurfaceFallback::original_tauri(app, surface_supervisor::route_ticket(app)).await?));}
     let manager=app.state::<SurfaceSupervisor>();
     let closing=toggle && manager.is_open();
     let mut request=manager.begin_request()?;
@@ -278,7 +278,9 @@ async fn finish_x11_presentation(app: &AppHandle, window: &tauri::WebviewWindow,
                 return Err("QuickPasteRequestCancelled".into());
             }
             if send.is_closed() || !ticket.current(&handle) { return Err("QuickPasteRequestCancelled".into()); }
-            window.set_focus().map_err(|error| error.to_string())
+            crate::infrastructure::surface_focus::present_tauri_with_time(
+                &window, ticket.request_timestamp()?, deadline,
+                || !send.is_closed() && ticket.current(&handle))
         })();
         let _ = send.send(result);
     }).map_err(|error| error.to_string())?;

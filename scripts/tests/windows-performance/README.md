@@ -20,6 +20,26 @@ editor, with all original history IDs retained. Each arm also measures visible
 and hidden state for 240 seconds after a 30-second settle, nominally every 250 ms.
 The main WebView remains constructed and hidden for both renderers.
 
+The query-state v3 method uses one additional, unmeasured show before every
+trial: native Ctrl+A/Backspace, 700 ms of setup, a bounded UIA observation of
+the empty input and at least two distinct visible fixture bodies, then Escape
+and actual hidden/target focus confirmation. A blank input with one stale
+filtered row is insufficient. Both renderers start each timed show with an
+empty search. These extra shows are setup, including the first invocation;
+their latency is never pooled into the five warmups or thirty formal samples.
+The original 1020-second active and 1080-second total arm budgets still apply.
+
+Before resource sampling, both renderers receive the same query for row 7.
+Bounded, original-window UIA must observe that input and exactly one matching
+visible fixture body before the unchanged 30-second settle. There are ten
+stored rows and one matching visible result. Missing or non-equivalent UIA
+data is explicitly unverified and stops the arm; sending input or waiting
+700 ms alone is insufficient. These observations are setup, not measurements
+of search readiness or first interactive frame.
+UIA can activate framework accessibility caches. The resulting resource values
+describe this UIA-observed controlled state and do not establish an
+accessibility-free natural idle footprint.
+
 Latency is a **native visibility and foreground activation proxy**, observed
 with a 10 ms polling delay. Actual observation intervals and request overhead
 are retained. It is not the first interactive frame and cannot establish the

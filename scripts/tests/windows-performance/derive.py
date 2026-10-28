@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
-BASE_COMMIT = '29d4333abd1427d92345bf2d11111cce64ff29a3'
+BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
 
 
 def derive_sources(controller, original_target, crash_events):
@@ -37,6 +37,7 @@ def derive_sources(controller, original_target, crash_events):
     replace_once("sys.path.insert(0, str(Path(__file__).resolve().parents[1]))",
                  "sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))")
     replace_once('deadline = time.monotonic() + 300', 'deadline = time.monotonic() + 1080')
+    replace_once("'paste': [0x11, 0x56]}", "'paste': [0x11, 0x56], 'backspace': [0x08]}")
     replace_once("'memory_scope': 'All observed Desktop descendants; working set/private commit are not PSS or USS.'}",
                  "'memory_scope': 'All observed Desktop descendants; working set/private commit are not PSS or USS.',\n                'observed_monotonic_ns': str(time.monotonic_ns())}")
     replace_once("        else:\n            raise RuntimeError('Only explicit target/Surface input is permitted')", """        elif role == 'tauri':
@@ -56,6 +57,30 @@ def derive_sources(controller, original_target, crash_events):
                  "elif operation == 'target-text': value = {'text': native.target_text(), 'target_focus': native.focus_snapshot(), 'observed_monotonic_ns': str(time.monotonic_ns())}")
     replace_once("elif operation == 'observe': value = native.observe()",
                  "elif operation == 'observe': value = native.observe()\n                elif operation == 'observe-processes': value = native.resource_observation(request)")
+    replace_once("elif operation == 'accessibility': value = native.accessibility(request.get('pid'))",
+                 "elif operation == 'accessibility': value = native.accessibility(request.get('pid'), request.get('panel_hwnd'))")
+    replace_once("""    def accessibility(self, pid):
+        observation = self.observe()
+        window = next(w for w in observation['windows'] if w['pid'] == pid and w['visible'])
+        require(any(p['pid'] == pid and Path(p['image']).resolve() == (self.root / 'candidate/dzc-surface.exe').resolve() for p in observation['processes']), 'UIA is limited to the actual owned Surface')
+""", """    def accessibility(self, pid, panel_hwnd=None):
+        observation = self.observe()
+        if pid == self.desktop:
+            windows = [w for w in observation['windows'] if w['pid'] == self.desktop and w['visible'] and w['class_name'] == 'Tauri Window']
+            require(isinstance(panel_hwnd, int) and len(windows) == 1, 'Explicit unique original Tauri panel required for UIA')
+            window = windows[0]
+            require(window['hwnd'] == panel_hwnd and window['title'] == ''
+                    and window['rect']['width'] == 480 and window['rect']['height'] == 360
+                    and observation['foreground'].get('hwnd') == panel_hwnd
+                    and observation['foreground'].get('pid') == self.desktop
+                    and self.process(self.desktop)['running'],
+                    'UIA requires the exact original foreground 480x360 Tauri panel')
+        else:
+            window = next(w for w in observation['windows'] if w['pid'] == pid and w['visible'])
+            require(any(p['pid'] == pid and Path(p['image']).resolve() == (self.root / 'candidate/dzc-surface.exe').resolve() for p in observation['processes']), 'UIA is limited to the actual owned Surface')
+            require(panel_hwnd == window['hwnd'] and observation['foreground'].get('hwnd') == panel_hwnd,
+                    'UIA requires the original foreground Surface panel')
+""")
     replace_once('    def activate(self, alternate=False):', """    def resource_observation(self, request):
         processes = self.tree()
         hwnd, pid = request.get('panel_hwnd'), request.get('panel_pid')

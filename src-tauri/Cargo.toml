@@ -17,7 +17,7 @@ desktop = [
     "dep:window-vibrancy", "dep:machine-uid",
     "dep:dotenvy", "dep:qrcode2", "dep:xcap", "dep:font-kit",
     "dep:windows-core", "dep:windows-future", "dep:windows-version",
-    "dep:winreg", "dep:webview2-com", "dep:x11-clipboard", "dep:ksni",
+    "dep:winreg", "dep:webview2-com", "dep:x11-clipboard", "dep:ksni", "dep:gtk",
     "dep:tauri-plugin-updater", "dep:reqwest", "dep:rustls",
 ]
 portable = ["dzc-core/portable", "dzc-platform/portable"]
@@ -98,6 +98,7 @@ winreg = { workspace = true, optional = true }
 webview2-com = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "=0.18.2", optional = true }
 libc = { workspace = true }
 x11rb = { workspace = true }
 x11-clipboard = { workspace = true, optional = true }
