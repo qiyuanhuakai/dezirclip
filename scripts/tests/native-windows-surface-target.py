@@ -192,6 +192,7 @@ class Native:
                 'messages': list(self.focus_messages)}
 
     def target_preflight(self, expected):
+        require(self.desktop is None, 'Independent target calibration must precede Desktop binding')
         require(valid_seed_text(expected), 'Only the original synthetic clipboard seed may calibrate the target')
         require(self.target_text() == '', 'Calibration requires the original empty target')
         self.activate()
@@ -289,7 +290,9 @@ class Native:
         return result
 
     def observe(self):
-        processes = self.tree()
+        # Before Desktop starts, calibration may inspect only this fixture's
+        # windows. Product observations still use the original bound tree.
+        processes = self.tree() if self.desktop is not None else []
         owned = {p['pid'] for p in processes if p['running']} | {os.getpid()}
         windows = []
         @self.enum_callback
@@ -318,8 +321,12 @@ class Native:
 
     def activate(self, alternate=False):
         window, edit = (self.alternate, self.alternate_edit) if alternate else (self.target, self.edit)
+        before = self.focus_snapshot()
         self.user.ShowWindow(window, 5)
-        require(self.user.SetForegroundWindow(window), 'Synthetic target activation was denied')
+        activated = bool(self.user.SetForegroundWindow(window))
+        require(activated, 'Synthetic target activation was denied: ' + json.dumps({
+            'role': 'alternate' if alternate else 'target', 'requested_hwnd': int(window),
+            'before': before, 'after': self.focus_snapshot()}))
         self.user.SetFocus(edit)
         require(self.user.GetForegroundWindow() == window, 'Synthetic target is not foreground')
         return {'foreground_target': True, 'hwnd': int(window), 'alternate': alternate, 'target_focus': self.focus_snapshot()}

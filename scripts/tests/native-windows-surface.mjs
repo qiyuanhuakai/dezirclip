@@ -388,6 +388,16 @@ export async function runSurfaceAcceptance(args, env = process.env) {
     const clipboard = new LoggedProcess(args.python, ['-B', fileURLToPath(new URL('./native-windows-clipboard.py', import.meta.url))], root, 'synthetic-clipboard-seed',
       { ...environment(root, true), DEZIRCLIP_NATIVE_CAPTURE_TEXT: seedText });
     await completedCommand(clipboard, 15000);
+    await stage('independent_native_target_paste_calibration', async () => {
+      const calibration = await native.request('target-preflight', { expected_text: seedText });
+      assert.equal(calibration.actual_target_text, seedText);
+      assert.equal(calibration.paste_attempts, 1);
+      assert.equal(calibration.input.sent, 4);
+      assert.equal(calibration.focus_before_input.foreground_hwnd, calibration.focus_before_input.target_hwnd);
+      assert.equal(calibration.focus_before_input.own_thread_focus_hwnd, calibration.focus_before_input.edit_hwnd);
+      assert.equal((await native.request('target-text')).text, '');
+      return calibration;
+    });
     const desktopEnv = { ...environment(root), WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
       WEBVIEW2_USER_DATA_FOLDER: path.join(root, 'webview'), DEZIRCLIP_DB_PATH: path.join(root, 'profile/clipboard.db') };
     desktop = new LoggedProcess(desktopPath, [], root, 'desktop', desktopEnv);
@@ -450,16 +460,6 @@ export async function runSurfaceAcceptance(args, env = process.env) {
       evidence.observed_hotkey_to_native_visible_ms = performance.now() - started;
       evidence.first_interactive_frame_measured = false; return evidence;
     };
-    await stage('independent_native_target_paste_calibration', async () => {
-      const calibration = await native.request('target-preflight', { expected_text: seedText });
-      assert.equal(calibration.actual_target_text, seedText);
-      assert.equal(calibration.paste_attempts, 1);
-      assert.equal(calibration.input.sent, 4);
-      assert.equal(calibration.focus_before_input.foreground_hwnd, calibration.focus_before_input.target_hwnd);
-      assert.equal(calibration.focus_before_input.own_thread_focus_hwnd, calibration.focus_before_input.edit_hwnd);
-      assert.equal((await native.request('target-text')).text, '');
-      return calibration;
-    });
     first = await stage('actual_hotkey_cold_native_show', () => activateAndShow());
     await stage('actual_escape_restores_target', async () => {
       await native.request('keys', { role: 'surface', key: 'escape' });
