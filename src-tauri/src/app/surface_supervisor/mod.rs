@@ -104,15 +104,43 @@ pub struct SurfaceFallback {
     deadline: Instant,
     #[cfg(target_os = "linux")]
     presentation: Option<Arc<crate::infrastructure::surface_focus::PresentationTarget>>,
+    #[cfg(target_os = "linux")]
+    request_timestamp: Option<u32>,
 }
 impl SurfaceFallback {
-    pub fn original_tauri(revision: u64) -> Result<Self, String> {
+    pub async fn original_tauri(app: &AppHandle, revision: u64) -> Result<Self, String> {
         let deadline = Instant::now() + TIMEOUT;
         #[cfg(target_os = "linux")]
         let presentation = if dzc_platform::runtime::is_native_wayland() { None }
             else { Some(Arc::new(crate::infrastructure::surface_focus::PresentationTarget::capture()?)) };
-        Ok(Self { revision, target: None, original_tauri: true, deadline,
-            #[cfg(target_os = "linux")] presentation })
+        let result = Self { revision, target: None, original_tauri: true, deadline,
+            #[cfg(target_os = "linux")] presentation,
+            #[cfg(target_os = "linux")] request_timestamp: None };
+        #[cfg(target_os = "linux")]
+        let mut result = result;
+        #[cfg(target_os = "linux")]
+        if result.presentation.is_some() {
+            if !result.current(app) { return Err("SurfaceDisplayCancelled".into()); }
+            let probe_deadline = deadline.min(Instant::now() + Duration::from_millis(250));
+            let generation = app.state::<SurfaceSupervisor>().revision.clone();
+            // This predicate runs inside deadline-bound X socket polling. Keep it
+            // atomic-only; context queries are checked outside the socket loop.
+            let current: Arc<dyn Fn() -> bool + Send + Sync> = Arc::new(move ||
+                revision != u64::MAX && generation.load(Ordering::Acquire) == revision);
+            let worker = tauri::async_runtime::spawn_blocking(move ||
+                crate::infrastructure::linux_api::surface_activation::request_time(probe_deadline, current));
+            let timestamp = tokio::time::timeout_at(tokio::time::Instant::from_std(probe_deadline), worker)
+                .await.map_err(|_| "SurfaceActivationUnavailable".to_owned())?
+                .map_err(|_| "SurfaceActivationUnavailable".to_owned())??;
+            if Instant::now() >= probe_deadline || !result.current(app) {
+                return Err("SurfaceDisplayCancelled".into());
+            }
+            if timestamp == 0 { return Err("SurfaceActivationUnavailable".into()); }
+            result.request_timestamp = Some(timestamp);
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = app;
+        Ok(result)
     }
     fn context_current(&self) -> bool {
         #[cfg(target_os = "linux")]
@@ -124,6 +152,13 @@ impl SurfaceFallback {
     }
     pub(crate) fn revision(&self) -> u64 { self.revision }
     pub(crate) fn deadline(&self) -> Instant { self.deadline }
+    #[cfg(target_os = "linux")]
+    pub(crate) fn request_timestamp(&self) -> Result<u32, String> {
+        // MyGo failure fallback keeps the server clock captured by that request;
+        // sampling a newer clock here would grant a late request fresh priority.
+        self.request_timestamp.or_else(|| self.target.as_ref().and_then(|target| target.request_timestamp().ok()))
+            .filter(|value| *value != 0).ok_or_else(|| "SurfaceActivationUnavailable".into())
+    }
 }
 impl SurfaceRequest {
     fn bind(&mut self, owner: Option<Arc<Managed>>) -> Result<(), String> {
@@ -885,6 +920,7 @@ impl SurfaceSupervisor {
         Ok((!closing && self.request_current(ticket)).then(|| SurfaceFallback {
             revision: ticket, target: request.target.clone(), original_tauri: false, deadline: Instant::now() + TIMEOUT,
             #[cfg(target_os = "linux")] presentation: None,
+            #[cfg(target_os = "linux")] request_timestamp: None,
         }))
     }
     async fn restore_target(&self, process: Arc<Managed>, target: Arc<Target>, revision: u64, deadline: Instant) -> Result<(), String> {

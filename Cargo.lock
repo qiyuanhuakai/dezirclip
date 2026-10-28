@@ -1262,6 +1262,7 @@ dependencies = [
  "dzc-platform",
  "dzc-service",
  "font-kit",
+ "gtk",
  "hex",
  "image",
  "keyring",
