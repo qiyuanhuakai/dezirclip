@@ -732,6 +732,29 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Commit a Quick-Paste handoff on the UI thread without restoring external focus.
+/// The route lock covers only pending-show cancellation, never native window calls.
+pub(crate) fn hide_main_for_quick_paste(
+    app: &AppHandle, revision: u64, deadline: std::time::Instant,
+    queue_open: impl FnOnce() -> bool,
+) -> Result<(), String> {
+    if !idle_destroyer::runs_on_main_thread() { return Err("QuickPasteUiThreadRequired".into()); }
+    crate::app::surface_supervisor::commit_main_handoff(app, revision, deadline, queue_open)?;
+    if !crate::app::surface_supervisor::route_current(app, revision) {
+        return Err("SurfaceDisplayCancelled".into());
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        release_win_keys();
+        let _ = main.set_focusable(false);
+        main.hide().map_err(|error| error.to_string())?;
+        webview_memory::lower_window_memory(&main, "quick-paste-hide-main");
+    }
+    idle_destroyer::mark_hidden();
+    hide_compact_preview_window(app);
+    disable_main_navigation();
+    Ok(())
+}
+
 #[tauri::command]
 pub fn toggle_window_cmd(app_handle: AppHandle) -> Result<(), String> {
     toggle_window(&app_handle);

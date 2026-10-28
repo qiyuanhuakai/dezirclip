@@ -33,7 +33,6 @@ use crate::services::clipboard_ops;
 /// Window label, matches `tauri.conf.json` (Task 22) and the main label used
 /// elsewhere in the app.
 const QUICK_PASTE_LABEL: &str = "quick-paste";
-const MAIN_LABEL: &str = "main";
 
 /// Fallback dimensions when the window's `outer_size()` is unavailable.
 /// Mirror the values declared in `tauri.conf.json` (480×360).
@@ -213,6 +212,32 @@ async fn show_surface(app:&AppHandle,toggle:bool)->Result<Option<crate::app::sur
 }
 
 fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket:&crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let handle = app.clone();
+    let window = window.clone();
+    let ticket = ticket.clone();
+    let deadline = ticket.deadline();
+    // with_window owns its creation lock on this worker. The UI closure must
+    // not build/collect auxiliary windows or wait for any worker operation.
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            if send.is_closed() || !ticket.current(&handle) {
+                return Err("QuickPasteRequestCancelled".into());
+            }
+            crate::app::window_manager::hide_main_for_quick_paste(
+                &handle, ticket.revision(), deadline, || !send.is_closed())?;
+            show_quick_paste_window_on_ui(&handle, &window, &ticket)
+        })();
+        let _ = send.send(result);
+    }).map_err(|error| error.to_string())?;
+    tauri::async_runtime::block_on(async {
+        tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), receive)
+            .await.map_err(|_| "QuickPasteRequestCancelled".to_string())?
+            .map_err(|_| "QuickPasteRequestCancelled".to_string())?
+    })
+}
+
+fn show_quick_paste_window_on_ui(app: &AppHandle, window: &tauri::WebviewWindow,ticket:&crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
     if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
     if let Ok(cursor) = window.cursor_position() {
@@ -234,15 +259,6 @@ fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket
         });
         let (x, y) = compute_quick_paste_position(cursor_x, cursor_y, win_w, win_h, monitor);
         let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
-    }
-
-    if let Some(main) = app.get_webview_window(MAIN_LABEL) {
-        if main.is_visible().unwrap_or(false) {
-            let _ = main.set_focusable(false);
-            let _ = main.hide();
-            crate::app::webview_memory::lower_window_memory(&main, "quick-paste-hide-main");
-            crate::app::idle_destroyer::mark_hidden();
-        }
     }
 
     let _ = window.set_ignore_cursor_events(false);

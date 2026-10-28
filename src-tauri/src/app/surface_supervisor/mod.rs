@@ -63,6 +63,9 @@ impl Drop for PendingReply<'_> {
 #[derive(Default)]
 pub struct SurfaceSupervisor {
     serial: AsyncMutex<()>,
+    // Only revision changes and the atomic main-show cancellation use this lock.
+    // Never hold it over native window calls, another lock, or an await.
+    route_commit: Mutex<()>,
     process: Mutex<Option<Arc<Managed>>>,
     revision: Arc<AtomicU64>,
     visible: AtomicU64,
@@ -93,21 +96,25 @@ pub struct SurfaceRequest {
     display: Option<String>,
     target: Option<Arc<Target>>,
 }
+#[derive(Clone)]
 pub struct SurfaceFallback {
     revision: u64,
     target: Option<Arc<Target>>,
     original_tauri: bool,
+    deadline: Instant,
 }
 impl SurfaceFallback {
     pub fn original_tauri(revision: u64) -> Self {
-        Self { revision, target: None, original_tauri: true }
+        Self { revision, target: None, original_tauri: true, deadline: Instant::now() + TIMEOUT }
     }
     fn context_current(&self) -> bool {
         self.original_tauri || self.target.as_ref().is_some_and(|target| target.presentation_current())
     }
     pub fn current(&self, app: &AppHandle) -> bool {
-        route_current(app, self.revision) && self.context_current()
+        Instant::now() < self.deadline && route_current(app, self.revision) && self.context_current()
     }
+    pub(crate) fn revision(&self) -> u64 { self.revision }
+    pub(crate) fn deadline(&self) -> Instant { self.deadline }
 }
 impl SurfaceRequest {
     fn bind(&mut self, owner: Option<Arc<Managed>>) -> Result<(), String> {
@@ -424,6 +431,7 @@ impl SurfaceSupervisor {
         self.revision.load(Ordering::Acquire)
     }
     fn claim_cancel(&self, expected: u64) -> Option<u64> {
+        let _commit = self.route_commit.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let next = expected.checked_add(1)?;
         self.revision
             .compare_exchange(expected, next, Ordering::AcqRel, Ordering::Acquire)
@@ -455,12 +463,24 @@ impl SurfaceSupervisor {
             .compare_exchange(revision, 0, Ordering::AcqRel, Ordering::Acquire);
     }
     fn invalidate(&self) -> u64 {
+        let _commit = self.route_commit.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         self.revision
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
                 value.checked_add(1)
             })
             .map(|previous| previous + 1)
             .unwrap_or(u64::MAX)
+    }
+    fn commit_main_handoff(&self, revision: u64, deadline: Instant,
+        queue_open: impl FnOnce() -> bool, cancel_pending: impl FnOnce()) -> Result<(), String> {
+        let _commit = self.route_commit.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !queue_open() || Instant::now() >= deadline || !self.request_current(revision) {
+            return Err("SurfaceDisplayCancelled".into());
+        }
+        // A later main request invalidates this route before creating its pending
+        // show. Linearize only these atomics; native actions remain on the UI queue.
+        cancel_pending();
+        Ok(())
     }
     pub fn visible(&self) -> bool {
         let revision = self.current_revision();
@@ -649,12 +669,26 @@ impl SurfaceSupervisor {
             shown: false,
         });
         request.display = Some(display.clone());
-        if let Some(main) = app.get_webview_window("main") {
-            if main.is_visible().unwrap_or(false) {
-                crate::app::window_manager::hide_window_cmd(app.clone()).map_err(error)?;
-            }
-        }
         let focus_deadline = target.presentation_deadline(TIMEOUT)?;
+        let (handoff_send, handoff_receive) = oneshot::channel();
+        let handoff_app = app.clone();
+        let handoff_process = process.clone();
+        let handoff_target = target.clone();
+        app.run_on_main_thread(move || {
+            let result = (|| {
+                if handoff_send.is_closed() || Instant::now() >= focus_deadline {
+                    return Err("SurfaceDisplayCancelled".into());
+                }
+                handoff_app.state::<SurfaceSupervisor>().valid(&handoff_process, revision)?;
+                if !handoff_target.context_current() { return Err("SurfaceFocusChanged".into()); }
+                crate::app::window_manager::hide_main_for_quick_paste(
+                    &handoff_app, revision, focus_deadline, || !handoff_send.is_closed())
+            })();
+            let _ = handoff_send.send(result);
+        }).map_err(error)?;
+        tokio::time::timeout_at(tokio::time::Instant::from_std(focus_deadline), handoff_receive)
+            .await.map_err(|_| "SurfaceFocusUnavailable".to_owned())?.map_err(error)??;
+        self.valid(&process, revision)?;
         target.authorize_managed(process.pid, || self.valid(&process, revision).is_ok())?;
         eprintln!("[surface] focus-authorized pid={} revision={}", process.pid, revision);
         let response = process
@@ -840,7 +874,7 @@ impl SurfaceSupervisor {
         if current.is_some() { self.stop_current("disabled", true).await?; }
         if self.running() { return Err("SurfaceExitUnconfirmed".into()); }
         Ok((!closing && self.request_current(ticket)).then(|| SurfaceFallback {
-            revision: ticket, target: request.target.clone(), original_tauri: false,
+            revision: ticket, target: request.target.clone(), original_tauri: false, deadline: Instant::now() + TIMEOUT,
         }))
     }
     async fn restore_target(&self, process: Arc<Managed>, target: Arc<Target>, revision: u64, deadline: Instant) -> Result<(), String> {
@@ -1258,6 +1292,14 @@ pub fn route_current(app: &AppHandle, ticket: u64) -> bool {
             .quick_paste_enabled
             .load(Ordering::Acquire)
 }
+pub(crate) fn commit_main_handoff(app: &AppHandle, ticket: u64, deadline: Instant,
+    queue_open: impl FnOnce() -> bool) -> Result<(), String> {
+    let settings = app.state::<crate::app_state::SettingsState>();
+    let manager = app.try_state::<SurfaceSupervisor>().ok_or("SurfaceDisplayCancelled")?;
+    manager.commit_main_handoff(ticket, deadline,
+        || queue_open() && settings.quick_paste_enabled.load(Ordering::Acquire),
+        crate::app::idle_destroyer::cancel_pending_show)
+}
 pub fn notify_main_shown(app: &AppHandle) {
     // A hidden main toast is not feedback. Retain only the generic failure
     // until a user-visible, painted main frame or a fresh Surface show.
@@ -1513,6 +1555,47 @@ mod transition_tests {
         assert!(supervisor.claim_cancel(current).is_some());
         assert!(!supervisor.visible());
         assert!(!supervisor.is_open());
+    }
+    #[test]
+    fn handoff_does_not_cancel_a_main_request_that_already_superseded_it() {
+        let supervisor = SurfaceSupervisor::default();
+        let old = supervisor.invalidate();
+        let main = supervisor.invalidate();
+        let pending_main = AtomicBool::new(true);
+        assert!(supervisor.commit_main_handoff(old, Instant::now() + TIMEOUT, || true,
+            || pending_main.store(false, Ordering::Release)).is_err());
+        assert!(pending_main.load(Ordering::Acquire));
+        assert!(supervisor.request_current(main));
+    }
+    #[test]
+    fn a_main_request_after_handoff_keeps_its_new_pending_show() {
+        let supervisor = SurfaceSupervisor::default();
+        let surface = supervisor.invalidate();
+        let pending_main = AtomicBool::new(true);
+        supervisor.commit_main_handoff(surface, Instant::now() + TIMEOUT, || true,
+            || pending_main.store(false, Ordering::Release)).unwrap();
+        assert!(!pending_main.load(Ordering::Acquire));
+        // Main invalidates the Surface route before beginning its own show.
+        let main = supervisor.invalidate();
+        pending_main.store(true, Ordering::Release);
+        assert!(supervisor.commit_main_handoff(surface, Instant::now() + TIMEOUT, || true,
+            || pending_main.store(false, Ordering::Release)).is_err());
+        assert!(pending_main.load(Ordering::Acquire));
+        assert!(supervisor.request_current(main));
+    }
+    #[test]
+    fn an_expired_or_abandoned_queued_handoff_never_cancels_main() {
+        let supervisor = SurfaceSupervisor::default();
+        let surface = supervisor.invalidate();
+        let pending_main = AtomicBool::new(true);
+        assert!(supervisor.commit_main_handoff(surface, Instant::now(), || true,
+            || pending_main.store(false, Ordering::Release)).is_err());
+        let (send, receive) = oneshot::channel::<()>();
+        drop(receive);
+        assert!(supervisor.commit_main_handoff(surface, Instant::now() + TIMEOUT, || !send.is_closed(),
+            || pending_main.store(false, Ordering::Release)).is_err());
+        assert!(pending_main.load(Ordering::Acquire));
+        assert!(supervisor.request_current(surface));
     }
     #[test]
     fn a_generic_failure_remains_pending_until_the_next_visible_delivery() {

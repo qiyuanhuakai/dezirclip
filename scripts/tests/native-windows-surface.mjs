@@ -85,6 +85,19 @@ export function verifyNativePanel(observation, helper, expectedPid = null) {
     hwnd: visible[0].hwnd, rect: visible[0].rect };
 }
 
+export function verifyNativeTauriPanel(observation, desktopPid) {
+  assert(observation.processes.some(item => item.pid === desktopPid && item.running), 'Original Desktop must remain alive');
+  const visible = observation.windows.filter(item => item.pid === desktopPid && item.visible && item.class_name === 'Tauri Window');
+  assert.equal(visible.length, 1, 'Exactly one actual Tauri panel must be visible');
+  const panel = visible[0];
+  assert.equal(panel.title, '');
+  assert.equal(panel.class_name, 'Tauri Window');
+  assert(panel.rect?.width > 0 && panel.rect?.height > 0);
+  assert.equal(observation.foreground?.pid, desktopPid, 'The actual Tauri panel must own foreground');
+  assert.equal(observation.foreground?.hwnd, panel.hwnd, 'Another Desktop window cannot substitute for the panel');
+  return panel;
+}
+
 export function verifyMainDestroyed(observation, desktopPid, originalHwnd) {
   assert(observation.processes.some(item => item.pid === desktopPid && item.running), 'Original Desktop must remain alive');
   assert(!observation.windows.some(item => item.pid === desktopPid && (item.hwnd === originalHwnd || item.title === 'DezirClip')),
@@ -525,14 +538,27 @@ export async function runSurfaceAcceptance(args, env = process.env) {
         selection_to_target_text_ms: performance.now() - selectedAt, native_paste_attempts: 1, stored_record_retained: true };
     });
     await stage('protected_content_is_unavailable_and_not_consumed', async () => {
+      const previous = first;
       await bridge.invoke('focus_clipboard_window');
+      // Opening main deliberately revokes the old Surface session. Warm reuse
+      // applies inside a session, not across this explicit lifecycle boundary.
+      const stopped = await poll('Main show revokes the original helper', async () => {
+        const status = await bridge.invoke('get_quick_paste_surface_status');
+        const observation = await native.request('observe');
+        const process = observation.processes.find(item => item.pid === previous.pid);
+        assert.equal(process?.creation_time_100ns, previous.creation_time_100ns);
+        if (process.running || status.managed_pid !== null) return null;
+        assert.equal(process.exit_code, 0);
+        return { status, observation, original_process: process };
+      });
       const protectedQuery = 'protectedprobe' + token;
       const protectedBody = `Synthetic protected Surface ${protectedQuery} payload`;
       const protectedId = await bridge.invoke('add_manual_item', { content: protectedBody, contentType: 'text', tags: ['sensitive'], expectedPrivacyEpoch: null, confirmPersistence: false });
       assert(Number.isSafeInteger(protectedId) && protectedId !== 0);
       const before = await bridge.invoke('get_clipboard_history', { limit: 150, offset: 0, contentType: null });
       assert(before.some(item => item.id === protectedId && item.tags?.includes('sensitive')));
-      await native.request('clear-target'); await activateAndShow(first.pid);
+      await native.request('clear-target'); first = await activateAndShow();
+      assert.notEqual(first.session_id, previous.session_id, 'Main revocation must create a fresh Surface session');
       await native.request('keys', { role: 'surface', key: 'select-all' });
       await native.request('keys', { role: 'surface', text: protectedQuery });
       const accessibility = await poll('Actual restricted search has no protected result', async () => {
@@ -549,7 +575,17 @@ export async function runSurfaceAcceptance(args, env = process.env) {
       const after = await bridge.invoke('get_clipboard_history', { limit: 150, offset: 0, contentType: null });
       assert(after.some(item => item.id === protectedId && item.tags?.includes('sensitive')));
       assert(after.some(item => item.id === id) && after.some(item => item.id === otherId));
+      // Enter on an empty result deliberately leaves the panel open. End this
+      // stage with a real Escape before the next stage sends a toggle hotkey.
+      await native.request('keys', { role: 'surface', key: 'escape' });
+      const dismissed = await poll('Restricted empty panel dismissed with Escape', async () => {
+        const status = await bridge.invoke('get_quick_paste_surface_status');
+        const observation = await native.request('observe');
+        return !status.visible && !observation.windows.some(window => window.pid === first.pid && window.visible)
+          && observation.foreground.hwnd === observation.target_hwnd ? { status, observation } : null;
+      });
       return { entry_id: protectedId, actual_target_text: '', attempts: 1, status, accessibility,
+        previous_session: previous, confirmed_previous_exit: stopped, new_session: first, dismissed,
         original_protected_record_retained: true, ordinary_fixture_records_retained: true,
         scope: 'Actual restricted UI search excludes the protected row and Enter cannot submit it. No forged protected-ID private frame or populated sequential queue is claimed.' };
     });
@@ -581,9 +617,10 @@ export async function runSurfaceAcceptance(args, env = process.env) {
       assert.equal((await bridge.invoke('get_quick_paste_surface_status')).managed_pid, null);
       await native.request('activate-target'); await native.request('keys', { role: 'target', key: 'hotkey' });
       const tauri = await poll('Actual restored Tauri Quick Paste', async () => {
-        const visible = await bridge.invoke('plugin:window|is_visible', { label: 'quick-paste' });
+        const visible = await bridge.invoke('is_quick_paste_visible');
         const observed = await native.request('observe');
-        return visible && observed.windows.filter(w => w.pid === desktop.child.pid && w.visible).length === 1 ? observed : null;
+        if (!visible) return null;
+        return { ...observed, panel: verifyNativeTauriPanel(observed, desktop.child.pid) };
       });
       await bridge.invoke('hide_quick_paste');
       assert.deepEqual(canarySnapshot(canary.directory), canary);
@@ -596,10 +633,10 @@ export async function runSurfaceAcceptance(args, env = process.env) {
       await native.request('activate-target'); await native.request('keys', { role: 'target', key: 'hotkey' });
       const result = await poll('Actual Tauri fallback', async () => {
         const status = await bridge.invoke('get_quick_paste_surface_status');
-        const tauriVisible = await bridge.invoke('plugin:window|is_visible', { label: 'quick-paste' });
+        const tauriVisible = await bridge.invoke('is_quick_paste_visible');
         const observation = await native.request('observe');
-        return status.managed_pid === null && status.last_error === 'renderer_unavailable' && tauriVisible
-          && observation.windows.filter(w => w.pid === desktop.child.pid && w.visible).length === 1 ? { status, observation, tauri_window_visible: true } : null;
+        if (status.managed_pid !== null || status.last_error !== 'renderer_unavailable' || !tauriVisible) return null;
+        return { status, observation, panel: verifyNativeTauriPanel(observation, desktop.child.pid), tauri_window_visible: true };
       });
       await bridge.invoke('hide_quick_paste'); await bridge.invoke('save_setting', { key: 'app.quick_paste_renderer', value: 'tauri' });
       assert(!existsSync(helper)); renameSync(movedHelper, helper); movedHelper = null;

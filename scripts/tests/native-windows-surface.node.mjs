@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented, verifyNativePanel, verifyMainDestroyed, mainBridgeReady } from './native-windows-surface.mjs';
+import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented, verifyNativePanel, verifyNativeTauriPanel, verifyMainDestroyed, mainBridgeReady } from './native-windows-surface.mjs';
 
 const source = 'a'.repeat(40);
 const expected = { component_version: '0.2.0-alpha.5', source_revision: source, source_state: 'verified_checkout',
@@ -83,6 +83,21 @@ test('main destruction requires a live original Desktop and actual HWND absence,
     assert.throws(() => verifyMainDestroyed({ ...destroyed, windows: [window] }, 10, 50));
   }
   assert.throws(() => verifyMainDestroyed({ ...destroyed, processes: [] }, 10, 50));
+});
+
+test('Tauri fallback requires the real panel and its foreground, not a status flag or another window', () => {
+  const panel = { pid: 10, hwnd: 50, visible: true, title: '', class_name: 'Tauri Window', rect: { width: 480, height: 360 } };
+  const actual = { processes: [{ pid: 10, running: true }], windows: [panel], foreground: { pid: 10, hwnd: 50 } };
+  assert.equal(verifyNativeTauriPanel(actual, 10), panel);
+  assert.equal(verifyNativeTauriPanel({ ...actual, windows: [panel,
+    { pid: 10, hwnd: 49, visible: true, title: '', class_name: 'Tao Thread Event Target', rect: { width: 16, height: 16 } }] }, 10), panel);
+  for (const patch of [{ processes: [] }, { windows: [] }, { foreground: { pid: 10, hwnd: 51 } },
+    { foreground: { pid: 20, hwnd: 50 } }, { windows: [panel, { ...panel, hwnd: 51 }] }]) {
+    assert.throws(() => verifyNativeTauriPanel({ ...actual, ...patch }, 10));
+  }
+  for (const patch of [{ visible: false }, { title: 'DezirClip' }, { class_name: 'Other' }, { rect: { width: 0, height: 360 } }]) {
+    assert.throws(() => verifyNativeTauriPanel({ ...actual, windows: [{ ...panel, ...patch }] }, 10));
+  }
 });
 
 test('a destroyed-main run validates the native helper independently without synthesizing supervisor state', () => {
