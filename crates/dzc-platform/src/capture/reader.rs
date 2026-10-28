@@ -671,7 +671,7 @@ mod tests {
             .save(&second_file)
             .unwrap();
         let store = history.capture_store(&directory);
-        let session = Mutex::new(VecDeque::new());
+        let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
         let mut notifications = CaptureNotificationState::default();
         let process_mode = |notifications: &mut CaptureNotificationState, timestamp, persistent| {
             let context = CaptureContext {

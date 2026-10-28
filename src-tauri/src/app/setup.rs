@@ -500,7 +500,7 @@ fn setup_state(
         idle_destroy_seconds: AtomicU64::new(s.idle_destroy_seconds),
     });
 
-    app.manage(SessionHistory(std::sync::Mutex::new(
+    app.manage(SessionHistory(dzc_core::api::SessionHistoryStore::new(
         std::collections::VecDeque::new(),
     ).into()));
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));

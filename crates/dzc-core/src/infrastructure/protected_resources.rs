@@ -777,7 +777,7 @@ mod tests {
     {
         use crate::capture::*;
         let fixture = Fixture::new();
-        let session = std::sync::Mutex::new(std::collections::VecDeque::new());
+        let session = crate::api::SessionHistoryStore::new(std::collections::VecDeque::new());
         let context = CaptureContext {
             source: CaptureSource {
                 app_name: "Synthetic Derived".into(),

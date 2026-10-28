@@ -13,7 +13,7 @@ fn value<T:serde::Serialize>(schema:&str,value:T)->Result<Value,WireErrorCode> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc,Mutex,atomic::{AtomicBool,AtomicUsize,Ordering}};
+    use std::sync::{Arc,atomic::{AtomicBool,AtomicUsize,Ordering}};
     #[derive(Default)]
     struct Actions {fail:AtomicBool,revocations:AtomicUsize}
     impl crate::HostActions for Actions {
@@ -30,7 +30,7 @@ mod tests {
     }
     fn host()->(Arc<Host>,Arc<Actions>) {
         let original=crate::router::tests::synthetic_host();let actions=Arc::new(Actions::default());
-        let host=Host::with_session(crate::HostOptions{history:original.history.clone(),directory:original.directory.clone(),mode:HostMode::Service,actions:actions.clone()},Arc::new(Mutex::new(Default::default()))).unwrap();
+        let host=Host::with_session(crate::HostOptions{history:original.history.clone(),directory:original.directory.clone(),mode:HostMode::Service,actions:actions.clone()},Arc::new(dzc_core::api::SessionHistoryStore::default())).unwrap();
         (host,actions)
     }
     fn session(host:&Host,role:ClientRole,control:bool)->Session {

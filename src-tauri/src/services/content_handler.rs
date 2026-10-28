@@ -564,11 +564,9 @@ fn update_database_with_changes(
             .clone();
         let store = history.capture_store(&directory);
         let mut updated = false;
+        let session = app_handle.state::<SessionHistory>();
+        let Ok(mut entries) = session.0.lock() else {return;};
         let mut update = || {
-            let session = app_handle.state::<SessionHistory>();
-            let Ok(mut entries) = session.0.lock() else {
-                return;
-            };
             let Some(entry) = entries.iter_mut().find(|entry| entry.id == id) else {
                 return;
             };
@@ -584,6 +582,7 @@ fn update_database_with_changes(
         {
             return;
         }
+        drop(entries);
     }
     let _ = app_handle.emit("clipboard-changed", id);
 }

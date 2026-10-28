@@ -500,7 +500,7 @@ mod tests {
 
         let history = HistoryService::open(&runtime.join("synthetic-history.db")).unwrap();
         let store = history.capture_store(&runtime);
-        let session = Mutex::new(VecDeque::new());
+        let session = dzc_core::api::SessionHistoryStore::new(VecDeque::new());
         let context = CaptureContext {
             source: CaptureSource::default(),
             timestamp: 12345,

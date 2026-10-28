@@ -1,4 +1,3 @@
-use crate::domain::models::ClipboardEntry;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
@@ -55,7 +54,7 @@ impl PasteQueueState {
 #[derive(Default)]
 pub struct PasteQueue(pub std::sync::Arc<Mutex<PasteQueueState>>);
 
-pub struct SessionHistory(pub std::sync::Arc<Mutex<VecDeque<ClipboardEntry>>>);
+pub struct SessionHistory(pub std::sync::Arc<dzc_core::api::SessionHistoryStore>);
 
 pub struct AppDataDir(pub Mutex<std::path::PathBuf>);
 

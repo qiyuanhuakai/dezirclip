@@ -40,7 +40,7 @@ pub struct HostOptions {
 pub struct Host {
     pub(crate) history: HistoryService,
     pub(crate) directory: PathBuf,
-    pub(crate) session: Arc<Mutex<VecDeque<ClipboardEntry>>>,
+    pub(crate) session: Arc<api::SessionHistoryStore>,
     pub(crate) grants: GrantAuthority,
     pub(crate) actions: Arc<dyn HostActions>,
     mode: HostMode,
@@ -57,6 +57,7 @@ pub struct Host {
     pub(crate) uploads: crate::upload::Uploads,
     copy_echo:Mutex<Option<(dzc_platform::capture::ClipboardEcho,i64)>>,
     capture_diagnostic:Mutex<Option<String>>,
+    history_version:Mutex<crate::history_version::HistoryVersion>,
 }
 
 pub fn now_ms() -> Result<i64, WireErrorCode> {
@@ -82,14 +83,14 @@ fn params<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, WireErrorCo
 
 impl Host {
     pub fn new(options: HostOptions) -> Result<Arc<Self>, WireErrorCode> {
-        Self::with_session(options, Arc::new(Mutex::new(VecDeque::new())))
+        Self::with_session(options, Arc::new(api::SessionHistoryStore::default()))
     }
-    pub fn with_session(options: HostOptions, session: Arc<Mutex<VecDeque<ClipboardEntry>>>) -> Result<Arc<Self>, WireErrorCode> {
+    pub fn with_session(options: HostOptions, session: Arc<api::SessionHistoryStore>) -> Result<Arc<Self>, WireErrorCode> {
         let epoch = options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.privacy_epoch;
         let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), requests: Mutex::new(()), stopped: AtomicBool::new(false),
-            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None) });
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
     }
@@ -100,6 +101,8 @@ impl Host {
         Ok(())
     }
     pub fn grants(&self) -> &GrantAuthority { &self.grants }
+    /// Immutable identity needs no history/database locks or state observation.
+    pub fn instance_id(&self)->&str {&self.instance}
     #[cfg(test)]
     pub(crate) fn waiting_subscriptions(&self) -> usize { self.events.waiters() }
     pub fn is_stopping(&self) -> bool { self.stop_requested.load(Ordering::Acquire) }
@@ -131,8 +134,21 @@ impl Host {
         Ok(())
     }
     pub fn snapshot(&self) -> Result<RuntimeState, WireErrorCode> {
+        // No RAM guard is held while acquiring the database lock here. A RAM
+        // mutation during this observation rejects the mixed snapshot.
+        let before=self.session.revision().map_err(unavailable)?;
+        let snapshot=self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
+        let after=self.session.revision().map_err(unavailable)?;
+        if before!=after {return Err(WireErrorCode::Busy);}
+        self.versioned_snapshot(snapshot,after)
+    }
+    pub(crate) fn snapshot_with_session(&self,session:&api::SessionHistoryGuard<'_>)->Result<RuntimeState,WireErrorCode> {
         let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
-        let state = RuntimeState { service_instance_id: self.instance.clone(), history_revision: snapshot.history_revision,
+        self.versioned_snapshot(snapshot,session.revision().map_err(unavailable)?)
+    }
+    fn versioned_snapshot(&self,snapshot:api::RuntimeSnapshot,session_revision:u64)->Result<RuntimeState,WireErrorCode> {
+        let revision=self.history_version.lock().map_err(unavailable)?.observe(snapshot.history_revision,session_revision)?;
+        let state = RuntimeState { service_instance_id: self.instance.clone(), history_revision: revision,
             privacy_epoch: snapshot.privacy_epoch, event_sequence: self.events.sequence().map_err(unavailable)? };
         result("RuntimeState", &state)?;
         Ok(state)
@@ -147,8 +163,7 @@ impl Host {
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
-        let state = RuntimeState { service_instance_id: self.instance.clone(), history_revision: snapshot.history_revision,
-            privacy_epoch: snapshot.privacy_epoch, event_sequence: self.events.sequence().map_err(unavailable)? };
+        let state = self.snapshot()?;
         self.events.push(EventKind::PrivacyStateChanged, state, EventData { entry_id: None, status: None }).map_err(unavailable)?;
         *observed = snapshot.privacy_epoch;
         self.actions.privacy_changed(&snapshot);
@@ -236,6 +251,12 @@ impl Host {
         }
         if can(Permission::SurfaceControl) && self.actions.can_activate() { methods.extend(["surface.activate", "surface.dismiss"]); }
         let mut platform = self.actions.platform_capabilities();
+        if session.surface_reader() {
+            methods.push("surface.history.page");
+            if let Some(platform) = platform.as_object_mut() {
+                platform.insert("surface_page_v1".into(), self.surface_capability());
+            }
+        }
         if let Some(platform) = platform.as_object_mut() {
             if can(Permission::DesktopHistory) && session.role()==ClientRole::Desktop {
                 platform.insert("desktop_generated_copy".into(),serde_json::json!({"supported":self.actions.can_copy(),"version":1}));
@@ -338,6 +359,7 @@ impl Host {
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
             Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),
+            Method::SurfaceHistoryPage => self.surface_page(session, params(request.params)?),
             Method::HistoryList | Method::SurfaceHistoryList => {
                 session.require(Permission::HistoryRead)?;
                 let query: HistoryPageParams = params(request.params)?;
@@ -412,8 +434,12 @@ impl Host {
             self.history.authorize_session_entry(entry, permit, now).map_err(privacy_error)
         } else { self.history.get_entry_authorized(id, permit, now).map_err(privacy_error)?.ok_or(WireErrorCode::NotFound) }
     }
-    fn history_page(&self, page: api::SummaryQuery, search: Option<api::SearchRequest>, permit: &api::PrivacyReadPermit, now: i64) -> Result<Vec<api::EntrySummary>, WireErrorCode> {
-        let session: Vec<_> = self.session.lock().map_err(unavailable)?.iter().cloned().collect();
+    pub(crate) fn history_page(&self, page: api::SummaryQuery, search: Option<api::SearchRequest>, permit: &api::PrivacyReadPermit, now: i64) -> Result<Vec<api::EntrySummary>, WireErrorCode> {
+        let session=self.session.lock().map_err(unavailable)?;
+        self.history_page_with_session(page,search,permit,now,&session)
+    }
+    pub(crate) fn history_page_with_session(&self,page:api::SummaryQuery,search:Option<api::SearchRequest>,permit:&api::PrivacyReadPermit,now:i64,session:&VecDeque<ClipboardEntry>)->Result<Vec<api::EntrySummary>,WireErrorCode> {
+        let session: Vec<_> = session.iter().cloned().collect();
         let all_session = api::SummaryQuery { limit: 1000, offset: 0, ..page.clone() };
         let mut entries = if let Some(query) = &search {
             self.history.search_summaries_for_session_authorized(&session, &api::SearchRequest { page: all_session, ..query.clone() }, permit, now)
@@ -435,7 +461,7 @@ impl Host {
 fn summary_query(query: HistoryPageParams) -> api::SummaryQuery {
     api::SummaryQuery { limit: query.limit, offset: query.offset, kind: query.kind, tag: query.tag, pinned: query.pinned.unwrap_or(false) }
 }
-fn summary(entry: api::EntrySummary) -> EntrySummary {
+pub(crate) fn summary(entry: api::EntrySummary) -> EntrySummary {
     EntrySummary { id: entry.id, kind: entry.kind, preview: entry.preview, tags: entry.tags, pinned: entry.pinned,
         timestamp: entry.timestamp, source_app: entry.source_app, privacy_visibility: "ordinary".into() }
 }

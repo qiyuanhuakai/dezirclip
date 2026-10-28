@@ -12,6 +12,8 @@ mod desktop_policy;
 mod hotkey;
 mod upload;
 mod ocr;
+mod surface;
+mod history_version;
 pub use ocr::schedule_capture_ocr;
 pub mod data;
 pub mod controller;

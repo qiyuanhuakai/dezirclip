@@ -1,6 +1,5 @@
+use crate::api::SessionHistoryStore;
 use crate::domain::models::ClipboardEntry;
-use std::collections::VecDeque;
-use std::sync::Mutex;
 
 /// A payload is read only after the source and capture controls permit it.
 #[derive(Debug)]
@@ -49,7 +48,7 @@ pub struct CaptureContext<'a> {
     pub source: CaptureSource,
     pub timestamp: i64,
     pub settings: CaptureSettings,
-    pub session: &'a Mutex<VecDeque<ClipboardEntry>>,
+    pub session: &'a SessionHistoryStore,
     pub paused: bool,
     pub sequential_echo: Option<String>,
 }

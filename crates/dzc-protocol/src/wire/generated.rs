@@ -347,6 +347,8 @@ pub enum Method {
     DesktopPrivacyFeedback,
     #[serde(rename = "desktop.privacy.remove_rule")]
     DesktopPrivacyRemoveRule,
+    #[serde(rename = "surface.history.page")]
+    SurfaceHistoryPage,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -389,6 +391,8 @@ pub enum WireErrorCode {
     ManualPersistenceConfirmationRequired,
     #[serde(rename = "privacy_duration_invalid")]
     PrivacyDurationInvalid,
+    #[serde(rename = "history_revision_changed")]
+    HistoryRevisionChanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -638,4 +642,206 @@ pub struct PrivacySetParams {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceBuildIdentity {
+    pub component_version: String,
+    pub source_revision: String,
+    pub build_id: String,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceTheme {
+    pub mode: String,
+    pub opacity: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfacePhysicalRect {
+    pub x: i64,
+    pub y: i64,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfacePageCapability {
+    pub version: u16,
+    pub max_page_size: u16,
+    pub build: SurfaceBuildIdentity,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfacePageParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub expected_history_revision: u64,
+    pub limit: u16,
+    pub offset: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<SearchMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfacePage {
+    pub entries: Vec<EntrySummary>,
+    pub state: RuntimeState,
+    pub has_more: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceInitialize {
+    pub surface_session_id: String,
+    pub endpoint: String,
+    pub grant: String,
+    pub state: RuntimeState,
+    pub build: SurfaceBuildIdentity,
+    pub locale: String,
+    pub theme: SurfaceTheme,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceReady {
+    pub surface_session_id: String,
+    pub build: SurfaceBuildIdentity,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceShow {
+    pub surface_session_id: String,
+    pub display_request_id: String,
+    pub state: RuntimeState,
+    pub rect: SurfacePhysicalRect,
+    pub scale: f64,
+    pub locale: String,
+    pub theme: SurfaceTheme,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceShown {
+    pub surface_session_id: String,
+    pub display_request_id: String,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceHide {
+    pub surface_session_id: String,
+    pub display_request_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceHidden {
+    pub surface_session_id: String,
+    pub display_request_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfacePaste {
+    pub surface_session_id: String,
+    pub display_request_id: String,
+    pub action_id: String,
+    pub entry_id: i64,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfacePasteResult {
+    pub surface_session_id: String,
+    pub display_request_id: String,
+    pub action_id: String,
+    pub performed: bool,
+    pub error_code: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceDismiss {
+    pub surface_session_id: String,
+    pub display_request_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceShutdown {
+    pub surface_session_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceStopped {
+    pub surface_session_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceFailed {
+    pub surface_session_id: String,
+    pub error_code: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum SurfaceControlType {
+    #[serde(rename = "initialize")]
+    Initialize,
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "show")]
+    Show,
+    #[serde(rename = "shown")]
+    Shown,
+    #[serde(rename = "hide")]
+    Hide,
+    #[serde(rename = "hidden")]
+    Hidden,
+    #[serde(rename = "paste")]
+    Paste,
+    #[serde(rename = "paste-result")]
+    PasteResult,
+    #[serde(rename = "dismiss")]
+    Dismiss,
+    #[serde(rename = "shutdown")]
+    Shutdown,
+    #[serde(rename = "stopped")]
+    Stopped,
+    #[serde(rename = "failed")]
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceControlMessage {
+    pub protocol_version: ProtocolVersion,
+    pub request_id: String,
+    pub r#type: SurfaceControlType,
+    pub payload: serde_json::Value,
 }

@@ -11,7 +11,7 @@ enum Mode { Starting, Embedded(Arc<Host>), Remote(String), Unavailable }
 #[derive(Clone,Copy)]
 enum RestoreMode {Embedded,Service{no_capture:bool}}
 struct Inner { mode:Mutex<Mode>, history:HistoryService, directory:PathBuf, database:PathBuf,
-    session:Arc<Mutex<std::collections::VecDeque<ClipboardEntry>>>, closing:AtomicBool,writer:Mutex<Option<dzc_platform::runtime::EmbeddedClipboardWriter>>,
+    session:Arc<dzc_core::api::SessionHistoryStore>, closing:AtomicBool,writer:Mutex<Option<dzc_platform::runtime::EmbeddedClipboardWriter>>,
     server:Mutex<Option<ServerTask>>,restore:Mutex<Option<RestoreMode>> }
 struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::Receiver<()>}
 #[derive(Clone)]
@@ -227,6 +227,21 @@ impl HostActions for DesktopActions {
 }
 
 impl DesktopHost {
+    #[cfg(test)]
+    pub(crate) fn synthetic_fixture(history:HistoryService,session:Arc<dzc_core::api::SessionHistoryStore>)->Self {
+        struct Actions;
+        impl HostActions for Actions {
+            fn platform_capabilities(&self)->serde_json::Value {serde_json::json!({})}
+            fn can_copy(&self)->bool {false}
+            fn copy(&self,_:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode>{Err(WireErrorCode::Unavailable)}
+            fn can_paste(&self)->bool {false}
+            fn paste(&self)->Result<(),WireErrorCode>{Err(WireErrorCode::Unavailable)}
+            fn stop_helpers(&self)->Result<(),WireErrorCode>{Ok(())}
+        }
+        let directory=PathBuf::new();
+        let host=Host::with_session(HostOptions{mode:HostMode::Embedded,history:history.clone(),directory:directory.clone(),actions:Arc::new(Actions)},session.clone()).unwrap();
+        Self(Arc::new(Inner{mode:Mutex::new(Mode::Embedded(host)),history,database:PathBuf::from(":memory:"),directory,session,closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}))
+    }
     pub fn start(app:&AppHandle) {
         let directory=app.state::<AppDataDir>().0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
         let bridge=Self(Arc::new(Inner {mode:Mutex::new(Mode::Starting),history:app.state::<DbState>().history_service(),database:directory.join("clipboard.db"),directory,
@@ -251,7 +266,7 @@ impl DesktopHost {
     pub fn embedded(&self)->Result<Option<Arc<Host>>,String> {match &*self.0.mode.lock().map_err(|_|failed())? {
         Mode::Embedded(host) if !host.is_stopping()=>Ok(Some(host.clone())),Mode::Remote(_)=>Ok(None),_=>Err(failed())}}
     pub fn instance(&self)->Result<String,String> {match &*self.0.mode.lock().map_err(|_|failed())? {
-        Mode::Embedded(host)=>host.snapshot().map(|state|state.service_instance_id).map_err(|_|failed()),Mode::Remote(instance)=>Ok(instance.clone()),_=>Err(failed())}}
+        Mode::Embedded(host)=>Ok(host.instance_id().into()),Mode::Remote(instance)=>Ok(instance.clone()),_=>Err(failed())}}
     pub(crate) fn queue_state(&self)->Result<(String,u64),String> {
         let instance=self.instance()?;
         let epoch=self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch;
@@ -651,7 +666,7 @@ mod tests {
             let original=dzc_host::controller::start(&database,&executable,true).await.unwrap();
             assert!(!original.capture_owner);
             let bridge=DesktopHost(Arc::new(Inner{mode:Mutex::new(Mode::Remote(original.state.service_instance_id.clone())),history,
-                directory,database:database.clone(),session:Arc::new(Mutex::new(Default::default())),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
+                directory,database:database.clone(),session:Arc::new(dzc_core::api::SessionHistoryStore::default()),closing:AtomicBool::new(false),writer:Mutex::new(None),server:Mutex::new(None),restore:Mutex::new(None)}));
             bridge.prepare_update().await.unwrap();
             assert!(dzc_host::controller::status(&database).await.is_err());
             assert!(matches!(*bridge.0.restore.lock().unwrap(),Some(RestoreMode::Service{no_capture:true})));

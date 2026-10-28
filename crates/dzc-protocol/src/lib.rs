@@ -3,6 +3,8 @@ pub mod build_info;
 pub mod history;
 #[cfg(feature = "wire")]
 pub mod wire;
+#[cfg(feature = "wire")]
+pub mod surface_control;
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion { major: 1, minor: 0 };
