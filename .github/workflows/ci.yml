@@ -53,7 +53,7 @@ jobs:
         run: node --test scripts/tests/surface-build.node.mjs scripts/tests/mygo-surface-patch.node.mjs
 
       - name: Test disposable native Surface fixture contracts
-        run: node --test scripts/tests/native-windows-surface.node.mjs
+        run: node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs
 
       - name: Check single-source local protocol generation
         run: python scripts/generate-protocol.py --check
