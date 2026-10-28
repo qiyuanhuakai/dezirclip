@@ -115,20 +115,17 @@ const AppearanceSettingsGroup = ({
 }: AppearanceSettingsGroupProps) => {
     useSyncExternalStore(subscribeCustomThemes, getCustomThemes);
     const { preferences: previewPreferences, ready: previewReady, error: previewLoadError, reload: reloadPreviewPreferences } = usePreviewPreferences();
-    const [previewSaving, setPreviewSaving] = useState(false);
     const [previewSaveError, setPreviewSaveError] = useState(false);
     const [draftPreviewOpacity, setDraftPreviewOpacity] = useState<number | null>(null);
     const previewSaveVersion = useRef(0);
     const savePreview = async (save: () => Promise<void>) => {
         const request = ++previewSaveVersion.current;
-        setPreviewSaving(true);
         setPreviewSaveError(false);
         try { await save(); }
         catch { if (request === previewSaveVersion.current) setPreviewSaveError(true); }
         finally {
             await reloadPreviewPreferences();
             if (request === previewSaveVersion.current) {
-                setPreviewSaving(false);
                 setDraftPreviewOpacity(null);
             }
         }
@@ -349,18 +346,6 @@ const AppearanceSettingsGroup = ({
 
                 <h4 className="settings-section-title">{t("preview_settings")}</h4>
                 <NativeFeatureBoundary t={t}>
-                    <div className="setting-item">
-                        <div className="item-label-group">
-                            <label className="item-label" htmlFor="preview-keyboard-enabled">{t("preview_keyboard_enabled")}</label>
-                            <span className="hint">{t("preview_keyboard_enabled_hint")}</span>
-                        </div>
-                        <label className="switch">
-                            <input id="preview-keyboard-enabled" className="cb" type="checkbox"
-                                checked={previewPreferences.keyboardEnabled} disabled={!previewReady || previewSaving}
-                                onChange={event => { const value = event.target.checked; void savePreview(() => savePreviewPreference("keyboardEnabled", value)); }} />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
-                    </div>
                     <div className="setting-item column">
                         <div className="item-label-group">
                             <label className="item-label" htmlFor="preview-opacity">{t("preview_opacity")}</label>

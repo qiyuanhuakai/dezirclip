@@ -17,6 +17,6 @@
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
 }
-.theme-manager-actions > .btn-icon { width: auto; min-width: 0; height: 36px; padding-inline: 12px; }
+.theme-manager-actions > :is(.btn-icon, .setting-btn) { width: auto; min-width: 0; height: 36px; padding-inline: 12px; }
 .theme-custom-list > .btn-icon { width: 100%; height: auto; min-height: 36px; padding: 8px 12px; white-space: normal; overflow-wrap: anywhere; }
 .theme-manager-hint, .theme-operation-error { margin: 0; overflow-wrap: anywhere; }

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { X } from "lucide-react";
 import { useHotkeyRecording } from "../../../shared/hooks/useHotkeyRecording";
 import { hotkeyChord } from "../utils/hotkeyChord";
 
@@ -10,10 +11,11 @@ interface HotkeyRecorderProps {
     readonly recording: boolean;
     readonly setRecording: (val: boolean) => void;
     readonly onHotkeyChange: (val: string) => void;
+    readonly onClear?: () => void;
     readonly disabled?: boolean;
     readonly placeholder?: string;
 }
-const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange, disabled = false, placeholder }: HotkeyRecorderProps) => {
+const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkeyChange, onClear, disabled = false, placeholder }: HotkeyRecorderProps) => {
     const [recordingError, setRecordingError] = useState<string | null>(null);
     const { record, cancel } = useHotkeyRecording({ recording: recording && !disabled, onRecorded: onHotkeyChange,
         onCancelled: () => setRecording(false),
@@ -49,7 +51,7 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
 
     return <div className="setting-item setting-item--detail hotkey-recorder">
         <div className="item-label-group"><span className="item-label">{t(labelKey)}</span></div>
-        <div
+        <div className="hotkey-binding"><div
             className={`key-group ${recording && !disabled ? "recording" : ""}`}
             role="button"
             aria-label={t(labelKey)}
@@ -64,6 +66,12 @@ const HotkeyRecorder = ({ t, labelKey, hotkey, recording, setRecording, onHotkey
             {recording && !disabled ? <div className="key-cap key-cap--placeholder">{t("waiting_for_input")}</div>
                 : parts.length > 0 ? parts.map((part, index) => <div key={`${part}-${index}`} className="key-cap">{part}</div>)
                     : <div className={`key-cap key-cap--placeholder ${placeholder ? "" : "key-cap--unset"}`}>{placeholder || t("not_set")}</div>}
+        </div>
+        {onClear && hotkey && !recording && <button type="button"
+            className="btn-icon btn-icon-scalable btn-icon-size-hotkey" disabled={disabled}
+            onClick={onClear} aria-label={`${t("delete")} ${t(labelKey)}`} title={`${t("delete")} ${hotkey}`}>
+            <X size={14} strokeWidth={2.6} />
+        </button>}
         </div>
         {recordingError && <p className="hotkey-recording-error" role="alert">{recordingError}</p>}
     </div>;

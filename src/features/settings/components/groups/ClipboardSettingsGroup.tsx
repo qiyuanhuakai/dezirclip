@@ -752,7 +752,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 labelStyle={{ fontWeight: 400 }}
                             />
                         </div>
-                        <p className="settings-description">{props.t("privacy_rules_custom_patterns_hint")}</p>
                         {props.privacyRulesOpen && (
                             <textarea
                                 className="search-input"

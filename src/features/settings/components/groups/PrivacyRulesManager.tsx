@@ -65,8 +65,6 @@ export default function PrivacyRulesManager({ t }: { t: (key: string) => string 
       <div className="item-label-group"><span id="privacy-rules-heading" className="item-label">{t("privacy_rules_title")}</span></div>
       {load === "ready" && <span className="settings-inline-note">{rules.length}</span>}
     </div>
-    <p className="settings-description">{t("privacy_rules_hint")}</p>
-    <p className="settings-description">{t("privacy_rules_single_hint")}</p>
     {!ready ? <p role="status" className="settings-description">{t("privacy_state_unavailable")}</p>
       : load === "loading" ? <p role="status" className="settings-description">{t("privacy_rules_loading")}</p>
       : load === "failed" ? <p role="alert" className="privacy-action-error">{t("privacy_rules_load_failed")}</p>

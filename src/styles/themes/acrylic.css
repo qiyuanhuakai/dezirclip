@@ -171,7 +171,7 @@ body:not(.compact-mode) .theme-acrylic .item-actions .btn-icon {
   letter-spacing: normal !important;
 }
 
-.theme-acrylic .setting-item span {
+.theme-acrylic .setting-item :is(span, label.item-label) {
   font-family: inherit;
   font-weight: 500;
   color: var(--text-primary);
