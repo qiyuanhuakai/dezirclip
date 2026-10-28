@@ -26,6 +26,14 @@ def valid_seed_text(value):
     return isinstance(value, str) and re.fullmatch(r'nativeupgradefixturemarker[a-f0-9]{32}-native-[ab]', value) is not None
 
 
+def absolute_mouse_point(x, y, left, top, width, height):
+    require(0 < width <= 65536 and 0 < height <= 65536, 'Virtual desktop dimensions exceed the click bound')
+    require(left <= x < left + width and top <= y < top + height, 'Owned click point is outside the virtual desktop')
+    # Aim at the middle of the device pixel in SendInput's 16-bit coordinate space.
+    return ((2 * (x - left) + 1) * 65536 // (2 * width),
+            (2 * (y - top) + 1) * 65536 // (2 * height))
+
+
 def save(path, value):
     data = (json.dumps(value, indent=2, ensure_ascii=True) + '\n').encode()
     with path.open('xb') as stream:
@@ -89,6 +97,7 @@ class Native:
             _fields_ = [('type', W.DWORD), ('data', Union)]
 
         self.ProcessEntry, self.Memory, self.Input, self.Keyboard = ProcessEntry, Memory, Input, Keyboard
+        self.Mouse = Mouse
         declarations = [
             (self.kernel, 'CreateToolhelp32Snapshot', [W.DWORD, W.DWORD], W.HANDLE),
             (self.kernel, 'Process32FirstW', [W.HANDLE, ctypes.POINTER(ProcessEntry)], W.BOOL),
@@ -101,6 +110,7 @@ class Native:
             (self.kernel, 'TerminateProcess', [W.HANDLE, W.UINT], W.BOOL),
             (self.kernel, 'WaitForSingleObject', [W.HANDLE, W.DWORD], W.DWORD),
             (self.kernel, 'GetModuleHandleW', [W.LPCWSTR], W.HMODULE),
+            (self.kernel, 'GetCurrentThreadId', [], W.DWORD),
             (self.user, 'CreateWindowExW', [W.DWORD, W.LPCWSTR, W.LPCWSTR, W.DWORD, ctypes.c_int, ctypes.c_int,
                                          ctypes.c_int, ctypes.c_int, W.HWND, W.HMENU, W.HINSTANCE, W.LPVOID], W.HWND),
             (self.user, 'GetForegroundWindow', [], W.HWND),
@@ -113,6 +123,13 @@ class Native:
             (self.user, 'ShowWindow', [W.HWND, ctypes.c_int], W.BOOL),
             (self.user, 'IsWindowVisible', [W.HWND], W.BOOL),
             (self.user, 'IsWindow', [W.HWND], W.BOOL),
+            (self.user, 'IsWindowEnabled', [W.HWND], W.BOOL),
+            (self.user, 'IsIconic', [W.HWND], W.BOOL),
+            (self.user, 'GetParent', [W.HWND], W.HWND),
+            (self.user, 'GetClientRect', [W.HWND, ctypes.POINTER(W.RECT)], W.BOOL),
+            (self.user, 'ClientToScreen', [W.HWND, ctypes.POINTER(W.POINT)], W.BOOL),
+            (self.user, 'WindowFromPoint', [W.POINT], W.HWND),
+            (self.user, 'GetSystemMetrics', [ctypes.c_int], ctypes.c_int),
             (self.user, 'GetWindowThreadProcessId', [W.HWND, ctypes.POINTER(W.DWORD)], W.DWORD),
             (self.user, 'GetWindowTextW', [W.HWND, W.LPWSTR, ctypes.c_int], ctypes.c_int),
             (self.user, 'GetClassNameW', [W.HWND, W.LPWSTR, ctypes.c_int], ctypes.c_int),
@@ -134,6 +151,7 @@ class Native:
         self.handles = {}
         self.identities = {}
         self.desktop = None
+        self.window_thread_id = self.kernel.GetCurrentThreadId()
         self.focus_messages = deque(maxlen=64)
         self.callback_errors = deque(maxlen=8)
         self.window_procedures = {}
@@ -330,6 +348,49 @@ class Native:
         self.user.SetFocus(edit)
         require(self.user.GetForegroundWindow() == window, 'Synthetic target is not foreground')
         return {'foreground_target': True, 'hwnd': int(window), 'alternate': alternate, 'target_focus': self.focus_snapshot()}
+
+    def click_alternate(self):
+        require(self.desktop is not None, 'External click requires the original Desktop binding')
+        require(self.kernel.GetCurrentThreadId() == self.window_thread_id, 'Owned click must run on the original window thread')
+        for window in (self.alternate, self.alternate_edit):
+            pid = W.DWORD()
+            thread = self.user.GetWindowThreadProcessId(window, ctypes.byref(pid))
+            require(self.user.IsWindow(window) and pid.value == os.getpid() and thread == self.window_thread_id,
+                    'Original alternate window ownership changed')
+            require(self.user.IsWindowVisible(window) and self.user.IsWindowEnabled(window), 'Owned alternate is hidden or disabled')
+        require(self.user.GetParent(self.alternate_edit) == self.alternate and not self.user.IsIconic(self.alternate),
+                'Original alternate editor parent changed or was minimized')
+        rect = W.RECT()
+        require(self.user.GetClientRect(self.alternate_edit, ctypes.byref(rect)), 'Owned editor client rectangle unavailable')
+        require(rect.left == 0 and rect.top == 0 and rect.right > 16 and rect.bottom > 2, 'Owned editor client bounds differ')
+        # This fixed left inset is outside the centered Surface. Never search for
+        # another clickable window or move/raise a covered target to make it pass.
+        point = W.POINT(8, rect.bottom // 2)
+        require(self.user.ClientToScreen(self.alternate_edit, ctypes.byref(point)), 'Owned click screen coordinates unavailable')
+        virtual = [self.user.GetSystemMetrics(index) for index in (76, 77, 78, 79)]
+        normalized = absolute_mouse_point(point.x, point.y, *virtual)
+        before = self.focus_snapshot()
+        hit = self.user.WindowFromPoint(point)
+        require(hit == self.alternate_edit, 'Owned alternate click is covered or misses the original editor: ' + json.dumps({
+            'point': [point.x, point.y], 'hit_hwnd': int(hit or 0), 'expected_edit': int(self.alternate_edit), 'before': before}))
+        inputs = (self.Input * 3)()
+        inputs[0].mi = self.Mouse(*normalized, 0, 0x8000 | 0x4000 | 0x0001, 0, 0)
+        inputs[1].mi = self.Mouse(0, 0, 0, 0x0002, 0, 0)
+        inputs[2].mi = self.Mouse(0, 0, 0, 0x0004, 0, 0)
+        sent = self.user.SendInput(3, inputs, ctypes.sizeof(self.Input))
+        receipt = {'method': 'one-native-mouse-click', 'sent': sent, 'hwnd': int(self.alternate),
+                   'edit_hwnd': int(self.alternate_edit), 'pid': os.getpid(), 'thread_id': self.window_thread_id,
+                   'screen_point': [point.x, point.y], 'absolute_point': list(normalized),
+                   'virtual_desktop': virtual, 'hit_hwnd': int(hit), 'before': before}
+        require(sent == 3, 'Single owned mouse input was incomplete: ' + json.dumps(receipt))
+        deadline = time.monotonic() + 2
+        while True:
+            self.pump_messages()
+            after = self.focus_snapshot()
+            if after['foreground_hwnd'] == int(self.alternate) and after['own_thread_focus_hwnd'] == int(self.alternate_edit):
+                return {**receipt, 'after': after}
+            require(time.monotonic() < deadline, 'Single owned click did not focus its editor: ' + json.dumps({**receipt, 'after': after}))
+            time.sleep(.01)
 
     def target_text(self):
         text = ctypes.create_unicode_buffer(4097)
@@ -540,6 +601,7 @@ def main():
                 elif operation == 'observe': value = native.observe()
                 elif operation == 'activate-target': value = native.activate()
                 elif operation == 'activate-alternate': value = native.activate(alternate=True)
+                elif operation == 'click-alternate': value = native.click_alternate()
                 elif operation == 'target-text': value = {'text': native.target_text(), 'target_focus': native.focus_snapshot()}
                 elif operation == 'target-preflight': value = native.target_preflight(request.get('expected_text'))
                 elif operation == 'clear-target':

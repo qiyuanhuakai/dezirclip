@@ -8,21 +8,21 @@ from pathlib import Path
 import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
-BASE_COMMIT = '2484933d66c77b083458467883be574dcc1c425c'
+BASE_COMMIT = '7ebdceb98c580a37f5244df4937d978d697be066'
 
 
 def derive_sources(controller, original_target):
     # Compare canonical LF text so Git's Windows checkout conversion is harmless.
     controller = controller.replace('\r\n', '\n')
     original_target = original_target.replace('\r\n', '\n')
-    assert hashlib.sha256(controller.encode('utf-8')).hexdigest() == 'f224c4cf2744f583519fd25e31cf7b6fa5ac72803f0bed7053931f670927b29a', 'Functional controller changed; review the derivation before use'
+    assert hashlib.sha256(controller.encode('utf-8')).hexdigest() == 'a9e8cfc962785d769e3d883f7e322e8a1d8c084cdd96e5cb7be024d631c2a12c', 'Functional controller changed; review the derivation before use'
     original_plumbing = controller.split('export async function runSurfaceAcceptance(', 1)[0]
     plumbing = original_plumbing.replace("from '../build-surface.mjs'", "from '../../scripts/build-surface.mjs'")
     plumbing = plumbing.replace("from '../release-windows-upgrade.mjs'", "from '../../scripts/release-windows-upgrade.mjs'")
     plumbing = plumbing.replace("new URL('./native-windows-surface-target.py', import.meta.url)",
                                 "new URL('./native-target.py', import.meta.url)")
     plumbing += '\nexport { repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot, environment, LoggedProcess, NativeChannel, Bridge, completedCommand, availablePort, fixedSurfaceInputs, toolkitPatchId };\n'
-    assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == 'b4022f53dc3ce154754bded130e5dace16e579d504b377eb817938e61fd486f1', 'Functional target changed; review the derivation before use'
+    assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == '695244a2b2cada27d638bd49883bb357ba2029aed4146173219c52e1c5856f9d', 'Functional target changed; review the derivation before use'
     target = original_target
 
 

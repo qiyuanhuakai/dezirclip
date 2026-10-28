@@ -50,14 +50,31 @@ def evaluate(machine,audit,number):
         pc+=1
     raise AssertionError('Filter did not return')
 
+def workflow_python_block(source,name):
+    step=source.split('      - name: '+name+'\n',1)[1]
+    script=step.split('        run: |\n',1)[1]
+    lines=[]
+    for line in script.splitlines():
+        if line.strip() and not line.startswith('          '):
+            break
+        lines.append(line)
+    return textwrap.dedent('\n'.join(lines)).rstrip()
+
 class ReleaseIdentities(unittest.TestCase):
+    def test_workflow_python_block_stops_at_any_following_step_or_job(self):
+        script='      - name: Selected check\n        shell: python\n        run: |\n          value = 1\n          if value:\n              print(value)\n'
+        expected='value = 1\nif value:\n    print(value)'
+        for suffix in ('\n      - name: Another step\n        run: forbidden()\n',
+                       '\n  newly-added-job:\n    runs-on: windows-latest\n    steps:\n      - name: Another check\n        run: forbidden()\n', ''):
+            with self.subTest(suffix=suffix):
+                actual=workflow_python_block(script+suffix,'Selected check')
+                self.assertEqual(actual,expected)
+                ast.parse(actual)
+
     def test_final_mount_step_requires_the_original_run_receipt_and_only_reads_sysctl(self):
         source=(identity.ROOT/'.github/workflows/ci.yml').read_text(encoding='utf-8')
-        def block(name):
-            step=source.split('      - name: '+name+'\n',1)[1].split('\n      - name:',1)[0].split('\n  standalone-cli:',1)[0]
-            return textwrap.dedent(step.split('        run: |\n',1)[1]).rstrip()
-        early=block('Permit private user namespaces on disposable Linux runner')
-        late=block('Verify actual private Linux release receipt mounts')
+        early=workflow_python_block(source,'Permit private user namespaces on disposable Linux runner')
+        late=workflow_python_block(source,'Verify actual private Linux release receipt mounts')
         with tempfile.TemporaryDirectory(prefix='dezirclip-receipt-test-') as temp:
             root=Path(temp);concrete=type(root)
             environment={'GITHUB_ACTIONS':'true','RUNNER_ENVIRONMENT':'github-hosted','RUNNER_TEMP':temp,'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'2','GITHUB_JOB':'tauri','GITHUB_SHA':REVISION,'RUNNER_NAME':'synthetic-runner','RUNNER_ARCH':'X64'}
