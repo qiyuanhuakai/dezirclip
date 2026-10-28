@@ -1,5 +1,6 @@
 //! Request-bound application activation. The WM may refuse every request.
 use std::io::{self, IoSlice};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use std::time::Instant;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{Atom, AtomEnum, ClientMessageEvent, ConnectionExt, CreateWindowAux, EventMask, MapState, PropMode, Property, Window, WindowClass};
 use x11rb::protocol::Event;
-use x11rb::reexports::x11rb_protocol::{parse_display::{parse_display, ConnectAddress}, xauth::get_auth};
+use x11rb::reexports::x11rb_protocol::{parse_display::{parse_display, ConnectAddress, ParsedDisplay}, xauth::get_auth};
 use x11rb::rust_connection::{DefaultStream, PollMode, RustConnection, Stream};
 use x11rb::utils::RawFdContainer;
 use x11rb::wrapper::ConnectionExt as _;
@@ -95,18 +96,105 @@ fn local_socket(path: &str, abstract_socket: bool, deadline: Instant, current: &
     Ok(UnixStream::from(descriptor))
 }
 
+fn loopback_ip(address: IpAddr) -> bool {
+    address.is_loopback() || match address {
+        IpAddr::V6(value) => value.to_ipv4_mapped().is_some_and(|value| value.is_loopback()),
+        IpAddr::V4(_) => false,
+    }
+}
+
+fn local_tcp_addresses(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
+    if port < 6000 {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "X TCP port rejected"));
+    }
+    // Do not invoke an unbounded resolver on this request path. Only the local
+    // canonical name and explicit loopback addresses are supported over TCP.
+    if host.eq_ignore_ascii_case("localhost") || host.eq_ignore_ascii_case("localhost.") {
+        return Ok(vec![SocketAddr::new(Ipv6Addr::LOCALHOST.into(), port),
+                       SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port)]);
+    }
+    let numeric = host.strip_prefix('[').and_then(|value| value.strip_suffix(']')).unwrap_or(host);
+    let address: IpAddr = numeric.parse()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "Only local X TCP addresses are supported"))?;
+    if !loopback_ip(address) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Nonlocal X TCP address rejected"));
+    }
+    Ok(vec![SocketAddr::new(address, port)])
+}
+
+fn validate_tcp_display_port(display: &ParsedDisplay) -> io::Result<()> {
+    // x11rb adds 6000 when producing TCP instructions. Reject overflow before
+    // asking for them; an explicit Unix-only display does not use a TCP port.
+    if display.protocol.as_deref() != Some("unix") && display.host != "unix"
+        && display.display.checked_add(6000).is_none() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "X display TCP port overflow"));
+    }
+    Ok(())
+}
+
+fn local_tcp_socket(address: SocketAddr, deadline: Instant, current: &dyn Fn() -> bool) -> io::Result<TcpStream> {
+    active(deadline, current)?;
+    if address.port() < 6000 || !loopback_ip(address.ip()) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Local X TCP address rejected"));
+    }
+    let family = if address.is_ipv4() { libc::AF_INET } else { libc::AF_INET6 };
+    // Keep the same nonblocking connect/poll/ownership rules as the Unix path.
+    let raw = unsafe { libc::socket(family, libc::SOCK_STREAM | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK, 0) };
+    if raw < 0 { return Err(io::Error::last_os_error()); }
+    let descriptor = unsafe { OwnedFd::from_raw_fd(raw) };
+    active(deadline, current)?;
+    let result = match address {
+        SocketAddr::V4(value) => {
+            let address = libc::sockaddr_in { sin_family: libc::AF_INET as libc::sa_family_t,
+                sin_port: value.port().to_be(), sin_addr: libc::in_addr { s_addr: u32::from_ne_bytes(value.ip().octets()) },
+                sin_zero: [0; 8] };
+            unsafe { libc::connect(descriptor.as_raw_fd(), (&address as *const libc::sockaddr_in).cast(),
+                std::mem::size_of_val(&address) as libc::socklen_t) }
+        }
+        SocketAddr::V6(value) => {
+            let address = libc::sockaddr_in6 { sin6_family: libc::AF_INET6 as libc::sa_family_t,
+                sin6_port: value.port().to_be(), sin6_flowinfo: value.flowinfo().to_be(),
+                sin6_addr: libc::in6_addr { s6_addr: value.ip().octets() }, sin6_scope_id: value.scope_id() };
+            unsafe { libc::connect(descriptor.as_raw_fd(), (&address as *const libc::sockaddr_in6).cast(),
+                std::mem::size_of_val(&address) as libc::socklen_t) }
+        }
+    };
+    if result != 0 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::EINPROGRESS) { return Err(error); }
+        poll(descriptor.as_raw_fd(), PollMode::Writable, deadline, current)?;
+        let mut value: libc::c_int = 0;
+        let mut size = std::mem::size_of_val(&value) as libc::socklen_t;
+        if unsafe { libc::getsockopt(descriptor.as_raw_fd(), libc::SOL_SOCKET, libc::SO_ERROR,
+            (&mut value as *mut libc::c_int).cast(), &mut size) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if value != 0 { return Err(io::Error::from_raw_os_error(value)); }
+    }
+    active(deadline, current)?;
+    Ok(TcpStream::from(descriptor))
+}
+
 fn connection(deadline: Instant, current: Current) -> Result<(XConnection, usize), String> {
     active(deadline, current.as_ref()).map_err(|_| "SurfaceActivationUnavailable")?;
     let display = parse_display(None).map_err(|_| "SurfaceActivationUnavailable")?;
+    validate_tcp_display_port(&display).map_err(|_| "SurfaceActivationUnavailable")?;
     let screen = usize::from(display.screen);
     for address in display.connect_instruction() {
-        let ConnectAddress::Socket(path) = address else { continue; };
-        for abstract_socket in [true, false] {
-            let socket = match local_socket(&path, abstract_socket, deadline, current.as_ref()) {
-                Ok(socket) => socket,
-                Err(_) => continue,
-            };
-            let (stream, (family, address)) = DefaultStream::from_unix_stream(socket).map_err(|_| "SurfaceActivationUnavailable")?;
+        let connected = match address {
+            ConnectAddress::Socket(path) => [true, false].into_iter()
+                .find_map(|abstract_socket| local_socket(&path, abstract_socket, deadline, current.as_ref()).ok())
+                .ok_or_else(|| io::Error::new(io::ErrorKind::ConnectionRefused, "Local X socket unavailable"))
+                .and_then(DefaultStream::from_unix_stream),
+            ConnectAddress::Hostname(host, port) => local_tcp_addresses(host, port).and_then(|addresses| {
+                addresses.into_iter().find_map(|address| local_tcp_socket(address, deadline, current.as_ref()).ok())
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::ConnectionRefused, "Local X TCP socket unavailable"))
+                    .and_then(DefaultStream::from_tcp_stream)
+            }),
+            _ => continue,
+        };
+        if let Ok((stream, (family, address))) = connected {
+            active(deadline, current.as_ref()).map_err(|_| "SurfaceActivationUnavailable")?;
             // Authentication stays the normal parent's Xauthority lookup. It runs
             // in a bounded caller worker; an OS-blocked file read is not a killable thread.
             let (name, data) = get_auth(family, &address, display.display).map_err(|_| "SurfaceActivationUnavailable")?.unwrap_or_default();
@@ -299,6 +387,48 @@ pub(crate) fn restore_once(window: Window, deadline: Instant, current: Current,
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_tcp_display_addresses_do_not_require_dns() {
+        for name in ["localhost", "LOCALHOST", "localhost."] {
+            assert_eq!(local_tcp_addresses(name, 6000).unwrap(), vec![
+                SocketAddr::new(Ipv6Addr::LOCALHOST.into(), 6000),
+                SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 6000),
+            ]);
+        }
+        for display in ["127.0.0.1:0", "127.8.2.4:12", "::1:0", "[::1]:1", "[::ffff:127.0.0.1]:0"] {
+            let parsed = parse_display(Some(display)).unwrap();
+            validate_tcp_display_port(&parsed).unwrap();
+            let ConnectAddress::Hostname(host, port) = parsed.connect_instruction().next().unwrap() else { panic!("TCP display expected") };
+            let addresses = local_tcp_addresses(host, port).unwrap();
+            assert_eq!(addresses.len(), 1);
+            assert!(loopback_ip(addresses[0].ip()));
+            assert_eq!(addresses[0].port(), 6000 + parsed.display);
+        }
+    }
+    #[test]
+    fn tcp_display_rejects_nonlocal_names_addresses_and_port_wraparound() {
+        for host in ["localhost.evil", "localhost..", "localhost.localdomain", "server", "localhost:6000", "127.0.0.1.evil",
+            "0.0.0.0", "192.168.1.2", "::", "::127.0.0.1", "[::127.0.0.1]", "[2001:db8::1]", "[::ffff:192.168.1.2]", "[::1", "::1]", "::1%lo"] {
+            assert!(local_tcp_addresses(host, 6000).is_err(), "unexpected endpoint: {host}");
+        }
+        for port in [0, 1, 5999] { assert!(local_tcp_addresses("localhost", port).is_err()); }
+        assert_eq!(local_tcp_addresses("127.0.0.1", u16::MAX).unwrap()[0].port(), u16::MAX);
+        validate_tcp_display_port(&parse_display(Some("localhost:59535")).unwrap()).unwrap();
+        assert!(validate_tcp_display_port(&parse_display(Some("localhost:59536")).unwrap()).is_err());
+        assert!(validate_tcp_display_port(&parse_display(Some("[::1]:65535")).unwrap()).is_err());
+        validate_tcp_display_port(&ParsedDisplay { host: "unix".into(), protocol: None, display: u16::MAX, screen: 0 }).unwrap();
+        validate_tcp_display_port(&parse_display(Some("unix/host:65535")).unwrap()).unwrap();
+    }
+    #[test]
+    fn expired_or_cancelled_tcp_request_never_starts_a_socket() {
+        let address = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 6000);
+        assert!(local_tcp_socket(address, Instant::now(), &|| panic!("expired request must not inspect context")).is_err());
+        assert!(local_tcp_socket(address, Instant::now() + std::time::Duration::from_secs(1), &|| false).is_err());
+        assert!(local_tcp_socket("192.168.1.2:6000".parse().unwrap(),
+            Instant::now() + std::time::Duration::from_secs(1), &|| true).is_err());
+        assert!(local_tcp_socket("127.0.0.1:5999".parse().unwrap(),
+            Instant::now() + std::time::Duration::from_secs(1), &|| true).is_err());
+    }
     #[test]
     fn restoration_context_that_finishes_at_deadline_cannot_write() {
         let start = Instant::now();
