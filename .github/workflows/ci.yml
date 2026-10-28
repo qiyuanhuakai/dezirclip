@@ -9,6 +9,13 @@ on:
   # leaves the branch unverified until the stack is merged. Every PR now runs the
   # same suite regardless of what it is stacked on.
   pull_request:
+  workflow_dispatch:
+    inputs:
+      windows_surface_performance:
+        description: Run the optional release Windows Tauri/MyGo comparison after functional checks
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -54,6 +61,12 @@ jobs:
 
       - name: Test disposable native Surface fixture contracts
         run: node --test scripts/tests/native-windows-surface.node.mjs
+
+      - name: Test opt-in Windows performance fixture contracts without native execution
+        run: |
+          python -B -m unittest discover -s scripts/tests -p test_windows_performance_derivation.py
+          python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-pure-check
+          node --test .harness/windows-performance-pure-check/pure.node.mjs
 
       - name: Check single-source local protocol generation
         run: python scripts/generate-protocol.py --check
@@ -389,6 +402,109 @@ jobs:
           assert (saved['before'] in ('0', '1') and saved['after'] == current == '0') if key.exists() else saved['before'] is saved['after'] is current is None, 'Userns prerequisite no longer matches its original readback'
           print('DEZIRCLIP_USERNS_PREREQUISITE_RETAINED', {'original': saved, 'current': current}, flush=True)
           subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
+
+  windows-surface-performance:
+    name: Optional Windows release Surface comparison
+    if: github.event_name == 'workflow_dispatch' && inputs.windows_surface_performance == true
+    needs: [frontend, tauri]
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      DZC_WINDOWS_PERFORMANCE_ENABLED: 'true'
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup native fixture runtime
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache release Rust artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: windows-surface-release-performance
+
+      - name: Setup pinned Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: |
+            clients/go/go.sum
+            frontends/dzc-surface/go.sum
+
+      - name: Build the release frontend and matching native Surface
+        env:
+          TAURI_ENV_TARGET_TRIPLE: x86_64-pc-windows-msvc
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+          pnpm run surface:build
+
+      - name: Build the actual release Desktop with embedded frontend
+        run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
+
+      - name: Derive the comparison fixture from reviewed functional sources
+        run: python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-runtime
+
+      - name: Verify these release bytes before the sequential ABBA comparison
+        shell: python
+        run: |
+          import datetime, json, os, pathlib, subprocess, sys, uuid
+          assert sys.platform == 'win32' and os.environ.get('GITHUB_ACTIONS') == 'true'
+          assert os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and os.environ.get('RUNNER_ARCH') == 'X64'
+          assert os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and os.environ.get('DZC_WINDOWS_PERFORMANCE_ENABLED') == 'true'
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP'])
+          builds_finished_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          functional = temporary / ('dezirclip-surface-' + uuid.uuid4().hex)
+          desktop = pathlib.Path('target/release/dezirclip.exe')
+          helper = pathlib.Path('artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe')
+          common = ['--desktop', str(desktop), '--helper', str(helper), '--helper-proof', str(helper) + '.proof.json', '--python', sys.executable]
+          subprocess.run(['node', 'scripts/tests/native-windows-surface.mjs', *common, '--output-root', str(functional)], check=True)
+          quiet = temporary / ('dezirclip-performance-quiet-' + uuid.uuid4().hex + '.json')
+          note = {'source_revision': os.environ['GITHUB_SHA'], 'run_id': os.environ['GITHUB_RUN_ID'],
+                  'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'builds_finished': True, 'builds_finished_at': builds_finished_at,
+                  'other_owned_measurements_running': False, 'shared_host_quiet_verified': False,
+                  'scope': 'This job runs functional acceptance and measurement sequentially after its builds; no claim about the shared physical host.'}
+          with quiet.open('x', encoding='utf-8') as stream:
+              json.dump(note, stream, indent=2)
+          comparison = temporary / ('dezirclip-performance-' + uuid.uuid4().hex)
+          subprocess.run(['node', '.harness/windows-performance-runtime/controller.mjs', *common,
+              '--functional-report', str(functional / 'report.json'), '--quiet-note', str(quiet), '--output-root', str(comparison)], check=True)
+
+      - name: Preserve original comparison sources, observations and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-surface-release-performance-${{ github.run_attempt }}
+          include-hidden-files: true
+          path: |
+            .harness/windows-performance-runtime/*
+            ${{ runner.temp }}/dezirclip-performance-quiet-*.json
+            ${{ runner.temp }}/dezirclip-surface-*/*.json
+            ${{ runner.temp }}/dezirclip-surface-*/*.log
+            ${{ runner.temp }}/dezirclip-surface-*/*.png
+            ${{ runner.temp }}/dezirclip-performance-*/comparison.json
+            ${{ runner.temp }}/dezirclip-performance-*/dezirclip-surface-*/*.json
+            ${{ runner.temp }}/dezirclip-performance-*/dezirclip-surface-*/*.jsonl
+            ${{ runner.temp }}/dezirclip-performance-*/dezirclip-surface-*/*.log
+          if-no-files-found: warn
 
   standalone-cli:
     name: Compatible standalone CLI
