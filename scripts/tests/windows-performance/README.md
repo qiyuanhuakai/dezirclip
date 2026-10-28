@@ -10,6 +10,8 @@ the comparison job.
 target, then generates temporary plumbing and a target with narrow timing and
 resource-observation additions. Generated copies are not maintained as tracked
 sources. Functional fixture changes require review and updated base hashes.
+The reviewed crash-event reader is copied unchanged, with its own fixed source
+hash and a generated-file hash in the derivation receipt.
 
 Each fresh arm uses the same ten ordinary text entries and a 480×360 panel, in
 Tauri/MyGo/MyGo/Tauri order. Five warmups precede thirty measured trials. Every
@@ -39,6 +41,11 @@ opt-in. It preserves original process handles, native foreground ownership,
 the profile/WebView policy transaction, source hashes and cleanup receipts.
 Failed arms abort the cohort without retry. Cleanup can terminate owned
 processes, so it does not demonstrate natural application shutdown.
+Each arm retains the original Desktop state before cleanup and rejects abnormal
+exits. Exit code 1 is accepted only after cleanup starts when the original PID
+is explicitly recorded as terminated by cleanup. A pre-cleanup abnormal close
+may collect bounded, identity-bound Application Error/WER evidence; missing or
+unavailable diagnostics never turn that failed arm into a success.
 
 Pure checks, without native execution:
 

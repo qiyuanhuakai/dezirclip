@@ -476,7 +476,8 @@ ConvertTo-Json -InputObject $rows -Depth 5 -Compress
                     require(self.kernel.TerminateProcess(self.handles[item['pid']], 1), 'Owned cleanup termination failed')
                     require(self.kernel.WaitForSingleObject(self.handles[item['pid']], 5000) == 0, 'Owned original process has not exited')
                     forced.append(item['pid'])
-        remaining = [self.process(pid) for pid in self.handles if self.process(pid)['running']]
+        final_processes = [self.process(pid) for pid in self.handles]
+        remaining = [item for item in final_processes if item['running']]
         require(not remaining, 'Owned processes remain alive')
         if self.target and self.user.IsWindow(self.target):
             require(self.user.DestroyWindow(self.target), 'Synthetic target close failed')
@@ -485,6 +486,7 @@ ConvertTo-Json -InputObject $rows -Depth 5 -Compress
         for handle in self.handles.values():
             self.kernel.CloseHandle(handle)
         return {'remaining_owned_processes': remaining, 'forced_cleanup_pids': forced,
+                'final_owned_processes': final_processes,
                 'target_closed': not bool(self.user.IsWindow(self.target)),
                 'alternate_target_closed': not bool(self.user.IsWindow(self.alternate)), 'natural_application_shutdown_tested': False}
 

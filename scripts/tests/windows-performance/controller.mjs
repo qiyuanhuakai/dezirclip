@@ -11,6 +11,7 @@ import {
   validateDesktopIdentity, verifyNativePanel, verifyNativeTauriPanel,
 } from './native-plumbing.mjs';
 import { ProcessLedger, percentile, SAMPLE_INTERVAL_MS, SETTLE_MS, SAMPLE_MS } from './process-sampler.mjs';
+import { collectOwnedCrashEvents, desktopExitVerdict } from './native-windows-crash-events.mjs';
 
 export const ARMS = ['tauri', 'mygo', 'mygo', 'tauri'];
 export const WARMUPS = 5;
@@ -261,6 +262,9 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
     report.status = 'passed';
   } catch (error) { report.status = 'failed'; report.error = String(error.stack ?? error); }
   finally {
+    const cleanupStartedAt = new Date().toISOString();
+    report.cleanup_started_at = cleanupStartedAt;
+    report.desktop_before_cleanup = desktop ? { ...desktop.record } : null;
     const errors = [];
     if (bridge?.socket?.readyState === WebSocket.OPEN) {
       try { await bridge.invoke('hide_quick_paste', {}, 5000); await bridge.invoke('save_setting', { key: 'app.quick_paste_renderer', value: 'tauri' }, 5000); }
@@ -280,7 +284,16 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
     }
     if (desktop) {
       try { report.desktop_exit = await Promise.race([desktop.closed, delay(5000).then(() => { throw new Error('Original Desktop remains alive'); })]);
-        desktop.finish(); assert(!desktop.overflow && !desktop.error); }
+        desktop.finish(); assert(!desktop.overflow && !desktop.error);
+        const exitRecord = { ...desktop.record, ...report.desktop_exit };
+        const verdict = desktopExitVerdict(exitRecord, cleanupStartedAt, report.cleanup?.native?.forced_cleanup_pids ?? []);
+        report.desktop_exit_verdict = verdict;
+        if (!verdict.allowed) {
+          errors.push('Unexpected original Desktop exit: ' + verdict.exit_code_hex);
+          report.desktop_crash_events = await collectOwnedCrashEvents({ ...report.desktop_original,
+            started_at: exitRecord.started_at, closed_at: exitRecord.closed_at }, exitRecord, cleanupStartedAt);
+        }
+      }
       catch (error) { errors.push(String(error)); }
     }
     try {
@@ -329,7 +342,7 @@ export async function runComparison(args, env = process.env) {
   const rows = dataset(randomUUID().replaceAll('-', '').slice(0, 12).replace(/[0-9]/g, character => String.fromCharCode(97 + Number(character))));
   const report = { schema_version: 1, kind: 'phase6_windows_native_comparison_v1', status: 'running', source_revision: expected.source_revision,
     fixture_id: 'phase6-windows-native-comparison-v1', desktop_build_profile: 'release',
-    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'process-sampler.mjs'].map(name => ({ name,
+    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'process-sampler.mjs', 'native-windows-crash-events.mjs'].map(name => ({ name,
       ...regular(new URL(name, import.meta.url)) })),
     run_id: env.GITHUB_RUN_ID, run_attempt: env.GITHUB_RUN_ATTEMPT, order: ARMS, rows, arms: [],
     functional_gate: { path: args['functional-report'], ...regular(args['functional-report']) },

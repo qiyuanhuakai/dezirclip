@@ -8,21 +8,23 @@ from pathlib import Path
 import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
-BASE_COMMIT = '7ebdceb98c580a37f5244df4937d978d697be066'
+BASE_COMMIT = '29d4333abd1427d92345bf2d11111cce64ff29a3'
 
 
-def derive_sources(controller, original_target):
+def derive_sources(controller, original_target, crash_events):
     # Compare canonical LF text so Git's Windows checkout conversion is harmless.
     controller = controller.replace('\r\n', '\n')
     original_target = original_target.replace('\r\n', '\n')
-    assert hashlib.sha256(controller.encode('utf-8')).hexdigest() == 'a9e8cfc962785d769e3d883f7e322e8a1d8c084cdd96e5cb7be024d631c2a12c', 'Functional controller changed; review the derivation before use'
+    crash_events = crash_events.replace('\r\n', '\n')
+    assert hashlib.sha256(controller.encode('utf-8')).hexdigest() == 'c1950a6bff4cf51f91e9d5f5cc4d8bf554d6c9c5361c6b733c676f6374e812cf', 'Functional controller changed; review the derivation before use'
+    assert hashlib.sha256(crash_events.encode('utf-8')).hexdigest() == 'b8fd4ea818c09963e8e0d9f746ffd2a2e7ca8b2e90993cf931989b7b09d61400', 'Functional crash diagnostics changed; review the derivation before use'
     original_plumbing = controller.split('export async function runSurfaceAcceptance(', 1)[0]
     plumbing = original_plumbing.replace("from '../build-surface.mjs'", "from '../../scripts/build-surface.mjs'")
     plumbing = plumbing.replace("from '../release-windows-upgrade.mjs'", "from '../../scripts/release-windows-upgrade.mjs'")
     plumbing = plumbing.replace("new URL('./native-windows-surface-target.py', import.meta.url)",
                                 "new URL('./native-target.py', import.meta.url)")
     plumbing += '\nexport { repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot, environment, LoggedProcess, NativeChannel, Bridge, completedCommand, availablePort, fixedSurfaceInputs, toolkitPatchId };\n'
-    assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == '695244a2b2cada27d638bd49883bb357ba2029aed4146173219c52e1c5856f9d', 'Functional target changed; review the derivation before use'
+    assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780', 'Functional target changed; review the derivation before use'
     target = original_target
 
 
@@ -77,7 +79,7 @@ def derive_sources(controller, original_target):
 
     def activate(self, alternate=False):""")
 
-    files = {}
+    files = {'native-windows-crash-events.mjs': crash_events}
     for filename, before, after in [('native-plumbing.mjs', original_plumbing, plumbing),
                                      ('native-target.py', original_target, target)]:
         files[filename] = after
@@ -103,7 +105,8 @@ def generate(repository, destination):
     destination = validate_destination(repository, destination)
     controller = (repository / 'scripts/tests/native-windows-surface.mjs').read_text(encoding='utf-8')
     target = (repository / 'scripts/tests/native-windows-surface-target.py').read_text(encoding='utf-8')
-    files = derive_sources(controller, target)
+    crash_events = (repository / 'scripts/tests/native-windows-crash-events.mjs').read_text(encoding='utf-8')
+    files = derive_sources(controller, target, crash_events)
     source_directory = repository / 'scripts/tests/windows-performance'
     for name in ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs'):
         files[name] = (source_directory / name).read_text(encoding='utf-8')
@@ -115,7 +118,8 @@ def generate(repository, destination):
     proof = {'kind': 'windows_performance_source_derivation_v1', 'functional_base_commit': BASE_COMMIT,
              'native_runtime_executed_by_generator': False,
              'base_lf_sha256': {name: hashlib.sha256(source.encode('utf-8')).hexdigest() for name, source in
-                               [('native-windows-surface.mjs', controller), ('native-windows-surface-target.py', target)]},
+                               [('native-windows-surface.mjs', controller), ('native-windows-surface-target.py', target),
+                                ('native-windows-crash-events.mjs', crash_events)]},
              'generated_sha256': {name: hashlib.sha256((destination / name).read_bytes()).hexdigest() for name in files}}
     with (destination / 'derivation.json').open('x', encoding='utf-8', newline='\n') as output:
         output.write(json.dumps(proof, indent=2) + '\n')
