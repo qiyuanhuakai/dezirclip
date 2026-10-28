@@ -381,7 +381,7 @@ mod tests {
             .write_to(&mut png, image::ImageFormat::Png).unwrap();
         let data = format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png.into_inner()));
         let html = format!("<p>Known mixed text</p><img src='{data}'><!--TIEZ_RICH_IMAGE:{data}-->");
-        let session = Mutex::new(VecDeque::new());
+        let session = Default::default();
         let context = context(&session);
         let store = state.capture_store(&directory);
         let frame = CaptureFrame { data: CaptureData::RichText { text: "Known mixed text".into(), html }, metadata: CaptureReadMetadata::default() };
