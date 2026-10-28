@@ -1,5 +1,6 @@
 """Disposable Windows CI target and observations; never imports a product database."""
 import argparse
+from collections import deque
 import ctypes
 from ctypes import wintypes as W
 import hashlib
@@ -7,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import stat
 import subprocess
 import sys
@@ -18,6 +20,10 @@ import traceback
 def require(value, message):
     if not value:
         raise RuntimeError(message)
+
+
+def valid_seed_text(value):
+    return isinstance(value, str) and re.fullmatch(r'nativeupgradefixturemarker[a-f0-9]{32}-native-[ab]', value) is not None
 
 
 def save(path, value):
@@ -100,6 +106,10 @@ class Native:
             (self.user, 'GetForegroundWindow', [], W.HWND),
             (self.user, 'SetForegroundWindow', [W.HWND], W.BOOL),
             (self.user, 'SetFocus', [W.HWND], W.HWND),
+            (self.user, 'GetFocus', [], W.HWND),
+            (self.user, 'GetWindowLongPtrW', [W.HWND, ctypes.c_int], ctypes.c_ssize_t),
+            (self.user, 'SetWindowLongPtrW', [W.HWND, ctypes.c_int, ctypes.c_ssize_t], ctypes.c_ssize_t),
+            (self.user, 'CallWindowProcW', [ctypes.c_void_p, W.HWND, W.UINT, W.WPARAM, W.LPARAM], ctypes.c_ssize_t),
             (self.user, 'ShowWindow', [W.HWND, ctypes.c_int], W.BOOL),
             (self.user, 'IsWindowVisible', [W.HWND], W.BOOL),
             (self.user, 'IsWindow', [W.HWND], W.BOOL),
@@ -124,6 +134,10 @@ class Native:
         self.handles = {}
         self.identities = {}
         self.desktop = None
+        self.focus_messages = deque(maxlen=64)
+        self.callback_errors = deque(maxlen=8)
+        self.window_procedures = {}
+        self.window_callback = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, W.HWND, W.UINT, W.WPARAM, W.LPARAM)
         self.target = self.user.CreateWindowExW(0, 'STATIC', 'DezirClip Surface QA ' + root.name,
             0x10CF0000, 60, 60, 620, 260, None, None, self.kernel.GetModuleHandleW(None), None)
         require(self.target, 'Could not create the dedicated synthetic target')
@@ -136,6 +150,78 @@ class Native:
         self.alternate_edit = self.user.CreateWindowExW(0x200, 'EDIT', '', 0x50000080,
             16, 48, 560, 42, self.alternate, None, self.kernel.GetModuleHandleW(None), None)
         require(self.alternate_edit, 'Could not create the alternate synthetic edit control')
+        self.install_window_procedure(self.target, 'target', self.edit)
+        self.install_window_procedure(self.alternate, 'alternate', self.alternate_edit)
+        self.install_window_procedure(self.edit, 'target-edit')
+        self.install_window_procedure(self.alternate_edit, 'alternate-edit')
+
+    def install_window_procedure(self, window, role, editor=None):
+        # STATIC has no editor-focus policy. A normal editor restores its own
+        # child focus when Windows activates the top-level window.
+        @self.window_callback
+        def callback(hwnd, message, wparam, lparam):
+            previous = self.window_procedures[int(hwnd)]['original']
+            try:
+                if message in (0x0006, 0x0007, 0x0008, 0x0100, 0x0101, 0x0302):
+                    self.focus_messages.append({'role': role, 'hwnd': int(hwnd), 'message': message,
+                                                'wparam': int(wparam), 'own_thread_focus': int(self.user.GetFocus() or 0)})
+                if message == 0x0007 and editor and self.user.IsWindow(editor):
+                    self.user.SetFocus(editor)
+                    return 0
+            except BaseException as error:
+                self.callback_errors.append(str(error))
+            return self.user.CallWindowProcW(previous, hwnd, message, wparam, lparam)
+        address = ctypes.cast(callback, ctypes.c_void_p).value
+        original = self.user.GetWindowLongPtrW(window, -4)
+        require(original, 'Owned target original window procedure unavailable')
+        self.window_procedures[int(window)] = {'original': original, 'callback': callback}
+        previous = self.user.SetWindowLongPtrW(window, -4, address)
+        require(previous == original, 'Owned target window subclass failed or changed concurrently')
+
+    def pump_messages(self):
+        message = W.MSG()
+        while self.user.PeekMessageW(ctypes.byref(message), None, 0, 0, 1):
+            self.user.TranslateMessage(ctypes.byref(message))
+            self.user.DispatchMessageW(ctypes.byref(message))
+
+    def focus_snapshot(self):
+        require(not self.callback_errors, 'Owned window callback failed: ' + '; '.join(self.callback_errors))
+        return {'foreground_hwnd': int(self.user.GetForegroundWindow() or 0),
+                'own_thread_focus_hwnd': int(self.user.GetFocus() or 0),
+                'target_hwnd': int(self.target), 'edit_hwnd': int(self.edit),
+                'messages': list(self.focus_messages)}
+
+    def target_preflight(self, expected):
+        require(valid_seed_text(expected), 'Only the original synthetic clipboard seed may calibrate the target')
+        require(self.target_text() == '', 'Calibration requires the original empty target')
+        self.activate()
+        self.activate(alternate=True)
+        # Exercise the same top-level-only restoration used by the product.
+        # No late SetFocus(edit), target reactivation, or extra paste repairs it.
+        require(self.user.SetForegroundWindow(self.target), 'Target calibration restoration denied')
+        deadline = time.monotonic() + 2
+        while True:
+            self.pump_messages()
+            focus = self.focus_snapshot()
+            if focus['foreground_hwnd'] == int(self.target) and focus['own_thread_focus_hwnd'] == int(self.edit):
+                break
+            require(time.monotonic() < deadline, 'Restored target did not regain its editor focus')
+            time.sleep(.01)
+        sent = self.keys({'role': 'target', 'key': 'paste'})
+        deadline = time.monotonic() + 2
+        while True:
+            self.pump_messages()
+            actual = self.target_text()
+            if actual == expected:
+                break
+            require(time.monotonic() < deadline, 'Independent target Ctrl+V calibration failed')
+            time.sleep(.01)
+        receipt = {'focus_before_input': focus, 'input': sent, 'actual_target_text': actual,
+                   'paste_attempts': 1, 'focus_after_input': self.focus_snapshot(),
+                   'restoration': 'SetForegroundWindow(top-level), ordinary WM_SETFOCUS editor forwarding'}
+        require(self.user.SetWindowTextW(self.edit, ''), 'Could not clear the calibration text')
+        require(self.target_text() == '', 'Calibration text remained in the product target')
+        return receipt
 
     def process(self, pid):
         if pid not in self.handles:
@@ -227,6 +313,7 @@ class Native:
         return {'processes': processes, 'windows': windows, 'foreground': foreground or {'kind': 'other-uninspected'},
                 'target_hwnd': int(self.target), 'edit_hwnd': int(self.edit),
                 'alternate_hwnd': int(self.alternate),
+                'target_focus': self.focus_snapshot(),
                 'memory_scope': 'All observed Desktop descendants; working set/private commit are not PSS or USS.'}
 
     def activate(self, alternate=False):
@@ -235,7 +322,7 @@ class Native:
         require(self.user.SetForegroundWindow(window), 'Synthetic target activation was denied')
         self.user.SetFocus(edit)
         require(self.user.GetForegroundWindow() == window, 'Synthetic target is not foreground')
-        return {'foreground_target': True, 'hwnd': int(window), 'alternate': alternate}
+        return {'foreground_target': True, 'hwnd': int(window), 'alternate': alternate, 'target_focus': self.focus_snapshot()}
 
     def target_text(self):
         text = ctypes.create_unicode_buffer(4097)
@@ -260,9 +347,11 @@ class Native:
             item.ki = self.Keyboard(vk, scan, flags, 0, 0)
             inputs.append(item)
         chords = {'hotkey': [0x11, 0x12, 0x10, 0x79], 'select-all': [0x11, 0x41],
-                  'escape': [0x1B], 'enter': [0x0D], 'down': [0x28], 'up': [0x26]}
+                  'escape': [0x1B], 'enter': [0x0D], 'down': [0x28], 'up': [0x26], 'paste': [0x11, 0x56]}
         if request.get('key'):
             require(request['key'] in chords, 'Unrecognized bounded key command')
+            if request['key'] == 'paste':
+                require(role == 'target' and self.user.GetFocus() == self.edit, 'Calibration paste requires the owned foreground editor')
             keys = chords[request['key']]
             for vk in keys:
                 key(vk)
@@ -278,7 +367,7 @@ class Native:
         array = (self.Input * len(inputs))(*inputs)
         sent = self.user.SendInput(len(inputs), array, ctypes.sizeof(self.Input))
         require(sent == len(inputs), 'SendInput did not accept the complete original input')
-        return {'sent': sent, 'foreground_before': foreground, 'native_input': True}
+        return {'sent': sent, 'foreground_before': foreground, 'native_input': True, 'target_focus': self.focus_snapshot()}
 
     def accessibility(self, pid):
         observation = self.observe()
@@ -427,9 +516,7 @@ def main():
         stopped = False
         while not stopped:
             require(time.monotonic() < deadline, 'Native QA control deadline expired')
-            message = W.MSG()
-            while native.user.PeekMessageW(ctypes.byref(message), None, 0, 0, 1):
-                native.user.TranslateMessage(ctypes.byref(message)); native.user.DispatchMessageW(ctypes.byref(message))
+            native.pump_messages()
             try:
                 request = requests.get(timeout=0.01)
             except queue.Empty:
@@ -446,7 +533,8 @@ def main():
                 elif operation == 'observe': value = native.observe()
                 elif operation == 'activate-target': value = native.activate()
                 elif operation == 'activate-alternate': value = native.activate(alternate=True)
-                elif operation == 'target-text': value = {'text': native.target_text()}
+                elif operation == 'target-text': value = {'text': native.target_text(), 'target_focus': native.focus_snapshot()}
+                elif operation == 'target-preflight': value = native.target_preflight(request.get('expected_text'))
                 elif operation == 'clear-target':
                     require(native.user.SetWindowTextW(native.edit, ''), 'Cannot clear the synthetic target')
                     value = {'text': native.target_text()}
