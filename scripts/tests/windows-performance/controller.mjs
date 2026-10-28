@@ -177,7 +177,6 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
     for (const [key, value] of [['app.quick_paste_hotkey', 'Ctrl+Alt+Shift+F10'], ['app.quick_paste_enabled', 'true'],
       ['app.language', 'en'], ['app.quick_paste_renderer', renderer]]) await invoke('save_setting', { key, value });
     const readHistory = (budget = 20000) => invoke('get_clipboard_history', { limit: 150, offset: 0, contentType: null }, budget);
-    await boundedPoll('Initial synthetic capture', async budget => (await readHistory(budget)).some(row => row.content === seedText), activeDeadline);
     await invoke('clear_clipboard_history');
     for (const row of rows) await invoke('add_manual_item', { content: row.content, contentType: 'text', tags: [], expectedPrivacyEpoch: null, confirmPersistence: false });
     report.history_before = await readHistory(); const originalIds = validateRows(report.history_before, rows);

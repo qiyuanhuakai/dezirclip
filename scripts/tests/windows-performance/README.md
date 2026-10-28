@@ -20,6 +20,12 @@ editor, with all original history IDs retained. Each arm also measures visible
 and hidden state for 240 seconds after a 30-second settle, nominally every 250 ms.
 The main WebView remains constructed and hidden for both renderers.
 
+The clipboard marker written before Desktop starts only calibrates the native
+target. Windows capture subscribes to subsequent changes; the fixture does not
+require that earlier marker to be imported on startup. After calibration and
+Desktop identity checks, it clears history and creates the same ten entries
+through the production manual-item command for every arm.
+
 The query-state v3 method uses one additional, unmeasured show before every
 trial: native Ctrl+A/Backspace, 700 ms of setup, a bounded UIA observation of
 the empty input and at least two distinct visible fixture bodies, then Escape
