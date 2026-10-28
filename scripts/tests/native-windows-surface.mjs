@@ -493,7 +493,7 @@ export async function runSurfaceAcceptance(args, env = process.env) {
     });
     await stage('external_blur_does_not_restore_previous_target', async () => {
       await activateAndShow(first.pid);
-      const alternate = await native.request('activate-alternate');
+      const alternate = await native.request('click-alternate');
       const result = await poll('External blur hides without taking focus back', async () => {
         const status = await bridge.invoke('get_quick_paste_surface_status'), observation = await native.request('observe');
         return !status.visible && !observation.windows.some(w => w.pid === first.pid && w.visible)
