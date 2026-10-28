@@ -8,6 +8,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "windows")]
+static NAVIGATION_REQUEST: AtomicU64 = AtomicU64::new(0);
+
 #[cfg(target_os = "linux")]
 use std::sync::{Mutex, OnceLock};
 #[cfg(target_os = "linux")]
@@ -182,9 +185,8 @@ pub fn toggle_window(app: &AppHandle) {
         // a third watcher — and the request the user meant to close would still
         // land a moment later. Once a show is in flight, a toggle closes it.
         // This is also what keeps the keyboard out of the foreground app's
-        // hands: the global hook reads `NAVIGATION_ENABLED` and `IS_HIDDEN`,
-        // never visibility, so a flag raised for a window that has not appeared
-        // yet swallows arrow keys and Escape from whatever is in front.
+        // hands: the global hook accepts navigation only while the current main
+        // window is visible. A pending show must not publish that claim early.
         if idle_destroyer::show_is_pending() && !is_visible {
             idle_destroyer::cancel_pending_show();
             let _ = window.set_focusable(false);
@@ -529,7 +531,6 @@ pub fn toggle_window(app: &AppHandle) {
         let emit_app = app.clone();
         idle_destroyer::show_main_window_when_ready(app, move || {
             IS_HIDDEN.store(false, Ordering::Relaxed);
-            NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
 
             #[cfg(target_os = "windows")]
             WindowExt::release_win_keys();
@@ -538,7 +539,6 @@ pub fn toggle_window(app: &AppHandle) {
                 .unwrap()
                 .as_millis() as u64;
             LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
-            idle_destroyer::notify_main_window_shown(&show_app);
             webview_memory::restore_window_memory(&show_window, "toggle-show");
 
             let _ = show_window.set_always_on_top(pinned);
@@ -579,17 +579,100 @@ pub fn toggle_window(app: &AppHandle) {
                 let _ = show_window.set_focusable(true);
                 let _ = show_window.show();
             }
+            idle_destroyer::notify_main_window_shown(&show_app);
+            let _ = set_navigation_enabled(show_app, true);
         });
     }
 }
 
-#[tauri::command]
-pub fn set_navigation_enabled(enabled: bool) -> Result<(), String> {
-    NAVIGATION_ENABLED.store(enabled, Ordering::SeqCst);
-    if !enabled {
-        NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
+fn clear_main_navigation() {
+    NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
+    NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
+    #[cfg(target_os = "windows")]
+    WindowExt::clear_main_navigation_window(None);
+}
+
+#[cfg(target_os = "windows")]
+pub fn invalidate_main_navigation_snapshot() -> u64 {
+    WindowExt::clear_main_navigation_window(None);
+    NAVIGATION_REQUEST.fetch_add(1, Ordering::AcqRel) + 1
+}
+
+pub fn disable_main_navigation() {
+    #[cfg(target_os = "windows")]
+    invalidate_main_navigation_snapshot();
+    clear_main_navigation();
+}
+
+#[cfg(target_os = "windows")]
+fn publish_main_navigation(app: &AppHandle, request: u64) {
+    if NAVIGATION_REQUEST.load(Ordering::Acquire) != request { return; }
+    if !NAVIGATION_ENABLED.load(Ordering::Acquire) || IS_HIDDEN.load(Ordering::Acquire)
+        || WINDOW_LIFECYCLE.load(Ordering::Acquire) != idle_destroyer::LIFECYCLE_OPEN
+    {
+        WindowExt::clear_main_navigation_window(None);
+        return;
     }
-    Ok(())
+    let hwnd = app.get_webview_window("main").and_then(|window| window.hwnd().ok());
+    let Some(hwnd) = hwnd else { WindowExt::clear_main_navigation_window(None); return; };
+    if !WindowExt::publish_main_navigation_window(HWND(hwnd.0)) {
+        WindowExt::clear_main_navigation_window(None);
+        return;
+    }
+    // Destroy enters Closing before revoking the snapshot. If it raced this
+    // publication, revoke again; a UI callback cannot outlive a UI rebuild.
+    if NAVIGATION_REQUEST.load(Ordering::Acquire) != request
+        || !NAVIGATION_ENABLED.load(Ordering::Acquire)
+        || WINDOW_LIFECYCLE.load(Ordering::Acquire) != idle_destroyer::LIFECYCLE_OPEN
+    {
+        WindowExt::clear_main_navigation_window(Some(HWND(hwnd.0)));
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn refresh_main_navigation_snapshot(app: &AppHandle) {
+    // Refresh a newly shown HWND without overriding a pending frontend request
+    // or re-enabling navigation in an already open settings/tag panel.
+    let request = NAVIGATION_REQUEST.load(Ordering::Acquire);
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        publish_main_navigation(&handle, request);
+    });
+}
+
+#[tauri::command]
+pub fn set_navigation_enabled(app_handle: AppHandle, enabled: bool) -> Result<(), String> {
+    NAVIGATION_ENABLED.store(enabled, Ordering::SeqCst);
+    if !enabled { NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst); }
+    #[cfg(target_os = "windows")]
+    {
+        // UI-thread calls can run inline while worker calls queue. A newer
+        // request invalidates both forms of older callback before publication.
+        let request = invalidate_main_navigation_snapshot();
+        let handle = app_handle.clone();
+        app_handle.run_on_main_thread(move || publish_main_navigation(&handle, request))
+            .map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app_handle;
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn hide_main_navigation_window(app: AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if NAVIGATION_ENABLED.load(Ordering::Acquire)
+            && !IS_HIDDEN.load(Ordering::Acquire)
+            && WINDOW_LIFECYCLE.load(Ordering::Acquire) == idle_destroyer::LIFECYCLE_OPEN
+            && WindowExt::main_navigation_window_is_visible()
+        {
+            let _ = handle.emit("navigation-action", "escape");
+            let _ = hide_window_cmd(handle);
+        }
+    });
 }
 
 #[tauri::command]

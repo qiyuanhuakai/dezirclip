@@ -216,6 +216,8 @@ fn main_window_ready(window_exists: bool, is_destroyed: bool, lifecycle: u8) -> 
 /// Record that the main window is currently hidden.
 /// Safe to call multiple times; latest timestamp wins.
 pub fn mark_hidden() {
+    #[cfg(target_os = "windows")]
+    crate::app::window_manager::invalidate_main_navigation_snapshot();
     LAST_HIDDEN_TIMESTAMP.store(now_ms(), Ordering::Relaxed);
 }
 
@@ -260,6 +262,8 @@ pub fn mark_frontend_catchup_pending() {
 /// whatever was there when the window went down.
 pub fn notify_main_window_shown(app: &AppHandle) {
     mark_shown();
+    #[cfg(target_os = "windows")]
+    crate::app::window_manager::refresh_main_navigation_snapshot(app);
     EDGE_SHOW_PENDING.store(false, Ordering::Release);
     let _ = app.emit_to("main", "privacy-view-shown", ());
     crate::app::surface_supervisor::notify_main_shown(app);
@@ -435,6 +439,7 @@ fn collect_parked_overlays_while_destroyed(app: &AppHandle) {
 }
 
 fn destroy_main_window(app: &AppHandle, wait_for_browser_exit: bool) -> bool {
+    crate::app::window_manager::disable_main_navigation();
     let Some(win) = app.get_webview_window("main") else {
         webview_environment::mark_main_browser_process_exited();
         return true;
@@ -789,8 +794,7 @@ pub fn watcher_action(
 /// same everywhere: the hotkey path adjusts Windows Z order, the tray path emits
 /// a frontend event, and only now may the window claim the keyboard. Deferring
 /// just `show()` and running the rest immediately would let a window that is not
-/// on screen yet swallow the foreground app's arrow keys — the global hook gates
-/// on `NAVIGATION_ENABLED` and `IS_HIDDEN`, not on visibility.
+/// on screen yet claim navigation before the native visibility gate accepts it.
 ///
 /// Hidden windows also prepare a fresh privacy-bound history page before being
 /// presented. The request ID prevents a late page from completing a newer show.
@@ -1613,10 +1617,8 @@ mod tests {
 
     #[test]
     fn a_window_that_has_not_shown_yet_may_not_claim_the_keyboard() {
-        // The global hook gates on `NAVIGATION_ENABLED` and `IS_HIDDEN`, never on
-        // visibility. Raising either for a window that is still waiting means
-        // swallowing the foreground app's arrow keys and Escape until the paint
-        // lands — up to the whole budget.
+        // Navigation publication belongs after the actual show, even though the
+        // native hook also independently rejects a window that is still hidden.
         let source = include_str!("window_manager.rs");
         let body = source
             .split_once("pub fn toggle_window")
@@ -1636,7 +1638,7 @@ mod tests {
         // than whether it appears at all.
         let at_show = &body[gate..];
         for claim in [
-            "NAVIGATION_ENABLED.store(true",
+            "set_navigation_enabled(show_app, true)",
             "IS_HIDDEN.store(false",
             "notify_main_window_shown",
             "LAST_SHOW_TIMESTAMP.store",
