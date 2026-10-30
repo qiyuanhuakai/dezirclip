@@ -16,6 +16,11 @@ on:
         type: boolean
         required: false
         default: false
+      windows_surface_crash_diagnostics:
+        description: Run up to five fresh-profile release Windows diagnostic cases, stopping on first failure, without ABBA
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -60,11 +65,16 @@ jobs:
         run: node --test scripts/tests/surface-build.node.mjs scripts/tests/mygo-surface-patch.node.mjs
 
       - name: Test disposable native Surface fixture contracts
-        run: node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs
+        run: |
+          node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs scripts/tests/native-windows-lifecycle.node.mjs
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_click_plan.py
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_surface_target.py
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_supervisor.py
 
       - name: Test opt-in Windows performance fixture contracts without native execution
         run: |
           python -B -m unittest discover -s scripts/tests -p test_windows_performance_derivation.py
+          python -B -m unittest discover -s scripts/tests -p 'test_windows_crash*.py'
           python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-pure-check
           node --test .harness/windows-performance-pure-check/pure.node.mjs
 
@@ -359,16 +369,19 @@ jobs:
 
       - name: Verify experimental Surface on disposable Windows desktop
         if: runner.os == 'Windows' && matrix.can_test
+        timeout-minutes: 12
         shell: python
         run: |
-          import os, pathlib, subprocess, sys, uuid
+          import os, pathlib, sys, uuid
+          sys.path.insert(0, 'scripts/tests')
+          from native_windows_supervisor import run_controller
           assert sys.platform == 'win32' and os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
           root = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-surface-' + uuid.uuid4().hex)
           helper = pathlib.Path('artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe')
-          subprocess.run(['node', 'scripts/tests/native-windows-surface.mjs',
+          sys.exit(run_controller(['node', 'scripts/tests/native-windows-surface.mjs',
               '--desktop', 'target/debug/dezirclip.exe', '--helper', str(helper),
               '--helper-proof', str(helper) + '.proof.json', '--python', sys.executable,
-              '--output-root', str(root)], check=True)
+              '--output-root', str(root)], cwd=pathlib.Path.cwd(), output_root=root))
 
       - name: Preserve original Windows Surface observations
         if: always() && runner.os == 'Windows' && matrix.can_test
@@ -405,14 +418,26 @@ jobs:
 
   windows-surface-performance:
     name: Optional Windows release Surface comparison
-    if: github.event_name == 'workflow_dispatch' && inputs.windows_surface_performance == true
+    if: >-
+      ${{ !cancelled() && github.event_name == 'workflow_dispatch' &&
+          (inputs.windows_surface_crash_diagnostics == true ||
+           (inputs.windows_surface_performance == true &&
+            needs.frontend.result == 'success' && needs.tauri.result == 'success')) }}
     needs: [frontend, tauri]
     runs-on: windows-latest
     timeout-minutes: 150
     env:
-      DZC_WINDOWS_PERFORMANCE_ENABLED: 'true'
+      DZC_WINDOWS_PERFORMANCE_ENABLED: ${{ inputs.windows_surface_performance && 'true' || 'false' }}
+      DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED: ${{ inputs.windows_surface_crash_diagnostics && 'true' || 'false' }}
       GOTOOLCHAIN: local
     steps:
+      - name: Require exactly one optional Windows mode
+        shell: pwsh
+        run: |
+          if (($env:DZC_WINDOWS_PERFORMANCE_ENABLED -eq 'true') -eq ($env:DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED -eq 'true')) {
+            throw 'Select either performance or diagnostic-only functional checks'
+          }
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -461,12 +486,18 @@ jobs:
         run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
 
       - name: Derive the comparison fixture from reviewed functional sources
+        if: inputs.windows_surface_performance
         run: python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-runtime
 
       - name: Verify these release bytes before the sequential ABBA comparison
+        id: performance-prerequisite
+        if: inputs.windows_surface_performance
+        timeout-minutes: 12
         shell: python
         run: |
           import datetime, json, os, pathlib, subprocess, sys, uuid
+          sys.path.insert(0, 'scripts/tests')
+          from native_windows_supervisor import run_controller
           assert sys.platform == 'win32' and os.environ.get('GITHUB_ACTIONS') == 'true'
           assert os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted' and os.environ.get('RUNNER_ARCH') == 'X64'
           assert os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' and os.environ.get('DZC_WINDOWS_PERFORMANCE_ENABLED') == 'true'
@@ -476,7 +507,10 @@ jobs:
           desktop = pathlib.Path('target/release/dezirclip.exe')
           helper = pathlib.Path('artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe')
           common = ['--desktop', str(desktop), '--helper', str(helper), '--helper-proof', str(helper) + '.proof.json', '--python', sys.executable]
-          subprocess.run(['node', 'scripts/tests/native-windows-surface.mjs', *common, '--output-root', str(functional)], check=True)
+          functional_exit = run_controller(['node', 'scripts/tests/native-windows-surface.mjs', *common, '--output-root', str(functional)],
+              cwd=pathlib.Path.cwd(), output_root=functional)
+          if functional_exit:
+              raise SystemExit(functional_exit)
           quiet = temporary / ('dezirclip-performance-quiet-' + uuid.uuid4().hex + '.json')
           note = {'source_revision': os.environ['GITHUB_SHA'], 'run_id': os.environ['GITHUB_RUN_ID'],
                   'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'], 'builds_finished': True, 'builds_finished_at': builds_finished_at,
@@ -485,11 +519,69 @@ jobs:
           with quiet.open('x', encoding='utf-8') as stream:
               json.dump(note, stream, indent=2)
           comparison = temporary / ('dezirclip-performance-' + uuid.uuid4().hex)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+              for name, value in [('functional_root', functional), ('quiet_note', quiet), ('comparison_root', comparison)]:
+                  assert '\n' not in str(value) and '\r' not in str(value)
+                  stream.write(name + '=' + str(value) + '\n')
+
+      - name: Run the complete sequential release ABBA comparison
+        if: inputs.windows_surface_performance
+        shell: python
+        env:
+          DZC_FUNCTIONAL_ROOT: ${{ steps.performance-prerequisite.outputs.functional_root }}
+          DZC_QUIET_NOTE: ${{ steps.performance-prerequisite.outputs.quiet_note }}
+          DZC_COMPARISON_ROOT: ${{ steps.performance-prerequisite.outputs.comparison_root }}
+        run: |
+          import os, pathlib, subprocess, sys
+          functional = pathlib.Path(os.environ['DZC_FUNCTIONAL_ROOT'])
+          quiet = pathlib.Path(os.environ['DZC_QUIET_NOTE'])
+          comparison = pathlib.Path(os.environ['DZC_COMPARISON_ROOT'])
+          assert all(path.is_absolute() for path in (functional, quiet, comparison))
+          helper = pathlib.Path('artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe')
+          common = ['--desktop', 'target/release/dezirclip.exe', '--helper', str(helper), '--helper-proof', str(helper) + '.proof.json', '--python', sys.executable]
           subprocess.run(['node', '.harness/windows-performance-runtime/controller.mjs', *common,
               '--functional-report', str(functional / 'report.json'), '--quiet-note', str(quiet), '--output-root', str(comparison)], check=True)
 
+      - name: Run up to five success-only diagnostic release cases
+        id: crash-diagnostics
+        if: inputs.windows_surface_crash_diagnostics
+        timeout-minutes: 55
+        shell: pwsh
+        run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode run
+
+      - name: Restore only the matching owned WER child key
+        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.root != ''
+        shell: pwsh
+        env:
+          DZC_CRASH_DIAGNOSTICS_ROOT: ${{ steps.crash-diagnostics.outputs.root }}
+        run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode cleanup -Root $env:DZC_CRASH_DIAGNOSTICS_ROOT
+
+      - name: Preserve original functional failures and crash metadata
+        if: always() && inputs.windows_surface_crash_diagnostics && (steps.crash-diagnostics.outputs.sequence_root != '' || steps.crash-diagnostics.outputs.root != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-surface-release-crash-metadata-${{ github.run_attempt }}
+          retention-days: 3
+          path: |
+            ${{ steps.crash-diagnostics.outputs.sequence_root != '' && format('{0}/**/*', steps.crash-diagnostics.outputs.sequence_root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.root != '' && format('{0}/*.json', steps.crash-diagnostics.outputs.root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.functional_root != '' && format('{0}/*.json', steps.crash-diagnostics.outputs.functional_root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.functional_root != '' && format('{0}/*.log', steps.crash-diagnostics.outputs.functional_root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.functional_root != '' && format('{0}/*.png', steps.crash-diagnostics.outputs.functional_root) || '' }}
+          if-no-files-found: error
+
+      - name: Preserve only the identity-bound original Desktop dump
+        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.accepted_dump != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-surface-release-owned-crash-dump-${{ github.run_attempt }}
+          retention-days: 3
+          compression-level: 1
+          path: ${{ steps.crash-diagnostics.outputs.accepted_dump }}
+          if-no-files-found: error
+
       - name: Preserve original comparison sources, observations and failures
-        if: always()
+        if: always() && inputs.windows_surface_performance
         uses: actions/upload-artifact@v4
         with:
           name: windows-surface-release-performance-${{ github.run_attempt }}

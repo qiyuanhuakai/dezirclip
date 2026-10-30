@@ -9,7 +9,9 @@ import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
-REVIEWED_TARGET_LF_SHA256 = '118153005216eff075d4596335e6bd26c8fb9a880d13dc96c6627b1547e165f7'
+REVIEWED_TARGET_LF_SHA256 = 'ac2ff1dbd3794cafd70adfcac31318d7a08f01ee87a88cdb69a10c121d4e5a87'
+REVIEWED_CONTROLLER_LF_SHA256 = '55ec72ffdd43340b955c22563b3a8ecedb2a2eedf210963850585f1c9ffff27f'
+REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
 
 def derive_sources(controller, original_target, crash_events):
@@ -17,14 +19,14 @@ def derive_sources(controller, original_target, crash_events):
     controller = controller.replace('\r\n', '\n')
     original_target = original_target.replace('\r\n', '\n')
     crash_events = crash_events.replace('\r\n', '\n')
-    assert hashlib.sha256(controller.encode('utf-8')).hexdigest() == 'c1950a6bff4cf51f91e9d5f5cc4d8bf554d6c9c5361c6b733c676f6374e812cf', 'Functional controller changed; review the derivation before use'
+    assert hashlib.sha256(controller.encode('utf-8')).hexdigest() == REVIEWED_CONTROLLER_LF_SHA256, 'Functional controller changed; review the derivation before use'
     assert hashlib.sha256(crash_events.encode('utf-8')).hexdigest() == 'b8fd4ea818c09963e8e0d9f746ffd2a2e7ca8b2e90993cf931989b7b09d61400', 'Functional crash diagnostics changed; review the derivation before use'
     original_plumbing = controller.split('export async function runSurfaceAcceptance(', 1)[0]
     plumbing = original_plumbing.replace("from '../build-surface.mjs'", "from '../../scripts/build-surface.mjs'")
     plumbing = plumbing.replace("from '../release-windows-upgrade.mjs'", "from '../../scripts/release-windows-upgrade.mjs'")
     plumbing = plumbing.replace("new URL('./native-windows-surface-target.py', import.meta.url)",
                                 "new URL('./native-target.py', import.meta.url)")
-    plumbing += '\nexport { repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot, environment, LoggedProcess, NativeChannel, Bridge, completedCommand, availablePort, fixedSurfaceInputs, toolkitPatchId };\n'
+    plumbing += '\nexport { repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot, environment, LoggedProcess, NativeChannel, availablePort, fixedSurfaceInputs, toolkitPatchId, within, finalizeManagedChild, stopManagedChild, exitFailedController };\n'
     assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == REVIEWED_TARGET_LF_SHA256, 'Functional target changed; review the derivation before use'
     target = original_target
 
@@ -129,6 +131,9 @@ def generate(repository, destination):
     target = (repository / 'scripts/tests/native-windows-surface-target.py').read_text(encoding='utf-8')
     crash_events = (repository / 'scripts/tests/native-windows-crash-events.mjs').read_text(encoding='utf-8')
     files = derive_sources(controller, target, crash_events)
+    lifecycle = (repository / 'scripts/tests/native-windows-lifecycle.mjs').read_text(encoding='utf-8').replace('\r\n', '\n')
+    assert hashlib.sha256(lifecycle.encode('utf-8')).hexdigest() == REVIEWED_LIFECYCLE_LF_SHA256, 'Functional lifecycle changed; review the derivation before use'
+    files['native-windows-lifecycle.mjs'] = lifecycle
     source_directory = repository / 'scripts/tests/windows-performance'
     for name in ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs'):
         files[name] = (source_directory / name).read_text(encoding='utf-8')
@@ -138,7 +143,7 @@ def generate(repository, destination):
         with (destination / name).open('x', encoding='utf-8', newline='\n') as output:
             output.write(source)
     source_paths = ['scripts/tests/' + name for name in
-                    ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs')]
+                    ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs', 'native-windows-lifecycle.mjs')]
     source_paths += ['scripts/tests/windows-performance/' + name for name in
                      ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs')]
     source_files = {}
@@ -148,15 +153,21 @@ def generate(repository, destination):
                              'canonical_lf_sha256': hashlib.sha256(raw.decode('utf-8').replace('\r\n', '\n').encode('utf-8')).hexdigest()}
     proof = {'kind': 'windows_performance_source_derivation_v1',
              'functional_controller_base_commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
-             'functional_controller_base_scope': ['native-windows-surface.mjs', 'native-windows-crash-events.mjs'],
+             'functional_controller_base_scope': ['native-windows-crash-events.mjs'],
+             'functional_controller_provenance': {'reviewed_lf_sha256': REVIEWED_CONTROLLER_LF_SHA256,
+                 'diagnostic_delta': 'bounded-original-child-and-socket-finalization',
+                 'original_controller_reference': {'commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
+                     'lf_sha256': 'c1950a6bff4cf51f91e9d5f5cc4d8bf554d6c9c5361c6b733c676f6374e812cf',
+                     'scope': 'Prior reference only; the current controller has additional bounded failure cleanup.'}},
+             'functional_lifecycle_provenance': {'reviewed_lf_sha256': REVIEWED_LIFECYCLE_LF_SHA256},
              'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
-                 'diagnostic_delta': 'bounded-key-state-and-owned-message-timing',
+                  'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-and-checked-snapshot-eof',
                  'original_target_reference': {'commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
                      'lf_sha256': 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780',
                      'scope': 'Prior reference only; the current diagnostic target is bound by its reviewed LF hash, not attributed to this commit.'}},
              'native_runtime_executed_by_generator': False,
              'source_files': source_files,
-             'base_lf_sha256_scope': 'Current reviewed functional source text; these hashes do not attribute the modified diagnostic target to the controller base commit.',
+             'base_lf_sha256_scope': 'Current reviewed functional source text; modified controller, target and lifecycle are not attributed to the prior reference commit.',
              'base_lf_sha256': {name: hashlib.sha256(source.encode('utf-8')).hexdigest() for name, source in
                                [('native-windows-surface.mjs', controller), ('native-windows-surface-target.py', target),
                                 ('native-windows-crash-events.mjs', crash_events)]},
