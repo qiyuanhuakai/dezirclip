@@ -74,9 +74,15 @@ Windows 本次发布构建对照 [41106374215](https://github.com/qiyuanhuakai/d
 
 `9a1d873ae379d017535bc829e93729baf3642000` 将归属规则统一为已完整认证原对象的生命周期证书：每轮校验冻结证书、原 handle/identity 并新读状态与计数，读取失败仍中止；已退出父对象的原句柄也作为发现后代的锚点。仅完整通过双快照及逐边创建代际检查的新候选才批量取得证书；未认证 pending 不进入返回的窗口或输入范围，仍仅关闭且使清理失败。普通 API 枚举错误和其他断言保持闭锁，没有输入、观察重试或时间门槛变化。Root 独立核对冻结源码并执行 83 项纯检查，另两份独立源码审查未发现新增阻断；这不是实际 Windows 通过结论。
 
-新完整请求 [41127251117](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41127251117) 绑定 9a1d873，2026-10-30 20:57:14 UTC 发起，继续执行工作流自身全部前置门禁，尚无正式对照结果。5d6 与 9a1d873 的上述产品目录及根清单实际 Git diff 为空；新旧 Windows 原件不拼接，Linux 数值未重新测量。
+新完整请求 [41127251117](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41127251117) 绑定 9a1d873，2026-10-30 20:57:14 UTC 发起。它的 17 项普通前置成功，自身 debug 原生 13 项及发布版原生 13 项也分别经原件复核；发布版复核 SHA-256 `287ee57d90a80a1990fd4873ca65ff635a8a54ec37fb0a807d823775dbe0de34`。发布版响应 37 的一次原只读 UIA 超时保留，该项随后在原期限内通过。5d6 与 9a1d873 的上述产品目录及根清单实际 Git diff 为空；新旧 Windows 原件不拼接，Linux 数值未重新测量。
 
-首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 上述运行均未进入正式计时。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
+该请求的对照步骤于 21:34:15 UTC 实际开始，21:34:41 UTC 失败。唯一已开始的是 A1 Tauri：5 次预热完成，首个正式 trial 5 的单次 Enter 后，770 次原目标文本读取均为空，最末距离输入开始约 12,000.7933 ms，全部前台读数仍为原 Tauri HWND。没有接受的正式样本、没有资源窗口；后续 MyGo、MyGo、Tauri 三轮均未开始。顶层 `comparison.arms=[]` 是 await 失败未追加，不能据此声称没有 arm 开始。原件 [13013910989](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41127251117/artifacts/13013910989) 为 428,475 字节，SHA-256 `a5832efe1e4021089a4ba1d6a831b52469fabafdc797f3844247a1d0afbe4c29`，完整原失败复核 SHA-256 `407fa45af31eaccd1c9cabe6e3561f7783180817db5969c29cab5e3fce0e04be`，首正式样本取证复核 SHA-256 `00ac6a3a1c4c5cbb1546ee1fc1f4d565f19b5a88ca864cd440636088fe3c5bee`。
+
+产品日志走到了第六次 copy/shift-insert 分支，但没有保存实际剪贴板值、当时保存的目标 HWND 或焦点 API 返回值，不能用这些日志证明目标收到文本或确定失败原因。输入后的查询结果资格也没有单独观察，只有原固定 700 ms 准备时间。PR #153 的去除粘贴后前端 hide 修正已在本次源码中，相关两个产品文件与该 PR head 的 Git diff 为空，不能再次归因于缺少该修正。A1 的 9 个已知原对象退出、bootstrap 恢复且清理无错误；Desktop 在清理前仍运行，记录的退出 1 来自清理终止，本次没有 heap 退出证据。
+
+另一次普通 CI [41127196755](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41127196755) 的 Surface 13 项通过，但独立 NSIS OwnedUpgrade 任务失败。它仅安装了旧 alpha.1 标签的同源码 debug 夹具；GUI 原进程仍运行，180 次访问其 CDP 端口均拒连，候选 alpha.2 安装尚未开始。实际 GUI 字节匹配旧构建收据且含调试端口常量，仍不足以确定运行时为何没有监听。原包 SHA-256 `58413e81877a9194d9eff6cfe71e44d6973a0721ee5b290432d0e1be42e64708`、独立失败复核 SHA-256 `ba60199ac50fa391d5b8b41ec318ec07d583870ebd787b8787c7d736126b8020` 保留；不把该失败归为已证实的升级替换错误，也不以手动运行的其他成功覆盖。
+
+首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 尚无完成且可接受的性能对照。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
 
 ## 补测方法与环境条件
 
