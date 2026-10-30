@@ -21,6 +21,15 @@ class Input(ctypes.Structure):
     _fields_ = [('type', ctypes.c_ulong), ('mi', Mouse)]
 
 
+class Keyboard(ctypes.Structure):
+    _fields_ = [('wVk', ctypes.c_ushort), ('wScan', ctypes.c_ushort), ('dwFlags', ctypes.c_ulong),
+                ('time', ctypes.c_ulong), ('dwExtraInfo', ctypes.c_size_t)]
+
+
+class KeyboardInput(ctypes.Structure):
+    _fields_ = [('type', ctypes.c_ulong), ('ki', Keyboard)]
+
+
 class FakeUser:
     def __init__(self):
         self.pid, self.thread, self.parent, self.hit = os.getpid(), 7, 10, 20
@@ -126,6 +135,85 @@ class AlternateClickTests(unittest.TestCase):
                      (-1, 0, 0, 0, 100, 100), (100, 0, 0, 0, 100, 100),
                      (0, -1, 0, 0, 100, 100), (0, 100, 0, 0, 100, 100)]:
             with self.subTest(args=args), self.assertRaises(RuntimeError): TARGET.absolute_mouse_point(*args)
+
+
+class KeyboardDiagnosticTests(unittest.TestCase):
+    def fixture(self):
+        native = fixture()
+        native.target, native.Input, native.Keyboard = 10, KeyboardInput, Keyboard
+        native.observe = lambda: {'foreground': {'hwnd': 10}, 'processes': []}
+        native.user.foreground, native.user.focus = 10, 20
+        native.user.key_reads = []
+        native.user.key_phase, native.user.key_accepted = 0, 8
+
+        def key_state(vk):
+            native.user.key_reads.append((native.user.key_phase, vk))
+            return ({0x10: -32767, 0x11: 1} if native.user.key_phase == 0 else {0x2D: -32768, 0x79: 1}).get(vk, 0)
+
+        def send(count, inputs, size):
+            native.user.calls += 1
+            native.user.input = [(item.ki.wVk, item.ki.wScan, item.ki.dwFlags) for item in inputs]
+            native.user.key_phase = 1
+            return native.user.key_accepted
+
+        native.user.GetAsyncKeyState, native.user.SendInput = key_state, send
+        return native
+
+    def test_fixed_high_bit_snapshots_do_not_change_or_repeat_the_input_batch(self):
+        native = self.fixture()
+        with patch.object(TARGET.time, 'monotonic_ns', side_effect=[100, 110, 120, 130, 140, 150]):
+            receipt = native.keys({'role': 'target', 'key': 'hotkey'})
+        self.assertEqual(native.user.calls, 1)
+        self.assertEqual(native.user.input, [(17, 0, 0), (18, 0, 0), (16, 0, 0), (121, 0, 0),
+                                             (121, 0, 2), (16, 0, 2), (18, 0, 2), (17, 0, 2)])
+        expected_keys = [16, 17, 18, 160, 161, 162, 163, 164, 165, 91, 92, 45, 121]
+        self.assertEqual(native.user.key_reads, [(phase, vk) for phase in (0, 1) for vk in expected_keys])
+        self.assertEqual((receipt['input_monotonic_ns'], receipt['input_returned_monotonic_ns']), ('120', '130'))
+        self.assertEqual((receipt['keyboard_before']['began_monotonic_ns'], receipt['keyboard_before']['completed_monotonic_ns']), ('100', '110'))
+        self.assertEqual((receipt['keyboard_after']['began_monotonic_ns'], receipt['keyboard_after']['completed_monotonic_ns']), ('140', '150'))
+        self.assertTrue(receipt['keyboard_before']['down']['shift'])
+        self.assertFalse(receipt['keyboard_before']['down']['control'], 'The low pressed-since bit is not down state')
+        self.assertTrue(receipt['keyboard_after']['down']['insert'])
+        self.assertFalse(receipt['keyboard_after']['down']['f10'])
+        self.assertIn('not an atomic state or message-delivery acknowledgement', receipt['keyboard_before']['scope'])
+
+    def test_partial_input_preserves_failure_and_never_retries_or_inserts_releases(self):
+        native = self.fixture()
+        native.user.key_accepted = 7
+        with self.assertRaisesRegex(RuntimeError, 'complete original input'):
+            native.keys({'role': 'target', 'key': 'hotkey'})
+        self.assertEqual(native.user.calls, 1)
+        self.assertEqual(len(native.user.input), 8)
+        self.assertEqual(len(native.user.key_reads), 26)
+
+    def test_unowned_or_empty_input_does_not_read_keyboard_state(self):
+        for request in ({'role': 'unowned', 'key': 'hotkey'}, {'role': 'target'}):
+            native = self.fixture()
+            with self.assertRaises(RuntimeError): native.keys(request)
+            self.assertEqual(native.user.calls, 0)
+            self.assertEqual(native.user.key_reads, [])
+
+    def test_owned_key_message_timestamps_preserve_bounded_capture_and_original_procedure(self):
+        native = self.fixture()
+        native.window_procedures, native.focus_messages = {}, TARGET.deque(maxlen=64)
+        native.callback_errors, native.window_callback = TARGET.deque(maxlen=8), lambda callback: callback
+        native.user.GetFocus = lambda: native.user.focus
+        native.user.GetWindowLongPtrW = lambda window, index: 40
+        native.user.SetWindowLongPtrW = lambda window, index, address: 40
+        delegated = []
+        native.user.CallWindowProcW = lambda *args: delegated.append(args) or 42
+        with patch.object(TARGET.ctypes, 'cast', return_value=SimpleNamespace(value=41)):
+            native.install_window_procedure(20, 'target-edit')
+        callback = native.window_procedures[20]['callback']
+        with patch.object(TARGET.time, 'monotonic_ns', side_effect=range(100, 166)):
+            for message in [0x0100, 0x0101, 0x0104, 0x0105, 0x0302, *([0x0100] * 61)]:
+                self.assertEqual(callback(20, message, 16, 0), 42)
+        self.assertEqual(len(native.focus_messages), 64)
+        self.assertEqual(len(delegated), 66)
+        self.assertEqual(native.focus_messages[-1]['observed_monotonic_ns'], '165')
+        self.assertEqual(native.focus_messages[0]['message'], 0x0104)
+        self.assertTrue(all(item['role'] == 'target-edit' and item['hwnd'] == 20 for item in native.focus_messages))
+        self.assertEqual(list(native.callback_errors), [])
 
 
 if __name__ == '__main__':
