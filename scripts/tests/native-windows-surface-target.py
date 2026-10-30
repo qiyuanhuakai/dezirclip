@@ -364,11 +364,7 @@ class Native:
         self.validated_owned_handles[pid] = {'handle': self.handles[pid], 'identity': dict(self.identities[pid])}
         return info
 
-    def tree(self):
-        require(self.desktop, 'Desktop binding required')
-        require(self.validated_owned_handles.get(self.desktop) == {
-            'handle': self.handles.get(self.desktop), 'identity': self.identities.get(self.desktop)},
-            'Desktop original handle was not authenticated')
+    def parent_snapshot(self):
         snapshot = self.kernel.CreateToolhelp32Snapshot(2, 0)
         require(snapshot and snapshot != ctypes.c_void_p(-1).value, 'Process snapshot unavailable')
         parents = {}
@@ -381,6 +377,14 @@ class Native:
                 found = self.kernel.Process32NextW(snapshot, ctypes.byref(entry))
         finally:
             self.kernel.CloseHandle(snapshot)
+        return parents
+
+    def tree(self):
+        require(self.desktop, 'Desktop binding required')
+        require(self.validated_owned_handles.get(self.desktop) == {
+            'handle': self.handles.get(self.desktop), 'identity': self.identities.get(self.desktop)},
+            'Desktop original handle was not authenticated')
+        parents = self.parent_snapshot()
         owned = {self.desktop} if self.process(self.desktop)['running'] else set()
         while True:
             more = {pid for pid, parent in parents.items() if parent in owned}
@@ -394,12 +398,28 @@ class Native:
             except RuntimeError:
                 if pid in parents:
                     raise
-        # Opening/querying a process alone never authorizes termination. Promote
-        # descendants only after this anchored tree and its identities validate.
-        for item in result:
-            if item['pid'] in owned:
-                pid = item['pid']
-                self.validated_owned_handles[pid] = {'handle': self.handles[pid], 'identity': dict(self.identities[pid])}
+        candidates = {item['pid']: {'handle': self.handles[item['pid']],
+                      'identity': dict(self.identities[item['pid']])} for item in result if item['pid'] in owned}
+        require(set(candidates) == owned, 'Candidate tree identities are incomplete')
+        # A PID can change generation between the first snapshot and OpenProcess.
+        # All candidate handles are retained before confirming their parent PIDs.
+        confirmed = self.parent_snapshot()
+        for pid, candidate in candidates.items():
+            require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity'],
+                    'Candidate retained handle or identity changed during parent confirmation')
+            if pid == self.desktop:
+                continue
+            parent = parents.get(pid)
+            require(parent in candidates and confirmed.get(pid) == parent,
+                    'Candidate parent PID changed or disappeared between snapshots: pid=' + str(pid))
+            created = int(candidate['identity']['creation_time_100ns'])
+            parent_created = int(candidates[parent]['identity']['creation_time_100ns'])
+            require(0 < parent_created <= created, 'Parent PID generation does not bind this child: ' + json.dumps({
+                'pid': pid, 'parent_pid': parent, 'creation_time_100ns': str(created),
+                'parent_creation_time_100ns': str(parent_created)}))
+        # A complete query alone is insufficient: every edge and original object
+        # must validate before any newly opened candidate can be terminated.
+        self.validated_owned_handles.update(candidates)
         return result
 
     def observe(self):

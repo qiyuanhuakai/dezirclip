@@ -291,7 +291,7 @@ class OwnershipCleanupTests(unittest.TestCase):
         native.root, native.desktop, native.target, native.alternate = Path('fake-root'), None, 0, 0
         native.Memory, native.handles, native.identities, native.validated_owned_handles = Memory, {}, {}, {}
         native.binding_attempted_pid, native.binding_error = None, None
-        calls, live = [], {500: True, 600: True}
+        calls, live = [], {500: True, 600: True, 700: True}
         expected = str((native.root / 'candidate/dezirclip.exe').resolve())
 
         def times(handle, created, exited, kernel, user):
@@ -396,26 +396,118 @@ class OwnershipCleanupTests(unittest.TestCase):
         self.assertFalse(any(call[0] == 'terminate' for call in calls))
         self.assertIn(('close', 600), calls)
 
-    def attach_tree(self, native):
+    def attach_tree(self, native, snapshots=None):
         class Entry(ctypes.Structure):
             _fields_ = [('dwSize', ctypes.c_ulong), ('th32ProcessID', ctypes.c_ulong), ('th32ParentProcessID', ctypes.c_ulong)]
         native.ProcessEntry = Entry
-        entries, cursor = [(50, 1), (60, 50)], [0]
+        native.test_snapshot_calls = 0
+        snapshots = snapshots or [[(50, 1), (60, 50)]]
+        entries, cursor, snapshot_index = [[]], [0], [-1]
         def fill(output):
-            if cursor[0] >= len(entries): return False
-            output._obj.th32ProcessID, output._obj.th32ParentProcessID = entries[cursor[0]]
+            if cursor[0] >= len(entries[0]): return False
+            output._obj.th32ProcessID, output._obj.th32ParentProcessID = entries[0][cursor[0]]
             return True
         def first(snapshot, output): cursor[0] = 0; return fill(output)
         def next_entry(snapshot, output): cursor[0] += 1; return fill(output)
-        native.kernel.CreateToolhelp32Snapshot = lambda *args: 900
+        def snapshot(*args):
+            native.test_snapshot_calls += 1
+            snapshot_index[0] += 1
+            entries[0] = snapshots[min(snapshot_index[0], len(snapshots) - 1)]
+            return 900
+        native.kernel.CreateToolhelp32Snapshot = snapshot
         native.kernel.Process32FirstW, native.kernel.Process32NextW = first, next_entry
         native.tree = TARGET.Native.tree.__get__(native)
+
+    def change_creation(self, native, values):
+        original = native.kernel.GetProcessTimes
+        def times(handle, created, *args):
+            result = original(handle, created, *args)
+            if handle in values: created._obj.dwLowDateTime = values[handle]
+            return result
+        native.kernel.GetProcessTimes = times
+
+    def test_old_parent_pid_generation_cannot_authenticate_or_terminate_an_older_child(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        self.change_creation(native, {600: 100})
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('close', 600), calls)
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_generation_is_checked_on_each_edge_not_just_against_the_root(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native, [[(50, 1), (60, 50), (70, 60)]])
+        self.change_creation(native, {700: 550})
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        with patch.object(TARGET, 'save'):
+            with self.assertRaises(RuntimeError): native.cleanup()
+        self.assertFalse(any(call[0] == 'terminate' and call[1] in (600, 700) for call in calls))
+
+    def test_first_snapshot_entry_cannot_authenticate_a_reused_pid_opened_afterwards(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1), (60, 99)]])
+        with self.assertRaisesRegex(RuntimeError, 'parent PID changed'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('ownership unconfirmed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'ownership unconfirmed'): native.cleanup()
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [60])
+
+    def test_missing_second_snapshot_candidate_cannot_be_promoted(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1)]])
+        with self.assertRaisesRegex(RuntimeError, 'disappeared'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+
+    def test_second_snapshot_confirmation_is_bound_to_the_captured_handle_and_identity(self):
+        for changed in ('handle', 'identity'):
+            with self.subTest(changed=changed):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                original = native.kernel.CreateToolhelp32Snapshot
+                def snapshot(*args):
+                    result = original(*args)
+                    if native.test_snapshot_calls == 2:
+                        if changed == 'handle': native.handles[60] = 700
+                        else: native.identities[60] = {**native.identities[60], 'creation_time_100ns': '700'}
+                    return result
+                native.kernel.CreateToolhelp32Snapshot = snapshot
+                with self.assertRaisesRegex(RuntimeError, 'retained handle or identity changed'): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50})
+
+    def test_later_bad_generation_preserves_only_previously_authenticated_objects(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.attach_tree(native, [[(50, 1), (60, 50), (70, 60)]])
+        self.change_creation(native, {700: 550})
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50, 60})
+        with patch.object(TARGET, 'save'):
+            with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertIn(('terminate', 600, 1), calls)
+        self.assertNotIn(('terminate', 700, 1), calls)
 
     def test_anchored_fully_read_tree_authenticates_descendants_before_known_cleanup(self):
         native, calls = self.fixture()
         native.bind(50)
         self.attach_tree(native)
         self.assertEqual([item['pid'] for item in native.tree()], [50, 60])
+        self.assertEqual(native.test_snapshot_calls, 2)
         self.assertEqual(native.validated_owned_handles[60], {'handle': 600, 'identity': dict(native.identities[60])})
         native.tree = lambda: (_ for _ in ()).throw(RuntimeError('later discovery failed'))
         with patch.object(TARGET, 'save') as saved:
