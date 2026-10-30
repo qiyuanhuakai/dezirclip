@@ -312,10 +312,15 @@ class Native:
         require(self.target_text() == '', 'Calibration text remained in the product target')
         return receipt
 
-    def process(self, pid):
+    def process(self, pid, phase='observation'):
         if pid not in self.handles:
-            handle = self.kernel.OpenProcess(0x00100000 | 0x1000 | 0x10 | 1, False, pid)
-            require(handle, 'Cannot retain an owned original process handle')
+            access = 0x00100000 | 0x1000 | 0x10 | 1
+            handle = self.kernel.OpenProcess(access, False, pid)
+            if not handle:
+                error = ctypes.get_last_error()
+                raise RuntimeError('Cannot retain an owned original process handle: ' + json.dumps({
+                    'pid': pid, 'requested_access': hex(access), 'winerror': error,
+                    'had_retained_handle': False, 'phase': phase}))
             self.handles[pid] = handle
         handle = self.handles[pid]
         created, exited, kernel, user = W.FILETIME(), W.FILETIME(), W.FILETIME(), W.FILETIME()
@@ -334,11 +339,13 @@ class Native:
         memory = self.Memory()
         memory.cb = ctypes.sizeof(memory)
         measured = bool(self.psapi.GetProcessMemoryInfo(handle, ctypes.byref(memory), memory.cb))
+        memory_error = None if measured else ctypes.get_last_error()
         return {'pid': pid, **identity,
                 'running': code.value == 259, 'exit_code': None if code.value == 259 else code.value,
                 'cpu_kernel_100ns': value(kernel), 'cpu_user_100ns': value(user),
                 'working_set_bytes': memory.WorkingSetSize if measured else None,
                 'private_commit_bytes': memory.PrivateUsage if measured else None,
+                'memory_query': {'succeeded': measured, 'winerror': memory_error},
                 'original_handle_retained': True}
 
     def bind(self, pid):
@@ -371,7 +378,7 @@ class Native:
         result = []
         for pid in sorted(owned | set(self.handles)):
             try:
-                result.append(self.process(pid))
+                result.append(self.process(pid, phase='tree'))
             except RuntimeError:
                 if pid in parents:
                     raise
@@ -604,27 +611,57 @@ ConvertTo-Json -InputObject $rows -Depth 5 -Compress
         return {'hwnd': window['hwnd'], 'pid': pid, 'elements': json.loads(result.stdout.decode('utf-8-sig') or '[]')}
 
     def cleanup(self):
-        forced = []
+        forced, errors, final_processes, unconfirmed = [], [], [], []
+        discovery_complete = True
+        deadline = time.monotonic() + 10
         if self.desktop:
-            current = self.tree()
-            for item in reversed(current):
-                if self.process(item['pid'])['running']:
-                    require(self.kernel.TerminateProcess(self.handles[item['pid']], 1), 'Owned cleanup termination failed')
-                    require(self.kernel.WaitForSingleObject(self.handles[item['pid']], 5000) == 0, 'Owned original process has not exited')
-                    forced.append(item['pid'])
-        final_processes = [self.process(pid) for pid in self.handles]
+            try:
+                self.tree()
+            except BaseException:
+                discovery_complete = False
+                errors.append(traceback.format_exc())
+        # Discovery failure remains fatal, but cannot skip the original handles
+        # already retained before that failure. Never reopen a snapshot-only PID.
+        for pid, handle in reversed(list(self.handles.items())):
+            try:
+                code = W.DWORD()
+                require(self.kernel.GetExitCodeProcess(handle, ctypes.byref(code)), 'Owned original exit state unavailable')
+                if code.value == 259:
+                    require(self.kernel.TerminateProcess(handle, 1), 'Owned cleanup termination failed')
+                    remaining_ms = max(0, min(5000, int((deadline - time.monotonic()) * 1000)))
+                    require(self.kernel.WaitForSingleObject(handle, remaining_ms) == 0, 'Owned original process has not exited')
+                    forced.append(pid)
+                require(self.kernel.GetExitCodeProcess(handle, ctypes.byref(code)), 'Owned final exit state unavailable')
+                final_processes.append({'pid': pid, **self.identities.get(pid, {}),
+                                        'original_handle_retained': True, 'running': code.value == 259,
+                                        'exit_code': None if code.value == 259 else code.value})
+            except BaseException:
+                unconfirmed.append(pid)
+                errors.append(traceback.format_exc())
         remaining = [item for item in final_processes if item['running']]
-        require(not remaining, 'Owned processes remain alive')
-        if self.target and self.user.IsWindow(self.target):
-            require(self.user.DestroyWindow(self.target), 'Synthetic target close failed')
-        if self.alternate and self.user.IsWindow(self.alternate):
-            require(self.user.DestroyWindow(self.alternate), 'Alternate synthetic target close failed')
+        if remaining:
+            errors.append('Owned processes remain alive')
+        for window in (self.target, self.alternate):
+            try:
+                if window and self.user.IsWindow(window):
+                    require(self.user.DestroyWindow(window), 'Synthetic target close failed')
+            except BaseException:
+                errors.append(traceback.format_exc())
         for handle in self.handles.values():
-            self.kernel.CloseHandle(handle)
-        return {'remaining_owned_processes': remaining, 'forced_cleanup_pids': forced,
-                'final_owned_processes': final_processes,
-                'target_closed': not bool(self.user.IsWindow(self.target)),
-                'alternate_target_closed': not bool(self.user.IsWindow(self.alternate)), 'natural_application_shutdown_tested': False}
+            try:
+                require(self.kernel.CloseHandle(handle), 'Original owned process handle close failed')
+            except BaseException:
+                errors.append(traceback.format_exc())
+        receipt = {'remaining_owned_processes': remaining if discovery_complete and not errors else None,
+                   'remaining_known_processes': remaining, 'discovery_complete': discovery_complete,
+                   'unconfirmed_known_pids': unconfirmed,
+                   'forced_cleanup_pids': forced, 'final_owned_processes': final_processes,
+                   'target_closed': not bool(self.user.IsWindow(self.target)),
+                   'alternate_target_closed': not bool(self.user.IsWindow(self.alternate)),
+                   'errors': errors, 'natural_application_shutdown_tested': False}
+        save(self.root / 'native-known-cleanup.json', receipt)
+        require(not errors, 'Original owned cleanup failed: ' + '\n'.join(errors))
+        return receipt
 
 
 def bootstrap(root, port, source):

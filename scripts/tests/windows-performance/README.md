@@ -65,8 +65,8 @@ Release optimization and stripping are unchanged; debugger tools are
 inventoried without installation, so this first collector does not promise a
 symbolic stack or identify the corruption origin.
 
-`derive.py` checks reviewed, LF-normalized hashes of the functional controller and
-target, then generates temporary plumbing and a target with narrow timing and
+`derive.py` checks reviewed, LF-normalized hashes of the functional controller,
+target and lifecycle helper, then generates temporary plumbing and a target with narrow timing and
 resource-observation additions. Generated copies are not maintained as tracked
 sources. Functional fixture changes require review and updated base hashes.
 The reviewed crash-event reader is copied unchanged, with its own fixed source
@@ -137,6 +137,38 @@ exits. Exit code 1 is accepted only after cleanup starts when the original PID
 is explicitly recorded as terminated by cleanup. A pre-cleanup abnormal close
 may collect bounded, identity-bound Application Error/WER evidence; missing or
 unavailable diagnostics never turn that failed arm into a success.
+
+The 364bfd2 performance request (run 41075863232) failed its debug functional
+prerequisite before any release ABBA arm started. Native observation repeatedly
+reported an unavailable original process handle while product status reported
+the helper visible. The report retained the original show timeout; failed
+cleanup then left the Desktop and its pipes alive until the operator cancelled
+the job. This does not establish that MyGo never displayed, or a heap-crash cause.
+Its original report, cleanup error and cancellation are preserved together.
+
+The subsequent fixture adds bounded failure cleanup only. Discovery errors stay
+fatal and prevent WebView-policy restoration, while cleanup still attempts only
+already-retained original handles. Failed handle acquisition records PID, exact
+requested access, phase and Windows error; failed memory queries remain null.
+Node records process exit separately from stdio close. A failed stop request
+still enters a bounded close wait; fallback termination targets only its original
+spawned child. A kill request, destroyed pipe or detached event handle never
+counts as confirmed application cleanup. An unconfirmed CDP close is a cleanup
+failure. After synchronously preserving the failed report and raw child logs,
+the CLI flushes its output for at most one second and exits nonzero even if an
+unconfirmed socket remains active.
+
+Each functional controller also has a separate 600 second Python supervisor,
+with at most five seconds to confirm its original child after termination is
+requested. Its exclusive metadata receipt preserves an original nonzero code;
+a total timeout returns 124 and does not certify product cleanup. Ordinary CI
+limits this step to 12 minutes. The success-only five-case diagnostic step is
+limited to 55 minutes so its collector can retain WER restoration in finally.
+The release functional prerequisite uses the same supervisor and its own
+12 minute step. The following complete ABBA step retains its original arm
+budgets and 150 minute job budget. These bounds
+do not change the thirteen functional assertions or allow retries. Any future
+validation is a new complete source cohort; no old case or failed arm is resumed.
 
 Pure checks, without native execution:
 

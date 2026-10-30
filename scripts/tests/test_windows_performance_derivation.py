@@ -115,7 +115,7 @@ class PerformanceDerivationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             repository = Path(temporary).resolve()
             names = ['scripts/tests/' + name for name in
-                     ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs')]
+                     ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs', 'native-windows-lifecycle.mjs')]
             names += ['scripts/tests/windows-performance/' + name for name in
                       ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs')]
             for name in names:
@@ -127,9 +127,11 @@ class PerformanceDerivationTests(unittest.TestCase):
             proof = json.loads((generated / 'derivation.json').read_text())
             self.assertNotIn('functional_base_commit', proof)
             self.assertEqual(proof['functional_controller_base_commit'], derivation.FUNCTIONAL_CONTROLLER_BASE_COMMIT)
-            self.assertEqual(proof['functional_controller_base_scope'], ['native-windows-surface.mjs', 'native-windows-crash-events.mjs'])
+            self.assertEqual(proof['functional_controller_base_scope'], ['native-windows-crash-events.mjs'])
+            self.assertEqual(proof['functional_controller_provenance']['reviewed_lf_sha256'], derivation.REVIEWED_CONTROLLER_LF_SHA256)
+            self.assertEqual(proof['functional_lifecycle_provenance']['reviewed_lf_sha256'], derivation.REVIEWED_LIFECYCLE_LF_SHA256)
             self.assertEqual(proof['functional_target_provenance']['reviewed_lf_sha256'], derivation.REVIEWED_TARGET_LF_SHA256)
-            self.assertEqual(proof['functional_target_provenance']['diagnostic_delta'], 'bounded-key-state-owned-message-timing-and-predeclared-click-planning')
+            self.assertEqual(proof['functional_target_provenance']['diagnostic_delta'], 'bounded-key-state-owned-message-timing-predeclared-click-planning-and-retained-handle-cleanup')
             self.assertEqual(proof['functional_target_provenance']['original_target_reference']['lf_sha256'], 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780')
             self.assertFalse(proof['native_runtime_executed_by_generator'])
             self.assertEqual(set(proof['source_files']), set(names))
@@ -139,6 +141,20 @@ class PerformanceDerivationTests(unittest.TestCase):
                     self.assertEqual(proof['source_files'][name], {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
                         'canonical_lf_sha256': hashlib.sha256(raw.decode('utf-8').replace('\r\n', '\n').encode('utf-8')).hexdigest()})
             self.assertNotEqual(proof['source_files']['scripts/tests/native-windows-surface-target.py']['sha256'], derivation.REVIEWED_TARGET_LF_SHA256)
+
+    def test_lifecycle_drift_is_rejected_before_generating_a_fixture(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary).resolve()
+            for name in ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs', 'native-windows-lifecycle.mjs'):
+                output = repository / 'scripts/tests' / name
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text((REPOSITORY / 'scripts/tests' / name).read_text(), encoding='utf-8')
+            lifecycle = repository / 'scripts/tests/native-windows-lifecycle.mjs'
+            lifecycle.write_text(lifecycle.read_text() + '\n', encoding='utf-8')
+            destination = repository / '.harness/windows-performance-drift'
+            with self.assertRaisesRegex(AssertionError, 'lifecycle changed'):
+                derivation.generate(repository, destination)
+            self.assertFalse(destination.exists())
 
 
 if __name__ == '__main__':

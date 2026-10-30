@@ -19,6 +19,7 @@ OUTPUT_LIMIT = 8192
 METADATA_FILE_LIMIT = 16 * 1024 * 1024
 METADATA_CASE_LIMIT = 128 * 1024 * 1024
 SOURCE_PATHS = (
+    'scripts/tests/native-windows-lifecycle.mjs', 'scripts/tests/native_windows_supervisor.py',
     'scripts/tests/windows-crash-sequence.py', 'scripts/tests/windows-crash-diagnostics.py',
     'scripts/tests/windows-crash-diagnostics.ps1', 'scripts/tests/native-windows-surface.mjs',
     'scripts/tests/native-windows-surface-target.py', 'scripts/tests/native-windows-clipboard.py',

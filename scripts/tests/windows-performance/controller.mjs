@@ -7,6 +7,7 @@ import { performance } from 'node:perf_hooks';
 import {
   repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot,
   environment, LoggedProcess, NativeChannel, Bridge, completedCommand, availablePort,
+  within, finalizeManagedChild, stopManagedChild, exitFailedController,
   fixedSurfaceInputs, toolkitPatchId, validateCiContext, validateBuildProof,
   validateDesktopIdentity, verifyNativePanel, verifyNativeTauriPanel,
 } from './native-plumbing.mjs';
@@ -149,7 +150,7 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
     canary = canarySnapshot(canaryDirectory); report.startup_canary_before = canary;
     const port = await availablePort(); report.cdp_port = port;
     native = new NativeChannel(args.python, root, expected.source_revision, port);
-    await Promise.race([native.ready, delay(20000).then(() => { throw new Error('Owned native target bootstrap timed out'); })]);
+    await within(native.ready, 20000, 'Owned native target bootstrap timed out');
     const seedText = 'nativeupgradefixturemarker' + randomUUID().replaceAll('-', '') + '-native-a';
     const seed = new LoggedProcess(args.python, ['-B', path.join(repository, 'scripts/tests/native-windows-clipboard.py')], root,
       'synthetic-clipboard-seed', { ...environment(root, true), DEZIRCLIP_NATIVE_CAPTURE_TEXT: seedText });
@@ -326,21 +327,36 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
     if (bridge?.socket?.readyState === WebSocket.OPEN) {
       try { await bridge.invoke('hide_quick_paste', {}, 5000); await bridge.invoke('save_setting', { key: 'app.quick_paste_renderer', value: 'tauri' }, 5000); }
       catch (error) { errors.push(String(error)); }
-      bridge.close();
+    }
+    if (bridge) {
+      report.bridge_cleanup = await bridge.finalize();
+      if (!report.bridge_cleanup.close_confirmed) errors.push('Actual CDP socket close was not confirmed');
     }
     if (native) {
       try {
-        try { await native.request('stop', {}, 5000); } finally { native.child.stdin.end(); }
-        report.native_target_exit = await Promise.race([native.closed, delay(20000).then(() => { throw new Error('Owned cleanup timed out'); })]);
+        report.native_lifecycle = await stopManagedChild(native, () => native.request('stop', {}, 5000), 5000);
+        report.native_process_exit = { ...native.record.process_exit };
+        if (report.native_lifecycle.stop_error) errors.push(report.native_lifecycle.stop_error);
+        if (report.native_lifecycle.input_error) errors.push(report.native_lifecycle.input_error);
+        if (report.native_lifecycle.close_deadline_exceeded) errors.push('Original native cleanup close deadline expired');
+        report.native_target_exit = native.record.closed_at ? await native.closed : null;
+        if (existsSync(path.join(root, 'native-cleanup.json'))) report.cleanup = json(path.join(root, 'native-cleanup.json'));
+        assert(report.native_lifecycle.close_confirmed, 'Owned cleanup close was not confirmed');
         assert.equal(report.native_target_exit.exit_code, 0); assert(!native.overflow && !native.error);
-        report.cleanup = json(path.join(root, 'native-cleanup.json'));
-        assert(!report.cleanup.native_error && !report.cleanup.bootstrap_error);
+        assert(report.cleanup && !report.cleanup.native_error && !report.cleanup.bootstrap_error);
         assert.deepEqual(report.cleanup.native.remaining_owned_processes, []);
         assert.equal(report.cleanup.native.target_closed, true); assert.equal(report.cleanup.native.alternate_target_closed, true);
-      } catch (error) { errors.push(String(error)); } finally { native.finish(); }
+      } catch (error) { errors.push(String(error)); }
+      finally { try { native.finish(); } catch (error) { errors.push(String(error)); } }
     }
     if (desktop) {
-      try { report.desktop_exit = await Promise.race([desktop.closed, delay(5000).then(() => { throw new Error('Original Desktop remains alive'); })]);
+      try {
+        report.desktop_lifecycle = await finalizeManagedChild(desktop, 5000);
+        report.desktop_process_exit = { ...desktop.record.process_exit };
+        report.desktop_exit = desktop.record.closed_at ? await desktop.closed : null;
+        if (report.desktop_lifecycle.kill_requested) errors.push('Original Desktop required controller fallback termination');
+        if (report.desktop_lifecycle.close_deadline_exceeded) errors.push('Original Desktop close deadline expired');
+        assert(report.desktop_lifecycle.close_confirmed, 'Original Desktop close was not confirmed');
         desktop.finish(); assert(!desktop.overflow && !desktop.error);
         const exitRecord = { ...desktop.record, ...report.desktop_exit };
         const verdict = desktopExitVerdict(exitRecord, cleanupStartedAt, report.cleanup?.native?.forced_cleanup_pids ?? []);
@@ -352,6 +368,7 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
         }
       }
       catch (error) { errors.push(String(error)); }
+      finally { try { desktop.finish(); } catch (error) { errors.push(String(error)); } }
     }
     try {
       for (const input of report.input_bytes ?? []) for (const file of [input.source, input.path]) assert.deepEqual(regular(file), { bytes: input.bytes, sha256: input.sha256 });
@@ -399,7 +416,7 @@ export async function runComparison(args, env = process.env) {
   const rows = dataset(randomUUID().replaceAll('-', '').slice(0, 12).replace(/[0-9]/g, character => String.fromCharCode(97 + Number(character))));
   const report = { schema_version: 1, kind: 'phase6_windows_native_comparison_v1', status: 'running', source_revision: expected.source_revision,
     fixture_id: 'phase6-windows-native-comparison-v1', desktop_build_profile: 'release',
-    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'process-sampler.mjs', 'native-windows-crash-events.mjs', 'tauri-query.mjs'].map(name => ({ name,
+    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'native-windows-lifecycle.mjs', 'process-sampler.mjs', 'native-windows-crash-events.mjs', 'tauri-query.mjs'].map(name => ({ name,
       ...regular(new URL(name, import.meta.url)) })),
     run_id: env.GITHUB_RUN_ID, run_attempt: env.GITHUB_RUN_ATTEMPT, order: ARMS, rows, arms: [],
     functional_gate: { path: args['functional-report'], ...regular(args['functional-report']) },
@@ -420,5 +437,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     const key = process.argv[index].slice(2); assert(names.includes(key) && process.argv[index + 1] && !Object.hasOwn(args, key)); args[key] = process.argv[index + 1];
   }
   assert(names.every(key => args[key]));
-  runComparison(args).catch(error => { console.error(error.stack ?? error); process.exitCode = 1; });
+  runComparison(args).catch(error => exitFailedController(error));
 }
