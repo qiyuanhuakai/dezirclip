@@ -185,6 +185,18 @@ candidates retain both snapshots and every creation-time edge check. There is
 no new observation retry, input, wait or resumed failed case. The original
 failed run remains failed, and the earlier heap-corruption risk remains open.
 
+The 527c128 request (run 41115292407) was stopped by the operator after a
+source review and all-fake counterexample found an independent snapshot error
+path. This method stop does not establish an actual Windows API error, product
+failure or heap crash in that run. Snapshot enumeration now accepts a false
+First/Next result only with `ERROR_NO_MORE_FILES` (18); any other error records
+its first/next phase and Windows error and aborts discovery. A partial process
+map cannot authorize new handles or certify complete cleanup. The snapshot
+handle still closes in `finally`, with no enumeration or input retry. See
+Microsoft's [Process32First](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-process32first)
+and [Process32NextW](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-process32nextw)
+return-value contracts.
+
 Node records process exit separately from stdio close. A failed stop request
 still enters a bounded close wait; fallback termination targets only its original
 spawned child. A kill request, destroyed pipe or detached event handle never
