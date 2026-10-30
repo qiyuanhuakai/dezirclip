@@ -70,6 +70,7 @@ jobs:
           python -B -m unittest discover -s scripts/tests -p test_native_windows_click_plan.py
           python -B -m unittest discover -s scripts/tests -p test_native_windows_surface_target.py
           python -B -m unittest discover -s scripts/tests -p test_native_windows_supervisor.py
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_service_paste.py
 
       - name: Test opt-in Windows performance fixture contracts without native execution
         run: |

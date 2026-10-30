@@ -464,7 +464,7 @@ impl DesktopHost {
             return Err("ClipboardHostInstanceChanged".into());
         }
         if target.is_some() {
-            let build=dzc_protocol::build_info::BuildInfo::current_with_host(dzc_protocol::build_info::Component::Desktop,dzc_core::api::DATABASE_SCHEMA_VERSION);
+            let build=dzc_core::protocol::build_info::BuildInfo::current_with_host(dzc_core::protocol::build_info::Component::Desktop,dzc_core::api::DATABASE_SCHEMA_VERSION);
             client.require_windows_bound_paste(&build).await.map_err(|_|"ClipboardHostCapabilityUnavailable".to_owned())?;
         }
         params.expected_paste_target=target;
@@ -579,7 +579,7 @@ impl DesktopHost {
         let windows_paste_bound=target.is_some();
         if windows_paste_bound {
             if !cfg!(target_os="windows") || !copy_to_clipboard {return Err("WindowsPasteTargetUnavailable".into());}
-            let build=dzc_protocol::build_info::BuildInfo::current_with_host(dzc_protocol::build_info::Component::Desktop,dzc_core::api::DATABASE_SCHEMA_VERSION);
+            let build=dzc_core::protocol::build_info::BuildInfo::current_with_host(dzc_core::protocol::build_info::Component::Desktop,dzc_core::api::DATABASE_SCHEMA_VERSION);
             client.require_windows_bound_paste(&build).await.map_err(|_|"ClipboardHostCapabilityUnavailable".to_owned())?;
         }
         let state=client.hello.state.clone();
