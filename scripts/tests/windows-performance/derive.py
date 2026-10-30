@@ -9,7 +9,7 @@ import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
-REVIEWED_TARGET_LF_SHA256 = '118153005216eff075d4596335e6bd26c8fb9a880d13dc96c6627b1547e165f7'
+REVIEWED_TARGET_LF_SHA256 = '8bd390c785cac6fbbe0120ec31f1c97be5c8cd06ceb1a8bdc28c0ebe49483fa3'
 
 
 def derive_sources(controller, original_target, crash_events):
@@ -150,7 +150,7 @@ def generate(repository, destination):
              'functional_controller_base_commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
              'functional_controller_base_scope': ['native-windows-surface.mjs', 'native-windows-crash-events.mjs'],
              'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
-                 'diagnostic_delta': 'bounded-key-state-and-owned-message-timing',
+                  'diagnostic_delta': 'bounded-key-state-owned-message-timing-and-predeclared-click-planning',
                  'original_target_reference': {'commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
                      'lf_sha256': 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780',
                      'scope': 'Prior reference only; the current diagnostic target is bound by its reviewed LF hash, not attributed to this commit.'}},

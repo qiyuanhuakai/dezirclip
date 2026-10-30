@@ -36,16 +36,28 @@ class FakeUser:
         self.exists, self.visible, self.enabled, self.iconic = True, True, True, False
         self.sent, self.focus_received, self.calls, self.input = 3, True, 0, []
         self.foreground, self.focus = 30, 0
+        self.point_probes = []
 
     def GetWindowThreadProcessId(self, window, pid):
-        pid._obj.value = self.pid
-        return self.thread
+        pid._obj.value = 100 if window == 30 else self.pid
+        return 8 if window == 30 else self.thread
 
     def IsWindow(self, window): return self.exists
     def IsWindowVisible(self, window): return self.visible
     def IsWindowEnabled(self, window): return self.enabled
     def IsIconic(self, window): return self.iconic
-    def GetParent(self, window): return self.parent
+    def GetForegroundWindow(self): return self.foreground
+    def GetParent(self, window): return self.parent if window == 20 else 0
+    def GetAncestor(self, window, flag): return self.parent if window == 20 else window
+    def GetWindow(self, window, flag): return 0
+
+    def GetClassNameW(self, window, name, length):
+        name.value = {10: 'Static', 20: 'Edit', 30: 'MyGoWindow'}.get(window, 'Other')
+        return len(name.value)
+
+    def GetWindowRect(self, window, rect):
+        rect._obj.left, rect._obj.top, rect._obj.right, rect._obj.bottom = 0, 0, 100, 100
+        return True
 
     def GetClientRect(self, window, rect):
         rect._obj.left, rect._obj.top, rect._obj.right, rect._obj.bottom = 0, 0, 560, 42
@@ -59,7 +71,9 @@ class FakeUser:
     def GetSystemMetrics(self, index):
         return {76: -1920, 77: 0, 78: 3840, 79: 1080}[index]
 
-    def WindowFromPoint(self, point): return self.hit
+    def WindowFromPoint(self, point):
+        self.point_probes.append((point.x, point.y))
+        return self.hit
 
     def SendInput(self, count, inputs, size):
         self.calls += 1
@@ -74,6 +88,11 @@ def fixture():
     native = TARGET.Native.__new__(TARGET.Native)
     native.user, native.kernel = FakeUser(), SimpleNamespace(GetCurrentThreadId=lambda: 7)
     native.desktop, native.window_thread_id, native.alternate, native.alternate_edit = 50, 7, 10, 20
+    native.root = Path(__file__).parent / 'synthetic-native-root'
+    surface = {'pid': 100, 'image': str(native.root / 'candidate/dzc-surface.exe'), 'running': True,
+               'creation_time_100ns': '123', 'original_handle_retained': True}
+    native.tree = lambda: [surface]
+    native.process = lambda pid: surface
     native.Input, native.Mouse = Input, Mouse
     native.pump_messages = lambda: None
     native.focus_snapshot = lambda: {'foreground_hwnd': native.user.foreground, 'own_thread_focus_hwnd': native.user.focus}
@@ -81,7 +100,7 @@ def fixture():
 
 
 class AlternateClickTests(unittest.TestCase):
-    def test_one_batch_click_uses_fixed_owned_point_and_real_focus_result(self):
+    def test_one_batch_click_prefers_original_left_point_and_real_focus_result(self):
         native = fixture()
         receipt = native.click_alternate()
         self.assertEqual(native.user.calls, 1)
@@ -91,6 +110,45 @@ class AlternateClickTests(unittest.TestCase):
         self.assertEqual([item[0] for item in native.user.input], [0, 0, 0])
         self.assertEqual([item[3] for item in native.user.input], [0xC001, 2, 4])
         self.assertEqual(list(native.user.input[0][1:3]), receipt['absolute_point'])
+        self.assertEqual(len(native.user.point_probes), 4)
+        self.assertEqual(receipt['click_plan']['selected_index'], 0)
+        self.assertEqual(receipt['click_plan']['recheck']['hit']['parent_hwnd'], 10)
+        self.assertNotIn('title', receipt['click_plan']['recheck']['hit'])
+
+    def test_readonly_right_candidate_is_used_when_only_original_left_is_covered(self):
+        native = fixture()
+        def hit(point):
+            native.user.point_probes.append((point.x, point.y))
+            return 99 if point.x == -1792 else 20
+        native.user.WindowFromPoint = hit
+        receipt = native.click_alternate()
+        self.assertEqual(receipt['screen_point'], [-1248, 421])
+        self.assertEqual(receipt['click_plan']['selected_index'], 1)
+        self.assertEqual((len(native.user.point_probes), native.user.calls), (4, 1))
+
+    def test_changed_foreground_during_probes_never_sends_or_replans(self):
+        native = fixture()
+        def hit(point):
+            native.user.point_probes.append((point.x, point.y))
+            if len(native.user.point_probes) == 3:
+                native.user.foreground = 99
+            return 20
+        native.user.WindowFromPoint = hit
+        with self.assertRaisesRegex(RuntimeError, 'changed before input'):
+            native.click_alternate()
+        self.assertEqual((len(native.user.point_probes), native.user.calls), (4, 0))
+
+    def test_changed_selected_hit_identity_during_recheck_never_sends(self):
+        native = fixture()
+        def hit(point):
+            native.user.point_probes.append((point.x, point.y))
+            if len(native.user.point_probes) == 4:
+                native.user.parent = 99
+            return 20
+        native.user.WindowFromPoint = hit
+        with self.assertRaisesRegex(RuntimeError, 'changed before input'):
+            native.click_alternate()
+        self.assertEqual((len(native.user.point_probes), native.user.calls), (4, 0))
 
     def test_unbound_or_wrong_caller_thread_never_sends_input(self):
         for change in ('unbound', 'wrong-thread'):
@@ -100,6 +158,15 @@ class AlternateClickTests(unittest.TestCase):
                 else: native.kernel.GetCurrentThreadId = lambda: 8
                 with self.assertRaises(RuntimeError): native.click_alternate()
                 self.assertEqual(native.user.calls, 0)
+
+    def test_foreground_requires_the_retained_original_surface_process(self):
+        for field, value in (('original_handle_retained', False), ('running', False), ('image', 'unrelated.exe')):
+            with self.subTest(field=field):
+                native = fixture()
+                native.process(100)[field] = value
+                with self.assertRaisesRegex(RuntimeError, 'not foreground'):
+                    native.click_alternate()
+                self.assertEqual((len(native.user.point_probes), native.user.calls), (0, 0))
 
     def test_changed_window_identity_or_unavailable_editor_never_sends_input(self):
         for field, value in [('pid', os.getpid() + 1), ('thread', 8), ('parent', 99), ('exists', False),
