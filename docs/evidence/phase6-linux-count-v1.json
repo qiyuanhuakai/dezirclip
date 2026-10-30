@@ -4,6 +4,19 @@
   "source_revision": "5d6af007b0b000ed78a22e7fc6e1413c92f28d42",
   "target": "x86_64-unknown-linux-gnu",
   "mode": "embedded",
+  "environment_from_frozen_invocation": {
+    "display": "private Xvfb 1280x900x24",
+    "product_environment_subset": {
+      "WEBKIT_DISABLE_DMABUF_RENDERER": "1",
+      "WEBKIT_DISABLE_COMPOSITING_MODE": "1",
+      "TAURI_WEBVIEW_AUTOMATION": "true",
+      "DEZIRCLIP_DISABLE_LINUX_SERVICES": "window_tracker,edge_docking,mouse_hotkey"
+    },
+    "gpu_device_binds_recorded": [],
+    "tracefs_bind_recorded": false,
+    "basis": "Frozen outer source and retained namespace invocation, not a runtime hardware capability probe.",
+    "scope": "CPU/PSS/USS describe this controlled display configuration. GPU memory and wakeup remain unmeasured, never inferred zero or generalized to a normal hardware-composited desktop."
+  },
   "window_size": [
     480,
     360

@@ -6,7 +6,9 @@ Linux X11 的新四轮受控对照已完成并独立复算。MyGo 在此配置�
 
 Windows 本次发布构建对照 [41106374215](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41106374215) 已结束失败，源码为 `a11cb83fab6e057d18301c05dca6cb3e3ce0a83f`。发布版功能前置 12 项通过，第 13 项开头的原生观察被夹具拒绝，零 ABBA 轮次，尚无 Windows 正式性能结论。
 
-## Linux X11 结果
+## Linux X11 受限合成配置结果
+
+本组使用私有 Xvfb 1280×900×24，固定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`、`WEBKIT_DISABLE_COMPOSITING_MODE=1` 与 `TAURI_WEBVIEW_AUTOMATION=true`；`window_tracker,edge_docking,mouse_hotkey` 三项 Linux 后台服务由固定环境关闭。保留的命名空间调用记录没有 GPU 设备或 tracefs 绑定。这限定了所测显示、合成和自动化路径，当前 CPU/内存差异不能外推常规硬件合成桌面；GPU 显存与后台唤醒继续保留未测量，不能由这些配置补写为 0。
 
 同一组 release 二进制，顺序 Tauri、MyGo、MyGo、Tauri，各用新配置。每轮 5 次预热、30 次正式可见呼出代理；每种显示状态各 960 次真实资源捕获。全部 120 个正式时间与 7680 个资源快照保留，两侧各有 2 轮。p50/p95 为最近秩分位数；内存为等捕获次数的经验快照分布。CPU 用两轮计数器增量之和除以两轮实际计数器读取中点跨度之和，单位为单核百分比。
 
@@ -58,4 +60,6 @@ Windows 本次发布构建对照 [41106374215](https://github.com/qiyuanhuakai/d
 
 本次 supervisor 无超时或终止请求，原 controller 退出 1；Desktop 在清理前仍运行，随后记录清理终止退出 1，16 个已知原进程退出，pending、unconfirmed、remaining 和清理错误均空，bootstrap 已恢复。原件 [13003078312](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41106374215/artifacts/13003078312) 为 156,830 字节，SHA-256 `a8f773cc4526d99f945467dff0cbae306f7a28f28093ade9b4ecf7ff6b74ff4e`；独立原失败复核 SHA-256 `edf9950251fba412c08a33bbb5e96aa425be4b3ae988f2e2a4f08a7e7bbebb22`。没有比较目录、资源流或已开始的 arm，本次为零 ABBA。后续只处理夹具已认证终态进程的观察分支，保留本次原失败。旧 364 的五例 release 功能成功及更早清理前 `0xC0000374` 各自保留；未复现和记录的清理终止不能关闭 heap 根因。
 
-首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围，Windows 发布版前置因夹具观察失败而未进入正式计时；Phase 6 和 Phase 7 继续保留未通过/未启动状态。
+`527c128c59e07267a01ab05ca8cbdd76cf1e1f0e` 已修正该已认证终态对象的观察分支，原 handle/identity 硬校验在例外前，新、pending 和仍运行候选的原有双快照与创建代际检查保持。Root 独立执行 70 项纯逻辑检查通过；新完整运行 [41115292407](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41115292407) 于 2026-10-30 19:26:38 UTC 发起，由现有工作流自身执行普通与发布版功能前置门禁，尚无其发布版四轮结论。原 a11 失败未重跑或改写。
+
+首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 原 a11 前置未进入正式计时，新 527c 完整运行尚待结果。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
