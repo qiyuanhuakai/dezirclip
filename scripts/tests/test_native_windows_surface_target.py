@@ -502,6 +502,108 @@ class OwnershipCleanupTests(unittest.TestCase):
         self.assertIn(('terminate', 600, 1), calls)
         self.assertNotIn(('terminate', 700, 1), calls)
 
+    def terminal_exit(self, native, handle, exit_code=0):
+        original = native.kernel.GetExitCodeProcess
+        original_times = native.kernel.GetProcessTimes
+        def code(current, output):
+            if current == handle:
+                output._obj.value = exit_code
+                return True
+            return original(current, output)
+        def times(current, created, exited, kernel, user):
+            result = original_times(current, created, exited, kernel, user)
+            if current == handle:
+                kernel._obj.dwLowDateTime, user._obj.dwLowDateTime = 41, 59
+            return result
+        native.kernel.GetExitCodeProcess = code
+        native.kernel.GetProcessTimes = times
+
+    def test_authenticated_terminal_original_keeps_counters_without_a_current_parent_edge(self):
+        for second in ([ (50, 1) ], [ (50, 1), (60, 99) ]):
+            for exit_code in (0, 17):
+                with self.subTest(second=second, exit_code=exit_code):
+                    native, calls = self.fixture()
+                    native.bind(50)
+                    self.attach_tree(native)
+                    native.tree()
+                    authenticated = dict(native.validated_owned_handles[60])
+                    self.terminal_exit(native, 600, exit_code)
+                    terminal = native.process(60)
+                    self.attach_tree(native, [[(50, 1), (60, 50)], second])
+                    values = native.tree()
+                    self.assertEqual(next(item for item in values if item['pid'] == 60), terminal)
+                    self.assertFalse(terminal['running'])
+                    self.assertEqual(terminal['exit_code'], exit_code)
+                    self.assertEqual((terminal['cpu_kernel_100ns'], terminal['cpu_user_100ns']), (41, 59))
+                    self.assertEqual(native.validated_owned_handles[60], authenticated)
+                    self.assertEqual(native.test_snapshot_calls, 2)
+                    self.assertFalse(any(call[0] == 'terminate' for call in calls))
+
+    def test_new_terminal_candidate_is_not_authorized_by_disappearing_or_changed_parent(self):
+        for second in ([ (50, 1) ], [ (50, 1), (60, 99) ]):
+            with self.subTest(second=second):
+                native, calls = self.fixture()
+                native.bind(50)
+                self.terminal_exit(native, 600)
+                self.attach_tree(native, [[(50, 1), (60, 50)], second])
+                with self.assertRaisesRegex(RuntimeError, 'parent PID changed or disappeared'): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50})
+                native.tree = lambda: (_ for _ in ()).throw(RuntimeError('ownership unconfirmed'))
+                with patch.object(TARGET, 'save') as saved:
+                    with self.assertRaisesRegex(RuntimeError, 'ownership unconfirmed'): native.cleanup()
+                self.assertNotIn(('terminate', 600, 1), calls)
+                self.assertIn(('close', 600), calls)
+                self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [60])
+
+    def test_previously_authenticated_live_candidate_still_requires_both_parent_snapshots(self):
+        for second in ([ (50, 1) ], [ (50, 1), (60, 99) ]):
+            with self.subTest(second=second):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.attach_tree(native, [[(50, 1), (60, 50)], second])
+                with self.assertRaisesRegex(RuntimeError, 'parent PID changed or disappeared'): native.tree()
+                self.assertEqual(native.test_snapshot_calls, 2)
+
+    def test_terminal_original_never_bypasses_changed_handle_identity_or_authentication_slot(self):
+        for changed in ('handle', 'identity', 'authentication'):
+            with self.subTest(changed=changed):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.terminal_exit(native, 600)
+                self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1)]])
+                original = native.kernel.CreateToolhelp32Snapshot
+                def snapshot(*args):
+                    result = original(*args)
+                    if native.test_snapshot_calls == 2:
+                        if changed == 'handle': native.handles[60] = 700
+                        elif changed == 'identity': native.identities[60] = {**native.identities[60], 'creation_time_100ns': '700'}
+                        else: native.validated_owned_handles[60] = {'handle': 700, 'identity': dict(native.identities[60])}
+                    return result
+                native.kernel.CreateToolhelp32Snapshot = snapshot
+                message = 'parent PID changed or disappeared' if changed == 'authentication' else 'retained handle or identity changed'
+                with self.assertRaisesRegex(RuntimeError, message): native.tree()
+
+    def test_authenticated_terminal_parent_does_not_promote_a_new_bad_generation(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.terminal_exit(native, 600)
+        self.change_creation(native, {700: 550})
+        self.attach_tree(native, [[(50, 1), (60, 50), (70, 60)], [(50, 1), (70, 60)]])
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50, 60})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('ownership unconfirmed'))
+        with patch.object(TARGET, 'save'):
+            with self.assertRaisesRegex(RuntimeError, 'ownership unconfirmed'): native.cleanup()
+        self.assertNotIn(('terminate', 700, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('terminate', 500, 1), calls)
+
     def test_anchored_fully_read_tree_authenticates_descendants_before_known_cleanup(self):
         native, calls = self.fixture()
         native.bind(50)
