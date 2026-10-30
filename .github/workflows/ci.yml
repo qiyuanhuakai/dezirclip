@@ -517,7 +517,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [LegacyUninstall, OldToNew, PublishedAlphaToAlpha, OwnedUpgrade, OwnedExternalEdit]
+        scenario: [LegacyUninstall, OldToNew, PublishedAlphaToAlpha, OwnedUpgrade, OwnedExternalEdit, DeniedGuiUpgrade]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -552,6 +552,7 @@ jobs:
           ./scripts/tests/native-packaging-proof.ps1
           ./scripts/tests/native-process-identity.ps1
           ./scripts/tests/native-build-info.ps1
+          ./scripts/tests/native-installer-outcomes.ps1
 
       - name: Install Rust stable
         if: matrix.scenario != 'LegacyUninstall'

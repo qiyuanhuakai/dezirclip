@@ -45,7 +45,7 @@ export const useAppBootstrap = ({
     if (defaultsReadRef.current) return;
     defaultsReadRef.current = true;
 
-    const types = ["text", "image", "video", "code", "url"];
+    const types = ["text", "rich_text", "image", "video", "code", "url"];
     Promise.all(
       types.map((type) =>
         invoke<string>("get_system_default_app", { contentType: type })

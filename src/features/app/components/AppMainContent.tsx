@@ -218,9 +218,9 @@ const AppMainContent = ({
 
   return (
     <>
-      <Suspense fallback={<div style={{ height: "100%" }} />}>
+      <Suspense fallback={<div className="main-panel-view" />}>
         {tagManagerVisible && (
-          <div style={{ height: "100%" }}>
+          <div className="main-panel-view">
             <TagManager t={t} theme={theme} language={language} compactMode={compactMode}
               isWindowPinned={isWindowPinned} privacyProtection={privacyProtection}
               tagColors={tagColors} richTextSnapshotPreview={richTextSnapshotPreview}
@@ -228,9 +228,9 @@ const AppMainContent = ({
           </div>
         )}
       </Suspense>
-      <Suspense fallback={<div style={{ height: "100%" }} />}>
+      <Suspense fallback={<div className="main-panel-view" />}>
         {showEmojiPanel && (
-          <div style={{ height: "100%", overflow: "hidden" }}>
+          <div className="main-panel-view">
             <EmojiPanel
               t={t}
               favorites={emojiFavorites}

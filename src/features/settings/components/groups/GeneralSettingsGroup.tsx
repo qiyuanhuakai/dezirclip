@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import WaylandCapabilitiesSection from "./WaylandCapabilitiesSection";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
+import KeyboardPreviewSetting from "./KeyboardPreviewSetting";
 
 interface LabelWithHintProps {
     label: string;
@@ -443,6 +444,8 @@ const GeneralSettingsGroup = ({
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
                 </div>
+
+                <KeyboardPreviewSetting t={t} arrowKeySelection={arrowKeySelection} />
 
                 {/* Restart as Admin button */}
                 <div className="setting-item">

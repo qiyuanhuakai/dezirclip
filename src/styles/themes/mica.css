@@ -172,7 +172,7 @@ body:not(.compact-mode) .theme-mica .item-actions .btn-icon {
   letter-spacing: normal !important;
 }
 
-.theme-mica .setting-item span {
+.theme-mica .setting-item :is(span, label.item-label) {
   font-family: inherit;
   font-weight: 500;
   color: var(--text-primary);

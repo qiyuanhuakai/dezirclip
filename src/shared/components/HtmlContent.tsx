@@ -121,12 +121,13 @@ type HtmlContentProps = {
   className?: string;
   style?: React.CSSProperties;
   preview?: boolean;
+  eager?: boolean;
 };
 
-const HtmlContent = ({ htmlContent, fallbackText, className, style, preview }: HtmlContentProps) => {
+const HtmlContent = ({ htmlContent, fallbackText, className, style, preview, eager = false }: HtmlContentProps) => {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const processedRef = useRef<{ htmlContent: string; preview?: boolean; fallbackText?: string } | null>(null);
-  const [isVisible, setIsVisible] = useState(!!preview);
+  const [isVisible, setIsVisible] = useState(!!preview || eager);
   const previewPlaceholderMinHeight = (() => {
     const maxH = style?.maxHeight;
     if (typeof maxH === "number" && Number.isFinite(maxH)) return `${maxH}px`;
@@ -135,6 +136,7 @@ const HtmlContent = ({ htmlContent, fallbackText, className, style, preview }: H
   })();
 
   useLayoutEffect(() => {
+    if (eager) { setIsVisible(true); return; }
     if (preview) return;
     if (!contentRef.current) return;
 
@@ -150,7 +152,7 @@ const HtmlContent = ({ htmlContent, fallbackText, className, style, preview }: H
 
     observer.observe(contentRef.current);
     return () => observer.disconnect();
-  }, [preview]);
+  }, [preview, eager]);
 
   useEffect(() => {
     if (!isVisible || !contentRef.current) return;

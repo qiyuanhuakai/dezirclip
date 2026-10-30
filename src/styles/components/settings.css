@@ -717,11 +717,6 @@
   align-items: center;
   gap: 8px;
   max-width: 100%;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
   text-align: start;
   cursor: pointer;
 }
@@ -731,15 +726,10 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 24px;
-  height: 24px;
-  border: var(--select-control-border, 1px solid var(--border-dark));
-  border-radius: var(--select-control-radius, 4px);
-  background: var(--select-control-bg, var(--bg-element));
-  box-shadow: var(--select-control-shadow, none);
+  width: 16px;
+  height: 16px;
 }
 
-.settings-disclosure-toggle:hover .settings-disclosure-chevron { background: var(--bg-input); }
 .settings-disclosure-toggle:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 3px; }
 .privacy-kind-option { display: inline-flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 12px; cursor: pointer; }
 .privacy-kind-option .switch { flex: none; }
@@ -809,7 +799,7 @@
    a label too wide for its column was sliced mid-glyph instead of ending in "…".
    Nothing renders element children inside `.item-label`, so block costs nothing.
    Vertical centring is preserved by the line-height it already inherits. */
-.setting-item span.item-label {
+.setting-item .item-label {
   font-weight: 700;
   color: var(--text-primary);
   font-size: var(--font-size-md);
@@ -819,6 +809,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.settings-view :where(button, input, select, textarea),
+.settings-view .item-label { font-family: var(--font-main); }
 
 /* Recessed Data Panel (for paths/status) */
 /* Block, not flex: the panel holds one run of text, and `display: flex` cancelled
