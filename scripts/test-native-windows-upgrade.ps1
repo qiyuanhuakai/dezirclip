@@ -214,17 +214,44 @@ function Snapshot-RequiredInstalledFiles {
         [pscustomobject][ordered]@{ name = $name; bytes = (Get-Item -LiteralPath $path).Length; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
     }
 }
+function Get-RawDaclSnapshot($Acl) {
+    $raw = [System.Security.AccessControl.RawSecurityDescriptor]::new($Acl.GetSecurityDescriptorBinaryForm(), 0)
+    if ($null -eq $raw.DiscretionaryAcl -or $null -eq $raw.Owner -or $null -eq $raw.Group) { throw 'Complete file DACL, owner and group are required.' }
+    $bytes = [byte[]]::new($raw.DiscretionaryAcl.BinaryLength)
+    $raw.DiscretionaryAcl.GetBinaryForm($bytes, 0)
+    return [pscustomobject][ordered]@{ daclBase64 = [Convert]::ToBase64String($bytes); controlFlags = [int]$raw.ControlFlags; ownerSid = $raw.Owner.Value; groupSid = $raw.Group.Value; sddl = $Acl.GetSecurityDescriptorSddlForm([System.Security.AccessControl.AccessControlSections]::Access) }
+}
+function Compare-RestoredDacl($Before, $After) {
+    foreach ($snapshot in @($Before, $After)) {
+        if ($null -eq $snapshot -or ($snapshot.controlFlags -isnot [int] -and $snapshot.controlFlags -isnot [long]) -or $snapshot.controlFlags -lt 0 -or $snapshot.controlFlags -gt 65535 -or ($snapshot.controlFlags -band 4) -eq 0) { throw 'A present DACL and integer descriptor flags are required.' }
+        foreach ($name in @('ownerSid', 'groupSid')) {
+            if ($snapshot.$name -isnot [string] -or $snapshot.$name.Length -gt 184 -or $snapshot.$name -cnotmatch '^S-1-(?:[0-9]+-)*[0-9]+$') { throw 'Canonical owner and group SID values are required.' }
+        }
+        if ($snapshot.daclBase64 -isnot [string] -or $snapshot.daclBase64.Length -gt 87380) { throw 'Bounded canonical DACL bytes are required.' }
+        $decoded = [Convert]::FromBase64String($snapshot.daclBase64)
+        if ($decoded.Length -lt 8 -or $decoded.Length -gt 65535 -or [Convert]::ToBase64String($decoded) -cne $snapshot.daclBase64) { throw 'Canonical nonempty DACL bytes are required.' }
+    }
+    $difference = $Before.controlFlags -bxor $After.controlFlags
+    $autoInheritedAdded = $difference -eq 1024 -and ($Before.controlFlags -band 1024) -eq 0 -and ($After.controlFlags -band 1024) -ne 0
+    $sameDacl = $Before.daclBase64 -ceq $After.daclBase64
+    $sameOwner = $Before.ownerSid -ceq $After.ownerSid
+    $sameGroup = $Before.groupSid -ceq $After.groupSid
+    $verified = $sameDacl -and $sameOwner -and $sameGroup -and ($difference -eq 0 -or $autoInheritedAdded)
+    $reason = if (-not $sameDacl) { 'dacl_binary_changed' } elseif (-not $sameOwner) { 'owner_changed' } elseif (-not $sameGroup) { 'group_changed' } elseif ($difference -ne 0 -and -not $autoInheritedAdded) { 'control_flags_changed' } elseif ($autoInheritedAdded) { 'auto_inherited_flag_added' } else { 'exact_descriptor_state' }
+    return [pscustomobject][ordered]@{ verified = $verified; reason = $reason; daclBinaryIdentical = $sameDacl; ownerIdentical = $sameOwner; groupIdentical = $sameGroup; flagsBefore = $Before.controlFlags; flagsAfter = $After.controlFlags; flagsDifference = $difference; autoInheritedFlagAdded = $autoInheritedAdded }
+}
 function Assert-DeniedGuiUpgrade($Manifest) {
     Assert-InstalledCandidate $Manifest 'denied-before'
     $application = Resolve-RunnerFixturePath (Join-Path $installDirectory 'dezirclip.exe') -RequireFile
     $originalAcl = Get-Acl -LiteralPath $application
+    $originalSnapshot = Get-RawDaclSnapshot $originalAcl
     $accessSection = [System.Security.AccessControl.AccessControlSections]::Access
     $originalAccessSddl = $originalAcl.GetSecurityDescriptorSddlForm($accessSection)
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     try { $sid = $identity.User } finally { $identity.Dispose() }
     $before = @(Snapshot-RequiredInstalledFiles)
     $settings = @(Snapshot-Settings)
-    $receipt = [ordered]@{ schemaVersion = 1; kind = 'required-gui-write-denied'; status = 'running'; application = $application; sid = $sid.Value; accessBefore = $originalAccessSddl; filesBefore = $before; settingsBefore = $settings; aclRestored = $false }
+    $receipt = [ordered]@{ schemaVersion = 1; kind = 'required-gui-write-denied'; status = 'running'; application = $application; sid = $sid.Value; accessBefore = $originalAccessSddl; aclBefore = $originalSnapshot; filesBefore = $before; settingsBefore = $settings; aclRestored = $false }
     $aclAttempted = $false
     $completed = $false
     $installerCount = $runEvidence.installers.Count
@@ -267,8 +294,11 @@ function Assert-DeniedGuiUpgrade($Manifest) {
                 $restore.SetSecurityDescriptorSddlForm($originalAccessSddl, $accessSection)
                 Set-Acl -LiteralPath $application -AclObject $restore
             }
-            $receipt.accessRestored = (Get-Acl -LiteralPath $application).GetSecurityDescriptorSddlForm($accessSection)
-            if ($receipt.accessRestored -cne $originalAccessSddl) { throw 'Required GUI ACL was not restored exactly.' }
+            $restoredSnapshot = Get-RawDaclSnapshot (Get-Acl -LiteralPath $application)
+            $receipt.accessRestored = $restoredSnapshot.sddl
+            $receipt.aclAfter = $restoredSnapshot
+            $receipt.aclComparison = Compare-RestoredDacl $originalSnapshot $restoredSnapshot
+            if (-not $receipt.aclComparison.verified) { throw 'Required GUI DACL bytes, descriptor flags, owner or group were not restored.' }
             $receipt.aclRestored = $true
             if ($completed) { $receipt.status = 'passed' } else { $receipt.status = 'failed' }
         } catch {

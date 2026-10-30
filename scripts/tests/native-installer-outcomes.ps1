@@ -3,10 +3,12 @@ $source = Join-Path $PSScriptRoot '../test-native-windows-upgrade.ps1'
 $tokens = $null; $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
-$functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Run-Installer' }, $true))
-if ($functions.Count -ne 1) { throw 'Expected exactly one installer outcome function.' }
 # Import only the controller declaration; all process operations below are mocks.
-. ([scriptblock]::Create($functions[0].Extent.Text))
+foreach ($name in @('Run-Installer', 'Compare-RestoredDacl')) {
+    $functions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true))
+    if ($functions.Count -ne 1) { throw "Expected exactly one pure declaration: $name" }
+    . ([scriptblock]::Create($functions[0].Extent.Text))
+}
 function Resolve-RunnerFixturePath([string]$Path, [switch]$RequireFile) {
     if ($Path -cne $script:syntheticPath -or -not $RequireFile) { throw 'Unexpected pure fixture input.' }
     return $Path
@@ -68,8 +70,54 @@ try {
         }
         Write-Output ('Passed: ' + $case.name)
     }
+    $syntheticDacl = [byte[]](0..15)
+    $daclCases = @('exact', 'add-ai', 'retain-ai', 'remove-ai', 'change-permission', 'change-ace-sid', 'change-ace-order', 'change-length', 'change-owner', 'change-group', 'add-protected', 'remove-protected', 'add-inherit-request', 'remove-inherit-request', 'change-defaulted', 'change-other-flag', 'ai-plus-protected', 'ai-plus-permission', 'ai-plus-owner', 'missing-dacl', 'boolean-flags', 'oversized-flags', 'invalid-base64', 'noncanonical-base64', 'short-dacl', 'empty-owner', 'malformed-group')
+    foreach ($name in $daclCases) {
+        $before = [pscustomobject]@{ daclBase64 = [Convert]::ToBase64String($syntheticDacl); controlFlags = 32772; ownerSid = 'S-1-5-21-1-2-3-500'; groupSid = 'S-1-5-32-544' }
+        $after = $before | ConvertTo-Json | ConvertFrom-Json
+        switch ($name) {
+            'add-ai' { $after.controlFlags = 33796 }
+            'retain-ai' { $before.controlFlags = 33796; $after.controlFlags = 33796 }
+            'remove-ai' { $before.controlFlags = 33796 }
+            'change-permission' { $changed = [byte[]]$syntheticDacl.Clone(); $changed[8] = 0; $after.daclBase64 = [Convert]::ToBase64String($changed) }
+            'change-ace-sid' { $changed = [byte[]]$syntheticDacl.Clone(); $changed[15] = 0; $after.daclBase64 = [Convert]::ToBase64String($changed) }
+            'change-ace-order' { $changed = [byte[]]$syntheticDacl.Clone(); [Array]::Reverse($changed); $after.daclBase64 = [Convert]::ToBase64String($changed) }
+            'change-length' { $after.daclBase64 = [Convert]::ToBase64String([byte[]](0..14)) }
+            'change-owner' { $after.ownerSid = 'S-1-5-21-1-2-3-501' }
+            'change-group' { $after.groupSid = 'S-1-5-32-545' }
+            'add-protected' { $after.controlFlags = 36868 }
+            'remove-protected' { $before.controlFlags = 36868 }
+            'add-inherit-request' { $after.controlFlags = 33028 }
+            'remove-inherit-request' { $before.controlFlags = 33028 }
+            'change-defaulted' { $after.controlFlags = 32780 }
+            'change-other-flag' { $after.controlFlags = 32774 }
+            'ai-plus-protected' { $after.controlFlags = 37892 }
+            'ai-plus-permission' { $after.controlFlags = 33796; $changed = [byte[]]$syntheticDacl.Clone(); $changed[8] = 0; $after.daclBase64 = [Convert]::ToBase64String($changed) }
+            'ai-plus-owner' { $after.controlFlags = 33796; $after.ownerSid = 'S-1-5-21-1-2-3-501' }
+            'missing-dacl' { $after.controlFlags = 32768 }
+            'boolean-flags' { $after.controlFlags = $true }
+            'oversized-flags' { $after.controlFlags = 65536 }
+            'invalid-base64' { $after.daclBase64 = '!' }
+            'noncanonical-base64' { $after.daclBase64 = ' ' + $after.daclBase64 }
+            'short-dacl' { $after.daclBase64 = [Convert]::ToBase64String([byte[]](0..3)) }
+            'empty-owner' { $after.ownerSid = '' }
+            'malformed-group' { $after.groupSid = 'unresolved group' }
+        }
+        $invalid = $name -in @('missing-dacl', 'boolean-flags', 'oversized-flags', 'invalid-base64', 'noncanonical-base64', 'short-dacl', 'empty-owner', 'malformed-group')
+        $comparison = $null; $rejected = $false
+        try { $comparison = Compare-RestoredDacl $before $after } catch { $rejected = $true }
+        Assert-Equal $rejected $invalid
+        if (-not $invalid) {
+            Assert-Equal $comparison.verified ($name -in @('exact', 'add-ai', 'retain-ai'))
+            Assert-Equal $comparison.autoInheritedFlagAdded ($name -in @('add-ai', 'ai-plus-permission', 'ai-plus-owner'))
+            if ($comparison.verified -and (-not $comparison.daclBinaryIdentical -or -not $comparison.ownerIdentical -or -not $comparison.groupIdentical)) { throw 'Verified restoration lost an original identity.' }
+            if ($name -eq 'add-ai') { Assert-Equal $comparison.flagsDifference 1024; Assert-Equal $comparison.reason 'auto_inherited_flag_added' }
+        }
+        Write-Output ('Passed DACL bytes/flags/SIDs: ' + $name)
+    }
 } finally {
     [System.IO.File]::Delete($script:syntheticPath)
     [System.IO.Directory]::Delete($directory, $false)
 }
 Write-Output "$($cases.Count) installer controller checks passed using mocked processes and synthetic bytes; no installer, ACL, registry, GUI or Windows process APIs were invoked."
+Write-Output "$($daclCases.Count) DACL comparison checks used synthetic arrays and SID strings only; no security descriptors or OS ACL APIs were constructed."
