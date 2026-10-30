@@ -1,6 +1,8 @@
 """Pure source-derivation checks; never construct a native fixture or launch a product."""
 import ast
+import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -43,9 +45,22 @@ class PerformanceDerivationTests(unittest.TestCase):
             native = next(node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == 'Native')
             return {node.name: ast.dump(node) for node in native.body if isinstance(node, ast.FunctionDef)}
         original, generated = methods(self.target), methods(result)
-        for name in ('__init__', 'install_window_procedure', 'focus_snapshot', 'target_preflight', 'activate', 'process', 'bind', 'tree', 'cleanup'):
+        for name in ('__init__', 'install_window_procedure', 'focus_snapshot', 'keyboard_snapshot', 'target_preflight', 'activate', 'process', 'bind', 'tree', 'cleanup'):
             with self.subTest(method=name):
                 self.assertEqual(original[name], generated[name])
+
+    def test_derived_input_retains_one_immediately_timed_batch_and_two_read_only_snapshots(self):
+        source = derivation.derive_sources(self.controller, self.target, self.crash_events)['native-target.py']
+        native = next(node for node in ast.parse(source).body if isinstance(node, ast.ClassDef) and node.name == 'Native')
+        keys = next(node for node in native.body if isinstance(node, ast.FunctionDef) and node.name == 'keys')
+        names = lambda node: [target.id for target in node.targets if isinstance(target, ast.Name)] if isinstance(node, ast.Assign) else []
+        assignments = {name: index for index, node in enumerate(keys.body) for name in names(node)}
+        self.assertEqual(sum('input_monotonic_ns' in names(node) for node in keys.body), 1)
+        self.assertEqual(assignments['input_monotonic_ns'] + 1, assignments['sent'])
+        self.assertEqual(assignments['sent'] + 1, assignments['input_returned_monotonic_ns'])
+        calls = [node for node in ast.walk(keys) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)]
+        self.assertEqual(sum(node.func.attr == 'SendInput' for node in calls), 1)
+        self.assertEqual(sum(node.func.attr == 'keyboard_snapshot' for node in calls), 2)
 
     def test_derived_tauri_accessibility_requires_the_explicit_original_foreground_panel(self):
         source = derivation.derive_sources(self.controller, self.target, self.crash_events)['native-target.py']
@@ -90,6 +105,35 @@ class PerformanceDerivationTests(unittest.TestCase):
             for destination in (fresh, repository / 'windows-performance-outside', boundary / 'unrelated', boundary / 'nested/windows-performance-hidden'):
                 with self.subTest(destination=destination), self.assertRaises(ValueError):
                     derivation.validate_destination(repository, destination)
+
+    def test_manifest_separates_controller_reference_and_reviewed_diagnostic_target(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = Path(temporary).resolve()
+            names = ['scripts/tests/' + name for name in
+                     ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs')]
+            names += ['scripts/tests/windows-performance/' + name for name in
+                      ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs')]
+            for name in names:
+                path = repository / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                content = (REPOSITORY / name).read_text(encoding='utf-8')
+                path.write_bytes(content.replace('\n', '\r\n').encode('utf-8'))
+            generated = derivation.generate(repository, repository / '.harness/windows-performance-provenance')
+            proof = json.loads((generated / 'derivation.json').read_text())
+            self.assertNotIn('functional_base_commit', proof)
+            self.assertEqual(proof['functional_controller_base_commit'], derivation.FUNCTIONAL_CONTROLLER_BASE_COMMIT)
+            self.assertEqual(proof['functional_controller_base_scope'], ['native-windows-surface.mjs', 'native-windows-crash-events.mjs'])
+            self.assertEqual(proof['functional_target_provenance']['reviewed_lf_sha256'], derivation.REVIEWED_TARGET_LF_SHA256)
+            self.assertEqual(proof['functional_target_provenance']['diagnostic_delta'], 'bounded-key-state-and-owned-message-timing')
+            self.assertEqual(proof['functional_target_provenance']['original_target_reference']['lf_sha256'], 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780')
+            self.assertFalse(proof['native_runtime_executed_by_generator'])
+            self.assertEqual(set(proof['source_files']), set(names))
+            for name in names:
+                with self.subTest(name=name):
+                    raw = (repository / name).read_bytes()
+                    self.assertEqual(proof['source_files'][name], {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                        'canonical_lf_sha256': hashlib.sha256(raw.decode('utf-8').replace('\r\n', '\n').encode('utf-8')).hexdigest()})
+            self.assertNotEqual(proof['source_files']['scripts/tests/native-windows-surface-target.py']['sha256'], derivation.REVIEWED_TARGET_LF_SHA256)
 
 
 if __name__ == '__main__':

@@ -22,6 +22,14 @@ def require(value, message):
         raise RuntimeError(message)
 
 
+KEY_STATE_DIAGNOSTICS = (('shift', 0x10), ('control', 0x11), ('alt', 0x12),
+                         ('left_shift', 0xA0), ('right_shift', 0xA1),
+                         ('left_control', 0xA2), ('right_control', 0xA3),
+                         ('left_alt', 0xA4), ('right_alt', 0xA5),
+                         ('left_win', 0x5B), ('right_win', 0x5C),
+                         ('insert', 0x2D), ('f10', 0x79))
+
+
 def valid_seed_text(value):
     return isinstance(value, str) and re.fullmatch(r'nativeupgradefixturemarker[a-f0-9]{32}-native-[ab]', value) is not None
 
@@ -117,6 +125,7 @@ class Native:
             (self.user, 'SetForegroundWindow', [W.HWND], W.BOOL),
             (self.user, 'SetFocus', [W.HWND], W.HWND),
             (self.user, 'GetFocus', [], W.HWND),
+            (self.user, 'GetAsyncKeyState', [ctypes.c_int], ctypes.c_short),
             (self.user, 'GetWindowLongPtrW', [W.HWND, ctypes.c_int], ctypes.c_ssize_t),
             (self.user, 'SetWindowLongPtrW', [W.HWND, ctypes.c_int, ctypes.c_ssize_t], ctypes.c_ssize_t),
             (self.user, 'CallWindowProcW', [ctypes.c_void_p, W.HWND, W.UINT, W.WPARAM, W.LPARAM], ctypes.c_ssize_t),
@@ -180,9 +189,11 @@ class Native:
         def callback(hwnd, message, wparam, lparam):
             previous = self.window_procedures[int(hwnd)]['original']
             try:
-                if message in (0x0006, 0x0007, 0x0008, 0x0100, 0x0101, 0x0302):
+                if message in (0x0006, 0x0007, 0x0008, 0x0100, 0x0101, 0x0104, 0x0105, 0x0302):
+                    observed_monotonic_ns = time.monotonic_ns()
                     self.focus_messages.append({'role': role, 'hwnd': int(hwnd), 'message': message,
-                                                'wparam': int(wparam), 'own_thread_focus': int(self.user.GetFocus() or 0)})
+                                                'wparam': int(wparam), 'own_thread_focus': int(self.user.GetFocus() or 0),
+                                                'observed_monotonic_ns': str(observed_monotonic_ns)})
                 if message == 0x0007 and editor and self.user.IsWindow(editor):
                     self.user.SetFocus(editor)
                     return 0
@@ -398,6 +409,12 @@ class Native:
         require(len(text.value) < 4096, 'Synthetic target text exceeded its bound')
         return text.value
 
+    def keyboard_snapshot(self):
+        began = time.monotonic_ns()
+        down = {name: bool(self.user.GetAsyncKeyState(vk) & 0x8000) for name, vk in KEY_STATE_DIAGNOSTICS}
+        return {'began_monotonic_ns': str(began), 'completed_monotonic_ns': str(time.monotonic_ns()),
+                'down': down, 'scope': 'Fixed modifiers, Insert and F10 high-bit observations only; sequential reads, not an atomic state or message-delivery acknowledgement. Zero may also mean unavailable state.'}
+
     def keys(self, request):
         observation = self.observe()
         foreground = observation['foreground']
@@ -433,9 +450,15 @@ class Native:
                 key(0, value, 6)
         require(inputs, 'Native input must not be empty')
         array = (self.Input * len(inputs))(*inputs)
+        keyboard_before = self.keyboard_snapshot()
+        input_monotonic_ns = time.monotonic_ns()
         sent = self.user.SendInput(len(inputs), array, ctypes.sizeof(self.Input))
+        input_returned_monotonic_ns = time.monotonic_ns()
+        keyboard_after = self.keyboard_snapshot()
         require(sent == len(inputs), 'SendInput did not accept the complete original input')
-        return {'sent': sent, 'foreground_before': foreground, 'native_input': True, 'target_focus': self.focus_snapshot()}
+        return {'sent': sent, 'foreground_before': foreground, 'native_input': True, 'target_focus': self.focus_snapshot(),
+                'input_monotonic_ns': str(input_monotonic_ns), 'input_returned_monotonic_ns': str(input_returned_monotonic_ns),
+                'keyboard_before': keyboard_before, 'keyboard_after': keyboard_after}
 
     def accessibility(self, pid):
         observation = self.observe()

@@ -8,7 +8,8 @@ from pathlib import Path
 import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
-BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
+FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
+REVIEWED_TARGET_LF_SHA256 = '118153005216eff075d4596335e6bd26c8fb9a880d13dc96c6627b1547e165f7'
 
 
 def derive_sources(controller, original_target, crash_events):
@@ -24,7 +25,7 @@ def derive_sources(controller, original_target, crash_events):
     plumbing = plumbing.replace("new URL('./native-windows-surface-target.py', import.meta.url)",
                                 "new URL('./native-target.py', import.meta.url)")
     plumbing += '\nexport { repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot, environment, LoggedProcess, NativeChannel, Bridge, completedCommand, availablePort, fixedSurfaceInputs, toolkitPatchId };\n'
-    assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780', 'Functional target changed; review the derivation before use'
+    assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == REVIEWED_TARGET_LF_SHA256, 'Functional target changed; review the derivation before use'
     target = original_target
 
 
@@ -49,10 +50,6 @@ def derive_sources(controller, original_target, crash_events):
             require(self.process(self.desktop)['running'], 'Original Desktop has exited')
         else:
             raise RuntimeError('Only explicit target/Surface/Tauri panel input is permitted')""")
-    replace_once('        sent = self.user.SendInput(len(inputs), array, ctypes.sizeof(self.Input))',
-                 '        input_monotonic_ns = time.monotonic_ns()\n        sent = self.user.SendInput(len(inputs), array, ctypes.sizeof(self.Input))')
-    replace_once("return {'sent': sent, 'foreground_before': foreground, 'native_input': True, 'target_focus': self.focus_snapshot()}",
-                 "return {'sent': sent, 'foreground_before': foreground, 'native_input': True, 'target_focus': self.focus_snapshot(),\n                'input_monotonic_ns': str(input_monotonic_ns)}")
     replace_once("elif operation == 'target-text': value = {'text': native.target_text(), 'target_focus': native.focus_snapshot()}",
                  "elif operation == 'target-text': value = {'text': native.target_text(), 'target_focus': native.focus_snapshot(), 'observed_monotonic_ns': str(time.monotonic_ns())}")
     replace_once("elif operation == 'observe': value = native.observe()",
@@ -140,8 +137,26 @@ def generate(repository, destination):
     for name, source in files.items():
         with (destination / name).open('x', encoding='utf-8', newline='\n') as output:
             output.write(source)
-    proof = {'kind': 'windows_performance_source_derivation_v1', 'functional_base_commit': BASE_COMMIT,
+    source_paths = ['scripts/tests/' + name for name in
+                    ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs')]
+    source_paths += ['scripts/tests/windows-performance/' + name for name in
+                     ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs')]
+    source_files = {}
+    for name in source_paths:
+        raw = (repository / name).read_bytes()
+        source_files[name] = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest(),
+                             'canonical_lf_sha256': hashlib.sha256(raw.decode('utf-8').replace('\r\n', '\n').encode('utf-8')).hexdigest()}
+    proof = {'kind': 'windows_performance_source_derivation_v1',
+             'functional_controller_base_commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
+             'functional_controller_base_scope': ['native-windows-surface.mjs', 'native-windows-crash-events.mjs'],
+             'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
+                 'diagnostic_delta': 'bounded-key-state-and-owned-message-timing',
+                 'original_target_reference': {'commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
+                     'lf_sha256': 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780',
+                     'scope': 'Prior reference only; the current diagnostic target is bound by its reviewed LF hash, not attributed to this commit.'}},
              'native_runtime_executed_by_generator': False,
+             'source_files': source_files,
+             'base_lf_sha256_scope': 'Current reviewed functional source text; these hashes do not attribute the modified diagnostic target to the controller base commit.',
              'base_lf_sha256': {name: hashlib.sha256(source.encode('utf-8')).hexdigest() for name, source in
                                [('native-windows-surface.mjs', controller), ('native-windows-surface-target.py', target),
                                 ('native-windows-crash-events.mjs', crash_events)]},
