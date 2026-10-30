@@ -400,6 +400,7 @@ class Native:
                     raise
         candidates = {item['pid']: {'handle': self.handles[item['pid']],
                       'identity': dict(self.identities[item['pid']])} for item in result if item['pid'] in owned}
+        observations = {item['pid']: item for item in result}
         require(set(candidates) == owned, 'Candidate tree identities are incomplete')
         # A PID can change generation between the first snapshot and OpenProcess.
         # All candidate handles are retained before confirming their parent PIDs.
@@ -408,6 +409,10 @@ class Native:
             require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity'],
                     'Candidate retained handle or identity changed during parent confirmation')
             if pid == self.desktop:
+                continue
+            # An authenticated original object keeps its ownership after exit.
+            # Its terminal counters do not depend on later snapshot membership.
+            if self.validated_owned_handles.get(pid) == candidate and not observations[pid]['running']:
                 continue
             parent = parents.get(pid)
             require(parent in candidates and confirmed.get(pid) == parent,

@@ -164,11 +164,27 @@ snapshot taken after all candidate handles are retained, and requires each
 child's creation time to be no earlier than its retained parent's. This rejects
 stale ParentPID links to a newer reused PID and a PID replaced between the
 first snapshot and its first open. Every candidate retains the same exact
-handle and identity across confirmation; an incomplete or changed edge fails
-before any new candidate is promoted. The original 922 fixture's fake older-child
+handle and identity across confirmation. Every new or still-live candidate
+requires a complete unchanged edge before any new candidate is promoted.
+The original 922 fixture's fake older-child
 counterexample is preserved separately. This is fixture ownership validation,
 with no claim of a Windows crash cause or change to the Linux producer.
 The stale ParentPID case follows [Microsoft's documented PID-reuse example](https://devblogs.microsoft.com/oldnewthing/20150403-00/?p=44313).
+
+The a11cb83 request (run 41106374215) passed twelve release functional checks
+before the thirteenth check's initial main-window observation rejected PID 7624.
+That same authenticated original WebView2 handle, creation time and image had
+already been observed exited with code 0. The original error combines changed
+and disappeared parent-snapshot entries; the two snapshots were not serialized.
+The supervisor preserved exit 1 and confirmed its original controller's exit.
+Native cleanup receipts confirmed all sixteen known objects exited; no ABBA arm started.
+The narrow terminal-state change retains an already authenticated object's
+terminal observation and counters only while its exact handle and identity
+still match. Slot checks precede this exception. New, pending and still-live
+candidates retain both snapshots and every creation-time edge check. There is
+no new observation retry, input, wait or resumed failed case. The original
+failed run remains failed, and the earlier heap-corruption risk remains open.
+
 Node records process exit separately from stdio close. A failed stop request
 still enters a bounded close wait; fallback termination targets only its original
 spawned child. A kill request, destroyed pipe or detached event handle never
