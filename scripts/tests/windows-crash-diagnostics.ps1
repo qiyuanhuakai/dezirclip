@@ -5,12 +5,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$diagnosticArguments = @('-B', (Join-Path $PSScriptRoot 'windows-crash-diagnostics.py'), $Mode)
 if ($Mode -eq 'cleanup') {
     if ([string]::IsNullOrWhiteSpace($Root)) { throw 'The exact owned diagnostics root is required' }
-    $diagnosticArguments += @('--root', $Root)
+    $diagnosticArguments = @('-B', (Join-Path $PSScriptRoot 'windows-crash-diagnostics.py'), 'cleanup', '--root', $Root)
 } else {
-    $diagnosticArguments += @(
+    $diagnosticArguments = @('-B', (Join-Path $PSScriptRoot 'windows-crash-sequence.py')) + @(
         '--desktop', 'target/release/dezirclip.exe',
         '--helper', 'artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe',
         '--helper-proof', 'artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe.proof.json'

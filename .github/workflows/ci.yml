@@ -17,7 +17,7 @@ on:
         required: false
         default: false
       windows_surface_crash_diagnostics:
-        description: Run only release Windows functional checks with owned WER crash dump collection, without ABBA
+        description: Run up to five fresh-profile release Windows diagnostic cases, stopping on first failure, without ABBA
         type: boolean
         required: false
         default: false
@@ -70,6 +70,7 @@ jobs:
       - name: Test opt-in Windows performance fixture contracts without native execution
         run: |
           python -B -m unittest discover -s scripts/tests -p test_windows_performance_derivation.py
+          python -B -m unittest discover -s scripts/tests -p 'test_windows_crash*.py'
           python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-pure-check
           node --test .harness/windows-performance-pure-check/pure.node.mjs
 
@@ -507,7 +508,7 @@ jobs:
           subprocess.run(['node', '.harness/windows-performance-runtime/controller.mjs', *common,
               '--functional-report', str(functional / 'report.json'), '--quiet-note', str(quiet), '--output-root', str(comparison)], check=True)
 
-      - name: Run diagnostic-only release functional checks
+      - name: Run up to five success-only diagnostic release cases
         id: crash-diagnostics
         if: inputs.windows_surface_crash_diagnostics
         shell: pwsh
@@ -521,16 +522,17 @@ jobs:
         run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode cleanup -Root $env:DZC_CRASH_DIAGNOSTICS_ROOT
 
       - name: Preserve original functional failures and crash metadata
-        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.root != ''
+        if: always() && inputs.windows_surface_crash_diagnostics && (steps.crash-diagnostics.outputs.sequence_root != '' || steps.crash-diagnostics.outputs.root != '')
         uses: actions/upload-artifact@v4
         with:
           name: windows-surface-release-crash-metadata-${{ github.run_attempt }}
           retention-days: 3
           path: |
-            ${{ steps.crash-diagnostics.outputs.root }}/*.json
-            ${{ steps.crash-diagnostics.outputs.functional_root }}/*.json
-            ${{ steps.crash-diagnostics.outputs.functional_root }}/*.log
-            ${{ steps.crash-diagnostics.outputs.functional_root }}/*.png
+            ${{ steps.crash-diagnostics.outputs.sequence_root != '' && format('{0}/**/*', steps.crash-diagnostics.outputs.sequence_root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.root != '' && format('{0}/*.json', steps.crash-diagnostics.outputs.root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.functional_root != '' && format('{0}/*.json', steps.crash-diagnostics.outputs.functional_root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.functional_root != '' && format('{0}/*.log', steps.crash-diagnostics.outputs.functional_root) || '' }}
+            ${{ steps.crash-diagnostics.outputs.functional_root != '' && format('{0}/*.png', steps.crash-diagnostics.outputs.functional_root) || '' }}
           if-no-files-found: error
 
       - name: Preserve only the identity-bound original Desktop dump
