@@ -40,13 +40,16 @@ pub(crate) trait InputDriver {
 struct Attempt<'a, D> { driver: &'a mut D, pressed: Vec<Input>, initially_held: Vec<u16> }
 impl<D: InputDriver> Attempt<'_, D> {
     fn send(&mut self, inputs: &[Input]) -> Result<(), PasteError> {
+        if !self.driver.same_target() { return Err(PasteError::ForegroundChanged); }
         let accepted = self.driver.send(inputs);
         for input in inputs.iter().take(accepted.min(inputs.len())) {
             if input.up { self.pressed.retain(|down| down.key != input.key || down.encoding != input.encoding); }
             else if !self.pressed.contains(input) { self.pressed.push(*input); }
         }
-        if accepted == inputs.len() { Ok(()) }
-        else { Err(PasteError::InputRejected { expected: inputs.len(), accepted }) }
+        let same_target = self.driver.same_target();
+        if accepted != inputs.len() { return Err(PasteError::InputRejected { expected: inputs.len(), accepted }); }
+        if !same_target { return Err(PasteError::ForegroundChanged); }
+        Ok(())
     }
     fn key(&mut self, key: u16, encoding: Encoding, up: bool) -> Result<(), PasteError> {
         self.send(&[Input::new(key, encoding, up)])
@@ -60,9 +63,8 @@ impl<D: InputDriver> Attempt<'_, D> {
     }
     fn text(&mut self, text: &str) -> Result<(), PasteError> {
         let length = text.chars().count();
-        let (down, up, interval) = if length > 800 { (2, 2, 40) } else if length > 200 { (4, 4, 30) } else { (10, 10, 20) };
-        for (index, unit) in text.encode_utf16().enumerate() {
-            if index % interval == 0 && !self.driver.same_target() { return Err(PasteError::ForegroundChanged); }
+        let (down, up) = if length > 800 { (2, 2) } else if length > 200 { (4, 4) } else { (10, 10) };
+        for unit in text.encode_utf16() {
             match unit {
                 13 => (),
                 10 => self.pair(ENTER, Encoding::ScanWithVirtual, down, up)?,
@@ -82,6 +84,7 @@ impl<D: InputDriver> Attempt<'_, D> {
         } else if method == "game_mode" {
             self.driver.pause(250);
             if let Some(text) = content {
+                if !self.driver.same_target() { return Err(PasteError::ForegroundChanged); }
                 if !self.driver.begin_text() { return Err(PasteError::ForegroundChanged); }
                 let result = self.text(text);
                 self.driver.end_text();
@@ -116,9 +119,26 @@ impl<D: InputDriver> Attempt<'_, D> {
 pub(crate) fn send_paste(driver: &mut impl InputDriver, method: &str, content: Option<&str>, content_type: Option<&str>) -> Result<(), PasteError> {
     let initially_held = [CONTROL, SHIFT, V, INSERT, ENTER].into_iter().filter(|key| driver.key_is_down(*key)).collect();
     let mut attempt = Attempt { driver, pressed: Vec::new(), initially_held };
-    let result = attempt.run(method, content, content_type);
+    let result = attempt.run(method, content, content_type).and_then(|()| {
+        if attempt.driver.same_target() { Ok(()) } else { Err(PasteError::ForegroundChanged) }
+    });
     if result.is_err() { attempt.release_owned_keys(); }
     result
+}
+pub(crate) fn release_window_keys(driver: &mut impl InputDriver) -> Result<(), PasteError> {
+    let mut attempt = Attempt { driver, pressed: Vec::new(), initially_held: Vec::new() };
+    attempt.send(&[LEFT_WIN, RIGHT_WIN].map(|key| Input::new(key, Encoding::Virtual, true)))
+}
+pub(crate) fn restore_borrowed_ime<C: Copy + Eq>(original: C,
+    mut same_window: impl FnMut() -> bool, borrow_current: impl FnOnce() -> Option<C>,
+    restore_mode: impl FnOnce(C), mut release: impl FnMut(C)) {
+    if same_window() {
+        if let Some(current) = borrow_current() {
+            if current == original && same_window() { restore_mode(original); }
+            release(current);
+        }
+    }
+    release(original);
 }
 
 #[cfg(test)]
@@ -129,6 +149,7 @@ mod tests {
     struct Fake {
         calls: Vec<Vec<Input>>, pauses: Vec<u64>, fail: Option<(usize, usize)>, held: Vec<u16>,
         checks: Cell<usize>, lose_focus: Option<usize>, unavailable: bool, began: usize, ended: usize,
+        lost_at_call: Cell<Option<usize>>,
     }
     impl InputDriver for Fake {
         fn send(&mut self, inputs: &[Input]) -> usize {
@@ -138,7 +159,12 @@ mod tests {
         fn pause(&mut self, ms: u64) { self.pauses.push(ms); }
         fn key_is_down(&self, key: u16) -> bool { self.held.contains(&key) }
         fn begin_text(&mut self) -> bool { self.began += 1; !self.unavailable }
-        fn same_target(&self) -> bool { let check = self.checks.get(); self.checks.set(check + 1); self.lose_focus != Some(check) }
+        fn same_target(&self) -> bool {
+            let check = self.checks.get(); self.checks.set(check + 1);
+            let same = self.lose_focus != Some(check);
+            if !same { self.lost_at_call.set(Some(self.calls.len())); }
+            same
+        }
         fn end_text(&mut self) { self.ended += 1; }
     }
     fn fault_matrix(method: &str, text: Option<&str>, kind: Option<&str>) {
@@ -168,16 +194,53 @@ mod tests {
         assert_eq!(typed.iter().filter(|event| event.encoding == Encoding::Unicode).map(|event| event.key).collect::<Vec<_>>(), "中😀Z".encode_utf16().collect::<Vec<_>>());
         assert_eq!(typed.iter().filter(|event| event.key == ENTER && event.encoding == Encoding::ScanWithVirtual).count(), 1);
     }
-    #[test] fn lost_initial_or_mid_text_focus_is_failure_and_restores_context() {
-        for check in [0, 1] {
-            let mut fake = Fake { lose_focus: Some(check), ..Default::default() };
-            assert_eq!(send_paste(&mut fake, "game_mode", Some(&"a".repeat(45)), Some("text")), Err(PasteError::ForegroundChanged));
-            assert_eq!((fake.began, fake.ended), (1, 1));
-            assert_eq!(fake.calls.iter().flatten().filter(|event| !event.up).count(), check * 20);
+    #[test] fn every_batch_and_final_focus_check_rejects_loss_without_retrying_input() {
+        for (method, content, kind) in [
+            ("ctrl_v", None, Some("text")), ("shift_insert", None, Some("text")),
+            ("unknown", None, None), ("game_mode", None, Some("text")),
+            ("game_mode", Some("中😀\r\nZ"), Some("text")),
+            ("game_mode", Some("not typed"), Some("image")),
+        ] {
+            let mut full = Fake::default();
+            send_paste(&mut full, method, content, kind).unwrap();
+            for check in 0..full.checks.get() {
+                let mut fake = Fake { lose_focus: Some(check), ..Default::default() };
+                assert_eq!(send_paste(&mut fake, method, content, kind), Err(PasteError::ForegroundChanged), "{method} check {check}");
+                assert_eq!(fake.began, fake.ended);
+                let stopped = fake.lost_at_call.get().unwrap();
+                assert!(fake.calls[stopped..].iter().flatten().all(|event| event.up), "after target loss only release this attempt's keys");
+                if check == 0 { assert!(fake.calls.is_empty(), "wrong initial target receives no modifier release or paste"); }
+            }
         }
+    }
+    #[test] fn preparatory_window_key_releases_obey_the_same_target_and_count_guards() {
+        let mut full = Fake::default();
+        release_window_keys(&mut full).unwrap();
+        assert_eq!(full.calls, vec![vec![Input::new(LEFT_WIN, Encoding::Virtual, true), Input::new(RIGHT_WIN, Encoding::Virtual, true)]]);
+        for check in [0, 1] {
+            let mut changed = Fake { lose_focus: Some(check), ..Default::default() };
+            assert_eq!(release_window_keys(&mut changed), Err(PasteError::ForegroundChanged));
+            assert_eq!(changed.calls.len(), check);
+        }
+        let mut partial = Fake { fail: Some((0, 1)), ..Default::default() };
+        assert_eq!(release_window_keys(&mut partial), Err(PasteError::InputRejected { expected: 2, accepted: 1 }));
+        assert_eq!(partial.calls.len(), 1);
+    }
+    #[test] fn unavailable_text_context_aborts_before_typing() {
         let mut fake = Fake { unavailable: true, ..Default::default() };
         assert_eq!(send_paste(&mut fake, "game_mode", Some("x"), Some("text")), Err(PasteError::ForegroundChanged));
         assert_eq!(fake.calls.len(), 1);
+    }
+    #[test] fn target_loss_after_ctrl_down_only_releases_that_attempt_and_keeps_partial_error() {
+        let mut lost = Fake { lose_focus: Some(3), ..Default::default() };
+        assert_eq!(send_paste(&mut lost, "ctrl_v", None, Some("text")), Err(PasteError::ForegroundChanged));
+        assert_eq!(lost.calls[2], vec![Input::new(V, Encoding::Scan, true), Input::new(CONTROL, Encoding::Scan, true)]);
+        let mut partial = Fake { lose_focus: Some(3), fail: Some((1, 1)), ..Default::default() };
+        assert_eq!(send_paste(&mut partial, "ctrl_v", None, Some("text")), Err(PasteError::InputRejected { expected: 2, accepted: 1 }));
+        assert_eq!(partial.calls[2], vec![Input::new(CONTROL, Encoding::Scan, true)]);
+        let mut held = Fake { lose_focus: Some(3), fail: Some((1, 1)), held: vec![CONTROL], ..Default::default() };
+        assert!(send_paste(&mut held, "ctrl_v", None, Some("text")).is_err());
+        assert_eq!(held.calls.len(), 2);
     }
     #[test] fn partial_ctrl_down_only_releases_inserted_non_user_keys_and_keeps_original_error() {
         let mut fake = Fake { fail: Some((1, 1)), ..Default::default() };
@@ -197,6 +260,24 @@ mod tests {
         ] {
             let mut fake = Fake::default(); send_paste(&mut fake, method, content, kind).unwrap();
             assert_eq!(fake.pauses, pauses);
+        }
+    }
+    #[test] fn ime_cleanup_rejects_replaced_windows_or_contexts_and_pairs_every_borrow() {
+        use std::cell::RefCell;
+        for (checks, current, expected) in [
+            (vec![false], Some(7), vec![("release", 7)]),
+            (vec![true], None, vec![("borrow", 0), ("release", 7)]),
+            (vec![true], Some(9), vec![("borrow", 9), ("release", 9), ("release", 7)]),
+            (vec![true, false], Some(7), vec![("borrow", 7), ("release", 7), ("release", 7)]),
+            (vec![true, true], Some(7), vec![("borrow", 7), ("restore", 7), ("release", 7), ("release", 7)]),
+        ] {
+            let mut checks = checks.into_iter();
+            let events = RefCell::new(Vec::new());
+            restore_borrowed_ime(7, || checks.next().unwrap(),
+                || { events.borrow_mut().push(("borrow", current.unwrap_or(0))); current },
+                |context| events.borrow_mut().push(("restore", context)),
+                |context| events.borrow_mut().push(("release", context)));
+            assert_eq!(*events.borrow(), expected);
         }
     }
 }

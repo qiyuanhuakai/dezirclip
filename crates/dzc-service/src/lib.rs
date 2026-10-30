@@ -15,6 +15,12 @@ struct Options {
     #[arg(long)] build_info: bool,
 }
 
+#[cfg(target_os="windows")]
+struct WindowsPreparedPaste(dzc_platform::runtime::WindowsBoundPaste);
+#[cfg(target_os="windows")]
+impl dzc_host::PreparedPaste for WindowsPreparedPaste {
+    fn send(&self)->Result<(),WireErrorCode> {self.0.send().map_err(|_|WireErrorCode::Unavailable)}
+}
 struct NativeActions { writer: dzc_platform::runtime::EmbeddedClipboardWriter }
 impl HostActions for NativeActions {
     fn platform_capabilities(&self) -> serde_json::Value { serde_json::to_value(dzc_platform::runtime::standalone_capabilities()).unwrap_or_default() }
@@ -22,6 +28,11 @@ impl HostActions for NativeActions {
     fn copy(&self, payload: ClipboardPayload) -> Result<(), WireErrorCode> { self.writer.write_suppressing_recapture(payload).map_err(|_| WireErrorCode::Unavailable) }
     fn can_paste(&self) -> bool { dzc_platform::runtime::NativePasteController.capability().is_available() }
     fn paste(&self) -> Result<(), WireErrorCode> { dzc_platform::runtime::NativePasteController.paste().map_err(|_| WireErrorCode::Unavailable) }
+    fn supports_windows_bound_paste(&self)->bool {cfg!(target_os="windows")}
+    #[cfg(target_os="windows")]
+    fn prepare_windows_paste(&self,target:&dzc_host::wire::WindowsPasteTarget)->Result<Box<dyn dzc_host::PreparedPaste>,WireErrorCode> {
+        Ok(Box::new(WindowsPreparedPaste(dzc_platform::runtime::WindowsBoundPaste::prepare(target).map_err(|_|WireErrorCode::Unavailable)?)))
+    }
     fn stop_helpers(&self) -> Result<(), WireErrorCode> { self.writer.stop().map_err(|_| WireErrorCode::Busy) }
 }
 

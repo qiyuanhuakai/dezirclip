@@ -3,6 +3,7 @@ use crate::database::DbState;
 use crate::error::AppResult;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use tauri::{Emitter, Manager, State};
+use std::sync::Arc;
 
 #[allow(dead_code)]
 const WM_PASTE: u32 = 0x0302;
@@ -184,61 +185,30 @@ fn finish_pasted(app:&tauri::AppHandle,guard:&QueueStepGuard,empty:Option<bool>,
 fn send_queue_input(
     validate:impl FnOnce()->Result<(),String>,
     send:impl FnOnce()->Result<(),String>,
-    restore:impl FnOnce(),
+    restore:impl FnOnce()->Result<(),String>,
 )->Result<(),String> {
     validate()?;
-    let result=send();
-    restore();
-    result
+    send()?;
+    restore()
 }
 
-fn send_queue_keystroke(method:&str,content:Option<&str>,content_type:&str,validate:impl FnOnce()->Result<(),String>)->Result<(),String> {
-            let alt_was_down = {
-                #[cfg(target_os = "windows")]
-                unsafe {
-                    (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x12) as i16) < 0
-                }
-                #[cfg(not(target_os = "windows"))]
-                false
-            };
-
-
+fn send_queue_keystroke(target:Option<&crate::infrastructure::surface_focus::Target>,method:&str,content:Option<&str>,content_type:&str,validate:impl FnOnce()->Result<(),String>)->Result<(),String> {
+    #[cfg(target_os = "windows")]
+    let alt_was_down=crate::infrastructure::windows_api::paste::alt_is_down();
     send_queue_input(validate,|| {
-        crate::services::clipboard_ops::send_paste_keystroke(method,content,Some(content_type)).map_err(|error|format!("PasteKeystrokeFailed:{error}"))
+        crate::services::clipboard_ops::send_paste_keystroke(target,method,content,Some(content_type)).map_err(|error|format!("PasteKeystrokeFailed:{error}"))
     },|| {
-            // Settle time
-            std::thread::sleep(std::time::Duration::from_millis(20));
-
-            // Restore Alt state if it was physically held down
-            // This is crucial for sequential paste flow (holding Alt while tapping V)
-            if alt_was_down {
-                #[cfg(target_os = "windows")]
-                unsafe {
-                    use windows::Win32::UI::Input::KeyboardAndMouse::{
-                        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, VK_MENU,
-                    };
-                    let alt_restore = INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_MENU,
-                                dwFlags:
-                                    windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS(
-                                        0,
-                                    ),
-                                ..Default::default()
-                            },
-                        },
-                    };
-                    SendInput(&[alt_restore], std::mem::size_of::<INPUT>() as i32);
-                    println!("[DEBUG] Restored Alt key state for continuous sequential paste");
-                }
-            }
-
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        #[cfg(target_os = "windows")]
+        {
+            let target=target.ok_or_else(||"Paste target unavailable".to_owned())?;
+            crate::infrastructure::windows_api::paste::restore_held_alt(target,alt_was_down)?;
+        }
+        Ok(())
     })
 }
 
-async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::DesktopHost,guard:QueueStepGuard,instance:String,epoch:u64,method:String,delete:bool) {
+async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::DesktopHost,guard:QueueStepGuard,instance:String,epoch:u64,method:String,delete:bool,target:Option<Arc<crate::infrastructure::surface_focus::Target>>) {
     let id=guard.step.id;
     let mut prepared=match bridge.prepare_service_queue(id,&instance,epoch).await {
         Ok(prepared)=>prepared,
@@ -252,7 +222,7 @@ async fn paste_service_step(app:tauri::AppHandle,bridge:crate::app::ipc_host::De
     guard.track(prepared.content.clone());
     if let Err(error)=prepared.copy().await {guard.fail(&app,&error);return;}
     if let Err(error)=prepared.check(&bridge).await {guard.fail(&app,&error);return;}
-    let result=send_queue_keystroke(&method,prepared.content.as_deref(),&prepared.content_type,|| {
+    let result=send_queue_keystroke(target.as_deref(),&method,prepared.content.as_deref(),&prepared.content_type,|| {
         if !guard.current() {return Err("PasteQueueChanged".into());}
         bridge.check_queue_state(&instance,epoch)?;
         Ok(())
@@ -272,6 +242,10 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
         Err(error)=>{let _=app_handle.emit("paste-queue-unavailable",error);return;},
     };
     let guard=QueueStepGuard{queue:state.0.clone(),step};
+    let target=match crate::services::clipboard_ops::capture_paste_target(true) {
+        Ok(target)=>target,
+        Err(error)=>{guard.fail(&app_handle,&error.to_string());return;},
+    };
     let id=guard.step.id;
     if id<=0 {guard.fail(&app_handle,"SessionQueueUnavailable");return;}
     let bridge=app_handle.state::<crate::app::ipc_host::DesktopHost>().inner().clone();
@@ -282,7 +256,7 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
     match bridge.embedded() {
         Err(error)=>{guard.fail(&app_handle,&error);return;},
         Ok(None)=>{
-            tauri::async_runtime::spawn(paste_service_step(app_handle.clone(),bridge,guard,instance,epoch,method,delete));
+            tauri::async_runtime::spawn(paste_service_step(app_handle.clone(),bridge,guard,instance,epoch,method,delete,target));
             return;
         },
         Ok(Some(_))=>(),
@@ -303,13 +277,13 @@ pub fn paste_next_step(app_handle:tauri::AppHandle) {
     guard.track(Some(entry.content.clone()));
     let copied=bridge.call_embedded::<dzc_host::wire::OperationResult>(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams{
         id,service_instance_id:instance.clone(),expected_epoch:permit.epoch(),reveal:false,paste:false,derived_text:None,image_as_base64:None,
-        with_format:Some(entry.content_type=="rich_text" && entry.html_content.is_some()),delete_after_use:Some(false),move_to_top:Some(false)});
+        with_format:Some(entry.content_type=="rich_text" && entry.html_content.is_some()),delete_after_use:Some(false),move_to_top:Some(false),expected_paste_target:None});
     match copied {
         Ok(result) if result.performed=>(),
         Ok(_)=>{guard.fail(&app_handle,"ClipboardCopyFailed");return;},
         Err(error)=>{guard.fail(&app_handle,&error);return;},
     }
-    let pasted=send_queue_keystroke(&method,Some(&entry.content),&entry.content_type,|| {
+    let pasted=send_queue_keystroke(target.as_deref(),&method,Some(&entry.content),&entry.content_type,|| {
         if !guard.current() {return Err("PasteQueueChanged".into());}
         if bridge.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
         history.privacy().check_read(&permit,chrono::Utc::now().timestamp_millis()).map_err(|error|error.to_string())
@@ -323,18 +297,18 @@ mod authorization_tests {
     use super::*;
     use std::sync::{Arc,Mutex};
     #[test]
-    fn held_alt_is_restored_after_input_failure_without_masking_the_error_or_consuming() {
+    fn rejected_input_never_restores_alt_or_consumes_and_success_restores_once() {
         use std::cell::{Cell,RefCell};
         let held=Cell::new(true);let order=RefCell::new(Vec::new());
         let original="PasteKeystrokeFailed:accepted 1 of 2 events".to_owned();
         let result=send_queue_input(
             ||{order.borrow_mut().push("validate");Ok(())},
             ||{order.borrow_mut().push("send");held.set(false);Err(original.clone())},
-            ||{order.borrow_mut().push("restore");held.set(true)},
+            ||{order.borrow_mut().push("restore");held.set(true);Ok(())},
         );
         assert_eq!(result,Err(original));
-        assert!(held.get());
-        assert_eq!(*order.borrow(),vec!["validate","send","restore"]);
+        assert!(!held.get());
+        assert_eq!(*order.borrow(),vec!["validate","send"]);
         let shared=Arc::new(Mutex::new(PasteQueueState::default()));shared.lock().unwrap().items.push_back(17);
         let step=reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap();
         let guard=QueueStepGuard{queue:shared.clone(),step};
@@ -342,10 +316,10 @@ mod authorization_tests {
         assert_eq!(shared.lock().unwrap().items.front(),Some(&17));
         drop(guard);assert!(shared.lock().unwrap().in_flight.is_none());
         order.borrow_mut().clear();
-        let denied=send_queue_input(||Err("PrivacyEpochChanged".into()),||{order.borrow_mut().push("send");Ok(())},||{order.borrow_mut().push("restore");});
+        let denied=send_queue_input(||Err("PrivacyEpochChanged".into()),||{order.borrow_mut().push("send");Ok(())},||{order.borrow_mut().push("restore");Ok(())});
         assert_eq!(denied,Err("PrivacyEpochChanged".into()));
         assert!(order.borrow().is_empty(),"validation failure must not inject or restore keys");
-        assert_eq!(send_queue_input(||Ok(()),||Ok(()),||{order.borrow_mut().push("restore");}),Ok(()));
+        assert_eq!(send_queue_input(||Ok(()),||Ok(()),||{order.borrow_mut().push("restore");Ok(())}),Ok(()));
         assert_eq!(*order.borrow(),vec!["restore"]);
     }
     #[test]
@@ -380,6 +354,47 @@ mod authorization_tests {
             assert!(shared.lock().unwrap().in_flight.is_none());
             assert_eq!(reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap().id,17);
         }
+    }
+    #[test]
+    fn accepted_input_with_lost_target_does_not_restore_alt_complete_or_consume() {
+        use crate::infrastructure::paste_input::{self,Input,InputDriver};
+        use std::cell::Cell;
+        struct Changed { checks:Cell<usize>, lost_at:usize, sends:usize }
+        impl InputDriver for Changed {
+            fn send(&mut self,inputs:&[Input])->usize {self.sends+=1;inputs.len()}
+            fn pause(&mut self,_:u64) {}
+            fn key_is_down(&self,_:u16)->bool {false}
+            fn begin_text(&mut self)->bool {true}
+            fn same_target(&self)->bool {let check=self.checks.get();self.checks.set(check+1);check!=self.lost_at}
+            fn end_text(&mut self) {}
+        }
+        for lost_at in [0,3,6] {
+            let shared=Arc::new(Mutex::new(PasteQueueState::default()));
+            shared.lock().unwrap().items.extend([17,18]);
+            let step=reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap();
+            let guard=QueueStepGuard{queue:shared.clone(),step};
+            let restores=Cell::new(0);
+            let mut driver=Changed{checks:Cell::new(0),lost_at,sends:0};
+            let result=send_queue_input(||Ok(()),|| {
+                paste_input::send_paste(&mut driver,"ctrl_v",None,Some("text")).map_err(|error|error.to_string())
+            },|| {restores.set(restores.get()+1);Ok(())});
+            assert!(result.as_ref().unwrap_err().contains("foreground"));
+            assert_eq!(restores.get(),0);
+            assert!(guard.accept_keystroke(result).is_err());
+            assert_eq!(shared.lock().unwrap().items.iter().copied().collect::<Vec<_>>(),vec![17,18]);
+            if lost_at==0 {assert_eq!(driver.sends,0);}
+            if lost_at==6 {assert_eq!(driver.sends,3,"even fully accepted batches cannot acknowledge a failed final target check");}
+            drop(guard);
+            assert!(shared.lock().unwrap().in_flight.is_none());
+        }
+        let result=send_queue_input(||Ok(()),||Ok(()),||Err("ForegroundChangedDuringAltRestore".into()));
+        assert_eq!(result,Err("ForegroundChangedDuringAltRestore".into()));
+        let shared=Arc::new(Mutex::new(PasteQueueState::default()));
+        shared.lock().unwrap().items.push_back(17);
+        let step=reserve_step(&mut shared.lock().unwrap()).unwrap().unwrap();
+        let guard=QueueStepGuard{queue:shared.clone(),step};
+        assert!(guard.accept_keystroke(result).is_err());
+        assert_eq!(shared.lock().unwrap().items.front(),Some(&17));
     }
 #[test]
     fn dropping_a_cancelled_async_step_releases_its_reservation_without_consuming() {

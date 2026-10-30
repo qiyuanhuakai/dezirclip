@@ -6,7 +6,7 @@ use base64::Engine;
 use serde_json::Value;
 use std::{sync::{Arc,Mutex},time::{Duration,Instant}};
 
-struct Upload { id:String, owner:String, ticket:Option<CaptureTicket>, copy_permit:Option<PrivacyReadPermit>, epoch:u64, timestamp:i64, expires:Instant, bytes:Vec<u8> }
+struct Upload { id:String, owner:String, ticket:Option<CaptureTicket>, copy_permit:Option<PrivacyReadPermit>, epoch:u64, timestamp:i64, expires:Instant, bytes:Vec<u8>, paste_target:Option<Box<dyn crate::PreparedPaste>> }
 #[derive(Default)]
 pub(crate) struct Uploads(Arc<Mutex<Vec<Upload>>>);
 impl Uploads {
@@ -27,6 +27,10 @@ impl Host {
             if uploads.len()>=4 {return Err(WireErrorCode::Busy);}
             let copying=request.copy_to_clipboard.unwrap_or(false);
             if copying && !self.actions.can_copy() {return Err(WireErrorCode::UnsupportedCapability);}
+            if !copying && request.expected_paste_target.is_some() {return Err(WireErrorCode::InvalidRequest);}
+            let paste_target=if request.expected_paste_target.is_some() {
+                self.prepare_desktop_paste(true,request.expected_paste_target.as_ref())?
+            } else {None};
             let copy_permit=if copying {Some(self.history.privacy().authorize_read(PrivacyAccessIntent::GeneratedCopy,SensitiveAccess::Denied,Some(request.expected_epoch),now).map_err(crate::router::privacy_error)?)}else{None};
             let ticket=match self.history.privacy().capture_ticket(now) {
                 Ok(ticket)=>Some(ticket),
@@ -36,7 +40,7 @@ impl Host {
             };
             let id=uuid::Uuid::new_v4().simple().to_string();
             if ticket.as_ref().is_some_and(|ticket|ticket.epoch()!=request.expected_epoch) {return Err(WireErrorCode::PrivacyBlocked);}
-            uploads.push(Upload{id:id.clone(),owner:session.id().into(),ticket,copy_permit,epoch:request.expected_epoch,timestamp:now,expires:Instant::now()+Duration::from_secs(5),bytes:Vec::new()});
+            uploads.push(Upload{id:id.clone(),owner:session.id().into(),ticket,copy_permit,epoch:request.expected_epoch,timestamp:now,expires:Instant::now()+Duration::from_secs(5),bytes:Vec::new(),paste_target});
             let storage=self.uploads.0.clone();let expired_id=id.clone();
             if std::thread::Builder::new().name("dzc-upload-expiry".into()).spawn(move|| {
                 std::thread::sleep(Duration::from_secs(5));
@@ -55,6 +59,7 @@ impl Host {
             upload.bytes.extend(bytes);
             return serde_json::to_value(OperationResult{performed:true}).map_err(|_|WireErrorCode::Internal);
         }
+        if parameters.get("expected_paste_target").is_some() {return Err(WireErrorCode::InvalidRequest);}
         let request:CaptureFinishParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
         let index=uploads.iter().position(|upload|upload.id==request.capture_id && upload.owner==session.id()).ok_or(WireErrorCode::NotFound)?;
         let upload=uploads.remove(index);
@@ -65,7 +70,10 @@ impl Host {
         let body:GeneratedBody=serde_json::from_value(value).map_err(|_|WireErrorCode::InvalidRequest)?;
         if let Some(permit)=upload.copy_permit {
             if request.inherited_protection {return Err(WireErrorCode::InvalidRequest);}
-            if request.paste==Some(true) && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}
+            if request.paste==Some(true) && (!self.actions.can_paste()
+                || (cfg!(target_os="windows") || self.actions.supports_windows_bound_paste()) && upload.paste_target.is_none()) {
+                return Err(WireErrorCode::UnsupportedCapability);
+            }
             // This entry contains only the caller's new payload. It is never
             // resolved as a history/session ID or allowed to name a local file.
             if body.kind=="image" && !body.text.starts_with("data:image/") {return Err(WireErrorCode::InvalidRequest);}
@@ -83,7 +91,7 @@ impl Host {
             self.copy_payload(payload)?;
             if request.paste==Some(true) {
                 self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
-                self.actions.paste()?;
+                if let Some(target)=upload.paste_target { target.send()?; } else { self.actions.paste()?; }
             }
             return serde_json::to_value(OperationResult{performed:true}).map_err(|_|WireErrorCode::Internal);
         }
@@ -117,7 +125,7 @@ mod tests {
     use crate::{HostActions,HostOptions};
     use dzc_core::ports::ClipboardPayload;
     #[derive(Default)]
-    struct Actions {copied:Mutex<Vec<String>>,pastes:std::sync::atomic::AtomicUsize}
+    struct Actions {copied:Mutex<Vec<String>>,pastes:Arc<std::sync::atomic::AtomicUsize>,target_generation:Arc<std::sync::atomic::AtomicUsize>}
     impl HostActions for Actions {
         fn platform_capabilities(&self)->Value {serde_json::json!({"synthetic":true})}
         fn can_copy(&self)->bool {true}
@@ -131,7 +139,20 @@ mod tests {
             self.copied.lock().unwrap().push(label);Ok(())
         }
         fn can_paste(&self)->bool {true}
-        fn paste(&self)->Result<(),WireErrorCode> {self.pastes.fetch_add(1,std::sync::atomic::Ordering::SeqCst);Ok(())}
+        fn paste(&self)->Result<(),WireErrorCode> {panic!("bound generated paste cannot use unbound fallback")}
+        fn supports_windows_bound_paste(&self)->bool {true}
+        fn prepare_windows_paste(&self,target:&WindowsPasteTarget)->Result<Box<dyn crate::PreparedPaste>,WireErrorCode> {
+            assert_eq!(*target,crate::router::tests::windows_target());
+            struct Fixed {pastes:Arc<std::sync::atomic::AtomicUsize>,generation:Arc<std::sync::atomic::AtomicUsize>,original:usize}
+            impl crate::PreparedPaste for Fixed {
+                fn send(&self)->Result<(),WireErrorCode> {
+                    if self.generation.load(std::sync::atomic::Ordering::SeqCst)!=self.original {return Err(WireErrorCode::Unavailable);}
+                    self.pastes.fetch_add(1,std::sync::atomic::Ordering::SeqCst);Ok(())
+                }
+            }
+            Ok(Box::new(Fixed{pastes:self.pastes.clone(),generation:self.target_generation.clone(),
+                original:self.target_generation.load(std::sync::atomic::Ordering::SeqCst)}))
+        }
         fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
     }
     fn session(host:&Host,role:ClientRole,grant:bool)->Session {
@@ -144,7 +165,9 @@ mod tests {
     }
     fn begin(host:&Host,session:&Session,copy:bool)->Response {
         let state=host.snapshot().unwrap();
-        call(host,session,Method::DesktopCaptureBegin,serde_json::json!({"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"copy_to_clipboard":copy}))
+        let mut params=serde_json::json!({"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"copy_to_clipboard":copy});
+        if copy {params["expected_paste_target"]=serde_json::to_value(crate::router::tests::windows_target()).unwrap();}
+        call(host,session,Method::DesktopCaptureBegin,params)
     }
     fn upload(host:&Host,session:&Session,body:Value)->String {
         let id=begin(host,session,true).result.unwrap()["capture_id"].as_str().unwrap().to_owned();
@@ -167,7 +190,7 @@ mod tests {
         // Waiting for a selection creates no upload or upload-expiry deadline.
         std::thread::sleep(Duration::from_millis(5_100));
         let response=call(&host,&desktop,Method::DesktopCaptureBegin,serde_json::json!({
-            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true}));
+            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true,"expected_paste_target":crate::router::tests::windows_target()}));
         let id=response.result.unwrap()["capture_id"].as_str().unwrap().to_owned();
         let body=serde_json::json!({"kind":"text","text":"synthetic frozen screenshot transfer"});
         assert!(call(&host,&desktop,Method::DesktopCaptureWrite,serde_json::json!({"capture_id":id,"offset":0,
@@ -178,9 +201,42 @@ mod tests {
         host.history.privacy().toggle(now).unwrap();
         host.history.privacy().toggle(now+1).unwrap();
         let stale=call(&host,&desktop,Method::DesktopCaptureBegin,serde_json::json!({
-            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true}));
+            "service_instance_id":frozen.service_instance_id,"expected_epoch":frozen.privacy_epoch,"copy_to_clipboard":true,"expected_paste_target":crate::router::tests::windows_target()}));
         assert_eq!(stale.error.unwrap().code,WireErrorCode::PrivacyBlocked);
         assert_eq!(actions.copied.lock().unwrap().len(),1);
+    }
+    #[test]
+    fn generated_original_target_is_frozen_at_begin_not_reselected_at_finish() {
+        let original=crate::router::tests::synthetic_host();
+        let actions=Arc::new(Actions::default());
+        let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
+        let desktop=session(&host,ClientRole::Desktop,true);
+        let id=upload(&host,&desktop,serde_json::json!({"kind":"text","text":"synthetic frozen target"}));
+        actions.target_generation.fetch_add(1,std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(finish(&host,&desktop,&id).error.unwrap().code,WireErrorCode::Unavailable);
+        assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst),0);
+        assert_eq!(actions.copied.lock().unwrap().len(),1,"an authorized clipboard copy is not rolled back after a guarded paste rejection");
+        assert_eq!(finish(&host,&desktop,&id).error.unwrap().code,WireErrorCode::NotFound);
+        assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst),0);
+    }
+    #[test]
+    fn generated_finish_cannot_add_or_replace_an_original_target() {
+        let original=crate::router::tests::synthetic_host();
+        let actions=Arc::new(Actions::default());
+        let host=Host::new(HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
+        let desktop=session(&host,ClientRole::Desktop,true);
+        let id=upload(&host,&desktop,serde_json::json!({"kind":"text","text":"synthetic original target"}));
+        let changed=call(&host,&desktop,Method::DesktopCaptureFinish,serde_json::json!({"capture_id":id,"source_app":"Synthetic","inherited_protection":false,"paste":true,"expected_paste_target":crate::router::tests::windows_target()}));
+        assert_eq!(changed.error.unwrap().code,WireErrorCode::InvalidRequest);
+        assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst),0);
+        let state=host.snapshot().unwrap();
+        let start=call(&host,&desktop,Method::DesktopCaptureBegin,serde_json::json!({"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"copy_to_clipboard":true}));
+        let missing=start.result.unwrap()["capture_id"].as_str().unwrap().to_owned();
+        let body=serde_json::to_vec(&serde_json::json!({"kind":"text","text":"synthetic missing target"})).unwrap();
+        assert!(call(&host,&desktop,Method::DesktopCaptureWrite,serde_json::json!({"capture_id":missing,"offset":0,"data_base64":base64::engine::general_purpose::STANDARD.encode(body)})).error.is_none());
+        assert_eq!(finish(&host,&desktop,&missing).error.unwrap().code,WireErrorCode::UnsupportedCapability);
+        assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst),0);
+        assert!(actions.copied.lock().unwrap().is_empty());
     }
     #[test]
     fn generated_copy_uses_desktop_owner_for_emoji_image_and_large_unpersisted_content() {

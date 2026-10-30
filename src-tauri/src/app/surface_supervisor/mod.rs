@@ -5,8 +5,9 @@ mod diagnostics;
 use super::ipc_host::{DesktopHost, SurfaceAccess};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use crate::infrastructure::surface_focus::{ManagedChild, RestoreForeground, Target};
+#[cfg(target_os = "linux")]
+use dzc_core::ports::PasteController;
 use dzc_core::{
-    ports::PasteController,
     protocol::{
         surface_control::{self, Direction},
         wire::*,
@@ -1095,8 +1096,17 @@ impl SurfaceSupervisor {
         }
         self.valid(&process, revision)?;
         action_budget(deadline)?;
-        dzc_platform::runtime::NativePasteController
-            .paste()
+        #[cfg(target_os = "windows")]
+        {
+            let descriptor = target.windows_paste_target().ok_or("SurfaceTargetUnavailable")?;
+            let prepared = dzc_platform::runtime::WindowsBoundPaste::prepare(&descriptor)
+                .map_err(|_| "SurfacePasteFailed".to_owned())?;
+            self.valid(process, revision)?;
+            action_budget(deadline)?;
+            prepared.send().map_err(|_| "SurfacePasteFailed".to_owned())?;
+        }
+        #[cfg(target_os = "linux")]
+        dzc_platform::runtime::NativePasteController.paste()
             .map_err(|_| "SurfacePasteFailed".to_owned())?;
         Ok(())
     }

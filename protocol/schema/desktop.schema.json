@@ -335,6 +335,9 @@
         },
         "copy_to_clipboard": {
           "type": "boolean"
+        },
+        "expected_paste_target": {
+          "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/WindowsPasteTarget"
         }
       },
       "required": [
@@ -566,6 +569,9 @@
         },
         "move_to_top": {
           "type": "boolean"
+        },
+        "expected_paste_target": {
+          "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/WindowsPasteTarget"
         }
       },
       "required": [
@@ -576,6 +582,46 @@
         "paste"
       ],
       "additionalProperties": true
+    },
+    "WindowsPasteTarget": {
+      "type": "object",
+      "properties": {
+        "hwnd": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
+        },
+        "root_hwnd": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "thread_id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "creation_time_100ns": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,19}$",
+          "maxLength": 20
+        }
+      },
+      "required": [
+        "hwnd",
+        "root_hwnd",
+        "pid",
+        "thread_id",
+        "creation_time_100ns"
+      ],
+      "additionalProperties": false
     }
   }
 }

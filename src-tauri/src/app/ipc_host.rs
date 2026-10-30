@@ -160,7 +160,7 @@ fn check_queue_state(instance:&str,epoch:u64,actual_instance:&str,actual_epoch:u
 }
 fn frozen_capture_request(instance:&str,epoch:u64,actual_instance:&str,actual_epoch:u64)->Result<CaptureBeginParams,String> {
     check_queue_state(instance,epoch,actual_instance,actual_epoch)?;
-    Ok(CaptureBeginParams{service_instance_id:instance.into(),expected_epoch:epoch,copy_to_clipboard:Some(false)})
+    Ok(CaptureBeginParams{service_instance_id:instance.into(),expected_epoch:epoch,copy_to_clipboard:Some(false),expected_paste_target:None})
 }
 #[cfg(test)]
 mod frozen_capture_tests {
@@ -196,7 +196,7 @@ async fn resolve_queue_body(body:Result<DesktopEntry,String>,metadata:impl std::
 impl ServiceQueueCopy {
     pub async fn copy(&mut self)->Result<(),String> {
         let result:OperationResult=self.client.call(Method::DesktopClipboardCopy,DesktopCopyParams{id:self.id,service_instance_id:self.instance.clone(),expected_epoch:self.epoch,
-            reveal:false,paste:false,derived_text:None,image_as_base64:None,with_format:Some(self.content_type=="rich_text"),delete_after_use:Some(false),move_to_top:Some(false)},"OperationResult").await.map_err(remote_error)?;
+            reveal:false,paste:false,derived_text:None,image_as_base64:None,with_format:Some(self.content_type=="rich_text"),delete_after_use:Some(false),move_to_top:Some(false),expected_paste_target:None},"OperationResult").await.map_err(remote_error)?;
         if !result.performed {return Err(failed());} Ok(())
     }
     pub async fn check(&mut self,bridge:&DesktopHost)->Result<(),String> {
@@ -209,7 +209,7 @@ impl ServiceQueueCopy {
         if result.id!=self.id || !result.performed {return Err(failed());} Ok(())
     }
 }
-pub struct GeneratedUpload {client:Client,id:String}
+pub struct GeneratedUpload {client:Client,id:String,windows_paste_bound:bool}
 impl GeneratedUpload {
     pub async fn finish(self,body:GeneratedBody,source:String,protected:bool)->Result<bool,String> {
         self.finish_inner(body,source,protected,None).await
@@ -219,6 +219,9 @@ impl GeneratedUpload {
         Ok(())
     }
     async fn finish_inner(mut self,body:GeneratedBody,source:String,protected:bool,paste:Option<bool>)->Result<bool,String> {
+        if cfg!(target_os="windows") && paste==Some(true) && !self.windows_paste_bound {
+            return Err("WindowsPasteTargetUnavailable".into());
+        }
         use base64::Engine;
         let bytes=serde_json::to_vec(&body).map_err(|_|failed())?;
         if bytes.len()>32*1024*1024 {return Err("GeneratedBodyTooLarge".into());}
@@ -333,6 +336,12 @@ fn confirmed_fallback<T>(host:&Host,create:impl FnOnce()->Result<T,String>)->Res
     host.shutdown().map_err(|_|"CaptureStopUnconfirmed".to_owned())?;
     create()
 }
+#[cfg(target_os="windows")]
+struct WindowsDesktopPreparedPaste(dzc_platform::runtime::WindowsBoundPaste);
+#[cfg(target_os="windows")]
+impl dzc_host::PreparedPaste for WindowsDesktopPreparedPaste {
+    fn send(&self)->Result<(),WireErrorCode> {self.0.send().map_err(|_|WireErrorCode::Unavailable)}
+}
 struct DesktopActions {writer:dzc_platform::runtime::EmbeddedClipboardWriter}
 impl HostActions for DesktopActions {
     fn platform_capabilities(&self)->serde_json::Value {serde_json::to_value(dzc_platform::runtime::standalone_capabilities()).unwrap_or_default()}
@@ -340,6 +349,11 @@ impl HostActions for DesktopActions {
     fn copy(&self,payload:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode> {self.writer.write_suppressing_recapture(payload).map_err(|_|WireErrorCode::Unavailable)}
     fn can_paste(&self)->bool {dzc_platform::runtime::NativePasteController.capability().is_available()}
     fn paste(&self)->Result<(),WireErrorCode> {dzc_platform::runtime::NativePasteController.paste().map_err(|_|WireErrorCode::Unavailable)}
+    fn supports_windows_bound_paste(&self)->bool {cfg!(target_os="windows")}
+    #[cfg(target_os="windows")]
+    fn prepare_windows_paste(&self,target:&WindowsPasteTarget)->Result<Box<dyn dzc_host::PreparedPaste>,WireErrorCode> {
+        Ok(Box::new(WindowsDesktopPreparedPaste(dzc_platform::runtime::WindowsBoundPaste::prepare(target).map_err(|_|WireErrorCode::Unavailable)?)))
+    }
     fn can_activate(&self)->bool {app().is_some()}
     fn activate(&self,_id:Option<i64>)->Result<(),WireErrorCode> {crate::app::window_manager::focus_clipboard_window(app().ok_or(WireErrorCode::Unavailable)?.clone()).map_err(|_|WireErrorCode::Unavailable)}
     fn dismiss(&self)->Result<(),WireErrorCode> {crate::app::window_manager::hide_window_cmd(app().ok_or(WireErrorCode::Unavailable)?.clone()).map_err(|_|WireErrorCode::Unavailable)}
@@ -437,6 +451,25 @@ impl DesktopHost {
         let status:ServiceStatus=client.call(Method::ServiceStatus,serde_json::json!({}),"ServiceStatus").await.map_err(|_|failed())?;
         if status.mode!=HostMode::Service {return Err(failed());} Ok(client)
     }
+    pub async fn copy_with_windows_target(&self,mut params:DesktopCopyParams,target:Option<WindowsPasteTarget>)->Result<OperationResult,String> {
+        if params.expected_paste_target.is_some() || (!params.paste && target.is_some()) {
+            return Err("WindowsPasteTargetUnavailable".into());
+        }
+        if cfg!(target_os="windows") && params.paste && target.is_none() {
+            return Err("WindowsPasteTargetUnavailable".into());
+        }
+        if !cfg!(target_os="windows") && target.is_some() {return Err("WindowsPasteTargetUnavailable".into());}
+        let mut client=self.service_client().await?;
+        if client.hello.state.service_instance_id!=self.instance()? || params.service_instance_id!=self.instance()? {
+            return Err("ClipboardHostInstanceChanged".into());
+        }
+        if target.is_some() {
+            let build=dzc_protocol::build_info::BuildInfo::current_with_host(dzc_protocol::build_info::Component::Desktop,dzc_core::api::DATABASE_SCHEMA_VERSION);
+            client.require_windows_bound_paste(&build).await.map_err(|_|"ClipboardHostCapabilityUnavailable".to_owned())?;
+        }
+        params.expected_paste_target=target;
+        client.call(Method::DesktopClipboardCopy,params,"OperationResult").await.map_err(remote_error)
+    }
     pub async fn call<T:DeserializeOwned>(&self,method:Method,params:impl Serialize,schema:&str)->Result<T,String> {
         if let Some(host)=self.embedded()? {
             return dispatch_embedded(&host,method,params);
@@ -525,7 +558,7 @@ impl DesktopHost {
         hosted(result,&state.service_instance_id).map(Some)
     }
     pub async fn begin_generated(&self)->Result<Option<GeneratedUpload>,String> {
-        self.begin_upload(false,None).await
+        self.begin_upload(false,None,None).await
     }
     pub(crate) async fn begin_generated_for_snapshot(&self,instance:&str,epoch:u64)->Result<Option<GeneratedUpload>,String> {
         if self.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
@@ -534,18 +567,24 @@ impl DesktopHost {
         if self.instance()?!=instance {return Err("ClipboardHostInstanceChanged".into());}
         let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,request,"CaptureBeginResult").await.map_err(remote_error)?;
         check_queue_state(instance,epoch,&result.state.service_instance_id,result.state.privacy_epoch)?;
-        Ok(result.capture_id.map(|id|GeneratedUpload{client,id}))
+        Ok(result.capture_id.map(|id|GeneratedUpload{client,id,windows_paste_bound:false}))
     }
-    pub async fn begin_generated_copy(&self,epoch:Option<u64>)->Result<GeneratedUpload,String> {
-        self.begin_upload(true,epoch).await?.ok_or_else(failed)
+    pub async fn begin_generated_copy(&self,epoch:Option<u64>,target:Option<WindowsPasteTarget>)->Result<GeneratedUpload,String> {
+        self.begin_upload(true,epoch,target).await?.ok_or_else(failed)
     }
-    async fn begin_upload(&self,copy_to_clipboard:bool,epoch:Option<u64>)->Result<Option<GeneratedUpload>,String> {
+    async fn begin_upload(&self,copy_to_clipboard:bool,epoch:Option<u64>,target:Option<WindowsPasteTarget>)->Result<Option<GeneratedUpload>,String> {
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
         if copy_to_clipboard {client.require_generated_copy().await.map_err(|_|"ClipboardHostCapabilityUnavailable".to_owned())?;}
+        let windows_paste_bound=target.is_some();
+        if windows_paste_bound {
+            if !cfg!(target_os="windows") || !copy_to_clipboard {return Err("WindowsPasteTargetUnavailable".into());}
+            let build=dzc_protocol::build_info::BuildInfo::current_with_host(dzc_protocol::build_info::Component::Desktop,dzc_core::api::DATABASE_SCHEMA_VERSION);
+            client.require_windows_bound_paste(&build).await.map_err(|_|"ClipboardHostCapabilityUnavailable".to_owned())?;
+        }
         let state=client.hello.state.clone();
-        let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:epoch.unwrap_or(state.privacy_epoch),copy_to_clipboard:Some(copy_to_clipboard)},"CaptureBeginResult").await.map_err(remote_error)?;
-        Ok(result.capture_id.map(|id|GeneratedUpload{client,id}))
+        let result:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:state.service_instance_id,expected_epoch:epoch.unwrap_or(state.privacy_epoch),copy_to_clipboard:Some(copy_to_clipboard),expected_paste_target:target},"CaptureBeginResult").await.map_err(remote_error)?;
+        Ok(result.capture_id.map(|id|GeneratedUpload{client,id,windows_paste_bound}))
     }
     pub async fn mutation(&self,mut request:DesktopMutationParams,expected:Option<&str>)->Result<Option<i64>,String> {
         self.check_instance(request.id,expected)?;

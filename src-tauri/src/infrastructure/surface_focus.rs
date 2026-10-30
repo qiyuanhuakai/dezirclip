@@ -72,6 +72,14 @@ fn wait_for_focus(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RestoreForeground { None, Owned, Target, External }
+#[cfg(any(target_os = "windows", test))]
+fn capture_window(foreground: usize, external_identity_valid: bool, previous: usize) -> usize {
+    if external_identity_valid { foreground } else { previous }
+}
+#[cfg(any(target_os = "windows", test))]
+fn focus_root_matches(expected_root: usize, focus: usize, focus_valid: bool, focus_root: usize) -> bool {
+    expected_root != 0 && focus != 0 && focus_valid && focus_root == expected_root
+}
 impl RestoreForeground {
     pub fn label(self) -> &'static str {
         match self { Self::None => "none", Self::Owned => "owned", Self::Target => "target", Self::External => "external" }
@@ -95,7 +103,7 @@ fn restore_until(
         if now() >= deadline { return Err("SurfaceFocusRestoreFailed".to_owned()); }
         Ok(())
     };
-    let mut activated = false;
+    let mut attempted = false;
     let mut previous = None;
     let mut diagnostics = 0;
     loop {
@@ -111,9 +119,10 @@ fn restore_until(
         match foreground {
             RestoreForeground::Target => return Ok(()),
             RestoreForeground::External => return Err("SurfaceFocusChanged".into()),
-            RestoreForeground::Owned if !activated => {
+            RestoreForeground::Owned if !attempted => {
                 check()?;
-                activated = activate()?;
+                attempted = true;
+                let _ = activate()?;
                 check()?;
             }
             RestoreForeground::None | RestoreForeground::Owned => {}
@@ -198,6 +207,8 @@ pub struct ManagedActivation {
 #[derive(Debug)]
 pub struct Target {
     window: usize,
+    #[cfg(target_os = "windows")]
+    root_window: usize,
     process: Process,
     thread: u32,
     request_clock: std::sync::OnceLock<RequestClock>,
@@ -295,6 +306,24 @@ impl Target {
     pub fn is_current(&self) -> bool {
         native::is_current(self)
     }
+    pub(crate) fn windows_paste_target(&self) -> Option<dzc_host::wire::WindowsPasteTarget> {
+        #[cfg(target_os = "windows")]
+        { Some(dzc_host::wire::WindowsPasteTarget {
+            hwnd: self.window.to_string(), root_hwnd: self.root_window.to_string(),
+            pid: self.process.pid, thread_id: self.thread,
+            creation_time_100ns: self.process.started.to_string(),
+        }) }
+        #[cfg(target_os = "linux")]
+        { None }
+    }
+    #[cfg(target_os = "windows")]
+    pub(in crate::infrastructure) fn windows_handle(&self) -> windows::Win32::Foundation::HWND {
+        windows::Win32::Foundation::HWND(self.window as *mut _)
+    }
+    #[cfg(target_os = "windows")]
+    pub(in crate::infrastructure) fn windows_identity_current(&self) -> bool {
+        native::identity_matches(self, false)
+    }
     pub fn context_current(&self) -> bool {
         native::context_current(self)
     }
@@ -381,16 +410,21 @@ mod native {
         Foundation::HWND,
         UI::WindowsAndMessaging::{
             GetForegroundWindow, GetWindowThreadProcessId, IsWindow, IsWindowVisible,
-            AllowSetForegroundWindow, SetForegroundWindow,
+            AllowSetForegroundWindow, SetForegroundWindow, GetAncestor, GA_ROOT,
+            GetGUIThreadInfo, GUITHREADINFO,
         },
     };
     fn hwnd(window: usize) -> HWND {
         HWND(window as *mut _)
     }
     fn identity(window: usize) -> Result<(Process, u32), String> {
+        window_identity(window, true)
+    }
+    fn window_identity(window: usize, require_visible: bool) -> Result<(Process, u32), String> {
         if window == 0
             || !unsafe {
-                IsWindow(Some(hwnd(window))).as_bool() && IsWindowVisible(hwnd(window)).as_bool()
+                IsWindow(Some(hwnd(window))).as_bool()
+                    && (!require_visible || IsWindowVisible(hwnd(window)).as_bool())
             }
         {
             return Err("SurfaceTargetUnavailable".into());
@@ -403,7 +437,19 @@ mod native {
         Ok((process(pid)?, thread))
     }
     fn valid(target: &Target) -> bool {
-        identity(target.window).ok() == Some((target.process, target.thread))
+        identity_matches(target, true)
+    }
+    pub(super) fn identity_matches(target: &Target, require_visible: bool) -> bool {
+        window_identity(target.window, require_visible).ok() == Some((target.process, target.thread))
+            && target.root_window != 0
+            && unsafe { GetAncestor(hwnd(target.window), GA_ROOT).0 as usize } == target.root_window
+    }
+    fn input_focus_matches(target: &Target) -> bool {
+        let mut info = GUITHREADINFO { cbSize: std::mem::size_of::<GUITHREADINFO>() as u32, ..Default::default() };
+        if unsafe { GetGUIThreadInfo(target.thread, &mut info) }.is_err() { return false; }
+        focus_root_matches(target.root_window, info.hwndFocus.0 as usize,
+            unsafe { IsWindow(Some(info.hwndFocus)).as_bool() },
+            unsafe { GetAncestor(info.hwndFocus, GA_ROOT).0 as usize })
     }
     fn current() -> usize {
         unsafe { GetForegroundWindow().0 as usize }
@@ -411,25 +457,26 @@ mod native {
     pub(super) fn capture() -> Result<Target, String> {
         use std::sync::atomic::Ordering;
         let current = current();
-        let window = if identity(current).is_ok() {
-            current
-        } else {
-            crate::global_state::LAST_ACTIVE_HWND.load(Ordering::Acquire)
-        };
+        let window = capture_window(current, identity(current).is_ok(),
+            crate::global_state::LAST_ACTIVE_HWND.load(Ordering::Acquire));
         if crate::infrastructure::windows_api::window_tracker::is_system_focus_window(hwnd(window))
         {
             return Err("SurfaceTargetUnavailable".into());
         }
         let (process, thread) = identity(window)?;
-        Ok(Target {
+        let target = Target {
             window,
+            root_window: unsafe { GetAncestor(hwnd(window), GA_ROOT).0 as usize },
             process,
             thread,
             request_clock: std::sync::OnceLock::new(),
-        })
+        };
+        if !valid(&target) { return Err("SurfaceTargetUnavailable".into()); }
+        Ok(target)
     }
     pub(super) fn is_current(target: &Target) -> bool {
-        valid(target) && current() == target.window
+        valid(target) && current() == target.window && input_focus_matches(target)
+            && valid(target) && current() == target.window
     }
     pub(super) fn context_current(target: &Target) -> bool {
         if !valid(target) {
@@ -462,7 +509,9 @@ mod native {
     fn restore_foreground(target: &Target) -> RestoreForeground {
         let window = current();
         if window == 0 { return RestoreForeground::None; }
-        if window == target.window { return RestoreForeground::Target; }
+        if window == target.window {
+            return if input_focus_matches(target) { RestoreForeground::Target } else { RestoreForeground::None };
+        }
         let mut pid = 0;
         unsafe { GetWindowThreadProcessId(hwnd(window), Some(&mut pid)); }
         if ours(pid) { RestoreForeground::Owned } else { RestoreForeground::External }
@@ -479,10 +528,7 @@ mod native {
             if !allowed() { return Err("SurfaceDisplayCancelled".into()); }
             if !valid(target) { return Err("SurfaceTargetChanged".into()); }
             if Instant::now() >= deadline { return Err("SurfaceFocusRestoreFailed".into()); }
-            if !unsafe { SetForegroundWindow(hwnd(target.window)).as_bool() } {
-                return Err("SurfaceFocusRestoreFailed".into());
-            }
-            Ok(true)
+            Ok(unsafe { SetForegroundWindow(hwnd(target.window)).as_bool() })
         }, diagnostic, Instant::now, std::thread::sleep)
     }
 }
@@ -687,18 +733,32 @@ mod tests {
         assert_eq!(calls.get(), 1);
     }
     #[test]
-    fn an_activation_recheck_that_makes_no_write_does_not_consume_the_single_attempt() {
-        let start = Instant::now();
-        let clock = std::cell::Cell::new(start);
-        let calls = std::cell::Cell::new(0);
-        let mut states = [RestoreForeground::Owned, RestoreForeground::None,
-            RestoreForeground::Owned, RestoreForeground::Target].into_iter();
-        restore_until(start + Duration::from_secs(5), || true, || true,
-            || Ok(states.next().unwrap()), || {
-                calls.set(calls.get() + 1);
-                Ok(calls.get() == 2)
-            }, |_| {}, || clock.get(), |wait| clock.set(clock.get() + wait)).unwrap();
-        assert_eq!(calls.get(), 2);
+    fn a_false_activation_is_not_retried_and_only_observation_can_confirm_success() {
+        for (last, expected) in [
+            (RestoreForeground::Owned, Err("SurfaceFocusRestoreFailed".to_owned())),
+            (RestoreForeground::Target, Ok(())),
+            (RestoreForeground::External, Err("SurfaceFocusChanged".to_owned())),
+        ] {
+            let start = Instant::now();
+            let clock = std::cell::Cell::new(start);
+            let calls = std::cell::Cell::new(0);
+            let observations = std::cell::Cell::new(0);
+            let result = restore_until(start + Duration::from_millis(150), || true, || true,
+                || { let n = observations.get(); observations.set(n + 1); Ok(if n == 0 { RestoreForeground::Owned } else { last }) },
+                || { calls.set(calls.get() + 1); Ok(false) }, |_| {},
+                || clock.get(), |wait| clock.set(clock.get() + wait));
+            assert_eq!(result, expected);
+            assert_eq!(calls.get(), 1, "an unsuccessful or skipped activation attempt is never repeated");
+        }
+    }
+    #[test]
+    fn foreground_without_a_valid_focus_descendant_is_not_a_paste_target() {
+        assert!(focus_root_matches(17, 17, true, 17));
+        assert!(focus_root_matches(17, 29, true, 17));
+        assert!(!focus_root_matches(17, 29, true, 31));
+        assert!(!focus_root_matches(17, 0, false, 17));
+        assert!(!focus_root_matches(17, 29, false, 17));
+        assert!(!focus_root_matches(0, 29, true, 0));
     }
     #[test]
     fn restore_rejects_external_or_changed_targets_without_activation() {
@@ -709,6 +769,24 @@ mod tests {
         assert_eq!(restore_until(start + Duration::from_secs(5), || true, || false,
             || panic!("changed identity is rejected before observation"), || panic!("changed identity cannot activate"), |_| {},
             || start, |_| panic!("changed identity cannot wait")).unwrap_err(), "SurfaceTargetChanged");
+    }
+    #[test]
+    fn capture_uses_the_current_external_origin_or_the_previous_external_for_owned_ui() {
+        assert_eq!(capture_window(41, true, 17), 41, "a global paste must ignore stale previous focus");
+        assert_eq!(capture_window(41, false, 17), 17, "owned UI must keep its earlier external target");
+        assert_eq!(capture_window(0, false, 17), 17);
+        assert_eq!(capture_window(41, false, 0), 0, "the caller must reject an absent previous identity");
+    }
+    #[test]
+    fn a_third_party_after_the_single_restore_cancels_without_another_activation() {
+        let start = Instant::now();
+        let clock = std::cell::Cell::new(start);
+        let calls = std::cell::Cell::new(0);
+        let mut observations = [RestoreForeground::Owned, RestoreForeground::External].into_iter();
+        assert_eq!(restore_until(start + Duration::from_millis(150), || true, || true,
+            || Ok(observations.next().unwrap()), || { calls.set(calls.get() + 1); Ok(true) }, |_| {},
+            || clock.get(), |wait| clock.set(clock.get() + wait)).unwrap_err(), "SurfaceFocusChanged");
+        assert_eq!(calls.get(), 1);
     }
     #[test]
     fn restore_deadline_and_cancellation_prevent_late_activation_or_success() {
@@ -795,9 +873,22 @@ mod tests {
     }
     #[test]
     fn a_cancelled_or_expired_focus_wait_never_queries_native_state() {
-        let target = Target { window: 1, process: Process { pid: 2, started: 3 }, thread: 4, request_clock: std::sync::OnceLock::new() };
+        let target = Target { window: 1, #[cfg(target_os = "windows")] root_window: 1,
+            process: Process { pid: 2, started: 3 }, thread: 4, request_clock: std::sync::OnceLock::new() };
         assert_eq!(target.wait_managed_focus(10, Instant::now() + Duration::from_secs(5), || false).unwrap_err(), "SurfaceDisplayCancelled");
         assert_eq!(target.wait_managed_focus(10, Instant::now(), || true).unwrap_err(), "SurfaceFocusUnavailable");
+    }
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn exported_paste_identity_is_the_captured_tuple_without_native_recapture() {
+        let target = Target { window: 17, root_window: 13, process: Process { pid: 29, started: 133700000000000001 },
+            thread: 31, request_clock: std::sync::OnceLock::new() };
+        let descriptor = target.windows_paste_target().unwrap();
+        assert_eq!(descriptor.hwnd, "17");
+        assert_eq!(descriptor.root_hwnd, "13");
+        assert_eq!(descriptor.pid, 29);
+        assert_eq!(descriptor.thread_id, 31);
+        assert_eq!(descriptor.creation_time_100ns, "133700000000000001");
     }
     #[test]
     fn focus_observed_at_or_after_the_original_deadline_is_rejected() {

@@ -115,3 +115,78 @@ pub fn paste() -> PlatformResult<()> {
     }
     Ok(())
 }
+
+
+#[cfg(any(feature = "ipc", test))]
+fn partial_ctrl_v_releases(accepted: usize) -> &'static [u16] {
+    match accepted { 1 | 3 => &[0x11], 2 => &[0x56,0x11], _ => &[] }
+}
+#[cfg(any(feature = "ipc", test))]
+pub(super) fn guarded_ctrl_v(mut current: impl FnMut() -> PlatformResult<()>, send: impl FnOnce() -> usize,
+    mut release: impl FnMut(&[u16])) -> PlatformResult<()> {
+    current()?;
+    let accepted=send();
+    let after=current();
+    if accepted != 4 {
+        let keys=partial_ctrl_v_releases(accepted);
+        if !keys.is_empty() {release(keys);}
+        return Err(PlatformError::failed(Capability::AutoPaste));
+    }
+    after
+}
+#[cfg(feature = "ipc")]
+pub(super) fn paste_bound(mut current: impl FnMut() -> PlatformResult<()>) -> PlatformResult<()> {
+    if !paste_probe().is_available() {
+        return Err(PlatformError::unsupported(Capability::AutoPaste,UnsupportedReason::NoGraphicalSession));
+    }
+    let key = |code,up| INPUT { r#type:INPUT_KEYBOARD,Anonymous:INPUT_0 {ki:KEYBDINPUT {
+        wVk:VIRTUAL_KEY(code),dwFlags:if up {KEYEVENTF_KEYUP}else{KEYBD_EVENT_FLAGS(0)},..Default::default()
+    }}};
+    let inputs=[key(0x11,false),key(0x56,false),key(0x56,true),key(0x11,true)];
+    if [0x10,0x11,0x12,0x5b,0x5c,0x56].into_iter().any(|code|unsafe {::windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(code)<0}) {
+        return Err(PlatformError::failed(Capability::AutoPaste));
+    }
+    guarded_ctrl_v(&mut current,
+        ||unsafe {SendInput(&inputs,std::mem::size_of::<INPUT>() as i32)} as usize,
+        |codes| {
+            // Only this attempt's accepted prefix may need key-up cleanup.
+            let releases:Vec<_>=codes.iter().map(|code|key(*code,true)).collect();
+            unsafe {SendInput(&releases,std::mem::size_of::<INPUT>() as i32)};
+        })
+}
+#[cfg(test)]
+mod bound_input_tests {
+    use super::*;
+    #[test]
+    fn pre_and_post_guards_never_recapture_or_retry_input() {
+        use std::cell::Cell;
+        for fail_at in [Some(0),Some(1),None] {
+            let guards=Cell::new(0);let sends=Cell::new(0);let releases=Cell::new(0);
+            let result=guarded_ctrl_v(|| {
+                let index=guards.get();guards.set(index+1);
+                if fail_at==Some(index) {Err(PlatformError::failed(Capability::AutoPaste))}else{Ok(())}
+            },||{sends.set(sends.get()+1);4},|_|releases.set(releases.get()+1));
+            assert_eq!(result.is_ok(),fail_at.is_none());
+            assert_eq!(sends.get(),if fail_at==Some(0){0}else{1});
+            assert_eq!(releases.get(),0);
+        }
+    }
+    #[test]
+    fn partial_batch_only_releases_owned_prefix_once_without_new_paste() {
+        for accepted in 0..4 {
+            let mut cleanup=Vec::new();let calls=std::cell::Cell::new(0);
+            assert!(guarded_ctrl_v(||Ok(()),||{calls.set(calls.get()+1);accepted},|keys|cleanup.extend_from_slice(keys)).is_err());
+            assert_eq!(calls.get(),1);
+            assert_eq!(cleanup.as_slice(),partial_ctrl_v_releases(accepted));
+        }
+    }
+    #[test]
+    fn partial_ctrl_v_cleanup_contains_only_this_prefix_unreleased_keys() {
+        assert!(partial_ctrl_v_releases(0).is_empty());
+        assert_eq!(partial_ctrl_v_releases(1),&[0x11][..]);
+        assert_eq!(partial_ctrl_v_releases(2),&[0x56,0x11][..]);
+        assert_eq!(partial_ctrl_v_releases(3),&[0x11][..]);
+        assert!(partial_ctrl_v_releases(4).is_empty());
+        assert!(partial_ctrl_v_releases(5).is_empty());
+    }
+}

@@ -4,6 +4,7 @@ use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
+use crate::infrastructure::surface_focus::Target;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 #[cfg(target_os = "windows")]
@@ -11,18 +12,11 @@ use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 #[cfg(target_os = "windows")]
 use std::sync::OnceLock;
 use tauri::{Emitter, Manager, State};
 use urlencoding::decode;
-#[cfg(target_os = "windows")]
-use windows::Win32::Foundation::HWND;
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Threading::AttachThreadInput;
-#[cfg(target_os = "windows")]
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetForegroundWindow,
-};
 
 const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
@@ -124,6 +118,30 @@ pub async fn copy_to_clipboard(
     app_handle: tauri::AppHandle,
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
+    content: String,
+    content_type: String,
+    paste: bool,
+    id: i64,
+    delete_after_use: bool,
+    paste_with_format: Option<bool>,
+    move_to_top: Option<bool>,
+    paste_image_as_base64: Option<bool>,
+    expected_privacy_epoch: Option<u64>,
+    derived_from_id: Option<i64>,
+    expected_host_instance_id:Option<String>,
+) -> AppResult<()> {
+    let paste_target = capture_paste_target(paste)?;
+    copy_to_clipboard_bound(
+        app_handle, state, session, content, content_type, paste, id, delete_after_use,
+        paste_with_format, move_to_top, paste_image_as_base64, expected_privacy_epoch,
+        derived_from_id, expected_host_instance_id, paste_target,
+    ).await
+}
+
+pub(crate) async fn copy_to_clipboard_bound(
+    app_handle: tauri::AppHandle,
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
     mut content: String,
     mut content_type: String,
     paste: bool,
@@ -135,6 +153,7 @@ pub async fn copy_to_clipboard(
     expected_privacy_epoch: Option<u64>,
     derived_from_id: Option<i64>,
     expected_host_instance_id:Option<String>,
+    paste_target: Option<Arc<Target>>,
 ) -> AppResult<()> {
     if paste && dzc_platform::runtime::is_native_wayland() {
         return Err(AppError::Validation("wayland_interaction_unavailable".into()));
@@ -143,20 +162,24 @@ pub async fn copy_to_clipboard(
     let source_id=if id!=0 {id}else{derived_from_id.unwrap_or(0)};
     bridge.check_instance(source_id,expected_host_instance_id.as_deref()).map_err(AppError::Validation)?;
     if bridge.embedded().map_err(AppError::Validation)?.is_none() {
-        if paste {handle_window_focus_for_paste(&app_handle).await?;}
+        if paste {handle_window_focus_for_paste(&app_handle, paste_target.as_ref()).await?;}
         if source_id==0 {
-            let upload=bridge.begin_generated_copy(expected_privacy_epoch).await.map_err(AppError::Validation)?;
+            let upload=bridge.begin_generated_copy(expected_privacy_epoch,
+                paste_target.as_deref().and_then(Target::windows_paste_target)).await.map_err(AppError::Validation)?;
             let body=generated_copy_body(&content,&content_type,paste_image_as_base64.unwrap_or(false))?;
+            if paste {check_paste_target(paste_target.as_deref())?;}
             upload.finish_copy(body,paste).await.map_err(AppError::Validation)?;
             if paste {play_paste_sound_if_enabled(&app_handle);}
             return Ok(());
         }
         let epoch=expected_privacy_epoch.unwrap_or(state.history_service().runtime_snapshot(Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch);
-        let _:dzc_host::wire::OperationResult=bridge.call(dzc_host::wire::Method::DesktopClipboardCopy,dzc_host::wire::DesktopCopyParams {
+        if paste {check_paste_target(paste_target.as_deref())?;}
+        let result=bridge.copy_with_windows_target(dzc_host::wire::DesktopCopyParams {
             id:source_id,service_instance_id:bridge.instance().map_err(AppError::Validation)?,expected_epoch:epoch,reveal:expected_privacy_epoch.is_some(),paste,
             with_format:paste_with_format,derived_text:derived_from_id.filter(|_|id==0).map(|_|content.clone()),image_as_base64:paste_image_as_base64,
-            delete_after_use:Some(delete_after_use),move_to_top,
-        },"OperationResult").await.map_err(AppError::Validation)?;
+            delete_after_use:Some(delete_after_use),move_to_top,expected_paste_target:None,
+        },paste_target.as_deref().and_then(Target::windows_paste_target)).await.map_err(AppError::Validation)?;
+        if !result.performed {return Err(AppError::Internal("Clipboard copy was not performed".into()));}
         if paste {play_paste_sound_if_enabled(&app_handle);}
         return Ok(());
     }
@@ -229,7 +252,7 @@ pub async fn copy_to_clipboard(
 
     // 1. Handle Window Visibility and Focus
     if paste {
-        handle_window_focus_for_paste(&app_handle).await?;
+        handle_window_focus_for_paste(&app_handle, paste_target.as_ref()).await?;
     }
 
     // 2. For image-to-Base64 and OCR-paste paths, synchronously insert the resulting
@@ -288,6 +311,7 @@ pub async fn copy_to_clipboard(
             Some(&content),
             &effective_content_type,
             move_to_top,
+            paste_target.as_deref(),
         )
         .await?;
     }
@@ -319,30 +343,56 @@ fn generated_copy_body(content:&str,kind:&str,image_as_text:bool)->AppResult<dzc
     Ok(dzc_host::wire::GeneratedBody{kind:kind.into(),text,html:None})
 }
 
-async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResult<()> {
-    let quick_paste_was_focused = hide_quick_paste_before_paste(app_handle).await;
+pub(crate) fn capture_paste_target(paste: bool) -> AppResult<Option<Arc<Target>>> {
+    if !paste { return Ok(None); }
+    #[cfg(target_os = "windows")]
+    { Target::capture().map(|target| Some(Arc::new(target))).map_err(AppError::Internal) }
+    #[cfg(target_os = "linux")]
+    { Ok(None) }
+}
 
-    // 1. Only restore focus if our window actually took focus; avoids unnecessary focus flips
-    // that can force fullscreen apps into windowed mode.
-    if !quick_paste_was_focused && crate::IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed) {
-        let _ = restore_focus_before_paste(app_handle).await;
+pub(crate) fn check_paste_target(target: Option<&Target>) -> AppResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        if !target.is_some_and(Target::is_current) {
+            return Err(AppError::Internal("Paste target changed or unavailable".into()));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    let _ = target;
+    Ok(())
+}
+
+async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle, target: Option<&Arc<Target>>) -> AppResult<()> {
+    let quick_paste_was_visible = hide_quick_paste_before_paste(app_handle);
+
+    #[cfg(target_os = "windows")]
+    restore_focus_before_paste(target).await?;
+    #[cfg(target_os = "linux")]
+    if quick_paste_was_visible || crate::IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed) {
+        let _ = restore_focus_before_paste(target).await;
+    }
+    if quick_paste_was_visible {
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     }
 
-    // 2. Then handle the specific visibility logic based on pinned state
     if crate::WINDOW_PINNED.load(Ordering::Relaxed) {
-        // In pinned mode, stay visible but ensure window does NOT have focus
         if let Some(window) = app_handle.get_webview_window("main") {
-            // Make sure the window doesn't steal focus back
             let _ = window.set_focusable(false);
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     } else {
-        // In auto-hide mode, hide the window now
         if let Some(window) = app_handle.get_webview_window("main") {
             let _ = window.hide();
             crate::app::webview_memory::lower_window_memory(&window, "paste-hide");
             // IS_HIDDEN only means "hidden by edge docking"; paste hides should clear it.
-            crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
+            crate::IS_HIDDEN.store(false, Ordering::Relaxed);
+            #[cfg(target_os = "windows")]
+            {
+                let target = target.ok_or_else(|| AppError::Internal("Paste target unavailable".into()))?;
+                crate::infrastructure::windows_api::paste::release_window_keys(target).map_err(AppError::Internal)?;
+            }
+            #[cfg(target_os = "linux")]
             crate::app::window_manager::release_win_keys();
         }
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
@@ -350,78 +400,37 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
     Ok(())
 }
 
-async fn hide_quick_paste_before_paste(app_handle: &tauri::AppHandle) -> bool {
-    let Some(window) = app_handle.get_webview_window("quick-paste") else {
-        return false;
-    };
-    if !window.is_visible().unwrap_or(false) {
-        return false;
-    }
-
+fn hide_quick_paste_before_paste(app_handle: &tauri::AppHandle) -> bool {
+    let Some(window) = app_handle.get_webview_window("quick-paste") else { return false; };
+    if !window.is_visible().unwrap_or(false) { return false; }
     let _ = window.set_focusable(false);
     let _ = window.hide();
     crate::app::webview_memory::lower_window_memory(&window, "quick-paste-hide-before-paste");
-    let _ = restore_focus_before_paste(app_handle).await;
-    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     true
 }
 
-async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult<()> {
-    let last_hwnd_val = crate::LAST_ACTIVE_HWND.load(Ordering::Relaxed);
-    if last_hwnd_val == 0 {
-        return Err(AppError::Internal(
-            "No last active window captured".to_string(),
-        ));
-    }
-
+async fn restore_focus_before_paste(target: Option<&Arc<Target>>) -> AppResult<()> {
     #[cfg(target_os = "windows")]
     {
-        let target_hwnd = HWND(last_hwnd_val as _);
-        unsafe {
-            if !IsWindowVisible(target_hwnd).as_bool() {
-                return Err(AppError::Internal(
-                    "Target window is no longer visible".to_string(),
-                ));
-            }
-
-            let fg_hwnd = GetForegroundWindow();
-            if fg_hwnd.0 != target_hwnd.0 {
-                let fg_thread_id = GetWindowThreadProcessId(fg_hwnd, None);
-                let target_thread_id = GetWindowThreadProcessId(target_hwnd, None);
-
-                if fg_thread_id != 0 && target_thread_id != 0 && fg_thread_id != target_thread_id {
-                    let _ = AttachThreadInput(fg_thread_id, target_thread_id, true);
-                    let _ = SetForegroundWindow(target_hwnd);
-                    if IsIconic(target_hwnd).as_bool() {
-                        let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
-                            target_hwnd,
-                            windows::Win32::UI::WindowsAndMessaging::SW_RESTORE,
-                        );
-                    }
-                    let _ = windows::Win32::UI::WindowsAndMessaging::BringWindowToTop(target_hwnd);
-                    let _ = AttachThreadInput(fg_thread_id, target_thread_id, false);
-                } else {
-                    let _ = SetForegroundWindow(target_hwnd);
-                    if IsIconic(target_hwnd).as_bool() {
-                        let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(
-                            target_hwnd,
-                            windows::Win32::UI::WindowsAndMessaging::SW_RESTORE,
-                        );
-                    }
-                    let _ = windows::Win32::UI::WindowsAndMessaging::BringWindowToTop(target_hwnd);
-                }
-            }
-        }
+        let target = target.cloned().ok_or_else(|| AppError::Internal("Paste target unavailable".into()))?;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(150);
+        let restore = tauri::async_runtime::spawn_blocking(move || {
+            target.restore_if(deadline, || true, |_| {})
+        });
+        tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), restore).await
+            .map_err(|_| AppError::Internal("Paste focus restore timed out".into()))?
+            .map_err(|error| AppError::Internal(error.to_string()))?
+            .map_err(AppError::Internal)
     }
-
     #[cfg(target_os = "linux")]
     {
-        let _ =
-            crate::infrastructure::linux_api::window_tracker::activate_window_focus(last_hwnd_val);
+        let _ = target;
+        let last_window = crate::LAST_ACTIVE_HWND.load(Ordering::Relaxed);
+        if last_window == 0 { return Err(AppError::Internal("No last active window captured".into())); }
+        let _ = crate::infrastructure::linux_api::window_tracker::activate_window_focus(last_window);
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        Ok(())
     }
-
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    Ok(())
 }
 
 fn calculate_content_hash(content: &str) -> (u64, u64) {
@@ -904,15 +913,15 @@ async fn perform_paste_action(
     content: Option<&str>,
     content_type: &str,
     move_to_top: Option<bool>,
+    target: Option<&Target>,
 ) -> AppResult<()> {
     println!(
         "[DEBUG] perform_paste_action: pinned={}",
         crate::WINDOW_PINNED.load(Ordering::Relaxed)
     );
     wait_for_focus_settle().await;
-    recover_focus_if_stolen(app_handle).await;
     let paste_method = resolve_paste_method(state);
-    send_paste_keystroke(&paste_method, content, Some(content_type))?;
+    send_paste_keystroke(target, &paste_method, content, Some(content_type))?;
     hide_window_after_paste(app_handle).await;
     handle_post_paste_actions(app_handle, state, id, delete_after_use, move_to_top)?;
     play_paste_sound_if_enabled(app_handle);
@@ -922,31 +931,6 @@ async fn perform_paste_action(
 
 async fn wait_for_focus_settle() {
     tokio::time::sleep(std::time::Duration::from_millis(40)).await;
-}
-
-#[cfg(target_os = "windows")]
-fn is_main_window_foreground(app_handle: &tauri::AppHandle) -> bool {
-    unsafe {
-        let foreground = GetForegroundWindow();
-        if let Some(window) = app_handle.get_webview_window("main") {
-            if let Ok(hwnd_raw) = window.hwnd() {
-                return foreground.0 == hwnd_raw.0;
-            }
-        }
-    }
-    false
-}
-
-#[cfg(not(target_os = "windows"))]
-fn is_main_window_foreground(_app_handle: &tauri::AppHandle) -> bool {
-    false
-}
-
-async fn recover_focus_if_stolen(app_handle: &tauri::AppHandle) {
-    if is_main_window_foreground(app_handle) {
-        println!("[WARN] Clipboard window STOLE focus back, attempting one last restore...");
-        let _ = restore_focus_before_paste(app_handle).await;
-    }
 }
 
 fn resolve_paste_method(state: &State<'_, DbState>) -> String {
@@ -960,11 +944,12 @@ fn resolve_paste_method(state: &State<'_, DbState>) -> String {
 
 async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
     if crate::WINDOW_PINNED.load(Ordering::Relaxed) {
-        // In pinned mode, keep window non-focusable and restore focus back to last app
+        // Keep the pinned window non-focusable without reactivating a target after input.
         if let Some(window) = app_handle.get_webview_window("main") {
             let _ = window.set_focusable(false);
         }
-        let _ = restore_focus_before_paste(app_handle).await;
+        #[cfg(target_os = "linux")]
+        let _ = restore_focus_before_paste(None).await;
         return;
     }
 
@@ -975,23 +960,29 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
         // IS_HIDDEN only means "hidden by edge docking"; paste hides should clear it.
         crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
         crate::NAVIGATION_ENABLED.store(false, Ordering::Relaxed); // Disable navigation like hide_window_cmd does
+        #[cfg(target_os = "linux")]
         crate::app::window_manager::release_win_keys();
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 }
 
 pub fn send_paste_keystroke(
+    target: Option<&Target>,
     method: &str,
     content: Option<&str>,
     content_type: Option<&str>,
 ) -> AppResult<()> {
     println!("[DEBUG] Sending paste keystroke using method: {}", method);
     #[cfg(target_os = "windows")]
-    crate::infrastructure::windows_api::paste::send_paste(method, content, content_type)
-        .map_err(AppError::Internal)?;
+    {
+        let target = target.ok_or_else(|| AppError::Internal("Paste target unavailable".into()))?;
+        crate::infrastructure::windows_api::paste::send_paste(target, method, content, content_type)
+            .map_err(AppError::Internal)?;
+    }
 
     #[cfg(target_os = "linux")]
     {
+        let _ = target;
         crate::infrastructure::linux_api::paste::simulate_paste_with_method_and_content(
             method,
             content_type,
@@ -1078,6 +1069,10 @@ fn play_paste_sound_if_enabled(app_handle: &tauri::AppHandle) {
 
 #[tauri::command]
 pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
+    let paste_target = match capture_paste_target(true) {
+        Ok(target) => target,
+        Err(error) => { eprintln!("[paste] target capture failed: {error}"); return; }
+    };
     let app_handle_clone = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         let delete_after = {
@@ -1097,7 +1092,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
 
         if let Ok(items) = history {
             if let Some(item) = items.first() {
-                let _ = copy_to_clipboard(
+                let _ = copy_to_clipboard_bound(
                     app_handle_clone.clone(),
                     app_handle_clone.state::<DbState>(),
                     app_handle_clone.state::<SessionHistory>(),
@@ -1112,6 +1107,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
                     None,
                     None,
                     item.host_instance_id.clone(),
+                    paste_target,
                 )
                 .await;
             }
