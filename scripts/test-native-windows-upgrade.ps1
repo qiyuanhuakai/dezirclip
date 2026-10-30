@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('OldToNew', 'PublishedAlphaToAlpha', 'LegacyUninstall', 'OwnedUpgrade', 'OwnedExternalEdit')][string]$Scenario = 'OldToNew',
+    [ValidateSet('OldToNew', 'PublishedAlphaToAlpha', 'LegacyUninstall', 'OwnedUpgrade', 'OwnedExternalEdit', 'DeniedGuiUpgrade')][string]$Scenario = 'OldToNew',
     [string]$OldInstaller = (Join-Path $PSScriptRoot 'DezirClip_0.1.20_x64-setup.exe'),
     [string]$NewInstaller,
     [string]$PreviousCandidate
@@ -41,10 +41,12 @@ foreach ($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win3
     }
 }
 $owned = $Scenario -in @('OwnedUpgrade', 'OwnedExternalEdit')
+$deniedGui = $Scenario -eq 'DeniedGuiUpgrade'
+$candidateInitial = $owned -or $deniedGui
 $publishedAlpha = $Scenario -eq 'PublishedAlphaToAlpha'
 $oldDigest = if ($publishedAlpha) { '31D8B88064E1185C9F74B5FDD327902B9BC860E523B9A5AC0D71620EC7ADBB87' } else { 'D20033124C74BEA451301716AFB46623607602BAE37647748AE7D25AB7DD4B8E' }
-if (-not $owned) { $OldInstaller = Resolve-RunnerFixturePath $OldInstaller -RequireFile }
-if (-not $owned -and (Get-FileHash -LiteralPath $OldInstaller -Algorithm SHA256).Hash -ne $oldDigest) {
+if (-not $candidateInitial) { $OldInstaller = Resolve-RunnerFixturePath $OldInstaller -RequireFile }
+if (-not $candidateInitial -and (Get-FileHash -LiteralPath $OldInstaller -Algorithm SHA256).Hash -ne $oldDigest) {
     throw 'The old installer differs from the explicitly selected pinned published x64 artifact.'
 }
 function Assert-CurrentBuildInfo($Info, [string]$Role, [string]$Version, [string]$Revision) {
@@ -182,11 +184,11 @@ function Assert-Explorer([bool]$RequireUnchanged) {
         throw 'The Explorer process set or start time changed.'
     }
 }
-function Run-Installer([string]$Path, [string[]]$Arguments, [string]$ExpectedSha256) {
+function Run-Installer([string]$Path, [string[]]$Arguments, [string]$ExpectedSha256, [switch]$ExpectFailure) {
     $resolved = Resolve-RunnerFixturePath $Path -RequireFile
     $digest = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash
     if ($ExpectedSha256 -and $digest -ne $ExpectedSha256) { throw 'Installer changed after its provenance was validated.' }
-    $record = [ordered]@{ path = $resolved; sha256 = $digest; expectedSha256 = $ExpectedSha256; arguments = $Arguments; startedAt = [DateTime]::UtcNow.ToString('o'); status = 'running' }
+    $record = [ordered]@{ path = $resolved; sha256 = $digest; expectedSha256 = $ExpectedSha256; arguments = $Arguments; expectedFailure = $ExpectFailure.IsPresent; startedAt = [DateTime]::UtcNow.ToString('o'); status = 'running' }
     $runEvidence.installers += $record
     Save-RunEvidence
     $process = $null
@@ -195,13 +197,87 @@ function Run-Installer([string]$Path, [string[]]$Arguments, [string]$ExpectedSha
         $record.processId = $process.Id
         if (-not $process.WaitForExit(120000)) { throw 'Fixture installer timed out.' }
         $record.exitCode = $process.ExitCode
-        if ($process.ExitCode -ne 0) { throw "Installer failed with $($process.ExitCode)." }
+        if ($ExpectFailure) {
+            if ($process.ExitCode -notin @(1, 2)) { throw "Expected an ordinary NSIS abort (1 or 2), received $($process.ExitCode)." }
+        } elseif ($process.ExitCode -ne 0) { throw "Installer failed with $($process.ExitCode)." }
         $record.status = 'passed'
     } catch { $record.status = 'failed'; $record.error = $_.Exception.Message; throw }
     finally {
         if ($process -and -not $process.HasExited) { $process.Kill($true); $process.WaitForExit(20000) | Out-Null }
         $record.finishedAt = [DateTime]::UtcNow.ToString('o')
         Save-RunEvidence
+    }
+}
+function Snapshot-RequiredInstalledFiles {
+    foreach ($name in @('dezirclip.exe', 'dzc.exe', 'dzc-service.exe', 'uninstall.exe')) {
+        $path = Resolve-RunnerFixturePath (Join-Path $installDirectory $name) -RequireFile
+        [pscustomobject][ordered]@{ name = $name; bytes = (Get-Item -LiteralPath $path).Length; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+    }
+}
+function Assert-DeniedGuiUpgrade($Manifest) {
+    Assert-InstalledCandidate $Manifest 'denied-before'
+    $application = Resolve-RunnerFixturePath (Join-Path $installDirectory 'dezirclip.exe') -RequireFile
+    $originalAcl = Get-Acl -LiteralPath $application
+    $accessSection = [System.Security.AccessControl.AccessControlSections]::Access
+    $originalAccessSddl = $originalAcl.GetSecurityDescriptorSddlForm($accessSection)
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    try { $sid = $identity.User } finally { $identity.Dispose() }
+    $before = @(Snapshot-RequiredInstalledFiles)
+    $settings = @(Snapshot-Settings)
+    $receipt = [ordered]@{ schemaVersion = 1; kind = 'required-gui-write-denied'; status = 'running'; application = $application; sid = $sid.Value; accessBefore = $originalAccessSddl; filesBefore = $before; settingsBefore = $settings; aclRestored = $false }
+    $aclAttempted = $false
+    $completed = $false
+    $installerCount = $runEvidence.installers.Count
+    try {
+        $deniedAcl = Get-Acl -LiteralPath $application
+        $rule = [System.Security.AccessControl.FileSystemAccessRule]::new($sid, [System.Security.AccessControl.FileSystemRights]::WriteData, [System.Security.AccessControl.AccessControlType]::Deny)
+        $deniedAcl.AddAccessRule($rule)
+        $aclAttempted = $true
+        Set-Acl -LiteralPath $application -AclObject $deniedAcl
+        $receipt.accessDenied = (Get-Acl -LiteralPath $application).GetSecurityDescriptorSddlForm($accessSection)
+        $stream = $null
+        try {
+            $stream = [System.IO.FileStream]::new($application, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite)
+            throw 'Required GUI data-write denial was not effective.'
+        } catch {
+            $probeException = $_.Exception
+            while ($probeException.InnerException) { $probeException = $probeException.InnerException }
+            $receipt.writeProbe = @{ exception = $probeException.GetType().FullName; hresult = $probeException.HResult; message = $probeException.Message }
+            if ($probeException -isnot [System.UnauthorizedAccessException] -or $probeException.HResult -ne -2147024891) { throw }
+        } finally { if ($stream) { $stream.Dispose() } }
+        Run-Installer -Path $NewInstaller -Arguments @('/S', '/UPDATE', "/D=$installDirectory") -ExpectedSha256 $Manifest.installerSha256 -ExpectFailure
+        $receipt.installer = $runEvidence.installers[-1]
+        $receipt.filesAfter = @(Snapshot-RequiredInstalledFiles)
+        $receipt.settingsAfter = @(Snapshot-Settings)
+        if ((ConvertTo-Json -InputObject $before -Depth 5 -Compress) -cne (ConvertTo-Json -InputObject $receipt.filesAfter -Depth 5 -Compress)) { throw 'Denied GUI extraction changed a required installed file.' }
+        if ((ConvertTo-Json -InputObject $settings -Depth 6 -Compress) -cne (ConvertTo-Json -InputObject $receipt.settingsAfter -Depth 6 -Compress)) { throw 'Denied GUI extraction changed managed settings.' }
+        $completed = $true
+    } catch {
+        $receipt.error = $_.Exception.ToString()
+        throw
+    } finally {
+        if ($runEvidence.installers.Count -gt $installerCount) { $receipt.installer = $runEvidence.installers[-1] }
+        try {
+            if (-not $receipt.Contains('filesAfter')) { $receipt.filesAfter = @(Snapshot-RequiredInstalledFiles) }
+            if (-not $receipt.Contains('settingsAfter')) { $receipt.settingsAfter = @(Snapshot-Settings) }
+        } catch { $receipt.afterObservationError = $_.Exception.ToString() }
+        try {
+            if ($aclAttempted) {
+                $restore = [System.Security.AccessControl.FileSecurity]::new()
+                $restore.SetSecurityDescriptorSddlForm($originalAccessSddl, $accessSection)
+                Set-Acl -LiteralPath $application -AclObject $restore
+            }
+            $receipt.accessRestored = (Get-Acl -LiteralPath $application).GetSecurityDescriptorSddlForm($accessSection)
+            if ($receipt.accessRestored -cne $originalAccessSddl) { throw 'Required GUI ACL was not restored exactly.' }
+            $receipt.aclRestored = $true
+            if ($completed) { $receipt.status = 'passed' } else { $receipt.status = 'failed' }
+        } catch {
+            $receipt.status = 'failed'
+            $receipt.aclRestoreError = $_.Exception.ToString()
+            throw
+        } finally {
+            $receipt | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $fixtureRoot 'denied-gui-write.json') -Encoding utf8
+        }
     }
 }
 function Get-InstalledApplicationProof([string]$Path, $Manifest) {
@@ -368,9 +444,9 @@ function Assert-Uninstalled {
 try {
     $env:DEZIRCLIP_DB_PATH = Join-Path $profileDirectory 'clipboard.db'
     Initialize-SharedProfile
-    $initial = if ($Scenario -eq 'OwnedUpgrade') { $PreviousCandidate } elseif ($owned) { $NewInstaller } else { $OldInstaller }
+    $initial = if ($Scenario -eq 'OwnedUpgrade') { $PreviousCandidate } elseif ($candidateInitial) { $NewInstaller } else { $OldInstaller }
     if ([string]::IsNullOrWhiteSpace($initial) -or -not (Test-Path -LiteralPath $initial -PathType Leaf)) { throw 'Initial installer fixture is missing.' }
-    $initialDigest = if ($previous) { $previous.installerSha256 } elseif ($owned) { $candidate.installerSha256 } else { $oldDigest }
+    $initialDigest = if ($previous) { $previous.installerSha256 } elseif ($candidateInitial) { $candidate.installerSha256 } else { $oldDigest }
     Run-Installer -Path $initial -Arguments @('/S', "/D=$installDirectory") -ExpectedSha256 $initialDigest
     foreach ($name in @('dezirclip.exe', 'dzc.exe')) {
         if (-not (Test-Path -LiteralPath (Join-Path $installDirectory $name) -PathType Leaf)) { throw 'Initial installed GUI or sidecar is missing.' }
@@ -393,7 +469,10 @@ try {
     $before = @(Snapshot-Settings)
     $beforeJson = $before | ConvertTo-Json -Depth 6
     $beforeJson | Set-Content (Join-Path $fixtureRoot 'settings-before.json')
-    if ($owned) {
+    if ($deniedGui) {
+        Assert-DeniedGuiUpgrade $candidate
+        Assert-Explorer $true
+    } elseif ($owned) {
         $initialManifest = if ($previous) { $previous } else { $candidate }
         Invoke-ActualGui $initialManifest $true ($Scenario -eq 'OwnedExternalEdit') 'initial'
         $acquired = @(Snapshot-Settings)
