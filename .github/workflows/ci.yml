@@ -410,7 +410,11 @@ jobs:
 
   windows-surface-performance:
     name: Optional Windows release Surface comparison
-    if: github.event_name == 'workflow_dispatch' && (inputs.windows_surface_performance == true || inputs.windows_surface_crash_diagnostics == true)
+    if: >-
+      ${{ !cancelled() && github.event_name == 'workflow_dispatch' &&
+          (inputs.windows_surface_crash_diagnostics == true ||
+           (inputs.windows_surface_performance == true &&
+            needs.frontend.result == 'success' && needs.tauri.result == 'success')) }}
     needs: [frontend, tauri]
     runs-on: windows-latest
     timeout-minutes: 150

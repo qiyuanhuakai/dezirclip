@@ -8,7 +8,10 @@ the comparison job.
 
 The separate `windows_surface_crash_diagnostics` dispatch input runs the original
 thirteen release functional checks with no comparison. The two optional modes
-are mutually exclusive. This hosted-runner-only collector uses a new private
+are mutually exclusive. Diagnostic-only dispatches can collect the target crash
+after ordinary checks fail; those failures remain failed. Performance still
+requires successful frontend and backend prerequisites. This hosted-runner-only
+collector uses a new private
 directory and an exclusively created per-application
 [WER LocalDumps configuration](https://learn.microsoft.com/en-us/windows/win32/wer/collecting-user-mode-dumps).
 It preserves existing registry settings, restores only its unchanged owned
