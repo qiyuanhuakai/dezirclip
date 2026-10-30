@@ -150,6 +150,15 @@ The subsequent fixture adds bounded failure cleanup only. Discovery errors stay
 fatal and prevent WebView-policy restoration, while cleanup still attempts only
 already-retained original handles. Failed handle acquisition records PID, exact
 requested access, phase and Windows error; failed memory queries remain null.
+The follow-up ownership fix separates opened handles from authenticated owned
+handles. Only a complete exact-image Desktop bind or a fully read descendant
+tree rooted in that authenticated Desktop authorizes termination of an exact
+retained handle and identity. Rejected or incomplete binds remain failed,
+including a failed open that left no handle. Unvalidated opened handles are
+closed without termination and keep ownership unknown, so WebView-policy
+restoration is blocked. Previously authenticated objects can still be cleaned
+after a later discovery error. Ordinary aa511b CI passed its normal path; that
+result does not exercise or close its rejected-bind P2.
 Node records process exit separately from stdio close. A failed stop request
 still enters a bounded close wait; fallback termination targets only its original
 spawned child. A kill request, destroyed pipe or detached event handle never

@@ -218,6 +218,9 @@ class Native:
         self.user.EnumWindows.restype = W.BOOL
         self.handles = {}
         self.identities = {}
+        self.validated_owned_handles = {}
+        self.binding_attempted_pid = None
+        self.binding_error = None
         self.desktop = None
         self.window_thread_id = self.kernel.GetCurrentThreadId()
         self.focus_messages = deque(maxlen=64)
@@ -349,14 +352,23 @@ class Native:
                 'original_handle_retained': True}
 
     def bind(self, pid):
-        require(self.desktop is None and isinstance(pid, int) and pid > 0, 'One original Desktop binding required')
-        info = self.process(pid)
-        require(info['running'] and Path(info['image']).resolve() == (self.root / 'candidate/dezirclip.exe').resolve(), 'Desktop original image differs')
+        require(self.desktop is None and self.binding_attempted_pid is None and isinstance(pid, int) and pid > 0, 'One original Desktop binding required')
+        self.binding_attempted_pid = pid
+        try:
+            info = self.process(pid)
+            require(info['running'] and Path(info['image']).resolve() == (self.root / 'candidate/dezirclip.exe').resolve(), 'Desktop original image differs')
+        except BaseException as error:
+            self.binding_error = 'Desktop ownership validation failed: ' + str(error)
+            raise
         self.desktop = pid
+        self.validated_owned_handles[pid] = {'handle': self.handles[pid], 'identity': dict(self.identities[pid])}
         return info
 
     def tree(self):
         require(self.desktop, 'Desktop binding required')
+        require(self.validated_owned_handles.get(self.desktop) == {
+            'handle': self.handles.get(self.desktop), 'identity': self.identities.get(self.desktop)},
+            'Desktop original handle was not authenticated')
         snapshot = self.kernel.CreateToolhelp32Snapshot(2, 0)
         require(snapshot and snapshot != ctypes.c_void_p(-1).value, 'Process snapshot unavailable')
         parents = {}
@@ -382,6 +394,12 @@ class Native:
             except RuntimeError:
                 if pid in parents:
                     raise
+        # Opening/querying a process alone never authorizes termination. Promote
+        # descendants only after this anchored tree and its identities validate.
+        for item in result:
+            if item['pid'] in owned:
+                pid = item['pid']
+                self.validated_owned_handles[pid] = {'handle': self.handles[pid], 'identity': dict(self.identities[pid])}
         return result
 
     def observe(self):
@@ -611,9 +629,13 @@ ConvertTo-Json -InputObject $rows -Depth 5 -Compress
         return {'hwnd': window['hwnd'], 'pid': pid, 'elements': json.loads(result.stdout.decode('utf-8-sig') or '[]')}
 
     def cleanup(self):
-        forced, errors, final_processes, unconfirmed = [], [], [], []
+        forced, errors, final_processes, unconfirmed, pending = [], [], [], [], []
+        pending_closed = []
         discovery_complete = True
         deadline = time.monotonic() + 10
+        if getattr(self, 'binding_error', None):
+            discovery_complete = False
+            errors.append(self.binding_error)
         if self.desktop:
             try:
                 self.tree()
@@ -623,6 +645,12 @@ ConvertTo-Json -InputObject $rows -Depth 5 -Compress
         # Discovery failure remains fatal, but cannot skip the original handles
         # already retained before that failure. Never reopen a snapshot-only PID.
         for pid, handle in reversed(list(self.handles.items())):
+            authenticated = getattr(self, 'validated_owned_handles', {}).get(pid)
+            if authenticated != {'handle': handle, 'identity': self.identities.get(pid)}:
+                pending.append(pid)
+                discovery_complete = False
+                errors.append('Unvalidated opened process handle; close only, ownership unknown: pid=' + str(pid))
+                continue
             try:
                 code = W.DWORD()
                 require(self.kernel.GetExitCodeProcess(handle, ctypes.byref(code)), 'Owned original exit state unavailable')
@@ -647,14 +675,17 @@ ConvertTo-Json -InputObject $rows -Depth 5 -Compress
                     require(self.user.DestroyWindow(window), 'Synthetic target close failed')
             except BaseException:
                 errors.append(traceback.format_exc())
-        for handle in self.handles.values():
+        for pid, handle in self.handles.items():
             try:
                 require(self.kernel.CloseHandle(handle), 'Original owned process handle close failed')
+                if pid in pending:
+                    pending_closed.append(pid)
             except BaseException:
                 errors.append(traceback.format_exc())
         receipt = {'remaining_owned_processes': remaining if discovery_complete and not errors else None,
                    'remaining_known_processes': remaining, 'discovery_complete': discovery_complete,
                    'unconfirmed_known_pids': unconfirmed,
+                   'unvalidated_pids': pending, 'unvalidated_handles_closed': pending_closed,
                    'forced_cleanup_pids': forced, 'final_owned_processes': final_processes,
                    'target_closed': not bool(self.user.IsWindow(self.target)),
                    'alternate_target_closed': not bool(self.user.IsWindow(self.alternate)),

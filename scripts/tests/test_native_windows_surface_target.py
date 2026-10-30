@@ -283,6 +283,165 @@ class KeyboardDiagnosticTests(unittest.TestCase):
         self.assertEqual(list(native.callback_errors), [])
 
 
+class OwnershipCleanupTests(unittest.TestCase):
+    def fixture(self, failure=None):
+        class Memory(ctypes.Structure):
+            _fields_ = [('cb', ctypes.c_ulong), ('WorkingSetSize', ctypes.c_size_t), ('PrivateUsage', ctypes.c_size_t)]
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.root, native.desktop, native.target, native.alternate = Path('fake-root'), None, 0, 0
+        native.Memory, native.handles, native.identities, native.validated_owned_handles = Memory, {}, {}, {}
+        native.binding_attempted_pid, native.binding_error = None, None
+        calls, live = [], {500: True, 600: True}
+        expected = str((native.root / 'candidate/dezirclip.exe').resolve())
+
+        def times(handle, created, exited, kernel, user):
+            if failure == 'times': return False
+            created._obj.dwLowDateTime = handle
+            return True
+
+        def code(handle, output):
+            calls.append(('exit', handle))
+            output._obj.value = 259 if live[handle] else 1
+            return True
+
+        def image(handle, flags, name, size):
+            if failure == 'image': return False
+            name.value = expected if failure != 'wrong-image' and handle == 500 else 'unvalidated-image'
+            return True
+
+        def terminate(handle, code):
+            calls.append(('terminate', handle, code)); live[handle] = False; return True
+
+        native.kernel = SimpleNamespace(OpenProcess=lambda access, inherit, pid: pid * 10,
+            GetProcessTimes=times, GetExitCodeProcess=code, QueryFullProcessImageNameW=image,
+            TerminateProcess=terminate, WaitForSingleObject=lambda handle, milliseconds: 0,
+            CloseHandle=lambda handle: calls.append(('close', handle)) or True)
+        native.psapi = SimpleNamespace(GetProcessMemoryInfo=lambda *args: True)
+        native.user = SimpleNamespace(IsWindow=lambda window: False)
+        native.tree = lambda: []
+        return native, calls
+
+    def test_wrong_image_bind_is_close_only_and_cannot_claim_cleanup_or_restore(self):
+        native, calls = self.fixture('wrong-image')
+        with self.assertRaisesRegex(RuntimeError, 'Desktop original image differs'): native.bind(50)
+        self.assertIsNone(native.desktop)
+        self.assertEqual(native.validated_owned_handles, {})
+        saved = []
+        with patch.object(TARGET, 'save', side_effect=lambda path, value: saved.append(value)):
+            with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+        self.assertFalse(any(call[0] == 'terminate' for call in calls))
+        self.assertIn(('close', 500), calls)
+        self.assertIsNone(saved[0]['remaining_owned_processes'])
+        self.assertFalse(saved[0]['discovery_complete'])
+        self.assertEqual(saved[0]['unvalidated_handles_closed'], [50])
+
+    def test_incomplete_first_identity_is_never_authorized_to_terminate(self):
+        for failure, message in [('times', 'process times unavailable'), ('image', 'Owned image unavailable')]:
+            with self.subTest(failure=failure):
+                native, calls = self.fixture(failure)
+                with self.assertRaisesRegex(RuntimeError, message): native.bind(50)
+                self.assertEqual(native.identities, {})
+                self.assertEqual(native.validated_owned_handles, {})
+                with patch.object(TARGET, 'save') as saved:
+                    with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+                self.assertFalse(any(call[0] == 'terminate' for call in calls))
+                self.assertIn(('close', 500), calls)
+                self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_failed_open_retains_failed_binding_even_without_any_opened_handle(self):
+        native, calls = self.fixture()
+        native.kernel.OpenProcess = lambda *args: 0
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot retain'): native.bind(50)
+        self.assertEqual(native.handles, {})
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'ownership validation failed'): native.cleanup()
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+        self.assertFalse(saved.call_args.args[1]['discovery_complete'])
+        self.assertFalse(any(call[0] == 'terminate' for call in calls))
+        with self.assertRaisesRegex(RuntimeError, 'One original Desktop binding'): native.bind(50)
+
+    def test_full_original_bind_authenticates_the_exact_handle_and_identity(self):
+        native, calls = self.fixture()
+        original = native.bind(50)
+        self.assertEqual(native.validated_owned_handles[50], {'handle': 500,
+            'identity': {'image': original['image'], 'creation_time_100ns': original['creation_time_100ns']}})
+        with patch.object(TARGET, 'save'):
+            receipt = native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertEqual(receipt['remaining_owned_processes'], [])
+        self.assertEqual(receipt['unvalidated_pids'], [])
+
+    def test_mixed_authenticated_and_pending_handles_only_terminate_the_authenticated_object(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        native.process(60, phase='tree')
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('discovery failed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'discovery failed'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('close', 600), calls)
+        receipt = saved.call_args.args[1]
+        self.assertEqual(receipt['forced_cleanup_pids'], [50])
+        self.assertEqual(receipt['unvalidated_pids'], [60])
+        self.assertIsNone(receipt['remaining_owned_processes'])
+
+    def test_a_changed_handle_does_not_inherit_an_earlier_authentication(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        native.handles[50] = 600
+        with patch.object(TARGET, 'save'):
+            with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+        self.assertFalse(any(call[0] == 'terminate' for call in calls))
+        self.assertIn(('close', 600), calls)
+
+    def attach_tree(self, native):
+        class Entry(ctypes.Structure):
+            _fields_ = [('dwSize', ctypes.c_ulong), ('th32ProcessID', ctypes.c_ulong), ('th32ParentProcessID', ctypes.c_ulong)]
+        native.ProcessEntry = Entry
+        entries, cursor = [(50, 1), (60, 50)], [0]
+        def fill(output):
+            if cursor[0] >= len(entries): return False
+            output._obj.th32ProcessID, output._obj.th32ParentProcessID = entries[cursor[0]]
+            return True
+        def first(snapshot, output): cursor[0] = 0; return fill(output)
+        def next_entry(snapshot, output): cursor[0] += 1; return fill(output)
+        native.kernel.CreateToolhelp32Snapshot = lambda *args: 900
+        native.kernel.Process32FirstW, native.kernel.Process32NextW = first, next_entry
+        native.tree = TARGET.Native.tree.__get__(native)
+
+    def test_anchored_fully_read_tree_authenticates_descendants_before_known_cleanup(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        self.assertEqual([item['pid'] for item in native.tree()], [50, 60])
+        self.assertEqual(native.validated_owned_handles[60], {'handle': 600, 'identity': dict(native.identities[60])})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('later discovery failed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'later discovery failed'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertIn(('terminate', 600, 1), calls)
+        self.assertEqual(saved.call_args.args[1]['unvalidated_pids'], [])
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_incomplete_descendant_identity_stays_pending_and_close_only(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        original = native.kernel.GetProcessTimes
+        native.kernel.GetProcessTimes = lambda handle, *args: False if handle == 600 else original(handle, *args)
+        with self.assertRaisesRegex(RuntimeError, 'process times unavailable'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('discovery still failed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'discovery still failed'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('close', 600), calls)
+        self.assertEqual(saved.call_args.args[1]['unvalidated_pids'], [60])
+
+
 class CleanupTests(unittest.TestCase):
     def test_open_failure_reports_pid_access_error_and_phase_without_retry(self):
         native = TARGET.Native.__new__(TARGET.Native)
@@ -319,6 +478,7 @@ class CleanupTests(unittest.TestCase):
         native = TARGET.Native.__new__(TARGET.Native)
         native.root, native.desktop, native.target, native.alternate = Path('fake-root'), 50, 10, 20
         native.handles, native.identities = {50: 500}, {50: {'creation_time_100ns': '123', 'image': 'fake-desktop'}}
+        native.validated_owned_handles = {50: {'handle': 500, 'identity': dict(native.identities[50])}}
         calls, live = [], {500: True}
 
         def exit_code(handle, code):
