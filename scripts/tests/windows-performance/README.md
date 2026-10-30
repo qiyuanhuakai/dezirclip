@@ -159,12 +159,12 @@ closed without termination and keep ownership unknown, so WebView-policy
 restoration is blocked. Previously authenticated objects can still be cleaned
 after a later discovery error. Ordinary aa511b CI passed its normal path; that
 result does not exercise or close its rejected-bind P2.
-Descendant authorization also confirms every parent edge in a second process
+New descendant authorization also confirms every parent edge in a second process
 snapshot taken after all candidate handles are retained, and requires each
 child's creation time to be no earlier than its retained parent's. This rejects
 stale ParentPID links to a newer reused PID and a PID replaced between the
 first snapshot and its first open. Every candidate retains the same exact
-handle and identity across confirmation. Every new or still-live candidate
+handle and identity across confirmation. Every new or pending candidate
 requires a complete unchanged edge before any new candidate is promoted.
 The original 922 fixture's fake older-child
 counterexample is preserved separately. This is fixture ownership validation,
@@ -178,10 +178,10 @@ already been observed exited with code 0. The original error combines changed
 and disappeared parent-snapshot entries; the two snapshots were not serialized.
 The supervisor preserved exit 1 and confirmed its original controller's exit.
 Native cleanup receipts confirmed all sixteen known objects exited; no ABBA arm started.
-The narrow terminal-state change retains an already authenticated object's
+The intermediate 527c128 terminal-state change retained an authenticated object's
 terminal observation and counters only while its exact handle and identity
-still match. Slot checks precede this exception. New, pending and still-live
-candidates retain both snapshots and every creation-time edge check. There is
+still matched. Slot checks preceded that exception. New, pending and still-live
+candidates retained both snapshots and every creation-time edge check. There was
 no new observation retry, input, wait or resumed failed case. The original
 failed run remains failed, and the earlier heap-corruption risk remains open.
 
@@ -196,6 +196,36 @@ handle still closes in `finally`, with no enumeration or input retry. See
 Microsoft's [Process32First](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-process32first)
 and [Process32NextW](https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/nf-tlhelp32-process32nextw)
 return-value contracts.
+
+The a7676e2 request (run 41120519234) failed its own debug prerequisite after
+twelve checks passed. In check thirteen, raw responses 137 and 141 satisfy the
+unchanged main-destruction predicate, and 141 satisfies the actual cold native
+panel/foreground predicate. The unchanged controller then requests Escape;
+response 142 rejects PID 5392 in the key command's initial observation, before
+Escape input. Earlier 141 recorded that original WebView2 object live; final
+cleanup recorded the same identity exited with code 0, without forced termination.
+The error combines changed/disappeared parent entries and does not serialize
+either snapshot or the failed request's certificate state. This does not prove
+the exact race or a product/heap cause. A separate readonly UIA timeout at
+response 38 remained in the original log; its search/selection check later passed.
+The complete thirteenth check remains failed, and no release ABBA result exists.
+
+Current ownership follows the lifetime of a fully authenticated original object,
+independently of its current live/terminal state. Each query freezes the prior
+handle/identity certificates, verifies their slots before and after fresh
+process reads and after the second snapshot, and fails on any changed slot or
+query exception even when an original object is absent from process snapshots.
+Discovery starts from these retained, generation-fixed objects, including an
+exited parent whose children can remain alive. Every new or pending descendant
+still requires both parent snapshots and each creation-time edge; only the
+complete validated batch gains certificates. Existing certificates are not
+rewritten. Only certified observations enter the returned process/window scope;
+unvalidated pending handles stay close-only and keep cleanup failed. Failure-only
+parent diagnostics retain bounded PID/parent/state fields. There is no new
+input, observation retry, wait, permission, deadline or performance-sampling
+method. See Microsoft's [process handle lifetime](https://learn.microsoft.com/en-us/windows/win32/procthread/process-handles-and-identifiers),
+[process termination](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
+and [process-object/PID lifetime explanation](https://devblogs.microsoft.com/oldnewthing/20110107-00/?p=11803).
 
 Node records process exit separately from stdio close. A failed stop request
 still enters a bounded close wait; fallback termination targets only its original
