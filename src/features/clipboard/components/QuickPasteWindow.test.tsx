@@ -95,7 +95,7 @@ describe("QuickPasteWindow", () => {
     expect(items[2]).toHaveClass("quick-paste-window__item--active");
   });
 
-  it("keyboard nav enter pastes and hides", async () => {
+  it("keyboard nav enter dispatches paste without a second hide", async () => {
     await act(async () => {
       render(<QuickPasteWindow />);
     });
@@ -107,7 +107,7 @@ describe("QuickPasteWindow", () => {
     expect(mockInvoke).toHaveBeenCalledWith("paste_quick_paste_selection", {
       entryId: 1,
     });
-    expect(mockInvoke).toHaveBeenCalledWith("hide_quick_paste");
+    expect(mockInvoke).not.toHaveBeenCalledWith("hide_quick_paste");
   });
 
   it("keyboard nav escape hides", async () => {
