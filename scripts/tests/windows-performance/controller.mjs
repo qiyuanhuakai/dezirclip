@@ -12,6 +12,7 @@ import {
 } from './native-plumbing.mjs';
 import { ProcessLedger, percentile, SAMPLE_INTERVAL_MS, SETTLE_MS, SAMPLE_MS } from './process-sampler.mjs';
 import { collectOwnedCrashEvents, desktopExitVerdict } from './native-windows-crash-events.mjs';
+import { domQueryObservation, readTauriQuery } from './tauri-query.mjs';
 
 export const ARMS = ['tauri', 'mygo', 'mygo', 'tauri'];
 export const WARMUPS = 5;
@@ -112,12 +113,12 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
   assert(!existsSync(root)); mkdirSync(root);
   const report = { schema_version: 1, kind: 'phase6_windows_comparison_arm_v1', source_revision: expected.source_revision,
     renderer, arm_index: armIndex, status: 'running', observations: [], trials: [], resources: {}, query_normalizations: [],
-    query_method: 'same-query-v3',
+    query_method: 'same-query-v4',
     limits: ['Native visible plus actual foreground is an observed polling endpoint, not first interactive frame.',
       'First invocation follows Desktop startup/settings; Tauri may be prebuilt while MyGo may start a new helper. Neither is whole-application cold startup.',
       'Activation proxy percentiles cannot establish the first-interactive-frame improvement threshold.',
       'Query gets a fixed 700 ms setup settle; no search-ready latency is measured.',
-      'Query qualification uses UIA before each trial and resources; resulting framework accessibility caches may affect the observed footprint.',
+      'Query qualification uses read-only CDP DOM for Tauri and UIA for MyGo; these different observers can affect resource caches. No accessibility flag is forced.',
       'Main WebView remains constructed and hidden, idle destruction disabled for both renderers.',
       'Owned process cleanup can be forced; natural application shutdown is not measured.'],
     latency_poll_delay_ms: LATENCY_POLL_MS,
@@ -214,10 +215,16 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
         && observation.foreground.hwnd === observation.target_hwnd ? observation : null;
     }, activeDeadline);
     const observeQuery = async (panel, query, selected = null) => {
-      const accessibility = await request('accessibility', { pid: panel.pid, panel_hwnd: panel.hwnd }, 10000);
+      const before = await request('observe');
+      verifyPanel(before, renderer, report.desktop_original, helper, panel);
+      const actual = renderer === 'tauri'
+        ? await readTauriQuery(port, panel, remaining(activeDeadline, 8000))
+        : await request('accessibility', { pid: panel.pid, panel_hwnd: panel.hwnd }, 10000);
       const observation = await request('observe');
       verifyPanel(observation, renderer, report.desktop_original, helper, panel);
-      return { ...queryObservation(accessibility, panel, query, rows, selected), accessibility, observation_after: observation };
+      const qualified = renderer === 'tauri' ? domQueryObservation(actual.snapshot, panel, query, rows, selected)
+        : { ...queryObservation(actual, panel, query, rows, selected), observer: 'owned_mygo_uia' };
+      return { ...qualified, actual, observation_before: before, observation_after: observation };
     };
     const normalizeQuery = async trial => {
       const began = performance.now();
@@ -392,7 +399,7 @@ export async function runComparison(args, env = process.env) {
   const rows = dataset(randomUUID().replaceAll('-', '').slice(0, 12).replace(/[0-9]/g, character => String.fromCharCode(97 + Number(character))));
   const report = { schema_version: 1, kind: 'phase6_windows_native_comparison_v1', status: 'running', source_revision: expected.source_revision,
     fixture_id: 'phase6-windows-native-comparison-v1', desktop_build_profile: 'release',
-    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'process-sampler.mjs', 'native-windows-crash-events.mjs'].map(name => ({ name,
+    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'process-sampler.mjs', 'native-windows-crash-events.mjs', 'tauri-query.mjs'].map(name => ({ name,
       ...regular(new URL(name, import.meta.url)) })),
     run_id: env.GITHUB_RUN_ID, run_attempt: env.GITHUB_RUN_ATTEMPT, order: ARMS, rows, arms: [],
     functional_gate: { path: args['functional-report'], ...regular(args['functional-report']) },

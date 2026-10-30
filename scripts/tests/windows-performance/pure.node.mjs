@@ -3,6 +3,48 @@ import test from 'node:test';
 import { ARMS, WARMUPS, MEASURED, dataset, validateRows, verifyPanel, latencyMs,
   remaining, validateResourceState, validateComparisonContext, runComparison, queryObservation, QUERY_SETUP_MS } from './controller.mjs';
 import { ProcessLedger, percentile, SAMPLE_MS } from './process-sampler.mjs';
+import { domQueryObservation, quickPasteUrl, selectQuickPasteTarget, readTauriQuery } from './tauri-query.mjs';
+
+test('DOM discovery requires the unique app Quick Paste page and original loopback endpoint', () => {
+  const url = 'http://tauri.localhost/?window=quick-paste';
+  const target = { type: 'page', id: 'AB-12', url, webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/AB-12' };
+  assert.equal(quickPasteUrl(url), true);
+  assert.equal(quickPasteUrl('http://tauri.localhost/index.html?window=quick-paste'), true);
+  assert.equal(selectQuickPasteTarget([target], 12345).id, target.id);
+  for (const bad of ['http://tauri.localhost/', 'http://other.localhost/?window=quick-paste',
+    'http://user@tauri.localhost/?window=quick-paste', 'http://tauri.localhost:8080/?window=quick-paste',
+    'http://tauri.localhost/?window=quick-paste#other', 'http://tauri.localhost/?window=quick-paste&window=main',
+    'http://tauri.localhost/iframe?window=quick-paste']) assert.equal(quickPasteUrl(bad), false);
+  for (const changed of [[], [target, { ...target, id: 'other' }], [{ ...target, type: 'iframe' }],
+    [{ ...target, webSocketDebuggerUrl: 'ws://127.0.0.1:12346/devtools/page/AB-12' }],
+    [{ ...target, webSocketDebuggerUrl: 'ws://example.com:12345/devtools/page/AB-12' }],
+    [{ ...target, webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/other' }]]) {
+    assert.throws(() => selectQuickPasteTarget(changed, 12345));
+  }
+});
+
+test('DOM qualification rejects stale, hidden, truncated and non-top-level observations', async () => {
+  const rows = dataset('abcdefgh'), panel = { pid: 10, hwnd: 20 };
+  const snapshot = { href: 'http://tauri.localhost/?window=quick-paste', top_level: true, ready_state: 'complete',
+    document_visible: true, input_count: 1, input: { value: '', visible: true, disabled: false }, row_count: 2,
+    rows: [{ content: rows[0].content, visible: true }, { content: rows[7].content, visible: true }] };
+  assert.equal(domQueryObservation(snapshot, panel, '', rows).status, 'verified');
+  const selected = { ...snapshot, input: { ...snapshot.input, value: rows[7].query }, row_count: 1, rows: [snapshot.rows[1]] };
+  assert.equal(domQueryObservation(selected, panel, rows[7].query, rows, rows[7]).status, 'verified');
+  for (const patch of [{ top_level: false }, { document_visible: false }, { ready_state: 'loading' },
+    { href: 'http://tauri.localhost/' }, { input_count: 2 }, { input: { ...snapshot.input, visible: false } },
+    { input: { ...snapshot.input, disabled: true } }, { row_count: 1, rows: [snapshot.rows[1]] },
+    { rows: [snapshot.rows[0], { ...snapshot.rows[1], visible: false }] },
+    { rows: [snapshot.rows[0], { ...snapshot.rows[1], content: rows[7].content.slice(0, -1) }] }]) {
+    assert.equal(domQueryObservation({ ...snapshot, ...patch }, panel, '', rows).status, 'unverified');
+  }
+  assert.equal(domQueryObservation({ ...selected, row_count: 2, rows: snapshot.rows }, panel, rows[7].query, rows, rows[7]).status, 'unverified');
+  assert.equal(domQueryObservation({ ...selected, row_count: 2, rows: [...selected.rows, { visible: true, content: 'unknown stale card' }] },
+    panel, rows[7].query, rows, rows[7]).status, 'unverified');
+  assert.equal(domQueryObservation({ ...selected, row_count: 2, rows: [...selected.rows, ...selected.rows] },
+    panel, rows[7].query, rows, rows[7]).status, 'unverified');
+  await assert.rejects(() => readTauriQuery(12345, panel, 1000, { GITHUB_ACTIONS: 'false' }));
+});
 
 const desktop = { pid: 10, image: 'C:/fixture/dezirclip.exe', creation_time_100ns: '100' };
 const helper = 'C:/fixture/dzc-surface.exe';

@@ -133,7 +133,7 @@ def generate(repository, destination):
     crash_events = (repository / 'scripts/tests/native-windows-crash-events.mjs').read_text(encoding='utf-8')
     files = derive_sources(controller, target, crash_events)
     source_directory = repository / 'scripts/tests/windows-performance'
-    for name in ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs'):
+    for name in ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs'):
         files[name] = (source_directory / name).read_text(encoding='utf-8')
     destination.parent.mkdir(exist_ok=True)
     destination.mkdir()

@@ -26,8 +26,8 @@ require that earlier marker to be imported on startup. After calibration and
 Desktop identity checks, it clears history and creates the same ten entries
 through the production manual-item command for every arm.
 
-The query-state v3 method uses one additional, unmeasured show before every
-trial: native Ctrl+A/Backspace, 700 ms of setup, a bounded UIA observation of
+The query-state v4 method uses one additional, unmeasured show before every
+trial: native Ctrl+A/Backspace, 700 ms of setup, a bounded observation of
 the empty input and at least two distinct visible fixture bodies, then Escape
 and actual hidden/target focus confirmation. A blank input with one stale
 filtered row is insufficient. Both renderers start each timed show with an
@@ -36,15 +36,21 @@ their latency is never pooled into the five warmups or thirty formal samples.
 The original 1020-second active and 1080-second total arm budgets still apply.
 
 Before resource sampling, both renderers receive the same query for row 7.
-Bounded, original-window UIA must observe that input and exactly one matching
+The original-window observer must find that input and exactly one matching
 visible fixture body before the unchanged 30-second settle. There are ten
-stored rows and one matching visible result. Missing or non-equivalent UIA
+stored rows and one matching visible result. Missing or non-equivalent
 data is explicitly unverified and stops the arm; sending input or waiting
 700 ms alone is insufficient. These observations are setup, not measurements
 of search readiness or first interactive frame.
-UIA can activate framework accessibility caches. The resulting resource values
-describe this UIA-observed controlled state and do not establish an
-accessibility-free natural idle footprint.
+MyGo uses bounded original-window UIA. The default WebView returned only Pane
+nodes in the preserved dd644 run, so Tauri uses a read-only DOM snapshot from
+the unique Quick Paste page on the original Desktop's private CDP port, with
+native PID/HWND/foreground checks before and after. It checks the top-level
+app URL, input value, CSS/viewport-intersecting cards and their DOM text. This
+does not establish full-text pixels or a painted frame. No accessibility flag
+is forced. Snapshots, expression hash and endpoint identity are preserved.
+The two observers may affect caches differently; resource results describe
+these controlled observation conditions, not a natural idle footprint.
 
 Latency is a **native visibility and foreground activation proxy**, observed
 with a 10 ms polling delay. Actual observation intervals and request overhead
