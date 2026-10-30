@@ -8,6 +8,19 @@ use base64::Engine;
 fn denied(error:impl ToString)->WireErrorCode {crate::router::privacy_error(error)}
 fn encoded<T:serde::Serialize>(value:T)->Result<Value,WireErrorCode> {serde_json::to_value(value).map_err(|_|WireErrorCode::Internal)}
 impl Host {
+    pub(crate) fn prepare_desktop_paste(&self, paste: bool, target: Option<&WindowsPasteTarget>)
+        -> Result<Option<Box<dyn crate::PreparedPaste>>, WireErrorCode> {
+        if !paste {
+            if target.is_some() { return Err(WireErrorCode::InvalidRequest); }
+            return Ok(None);
+        }
+        if cfg!(target_os="windows") || target.is_some() || self.actions.supports_windows_bound_paste() {
+            let target = target.ok_or(WireErrorCode::UnsupportedCapability)?;
+            if !self.actions.supports_windows_bound_paste() { return Err(WireErrorCode::UnsupportedCapability); }
+            return self.actions.prepare_windows_paste(target).map(Some);
+        }
+        Ok(None)
+    }
     pub(crate) fn desktop_permission(&self,session:&Session,instance:&str)->Result<(),WireErrorCode> {
         session.require(Permission::DesktopHistory)?;
         if session.role()!=ClientRole::Desktop {return Err(WireErrorCode::PermissionDenied);}
@@ -35,6 +48,7 @@ impl Host {
         let request:DesktopCopyParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
         self.desktop_permission(session,&request.service_instance_id)?;
         if !self.actions.can_copy() || request.paste && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}
+        let paste_target=self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())?;
         let now=crate::router::now_ms()?;
         let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false);
         let ticket=if generated {match self.history.privacy().capture_ticket(now) {
@@ -58,7 +72,10 @@ impl Host {
         }
         self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
         self.copy_payload(payload)?;
-        if request.paste {self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;self.actions.paste()?;}
+        if request.paste {
+            self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
+            if let Some(target)=paste_target { target.send()?; } else { self.actions.paste()?; }
+        }
         if request.delete_after_use==Some(true) {
             if request.id<0 {self.session.lock().map_err(|_|WireErrorCode::Unavailable)?.retain(|row|row.id!=request.id);}
             else {self.history.delete(request.id,Some(&self.directory)).map_err(|_|WireErrorCode::Unavailable)?;}
@@ -195,7 +212,13 @@ mod queue_completion_tests {
             fn can_copy(&self)->bool {true}
             fn copy(&self,_:ClipboardPayload)->Result<(),WireErrorCode> {Ok(())}
             fn can_paste(&self)->bool {true}
-            fn paste(&self)->Result<(),WireErrorCode> {Err(WireErrorCode::Unavailable)}
+            fn paste(&self)->Result<(),WireErrorCode> {panic!("bound Desktop paste cannot use unbound fallback")}
+            fn supports_windows_bound_paste(&self)->bool {true}
+            fn prepare_windows_paste(&self,_:&WindowsPasteTarget)->Result<Box<dyn crate::PreparedPaste>,WireErrorCode> {
+                struct Rejected;
+                impl crate::PreparedPaste for Rejected {fn send(&self)->Result<(),WireErrorCode>{Err(WireErrorCode::Unavailable)}}
+                Ok(Box::new(Rejected))
+            }
             fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
         }
         for mode in [HostMode::Embedded,HostMode::Service] {
@@ -208,7 +231,7 @@ mod queue_completion_tests {
                 let before=host.history.query(&query).unwrap();
                 let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
                 let cursor=state.event_sequence;
-                let failed=call(&host,&owner,Method::DesktopClipboardCopy,serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"paste":true,"delete_after_use":delete,"move_to_top":true}));
+                let failed=call(&host,&owner,Method::DesktopClipboardCopy,serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"paste":true,"expected_paste_target":crate::router::tests::windows_target(),"delete_after_use":delete,"move_to_top":true}));
                 assert_eq!(failed.error.unwrap().code,WireErrorCode::Unavailable);
                 let after=host.history.query(&query).unwrap();
                 assert_eq!(after.len(),1);
@@ -218,6 +241,51 @@ mod queue_completion_tests {
                 let events:EventsResult=serde_json::from_value(call(&host,&owner,Method::EventsSubscribe,serde_json::json!({"after_sequence":cursor,"wait_ms":0})).result.unwrap()).unwrap();
                 assert!(!events.events.iter().any(|event|matches!(event.event,EventKind::EntryDeleted|EventKind::EntryUpdated)));
             }
+        }
+    }
+    #[test]
+    fn bound_target_missing_or_changed_during_copy_never_pastes_or_consumes_history() {
+        use std::sync::atomic::AtomicBool;
+        struct Fixed { current:Arc<AtomicBool>,sent:Arc<AtomicUsize> }
+        impl crate::PreparedPaste for Fixed {
+            fn send(&self)->Result<(),WireErrorCode> {
+                if !self.current.load(Ordering::SeqCst) {return Err(WireErrorCode::Unavailable);}
+                self.sent.fetch_add(1,Ordering::SeqCst);Ok(())
+            }
+        }
+        struct Bound { current:Arc<AtomicBool>,sent:Arc<AtomicUsize>,copies:AtomicUsize,change:bool }
+        impl crate::HostActions for Bound {
+            fn platform_capabilities(&self)->Value {serde_json::json!({})}
+            fn can_copy(&self)->bool {true}
+            fn copy(&self,_:ClipboardPayload)->Result<(),WireErrorCode> {
+                self.copies.fetch_add(1,Ordering::SeqCst);
+                if self.change {self.current.store(false,Ordering::SeqCst);} Ok(())
+            }
+            fn can_paste(&self)->bool {true}
+            fn paste(&self)->Result<(),WireErrorCode> {panic!("no unbound fallback")}
+            fn supports_windows_bound_paste(&self)->bool {true}
+            fn prepare_windows_paste(&self,target:&WindowsPasteTarget)->Result<Box<dyn crate::PreparedPaste>,WireErrorCode> {
+                assert_eq!(*target,crate::router::tests::windows_target());
+                Ok(Box::new(Fixed{current:self.current.clone(),sent:self.sent.clone()}))
+            }
+            fn stop_helpers(&self)->Result<(),WireErrorCode> {Ok(())}
+        }
+        for (missing,change) in [(true,false),(false,true),(false,false)] {
+            let original=crate::router::tests::synthetic_host();
+            let actions=Arc::new(Bound{current:Arc::new(AtomicBool::new(true)),sent:Arc::new(AtomicUsize::new(0)),copies:AtomicUsize::new(0),change});
+            let host=Host::new(crate::HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:actions.clone()}).unwrap();
+            let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"synthetic bound target","preview":"synthetic","source_app":"Synthetic","timestamp":1,"is_pinned":false})).unwrap();
+            let id=host.history.save(&entry,None).unwrap();
+            let owner=session(&host,ClientRole::Desktop);let state=host.snapshot().unwrap();
+            let mut params=serde_json::json!({"id":id,"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"reveal":false,"paste":true,"delete_after_use":false,"move_to_top":false});
+            if !missing {params["expected_paste_target"]=serde_json::to_value(crate::router::tests::windows_target()).unwrap();}
+            let response=call(&host,&owner,Method::DesktopClipboardCopy,params);
+            assert_eq!(response.error.is_none(),!missing && !change);
+            assert_eq!(actions.copies.load(Ordering::SeqCst),if !missing {1}else{0});
+            assert_eq!(actions.sent.load(Ordering::SeqCst),if !missing && !change {1}else{0});
+            let rows=host.history.query(&dzc_core::api::HistoryQuery{id:Some(id),metadata:true,limit:1,..Default::default()}).unwrap();
+            assert_eq!(rows.len(),1);
+            assert_eq!(rows[0].use_count,if !missing && !change {1}else{0});
         }
     }
     #[test]

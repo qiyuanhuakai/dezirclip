@@ -10,6 +10,10 @@ mod linux;
 mod session;
 #[cfg(target_os = "windows")]
 mod windows;
+#[cfg(all(target_os = "windows", feature = "ipc"))]
+mod windows_bound_paste;
+#[cfg(all(target_os = "windows", feature = "ipc"))]
+pub use windows_bound_paste::WindowsBoundPaste;
 #[cfg(target_os = "linux")]
 mod x11;
 #[cfg(target_os = "linux")]

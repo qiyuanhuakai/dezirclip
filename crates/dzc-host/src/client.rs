@@ -3,6 +3,19 @@ use dzc_protocol::wire::{self, *};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{io, time::Duration};
 
+fn windows_bound_paste_capability(capabilities: &CapabilityReport, expected: &dzc_protocol::build_info::BuildInfo) -> bool {
+    let feature=&capabilities.platform["windows_bound_paste_target"];
+    let identity=serde_json::from_value::<dzc_protocol::build_info::BuildInfo>(feature["build"].clone()).ok();
+    expected.target.ends_with("-pc-windows-msvc") && feature["supported"].as_bool()==Some(true) && feature["version"].as_u64()==Some(1)
+        && capabilities.permissions.contains(&Permission::DesktopHistory)
+        && capabilities.methods.iter().any(|method|method=="desktop.clipboard.copy")
+        && ["desktop.capture.begin","desktop.capture.write","desktop.capture.finish"].iter().all(|required|
+            capabilities.methods.iter().any(|method|method.as_str()==*required))
+        && identity.is_some_and(|identity|identity.component==dzc_protocol::build_info::Component::Service
+            && expected.metadata_version==1 && identity.metadata_version==1
+            && expected.target==identity.target && expected.same_verified_build_set(&identity))
+}
+
 /// Requests on one connection are correlated and serialized by ownership.
 pub struct Client { stream: Option<Stream>, next: u64, pub hello: HelloResult, pub peer: ipc::PeerIdentity }
 impl Client {
@@ -33,6 +46,20 @@ impl Client {
         if feature["supported"].as_bool()!=Some(true) || feature["version"].as_u64()!=Some(1) {
             self.stream.take();
             return Err(io::Error::new(io::ErrorKind::Unsupported,"GeneratedCopyCapabilityUnavailable"));
+        }
+        Ok(())
+    }
+    pub async fn require_windows_bound_paste(&mut self, expected: &dzc_protocol::build_info::BuildInfo) -> io::Result<()> {
+        if !self.hello.permissions.contains(&Permission::DesktopHistory) {
+            self.stream.take();
+            return Err(io::Error::new(io::ErrorKind::Unsupported,"WindowsBoundPasteCapabilityUnavailable"));
+        }
+        let capabilities:CapabilityReport=match self.call(Method::Capabilities,serde_json::json!({}),"CapabilityReport").await {
+            Ok(value)=>value,Err(error)=>{self.stream.take();return Err(error);}
+        };
+        if !windows_bound_paste_capability(&capabilities,expected) {
+            self.stream.take();
+            return Err(io::Error::new(io::ErrorKind::Unsupported,"WindowsBoundPasteCapabilityUnavailable"));
         }
         Ok(())
     }
@@ -126,6 +153,31 @@ impl Drop for ControlFile { fn drop(&mut self) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn windows_target_capability_requires_exact_verified_build_and_real_extension() {
+        use dzc_protocol::build_info::{BuildInfo,Component,ComponentVersion};
+        let mut expected=BuildInfo::current_with_host(Component::Desktop,dzc_core::api::DATABASE_SCHEMA_VERSION);
+        expected.source_state="verified_checkout".into();
+        expected.source_revision=Some("a".repeat(40));
+        expected.build_id=Some(format!("{}@{}",expected.component_version,"a".repeat(40)));
+        expected.target="x86_64-pc-windows-msvc".into();
+        let mut peer=expected.clone();peer.component=Component::Service;
+        peer.linked_components.push(ComponentVersion{component:"dzc-service".into(),version:peer.component_version.clone()});
+        let report=|feature| CapabilityReport{methods:["desktop.clipboard.copy","desktop.capture.begin","desktop.capture.write","desktop.capture.finish"].into_iter().map(str::to_owned).collect(),permissions:vec![Permission::DesktopHistory],platform:serde_json::json!({"windows_bound_paste_target":feature})};
+        let feature=serde_json::json!({"supported":true,"version":1,"build":peer.clone()});
+        assert!(windows_bound_paste_capability(&report(feature.clone()),&expected));
+        for bad in [serde_json::Value::Null,serde_json::json!({"supported":true,"version":1}),serde_json::json!({"supported":false,"version":1,"build":peer.clone()}),serde_json::json!({"supported":true,"version":2,"build":peer.clone()})] {
+            assert!(!windows_bound_paste_capability(&report(bad),&expected));
+        }
+        let mut changed=peer.clone();changed.source_state="modified_checkout".into();
+        assert!(!windows_bound_paste_capability(&report(serde_json::json!({"supported":true,"version":1,"build":changed})),&expected));
+        let mut wrong=peer;wrong.target="aarch64-pc-windows-msvc".into();
+        assert!(!windows_bound_paste_capability(&report(serde_json::json!({"supported":true,"version":1,"build":wrong})),&expected));
+        let mut missing=report(feature.clone());missing.permissions.clear();
+        assert!(!windows_bound_paste_capability(&missing,&expected));
+        let mut missing=report(feature);missing.methods.retain(|method|method!="desktop.capture.finish");
+        assert!(!windows_bound_paste_capability(&missing,&expected));
+    }
     use tokio::io::AsyncReadExt;
 
     #[test]
@@ -227,7 +279,7 @@ mod tests {
                 let result=client.require_generated_copy().await;
                 if accepted {
                     result.unwrap();
-                    let _:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:client.hello.state.service_instance_id.clone(),expected_epoch:0,copy_to_clipboard:Some(true)},"CaptureBeginResult").await.unwrap();
+                    let _:CaptureBeginResult=client.call(Method::DesktopCaptureBegin,CaptureBeginParams{service_instance_id:client.hello.state.service_instance_id.clone(),expected_epoch:0,copy_to_clipboard:Some(true),expected_paste_target:None},"CaptureBeginResult").await.unwrap();
                 } else {assert_eq!(result.unwrap_err().kind(),io::ErrorKind::Unsupported);}
                 drop(client);server.await.unwrap();std::fs::remove_dir_all(directory).unwrap();
             }
