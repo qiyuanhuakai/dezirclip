@@ -1375,6 +1375,15 @@ mod tray_tests {
     use tauri::tray::{MouseButton, MouseButtonState};
 
     #[test]
+    fn late_blur_never_hides_or_restores_from_an_already_hidden_main() {
+        assert!(super::blurred_main_is_visible(Some(true), Some(false)));
+        for (visible, focused) in [(Some(false), Some(false)), (Some(false), Some(true)),
+            (Some(true), Some(true)), (None, Some(false)), (Some(true), None)] {
+            assert!(!super::blurred_main_is_visible(visible, focused));
+        }
+    }
+
+    #[test]
     fn tray_left_click_toggles_only_on_release() {
         assert!(!should_toggle_window_for_tray_click(
             MouseButton::Left,
@@ -1804,14 +1813,21 @@ fn persist_window_size(window: &tauri::Window, width: u32, height: u32) {
     });
 }
 
-fn handle_blur(window: &tauri::Window) {
+fn blurred_main_is_visible(visible: Option<bool>, focused: Option<bool>) -> bool {
+    matches!((visible, focused), (Some(true), Some(false)))
+}
+
+fn main_blur_can_hide(window: &tauri::Window) -> bool {
+    if !blurred_main_is_visible(window.is_visible().ok(), window.is_focused().ok()) {
+        return false;
+    }
     if IGNORE_BLUR.load(Ordering::Relaxed) || WINDOW_PINNED.load(Ordering::Relaxed) {
-        return;
+        return false;
     }
 
     let settings = window.app_handle().state::<SettingsState>();
     if settings.edge_docking.load(Ordering::Relaxed) && !dzc_platform::runtime::is_native_wayland() {
-        return;
+        return false;
     }
 
     let now = std::time::SystemTime::now()
@@ -1819,18 +1835,18 @@ fn handle_blur(window: &tauri::Window) {
         .unwrap()
         .as_millis() as u64;
     if now.saturating_sub(LAST_SHOW_TIMESTAMP.load(Ordering::Relaxed)) < 500 {
-        return;
+        return false;
     }
     if should_suppress_blur_for_tray_click(
         &TRAY_LEFT_BUTTON_ACTIVE,
         &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
         now,
     ) {
-        return;
+        return false;
     }
 
     if IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst) {
-        return;
+        return false;
     }
     #[cfg(target_os = "windows")]
     unsafe {
@@ -1839,44 +1855,30 @@ fn handle_blur(window: &tauri::Window) {
             || (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x02) as u16 & 0x8000)
                 != 0
         {
-            return;
+            return false;
         }
     }
+    true
+}
 
+fn handle_blur(window: &tauri::Window) {
+    if !main_blur_can_hide(window) { return; }
     let w = window.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(200));
-        let down = IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst) || {
-            #[cfg(target_os = "windows")]
-            unsafe {
-                (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x01) as u16
-                    & 0x8000)
-                    != 0
-                    || (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x02) as u16
-                        & 0x8000)
-                        != 0
+        let app = w.app_handle().clone();
+        let _ = app.run_on_main_thread(move || {
+            // A Quick-Paste handoff may have hidden main while this blur waited.
+            // Recheck the native window and every guard where hide actually acts.
+            if !main_blur_can_hide(&w) { return; }
+            let _ = w.hide();
+            if let Some(webview_window) = w.app_handle().get_webview_window("main") {
+                crate::app::webview_memory::lower_window_memory(&webview_window, "blur-hide");
             }
-            #[cfg(not(target_os = "windows"))]
-            false
-        };
-        if !down && matches!(w.is_focused(), Ok(false)) {
-            if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
-                if should_suppress_blur_for_tray_click(
-                    &TRAY_LEFT_BUTTON_ACTIVE,
-                    &LAST_TRAY_LEFT_INTERACTION_TIMESTAMP,
-                    now_millis(),
-                ) {
-                    return;
-                }
-                let _ = w.hide();
-                if let Some(webview_window) = w.app_handle().get_webview_window("main") {
-                    crate::app::webview_memory::lower_window_memory(&webview_window, "blur-hide");
-                }
-                crate::app::idle_destroyer::mark_hidden();
-                NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
-                release_win_keys();
-                let _ = restore_last_focus(w.app_handle().clone());
-            }
-        }
+            crate::app::idle_destroyer::mark_hidden();
+            crate::app::window_manager::disable_main_navigation();
+            release_win_keys();
+            let _ = restore_last_focus(w.app_handle().clone());
+        });
     });
 }

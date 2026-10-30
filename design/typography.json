@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "families": ["Cascadia Mono", "JetBrains Mono", "Noto Sans Mono"],
+  "fallback": "sans-serif",
+  "regularWeight": 400,
+  "emphasisWeight": 600
+}

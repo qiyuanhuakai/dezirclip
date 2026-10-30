@@ -242,7 +242,7 @@ impl Host {
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
-            if self.actions.can_copy() {methods.push("desktop.clipboard.copy");}
+            if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.surface.copy"]);}
             if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
         }
         if can(Permission::ServiceManage) {
@@ -360,6 +360,7 @@ impl Host {
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
             Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),
             Method::SurfaceHistoryPage => self.surface_page(session, params(request.params)?),
+            Method::DesktopSurfaceCopy => self.desktop_surface_copy(session, params(request.params)?),
             Method::HistoryList | Method::SurfaceHistoryList => {
                 session.require(Permission::HistoryRead)?;
                 let query: HistoryPageParams = params(request.params)?;

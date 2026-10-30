@@ -152,7 +152,8 @@ fn is_own_process_window(hwnd: HWND) -> bool {
     unsafe {
         GetWindowThreadProcessId(hwnd, Some(&mut process_id));
     }
-    process_id != 0 && process_id == unsafe { GetCurrentProcessId() }
+    process_id != 0 && (process_id == unsafe { GetCurrentProcessId() }
+        || crate::infrastructure::surface_focus::is_managed_child(process_id))
 }
 
 pub fn is_window_visible(hwnd: HWND) -> bool {
@@ -162,7 +163,7 @@ pub fn is_window_visible(hwnd: HWND) -> bool {
     unsafe { IsWindowVisible(hwnd).as_bool() }
 }
 
-fn is_system_focus_window(hwnd: HWND) -> bool {
+pub(crate) fn is_system_focus_window(hwnd: HWND) -> bool {
     if hwnd.0.is_null() {
         return true;
     }

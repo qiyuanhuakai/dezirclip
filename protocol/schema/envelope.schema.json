@@ -75,7 +75,8 @@
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
         "desktop.privacy.remove_rule",
-        "surface.history.page"
+        "surface.history.page",
+        "desktop.surface.copy"
       ]
     },
     "WireErrorCode": {
@@ -1035,6 +1036,22 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/surface.schema.json#/$defs/SurfacePageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.surface.copy"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/surface.schema.json#/$defs/DesktopSurfaceCopyParams"
               }
             }
           }

@@ -349,6 +349,8 @@ pub enum Method {
     DesktopPrivacyRemoveRule,
     #[serde(rename = "surface.history.page")]
     SurfaceHistoryPage,
+    #[serde(rename = "desktop.surface.copy")]
+    DesktopSurfaceCopy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -737,6 +739,8 @@ pub struct SurfaceShow {
     pub scale: f64,
     pub locale: String,
     pub theme: SurfaceTheme,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -787,6 +791,7 @@ pub struct SurfacePasteResult {
 pub struct SurfaceDismiss {
     pub surface_session_id: String,
     pub display_request_id: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -844,4 +849,11 @@ pub struct SurfaceControlMessage {
     pub request_id: String,
     pub r#type: SurfaceControlType,
     pub payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopSurfaceCopyParams {
+    pub entry_id: i64,
+    pub state: RuntimeState,
 }

@@ -279,6 +279,7 @@ fn main() {
             app::commands::show_quick_paste,
             app::commands::hide_quick_paste,
             app::commands::is_quick_paste_visible,
+            app::commands::get_quick_paste_surface_status,
             app::commands::paste_quick_paste_selection,
             services::paste_queue::get_paste_queue,
             services::paste_queue::set_paste_queue,

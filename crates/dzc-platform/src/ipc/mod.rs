@@ -15,7 +15,7 @@ pub use ownership::CaptureLease;
 mod private_file;
 pub use private_file::{read_private, write_private};
 mod process;
-pub use process::{spawn_background, inspect_helper, ProcessExit, BackgroundChild};
+pub use process::{spawn_background, inspect_helper, inspect_private_helper, ProcessExit, BackgroundChild};
 
 /// Produced only after an operating-system identity check, never deserialized.
 #[derive(Debug, Clone, PartialEq, Eq)]
