@@ -18,37 +18,122 @@ struct ServerTask {stop:tokio::sync::watch::Sender<bool>,done:std::sync::mpsc::R
 pub struct DesktopHost(Arc<Inner>);
 pub(crate) struct SurfaceAccess {
     bridge: DesktopHost,
-    client: tokio::sync::Mutex<Client>,
+    host_endpoint: dzc_platform::ipc::Endpoint,
     pub endpoint: String,
     pub grant: String,
     pub initial_state: RuntimeState,
 }
+fn check_surface_control(original:&str,current:&str,hello:&HelloResult)->Result<(),String> {
+    if original!=current || original!=hello.state.service_instance_id.as_str() {return Err("ClipboardHostInstanceChanged".into());}
+    if !hello.permissions.contains(&Permission::DesktopHistory) || !hello.permissions.contains(&Permission::ServiceManage) {
+        return Err("ClipboardHostPermissionDenied".into());
+    }
+    Ok(())
+}
+fn confirm_surface_revocation(result:OperationResult)->Result<(),String> {
+    if !result.performed {return Err("SurfaceGrantRevocationUnconfirmed".into());} Ok(())
+}
+fn surface_host_budget(deadline:tokio::time::Instant)->Result<(),String> {
+    if tokio::time::Instant::now()>=deadline {return Err("SurfaceHostDeadline".into());} Ok(())
+}
+async fn surface_host_request<T>(deadline:tokio::time::Instant,work:impl std::future::Future<Output=Result<T,String>>)->Result<T,String> {
+    surface_host_budget(deadline)?;
+    let result=tokio::time::timeout_at(deadline,work).await.map_err(|_|"SurfaceHostDeadline".to_owned())?;
+    surface_host_budget(deadline)?;
+    result
+}
 impl SurfaceAccess {
-    pub async fn state(&self) -> Result<RuntimeState,String> {
+    async fn connect(&self,deadline:tokio::time::Instant)->Result<Client,String> {
+        surface_host_budget(deadline)?;
         if self.bridge.instance()? != self.initial_state.service_instance_id {return Err("ClipboardHostInstanceChanged".into());}
-        let state:RuntimeState=tokio::time::timeout(Duration::from_secs(5),async {
-            self.client.lock().await.call(Method::Health,serde_json::json!({}),"RuntimeState").await.map_err(remote_error)
-        }).await.map_err(|_|"SurfaceHostDeadline")??;
+        surface_host_budget(deadline)?;
+        // Each operation authenticates again; the Host may have closed an idle
+        // connection. Never replay a write after an uncertain transport result.
+        let client=Client::control(&self.host_endpoint,ClientRole::Desktop).await.map_err(remote_error)?;
+        surface_host_budget(deadline)?;
+        check_surface_control(&self.initial_state.service_instance_id,&self.bridge.instance()?,&client.hello)?;
+        Ok(client)
+    }
+    async fn state_request(&self,deadline:tokio::time::Instant)->Result<RuntimeState,String> {
+        let mut client=self.connect(deadline).await?;
+        surface_host_budget(deadline)?;
+        let state:RuntimeState=client.call(Method::Health,serde_json::json!({}),"RuntimeState").await.map_err(remote_error)?;
+        surface_host_budget(deadline)?;
         if state.service_instance_id!=self.initial_state.service_instance_id || self.bridge.instance()?!=state.service_instance_id {return Err("ClipboardHostInstanceChanged".into());}
         Ok(state)
     }
+    async fn check_request(&self,expected:&RuntimeState,deadline:tokio::time::Instant)->Result<(),String> {
+        if !dzc_host::same_surface_state(expected,&self.state_request(deadline).await?) {return Err("SurfaceSelectionChanged".into());} Ok(())
+    }
+    pub async fn state(&self)->Result<RuntimeState,String> {
+        let deadline=tokio::time::Instant::now()+Duration::from_secs(5);
+        surface_host_request(deadline,self.state_request(deadline)).await
+    }
     pub async fn check(&self,expected:&RuntimeState)->Result<(),String> {
-        if !dzc_host::same_surface_state(expected,&self.state().await?) {return Err("SurfaceSelectionChanged".into());} Ok(())
+        let deadline=tokio::time::Instant::now()+Duration::from_secs(5);
+        surface_host_request(deadline,self.check_request(expected,deadline)).await
     }
     pub async fn copy(&self,entry_id:i64,expected:&RuntimeState)->Result<(),String> {
-        self.check(expected).await?;
-        let result:OperationResult=tokio::time::timeout(Duration::from_secs(5),async {
-            self.client.lock().await.call(Method::DesktopSurfaceCopy,
-                DesktopSurfaceCopyParams{entry_id,state:expected.clone()},"OperationResult").await.map_err(remote_error)
-        }).await.map_err(|_|"SurfaceHostDeadline")??;
-        if !result.performed {return Err("SurfaceCopyFailed".into());}
-        self.check(expected).await
+        let deadline=tokio::time::Instant::now()+Duration::from_secs(5);
+        surface_host_request(deadline,async {
+            self.check_request(expected,deadline).await?;
+            let mut client=self.connect(deadline).await?;
+            surface_host_budget(deadline)?;
+            let result:OperationResult=client.call(Method::DesktopSurfaceCopy,
+                DesktopSurfaceCopyParams{entry_id,state:expected.clone()},"OperationResult").await.map_err(remote_error)?;
+            surface_host_budget(deadline)?;
+            if !result.performed {return Err("SurfaceCopyFailed".into());}
+            self.check_request(expected,deadline).await
+        }).await
     }
     pub async fn revoke(&self)->Result<(),String> {
-        let _:OperationResult=tokio::time::timeout(Duration::from_secs(5),async {
-            self.client.lock().await.call(Method::ServiceRevoke,GrantRevokeParams{grant:self.grant.clone()},"OperationResult").await.map_err(remote_error)
-        }).await.map_err(|_|"SurfaceHostDeadline")??;
-        Ok(())
+        let deadline=tokio::time::Instant::now()+Duration::from_secs(5);
+        surface_host_request(deadline,async {
+            let mut client=self.connect(deadline).await?;
+            surface_host_budget(deadline)?;
+            let result:OperationResult=client.call(Method::ServiceRevoke,GrantRevokeParams{grant:self.grant.clone()},"OperationResult").await.map_err(remote_error)?;
+            surface_host_budget(deadline)?;
+            check_surface_control(&self.initial_state.service_instance_id,&self.bridge.instance()?,&client.hello)?;
+            confirm_surface_revocation(result)
+        }).await
+    }
+}
+#[cfg(test)]
+mod surface_access_tests {
+    use super::*;
+    fn hello(instance:&str,permissions:Vec<Permission>)->HelloResult {
+        HelloResult{session_id:"synthetic-surface-parent".into(),protocol_version:VERSION,core_version:"synthetic".into(),permissions,
+            state:RuntimeState{service_instance_id:instance.into(),history_revision:9,privacy_epoch:4,event_sequence:7},max_frame_bytes:MAX_FRAME_BYTES as u32}
+    }
+    #[test]
+    fn fresh_surface_control_requires_the_original_host_and_private_desktop_permissions() {
+        let original=hello("original-host",vec![Permission::DesktopHistory,Permission::ServiceManage]);
+        assert!(check_surface_control("original-host","original-host",&original).is_ok());
+        assert_eq!(check_surface_control("original-host","replacement-host",&original).unwrap_err(),"ClipboardHostInstanceChanged");
+        let replacement=hello("replacement-host",original.permissions.clone());
+        assert_eq!(check_surface_control("original-host","original-host",&replacement).unwrap_err(),"ClipboardHostInstanceChanged");
+        for permissions in [vec![],vec![Permission::HistoryRead],vec![Permission::ServiceManage],vec![Permission::DesktopHistory]] {
+            assert_eq!(check_surface_control("original-host","original-host",&hello("original-host",permissions)).unwrap_err(),"ClipboardHostPermissionDenied");
+        }
+        let mut changed_epoch=original;
+        changed_epoch.state.privacy_epoch+=1;
+        assert!(check_surface_control("original-host","original-host",&changed_epoch).is_ok());
+    }
+    #[test]
+    fn a_negative_surface_revocation_receipt_never_confirms_disable() {
+        assert!(confirm_surface_revocation(OperationResult{performed:true}).is_ok());
+        assert_eq!(confirm_surface_revocation(OperationResult{performed:false}).unwrap_err(),"SurfaceGrantRevocationUnconfirmed");
+    }
+    #[test]
+    fn an_expired_surface_host_deadline_never_polls_the_operation() {
+        let called=std::cell::Cell::new(false);
+        let deadline=tokio::time::Instant::now();
+        let result=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(surface_host_request(deadline,async {
+            called.set(true);
+            Ok(())
+        }));
+        assert_eq!(result.unwrap_err(),"SurfaceHostDeadline");
+        assert!(!called.get());
     }
 }
 pub(crate) struct ServiceQueueCopy {
@@ -292,7 +377,8 @@ impl DesktopHost {
         if initial_state.service_instance_id!=original || self.instance()?!=original {return Err("ClipboardHostInstanceChanged".into());}
         let grant:GrantResult=client.call(Method::ServiceGrant,GrantIssueParams{role:ClientRole::Surface,
             permissions:vec!["history_read".into()],lifetime_ms:600_000},"GrantResult").await.map_err(remote_error)?;
-        let access=SurfaceAccess{bridge:self.clone(),client:tokio::sync::Mutex::new(client),endpoint:endpoint.address().to_string_lossy().into_owned(),grant:grant.grant,initial_state};
+        drop(client);
+        let access=SurfaceAccess{bridge:self.clone(),endpoint:endpoint.address().to_string_lossy().into_owned(),host_endpoint:endpoint,grant:grant.grant,initial_state};
         if let Err(error)=access.check(&access.initial_state).await {let _=access.revoke().await;return Err(error);}
         Ok(access)
     }

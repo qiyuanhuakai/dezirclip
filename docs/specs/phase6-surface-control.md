@@ -145,6 +145,15 @@ an unavailable Service does not authorize reading a local database instead.
 Desktop revokes the finite grant on child exit, renderer/Host switch or update.
 Only Host owns global shortcuts, native target focus and clipboard capture.
 
+Desktop control requests use a fresh authenticated connection to the original
+typed endpoint. Each connection must still identify the original Host instance
+and grant the private Desktop permissions. A closed idle connection is never
+reused, and a failed or uncertain write is never replayed. State checks retain
+the selected instance, privacy epoch and history revision. Copy includes its
+authentication and before/after checks in one five-second deadline; revocation
+has the same total budget and requires a positive operation receipt for the
+original grant. An epoch change does not prevent revoking that old grant.
+
 ## Lifecycle acceptance boundary
 
 Test private framing, direction/correlation, source/version checks, finite
