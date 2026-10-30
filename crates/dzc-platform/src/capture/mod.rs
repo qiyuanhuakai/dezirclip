@@ -6,6 +6,8 @@ mod reader;
 mod subscription;
 #[cfg(any(target_os = "windows", test))]
 mod acquisition;
+#[cfg(any(target_os = "windows", test))]
+mod dropfiles;
 #[cfg(target_os = "windows")]
 pub mod windows_clipboard;
 #[cfg(target_os = "windows")]
