@@ -6,6 +6,24 @@ Surface from one checkout. The existing functional fixture must pass on those
 exact bytes before measurement starts. Ordinary push and PR runs never start
 the comparison job.
 
+The separate `windows_surface_crash_diagnostics` dispatch input runs the original
+thirteen release functional checks with no comparison. The two optional modes
+are mutually exclusive. This hosted-runner-only collector uses a new private
+directory and an exclusively created per-application
+[WER LocalDumps configuration](https://learn.microsoft.com/en-us/windows/win32/wer/collecting-user-mode-dumps).
+It preserves existing registry settings, restores only its unchanged owned
+child key in `finally` and an always cleanup step, and leaves an empty parent
+key if it had to create one. Forced runner loss cannot guarantee cleanup.
+
+Only a dump bound to the retained original PID, process creation second, exact
+module path, candidate hash and time window is eligible for upload. Parsing
+reads bounded metadata; raw full dumps are capped at 1 GiB and retained for
+three days. The original functional failure remains a failure. A successful
+run without a crash is `not_reproduced`, and does not close historical heap
+failures. Release optimization and stripping are unchanged; debugger tools are
+inventoried without installation, so this first collector does not promise a
+symbolic stack or identify the corruption origin.
+
 `derive.py` checks reviewed, LF-normalized hashes of the functional controller and
 target, then generates temporary plumbing and a target with narrow timing and
 resource-observation additions. Generated copies are not maintained as tracked

@@ -16,6 +16,11 @@ on:
         type: boolean
         required: false
         default: false
+      windows_surface_crash_diagnostics:
+        description: Run only release Windows functional checks with owned WER crash dump collection, without ABBA
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -405,14 +410,22 @@ jobs:
 
   windows-surface-performance:
     name: Optional Windows release Surface comparison
-    if: github.event_name == 'workflow_dispatch' && inputs.windows_surface_performance == true
+    if: github.event_name == 'workflow_dispatch' && (inputs.windows_surface_performance == true || inputs.windows_surface_crash_diagnostics == true)
     needs: [frontend, tauri]
     runs-on: windows-latest
     timeout-minutes: 150
     env:
-      DZC_WINDOWS_PERFORMANCE_ENABLED: 'true'
+      DZC_WINDOWS_PERFORMANCE_ENABLED: ${{ inputs.windows_surface_performance && 'true' || 'false' }}
+      DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED: ${{ inputs.windows_surface_crash_diagnostics && 'true' || 'false' }}
       GOTOOLCHAIN: local
     steps:
+      - name: Require exactly one optional Windows mode
+        shell: pwsh
+        run: |
+          if (($env:DZC_WINDOWS_PERFORMANCE_ENABLED -eq 'true') -eq ($env:DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED -eq 'true')) {
+            throw 'Select either performance or diagnostic-only functional checks'
+          }
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -461,9 +474,11 @@ jobs:
         run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
 
       - name: Derive the comparison fixture from reviewed functional sources
+        if: inputs.windows_surface_performance
         run: python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-runtime
 
       - name: Verify these release bytes before the sequential ABBA comparison
+        if: inputs.windows_surface_performance
         shell: python
         run: |
           import datetime, json, os, pathlib, subprocess, sys, uuid
@@ -488,8 +503,44 @@ jobs:
           subprocess.run(['node', '.harness/windows-performance-runtime/controller.mjs', *common,
               '--functional-report', str(functional / 'report.json'), '--quiet-note', str(quiet), '--output-root', str(comparison)], check=True)
 
+      - name: Run diagnostic-only release functional checks
+        id: crash-diagnostics
+        if: inputs.windows_surface_crash_diagnostics
+        shell: pwsh
+        run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode run
+
+      - name: Restore only the matching owned WER child key
+        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.root != ''
+        shell: pwsh
+        env:
+          DZC_CRASH_DIAGNOSTICS_ROOT: ${{ steps.crash-diagnostics.outputs.root }}
+        run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode cleanup -Root $env:DZC_CRASH_DIAGNOSTICS_ROOT
+
+      - name: Preserve original functional failures and crash metadata
+        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.root != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-surface-release-crash-metadata-${{ github.run_attempt }}
+          retention-days: 3
+          path: |
+            ${{ steps.crash-diagnostics.outputs.root }}/*.json
+            ${{ steps.crash-diagnostics.outputs.functional_root }}/*.json
+            ${{ steps.crash-diagnostics.outputs.functional_root }}/*.log
+            ${{ steps.crash-diagnostics.outputs.functional_root }}/*.png
+          if-no-files-found: error
+
+      - name: Preserve only the identity-bound original Desktop dump
+        if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.accepted_dump != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-surface-release-owned-crash-dump-${{ github.run_attempt }}
+          retention-days: 3
+          compression-level: 1
+          path: ${{ steps.crash-diagnostics.outputs.accepted_dump }}
+          if-no-files-found: error
+
       - name: Preserve original comparison sources, observations and failures
-        if: always()
+        if: always() && inputs.windows_surface_performance
         uses: actions/upload-artifact@v4
         with:
           name: windows-surface-release-performance-${{ github.run_attempt }}
