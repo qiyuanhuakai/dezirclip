@@ -43,6 +43,24 @@ sequence directory and the last original roots; an error before the first child 
 still retain the parent manifest. The existing separate dump upload accepts only the
 original collector's identity-bound path, and an accepted dump always stops dispatch.
 
+The external-blur input uses the same original alternate editor and at most three
+predeclared client points: left inset 8, right inset 8, then center, all at mid-height.
+Duplicate points are removed. Read-only conversion and hit probes record every point,
+including points outside the virtual desktop, and select the first exact original
+editor hit. Immediately before the single original three-event mouse batch, the
+fixture rechecks the original process/window/thread/class/parent identities, foreground,
+geometry and selected hit. Any change stops without selecting another point or sending
+input. It does not activate, move, raise or hide a window, move the pointer during
+planning, wait for coverage to clear or repeat a click. Hit metadata contains class,
+PID, parent/root/owner and geometry, with no third-party title, content or image reads.
+These read-only probes cannot make the final input atomic with window changes.
+
+This is new-cohort input planning. The `08eabd190f9ef10fa04350a6f076745f89f62e6c`
+diagnostic run `41048645997` remains failed at its second case's original fixed-point
+precheck; its third through fifth cases remain unstarted. The original controller's
+thirteen functional assertions, timing and post-click focus/blur checks remain intact.
+The input change does not reproduce or fix the historical heap failure.
+
 Release optimization and stripping are unchanged; debugger tools are
 inventoried without installation, so this first collector does not promise a
 symbolic stack or identify the corruption origin.

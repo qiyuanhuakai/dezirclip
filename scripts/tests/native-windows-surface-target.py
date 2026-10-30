@@ -42,6 +42,63 @@ def absolute_mouse_point(x, y, left, top, width, height):
             (2 * (y - top) + 1) * 65536 // (2 * height))
 
 
+def alternate_click_candidates(rect):
+    require(len(rect) == 4 and all(type(value) is int for value in rect), 'Invalid owned editor rectangle')
+    left, top, right, bottom = rect
+    require(left == 0 and top == 0 and right > 16 and bottom > 2, 'Owned editor client bounds differ')
+    candidates, seen = [], set()
+    for name, x in (('left', 8), ('right', right - 8), ('center', right // 2)):
+        point = (x, bottom // 2)
+        if point not in seen:
+            seen.add(point)
+            candidates.append({'id': name, 'client_point': list(point)})
+    return candidates
+
+
+def plan_alternate_click(rect, virtual, expected_edit, to_screen, inspect_point):
+    require(type(expected_edit) is int and expected_edit > 0, 'An original editor HWND is required')
+    require(len(virtual) == 4 and all(type(value) is int for value in virtual), 'Invalid virtual desktop')
+    left, top, width, height = virtual
+    require(0 < width <= 65536 and 0 < height <= 65536, 'Virtual desktop dimensions exceed the click bound')
+    plan = {'client_rect': list(rect), 'virtual_desktop': list(virtual), 'probes': [], 'selected_index': None,
+            'scope': 'Read-only point probes and recheck are not atomic with SendInput or window message delivery.'}
+    for candidate in alternate_click_candidates(rect):
+        probe = {**candidate, 'screen_point': None, 'in_virtual_desktop': False,
+                 'absolute_point': None, 'hit': None, 'eligible': False}
+        try:
+            point = to_screen(candidate['client_point'])
+            require(len(point) == 2 and all(type(value) is int for value in point), 'Invalid owned click screen point')
+            inside = left <= point[0] < left + width and top <= point[1] < top + height
+            probe.update(screen_point=list(point), in_virtual_desktop=inside)
+            if inside:
+                probe['absolute_point'] = list(absolute_mouse_point(*point, *virtual))
+                probe['hit'] = inspect_point(point)
+                require(isinstance(probe['hit'], dict), 'Missing read-only hit metadata')
+                probe['eligible'] = probe['hit'].get('hwnd') == expected_edit and probe['hit'].get('exists') is True
+        except BaseException as error:
+            probe['error'] = str(error)
+            plan['probes'].append(probe)
+            raise RuntimeError('Owned alternate point planning failed: ' + json.dumps(plan)) from error
+        if probe['eligible'] and plan['selected_index'] is None:
+            plan['selected_index'] = len(plan['probes'])
+        plan['probes'].append(probe)
+    return plan
+
+
+def send_planned_click(plan, recheck, send):
+    index = plan.get('selected_index')
+    if not (type(index) is int and 0 <= index < len(plan['probes'])):
+        raise RuntimeError('Owned alternate click has no unoccluded predeclared point: ' + json.dumps(plan))
+    selected = plan['probes'][index]
+    plan['recheck'] = recheck(selected)
+    if not (isinstance(plan['recheck'], dict) and plan['recheck'].get('unchanged') is True):
+        raise RuntimeError('Owned alternate click changed before input: ' + json.dumps(plan))
+    plan['sent'] = send(selected['absolute_point'])
+    if plan['sent'] != 3:
+        raise RuntimeError('Single owned mouse input was incomplete: ' + json.dumps(plan))
+    return plan['sent']
+
+
 def save(path, value):
     data = (json.dumps(value, indent=2, ensure_ascii=True) + '\n').encode()
     with path.open('xb') as stream:
@@ -135,6 +192,8 @@ class Native:
             (self.user, 'IsWindowEnabled', [W.HWND], W.BOOL),
             (self.user, 'IsIconic', [W.HWND], W.BOOL),
             (self.user, 'GetParent', [W.HWND], W.HWND),
+            (self.user, 'GetAncestor', [W.HWND, W.UINT], W.HWND),
+            (self.user, 'GetWindow', [W.HWND, W.UINT], W.HWND),
             (self.user, 'GetClientRect', [W.HWND, ctypes.POINTER(W.RECT)], W.BOOL),
             (self.user, 'ClientToScreen', [W.HWND, ctypes.POINTER(W.POINT)], W.BOOL),
             (self.user, 'WindowFromPoint', [W.POINT], W.HWND),
@@ -360,40 +419,94 @@ class Native:
         require(self.user.GetForegroundWindow() == window, 'Synthetic target is not foreground')
         return {'foreground_target': True, 'hwnd': int(window), 'alternate': alternate, 'target_focus': self.focus_snapshot()}
 
+    def click_window_metadata(self, window):
+        window = int(window or 0)
+        pid, cls, rect = W.DWORD(), ctypes.create_unicode_buffer(256), W.RECT()
+        exists = bool(window and self.user.IsWindow(window))
+        thread = self.user.GetWindowThreadProcessId(window, ctypes.byref(pid)) if exists else 0
+        if exists:
+            self.user.GetClassNameW(window, cls, len(cls))
+        positioned = exists and bool(self.user.GetWindowRect(window, ctypes.byref(rect)))
+        return {'hwnd': window, 'exists': exists, 'pid': pid.value, 'thread_id': thread, 'class_name': cls.value,
+                'parent_hwnd': int(self.user.GetParent(window) or 0) if exists else 0,
+                'root_hwnd': int(self.user.GetAncestor(window, 2) or 0) if exists else 0,
+                'owner_hwnd': int(self.user.GetWindow(window, 4) or 0) if exists else 0,
+                'visible': bool(exists and self.user.IsWindowVisible(window)),
+                'enabled': bool(exists and self.user.IsWindowEnabled(window)),
+                'iconic': bool(exists and self.user.IsIconic(window)),
+                'rect': [rect.left, rect.top, rect.right, rect.bottom] if positioned else None}
+
     def click_alternate(self):
         require(self.desktop is not None, 'External click requires the original Desktop binding')
         require(self.kernel.GetCurrentThreadId() == self.window_thread_id, 'Owned click must run on the original window thread')
-        for window in (self.alternate, self.alternate_edit):
-            pid = W.DWORD()
-            thread = self.user.GetWindowThreadProcessId(window, ctypes.byref(pid))
-            require(self.user.IsWindow(window) and pid.value == os.getpid() and thread == self.window_thread_id,
-                    'Original alternate window ownership changed')
-            require(self.user.IsWindowVisible(window) and self.user.IsWindowEnabled(window), 'Owned alternate is hidden or disabled')
-        require(self.user.GetParent(self.alternate_edit) == self.alternate and not self.user.IsIconic(self.alternate),
-                'Original alternate editor parent changed or was minimized')
-        rect = W.RECT()
-        require(self.user.GetClientRect(self.alternate_edit, ctypes.byref(rect)), 'Owned editor client rectangle unavailable')
-        require(rect.left == 0 and rect.top == 0 and rect.right > 16 and rect.bottom > 2, 'Owned editor client bounds differ')
-        # This fixed left inset is outside the centered Surface. Never search for
-        # another clickable window or move/raise a covered target to make it pass.
-        point = W.POINT(8, rect.bottom // 2)
-        require(self.user.ClientToScreen(self.alternate_edit, ctypes.byref(point)), 'Owned click screen coordinates unavailable')
-        virtual = [self.user.GetSystemMetrics(index) for index in (76, 77, 78, 79)]
-        normalized = absolute_mouse_point(point.x, point.y, *virtual)
+
+        def state():
+            rect = W.RECT()
+            require(self.user.GetClientRect(self.alternate_edit, ctypes.byref(rect)), 'Owned editor client rectangle unavailable')
+            return {'alternate': self.click_window_metadata(self.alternate),
+                    'editor': self.click_window_metadata(self.alternate_edit),
+                    'foreground': self.click_window_metadata(self.user.GetForegroundWindow()),
+                    'client_rect': [rect.left, rect.top, rect.right, rect.bottom],
+                    'virtual_desktop': [self.user.GetSystemMetrics(index) for index in (76, 77, 78, 79)]}
+
+        def screen_point(client_point):
+            point = W.POINT(*client_point)
+            require(self.user.ClientToScreen(self.alternate_edit, ctypes.byref(point)), 'Owned click screen coordinates unavailable')
+            return [point.x, point.y]
+
+        def hit_point(point):
+            return self.click_window_metadata(self.user.WindowFromPoint(W.POINT(*point)))
+
+        initial = state()
+        for name, cls in (('alternate', 'static'), ('editor', 'edit')):
+            window = initial[name]
+            require(window['exists'] and window['pid'] == os.getpid() and window['thread_id'] == self.window_thread_id
+                    and window['class_name'].casefold() == cls and window['visible'] and window['enabled']
+                    and not window['iconic'] and window['rect'] is not None, 'Original alternate window identity unavailable: ' + json.dumps(initial))
+        require(initial['editor']['parent_hwnd'] == int(self.alternate)
+                and initial['editor']['root_hwnd'] == int(self.alternate)
+                and initial['alternate']['root_hwnd'] == int(self.alternate), 'Original alternate editor parent changed: ' + json.dumps(initial))
+        foreground = initial['foreground']
+        surface = next((item for item in self.tree() if item['pid'] == foreground['pid'] and item['running']
+                        and Path(item['image']).resolve() == (self.root / 'candidate/dzc-surface.exe').resolve()), None)
+        require(surface is not None and surface.get('original_handle_retained') is True
+                and foreground['exists'] and foreground['visible'] and foreground['class_name']
+                and foreground['rect'] is not None, 'Original native Surface is not foreground before the external click: ' + json.dumps(initial))
+        process_keys = ('pid', 'creation_time_100ns', 'image', 'running', 'original_handle_retained')
+        surface_identity = {key: surface[key] for key in process_keys}
         before = self.focus_snapshot()
-        hit = self.user.WindowFromPoint(point)
-        require(hit == self.alternate_edit, 'Owned alternate click is covered or misses the original editor: ' + json.dumps({
-            'point': [point.x, point.y], 'hit_hwnd': int(hit or 0), 'expected_edit': int(self.alternate_edit), 'before': before}))
-        inputs = (self.Input * 3)()
-        inputs[0].mi = self.Mouse(*normalized, 0, 0x8000 | 0x4000 | 0x0001, 0, 0)
-        inputs[1].mi = self.Mouse(0, 0, 0, 0x0002, 0, 0)
-        inputs[2].mi = self.Mouse(0, 0, 0, 0x0004, 0, 0)
-        sent = self.user.SendInput(3, inputs, ctypes.sizeof(self.Input))
+        require(before['foreground_hwnd'] == foreground['hwnd'], 'Foreground changed before point planning: ' + json.dumps(initial))
+        plan = plan_alternate_click(initial['client_rect'], initial['virtual_desktop'], int(self.alternate_edit), screen_point, hit_point)
+        plan.update(initial_state=initial, foreground_process=surface_identity, before=before)
+
+        def recheck(selected):
+            try:
+                process = self.process(surface_identity['pid'])
+                identity = {key: process[key] for key in process_keys}
+                current = state()
+                current_point = screen_point(selected['client_point'])
+                focus = self.focus_snapshot()
+                hit = hit_point(current_point)
+                return {'state': current, 'screen_point': current_point, 'hit': hit, 'foreground_process': identity, 'focus': focus,
+                        'unchanged': current == initial and current_point == selected['screen_point']
+                        and hit == current['editor'] and identity == surface_identity
+                        and focus['foreground_hwnd'] == foreground['hwnd']}
+            except BaseException as error:
+                return {'unchanged': False, 'error': str(error)}
+
+        def send(absolute):
+            inputs = (self.Input * 3)()
+            inputs[0].mi = self.Mouse(*absolute, 0, 0x8000 | 0x4000 | 0x0001, 0, 0)
+            inputs[1].mi = self.Mouse(0, 0, 0, 0x0002, 0, 0)
+            inputs[2].mi = self.Mouse(0, 0, 0, 0x0004, 0, 0)
+            return self.user.SendInput(3, inputs, ctypes.sizeof(self.Input))
+
+        sent = send_planned_click(plan, recheck, send)
+        selected = plan['probes'][plan['selected_index']]
         receipt = {'method': 'one-native-mouse-click', 'sent': sent, 'hwnd': int(self.alternate),
                    'edit_hwnd': int(self.alternate_edit), 'pid': os.getpid(), 'thread_id': self.window_thread_id,
-                   'screen_point': [point.x, point.y], 'absolute_point': list(normalized),
-                   'virtual_desktop': virtual, 'hit_hwnd': int(hit), 'before': before}
-        require(sent == 3, 'Single owned mouse input was incomplete: ' + json.dumps(receipt))
+                   'screen_point': selected['screen_point'], 'absolute_point': selected['absolute_point'],
+                   'virtual_desktop': initial['virtual_desktop'], 'hit_hwnd': int(self.alternate_edit), 'before': before, 'click_plan': plan}
         deadline = time.monotonic() + 2
         while True:
             self.pump_messages()

@@ -65,7 +65,10 @@ jobs:
         run: node --test scripts/tests/surface-build.node.mjs scripts/tests/mygo-surface-patch.node.mjs
 
       - name: Test disposable native Surface fixture contracts
-        run: node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs
+        run: |
+          node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_click_plan.py
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_surface_target.py
 
       - name: Test opt-in Windows performance fixture contracts without native execution
         run: |
