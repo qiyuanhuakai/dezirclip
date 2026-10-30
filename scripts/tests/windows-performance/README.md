@@ -7,7 +7,8 @@ exact bytes before measurement starts. Ordinary push and PR runs never start
 the comparison job.
 
 The separate `windows_surface_crash_diagnostics` dispatch input runs the original
-thirteen release functional checks with no comparison. The two optional modes
+thirteen release functional checks in up to five predeclared, sequential fresh-profile
+cases with no comparison. The two optional modes
 are mutually exclusive. Diagnostic-only dispatches can collect the target crash
 after ordinary checks fail; those failures remain failed. Performance still
 requires successful frontend and backend prerequisites. This hosted-runner-only
@@ -23,7 +24,26 @@ module path, candidate hash and time window is eligible for upload. Parsing
 reads bounded metadata; raw full dumps are capped at 1 GiB and retained for
 three days. The original functional failure remains a failure. A successful
 run without a crash is `not_reproduced`, and does not close historical heap
-failures. Release optimization and stripping are unchanged; debugger tools are
+failures. The scheduler advances only after both original exits are zero, the original
+exit verdict is allowed, fixed build/source hashes and original input integrity agree,
+WER cleanup is confirmed restored, and collection says `not_reproduced` with no
+candidate or accepted dump. Every failure, exception or invalid receipt stops the
+sequence immediately; failed cases are never retried or replaced. Five qualified
+successes are only `not_reproduced_5`, and do not establish a fix.
+
+The private sequence manifest records all five planned cases, exact workflow identity,
+fixed inputs, each started case's outputs and exit, qualification or stop reason,
+and metadata hashes. Before another case starts it preserves each original WER root's
+top-level JSON and functional root's top-level JSON/log/PNG, including empty logs.
+Copies are bounded to 16 MiB per file, 128 MiB and 256 files per case; overflow stops
+the sequence. No profile, candidate directory or raw dump is traversed or copied.
+The original global workflow outputs remain attached to the child, so always-cleanup
+targets the only active WER transaction. Metadata upload includes the complete private
+sequence directory and the last original roots; an error before the first child can
+still retain the parent manifest. The existing separate dump upload accepts only the
+original collector's identity-bound path, and an accepted dump always stops dispatch.
+
+Release optimization and stripping are unchanged; debugger tools are
 inventoried without installation, so this first collector does not promise a
 symbolic stack or identify the corruption origin.
 
@@ -104,6 +124,7 @@ Pure checks, without native execution:
 
 ```sh
 python -B -m unittest discover -s scripts/tests -p test_windows_performance_derivation.py
+python -B -m unittest discover -s scripts/tests -p test_windows_crash_sequence.py
 python -B scripts/tests/windows-performance/derive.py --output-dir .harness/windows-performance-pure-check
 node --test .harness/windows-performance-pure-check/pure.node.mjs
 ```
