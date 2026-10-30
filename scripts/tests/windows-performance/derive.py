@@ -9,7 +9,7 @@ import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
-REVIEWED_TARGET_LF_SHA256 = '3849d3fe9ea426e907cadca51c0b5267cf532e05522e4f393723785c4c19505c'
+REVIEWED_TARGET_LF_SHA256 = '11b8575bd8f93bac80256f80cc364a732881f4dcd93230537d3c8b58b033586d'
 REVIEWED_CONTROLLER_LF_SHA256 = '55ec72ffdd43340b955c22563b3a8ecedb2a2eedf210963850585f1c9ffff27f'
 REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
@@ -161,7 +161,7 @@ def generate(repository, destination):
                      'scope': 'Prior reference only; the current controller has additional bounded failure cleanup.'}},
              'functional_lifecycle_provenance': {'reviewed_lf_sha256': REVIEWED_LIFECYCLE_LF_SHA256},
              'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
-                  'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-and-authenticated-handle-cleanup',
+                  'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-and-generation-verified-handle-cleanup',
                  'original_target_reference': {'commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
                      'lf_sha256': 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780',
                      'scope': 'Prior reference only; the current diagnostic target is bound by its reviewed LF hash, not attributed to this commit.'}},

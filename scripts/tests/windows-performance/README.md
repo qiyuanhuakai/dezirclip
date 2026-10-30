@@ -159,6 +159,16 @@ closed without termination and keep ownership unknown, so WebView-policy
 restoration is blocked. Previously authenticated objects can still be cleaned
 after a later discovery error. Ordinary aa511b CI passed its normal path; that
 result does not exercise or close its rejected-bind P2.
+Descendant authorization also confirms every parent edge in a second process
+snapshot taken after all candidate handles are retained, and requires each
+child's creation time to be no earlier than its retained parent's. This rejects
+stale ParentPID links to a newer reused PID and a PID replaced between the
+first snapshot and its first open. Every candidate retains the same exact
+handle and identity across confirmation; an incomplete or changed edge fails
+before any new candidate is promoted. The original 922 fixture's fake older-child
+counterexample is preserved separately. This is fixture ownership validation,
+with no claim of a Windows crash cause or change to the Linux producer.
+The stale ParentPID case follows [Microsoft's documented PID-reuse example](https://devblogs.microsoft.com/oldnewthing/20150403-00/?p=44313).
 Node records process exit separately from stdio close. A failed stop request
 still enters a bounded close wait; fallback termination targets only its original
 spawned child. A kill request, destroyed pipe or detached event handle never
