@@ -1,0 +1,1829 @@
+{
+  "kind": "complete_new_count_v1_descriptive_comparison",
+  "status": "completed_with_explicit_metric_limits",
+  "source_revision": "5d6af007b0b000ed78a22e7fc6e1413c92f28d42",
+  "target": "x86_64-unknown-linux-gnu",
+  "mode": "embedded",
+  "window_size": [
+    480,
+    360
+  ],
+  "dataset": "10 complete ordinary synthetic text records; query dzcp6needle7; original exact text pasted into independent native target",
+  "performance_eligible": false,
+  "phase6_passed": false,
+  "phase7_authorized": false,
+  "local_full_descriptive_record": {
+    "bytes": 87492,
+    "sha256": "241fa784d832bf67be7406a553fa7e8397c934d1897f9d4a3098276030221c35"
+  },
+  "independent_full_output_review": {
+    "bytes": 18521,
+    "sha256": "00c905265201b1034e95736ef9a55ab1e93e506b24a96cc97872ddbb2121e27f"
+  },
+  "source_freeze": {
+    "bytes": 3321,
+    "sha256": "63303598ff00a400651c1f8d3907c43917bec7739201445dc22baa4df7706a5b"
+  },
+  "summarizer": {
+    "bytes": 9741,
+    "sha256": "8f4a342f43e5f52c47a7e373992b680835cb1e68d92980f2ba5ab944fd9bf5f2"
+  },
+  "inputs": {
+    "desktop": {
+      "bytes": 17432440,
+      "sha256": "d28810abb323eef88d1342c4950c25f174f2828657c764db62deb5a990ec6ca9"
+    },
+    "helper": {
+      "bytes": 10723591,
+      "sha256": "c97cd7aacdac1e5fe531c64588317ff5dcf46a53744bf42b0ec3557183ca5a8a"
+    },
+    "desktop_proof": {
+      "bytes": 115946,
+      "sha256": "1f145790946aba1d430591e439d491b7861a3cc41830b9c3a162c74624ab38b4"
+    },
+    "helper_proof": {
+      "bytes": 8656,
+      "sha256": "4a1d96850cc4fb02931ca8ddfdcf3c7c4a14e63f0d67e71800d55707bd35b312"
+    },
+    "private_ss_helper": {
+      "bytes": 17633752,
+      "sha256": "e17337851ecdc886ed942eeec69b9fa3aaee795c31c95d34c8333baa448ec3be"
+    },
+    "webkit_driver": {
+      "bytes": 1735024,
+      "sha256": "488118541ba1dbeaca658073af84322900485b9435bc4fbb43eb1faf21db8b70"
+    },
+    "python": {
+      "bytes": 31508264,
+      "sha256": "bb4d05c1f88e8568985e8704afe1822e82700a54bad9317c05c8eb96d3186701"
+    },
+    "screenshot_tool": {
+      "bytes": 14656,
+      "sha256": "5b55f6bdec35ab6f5ae502f93c0308bf37aba3f23324c17a713363473fad7294"
+    },
+    "quiet_window_note": {
+      "bytes": 287,
+      "sha256": "1ef2fed6c25b2fc08f452c360ff5643ed403a97188e0ebae846e8eb000ee669c"
+    },
+    "paste_tool": {
+      "bytes": 84696,
+      "sha256": "a21dba4297e197ef27035071f6a36061cc8604ac360df19792db99ad3fd9a5f5"
+    },
+    "paste_tool_proof": {
+      "bytes": 11522,
+      "sha256": "59b337921bf01ec715286d432137bbfa44c9abe0d9cf802e46f68f4f86f6b87f"
+    }
+  },
+  "variants": {
+    "tauri": {
+      "warm_activation_proxy_ms": {
+        "count": 60,
+        "min": 41.142077,
+        "max": 62.855234,
+        "mean": 54.07021208333333,
+        "p50": 52.508836,
+        "p95": 62.534
+      },
+      "resources": {
+        "visible": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 617098,
+            "max": 621466,
+            "mean": 618758.9375,
+            "p50": 618138,
+            "p95": 620442
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 466200,
+            "max": 470636,
+            "mean": 467895.00416666665,
+            "p50": 467240,
+            "p95": 469612
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 3091,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959509700496,
+            "nominal_percent_one_core": 6.442873893619142,
+            "read_window_normalization_percent_range": [
+              6.44245423006842,
+              6.443293611847464
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          }
+        },
+        "hidden": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 613155,
+            "max": 618258,
+            "mean": 615593.678125,
+            "p50": 614843,
+            "p95": 617936
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 463300,
+            "max": 468104,
+            "mean": 465694.20416666666,
+            "p50": 464988,
+            "p95": 467996
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 72,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959504682177,
+            "nominal_percent_one_core": 0.1500774333620566,
+            "read_window_normalization_percent_range": [
+              0.1500683369218472,
+              0.15008653090510007
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          }
+        }
+      }
+    },
+    "mygo": {
+      "warm_activation_proxy_ms": {
+        "count": 60,
+        "min": 41.160935,
+        "max": 81.928797,
+        "mean": 56.423998233333336,
+        "p50": 51.715895,
+        "p95": 65.64182
+      },
+      "resources": {
+        "visible": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 482507,
+            "max": 484729,
+            "mean": 483524.18697916664,
+            "p50": 483519,
+            "p95": 484509
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 388504,
+            "max": 390824,
+            "mean": 389570.575,
+            "p50": 389516,
+            "p95": 390604
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 225,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959526804236,
+            "nominal_percent_one_core": 0.46898116656397276,
+            "read_window_normalization_percent_range": [
+              0.46895528415468396,
+              0.46900705183040425
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          }
+        },
+        "hidden": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 477771,
+            "max": 481108,
+            "mean": 479730.6984375,
+            "p50": 479655,
+            "p95": 481108
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 383768,
+            "max": 387204,
+            "mean": 385777.2479166667,
+            "p50": 385656,
+            "p95": 387204
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 64,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959514258947,
+            "nominal_percent_one_core": 0.13340083152122312,
+            "read_window_normalization_percent_range": [
+              0.1333944139354316,
+              0.13340724972454257
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          }
+        }
+      }
+    }
+  },
+  "arms_in_execution_order": [
+    {
+      "arm": "count-v1-5d6af007-1-tauri",
+      "renderer": "tauri",
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 51.197006,
+        "max": 62.855234,
+        "mean": 54.355335966666665,
+        "p50": 52.508836,
+        "p95": 62.847524
+      },
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.175758073,
+          "sample_span_seconds": 239.878242303,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 617098,
+            "max": 618138,
+            "mean": 617121.8666666667,
+            "p50": 617110,
+            "p95": 617178
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 466200,
+            "max": 467240,
+            "mean": 466223.86666666664,
+            "p50": 466212,
+            "p95": 466280
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 13.084548,
+            "max": 27.901347,
+            "mean": 15.716335909375001,
+            "p50": 15.246858,
+            "p95": 19.335849
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.079325,
+            "max": 251.264795,
+            "mean": 250.13372502919708,
+            "p50": 250.1184,
+            "p95": 250.232284
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.003341,
+            "max": 1.264795,
+            "mean": 0.1335892125,
+            "p50": 0.118348,
+            "p95": 0.232217
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.088632,
+            "max": 1.520412,
+            "mean": 0.10782814166666667,
+            "p50": 0.097377,
+            "p95": 0.147949
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.024572,
+            "max": 2.188507,
+            "mean": 0.055913761458333336,
+            "p50": 0.037172,
+            "p95": 0.10222
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007786,
+            "max": 80.162493,
+            "mean": 0.14139638645833333,
+            "p50": 0.009771,
+            "p95": 0.020849
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": false,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              234529750929221,
+              234529765906095
+            ],
+            "last": [
+              234769629634327,
+              234769643389351
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 1517,
+            "interval_min_ns": 239863728232,
+            "interval_max_ns": 239892460130,
+            "twice_nominal_interval_ns": 479756188362,
+            "nominal_percent_one_core": 6.3240455748132955,
+            "read_window_normalization_percent_range": [
+              6.323666859633368,
+              6.324424335357339
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 6.3240455748132955,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.16241563,
+          "sample_span_seconds": 239.878361325,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 613155,
+            "max": 614843,
+            "mean": 613710.2395833334,
+            "p50": 613159,
+            "p95": 614625
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 463300,
+            "max": 464988,
+            "mean": 463854.67083333334,
+            "p50": 463304,
+            "p95": 464768
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 12.319165,
+            "max": 25.347788,
+            "mean": 15.442015591666665,
+            "p50": 15.078502,
+            "p95": 18.450413
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.064101,
+            "max": 254.482401,
+            "mean": 250.13384913972888,
+            "p50": 250.118153,
+            "p95": 250.231514
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.00266,
+            "max": 4.482401,
+            "mean": 0.13371248437500002,
+            "p50": 0.118135,
+            "p95": 0.229079
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.086387,
+            "max": 2.483927,
+            "mean": 0.11158737812500001,
+            "p50": 0.097325,
+            "p95": 0.158172
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.026852,
+            "max": 4.370045,
+            "mean": 0.05168186875,
+            "p50": 0.038681,
+            "p95": 0.077369
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007547,
+            "max": 18.971589,
+            "mean": 0.08806451458333334,
+            "p50": 0.009835,
+            "p95": 0.019845
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": false,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              234800012841116,
+              234800027069305
+            ],
+            "last": [
+              235039890751918,
+              235039904314998
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 37,
+            "interval_min_ns": 239863682613,
+            "interval_max_ns": 239891473882,
+            "twice_nominal_interval_ns": 479755156495,
+            "nominal_percent_one_core": 0.15424534577310214,
+            "read_window_normalization_percent_range": [
+              0.15423641116232376,
+              0.15425428141906922
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.15424534577310214,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "qualification_count": 38,
+      "actual_reply_count": 76,
+      "assessment": {
+        "bytes": 22129,
+        "sha256": "fc39f882ddf28aff6a5227484c61ec73f4a1740444098d7cff6066fc16badce4"
+      },
+      "independent_raw_review": {
+        "bytes": 12098,
+        "sha256": "5ee9f301b802ffeedc360650f8a097905caa8d727fea5865fa2beb2e13e5c50d"
+      },
+      "original_raw_inventory": [
+        {
+          "role": "credential-boundary.json",
+          "bytes": 8616,
+          "sha256": "3d764c325d4f8f4394813430c6f964ff0be94156bfcd8dcd721eb0479585fe7b"
+        },
+        {
+          "role": "functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "role": "functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "role": "functional/native-observations.jsonl",
+          "bytes": 1387248,
+          "sha256": "865915f9206f6943663c0135b74cf1bcf271de09f53d7c87f856686abcb896c3"
+        },
+        {
+          "role": "functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "role": "functional/performance.json",
+          "bytes": 830419,
+          "sha256": "4fa92bdc6d6f623d685f81a370564e22c8e412ba51c2e36799a249f1c44e7244"
+        },
+        {
+          "role": "functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "443993badb4b47a6637bd929078dfdb26f9e26144eca6f2d77c6163e99e0acb8"
+        },
+        {
+          "role": "functional/resource-clock-hidden.jsonl",
+          "bytes": 204208,
+          "sha256": "172ced2fedfa75466c4785dc120e0d1bbc1f4a68076cb158730a8ee4d3e8a4b5"
+        },
+        {
+          "role": "functional/resource-clock-visible.jsonl",
+          "bytes": 204197,
+          "sha256": "da3c9f9e7e394fd34e82455ff7d9e844af3c1be5fdb33ce179a6e145a0aaa019"
+        },
+        {
+          "role": "functional/resource-visible-query.png",
+          "bytes": 4136,
+          "sha256": "e04bf6a7fb991bea8bf44b6ad783ad75b34dfcf6643c1153ee7caafa54097955"
+        },
+        {
+          "role": "functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resources-hidden.jsonl",
+          "bytes": 26409767,
+          "sha256": "a867540aa767fa98efbd55fad2efae01f925a9326aa96e71535da75718cc667c"
+        },
+        {
+          "role": "functional/resources-visible.jsonl",
+          "bytes": 26660147,
+          "sha256": "0d7e10d4e587d3fb94833e517d4cecac195685e9292dd9eb389e46d3f2231c2f"
+        },
+        {
+          "role": "functional/show-status-qualification.jsonl",
+          "bytes": 52942,
+          "sha256": "20dbb1e18c13198b7c4c6e520cb85bc0f4134ae44b4dc810d8bc4ddb50281c51"
+        },
+        {
+          "role": "functional/surface-before-warmup.png",
+          "bytes": 7416,
+          "sha256": "1e1c7dac4ea0234fe5f76b2f16211c40c79a02ddfc67e1f27e0f33141fb7987a"
+        },
+        {
+          "role": "functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "bf0d00710dd4582ed600f5912c11935e9768cbaf5007eeaaae430b2ff68ab509"
+        },
+        {
+          "role": "functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/target.stdout.jsonl",
+          "bytes": 7105,
+          "sha256": "6c1c7a0ba9863556b8d0dbd0510e50192024d279bb8dbbdf201732af27d01ab5"
+        },
+        {
+          "role": "functional/webdriver.log",
+          "bytes": 6544,
+          "sha256": "f424fe7c315b0aae1153323cbc5bc5ac82e8e422135c6c1b323e6e1977ee4cb7"
+        },
+        {
+          "role": "functional/wm.stderr.log",
+          "bytes": 8996,
+          "sha256": "f6aa7bea450cf66d3ff551acb2c5e76113e6c95bd4cd3485c08fd8bb6b4c55e5"
+        },
+        {
+          "role": "functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "host-load.jsonl",
+          "bytes": 197185,
+          "sha256": "d0876256b2ac16fab257f6a3366ddcf7aa08a2634b3e17d4788bb1403e9dee98"
+        },
+        {
+          "role": "host-preflight.json",
+          "bytes": 445,
+          "sha256": "16f76d96e0432c95169a9da9879d34df902472f44dbffb0e6d0c026081cd4371"
+        },
+        {
+          "role": "outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "role": "receipt.json",
+          "bytes": 8177,
+          "sha256": "6e922b51dde3dd7fcb67b9754d610ebdcea92f450f3f233c38961459cc27c92d"
+        },
+        {
+          "role": "runtime.json",
+          "bytes": 14841,
+          "sha256": "fee3380b3a957e9e6b06ad3ddcc6535f5de2f77e5ba9485a729f8e77256b861b"
+        }
+      ]
+    },
+    {
+      "arm": "count-v1-5d6af007-2-mygo",
+      "renderer": "mygo",
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 51.058743,
+        "max": 71.715982,
+        "mean": 56.57889096666667,
+        "p50": 51.480192,
+        "p95": 65.64182
+      },
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.157716778,
+          "sample_span_seconds": 239.888557575,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 484125,
+            "max": 484729,
+            "mean": 484276.5104166667,
+            "p50": 484184,
+            "p95": 484569
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 390220,
+            "max": 390824,
+            "mean": 390372.07916666666,
+            "p50": 390280,
+            "p95": 390664
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 11.410517,
+            "max": 26.196858,
+            "mean": 13.314943046875,
+            "p50": 13.029655,
+            "p95": 15.572475
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.076382,
+            "max": 256.551491,
+            "mean": 250.14448130865486,
+            "p50": 250.119401,
+            "p95": 250.239239
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.003741,
+            "max": 6.551491,
+            "mean": 0.14433470416666666,
+            "p50": 0.119387,
+            "p95": 0.236969
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.075562,
+            "max": 0.565723,
+            "mean": 0.0907336125,
+            "p50": 0.083956,
+            "p95": 0.123114
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.024574,
+            "max": 3.149985,
+            "mean": 0.050477803125000005,
+            "p50": 0.034592,
+            "p95": 0.090242
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007335,
+            "max": 13.730727,
+            "mean": 0.06613747083333334,
+            "p50": 0.010399,
+            "p95": 0.023342
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": false,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              236629621018279,
+              236629635595258
+            ],
+            "last": [
+              236869509717774,
+              236869521255518
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 114,
+            "interval_min_ns": 239874122516,
+            "interval_max_ns": 239900237239,
+            "twice_nominal_interval_ns": 479774359755,
+            "nominal_percent_one_core": 0.47522339484008636,
+            "read_window_normalization_percent_range": [
+              0.4751975292397389,
+              0.4752492632563815
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.47522339484008636,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.151716957,
+          "sample_span_seconds": 239.879749474,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 479377,
+            "max": 481108,
+            "mean": 480486.7135416667,
+            "p50": 481108,
+            "p95": 481108
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 385476,
+            "max": 387204,
+            "mean": 386582.8125,
+            "p50": 387204,
+            "p95": 387204
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 10.921512,
+            "max": 25.256014,
+            "mean": 13.147383922916667,
+            "p50": 12.855202,
+            "p95": 15.332974
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.077522,
+            "max": 253.553292,
+            "mean": 250.13529663607926,
+            "p50": 250.118389,
+            "p95": 250.211894
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.002348,
+            "max": 3.553292,
+            "mean": 0.13515814791666667,
+            "p50": 0.118341,
+            "p95": 0.210871
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.073325,
+            "max": 0.676701,
+            "mean": 0.0942182125,
+            "p50": 0.085418,
+            "p95": 0.126067
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.024795,
+            "max": 8.806812,
+            "mean": 0.07578194583333334,
+            "p50": 0.036319,
+            "p95": 0.117212
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.008376,
+            "max": 15.363422,
+            "mean": 0.12431626979166667,
+            "p50": 0.010636,
+            "p95": 0.025653
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": false,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              236899851980399,
+              236899863145063
+            ],
+            "last": [
+              237139732593696,
+              237139744663846
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 31,
+            "interval_min_ns": 239869448633,
+            "interval_max_ns": 239892683447,
+            "twice_nominal_interval_ns": 479762132080,
+            "nominal_percent_one_core": 0.1292307079993999,
+            "read_window_normalization_percent_range": [
+              0.12922444967709446,
+              0.12923696692791406
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.1292307079993999,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "qualification_count": 38,
+      "actual_reply_count": 45,
+      "assessment": {
+        "bytes": 22086,
+        "sha256": "a2675263a0516d02be905e6faf22a36bca2c94d1a38ccd7ed3a12f65715d8a84"
+      },
+      "independent_raw_review": {
+        "bytes": 13492,
+        "sha256": "24c2df957031688fa039ca2a8ae862fad7a5e54f9b955b59fbd3fadd05e96af6"
+      },
+      "original_raw_inventory": [
+        {
+          "role": "credential-boundary.json",
+          "bytes": 8600,
+          "sha256": "99983f94948423b2b4596721867b00b66dfa9f9c15d6dada555701f52f2447d0"
+        },
+        {
+          "role": "functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "role": "functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "role": "functional/native-observations.jsonl",
+          "bytes": 1388037,
+          "sha256": "dc85cb7474f8876301d4c6826e290f192ee6fb32adf52d5074405d97990efa26"
+        },
+        {
+          "role": "functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "role": "functional/performance.json",
+          "bytes": 841609,
+          "sha256": "3f54c3b9548c2845f9619d36c02d5ddc937bac6c2f340f55cc302f365ddc07c2"
+        },
+        {
+          "role": "functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "8d2992f5776d4bcac3960046e2c588141b7f411c4623835a11a871652bbd462b"
+        },
+        {
+          "role": "functional/resource-clock-hidden.jsonl",
+          "bytes": 204213,
+          "sha256": "50288395308613e238b06a6471bec6a1e9f58dc81591c415999d56e47a51202f"
+        },
+        {
+          "role": "functional/resource-clock-visible.jsonl",
+          "bytes": 204192,
+          "sha256": "6640f4f4646ff7c949b23d46f7d73f17a7099d39a1b70e90a26fee31ac3406e7"
+        },
+        {
+          "role": "functional/resource-visible-query.png",
+          "bytes": 9091,
+          "sha256": "69e70b38d984d30a43bad6e61f16ce8afbc0b0975b52c70575dd1b257c710d6b"
+        },
+        {
+          "role": "functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resources-hidden.jsonl",
+          "bytes": 22062456,
+          "sha256": "7013ef000f444d8ff58e1c63ef733e1ee0dba9c62cd682867b528e4830d8ca19"
+        },
+        {
+          "role": "functional/resources-visible.jsonl",
+          "bytes": 22239797,
+          "sha256": "c9b8b4b54d7c18934712aa29a9e5e99715f48c3186ecd1da1d51ac643735f2b4"
+        },
+        {
+          "role": "functional/show-status-qualification.jsonl",
+          "bytes": 38402,
+          "sha256": "2964b7afcb5c296529ac49ca19e972140178454609b0679412a61b34e267384f"
+        },
+        {
+          "role": "functional/surface-before-warmup.png",
+          "bytes": 25163,
+          "sha256": "9fd33a0519487acd3de05ed59b24e7a1c767f44bbf0a31cf0fc6414b7d39a9e9"
+        },
+        {
+          "role": "functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "bf0d00710dd4582ed600f5912c11935e9768cbaf5007eeaaae430b2ff68ab509"
+        },
+        {
+          "role": "functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/target.stdout.jsonl",
+          "bytes": 5675,
+          "sha256": "200b09810461318ad1e96e6f94c1150c162546a5f4af382d603f39f516ea9afd"
+        },
+        {
+          "role": "functional/webdriver.log",
+          "bytes": 28254,
+          "sha256": "c83884b1d2904ed67a3bb77453f386e81d884038835798b35711f4c4b46b993e"
+        },
+        {
+          "role": "functional/wm.stderr.log",
+          "bytes": 18043,
+          "sha256": "e1ae2955a8edd8eac495640f241000288a243d51d74ea8a63ea77de2d0b6ddbf"
+        },
+        {
+          "role": "functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "host-load.jsonl",
+          "bytes": 197029,
+          "sha256": "25c868edbdfa7acc8dcc1015682ea485ced2c804621e8e57163543d43b520605"
+        },
+        {
+          "role": "host-preflight.json",
+          "bytes": 447,
+          "sha256": "126665f668b53dc1d73a746ad7a3b8b606c0dff32d24c9d43d0171047635074c"
+        },
+        {
+          "role": "outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "role": "receipt.json",
+          "bytes": 8159,
+          "sha256": "af897c5ee7f4b3f6d4a722841989b3af6aed6a4dd237d2ccf1dc329f3fac4d93"
+        },
+        {
+          "role": "runtime.json",
+          "bytes": 14839,
+          "sha256": "e3f32cb3a9f665d15acc8d610f21c862b58956e5c207f91843378db5b26430b2"
+        }
+      ]
+    },
+    {
+      "arm": "count-v1-5d6af007-3-mygo",
+      "renderer": "mygo",
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 41.160935,
+        "max": 81.928797,
+        "mean": 56.2691055,
+        "p50": 51.834363,
+        "p95": 71.751341
+      },
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.147170524,
+          "sample_span_seconds": 239.879030687,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 482507,
+            "max": 483519,
+            "mean": 482771.86354166665,
+            "p50": 482719,
+            "p95": 483219
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 388504,
+            "max": 389516,
+            "mean": 388769.07083333336,
+            "p50": 388716,
+            "p95": 389216
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 11.164874,
+            "max": 49.314268,
+            "mean": 13.3950026375,
+            "p50": 13.021546,
+            "p95": 15.891783
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.070325,
+            "max": 250.941851,
+            "mean": 250.13454711887383,
+            "p50": 250.118386,
+            "p95": 250.230561
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.003266,
+            "max": 0.941851,
+            "mean": 0.13441036770833334,
+            "p50": 0.118339,
+            "p95": 0.230482
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.075159,
+            "max": 0.693306,
+            "mean": 0.09454761354166667,
+            "p50": 0.085356,
+            "p95": 0.143161
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.02545,
+            "max": 9.191926,
+            "mean": 0.07579614270833333,
+            "p50": 0.034876,
+            "p95": 0.087665
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.00819,
+            "max": 9.729051,
+            "mean": 0.083728225,
+            "p50": 0.010364,
+            "p95": 0.023769
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": false,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              238449302248502,
+              238449317801240
+            ],
+            "last": [
+              238689180601915,
+              238689191892308
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 111,
+            "interval_min_ns": 239862800675,
+            "interval_max_ns": 239889643806,
+            "twice_nominal_interval_ns": 479752444481,
+            "nominal_percent_one_core": 0.46273865314049906,
+            "read_window_normalization_percent_range": [
+              0.46271276341452355,
+              0.46276454576380305
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.46273865314049906,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.669827574,
+          "sample_span_seconds": 239.875017627,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 477771,
+            "max": 479707,
+            "mean": 478974.68333333335,
+            "p50": 479655,
+            "p95": 479679
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 383768,
+            "max": 385704,
+            "mean": 384971.68333333335,
+            "p50": 385652,
+            "p95": 385676
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 10.989289,
+            "max": 209.461527,
+            "mean": 13.175294563541666,
+            "p50": 12.69023,
+            "p95": 15.083302
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.073061,
+            "max": 252.516336,
+            "mean": 250.1303624890511,
+            "p50": 250.119517,
+            "p95": 250.197743
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.00244,
+            "max": 2.516336,
+            "mean": 0.13022923645833334,
+            "p50": 0.119489,
+            "p95": 0.197302
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.077123,
+            "max": 0.718179,
+            "mean": 0.09462205729166667,
+            "p50": 0.086064,
+            "p95": 0.118372
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.02607,
+            "max": 5.796981,
+            "mean": 0.06411519270833334,
+            "p50": 0.037438,
+            "p95": 0.12078
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.008536,
+            "max": 23.857839,
+            "mean": 0.10653634270833333,
+            "p50": 0.010863,
+            "p95": 0.027406
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": true,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              238719526721963,
+              238719537818420
+            ],
+            "last": [
+              238959402418215,
+              238959414249035
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 33,
+            "interval_min_ns": 239864599795,
+            "interval_max_ns": 239887527072,
+            "twice_nominal_interval_ns": 479752126867,
+            "nominal_percent_one_core": 0.13757104201081938,
+            "read_window_normalization_percent_range": [
+              0.13756446782702195,
+              0.1375776168230052
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.13757104201081938,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": 6930,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "qualification_count": 38,
+      "actual_reply_count": 47,
+      "assessment": {
+        "bytes": 22087,
+        "sha256": "ef5ed8b061abf5b3d97a6ba5197db66b7d26b091577e53f0a298e20a13bf0741"
+      },
+      "independent_raw_review": {
+        "bytes": 16373,
+        "sha256": "b82aa431f3f6c152a35981b9acc9e8b8003a17d29b16eb27471c327310b0ba58"
+      },
+      "original_raw_inventory": [
+        {
+          "role": "credential-boundary.json",
+          "bytes": 8600,
+          "sha256": "71e169c42504ffe5cb63285804c90c117e6036f75313f523204a1829c64ecf77"
+        },
+        {
+          "role": "functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "role": "functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "role": "functional/native-observations.jsonl",
+          "bytes": 1386761,
+          "sha256": "6bb91be1a8444bd6583c3a9b627582b7dfc78c3b2aba9a263760693936db1642"
+        },
+        {
+          "role": "functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "role": "functional/performance.json",
+          "bytes": 843721,
+          "sha256": "1f724d80d6c7ebe4366a58ace404fafad97ffe254469d9151a7db835500dbe81"
+        },
+        {
+          "role": "functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "ce38416ef495480e0e9d8143264e7aa34f2473b3a3e19d3f509f6a33392eec7a"
+        },
+        {
+          "role": "functional/resource-clock-hidden.jsonl",
+          "bytes": 204220,
+          "sha256": "102078a5c9334a073f2f7fcbb80c5aea928eb90fa91cd39cb160f570115c2fdc"
+        },
+        {
+          "role": "functional/resource-clock-visible.jsonl",
+          "bytes": 204205,
+          "sha256": "66ee5da2ce80f891646e6077c0ea62a54b7097f373c9e168a1b36a5ceed621bc"
+        },
+        {
+          "role": "functional/resource-visible-query.png",
+          "bytes": 9091,
+          "sha256": "69e70b38d984d30a43bad6e61f16ce8afbc0b0975b52c70575dd1b257c710d6b"
+        },
+        {
+          "role": "functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resources-hidden.jsonl",
+          "bytes": 22035193,
+          "sha256": "7ce1ec7bff2dd7f3566969f5def99e52d2332cc3ae18e693e768ee07c6dcde6e"
+        },
+        {
+          "role": "functional/resources-visible.jsonl",
+          "bytes": 22240215,
+          "sha256": "e6a4ac11f5a16048a5f54481cfa9643937828427f3ab0b6961bcd1526703006b"
+        },
+        {
+          "role": "functional/show-status-qualification.jsonl",
+          "bytes": 40127,
+          "sha256": "eedfd94fb800ed1e14ae6dc9453ab8ff2b2f6fe3489a0c25627e926b5235e3ed"
+        },
+        {
+          "role": "functional/surface-before-warmup.png",
+          "bytes": 25163,
+          "sha256": "9fd33a0519487acd3de05ed59b24e7a1c767f44bbf0a31cf0fc6414b7d39a9e9"
+        },
+        {
+          "role": "functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "bf0d00710dd4582ed600f5912c11935e9768cbaf5007eeaaae430b2ff68ab509"
+        },
+        {
+          "role": "functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/target.stdout.jsonl",
+          "bytes": 5675,
+          "sha256": "d9bee63f83590c093a023f11161da8cdca6bb0f9b15427bf3bcb2b1d25872aa2"
+        },
+        {
+          "role": "functional/webdriver.log",
+          "bytes": 28254,
+          "sha256": "c99ab86c52b6faf7801453c3bd8a0e1329b5b6a961336fdb439de75a9f6348ca"
+        },
+        {
+          "role": "functional/wm.stderr.log",
+          "bytes": 18043,
+          "sha256": "e1ae2955a8edd8eac495640f241000288a243d51d74ea8a63ea77de2d0b6ddbf"
+        },
+        {
+          "role": "functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "host-load.jsonl",
+          "bytes": 196836,
+          "sha256": "f2bc7c044122e52efe91353b664bbc4a20599b0383058373cb6f6755f82dd9d8"
+        },
+        {
+          "role": "host-preflight.json",
+          "bytes": 443,
+          "sha256": "69a3e23557242bac209d50dc41ad400ab4674efb9a7936b16c5754de805859cb"
+        },
+        {
+          "role": "outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "role": "receipt.json",
+          "bytes": 8159,
+          "sha256": "72014ba2cb2731eebd56839f44ac36fe01f091691c49f07fd6c9aef4129ec9ac"
+        },
+        {
+          "role": "runtime.json",
+          "bytes": 14839,
+          "sha256": "0ff90a00fad3c2ebf3bce2c42ac2220dd460f5550281b15aaab646b3edb43695"
+        }
+      ]
+    },
+    {
+      "arm": "count-v1-5d6af007-4-tauri",
+      "renderer": "tauri",
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 41.142077,
+        "max": 62.63616,
+        "mean": 53.785088200000004,
+        "p50": 52.161692,
+        "p95": 62.303165
+      },
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.142400702,
+          "sample_span_seconds": 239.874987368,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 619406,
+            "max": 621466,
+            "mean": 620396.0083333333,
+            "p50": 620442,
+            "p95": 620510
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 468576,
+            "max": 470636,
+            "mean": 469566.14166666666,
+            "p50": 469612,
+            "p95": 469680
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 13.646059,
+            "max": 30.514263,
+            "mean": 16.38072891875,
+            "p50": 15.951303,
+            "p95": 20.088387
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.047116,
+            "max": 250.476573,
+            "mean": 250.13033093639208,
+            "p50": 250.119374,
+            "p95": 250.221916
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.003604,
+            "max": 0.476573,
+            "mean": 0.13019892916666667,
+            "p50": 0.119371,
+            "p95": 0.221735
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.090107,
+            "max": 3.128919,
+            "mean": 0.11290534270833333,
+            "p50": 0.09955,
+            "p95": 0.150347
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.026858,
+            "max": 8.442449,
+            "mean": 0.0643896625,
+            "p50": 0.0383,
+            "p95": 0.099427
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007909,
+            "max": 3.786279,
+            "mean": 0.02574139270833333,
+            "p50": 0.01012,
+            "p95": 0.019933
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": false,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              239877993896253,
+              239878009922287
+            ],
+            "last": [
+              240117869792917,
+              240117887537757
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 1574,
+            "interval_min_ns": 239859870630,
+            "interval_max_ns": 239893641504,
+            "twice_nominal_interval_ns": 479753512134,
+            "nominal_percent_one_core": 6.561702875289701,
+            "read_window_normalization_percent_range": [
+              6.56124101552627,
+              6.562164800080297
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 6.561702875289701,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.155413744,
+          "sample_span_seconds": 239.87673897,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 616868,
+            "max": 618258,
+            "mean": 617477.1166666667,
+            "p50": 617932,
+            "p95": 617936
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 466928,
+            "max": 468104,
+            "mean": 467533.7375,
+            "p50": 467992,
+            "p95": 467996
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 13.064287,
+            "max": 25.849092,
+            "mean": 15.870192002083334,
+            "p50": 15.525408,
+            "p95": 18.985961
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.046793,
+            "max": 250.898976,
+            "mean": 250.13215742440042,
+            "p50": 250.121069,
+            "p95": 250.223713
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.004369,
+            "max": 0.898976,
+            "mean": 0.13202431145833335,
+            "p50": 0.121047,
+            "p95": 0.223507
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.088248,
+            "max": 1.478302,
+            "mean": 0.11158066354166667,
+            "p50": 0.099233,
+            "p95": 0.163018
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.027507,
+            "max": 0.879114,
+            "mean": 0.04668789375,
+            "p50": 0.039528,
+            "p95": 0.090929
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.008147,
+            "max": 50.177994,
+            "mean": 0.158742646875,
+            "p50": 0.010246,
+            "p95": 0.02285
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": false,
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              240148218556905,
+              240148235051836
+            ],
+            "last": [
+              240388094629970,
+              240388108504453
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 35,
+            "interval_min_ns": 239859578134,
+            "interval_max_ns": 239889947548,
+            "twice_nominal_interval_ns": 479749525682,
+            "nominal_percent_one_core": 0.14590947203228546,
+            "read_window_normalization_percent_range": [
+              0.14590023616140393,
+              0.14591870907255117
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.14590947203228546,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Observed threads only; short-lived threads between observations may be missed. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "unverified; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "qualification_count": 38,
+      "actual_reply_count": 76,
+      "assessment": {
+        "bytes": 22106,
+        "sha256": "f01dbe27d80b51aa3ceeba647857c883381d0f06eb8434edacbc7d9f06561c97"
+      },
+      "independent_raw_review": {
+        "bytes": 17229,
+        "sha256": "4f2225beb5b88b195c878feef2363d71ab7c2d3264f158e8f89e162591c904fd"
+      },
+      "original_raw_inventory": [
+        {
+          "role": "credential-boundary.json",
+          "bytes": 8616,
+          "sha256": "837e2816d0e79a93c4a0982aa4aa7b266a710b0cc34eef1b75e9068b777377de"
+        },
+        {
+          "role": "functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "role": "functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "role": "functional/native-observations.jsonl",
+          "bytes": 1381838,
+          "sha256": "768bc6ab9635ed3762173e281a30334e3778cac3e6b9842f2e5ab0b9d0497e04"
+        },
+        {
+          "role": "functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "role": "functional/performance.json",
+          "bytes": 830492,
+          "sha256": "9c28068a6da56d2cdca69e8faa94074bdc715b0304987f9f39e65e80d1405520"
+        },
+        {
+          "role": "functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "e48fc32f5e295791bc7ee2d25d79db269431e45177d298683d74642d310bbbb3"
+        },
+        {
+          "role": "functional/resource-clock-hidden.jsonl",
+          "bytes": 204208,
+          "sha256": "d054111a9eb70f90b129a1e10fd1d0bcce653859f6d05d96f23547195241f2f8"
+        },
+        {
+          "role": "functional/resource-clock-visible.jsonl",
+          "bytes": 204192,
+          "sha256": "c8b00e9b80982b7df45d0f7f2eacf67fed11d102ffcbd1753233c0b8e61b0fbc"
+        },
+        {
+          "role": "functional/resource-visible-query.png",
+          "bytes": 4136,
+          "sha256": "e04bf6a7fb991bea8bf44b6ad783ad75b34dfcf6643c1153ee7caafa54097955"
+        },
+        {
+          "role": "functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/resources-hidden.jsonl",
+          "bytes": 26404316,
+          "sha256": "0bad6853647cfa81347898c573eab0c3308e293e9e71e71b0544af6822bc72a2"
+        },
+        {
+          "role": "functional/resources-visible.jsonl",
+          "bytes": 26658399,
+          "sha256": "5f47d6e11c87b32ea0ab11d694329b752e16327ab88337620bfd94ecf147b3a0"
+        },
+        {
+          "role": "functional/show-status-qualification.jsonl",
+          "bytes": 52941,
+          "sha256": "cd97a11489541a10e2def0d1dc2e0efc48d4a1cff65cc5c75f49233d6a04f105"
+        },
+        {
+          "role": "functional/surface-before-warmup.png",
+          "bytes": 7416,
+          "sha256": "1e1c7dac4ea0234fe5f76b2f16211c40c79a02ddfc67e1f27e0f33141fb7987a"
+        },
+        {
+          "role": "functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "bf0d00710dd4582ed600f5912c11935e9768cbaf5007eeaaae430b2ff68ab509"
+        },
+        {
+          "role": "functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "functional/target.stdout.jsonl",
+          "bytes": 7105,
+          "sha256": "7e9f1424c02f4e8b867748f7ff0c23c0b036085eb44a130904f9ad9ca328e7cf"
+        },
+        {
+          "role": "functional/webdriver.log",
+          "bytes": 6544,
+          "sha256": "60e814b22522ab0a59118afec4e6df192dcff4cdb8c6a0554291c1a8e3c9a57f"
+        },
+        {
+          "role": "functional/wm.stderr.log",
+          "bytes": 8996,
+          "sha256": "f6aa7bea450cf66d3ff551acb2c5e76113e6c95bd4cd3485c08fd8bb6b4c55e5"
+        },
+        {
+          "role": "functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "host-load.jsonl",
+          "bytes": 196395,
+          "sha256": "a073849653a6fcecde5a9c843e5982f69ca5672637dd6005c1601cb5a58b964f"
+        },
+        {
+          "role": "host-preflight.json",
+          "bytes": 447,
+          "sha256": "46457be30813a7bffde7697b376148fb70e1c1cdce08f2ba4368885c8b402d70"
+        },
+        {
+          "role": "outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "role": "plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "role": "receipt.json",
+          "bytes": 8177,
+          "sha256": "6b0ead5e859644bf4cbb66462770839e0edff5cf6e574b15f42a4be8ab10e8d3"
+        },
+        {
+          "role": "runtime.json",
+          "bytes": 14841,
+          "sha256": "00022fc71ee0060de884fb67e1755c7e63c7f767af553f7e1bdc758426e98b0c"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Only all four fresh count-v1 arms; original v6 958/2 failed quality remains failed, excluded rather than relabelled or spliced.",
+    "Descriptive post-collection aggregation, not a preregistered new adoption gate, inference or significance test. Two arms per renderer; 1920 snapshots are correlated, not independent repetitions.",
+    "Nearest-rank p50/p95. Each renderer latency pools its two original 30-sample formal vectors; warmups excluded. Memory pools genuine capture snapshots, not fixed240s/equal-time weighted means.",
+    "CPU normalizes summed disjoint counter deltas by summed read-window midpoint intervals; intervals exclude settle, warmups and final tail.",
+    "Cold-start/first-interactive-frame/search-ready/GPU/wakeup/IME/DPI/multimonitor and whole-host idle remain unverified. Context-switch counts are not wakeups.",
+    "These Linux controlled native-visible/foreground proxies do not prove Windows performance, production adoption eligibility or Phase6/Phase7 acceptance."
+  ]
+}
