@@ -561,7 +561,7 @@ class OwnershipCleanupTests(unittest.TestCase):
                 self.assertIn(('close', 600), calls)
                 self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [60])
 
-    def test_previously_authenticated_live_candidate_still_requires_both_parent_snapshots(self):
+    def test_authenticated_live_original_keeps_current_state_when_parent_snapshots_change(self):
         for second in ([ (50, 1) ], [ (50, 1), (60, 99) ]):
             with self.subTest(second=second):
                 native, _ = self.fixture()
@@ -569,7 +569,10 @@ class OwnershipCleanupTests(unittest.TestCase):
                 self.attach_tree(native)
                 native.tree()
                 self.attach_tree(native, [[(50, 1), (60, 50)], second])
-                with self.assertRaisesRegex(RuntimeError, 'parent PID changed or disappeared'): native.tree()
+                observed = next(item for item in native.tree() if item['pid'] == 60)
+                self.assertTrue(observed['running'])
+                self.assertEqual(observed['creation_time_100ns'], '600')
+                self.assertEqual(native.validated_owned_handles[60]['handle'], 600)
                 self.assertEqual(native.test_snapshot_calls, 2)
 
     def test_terminal_original_never_bypasses_changed_handle_identity_or_authentication_slot(self):
@@ -590,8 +593,7 @@ class OwnershipCleanupTests(unittest.TestCase):
                         else: native.validated_owned_handles[60] = {'handle': 700, 'identity': dict(native.identities[60])}
                     return result
                 native.kernel.CreateToolhelp32Snapshot = snapshot
-                message = 'parent PID changed or disappeared' if changed == 'authentication' else 'retained handle or identity changed'
-                with self.assertRaisesRegex(RuntimeError, message): native.tree()
+                with self.assertRaisesRegex(RuntimeError, 'Authenticated retained handle, identity or certificate changed'): native.tree()
 
     def test_authenticated_terminal_parent_does_not_promote_a_new_bad_generation(self):
         native, calls = self.fixture()
@@ -609,6 +611,162 @@ class OwnershipCleanupTests(unittest.TestCase):
         self.assertNotIn(('terminate', 700, 1), calls)
         self.assertNotIn(('terminate', 600, 1), calls)
         self.assertIn(('terminate', 500, 1), calls)
+
+    def test_authenticated_live_absence_in_first_or_second_snapshot_preserves_current_counters(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        original = native.kernel.GetProcessTimes
+        counter = [0]
+        def times(handle, created, exited, kernel, user):
+            result = original(handle, created, exited, kernel, user)
+            if handle == 600:
+                counter[0] += 1
+                kernel._obj.dwLowDateTime = counter[0] * 11
+            return result
+        native.kernel.GetProcessTimes = times
+        for first in ([(50, 1)], [(50, 1), (60, 50)]):
+            self.attach_tree(native, [first, [(50, 1)]])
+            observed = next(p for p in native.tree() if p['pid'] == 60)
+            self.assertTrue(observed['running'])
+            self.assertEqual(observed['cpu_kernel_100ns'], counter[0] * 11)
+            self.assertEqual(native.test_snapshot_calls, 2)
+        self.assertEqual(counter[0], 2)
+
+    def test_retained_terminal_parent_anchors_new_descendants_with_strict_generation_checks(self):
+        for child_creation in (550, 700):
+            with self.subTest(child_creation=child_creation):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.terminal_exit(native, 600)
+                self.change_creation(native, {700: child_creation})
+                self.attach_tree(native, [[(50, 1), (70, 60)]])
+                if child_creation == 550:
+                    with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+                    self.assertEqual(set(native.validated_owned_handles), {50, 60})
+                else:
+                    values = native.tree()
+                    self.assertEqual([p['pid'] for p in values], [50, 60, 70])
+                    self.assertFalse(next(p for p in values if p['pid'] == 60)['running'])
+                    self.assertEqual(native.validated_owned_handles[70]['handle'], 700)
+                    self.assertEqual(native.test_snapshot_calls, 2)
+
+    def test_authenticated_query_failures_are_fatal_even_without_a_snapshot_entry(self):
+        for failure in ('times', 'exit', 'image', 'identity'):
+            with self.subTest(failure=failure):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.attach_tree(native, [[(50, 1)]])
+                if failure == 'identity':
+                    self.change_creation(native, {600: 700})
+                else:
+                    name = {'times': 'GetProcessTimes', 'exit': 'GetExitCodeProcess', 'image': 'QueryFullProcessImageNameW'}[failure]
+                    original = getattr(native.kernel, name)
+                    setattr(native.kernel, name, lambda handle, *args: False if handle == 600 else original(handle, *args))
+                with self.assertRaises(RuntimeError): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50, 60})
+
+    def test_live_certificate_drift_is_fatal_during_queries_or_stable_parent_confirmation(self):
+        for phase in ('query', 'confirmation'):
+            for changed in ('handle', 'identity', 'certificate', 'extra-certificate'):
+                with self.subTest(phase=phase, changed=changed):
+                    native, _ = self.fixture()
+                    native.bind(50)
+                    self.attach_tree(native)
+                    native.tree()
+                    self.attach_tree(native)
+                    def mutate():
+                        if changed == 'handle': native.handles[60] = 700
+                        elif changed == 'identity': native.identities[60] = {**native.identities[60], 'creation_time_100ns': '700'}
+                        elif changed == 'certificate': native.validated_owned_handles[60] = {'handle': 700, 'identity': dict(native.identities[60])}
+                        else: native.validated_owned_handles[70] = {'handle': 700, 'identity': dict(native.identities[60])}
+                    if phase == 'query':
+                        original = native.kernel.GetProcessTimes
+                        def times(handle, *args):
+                            result = original(handle, *args)
+                            if handle == 600: mutate()
+                            return result
+                        native.kernel.GetProcessTimes = times
+                    else:
+                        original = native.kernel.CreateToolhelp32Snapshot
+                        def snapshot(*args):
+                            handle = original(*args)
+                            if native.test_snapshot_calls == 2: mutate()
+                            return handle
+                        native.kernel.CreateToolhelp32Snapshot = snapshot
+                    with self.assertRaises(RuntimeError): native.tree()
+
+    def test_terminated_root_and_parent_certificates_can_anchor_a_still_live_descendant(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.terminal_exit(native, 500)
+        self.terminal_exit(native, 600)
+        self.attach_tree(native, [[(70, 60)]])
+        values = native.tree()
+        self.assertEqual([p['pid'] for p in values], [50, 60, 70])
+        self.assertEqual([p['pid'] for p in values if p['running']], [70])
+        self.assertEqual(set(native.validated_owned_handles), {50, 60, 70})
+
+    def test_pending_external_window_is_never_returned_or_read_as_owned_and_remains_close_only(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        native.process(60)
+        self.attach_tree(native, [[(50, 1)]])
+        reads = []
+        def pid(window, output): output._obj.value = 60; return 7
+        def title(*args): reads.append('pending caption read'); return 0
+        native.enum_callback = lambda callback: callback
+        native.edit, native.focus_snapshot = 0, lambda: {}
+        native.user = SimpleNamespace(EnumWindows=lambda callback, argument: callback(12345, argument),
+            GetWindowThreadProcessId=pid, GetWindowTextW=title, GetForegroundWindow=lambda: 0,
+            IsWindow=lambda window: False)
+        observed = native.observe()
+        self.assertEqual([p['pid'] for p in observed['processes']], [50])
+        self.assertEqual(observed['windows'], [])
+        self.assertEqual(reads, [])
+        self.assertIn(60, native.handles)
+        self.assertNotIn(60, native.validated_owned_handles)
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+        self.assertIn(('close', 600), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_new_parent_confirmation_failure_records_bounded_identity_diagnostics(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.terminal_exit(native, 600)
+        self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1)]])
+        with self.assertRaisesRegex(RuntimeError, 'parent PID changed or disappeared') as caught: native.tree()
+        import json
+        diagnostic = json.loads(str(caught.exception).split(': ', 1)[1])
+        self.assertEqual(diagnostic, {'pid': 60, 'first_parent': 50, 'confirmed_parent': None,
+            'running': False, 'previously_authenticated': False})
+        self.assertEqual(set(native.validated_owned_handles), {50})
+
+    def test_second_snapshot_error_is_fatal_even_with_only_lifetime_certificates(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.attach_tree(native, [[(50, 1)]])
+        original = native.kernel.CreateToolhelp32Snapshot
+        def snapshot(*args):
+            handle = original(*args)
+            if native.test_snapshot_calls == 2:
+                native.test_snapshot_error = 5
+                native.kernel.Process32NextW = lambda *args: False
+            return handle
+        native.kernel.CreateToolhelp32Snapshot = snapshot
+        with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50, 60})
 
     def test_anchored_fully_read_tree_authenticates_descendants_before_known_cleanup(self):
         native, calls = self.fixture()

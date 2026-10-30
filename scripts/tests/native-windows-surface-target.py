@@ -387,51 +387,59 @@ class Native:
 
     def tree(self):
         require(self.desktop, 'Desktop binding required')
-        require(self.validated_owned_handles.get(self.desktop) == {
-            'handle': self.handles.get(self.desktop), 'identity': self.identities.get(self.desktop)},
-            'Desktop original handle was not authenticated')
+        certificates = {pid: {'handle': entry['handle'], 'identity': dict(entry['identity'])}
+                        for pid, entry in self.validated_owned_handles.items()}
+        require(self.desktop in certificates, 'Desktop original handle was not authenticated')
+        def verify_certificate(pid, certificate):
+            require(self.validated_owned_handles == certificates,
+                    'Authenticated retained handle, identity or certificate changed: certificate map')
+            require(self.handles.get(pid) == certificate['handle']
+                    and self.identities.get(pid) == certificate['identity'],
+                    'Authenticated retained handle, identity or certificate changed: pid=' + str(pid))
+        observations = {}
+        for pid, certificate in sorted(certificates.items()):
+            verify_certificate(pid, certificate)
+            observations[pid] = self.process(pid, phase='authenticated-tree')
+            verify_certificate(pid, certificate)
         parents = self.parent_snapshot()
-        owned = {self.desktop} if self.process(self.desktop)['running'] else set()
+        # These exact original objects remain owned while their handles are held,
+        # including a parent that exited before one of its children was found.
+        owned = set(certificates)
         while True:
             more = {pid for pid, parent in parents.items() if parent in owned}
             if more <= owned:
                 break
             owned |= more
-        result = []
-        for pid in sorted(owned | set(self.handles)):
-            try:
-                result.append(self.process(pid, phase='tree'))
-            except RuntimeError:
-                if pid in parents:
-                    raise
-        candidates = {item['pid']: {'handle': self.handles[item['pid']],
-                      'identity': dict(self.identities[item['pid']])} for item in result if item['pid'] in owned}
-        observations = {item['pid']: item for item in result}
+        for pid in sorted(owned - set(certificates)):
+            observations[pid] = self.process(pid, phase='tree')
+        candidates = {pid: {'handle': self.handles[pid], 'identity': dict(self.identities[pid])}
+                      for pid in observations}
         require(set(candidates) == owned, 'Candidate tree identities are incomplete')
         # A PID can change generation between the first snapshot and OpenProcess.
         # All candidate handles are retained before confirming their parent PIDs.
         confirmed = self.parent_snapshot()
+        for pid, certificate in certificates.items():
+            verify_certificate(pid, certificate)
         for pid, candidate in candidates.items():
             require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity'],
                     'Candidate retained handle or identity changed during parent confirmation')
-            if pid == self.desktop:
-                continue
-            # An authenticated original object keeps its ownership after exit.
-            # Its terminal counters do not depend on later snapshot membership.
-            if self.validated_owned_handles.get(pid) == candidate and not observations[pid]['running']:
+            if pid in certificates:
                 continue
             parent = parents.get(pid)
-            require(parent in candidates and confirmed.get(pid) == parent,
-                    'Candidate parent PID changed or disappeared between snapshots: pid=' + str(pid))
+            if parent not in candidates or confirmed.get(pid) != parent:
+                raise RuntimeError('Candidate parent PID changed or disappeared between snapshots: ' + json.dumps({
+                        'pid': pid, 'first_parent': parent, 'confirmed_parent': confirmed.get(pid),
+                        'running': observations[pid]['running'], 'previously_authenticated': False}))
             created = int(candidate['identity']['creation_time_100ns'])
             parent_created = int(candidates[parent]['identity']['creation_time_100ns'])
-            require(0 < parent_created <= created, 'Parent PID generation does not bind this child: ' + json.dumps({
+            if not 0 < parent_created <= created:
+                raise RuntimeError('Parent PID generation does not bind this child: ' + json.dumps({
                 'pid': pid, 'parent_pid': parent, 'creation_time_100ns': str(created),
                 'parent_creation_time_100ns': str(parent_created)}))
         # A complete query alone is insufficient: every edge and original object
         # must validate before any newly opened candidate can be terminated.
-        self.validated_owned_handles.update(candidates)
-        return result
+        self.validated_owned_handles.update({pid: candidate for pid, candidate in candidates.items() if pid not in certificates})
+        return [observations[pid] for pid in sorted(owned)]
 
     def observe(self):
         # Before Desktop starts, calibration may inspect only this fixture's
