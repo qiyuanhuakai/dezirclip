@@ -30,21 +30,17 @@ const DefaultAppsSettingsGroup = ({
     defaultApps,
     saveAppSetting
 }: DefaultAppsSettingsGroupProps) => {
-    const APP_TYPES = ['text', 'image', 'video', 'code', 'url'] as const;
+    const APP_TYPES = ['text', 'rich_text', 'image', 'video', 'code', 'url'] as const;
 
     const optionsByType = useMemo(() => {
         const map: Record<string, ThemedSelectOption[]> = {};
         for (const type of APP_TYPES) {
             const seen = new Set<string>();
             const opts: ThemedSelectOption[] = [];
-            if (defaultApps[type]) {
-                const sysValue = `${SYSTEM_DEFAULT_VALUE}::${type}`;
-                opts.push({
-                    value: sysValue,
-                    label: `${t('system_default')} (${stripExe(defaultApps[type])})`
-                });
-                seen.add(sysValue);
-            }
+            const sysValue = `${SYSTEM_DEFAULT_VALUE}::${type}`;
+            opts.push({ value: sysValue, label: defaultApps[type]
+                ? `${t('system_default')} (${stripExe(defaultApps[type])})` : t('system_default') });
+            seen.add(sysValue);
             for (const app of installedApps) {
                 if (!seen.has(app.value)) {
                     seen.add(app.value);

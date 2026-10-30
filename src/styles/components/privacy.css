@@ -59,7 +59,7 @@
 .privacy-rule-confirm .setting-btn-group { flex-wrap: wrap; }
 .privacy-rule-manager .privacy-action-error { color: var(--color-error); font-size: var(--font-size-sm); }
 .privacy-rule-manager:focus-visible { outline: 2px solid var(--accent-color); outline-offset: 4px; }
-.main-resume-content { display: flex; flex: 1; min-height: 0; position: relative; }
+.main-resume-content { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; width: 100%; position: relative; }
 .main-resume-page { display: contents; }
 .main-resume-content[data-pending="true"] > .main-resume-page { visibility: hidden; pointer-events: none; }
 .main-resume-content > .empty-state { position: absolute; inset: 0; z-index: 1; }

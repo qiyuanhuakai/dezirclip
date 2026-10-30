@@ -354,7 +354,7 @@ fn resolve_icon_path(icon_name: &str) -> Option<String> {
 fn map_to_mime(content_type: &str) -> String {
     let ct = content_type.trim_start_matches('.').to_lowercase();
     match ct.as_str() {
-        "text" | "txt" | "plain" => "text/plain".to_string(),
+        "text" | "rich_text" | "txt" | "plain" => "text/plain".to_string(),
         "image" | "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" => "image/png".to_string(),
         "html" | "htm" => "text/html".to_string(),
         "video" | "mp4" | "mkv" | "avi" | "mov" | "webm" => "video/mp4".to_string(),

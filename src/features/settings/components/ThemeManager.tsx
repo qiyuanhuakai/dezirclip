@@ -56,7 +56,7 @@ const ThemeManager = ({ t, theme, setTheme, saveAppSetting }: Props) => {
     <div className="theme-manager-heading">
       <span className="item-label">{t("visual_theme")}</span>
       <div className="theme-manager-actions">
-        <button type="button" className="btn-icon" disabled={busy || themes.length >= MAX_CUSTOM_THEMES} onClick={() => void run(async () => {
+        <button type="button" className="setting-btn" disabled={busy || themes.length >= MAX_CUSTOM_THEMES} onClick={() => void run(async () => {
           const path = await open({ multiple: false, filters: [{ name: "DezirClip Theme", extensions: ["json"] }] });
           if (typeof path !== "string") return;
           const imported = parseThemePackage(await invoke<unknown>("import_custom_theme", { path }));
@@ -75,13 +75,13 @@ const ThemeManager = ({ t, theme, setTheme, saveAppSetting }: Props) => {
       </button>)}
     </div>}
     {selected && <div className="theme-manager-actions" aria-label={selected.name}>
-      <button type="button" className="btn-icon" disabled={busy} onClick={() => void run(async () => {
+      <button type="button" className="setting-btn" disabled={busy} onClick={() => void run(async () => {
         const path = await save({ defaultPath: `${selected.id}.json`, filters: [{ name: "DezirClip Theme", extensions: ["json"] }] });
         if (!path) return;
         await invoke("export_custom_theme", { id: selected.id, path });
         setNotice(t("theme_exported"));
       })}>{t("theme_export")}</button>
-      <button type="button" className="btn-icon" disabled={busy} onClick={() => void run(async () => {
+      <button type="button" className="setting-btn" disabled={busy} onClick={() => void run(async () => {
         if (!await ask(t("theme_delete_confirm"), { title: selected.name, kind: "warning" })) return;
         await invoke("delete_custom_theme", { id: selected.id });
         await refreshThemes();

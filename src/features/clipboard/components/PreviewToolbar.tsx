@@ -45,11 +45,11 @@ export function PreviewToolbar({ pinned, pinPending = false, opacity, image, zoo
             </div>
             <div className="preview-toolbar-actions">
                 <button type="button" className={`btn-icon preview-toolbar-button${pinned ? " active" : ""}`}
-                    title={pinned ? text.preview_toolbar_pinned : text.preview_toolbar_pin}
-                    aria-label={pinned ? text.preview_toolbar_pinned : text.preview_toolbar_pin}
-                    aria-pressed={pinned} disabled={pinned || pinPending} onClick={() => onPin(true)}><Pin size={14} /></button>
-                <button type="button" className="btn-icon preview-toolbar-button" title={text.preview_toolbar_close}
-                    aria-label={text.preview_toolbar_close} onClick={onClose}><X size={14} /></button>
+                    title={pinned ? text.preview_toolbar_close : text.preview_toolbar_pin}
+                    aria-label={pinned ? text.preview_toolbar_close : text.preview_toolbar_pin}
+                    aria-pressed={pinned} disabled={pinPending} onClick={() => pinned ? onClose() : onPin(true)}><Pin size={14} /></button>
+                {!pinned && <button type="button" className="btn-icon preview-toolbar-button" title={text.preview_toolbar_close}
+                    aria-label={text.preview_toolbar_close} onClick={onClose}><X size={14} /></button>}
             </div>
         </div>
         <div className="preview-toolbar-controls">
