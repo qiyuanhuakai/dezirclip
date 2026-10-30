@@ -1,5 +1,6 @@
 """Opt-in hosted Windows postmortem collection; imports and parser are platform independent."""
 import argparse
+from contextlib import contextmanager
 import ctypes
 import datetime as dt
 import hashlib
@@ -258,7 +259,29 @@ def create_registry_child(parent, name, winreg):
                  None, ctypes.byref(handle), ctypes.byref(disposition))
     if status:
         raise OSError(status, 'Cannot create WER child key')
-    return winreg.HKEYType(handle.value), disposition.value == 1
+    require(handle.value is not None and handle.value != 0, 'Successful registry call returned an invalid handle')
+    return handle.value, disposition.value == 1
+
+
+@contextmanager
+def registry_child(parent, name, winreg):
+    handle, created = create_registry_child(parent, name, winreg)
+    try:
+        yield handle, created
+    finally:
+        winreg.CloseKey(handle)
+
+
+def probe_registry_api(winreg):
+    require(sys.version_info[:3] == (3, 13, 15), 'The diagnostic runtime must remain Python 3.13.15')
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, WER_BASE, 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+        handle = key.Detach()
+        try:
+            winreg.QueryInfoKey(handle)
+        finally:
+            winreg.CloseKey(handle)
+    return {'python': sys.version, 'existing_wer_base_opened_read_only': True,
+            'detached_integer_handle_queried_and_closed': True, 'registry_writes': False}
 
 
 def configure_wer(root, journal):
@@ -286,12 +309,10 @@ def configure_wer(root, journal):
     except FileNotFoundError:
         pass
     with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, WER_BASE, 0, read | winreg.KEY_WRITE) as base:
-        parent, created = create_registry_child(base, 'LocalDumps', winreg)
-        with parent:
+        with registry_child(base, 'LocalDumps', winreg) as (parent, created):
             journal['created_parent'] = created
             journal['parent_values_sha256'] = values_hash(registry_snapshot(parent, winreg)['values'])
-            child, created = create_registry_child(parent, APP_KEY, winreg)
-            with child:
+            with registry_child(parent, APP_KEY, winreg) as (child, created):
                 require(created, 'Preserve the pre-existing per-app WER key')
                 journal['created_child'] = True
                 journal['child_snapshot'] = registry_snapshot(child, winreg)
@@ -436,6 +457,8 @@ def run(args, workflow):
               'functional_root': str(functional), 'functional_exit_code': None, 'cleanup': None}
     exit_code = 1
     try:
+        import winreg
+        result['registry_api_probe'] = probe_registry_api(winreg)
         result['tools'] = tools_inventory()
         configure_wer(root, journal)
         command = ['node', str(REPOSITORY / 'scripts/tests/native-windows-surface.mjs'), '--desktop', args.desktop,

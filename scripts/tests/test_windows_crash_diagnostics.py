@@ -6,6 +6,7 @@ import io
 from pathlib import Path, PureWindowsPath
 import struct
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -177,6 +178,78 @@ class AuthorityTests(unittest.TestCase):
             DIAGNOSTICS.write_json(path, {'created_child': True, 'snapshot': ['original']}, replace=True)
             self.assertEqual(DIAGNOSTICS.read_json(path), {'created_child': True, 'snapshot': ['original']})
             self.assertEqual(list(Path(directory).iterdir()), [path])
+
+
+class RegistryLifecycleTests(unittest.TestCase):
+    def fake_api(self, outcomes):
+        closed, calls = [], []
+        state = iter(outcomes)
+
+        class Create:
+            def __call__(self, parent, name, reserved, klass, options, access, security, handle, disposition):
+                calls.append((parent, name))
+                status, value, created = next(state)
+                handle._obj.value = value
+                disposition._obj.value = created
+                return status
+
+        winreg = SimpleNamespace(KEY_READ=0x20019, KEY_WRITE=0x20006, KEY_WOW64_64KEY=0x100, CloseKey=closed.append)
+        return winreg, SimpleNamespace(RegCreateKeyExW=Create()), calls, closed
+
+    def test_native_integer_handles_close_child_then_parent_on_exception(self):
+        winreg, library, calls, closed = self.fake_api([(0, 200, 1), (0, 201, 1)])
+        with patch.object(DIAGNOSTICS.ctypes, 'WinDLL', return_value=library, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'functional failure'):
+                with DIAGNOSTICS.registry_child(100, 'LocalDumps', winreg) as (parent, created):
+                    self.assertEqual((parent, created), (200, True))
+                    with DIAGNOSTICS.registry_child(parent, 'dezirclip.exe', winreg) as (child, created):
+                        self.assertEqual((child, created), (201, True))
+                        raise RuntimeError('functional failure')
+        self.assertEqual(calls, [(100, 'LocalDumps'), (200, 'dezirclip.exe')])
+        self.assertEqual(closed, [201, 200])
+        self.assertFalse(hasattr(winreg, 'HKEYType'), 'No unsupported handle constructor is needed')
+
+    def test_preexisting_child_is_reported_without_losing_its_open_handle(self):
+        winreg, library, _, closed = self.fake_api([(0, 201, 2)])
+        with patch.object(DIAGNOSTICS.ctypes, 'WinDLL', return_value=library, create=True):
+            with DIAGNOSTICS.registry_child(200, 'dezirclip.exe', winreg) as (child, created):
+                self.assertEqual(child, 201)
+                self.assertFalse(created)
+        self.assertEqual(closed, [201])
+
+    def test_failed_child_creation_still_closes_parent_without_closing_unowned_handle(self):
+        winreg, library, _, closed = self.fake_api([(0, 200, 1), (5, None, 0)])
+        with patch.object(DIAGNOSTICS.ctypes, 'WinDLL', return_value=library, create=True):
+            with self.assertRaises(OSError):
+                with DIAGNOSTICS.registry_child(100, 'LocalDumps', winreg) as (parent, _):
+                    with DIAGNOSTICS.registry_child(parent, 'dezirclip.exe', winreg):
+                        self.fail('Failed native creation must not reach the body')
+        self.assertEqual(closed, [200])
+
+    def test_read_only_runtime_probe_closes_detached_handle_even_if_query_fails(self):
+        for should_fail in (False, True):
+            closed, queried = [], []
+
+            class Key:
+                def __enter__(self): return self
+                def __exit__(self, *_args): return False
+                def Detach(self): return 200
+
+            def query(handle):
+                queried.append(handle)
+                if should_fail:
+                    raise OSError('read failure')
+                return 0, 0, 0
+
+            winreg = SimpleNamespace(HKEY_LOCAL_MACHINE=100, KEY_READ=0x20019, KEY_WOW64_64KEY=0x100,
+                                     OpenKey=lambda *_args: Key(), QueryInfoKey=query, CloseKey=closed.append)
+            with patch.object(DIAGNOSTICS.sys, 'version_info', (3, 13, 15)):
+                if should_fail:
+                    with self.assertRaises(OSError): DIAGNOSTICS.probe_registry_api(winreg)
+                else:
+                    self.assertFalse(DIAGNOSTICS.probe_registry_api(winreg)['registry_writes'])
+            self.assertEqual(queried, [200])
+            self.assertEqual(closed, [200])
 
 
 if __name__ == '__main__':
