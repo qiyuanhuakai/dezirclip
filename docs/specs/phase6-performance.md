@@ -62,4 +62,24 @@ Windows 本次发布构建对照 [41106374215](https://github.com/qiyuanhuakai/d
 
 `527c128c59e07267a01ab05ca8cbdd76cf1e1f0e` 已修正该已认证终态对象的观察分支，原 handle/identity 硬校验在例外前，新、pending 和仍运行候选的原有双快照与创建代际检查保持。Root 独立执行 70 项纯逻辑检查通过；新完整运行 [41115292407](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41115292407) 于 2026-10-30 19:26:38 UTC 发起，由现有工作流自身执行普通与发布版功能前置门禁，尚无其发布版四轮结论。原 a11 失败未重跑或改写。
 
-首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 原 a11 前置未进入正式计时，新 527c 完整运行尚待结果。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
+527c 运行随后因独立源码检查发现枚举 API 非 EOF 错误会被当作列表结束，由 Root 主动停止。停止前保存的状态为 14 个成功、3 个运行中，可选比较 job 尚不存在；终态为 14 个成功、4 个取消，后来出现的可选 job 为同一时刻起止、null runner 的取消条目。原 Windows 日志显示取消发生在 cargo check，实际 GUI Desktop 构建、Surface 功能步骤和 ABBA 均无执行记录，不能借用另一次普通 CI 的 13 项成功。独立 operator-stop 复核 SHA-256 `fb958077f8a5fc3830e9c9451a13510c6c4475b884538440e8bcbf458ea78d46` 保留；该方法停止不证明云端实际出现 API、产品或 heap 失败。
+
+`a7676e283319f76457e86262c48475cf56126a61` 只补上 First/Next 的 FALSE 返回值必须对应 `ERROR_NO_MORE_FILES=18` 才是正常 EOF，其他错误保留阶段与原 WinErr 并中止发现。原 snapshot 在 finally 关闭，没有部分 map 认证、枚举重试、输入重试或权限/时间门槛变化；原终态对象分支保持。Root 独立执行 75 项纯检查并核对 AST/派生身份后，发起新完整运行 [41120519234](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41120519234)（2026-10-30 20:05:32 UTC）。当前尚无其发布版四轮结果，原运行未重跑、原数据未重新标绿。
+
+首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 旧运行均未进入正式计时，新 a767 完整运行尚待结果。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
+
+## 补测方法与环境条件
+
+已做只读源码、原件和工具文件库存调查，没有据此启动新原生采样、安装输入法、修改宿主显示或提升权限。后续每项都需独立固定方法、能力和输入，原实验快照不能补写为这些指标。
+
+| 项目 | 可准确测量的边界与必要条件 |
+|---|---|
+| 新进程启动 | 启动前固定渲染器和数据，由同一观察器记录 spawn 前后单调时钟，直到实际热键/查询/单次 Enter 后独立目标收到完整文本；名称使用 fresh-process-to-verified-action。现有流明确为 already-started，输入哈希预读也已暖文件缓存，不能回填为进程或磁盘冷启动。 |
+| 粘贴与搜索/键盘 | 单次 Enter 到独立目标完整文本可用作粘贴验证延迟；一次末字符输入到完整查询、唯一编号 07 记录，以及一次方向键到实际选中状态，记录 last-negative/first-positive 和读取区间。DOM/UIA/AT-SPI 只读状态仍是 observed-state 指标，新增可访问性读取会影响 MyGo 惰性描述缓存，需新配对 cohort。 |
+| 首次可交互帧 | 目前缺少两端同义的内容呈现、可处理真实输入及其因果关联契约。NativeVisible、UIA、DOM、rAF 或 WaitForInputIdle 不能单独关闭该要求；Xvfb 也不提供物理 scanout。继续保留未验证。 |
+| 显存/共享映射 | 先确认实际设备与支持字段。DXGI QueryVideoMemoryInfo 只描述调用进程，适配器容量也不是目标用量；DRM fdinfo 字段可选，跨进程/client 的共享不能简单求和为唯一物理显存。当前记录不具备硬件计量证据，CPU PSS 不替代 VRAM。 |
+| 后台唤醒 | 研究带原线程生命周期、完整单调时间区间和丢事件计数的 ETW ReadyThread / Linux sched_wakeup；定义换入、wakeup_new 等事件语义，按目标 TID 归属。context-switch 不替代 wakeup，六命名空间内 root 不代表宿主 perf/trace 权限。缺能力或数据丢失须标记 unavailable/incomplete。 |
+| 中文 IME | 当前原生目标输入只覆盖 ASCII；UNICODE/VK_PACKET 不是组合输入。需固定真实中文转换引擎、输入框架、字体、私有总线与候选窗，实际验证 preedit/候选、Enter 只提交、Esc 先取消、最终中文单次粘贴及焦点/隐私。只读库存有 IBus 框架和 CJK 字体，未发现已列 manifest 中的中文转换引擎；未启动或修改用户 IME。 |
+| DPI/多屏 | 现有窗口矩形不等于 DPI 或 monitor 验收。需记录 awareness、实际 monitor/workarea/DPI/逻辑和物理矩形并区分镜像伪监视器，再验证真实混合缩放跨屏移动、候选窗/插入点/点击/焦点。更改 Xft.dpi 或发送模拟 WM_DPICHANGED 只可称布局代理。 |
+
+相关原始契约：[MyGo 固定版本可访问性](https://github.com/egoist/mygo/blob/6255ea40139d06e0762a7c4a32626148ba410478/docs/ui/accessibility.md)、[DXGI 调用进程显存](https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_4/nf-dxgi1_4-idxgiadapter3-queryvideomemoryinfo)、[DRM usage stats](https://docs.kernel.org/gpu/drm-usage-stats.html)、[ReadyThread](https://learn.microsoft.com/en-us/windows/win32/etw/readythread)、[perf 权限](https://docs.kernel.org/admin-guide/perf-security.html)、[Text Services Framework](https://learn.microsoft.com/en-us/windows/win32/tsf/text-services-framework)、[GetDpiForWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getdpiforwindow)、[EnumDisplayMonitors](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumdisplaymonitors)。这些为补测依据，不构成实际执行通过。
