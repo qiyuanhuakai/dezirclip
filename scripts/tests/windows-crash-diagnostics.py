@@ -16,6 +16,8 @@ import sys
 import time
 import uuid
 
+from native_windows_supervisor import run_controller
+
 
 REPOSITORY = Path(__file__).resolve().parents[2]
 WER_BASE = r'SOFTWARE\Microsoft\Windows\Windows Error Reporting'
@@ -465,8 +467,8 @@ def run(args, workflow):
                    '--helper', args.helper, '--helper-proof', args.helper_proof, '--python', sys.executable,
                    '--output-root', str(functional)]
         result['functional_command'] = command
-        result['functional_exit_code'] = subprocess.run(command, cwd=REPOSITORY, check=False).returncode
-        # The original controller retains all of its original deadlines and cleanup behavior.
+        result['functional_exit_code'] = run_controller(command, cwd=REPOSITORY, output_root=functional)
+        # The outer controller deadline leaves this collector's WER restoration in its original finally.
         exit_code = result['functional_exit_code']
         result['collection'] = collect_dump(root, functional, workflow)
         if result['collection']['accepted']:

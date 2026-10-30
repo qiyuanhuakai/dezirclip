@@ -283,5 +283,101 @@ class KeyboardDiagnosticTests(unittest.TestCase):
         self.assertEqual(list(native.callback_errors), [])
 
 
+class CleanupTests(unittest.TestCase):
+    def test_open_failure_reports_pid_access_error_and_phase_without_retry(self):
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.handles, calls = {}, []
+        native.kernel = SimpleNamespace(OpenProcess=lambda *args: calls.append(args) or 0)
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot retain') as caught:
+                native.process(8123, phase='tree')
+        self.assertIn('"pid": 8123', str(caught.exception))
+        self.assertIn('"winerror": 5', str(caught.exception))
+        self.assertIn('"phase": "tree"', str(caught.exception))
+        self.assertEqual(calls, [(0x101011, False, 8123)])
+        self.assertEqual(native.handles, {})
+
+    def test_failed_memory_read_is_null_with_its_original_error(self):
+        class Memory(ctypes.Structure):
+            _fields_ = [('cb', ctypes.c_ulong), ('WorkingSetSize', ctypes.c_size_t), ('PrivateUsage', ctypes.c_size_t)]
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.Memory, native.handles, native.identities = Memory, {50: 500}, {}
+        def times(handle, created, exited, kernel, user):
+            created._obj.dwLowDateTime = 123
+            return True
+        def code(handle, result): result._obj.value = 259; return True
+        def image(handle, flags, text, size): text.value = 'owned-image'; return True
+        native.kernel = SimpleNamespace(GetProcessTimes=times, GetExitCodeProcess=code, QueryFullProcessImageNameW=image)
+        native.psapi = SimpleNamespace(GetProcessMemoryInfo=lambda *args: False)
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=299, create=True):
+            receipt = native.process(50)
+        self.assertIsNone(receipt['working_set_bytes'])
+        self.assertIsNone(receipt['private_commit_bytes'])
+        self.assertEqual(receipt['memory_query'], {'succeeded': False, 'winerror': 299})
+
+    def fixture(self, discovery_failure=False, wait_result=0):
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.root, native.desktop, native.target, native.alternate = Path('fake-root'), 50, 10, 20
+        native.handles, native.identities = {50: 500}, {50: {'creation_time_100ns': '123', 'image': 'fake-desktop'}}
+        calls, live = [], {500: True}
+
+        def exit_code(handle, code):
+            calls.append(('exit', handle))
+            code._obj.value = 259 if live[handle] else 1
+            return True
+
+        def terminate(handle, code):
+            calls.append(('terminate', handle, code))
+            if wait_result == 0: live[handle] = False
+            return True
+
+        native.kernel = SimpleNamespace(GetExitCodeProcess=exit_code, TerminateProcess=terminate,
+            WaitForSingleObject=lambda handle, milliseconds: calls.append(('wait', handle, milliseconds)) or wait_result,
+            CloseHandle=lambda handle: calls.append(('close', handle)) or True)
+        windows = {10, 20}
+        native.user = SimpleNamespace(IsWindow=lambda window: window in windows,
+            DestroyWindow=lambda window: calls.append(('destroy', window)) or windows.remove(window) or True)
+
+        def discover():
+            calls.append(('discover',))
+            if discovery_failure: raise RuntimeError('Cannot retain an owned original process handle')
+            return []
+
+        native.tree = discover
+        return native, calls
+
+    def test_discovery_failure_still_cleans_retained_handles_and_preserves_failure(self):
+        native, calls = self.fixture(discovery_failure=True)
+        saved = []
+        with patch.object(TARGET, 'save', side_effect=lambda path, value: saved.append(value)), patch.object(TARGET.time, 'monotonic', return_value=100):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot retain an owned original process handle'):
+                native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertIn(('wait', 500, 5000), calls)
+        self.assertIn(('destroy', 10), calls)
+        self.assertIn(('destroy', 20), calls)
+        self.assertIn(('close', 500), calls)
+        self.assertFalse(saved[0]['discovery_complete'])
+        self.assertIsNone(saved[0]['remaining_owned_processes'])
+        self.assertEqual(saved[0]['forced_cleanup_pids'], [50])
+
+    def test_unconfirmed_termination_stays_unknown_and_cannot_restore(self):
+        native, calls = self.fixture(wait_result=258)
+        saved = []
+        with patch.object(TARGET, 'save', side_effect=lambda path, value: saved.append(value)), patch.object(TARGET.time, 'monotonic', return_value=100):
+            with self.assertRaisesRegex(RuntimeError, 'has not exited'): native.cleanup()
+        self.assertIsNone(saved[0]['remaining_owned_processes'])
+        self.assertEqual(saved[0]['forced_cleanup_pids'], [])
+        self.assertIn(('close', 500), calls)
+
+    def test_success_retains_original_cleanup_contract(self):
+        native, _ = self.fixture()
+        with patch.object(TARGET, 'save'), patch.object(TARGET.time, 'monotonic', return_value=100):
+            receipt = native.cleanup()
+        self.assertEqual(receipt['remaining_owned_processes'], [])
+        self.assertTrue(receipt['target_closed'] and receipt['alternate_target_closed'])
+        self.assertEqual(receipt['errors'], [])
+
+
 if __name__ == '__main__':
     unittest.main()
