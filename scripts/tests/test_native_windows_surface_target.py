@@ -416,6 +416,12 @@ class OwnershipCleanupTests(unittest.TestCase):
             return 900
         native.kernel.CreateToolhelp32Snapshot = snapshot
         native.kernel.Process32FirstW, native.kernel.Process32NextW = first, next_entry
+        native.test_snapshot_error = 18
+        original_snapshot = TARGET.Native.parent_snapshot.__get__(native)
+        def parent_snapshot():
+            with patch.object(TARGET.ctypes, 'get_last_error', side_effect=lambda: native.test_snapshot_error, create=True):
+                return original_snapshot()
+        native.parent_snapshot = parent_snapshot
         native.tree = TARGET.Native.tree.__get__(native)
 
     def change_creation(self, native, values):
@@ -634,6 +640,83 @@ class OwnershipCleanupTests(unittest.TestCase):
         self.assertNotIn(('terminate', 600, 1), calls)
         self.assertIn(('close', 600), calls)
         self.assertEqual(saved.call_args.args[1]['unvalidated_pids'], [60])
+
+
+class SnapshotEnumerationTests(unittest.TestCase):
+    def fixture(self):
+        support = OwnershipCleanupTests()
+        native, calls = support.fixture()
+        native.bind(50)
+        support.attach_tree(native)
+        return native, calls
+
+    def test_normal_error18_eof_preserves_complete_parent_entries_and_closes_each_snapshot(self):
+        native, calls = self.fixture()
+        self.assertEqual(native.parent_snapshot(), {50: 1, 60: 50})
+        self.assertEqual(calls.count(('close', 900)), 1)
+        self.assertEqual([item['pid'] for item in native.tree()], [50, 60])
+        self.assertEqual(calls.count(('close', 900)), 3)
+
+    def test_empty_first_error18_is_the_explicit_eof_path_and_closes_snapshot(self):
+        native, calls = self.fixture()
+        native.kernel.Process32FirstW = lambda *args: False
+        self.assertEqual(native.parent_snapshot(), {})
+        self.assertEqual(calls.count(('close', 900)), 1)
+
+    def test_non_eof_first_and_partial_next_fail_with_original_phase_and_error_before_close(self):
+        for phase in ('first', 'next'):
+            with self.subTest(phase=phase):
+                native, calls = self.fixture()
+                native.test_snapshot_error = 5
+                if phase == 'first': native.kernel.Process32FirstW = lambda *args: False
+                else: native.kernel.Process32NextW = lambda *args: False
+                original_close = native.kernel.CloseHandle
+                def close(handle):
+                    native.test_snapshot_error = 6
+                    return original_close(handle)
+                native.kernel.CloseHandle = close
+                with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed') as caught:
+                    native.parent_snapshot()
+                self.assertIn('"phase": "' + phase + '"', str(caught.exception))
+                self.assertIn('"winerror": 5', str(caught.exception))
+                self.assertEqual(calls.count(('close', 900)), 1)
+
+    def test_enumeration_failure_never_certifies_discovery_or_promotes_an_unseen_child(self):
+        for phase in ('first', 'next'):
+            with self.subTest(phase=phase):
+                native, calls = self.fixture()
+                native.test_snapshot_error = 5
+                if phase == 'first': native.kernel.Process32FirstW = lambda *args: False
+                else: native.kernel.Process32NextW = lambda *args: False
+                with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50})
+                with patch.object(TARGET, 'save') as saved:
+                    with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.cleanup()
+                receipt = saved.call_args.args[1]
+                self.assertFalse(receipt['discovery_complete'])
+                self.assertIsNone(receipt['remaining_owned_processes'])
+                self.assertTrue(receipt['errors'])
+                self.assertIn(('terminate', 500, 1), calls)
+                self.assertNotIn(('terminate', 600, 1), calls)
+
+    def test_second_snapshot_error_keeps_new_candidate_pending_and_close_only(self):
+        native, calls = self.fixture()
+        original = native.kernel.CreateToolhelp32Snapshot
+        def snapshot(*args):
+            handle = original(*args)
+            if native.test_snapshot_calls == 2:
+                native.test_snapshot_error = 5
+                native.kernel.Process32NextW = lambda *args: False
+            return handle
+        native.kernel.CreateToolhelp32Snapshot = snapshot
+        with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.cleanup()
+        self.assertFalse(saved.call_args.args[1]['discovery_complete'])
+        self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [60])
+        self.assertIn(('close', 600), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
 
 
 class CleanupTests(unittest.TestCase):

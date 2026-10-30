@@ -371,9 +371,15 @@ class Native:
         try:
             entry = self.ProcessEntry()
             entry.dwSize = ctypes.sizeof(entry)
+            phase = 'first'
             found = self.kernel.Process32FirstW(snapshot, ctypes.byref(entry))
-            while found:
+            while True:
+                if not found:
+                    error = ctypes.get_last_error()
+                    require(error == 18, 'Process snapshot enumeration failed: ' + json.dumps({'phase': phase, 'winerror': error}))
+                    break
                 parents[entry.th32ProcessID] = entry.th32ParentProcessID
+                phase = 'next'
                 found = self.kernel.Process32NextW(snapshot, ctypes.byref(entry))
         finally:
             self.kernel.CloseHandle(snapshot)
