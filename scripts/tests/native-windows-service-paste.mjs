@@ -168,6 +168,37 @@ export function clipboardProducerProof(original) {
   assert(original.record.closed_at, 'Original clipboard producer close unconfirmed');
   return { pid: original.child.pid, process_exit: { ...original.record.process_exit }, stdio_close: { ...original.record.stdio_close } };
 }
+export function validateServiceIntentHost(value, expected, allowStartupAdvance = false) {
+  assert.equal(value?.mode, 'service', 'Desktop must never fall back to Embedded');
+  assert.equal(value.capture_owner, false);
+  assert.equal(typeof expected?.service_instance_id, 'string'); assert(expected.service_instance_id.length > 0);
+  assert.equal(value.state?.service_instance_id, expected.service_instance_id, 'Original Service instance changed');
+  const epoch = value.state?.privacy_epoch;
+  assert(Number.isSafeInteger(epoch) && epoch >= 0, 'Invalid Service privacy epoch');
+  assert(Number.isSafeInteger(expected.privacy_epoch) && expected.privacy_epoch >= 0, 'Invalid original Service privacy epoch');
+  assert(allowStartupAdvance ? epoch >= expected.privacy_epoch : epoch === expected.privacy_epoch, 'Original Service epoch changed');
+  assert.equal(value.privacy?.active, false, 'Private Service fixture unexpectedly entered privacy mode');
+  assert.equal(value.privacy.privacy_epoch, epoch, 'Service privacy state disagrees with runtime state');
+  return value;
+}
+export async function freezeStartupIntent(readHost, freeze, initial, deadline, observations, now = () => performance.now()) {
+  const observe = async (stage, read) => {
+    const item = { stage, started_monotonic_ms: now() }; observations.push(item);
+    try { item.response = await read(startupBudget(deadline, 20000, now)); startupBudget(deadline, Infinity, now); return item.response; }
+    catch (error) { item.error = String(error.stack ?? error); throw error; }
+    finally { item.completed_monotonic_ms = now(); }
+  };
+  const before = validateServiceIntentHost(await observe('desktop-before-startup-baseline', readHost), initial, true);
+  const frozen = await observe('freeze-startup-baseline', remaining => freeze(before.state, remaining));
+  assert.equal(frozen.immutable, true); assert.equal(frozen.same_connection_capability_rechecked, true);
+  validateServiceIntentHost(frozen.status, before.state);
+  for (const state of [frozen.state, frozen.health]) {
+    assert.equal(state?.service_instance_id, before.state.service_instance_id, 'Frozen Service instance mismatch');
+    assert.equal(state?.privacy_epoch, before.state.privacy_epoch, 'Frozen Service epoch mismatch');
+  }
+  validateServiceIntentHost(await observe('desktop-after-startup-baseline', readHost), frozen.state);
+  return Object.freeze({ service_instance_id: frozen.state.service_instance_id, privacy_epoch: frozen.state.privacy_epoch });
+}
 export async function qualifyServiceHost(read, expected, deadline, observations, now = () => performance.now(), sleep = delay, bound = within) {
   const result = await pollRead('Desktop Service Host readiness', async () => {
     const started = now(), budget = startupBudget(deadline, 20000, now);
@@ -182,11 +213,7 @@ export async function qualifyServiceHost(read, expected, deadline, observations,
     }
     item.response = value; item.completed_monotonic_ms = now(); observations.push(item);
     startupBudget(deadline, Infinity, now);
-    assert.equal(value?.mode, 'service', 'Desktop must never fall back to Embedded');
-    assert.equal(value.capture_owner, false);
-    assert.equal(value.state?.service_instance_id, expected.service_instance_id, 'Original Service instance changed');
-    assert.equal(value.state?.privacy_epoch, expected.privacy_epoch, 'Original Service epoch changed');
-    return value;
+    return validateServiceIntentHost(value, expected, true);
   }, startupBudget(deadline, Infinity, now), now, sleep, bound);
   startupBudget(deadline, Infinity, now); return result;
 }
@@ -351,6 +378,10 @@ export async function runServicePaste(args, env = process.env) {
       report.service_connection.status.state, startupDeadline, report.observations);
     await bridge.invoke('set_idle_destroy_enabled', { enabled: false }, startupBudget(startupDeadline, 20000)); startupBudget(startupDeadline);
     await bridge.invoke('save_setting', { key: 'app.paste_method', value: 'shift_insert' }, startupBudget(startupDeadline, 20000)); startupBudget(startupDeadline);
+    const intent = await freezeStartupIntent(remaining => bridge.invoke('get_clipboard_host_status', {}, remaining),
+      (state, remaining) => client.request('freeze-startup-baseline', { expected_state: state }, remaining),
+      report.desktop_host.state, startupDeadline, report.observations);
+    report.startup_intent = intent;
     const startupCompleted = performance.now(); startupBudget(startupDeadline, Infinity, () => startupCompleted);
     report.startup.completed_monotonic_ms = startupCompleted;
     await stage('correct_original_target', async () => {
@@ -358,8 +389,8 @@ export async function runServicePaste(args, env = process.env) {
       const before = await native.request('snapshot');
       await bridge.invoke('copy_to_clipboard', { content: seedText, contentType: 'text', paste: true, id: seeded.seeded_ids[0],
         deleteAfterUse: false, pasteWithFormat: false, moveToTop: false, pasteImageAsBase64: false,
-        expectedPrivacyEpoch: report.service_connection.status.state.privacy_epoch, derivedFromId: null,
-        expectedHostInstanceId: report.desktop_host.state.service_instance_id });
+        expectedPrivacyEpoch: intent.privacy_epoch, derivedFromId: null,
+        expectedHostInstanceId: intent.service_instance_id });
       const after = await pollRead('Original native target full text', async remaining => {
         const value = await native.request('snapshot', {}, Math.max(1, remaining)); return value.target_text === seedText ? value : null;
       });

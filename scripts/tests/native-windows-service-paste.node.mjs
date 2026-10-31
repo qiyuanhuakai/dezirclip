@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { Bridge } from './native-windows-surface.mjs';
 import { within } from './native-windows-lifecycle.mjs';
-import { assertNoFixtureInput, pollRead, startupBudget, exactHostUnavailable, qualifyServiceHost, clipboardProducerProof } from './native-windows-service-paste.mjs';
+import { assertNoFixtureInput, pollRead, startupBudget, exactHostUnavailable, qualifyServiceHost, clipboardProducerProof, validateServiceIntentHost, freezeStartupIntent } from './native-windows-service-paste.mjs';
 
 const snapshot = () => ({ target: { hwnd: '11', root_hwnd: '11', pid: 17, thread_id: 19, creation_time_100ns: '23' },
   observation_epoch: 2, observation_label: 'stale_original_target_refused',
@@ -60,7 +60,8 @@ test('each observation and sleep receives only the remaining budget; no input is
   assert.equal(result, 'ready'); assert.equal(calls, 2); assert.deepEqual(budgets, [12000, 11969]); assert.deepEqual(sleeps, [30]);
 });
 const expectedHost = { service_instance_id: 'original-service', privacy_epoch: 0 };
-const readyHost = () => ({ mode: 'service', capture_owner: false, state: { ...expectedHost } });
+const readyHost = (epoch = 0) => ({ mode: 'service', capture_owner: false,
+  state: { ...expectedHost, privacy_epoch: epoch }, privacy: { active: false, privacy_epoch: epoch } });
 const unavailable = value => new Error(JSON.stringify({ exception: { type: 'string', value } }));
 test('only the exact structured temporary Host error may precede real Service qualification', async () => {
   let clock = 0, calls = 0; const observations = [];
@@ -71,9 +72,10 @@ test('only the exact structured temporary Host error may precede real Service qu
   assert(!exactHostUnavailable(new Error('ClipboardHostUnavailable')));
   assert(!exactHostUnavailable(unavailable('ClipboardHostPermissionDenied')));
 });
-test('wrong mode, capture, instance, epoch and non-temporary errors fail without another read', async () => {
+test('wrong mode, capture, instance, invalid epoch and non-temporary errors fail without another read', async () => {
   for (const change of [value => { value.mode = 'embedded'; }, value => { value.capture_owner = true; },
-    value => { value.state.service_instance_id = 'replacement'; }, value => { value.state.privacy_epoch = 1; }]) {
+    value => { value.state.service_instance_id = 'replacement'; }, value => { value.state.privacy_epoch = -1; },
+    value => { value.privacy.active = true; }, value => { value.privacy.privacy_epoch = 1; }]) {
     let calls = 0; const value = readyHost(); change(value);
     await assert.rejects(qualifyServiceHost(async () => { calls++; return value; }, expectedHost, 45000, [], () => 0, async () => {}));
     assert.equal(calls, 1);
@@ -82,6 +84,55 @@ test('wrong mode, capture, instance, epoch and non-temporary errors fail without
     let calls = 0;
     await assert.rejects(qualifyServiceHost(async () => { calls++; throw error; }, expectedHost, 45000, [], () => 0, async () => {}));
     assert.equal(calls, 1);
+  }
+});
+test('startup can advance the epoch before intent exists; invalid or backward state still fails', async () => {
+  const initial = { ...expectedHost }, observations = [];
+  const result = await qualifyServiceHost(async () => readyHost(4), initial, 45000, observations, () => 0);
+  assert.equal(result.state.privacy_epoch, 4); assert.equal(initial.privacy_epoch, 0);
+  assert.equal(observations[0].response.state.privacy_epoch, 4);
+  for (const epoch of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, true, null]) {
+    const bad = readyHost(); bad.state.privacy_epoch = epoch;
+    assert.throws(() => validateServiceIntentHost(bad, initial, true));
+  }
+  assert.throws(() => validateServiceIntentHost(readyHost(3), { ...initial, privacy_epoch: 4 }, true));
+  assert.throws(() => validateServiceIntentHost(readyHost(5), { ...initial, privacy_epoch: 4 }));
+});
+const frozenResponse = value => ({ immutable: true, same_connection_capability_rechecked: true,
+  state: { ...value.state }, status: value, health: { ...value.state } });
+test('intent freezes once after configuration against both peers, keeping initial ready immutable', async () => {
+  const initial = { ...expectedHost }, observations = []; let reads = 0, freezes = 0;
+  const result = await freezeStartupIntent(async () => { reads++; return readyHost(4); }, async state => {
+    freezes++; assert.equal(state.privacy_epoch, 4); return frozenResponse(readyHost(4));
+  }, initial, 45000, observations, () => 0);
+  assert.equal(result.privacy_epoch, 4); assert.equal(initial.privacy_epoch, 0);
+  assert(Object.isFrozen(result)); assert.equal(reads, 2); assert.equal(freezes, 1);
+  assert.deepEqual(observations.map(item => item.stage), ['desktop-before-startup-baseline', 'freeze-startup-baseline', 'desktop-after-startup-baseline']);
+});
+test('baseline disagreement or later drift fails without a refresh or any case operation', async () => {
+  for (const change of [value => { value.state.privacy_epoch = 0; }, value => { value.health.privacy_epoch = 5; },
+    value => { value.status.capture_owner = true; }, value => { value.health.service_instance_id = 'replacement'; },
+    value => { value.same_connection_capability_rechecked = false; }]) {
+    let reads = 0, freezes = 0;
+    await assert.rejects(freezeStartupIntent(async () => { reads++; return readyHost(4); }, async () => {
+      freezes++; const response = frozenResponse(readyHost(4)); change(response); return response;
+    }, expectedHost, 45000, [], () => 0));
+    assert.equal(reads, 1); assert.equal(freezes, 1);
+  }
+  let reads = 0, freezes = 0;
+  await assert.rejects(freezeStartupIntent(async () => readyHost(++reads === 1 ? 4 : 5), async () => {
+    freezes++; return frozenResponse(readyHost(4));
+  }, expectedHost, 45000, [], () => 0));
+  assert.equal(reads, 2); assert.equal(freezes, 1);
+});
+test('freeze failure and a late baseline cannot restart qualification or exceed shared startup', async () => {
+  for (const late of [false, true]) {
+    let clock = 0, reads = 0, freezes = 0;
+    await assert.rejects(freezeStartupIntent(async () => { reads++; return readyHost(4); }, async () => {
+      freezes++; if (!late) throw unavailable('ClipboardHostUnavailable');
+      clock = 45000; return frozenResponse(readyHost(4));
+    }, expectedHost, 45000, [], () => clock));
+    assert.equal(reads, 1); assert.equal(freezes, 1);
   }
 });
 test('persistent unavailability and late success cannot extend the shared startup deadline', async () => {
