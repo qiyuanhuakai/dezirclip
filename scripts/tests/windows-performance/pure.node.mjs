@@ -187,3 +187,4 @@ test('comparison refuses a non-CI host before reading inputs or creating output'
     { RUNNER_ENVIRONMENT: 'self-hosted' }]) assert.throws(() => validateComparisonContext({ ...valid, ...patch }, 'win32', 'x64'));
   assert.throws(() => validateComparisonContext(valid, 'win32', 'arm64'));
 });
+import './native-stream.node.mjs';

@@ -117,7 +117,7 @@ class PerformanceDerivationTests(unittest.TestCase):
             names = ['scripts/tests/' + name for name in
                      ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs', 'native-windows-lifecycle.mjs')]
             names += ['scripts/tests/windows-performance/' + name for name in
-                      ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs')]
+                      ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs', 'native-stream.mjs', 'native-stream.node.mjs')]
             for name in names:
                 path = repository / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -134,6 +134,9 @@ class PerformanceDerivationTests(unittest.TestCase):
             self.assertEqual(proof['functional_target_provenance']['diagnostic_delta'], 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-and-checked-snapshot-eof')
             self.assertEqual(proof['functional_target_provenance']['original_target_reference']['lf_sha256'], 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780')
             self.assertFalse(proof['native_runtime_executed_by_generator'])
+            self.assertEqual(proof['native_log_policy']['combined_disk_bytes'], 128 * 1024 * 1024)
+            self.assertEqual(proof['native_log_policy']['stdout_frame_bytes'], 1024 * 1024)
+            self.assertTrue(proof['native_log_policy']['first_error_permanently_stops_persistence'])
             self.assertEqual(set(proof['source_files']), set(names))
             for name in names:
                 with self.subTest(name=name):
@@ -155,6 +158,17 @@ class PerformanceDerivationTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, 'lifecycle changed'):
                 derivation.generate(repository, destination)
             self.assertFalse(destination.exists())
+
+    def test_streaming_is_only_enabled_for_generated_native_with_exact_anchors(self):
+        source = derivation.derive_sources(self.controller, self.target, self.crash_events)['native-plumbing.mjs']
+        self.assertEqual(source.count("root, 'native-target', environment(root, true), true, true);"), 1)
+        self.assertIn('env, pipeInput = false, streamNative = false)', source)
+        self.assertIn('this.nativeLog.receive(index, chunk); return;', source)
+        self.assertIn('this.nativeLog?.finish(this.record.stdio_close?.observed)', source)
+        self.assertIn("if (this.nativeLog.failure && operation !== 'stop') throw this.nativeLog.failure;", source)
+        self.assertNotIn('NativeStreamLog', self.controller)
+        with self.assertRaisesRegex(AssertionError, 'Streaming derivation anchor changed'):
+            derivation.native_streaming_plumbing(self.controller.replace('pipeInput = false)', 'pipeInput = true)'))
 
 
 if __name__ == '__main__':
