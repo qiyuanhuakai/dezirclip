@@ -14,6 +14,71 @@ REVIEWED_CONTROLLER_LF_SHA256 = '55ec72ffdd43340b955c22563b3a8ecedb2a2eedf210963
 REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
 
+def native_streaming_plumbing(plumbing):
+    """Only the generated long-running Native channel gets a streaming log sink."""
+    def replace_once(source, old, new):
+        assert source.count(old) == 1, 'Streaming derivation anchor changed: ' + old
+        return source.replace(old, new)
+
+    plumbing = replace_once(plumbing, "import assert from 'node:assert/strict';",
+                            "import assert from 'node:assert/strict';\nimport { NativeStreamLog, NativeJsonLines } from './native-stream.mjs';")
+    start, end = plumbing.index('class LoggedProcess {'), plumbing.index('export async function completedCommand(')
+    logged = plumbing[start:end]
+    logged = replace_once(logged, 'env, pipeInput = false)', 'env, pipeInput = false, streamNative = false)')
+    logged = replace_once(logged, "    this.child = spawn(", """    this.nativeLog = streamNative ? new NativeStreamLog(this.files, root, label, error => {
+      this.overflow = true; this.error ??= String(error);
+      this.cancelPending?.(error, true);
+    }) : null;
+    this.child = spawn(""")
+    logged = replace_once(logged, "      if (this[stream].length + chunk.length > maximumLog)",
+                          "      if (this.nativeLog) { this.nativeLog.receive(index, chunk); return; }\n      if (this[stream].length + chunk.length > maximumLog)")
+    logged = replace_once(logged, "    }, undefined, error => {\n      this.error = String(error);",
+                          "    }, undefined, error => {\n      this.nativeLog?.fail('pipe', 'stdio', error);\n      this.error = String(error);")
+    logged = replace_once(logged, '      this.cancelPending?.(error);',
+                          '      this.cancelPending?.(error, Boolean(this.nativeLog));')
+    logged = replace_once(logged, "      for (const fd of this.files) { fsyncSync(fd); closeSync(fd); }",
+                          "      const nativeLogs = this.nativeLog?.finish(this.record.stdio_close?.observed);\n      if (!this.nativeLog) for (const fd of this.files) { fsyncSync(fd); closeSync(fd); }")
+    logged = replace_once(logged, "        stdout: regular(path.join(this.root, this.label + '.stdout.log')),\n        stderr: regular(path.join(this.root, this.label + '.stderr.log'))",
+                          "        ...(nativeLogs ?? { stdout: regular(path.join(this.root, this.label + '.stdout.log')),\n          stderr: regular(path.join(this.root, this.label + '.stderr.log')) })")
+    plumbing = plumbing[:start] + logged + plumbing[end:]
+    start, end = plumbing.index('class NativeChannel extends LoggedProcess {'), plumbing.index('export class Bridge {')
+    native = plumbing[start:end]
+    native = replace_once(native, "root, 'native-target', environment(root, true), true);",
+                          "root, 'native-target', environment(root, true), true, true);")
+    native = replace_once(native, "this.sequence = 0; this.pending = new Map(); this.line = '';",
+                          "this.sequence = 0; this.pending = new Map();")
+    original_parser = """    this.child.stdout.on('data', chunk => {
+      this.line += chunk.toString('utf8');
+      while (this.line.includes('\\n')) {
+        const index = this.line.indexOf('\\n'), raw = this.line.slice(0, index); this.line = this.line.slice(index + 1);
+        let value;
+        try { value = JSON.parse(raw); } catch (error) { this.readyError(error); continue; }
+        if (value.event === 'ready') this.onReady(value);
+        const pending = this.pending.get(value.id);
+        if (pending) { this.pending.delete(value.id); clearTimeout(pending.timeout); value.error ? pending.reject(new Error(value.error)) : pending.resolve(value.value); }
+      }
+    });"""
+    native = replace_once(native, original_parser, """    this.ready.catch(() => {});
+    this.parser = new NativeJsonLines(this.nativeLog, value => {
+      if (value.event === 'ready' && !this.nativeLog.failure) this.onReady(value);
+      const pending = this.pending.get(value.id);
+      if (pending && (!this.nativeLog.failure || pending.operation === 'stop')) {
+        this.pending.delete(value.id); clearTimeout(pending.timeout);
+        value.error ? pending.reject(new Error(value.error)) : pending.resolve(value.value);
+      }
+    });
+    this.child.stdout.on('data', chunk => this.parser.push(chunk));
+    this.child.stdout.once('end', () => this.parser.end());""")
+    native = replace_once(native, 'this.pending.set(id, { resolve, reject, timeout });',
+                          'this.pending.set(id, { resolve, reject, timeout, operation });')
+    native = replace_once(native, "    assert(!this.overflow || operation === 'stop',",
+                          "    if (this.nativeLog.failure && operation !== 'stop') throw this.nativeLog.failure;\n    assert(!this.overflow || operation === 'stop',")
+    native = replace_once(native, '  cancelPending(error) {', '  cancelPending(error, preserveStop = false) {')
+    native = replace_once(native, "    for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(error); }\n    this.pending.clear();",
+                          "    for (const [id, pending] of this.pending) {\n      if (preserveStop && pending.operation === 'stop') continue;\n      clearTimeout(pending.timeout); pending.reject(error); this.pending.delete(id);\n    }")
+    return plumbing[:start] + native + plumbing[end:]
+
+
 def derive_sources(controller, original_target, crash_events):
     # Compare canonical LF text so Git's Windows checkout conversion is harmless.
     controller = controller.replace('\r\n', '\n')
@@ -26,6 +91,7 @@ def derive_sources(controller, original_target, crash_events):
     plumbing = plumbing.replace("from '../release-windows-upgrade.mjs'", "from '../../scripts/release-windows-upgrade.mjs'")
     plumbing = plumbing.replace("new URL('./native-windows-surface-target.py', import.meta.url)",
                                 "new URL('./native-target.py', import.meta.url)")
+    plumbing = native_streaming_plumbing(plumbing)
     plumbing += '\nexport { repository, sha, json, delay, normalized, regular, owned, save, copy, canarySnapshot, environment, LoggedProcess, NativeChannel, availablePort, fixedSurfaceInputs, toolkitPatchId, within, finalizeManagedChild, stopManagedChild, exitFailedController };\n'
     assert hashlib.sha256(original_target.encode('utf-8')).hexdigest() == REVIEWED_TARGET_LF_SHA256, 'Functional target changed; review the derivation before use'
     target = original_target
@@ -135,7 +201,7 @@ def generate(repository, destination):
     assert hashlib.sha256(lifecycle.encode('utf-8')).hexdigest() == REVIEWED_LIFECYCLE_LF_SHA256, 'Functional lifecycle changed; review the derivation before use'
     files['native-windows-lifecycle.mjs'] = lifecycle
     source_directory = repository / 'scripts/tests/windows-performance'
-    for name in ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs'):
+    for name in ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs', 'native-stream.mjs', 'native-stream.node.mjs'):
         files[name] = (source_directory / name).read_text(encoding='utf-8')
     destination.parent.mkdir(exist_ok=True)
     destination.mkdir()
@@ -145,7 +211,7 @@ def generate(repository, destination):
     source_paths = ['scripts/tests/' + name for name in
                     ('native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-crash-events.mjs', 'native-windows-lifecycle.mjs')]
     source_paths += ['scripts/tests/windows-performance/' + name for name in
-                     ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs')]
+                     ('controller.mjs', 'process-sampler.mjs', 'pure.node.mjs', 'tauri-query.mjs', 'native-stream.mjs', 'native-stream.node.mjs')]
     source_files = {}
     for name in source_paths:
         raw = (repository / name).read_bytes()
@@ -166,6 +232,10 @@ def generate(repository, destination):
                      'lf_sha256': 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780',
                      'scope': 'Prior reference only; the current diagnostic target is bound by its reviewed LF hash, not attributed to this commit.'}},
              'native_runtime_executed_by_generator': False,
+             'native_log_policy': {'id': 'performance-native-stream-v1', 'scope': 'Generated performance NativeChannel only; original functional/controller and other LoggedProcess instances retain their existing policy.',
+                 'combined_disk_bytes': 128 * 1024 * 1024, 'stdout_frame_bytes': 1024 * 1024,
+                 'first_error_permanently_stops_persistence': True, 'cleanup_stop_still_parsed': True,
+                 'hash_scope': 'Persisted original-byte prefix and received original bytes have distinct byte counts and SHA256 values; complete requires stdio close and no error.'},
              'source_files': source_files,
              'base_lf_sha256_scope': 'Current reviewed functional source text; modified controller, target and lifecycle are not attributed to the prior reference commit.',
              'base_lf_sha256': {name: hashlib.sha256(source.encode('utf-8')).hexdigest() for name, source in

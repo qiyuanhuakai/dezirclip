@@ -260,3 +260,16 @@ Use a fresh output directory for each derivation; existing evidence is never
 overwritten. The job retains generated sources/diffs, the build-completion quiet
 note, functional receipts, raw per-state resource samples and arm reports. The
 quiet note covers sequential work in this job, not the shared physical host.
+The generated performance Native channel uses `performance-native-stream-v1`: stdout and
+stderr are appended as original bytes with a combined 128 MiB per-arm disk quota, while
+the stdout JSONL parser retains at most one 1 MiB frame. This policy does not change the
+functional 13-stage or Service 3-stage fixtures, or the existing 16 MiB policy used for
+Desktop and short metadata commands. Received and persisted byte counts and SHA256
+values are distinct. After the first I/O, quota or framing error, neither log resumes
+persistence; the stored files remain exact prefixes and the arm fails. The bounded
+parser may continue solely to receive the original cleanup stop response. Discarded
+frame byte ranges are recorded, and an omitted range list is explicitly counted.
+Finalization attempts each file's fsync and close and verifies its persisted bytes with
+a 64 KiB readback buffer. A missing stdio close or any error cannot be marked complete.
+This changes raw-log transport only: the four arms, 5 warmups plus 30 formal trials,
+250 ms resource cadence, 240-second resource spans and input/target checks are unchanged.
