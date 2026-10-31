@@ -39,6 +39,30 @@ class ServiceTarget(base.Native):
         self.expected_bindings = set()
         self.observation_epoch = 0
         self.observation_label = None
+        self.clipboard_producer_expected = False
+        self.clipboard_producer_proof = None
+
+    def expect_clipboard_producer(self):
+        base.require(not self.clipboard_producer_expected, 'One original clipboard producer reservation required')
+        self.clipboard_producer_expected = True
+        return {'clipboard_producer_pending': True, 'bootstrap_restore_permitted': False}
+
+    def confirm_clipboard_producer(self, request):
+        base.require(self.clipboard_producer_expected and self.clipboard_producer_proof is None,
+                     'One original clipboard producer close confirmation required')
+        base.require(type(request.get('pid')) is int and request['pid'] > 0
+                     and isinstance(request.get('process_exit'), dict)
+                     and request['process_exit'].get('observed') is True
+                     and isinstance(request.get('stdio_close'), dict)
+                     and request['stdio_close'].get('observed') is True,
+                     'Original clipboard producer exit and stdio close must both be confirmed')
+        proof = {key: request[key] for key in ('pid', 'process_exit', 'stdio_close')}
+        base.save(self.root / 'service-clipboard-producer-proof.json', proof)
+        self.clipboard_producer_proof = proof
+        return {'clipboard_producer_pending': False, 'bootstrap_restore_permitted': True, 'proof': proof}
+
+    def bootstrap_restore_permitted(self):
+        return not getattr(self, 'clipboard_producer_expected', False) or getattr(self, 'clipboard_producer_proof', None) is not None
 
     def bind_service(self, pid):
         base.require(not self.service_binding_attempted, 'One original Service binding required')
@@ -157,6 +181,8 @@ class ServiceTarget(base.Native):
                 'discovery_anchor_role': 'service_original_before_desktop_bind' if service_only else 'desktop_and_service_originals',
                 'actual_desktop_binding': original_desktop, 'authenticated_service_binding': self.service,
                 'unresolved_reserved_originals': unresolved,
+                'clipboard_producer_expected': getattr(self, 'clipboard_producer_expected', False),
+                'clipboard_producer_confirmed': getattr(self, 'clipboard_producer_proof', None) is not None,
                 'original_binding_error': getattr(self, 'binding_error', None)})
             result = super().cleanup()
             result['discovery_anchor_role'] = 'service_original_before_desktop_bind' if service_only else 'desktop_and_service_originals'
@@ -211,6 +237,10 @@ def main():
                     value = {'reserved_original_role': role}
                 elif operation == 'bind-service-original':
                     value = native.bind_service(request.get('pid'))
+                elif operation == 'expect-clipboard-producer':
+                    value = native.expect_clipboard_producer()
+                elif operation == 'confirm-clipboard-producer-closed':
+                    value = native.confirm_clipboard_producer(request)
                 elif operation == 'bind':
                     base.require('desktop' in native.expected_bindings, 'Desktop spawn reservation required')
                     value = native.bind(request.get('pid'))
@@ -250,7 +280,14 @@ def main():
             cleanup['native'] = native.cleanup() if native else {'not_created': True}
         except BaseException:
             cleanup['native_error'] = traceback.format_exc()
-        if 'native_error' not in cleanup:
+        cleanup['clipboard_producer'] = {
+            'expected': bool(native and native.clipboard_producer_expected),
+            'confirmed': bool(native and native.clipboard_producer_proof is not None),
+            'proof': native.clipboard_producer_proof if native else None,
+        }
+        if native and not native.bootstrap_restore_permitted():
+            cleanup['bootstrap_error'] = 'Original clipboard producer exit/close unconfirmed; restoration denied'
+        elif 'native_error' not in cleanup:
             try:
                 base.restore_bootstrap(*state, root)
             except BaseException:

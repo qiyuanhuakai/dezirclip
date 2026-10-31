@@ -5,7 +5,8 @@ import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readF
 import { createServer } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { Bridge, completedCommand, validateCiContext, validateDesktopIdentity } from './native-windows-surface.mjs';
+import { Bridge, completedCommand, mainBridgeReady, validateCiContext, validateDesktopIdentity } from './native-windows-surface.mjs';
+import { mainWebviewTargets } from '../release-windows-upgrade.mjs';
 import { trackManagedChild, within, finalizeManagedChild, stopManagedChild, exitFailedController } from './native-windows-lifecycle.mjs';
 import { desktopExitVerdict } from './native-windows-crash-events.mjs';
 
@@ -148,6 +149,109 @@ async function port() {
   const server = createServer(); await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const value = server.address().port; await new Promise(resolve => server.close(resolve)); assert(value >= 1024); return value;
 }
+export function startupBudget(deadline, maximum = Infinity, now = () => performance.now()) {
+  const remaining = deadline - now();
+  assert(Number.isFinite(remaining) && remaining > 0, 'Service startup shared deadline expired');
+  return Math.min(maximum, remaining);
+}
+export function exactHostUnavailable(error) {
+  try {
+    const details = JSON.parse(error.message);
+    return details.exception?.type === 'string' && details.exception.value === 'ClipboardHostUnavailable';
+  } catch { return false; }
+}
+export function clipboardProducerProof(original) {
+  assert(Number.isSafeInteger(original.child.pid) && original.child.pid > 0);
+  assert.equal(original.record.pid, original.child.pid, 'Clipboard producer original PID changed');
+  assert.equal(original.record.process_exit?.observed, true, 'Original clipboard producer exit unconfirmed');
+  assert.equal(original.record.stdio_close?.observed, true, 'Original clipboard producer stdio close unconfirmed');
+  assert(original.record.closed_at, 'Original clipboard producer close unconfirmed');
+  return { pid: original.child.pid, process_exit: { ...original.record.process_exit }, stdio_close: { ...original.record.stdio_close } };
+}
+export async function qualifyServiceHost(read, expected, deadline, observations, now = () => performance.now(), sleep = delay, bound = within) {
+  const result = await pollRead('Desktop Service Host readiness', async () => {
+    const started = now(), budget = startupBudget(deadline, 20000, now);
+    const item = { stage: 'desktop-service-host-readiness', started_monotonic_ms: started, remaining_ms: budget };
+    let value;
+    try { value = await read(budget); }
+    catch (error) {
+      item.error = String(error.message ?? error); item.completed_monotonic_ms = now(); observations.push(item);
+      startupBudget(deadline, Infinity, now);
+      if (exactHostUnavailable(error)) return null;
+      throw error;
+    }
+    item.response = value; item.completed_monotonic_ms = now(); observations.push(item);
+    startupBudget(deadline, Infinity, now);
+    assert.equal(value?.mode, 'service', 'Desktop must never fall back to Embedded');
+    assert.equal(value.capture_owner, false);
+    assert.equal(value.state?.service_instance_id, expected.service_instance_id, 'Original Service instance changed');
+    assert.equal(value.state?.privacy_epoch, expected.privacy_epoch, 'Original Service epoch changed');
+    return value;
+  }, startupBudget(deadline, Infinity, now), now, sleep, bound);
+  startupBudget(deadline, Infinity, now); return result;
+}
+class ServiceStartupBridge extends Bridge {
+  async connect(port, observations, deadline) {
+    const readUntil = async (label, read) => {
+      const value = await pollRead(label, read, startupBudget(deadline)); startupBudget(deadline); return value;
+    };
+    const target = await readUntil('Private main WebView', async () => {
+      const item = { stage: 'service-CDP-discovery', started_monotonic_ms: performance.now() };
+      try {
+        const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
+          signal: AbortSignal.timeout(Math.max(1, Math.floor(startupBudget(deadline, 1500)))) });
+        assert.equal(response.status, 200);
+        const targets = await response.json(); startupBudget(deadline);
+        item.targets = targets;
+        const matching = mainWebviewTargets(targets); assert(matching.length <= 1, 'Multiple main WebViews');
+        return matching[0] ?? null;
+      } catch (error) {
+        item.error = String(error.message ?? error); startupBudget(deadline);
+        // Discovery has no product operation or Host decision to replay.
+        if (error instanceof TypeError && error.message === 'fetch failed' || error.name === 'TimeoutError') return null;
+        throw error;
+      } finally { item.completed_monotonic_ms = performance.now(); observations.push(item); }
+    });
+    const address = new URL(target.webSocketDebuggerUrl);
+    assert.equal(address.protocol, 'ws:'); assert(['127.0.0.1', 'localhost', '[::1]'].includes(address.hostname));
+    assert.equal(Number(address.port), port); startupBudget(deadline);
+    this.pending = new Map(); this.sequence = 0;
+    this.socket = new WebSocket(address);
+    this.closed = new Promise(resolve => this.socket.addEventListener('close', resolve, { once: true }));
+    this.socket.addEventListener('message', event => {
+      try {
+        const response = JSON.parse(event.data), pending = this.pending.get(response.id);
+        if (pending) { this.pending.delete(response.id); clearTimeout(pending.timeout); response.error ? pending.reject(new Error(JSON.stringify(response.error))) : pending.resolve(response.result); }
+      } catch (error) {
+        this.startupError = error;
+        for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(error); }
+        this.pending.clear(); this.socket.close();
+      }
+    });
+    this.socket.addEventListener('close', () => {
+      for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(new Error('Service CDP closed')); }
+      this.pending.clear();
+    });
+    const openBudget = startupBudget(deadline, 10000);
+    await within(new Promise((resolve, reject) => {
+      this.socket.addEventListener('open', resolve, { once: true });
+      this.socket.addEventListener('error', () => reject(new Error('Service CDP connection failed')), { once: true });
+    }), openBudget, 'Service CDP connection deadline');
+    let attempts = 0;
+    await readUntil('Actual main Tauri IPC', async () => {
+      assert(++attempts <= 384); if (this.startupError) throw this.startupError;
+      const item = { stage: 'service-CDP-IPC-readiness', started_monotonic_ms: performance.now() };
+      try {
+        const value = await this.command('Runtime.evaluate', {
+          expression: '({href:location.href,ready_state:document.readyState,invoke_type:typeof window.__TAURI_INTERNALS__?.invoke})', returnByValue: true,
+        }, startupBudget(deadline, 2000));
+        startupBudget(deadline); assert(!value.exceptionDetails); item.snapshot = value.result?.value;
+        return mainBridgeReady(item.snapshot) ? item.snapshot : null;
+      } catch (error) { item.error = String(error.message ?? error); throw error; }
+      finally { item.completed_monotonic_ms = performance.now(); observations.push(item); }
+    });
+  }
+}
 export async function runServicePaste(args, env = process.env) {
   validateCiContext(env, process.platform, env.GITHUB_SHA);
   const root = owned(args['output-root'], path.resolve(env.RUNNER_TEMP)); assert(!existsSync(root)); mkdirSync(root);
@@ -159,9 +263,14 @@ export async function runServicePaste(args, env = process.env) {
       'Foreground checks and SendInput are not OS-atomic; counts alone are not delivery.',
       'Stale-copy refusal does not separately read clipboard; generated refusal compares only its unique synthetic payload.',
       'Generated refusal may copy the clipboard before the final target check.'] };
-  let native, service, desktop, client, bridge;
+  let native, service, desktop, client, bridge, calibration;
+  let clipboardProducerConfirmed = false;
+  let startupDeadline;
   const all = [];
-  const managed = (...values) => { const process = new Managed(...values); all.push(process); return process; };
+  const managed = (...values) => { startupBudget(startupDeadline); const process = new Managed(...values); all.push(process); return process; };
+  const startupRequest = async (operation, values = {}) => {
+    const value = await native.request(operation, values, startupBudget(startupDeadline, 20000)); startupBudget(startupDeadline); return value;
+  };
   const stage = async (name, action) => {
     const item = { name, status: 'running', started_at: new Date().toISOString() }; report.cases.push(item);
     try {
@@ -172,60 +281,78 @@ export async function runServicePaste(args, env = process.env) {
     } catch (error) { item.status = 'failed'; item.error = String(error.stack ?? error); throw error; }
   };
   try {
+    const startupStarted = performance.now(); startupDeadline = startupStarted + 45000;
+    report.startup = { started_monotonic_ms: startupStarted, deadline_monotonic_ms: startupDeadline, budget_ms: 45000 };
     const paths = {};
     for (const [key, name] of [['desktop', 'dezirclip.exe'], ['cli', 'dzc.exe'], ['service', 'dzc-service.exe'], ['client', 'service-paste-client.exe']]) {
-      paths[key] = path.join(root, 'candidate', name); report.inputs.push(copy(path.resolve(args[key]), paths[key]));
+      paths[key] = path.join(root, 'candidate', name); report.inputs.push(copy(path.resolve(args[key]), paths[key])); startupBudget(startupDeadline);
     }
     for (const name of ['native-windows-service-paste.mjs', 'native-windows-service-paste-target.py', 'native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-lifecycle.mjs']) {
-      const source = path.join(repository, 'scripts/tests', name); report.inputs.push({ source, ...regular(source) });
+      const source = path.join(repository, 'scripts/tests', name); report.inputs.push({ source, ...regular(source) }); startupBudget(startupDeadline);
     }
     for (const name of ['crates/dzc-service/examples/windows_service_paste_acceptance.rs', '.github/workflows/ci.yml']) {
-      const source = path.join(repository, name); report.inputs.push({ source, ...regular(source) });
+      const source = path.join(repository, name); report.inputs.push({ source, ...regular(source) }); startupBudget(startupDeadline);
     }
     const childEnv = environment(root), database = path.join(root, 'profile/clipboard.db');
     const seedText = 'Service paste synthetic ' + randomUUID().replaceAll('-', '') + ' complete ordinary text';
     const seed = managed(paths.client, ['--seed', database], root, 'service-seed', childEnv);
+    startupBudget(startupDeadline);
     seed.child.stdin.end(JSON.stringify({ first: seedText, second: 'Service paste synthetic newer independent row' }) + '\n');
-    await completedCommand(seed, 15000);
-    const seeded = JSON.parse(seed.stdout.toString('utf8')); report.seed = seeded;
+    await completedCommand(seed, startupBudget(startupDeadline, 15000)); startupBudget(startupDeadline);
+    const seeded = JSON.parse(seed.stdout.toString('utf8')); report.seed = seeded; startupBudget(startupDeadline);
     const expected = seeded.build; assert.equal(expected.source_revision, env.GITHUB_SHA); assert.equal(expected.source_state, 'verified_checkout');
     assert.equal(expected.target, 'x86_64-pc-windows-msvc');
     const identities = {};
     for (const [key, argv] of [['service', ['--build-info']], ['cli', ['build-info', '--json']]]) {
-      const metadata = managed(paths[key], argv, root, key + '-build-info', childEnv); metadata.child.stdin.end();
-      await completedCommand(metadata, 10000); identities[key] = JSON.parse(metadata.stdout.toString('utf8')); validateRole(identities[key], key, expected);
+      const metadata = managed(paths[key], argv, root, key + '-build-info', childEnv); startupBudget(startupDeadline); metadata.child.stdin.end();
+      await completedCommand(metadata, startupBudget(startupDeadline, 10000)); startupBudget(startupDeadline);
+      identities[key] = JSON.parse(metadata.stdout.toString('utf8')); validateRole(identities[key], key, expected); startupBudget(startupDeadline);
     }
     report.build_info = identities;
-    const cdpPort = await port(); report.cdp_port = cdpPort;
+    const portBudget = startupBudget(startupDeadline);
+    const cdpPort = await within(port(), portBudget, 'Private port allocation deadline'); startupBudget(startupDeadline); report.cdp_port = cdpPort;
     native = managed(args.python, ['-B', fileURLToPath(new URL('./native-windows-service-paste-target.py', import.meta.url)), '--root', root, '--source', env.GITHUB_SHA, '--port', String(cdpPort)], root, 'service-native-target', childEnv, true);
-    const nativeReady = await within(native.ready, 20000, 'Private target/bootstrap startup deadline');
+    startupBudget(startupDeadline);
+    const nativeReady = await within(native.ready, startupBudget(startupDeadline, 20000), 'Private target/bootstrap startup deadline'); startupBudget(startupDeadline);
     assert.equal(nativeReady.target_pid, native.child.pid);
     const marker = 'nativeupgradefixturemarker' + randomUUID().replaceAll('-', '') + '-native-a';
-    const calibration = managed(args.python, ['-B', path.join(repository, 'scripts/tests/native-windows-clipboard.py')], root, 'service-clipboard-calibration', { ...childEnv, DEZIRCLIP_NATIVE_CAPTURE_TEXT: marker });
-    calibration.child.stdin.end(); await completedCommand(calibration, 15000);
-    report.target_calibration = await native.request('target-preflight', { expected_text: marker });
+    await startupRequest('expect-clipboard-producer');
+    calibration = managed(args.python, ['-B', path.join(repository, 'scripts/tests/native-windows-clipboard.py')], root, 'service-clipboard-calibration', { ...childEnv, DEZIRCLIP_NATIVE_CAPTURE_TEXT: marker });
+    startupBudget(startupDeadline);
+    calibration.child.stdin.end(); await completedCommand(calibration, startupBudget(startupDeadline, 15000)); startupBudget(startupDeadline);
+    const producerProof = clipboardProducerProof(calibration);
+    report.clipboard_producer_proof = await startupRequest('confirm-clipboard-producer-closed', producerProof);
+    clipboardProducerConfirmed = true;
+    report.target_calibration = await startupRequest('target-preflight', { expected_text: marker });
     assert.equal(report.target_calibration.actual_target_text, marker); assert.equal(report.target_calibration.paste_attempts, 1);
-    await native.request('expect-service-original');
+    await startupRequest('expect-service-original');
     service = managed(paths.service, ['--database', database, '--no-capture'], root, 'service-original', childEnv);
+    startupBudget(startupDeadline);
     save(path.join(root, 'service-identity.json'), { pid: service.child.pid, sha256: regular(paths.service).sha256, build: identities.service });
-    report.service_original = await native.request('bind-service-original', { pid: service.child.pid });
+    startupBudget(startupDeadline);
+    report.service_original = await startupRequest('bind-service-original', { pid: service.child.pid });
     client = managed(paths.client, ['--client', database, String(service.child.pid), String(native.child.pid)], root, 'service-client', childEnv, true);
-    report.service_connection = await within(client.ready, 25000, 'Authenticated Service readiness deadline');
+    startupBudget(startupDeadline);
+    report.service_connection = await within(client.ready, startupBudget(startupDeadline, 25000), 'Authenticated Service readiness deadline'); startupBudget(startupDeadline);
     assert.equal(report.service_connection.peer_pid, service.child.pid); assert.equal(report.service_connection.status.mode, 'service');
     assert.equal(report.service_connection.status.capture_owner, false);
     const capability = report.service_connection.capabilities.platform.windows_bound_paste_target;
     assert.equal(capability.supported, true); assert.equal(capability.version, 1); validateRole(capability.build, 'service', expected);
-    await native.request('expect-desktop-original');
+    await startupRequest('expect-desktop-original');
     desktop = managed(paths.desktop, [], root, 'service-desktop-original', { ...childEnv, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + cdpPort, WEBVIEW2_USER_DATA_FOLDER: path.join(root, 'webview') });
-    report.desktop_original = await native.request('bind', { pid: desktop.child.pid });
-    bridge = new Bridge(); await bridge.connect(cdpPort, report.observations);
-    report.build_info.desktop = await bridge.invoke('get_build_info'); validateDesktopIdentity(report.build_info.desktop, expected);
-    assert.equal(normalized(await bridge.invoke('get_data_path')), normalized(path.join(root, 'profile')));
-    report.desktop_host = await bridge.invoke('get_clipboard_host_status');
-    assert.equal(report.desktop_host.mode, 'service'); assert.equal(report.desktop_host.capture_owner, false);
-    assert.equal(report.desktop_host.state.service_instance_id, report.service_connection.status.state.service_instance_id);
-    await bridge.invoke('set_idle_destroy_enabled', { enabled: false });
-    await bridge.invoke('save_setting', { key: 'app.paste_method', value: 'shift_insert' });
+    startupBudget(startupDeadline);
+    report.desktop_original = await startupRequest('bind', { pid: desktop.child.pid });
+    bridge = new ServiceStartupBridge(); await bridge.connect(cdpPort, report.observations, startupDeadline); startupBudget(startupDeadline);
+    report.build_info.desktop = await bridge.invoke('get_build_info', {}, startupBudget(startupDeadline, 20000)); startupBudget(startupDeadline);
+    validateDesktopIdentity(report.build_info.desktop, expected); startupBudget(startupDeadline);
+    const dataPath = await bridge.invoke('get_data_path', {}, startupBudget(startupDeadline, 20000)); startupBudget(startupDeadline);
+    assert.equal(normalized(dataPath), normalized(path.join(root, 'profile')));
+    report.desktop_host = await qualifyServiceHost(remaining => bridge.invoke('get_clipboard_host_status', {}, remaining),
+      report.service_connection.status.state, startupDeadline, report.observations);
+    await bridge.invoke('set_idle_destroy_enabled', { enabled: false }, startupBudget(startupDeadline, 20000)); startupBudget(startupDeadline);
+    await bridge.invoke('save_setting', { key: 'app.paste_method', value: 'shift_insert' }, startupBudget(startupDeadline, 20000)); startupBudget(startupDeadline);
+    const startupCompleted = performance.now(); startupBudget(startupDeadline, Infinity, () => startupCompleted);
+    report.startup.completed_monotonic_ms = startupCompleted;
     await stage('correct_original_target', async () => {
       await native.request('clear-target'); await native.request('activate-target');
       const before = await native.request('snapshot');
@@ -276,6 +403,14 @@ export async function runServicePaste(args, env = process.env) {
     const errors = []; report.cleanup_started_at = new Date().toISOString();
     if (bridge) { try { report.bridge_cleanup = await bridge.finalize(); if (!report.bridge_cleanup.close_confirmed) errors.push('CDP close unconfirmed'); } catch (error) { errors.push(String(error)); } }
     if (client && !client.record.process_exit.observed) client.child.stdin.end();
+    if (calibration && !clipboardProducerConfirmed) {
+      try {
+        report.clipboard_producer_early_cleanup = await finalizeManagedChild(calibration, 0);
+        const proof = clipboardProducerProof(calibration);
+        report.clipboard_producer_proof = await native.request('confirm-clipboard-producer-closed', proof, 5000);
+        clipboardProducerConfirmed = true;
+      } catch (error) { errors.push('Clipboard producer must exit/close before bootstrap restore: ' + String(error)); }
+    }
     // Native's retained-original cleanup covers both roots before bootstrap restoration.
     if (native) {
       try {

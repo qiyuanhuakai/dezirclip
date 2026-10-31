@@ -1,5 +1,7 @@
 """All-fake checks of the dedicated wrapper's original-root ownership boundary."""
 import ast
+import contextlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -38,6 +40,90 @@ def wrapper(base_native, string_at=None, save=None):
 
 
 class ServiceWrapperTests(unittest.TestCase):
+    def test_producer_reservation_denies_restore_on_stop_eof_or_finally_until_close_proof(self):
+        kind = wrapper(object)
+        native = kind.__new__(kind)
+        native.root = Path('synthetic-root')
+        native.clipboard_producer_expected = False
+        native.clipboard_producer_proof = None
+        self.assertTrue(native.bootstrap_restore_permitted())
+        native.expect_clipboard_producer()
+        for exit_observed, close_observed in [(False, False), (True, False), (False, True)]:
+            self.assertFalse(native.bootstrap_restore_permitted(), 'EOF/finally must retain the deny regardless of stop request')
+            with self.assertRaises(RuntimeError):
+                native.confirm_clipboard_producer({'pid': 17, 'process_exit': {'observed': exit_observed},
+                                                  'stdio_close': {'observed': close_observed}})
+            self.assertIsNone(native.clipboard_producer_proof)
+        result = native.confirm_clipboard_producer({'pid': 17, 'process_exit': {'observed': True, 'exit_code': 1},
+                                                    'stdio_close': {'observed': True}})
+        self.assertFalse(result['clipboard_producer_pending'])
+        self.assertTrue(native.bootstrap_restore_permitted())
+        self.assertEqual(kind.saved[0][1]['pid'], 17)
+        with self.assertRaises(RuntimeError):
+            native.expect_clipboard_producer()
+
+    def test_producer_proof_archive_failure_keeps_restore_denied(self):
+        def fail_save(path, value):
+            raise OSError('cannot seal producer proof')
+        kind = wrapper(object, save=fail_save)
+        native = kind.__new__(kind)
+        native.root = Path('synthetic-root')
+        native.clipboard_producer_expected = True
+        native.clipboard_producer_proof = None
+        with self.assertRaises(OSError):
+            native.confirm_clipboard_producer({'pid': 17, 'process_exit': {'observed': True}, 'stdio_close': {'observed': True}})
+        self.assertFalse(native.bootstrap_restore_permitted())
+        self.assertIsNone(native.clipboard_producer_proof)
+
+    def test_real_main_finally_denies_restore_on_eof_or_stop_with_unconfirmed_producer(self):
+        import queue
+        main = next(node for node in ast.parse(SOURCE.read_text(encoding='utf-8')).body
+                    if isinstance(node, ast.FunctionDef) and node.name == 'main')
+        for via_eof in [True, False]:
+            for confirmed in [True, False]:
+                with self.subTest(via_eof=via_eof, confirmed=confirmed):
+                    events = []
+                    class Parser:
+                        def __init__(self, **kwargs):
+                            pass
+                        def add_argument(self, *args, **kwargs):
+                            pass
+                        def parse_args(self):
+                            return types.SimpleNamespace(root='fixture', source='a' * 40, port=9222)
+                    class Thread:
+                        def __init__(self, target, daemon):
+                            self.target = target
+                        def start(self):
+                            self.target()
+                    def require(value, message):
+                        if not value:
+                            raise RuntimeError(message)
+                    native = types.SimpleNamespace(
+                        clipboard_producer_expected=True, clipboard_producer_proof={'pid': 17} if confirmed else None,
+                        pump_messages=lambda: None, bootstrap_restore_permitted=lambda: confirmed,
+                        cleanup=lambda: events.append('known-root-cleanup') or {'errors': []})
+                    scope = {'__doc__': 'All fake main', 'argparse': types.SimpleNamespace(ArgumentParser=Parser),
+                        'base': types.SimpleNamespace(require=require, guarded_root=lambda *args: Path('fixture'),
+                            bootstrap=lambda *args: (1, 2, 3, 4),
+                            restore_bootstrap=lambda *args: events.append('restore'),
+                            save=lambda path, value: events.append(('sealed', value))),
+                        'ServiceTarget': lambda root: native, 'queue': queue, 'threading': types.SimpleNamespace(Thread=Thread),
+                        'sys': types.SimpleNamespace(stdin=[] if via_eof else ['{"id":1,"operation":"stop"}\n']),
+                        'os': types.SimpleNamespace(getpid=lambda: 19), 'time': types.SimpleNamespace(monotonic=lambda: 0),
+                        'json': json, 'traceback': __import__('traceback')}
+                    exec(compile(ast.fix_missing_locations(ast.Module(body=[main], type_ignores=[])), str(SOURCE), 'exec'), scope)
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        if confirmed:
+                            scope['main']()
+                        else:
+                            with self.assertRaises(RuntimeError):
+                                scope['main']()
+                    self.assertEqual(events[0], 'known-root-cleanup')
+                    self.assertEqual('restore' in events, confirmed)
+                    saved = next(item[1] for item in events if isinstance(item, tuple))
+                    self.assertEqual(saved['clipboard_producer']['confirmed'], confirmed)
+                    self.assertEqual('bootstrap_error' in saved, not confirmed)
+
     def test_epoch_archives_complete_old_ring_before_clear_and_never_accepts_another_label(self):
         from collections import deque
         def seal(path, value):
