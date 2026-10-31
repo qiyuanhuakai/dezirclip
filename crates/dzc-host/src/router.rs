@@ -5,12 +5,19 @@ use serde::Serialize;
 use serde_json::Value;
 use std::{collections::VecDeque, path::PathBuf, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
+pub trait PreparedPaste: Send {
+    fn send(&self) -> Result<(), WireErrorCode>;
+}
 pub trait HostActions: Send + Sync {
     fn platform_capabilities(&self) -> Value;
     fn can_copy(&self) -> bool;
     fn copy(&self, payload: dzc_core::ports::ClipboardPayload) -> Result<(), WireErrorCode>;
     fn can_paste(&self) -> bool;
     fn paste(&self) -> Result<(), WireErrorCode>;
+    fn supports_windows_bound_paste(&self) -> bool { false }
+    fn prepare_windows_paste(&self, _target: &WindowsPasteTarget) -> Result<Box<dyn PreparedPaste>, WireErrorCode> {
+        Err(WireErrorCode::UnsupportedCapability)
+    }
     fn can_activate(&self) -> bool { false }
     fn activate(&self, _entry_id: Option<i64>) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
     fn dismiss(&self) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
@@ -261,6 +268,15 @@ impl Host {
             if can(Permission::DesktopHistory) && session.role()==ClientRole::Desktop {
                 platform.insert("desktop_generated_copy".into(),serde_json::json!({"supported":self.actions.can_copy(),"version":1}));
                 platform.insert("desktop_queue_completion".into(),serde_json::json!({"supported":true,"version":1}));
+                let component = if self.mode == HostMode::Service {
+                    dzc_protocol::build_info::Component::Service
+                } else { dzc_protocol::build_info::Component::Desktop };
+                platform.insert("windows_bound_paste_target".into(),serde_json::json!({
+                    "supported":cfg!(target_os="windows") && self.actions.supports_windows_bound_paste()
+                        && self.actions.can_copy() && self.actions.can_paste(),
+                    "version":1,
+                    "build":crate::build_info(component, api::DATABASE_SCHEMA_VERSION)
+                }));
             }
             platform.insert("service_start".into(),serde_json::json!({"supported":service_transition,
                 "reason":if service_transition {"available"} else {"process_exit_observation_unavailable"}}));
@@ -500,6 +516,9 @@ pub(crate) mod tests {
         fn open_text(&self, cipher: &str) -> Option<String> {
             sealed_fixture_values().lock().unwrap().get(cipher).cloned()
         }
+    }
+    pub fn windows_target() -> WindowsPasteTarget {
+        WindowsPasteTarget{hwnd:"10".into(),root_hwnd:"10".into(),pid:20,thread_id:30,creation_time_100ns:"40".into()}
     }
     pub fn synthetic_host() -> Arc<Host> {
         static KEYS: SyntheticKeys = SyntheticKeys;

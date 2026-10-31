@@ -66,10 +66,11 @@ jobs:
 
       - name: Test disposable native Surface fixture contracts
         run: |
-          node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs scripts/tests/native-windows-lifecycle.node.mjs
+          node --test scripts/tests/native-windows-surface.node.mjs scripts/tests/native-windows-crash-events.node.mjs scripts/tests/native-windows-lifecycle.node.mjs scripts/tests/native-windows-service-paste.node.mjs
           python -B -m unittest discover -s scripts/tests -p test_native_windows_click_plan.py
           python -B -m unittest discover -s scripts/tests -p test_native_windows_surface_target.py
           python -B -m unittest discover -s scripts/tests -p test_native_windows_supervisor.py
+          python -B -m unittest discover -s scripts/tests -p test_native_windows_service_paste.py
 
       - name: Test opt-in Windows performance fixture contracts without native execution
         run: |
@@ -396,6 +397,45 @@ jobs:
             !${{ runner.temp }}/dezirclip-surface-*/webview/**
             !${{ runner.temp }}/dezirclip-surface-*/environment/**
             !${{ runner.temp }}/dezirclip-surface-*/candidate/**
+          if-no-files-found: warn
+
+      - name: Build disposable Windows Service paste client
+        if: runner.os == 'Windows' && matrix.can_test
+        timeout-minutes: 12
+        shell: python
+        run: |
+          import os, struct, subprocess, sys
+          assert sys.platform == 'win32' and struct.calcsize('P') == 8
+          assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+          assert os.environ.get('GITHUB_REPOSITORY') == 'qiyuanhuakai/dezirclip'
+          subprocess.run(['cargo', 'build', '--locked', '-p', 'dzc-service', '--example', 'windows_service_paste_acceptance'], check=True, timeout=600)
+
+      - name: Verify real Service-mode paste target binding on disposable Windows
+        if: runner.os == 'Windows' && matrix.can_test
+        timeout-minutes: 12
+        shell: python
+        run: |
+          import os, pathlib, struct, sys, uuid
+          sys.path.insert(0, 'scripts/tests')
+          from native_windows_supervisor import run_controller
+          assert sys.platform == 'win32' and struct.calcsize('P') == 8
+          assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / ('dezirclip-service-paste-' + uuid.uuid4().hex)
+          sys.exit(run_controller(['node', 'scripts/tests/native-windows-service-paste.mjs',
+              '--desktop', 'target/debug/dezirclip.exe', '--cli', 'target/debug/dzc.exe',
+              '--service', 'target/debug/dzc-service.exe',
+              '--client', 'target/debug/examples/windows_service_paste_acceptance.exe',
+              '--python', sys.executable, '--output-root', str(root)],
+              cwd=pathlib.Path.cwd(), output_root=root))
+
+      - name: Preserve original Service-mode target binding observations
+        if: always() && runner.os == 'Windows' && matrix.can_test
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-service-paste-${{ matrix.name }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/dezirclip-service-paste-*/*.json
+            ${{ runner.temp }}/dezirclip-service-paste-*/*.log
           if-no-files-found: warn
 
       - name: Verify actual private Linux release receipt mounts
