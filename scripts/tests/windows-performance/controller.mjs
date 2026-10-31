@@ -347,7 +347,12 @@ async function runArm(args, expected, renderer, rows, cohortRoot, armIndex) {
         assert.deepEqual(report.cleanup.native.remaining_owned_processes, []);
         assert.equal(report.cleanup.native.target_closed, true); assert.equal(report.cleanup.native.alternate_target_closed, true);
       } catch (error) { errors.push(String(error)); }
-      finally { try { native.finish(); } catch (error) { errors.push(String(error)); } }
+      finally {
+        try {
+          native.finish(); report.native_stream = native.nativeLog?.result?.native_stream ?? null;
+          assert.equal(report.native_stream?.complete, true, 'Native raw log persistence and framing were not complete');
+        } catch (error) { errors.push(String(error)); }
+      }
     }
     if (desktop) {
       try {
@@ -416,7 +421,7 @@ export async function runComparison(args, env = process.env) {
   const rows = dataset(randomUUID().replaceAll('-', '').slice(0, 12).replace(/[0-9]/g, character => String.fromCharCode(97 + Number(character))));
   const report = { schema_version: 1, kind: 'phase6_windows_native_comparison_v1', status: 'running', source_revision: expected.source_revision,
     fixture_id: 'phase6-windows-native-comparison-v1', desktop_build_profile: 'release',
-    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'native-windows-lifecycle.mjs', 'process-sampler.mjs', 'native-windows-crash-events.mjs', 'tauri-query.mjs'].map(name => ({ name,
+    fixture_sources: ['controller.mjs', 'native-plumbing.mjs', 'native-target.py', 'native-windows-lifecycle.mjs', 'process-sampler.mjs', 'native-windows-crash-events.mjs', 'tauri-query.mjs', 'native-stream.mjs'].map(name => ({ name,
       ...regular(new URL(name, import.meta.url)) })),
     run_id: env.GITHUB_RUN_ID, run_attempt: env.GITHUB_RUN_ATTEMPT, order: ARMS, rows, arms: [],
     functional_gate: { path: args['functional-report'], ...regular(args['functional-report']) },
