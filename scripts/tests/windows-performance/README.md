@@ -227,6 +227,47 @@ method. See Microsoft's [process handle lifetime](https://learn.microsoft.com/en
 [process termination](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process),
 and [process-object/PID lifetime explanation](https://devblogs.microsoft.com/oldnewthing/20110107-00/?p=11803).
 
+An unrecognized snapshot candidate can predate all original product roots while
+its numeric parent PID now identifies a different, newer descendant. The fixture
+only classifies a newly opened, never-authenticated candidate as outside its scope
+when its complete successful query, retained identity/slot and two matching parent
+snapshots show a positive creation time strictly below the minimum of **all**
+authoritative original roots and all previously authenticated original anchors.
+Including every old anchor makes the exclusion narrower: a legal new child of an
+older trusted anchor remains eligible even if it predates the product roots.
+Desktop and Service roles are pinned to their original
+binding attempts; the Service-only cleanup alias never creates a Desktop role, and
+an unconfirmed reserved root remains fatal. Root roles, original handles and full
+identities are checked again before promotion. Already authenticated objects are
+never removed by this floor: a previously trusted original object and its valid
+new descendants may predate the product roots.
+
+This classification uses the existing requirement that an authenticated parent
+chain has nondecreasing creation times. [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes)
+returns UTC FILETIME creation timestamps, not a monotonic measurement clock. The
+fixture does not establish that the host clock was never adjusted, and this rule
+does not prove an absolute OS creation ordering. It does not excuse an ordinary
+parent-generation mismatch for a candidate at or after the earliest root.
+
+The full candidate closure is retained for validation. Only an individually proven
+pre-root candidate is removed from the eligible set; any later child whose parent
+was excluded still makes discovery fail. Only after all other edges and slots pass
+does the fixture close each excluded original handle, check success, and promote
+the remaining new candidates as a batch. A close failure permanently blocks a
+successful scope/cleanup result. Excluded candidates never reach termination or
+window/input selection. Every later encounter is fully queried and closed again;
+the audit table is never an ignore-PID cache.
+
+The audit allows at most 2,048 candidate PIDs per closure, 64 excluded full
+`(pid, creation_time, image)` identities and 65,536 close attempts. Both the current
+scope and cumulative identity table have a 256 KiB JSON-byte bound using the
+actual ASCII-escaped serializer. Limits fail explicitly before adoption. Each
+observation carries only its current candidate PID set, parent-graph hash, roots
+and exclusion/close receipts. Cleanup additionally carries the bounded identity
+table with first/last graph hashes and close counts; repeated observations do not
+append an ever-growing history. The failed 070 cohort remains failed and is not
+resumed or combined with new samples.
+
 Node records process exit separately from stdio close. A failed stop request
 still enters a bounded close wait; fallback termination targets only its original
 spawned child. A kill request, destroyed pipe or detached event handle never

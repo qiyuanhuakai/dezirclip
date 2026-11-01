@@ -432,19 +432,22 @@ class OwnershipCleanupTests(unittest.TestCase):
             return result
         native.kernel.GetProcessTimes = times
 
-    def test_old_parent_pid_generation_cannot_authenticate_or_terminate_an_older_child(self):
+    def test_candidate_before_all_original_roots_is_closed_without_authentication_or_termination(self):
         native, calls = self.fixture()
         native.bind(50)
         self.attach_tree(native)
         self.change_creation(native, {600: 100})
-        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual([item['pid'] for item in native.tree()], [50])
         self.assertEqual(set(native.validated_owned_handles), {50})
+        self.assertNotIn(60, native.handles)
+        self.assertTrue(native.preexisting_exclusions[0]['close_confirmed'])
+        self.assertEqual(native.last_tree_scope['candidate_pids'], [50, 60])
         with patch.object(TARGET, 'save') as saved:
-            with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.cleanup()
+            native.cleanup()
         self.assertIn(('terminate', 500, 1), calls)
         self.assertNotIn(('terminate', 600, 1), calls)
         self.assertIn(('close', 600), calls)
-        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+        self.assertEqual(saved.call_args.args[1]['remaining_owned_processes'], [])
 
     def test_generation_is_checked_on_each_edge_not_just_against_the_root(self):
         native, calls = self.fixture()
@@ -972,6 +975,207 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(receipt['remaining_owned_processes'], [])
         self.assertTrue(receipt['target_closed'] and receipt['alternate_target_closed'])
         self.assertEqual(receipt['errors'], [])
+
+
+class PreexistingScopeTests(unittest.TestCase):
+    def fixture(self, created=100, snapshots=None):
+        support = OwnershipCleanupTests()
+        native, calls = support.fixture()
+        native.bind(50)
+        support.attach_tree(native, snapshots)
+        support.change_creation(native, {600: created})
+        return support, native, calls
+
+    def add_earlier_service_root(self, support, native):
+        support.change_creation(native, {700: 300})
+        native.process(70)
+        native.validated_owned_handles[70] = {'handle': 700, 'identity': dict(native.identities[70])}
+        native.authoritative_product_roots = lambda: {'desktop_original': 50, 'service_original': 70}
+
+    def test_only_strictly_before_minimum_of_all_roots_can_be_excluded(self):
+        for created, excluded in [(200, True), (300, False), (400, False)]:
+            with self.subTest(created=created):
+                support, native, calls = self.fixture(created, [[(50, 1), (70, 1), (60, 50)]])
+                self.add_earlier_service_root(support, native)
+                if excluded:
+                    self.assertEqual([v['pid'] for v in native.tree()], [50, 70])
+                    event = native.last_tree_scope
+                    self.assertEqual(event['root_floor_creation_time_100ns'], '300')
+                    self.assertEqual({r['pid'] for r in event['authoritative_roots']}, {50, 70})
+                    self.assertIn(('close', 600), calls)
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+                    self.assertNotIn(('close', 600), calls)
+                self.assertNotIn(60, native.validated_owned_handles)
+
+    def test_after_root_child_of_excluded_candidate_is_not_silently_removed(self):
+        _, native, calls = self.fixture(100, [[(50, 1), (60, 50), (70, 60)]])
+        with self.assertRaisesRegex(RuntimeError, 'parent is excluded'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        self.assertNotIn(('close', 600), calls)
+        self.assertNotIn(('terminate', 700, 1), calls)
+        self.assertFalse(getattr(native, 'preexisting_exclusions', []))
+
+    def test_previously_authenticated_object_is_never_excluded_by_birth_floor(self):
+        support, native, calls = self.fixture()
+        native.process(60)
+        native.validated_owned_handles[60] = {'handle': 600, 'identity': dict(native.identities[60])}
+        support.attach_tree(native, [[(50, 1)]])
+        self.assertEqual([v['pid'] for v in native.tree()], [50, 60])
+        self.assertFalse(getattr(native, 'preexisting_exclusions', []))
+        self.assertNotIn(('close', 600), calls)
+
+    def test_old_authenticated_anchor_keeps_its_legal_new_child_before_product_roots(self):
+        support, native, calls = self.fixture(100)
+        native.process(60)
+        native.validated_owned_handles[60] = {'handle': 600, 'identity': dict(native.identities[60])}
+        support.change_creation(native, {700: 200})
+        support.attach_tree(native, [[(50, 1), (60, 1), (70, 60)]])
+        self.assertEqual([v['pid'] for v in native.tree()], [50, 60, 70])
+        self.assertEqual(native.last_tree_scope['root_floor_creation_time_100ns'], '500')
+        self.assertEqual(native.last_tree_scope['negative_floor_creation_time_100ns'], '100')
+        self.assertEqual(set(native.validated_owned_handles), {50, 60, 70})
+        self.assertFalse(native.preexisting_exclusions)
+        self.assertNotIn(('close', 700), calls)
+
+    def test_preexisting_classification_never_bypasses_query_or_snapshot_errors(self):
+        for failed in ('times', 'image', 'memory', 'snapshot'):
+            with self.subTest(failed=failed):
+                _, native, calls = self.fixture()
+                if failed == 'times':
+                    original = native.kernel.GetProcessTimes
+                    native.kernel.GetProcessTimes = lambda handle, *args: False if handle == 600 else original(handle, *args)
+                elif failed == 'image':
+                    original = native.kernel.QueryFullProcessImageNameW
+                    native.kernel.QueryFullProcessImageNameW = lambda handle, *args: False if handle == 600 else original(handle, *args)
+                elif failed == 'memory':
+                    native.psapi.GetProcessMemoryInfo = lambda handle, *args: handle != 600
+                else:
+                    native.parent_snapshot = lambda: (_ for _ in ()).throw(RuntimeError('snapshot unavailable'))
+                with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+                    with self.assertRaises(RuntimeError): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50})
+                self.assertNotIn(('close', 600), calls)
+
+    def test_zero_creation_or_missing_confirmation_is_not_negative_ownership_evidence(self):
+        for created, snapshots in [(0, None), (100, [[(50, 1), (60, 50)], [(50, 1)]])]:
+            _, native, calls = self.fixture(created, snapshots)
+            with self.assertRaises(RuntimeError): native.tree()
+            self.assertEqual(set(native.validated_owned_handles), {50})
+            self.assertNotIn(('close', 600), calls)
+
+    def test_preexisting_candidate_handle_and_identity_drift_still_fail_before_close(self):
+        for changed in ('handle', 'identity'):
+            with self.subTest(changed=changed):
+                _, native, calls = self.fixture()
+                original = native.kernel.CreateToolhelp32Snapshot
+                def snapshot(*args):
+                    result = original(*args)
+                    if native.test_snapshot_calls == 2:
+                        if changed == 'handle': native.handles[60] = 700
+                        else: native.identities[60] = {**native.identities[60], 'creation_time_100ns': '200'}
+                    return result
+                native.kernel.CreateToolhelp32Snapshot = snapshot
+                with self.assertRaisesRegex(RuntimeError, 'retained handle or identity changed'): native.tree()
+                self.assertNotIn(('close', 600), calls)
+                self.assertNotIn(60, native.validated_owned_handles)
+
+    def test_root_membership_changes_during_confirmation_or_later_calls_are_fatal(self):
+        for changed in ('missing', 'added', 'slot'):
+            with self.subTest(changed=changed):
+                support, native, calls = self.fixture()
+                self.add_earlier_service_root(support, native)
+                roots = {'desktop_original': 50, 'service_original': 70}
+                native.authoritative_product_roots = lambda: dict(roots)
+                original = native.kernel.CreateToolhelp32Snapshot
+                def snapshot(*args):
+                    result = original(*args)
+                    if native.test_snapshot_calls == 2:
+                        if changed == 'missing': roots.clear()
+                        elif changed == 'added': roots['another_original'] = 60
+                        else: native.handles[70] = 600
+                    return result
+                native.kernel.CreateToolhelp32Snapshot = snapshot
+                with self.assertRaises(RuntimeError): native.tree()
+                self.assertNotIn(('close', 600), calls)
+        support, native, _ = self.fixture(600)
+        native.tree()
+        native.authoritative_product_roots = lambda: {'desktop_original': 50, 'service_original': 60}
+        with self.assertRaisesRegex(RuntimeError, 'roots changed'): native.tree()
+
+    def test_close_failure_is_permanent_and_never_promotes_or_restores_scope(self):
+        _, native, calls = self.fixture()
+        original = native.kernel.CloseHandle
+        native.kernel.CloseHandle = lambda handle: False if handle == 600 else original(handle)
+        with self.assertRaisesRegex(RuntimeError, 'close failed'): native.tree()
+        self.assertFalse(native.preexisting_exclusions[0]['close_confirmed'])
+        self.assertIn(60, native.handles)
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        native.kernel.CloseHandle = original
+        with self.assertRaisesRegex(RuntimeError, 'scope failed'): native.tree()
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'scope failed'): native.cleanup()
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+        self.assertNotIn(('terminate', 600, 1), calls)
+
+    def test_same_pid_is_fully_requeried_when_a_later_generation_is_seen(self):
+        support, native, calls = self.fixture()
+        self.assertEqual([v['pid'] for v in native.tree()], [50])
+        self.assertNotIn(60, native.handles)
+        support.change_creation(native, {600: 700})
+        self.assertEqual([v['pid'] for v in native.tree()], [50, 60])
+        self.assertEqual(native.validated_owned_handles[60]['identity']['creation_time_100ns'], '700')
+        self.assertEqual(len(native.preexisting_exclusions), 1)
+        self.assertEqual(calls.count(('close', 600)), 1)
+
+    def test_repeated_identity_is_fully_queried_and_closed_with_bounded_aggregation(self):
+        _, native, calls = self.fixture()
+        for _ in range(10):
+            self.assertEqual([v['pid'] for v in native.tree()], [50])
+            self.assertEqual(len(native.last_tree_scope['excluded_candidates']), 1)
+            self.assertTrue(native.last_tree_scope['complete'])
+        self.assertEqual(len(native.preexisting_exclusions), 1)
+        self.assertEqual(native.preexisting_exclusions[0]['close_attempts'], 10)
+        self.assertEqual(native.preexisting_exclusions[0]['close_confirmed_count'], 10)
+        self.assertEqual(native.preexisting_close_attempts, 10)
+        self.assertEqual(native.test_snapshot_calls, 20)
+        self.assertEqual(calls.count(('exit', 600)), 10)
+        self.assertEqual(calls.count(('close', 600)), 10)
+        self.assertNotIn(60, native.handles)
+
+    def test_new_identity_audit_limit_is_permanent_and_never_caches_an_ignore_pid(self):
+        support, native, calls = self.fixture()
+        for i in range(TARGET.MAX_PREEXISTING_IDENTITIES):
+            support.change_creation(native, {600: 100 + i})
+            native.tree()
+        support.change_creation(native, {600: 100 + TARGET.MAX_PREEXISTING_IDENTITIES})
+        with self.assertRaisesRegex(RuntimeError, 'identity audit bound'): native.tree()
+        self.assertEqual(len(native.preexisting_exclusions), 64)
+        self.assertEqual(calls.count(('close', 600)), 64)
+        self.assertIn(60, native.handles)
+        self.assertNotIn(60, native.validated_owned_handles)
+        with self.assertRaisesRegex(RuntimeError, 'scope failed'): native.tree()
+
+    def test_attempt_limit_stops_before_close_and_candidate_limit_before_new_queries(self):
+        _, native, calls = self.fixture()
+        native.preexisting_close_attempts = TARGET.MAX_PREEXISTING_CLOSE_ATTEMPTS
+        with self.assertRaisesRegex(RuntimeError, 'close attempt audit bound'): native.tree()
+        self.assertNotIn(('close', 600), calls)
+        self.assertNotIn(60, native.validated_owned_handles)
+        _, native, calls = self.fixture()
+        native.parent_snapshot = lambda: {50: 1, **{pid: 50 for pid in range(100, 2148)}}
+        with self.assertRaisesRegex(RuntimeError, 'Candidate scope exceeds'): native.tree()
+        self.assertEqual(set(native.handles), {50})
+        self.assertEqual(set(native.validated_owned_handles), {50})
+
+    def test_audit_bound_counts_json_bytes_and_stops_before_close(self):
+        _, native, calls = self.fixture()
+        # One BMP character is escaped to six ASCII bytes in the actual serializer.
+        native.preexisting_exclusions = [{'pid': 70, 'creation_time_100ns': '10',
+            'image': '\u4e00' * (TARGET.MAX_SCOPE_AUDIT_BYTES // 6)}]
+        with self.assertRaisesRegex(RuntimeError, 'audit byte bound'): native.tree()
+        self.assertNotIn(('close', 600), calls)
+        self.assertNotIn(60, native.validated_owned_handles)
 
 
 if __name__ == '__main__':

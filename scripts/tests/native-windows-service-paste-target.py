@@ -36,6 +36,7 @@ class ServiceTarget(base.Native):
             function.argtypes, function.restype = arguments, result
         self.service = None
         self.service_binding_attempted = False
+        self.service_binding_attempted_pid = None
         self.expected_bindings = set()
         self.observation_epoch = 0
         self.observation_label = None
@@ -67,6 +68,7 @@ class ServiceTarget(base.Native):
     def bind_service(self, pid):
         base.require(not self.service_binding_attempted, 'One original Service binding required')
         self.service_binding_attempted = True
+        self.service_binding_attempted_pid = pid
         try:
             base.require('service' in self.expected_bindings and type(pid) is int and pid > 0,
                          'Reserved original Service binding required')
@@ -163,6 +165,26 @@ class ServiceTarget(base.Native):
                     'unknown_content_returned': False, 'read_bound_bytes': len(payload)}
         finally:
             base.require(self.user.CloseClipboard(), 'Read-only clipboard close failed')
+
+    def authoritative_product_roots(self):
+        service = self.service
+        desktop = self.binding_attempted_pid
+        base.require(self.desktop == desktop if desktop is not None else self.desktop in (None, service),
+                     'Original Desktop root binding changed')
+        actual = {'service': service, 'desktop': desktop}
+        expected = getattr(self, 'expected_bindings', set())
+        base.require(expected <= {'service', 'desktop'}, 'Unknown authoritative product root reservation')
+        base.require(all(actual.get(role) is not None for role in expected),
+                     'Authoritative product root binding is incomplete')
+        roots = {}
+        if service is not None:
+            base.require(self.service_binding_attempted and service == self.service_binding_attempted_pid,
+                         'Original Service root binding changed')
+            roots['service_original'] = service
+        if desktop is not None:
+            base.require(desktop == self.binding_attempted_pid, 'Original Desktop root binding changed')
+            roots['desktop_original'] = desktop
+        return roots
 
     def cleanup(self):
         original_desktop = self.desktop

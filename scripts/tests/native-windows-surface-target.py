@@ -17,6 +17,12 @@ import time
 import traceback
 
 
+MAX_SCOPE_CANDIDATES = 2048
+MAX_PREEXISTING_IDENTITIES = 64
+MAX_PREEXISTING_CLOSE_ATTEMPTS = 65536
+MAX_SCOPE_AUDIT_BYTES = 256 * 1024
+
+
 def require(value, message):
     if not value:
         raise RuntimeError(message)
@@ -222,6 +228,11 @@ class Native:
         self.binding_attempted_pid = None
         self.binding_error = None
         self.desktop = None
+        self.authoritative_root_scope = None
+        self.preexisting_exclusions = []
+        self.preexisting_close_attempts = 0
+        self.preexisting_scope_error = None
+        self.last_tree_scope = None
         self.window_thread_id = self.kernel.GetCurrentThreadId()
         self.focus_messages = deque(maxlen=64)
         self.callback_errors = deque(maxlen=8)
@@ -385,8 +396,20 @@ class Native:
             self.kernel.CloseHandle(snapshot)
         return parents
 
+    def authoritative_product_roots(self):
+        require(type(self.desktop) is int and self.desktop > 0
+                and self.desktop == self.binding_attempted_pid, 'Original Desktop root binding changed')
+        return {'desktop_original': self.desktop}
+
     def tree(self):
         require(self.desktop, 'Desktop binding required')
+        require(not getattr(self, 'preexisting_scope_error', None),
+                'Pre-existing candidate scope failed: ' + str(getattr(self, 'preexisting_scope_error', None)))
+        self.last_tree_scope = None
+        def scope_limit(value, message):
+            if not value:
+                self.preexisting_scope_error = message
+                raise RuntimeError(message)
         certificates = {pid: {'handle': entry['handle'], 'identity': dict(entry['identity'])}
                         for pid, entry in self.validated_owned_handles.items()}
         require(self.desktop in certificates, 'Desktop original handle was not authenticated')
@@ -396,20 +419,49 @@ class Native:
             require(self.handles.get(pid) == certificate['handle']
                     and self.identities.get(pid) == certificate['identity'],
                     'Authenticated retained handle, identity or certificate changed: pid=' + str(pid))
+        def created_at(identity):
+            value = identity.get('creation_time_100ns')
+            require(type(value) is str and value.isascii() and value.isdecimal()
+                    and 0 < int(value) < 1 << 64, 'Positive original process creation time required')
+            return int(value)
+        def root_scope():
+            roots = self.authoritative_product_roots()
+            require(type(roots) is dict and roots and set(roots) <= {'desktop_original', 'service_original'}
+                    and all(type(pid) is int and pid > 0 for pid in roots.values())
+                    and len(set(roots.values())) == len(roots), 'Complete distinct authoritative product roots required')
+            result = []
+            for role, pid in sorted(roots.items()):
+                require(pid in certificates, 'Authoritative product root is not authenticated')
+                certificate = certificates[pid]
+                verify_certificate(pid, certificate)
+                identity = certificate['identity']
+                result.append((role, pid, certificate['handle'], created_at(identity), identity['image']))
+            result = tuple(result)
+            previous = getattr(self, 'authoritative_root_scope', None)
+            require(previous is None or previous == result, 'Authoritative product roots changed')
+            if previous is None:
+                self.authoritative_root_scope = result
+            return result
         observations = {}
         for pid, certificate in sorted(certificates.items()):
             verify_certificate(pid, certificate)
             observations[pid] = self.process(pid, phase='authenticated-tree')
             verify_certificate(pid, certificate)
+        original_roots = root_scope()
+        root_floor = min(root[3] for root in original_roots)
+        anchor_floor = min(created_at(certificate['identity']) for certificate in certificates.values())
+        negative_floor = min(root_floor, anchor_floor)
         parents = self.parent_snapshot()
         # These exact original objects remain owned while their handles are held,
         # including a parent that exited before one of its children was found.
         owned = set(certificates)
+        scope_limit(len(owned) <= MAX_SCOPE_CANDIDATES, 'Candidate scope exceeds the audit bound')
         while True:
             more = {pid for pid, parent in parents.items() if parent in owned}
             if more <= owned:
                 break
             owned |= more
+            scope_limit(len(owned) <= MAX_SCOPE_CANDIDATES, 'Candidate scope exceeds the audit bound')
         for pid in sorted(owned - set(certificates)):
             observations[pid] = self.process(pid, phase='tree')
         candidates = {pid: {'handle': self.handles[pid], 'identity': dict(self.identities[pid])}
@@ -420,6 +472,8 @@ class Native:
         confirmed = self.parent_snapshot()
         for pid, certificate in certificates.items():
             verify_certificate(pid, certificate)
+        require(root_scope() == original_roots, 'Authoritative product roots changed during confirmation')
+        excluded = set()
         for pid, candidate in candidates.items():
             require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity'],
                     'Candidate retained handle or identity changed during parent confirmation')
@@ -430,16 +484,106 @@ class Native:
                 raise RuntimeError('Candidate parent PID changed or disappeared between snapshots: ' + json.dumps({
                         'pid': pid, 'first_parent': parent, 'confirmed_parent': confirmed.get(pid),
                         'running': observations[pid]['running'], 'previously_authenticated': False}))
-            created = int(candidate['identity']['creation_time_100ns'])
-            parent_created = int(candidates[parent]['identity']['creation_time_100ns'])
+            created = created_at(candidate['identity'])
+            if created < negative_floor:
+                require(observations[pid]['memory_query']['succeeded'] is True,
+                        'Pre-existing candidate query failed: pid=' + str(pid))
+                excluded.add(pid)
+        eligible = {pid: candidate for pid, candidate in candidates.items() if pid not in excluded}
+        for pid, candidate in eligible.items():
+            if pid in certificates:
+                continue
+            parent = parents.get(pid)
+            if parent not in eligible:
+                raise RuntimeError('Candidate parent is excluded from the authenticated scope: ' + json.dumps({
+                    'pid': pid, 'parent_pid': parent, 'parent_excluded': parent in excluded}))
+            created = created_at(candidate['identity'])
+            parent_created = created_at(eligible[parent]['identity'])
             if not 0 < parent_created <= created:
                 raise RuntimeError('Parent PID generation does not bind this child: ' + json.dumps({
                 'pid': pid, 'parent_pid': parent, 'creation_time_100ns': str(created),
                 'parent_creation_time_100ns': str(parent_created)}))
+        roots_receipt = [{'role': root[0], 'pid': root[1],
+            'creation_time_100ns': str(root[3]), 'image': root[4]} for root in original_roots]
+        scope = {'complete': False, 'candidate_pids': sorted(owned),
+                 'root_floor_creation_time_100ns': str(root_floor), 'authoritative_roots': roots_receipt,
+                 'authenticated_anchor_floor_creation_time_100ns': str(anchor_floor),
+                 'negative_floor_creation_time_100ns': str(negative_floor),
+                 'authenticated_anchor_pids': sorted(certificates),
+                 'excluded_candidates': []}
+        graph = [(pid, parents.get(pid), confirmed.get(pid)) for pid in sorted(owned)]
+        graph_sha256 = hashlib.sha256(json.dumps(graph, separators=(',', ':')).encode('utf-8')).hexdigest()
+        scope['candidate_parent_graph_sha256'] = graph_sha256
+        exclusions = [dict(item) for item in getattr(self, 'preexisting_exclusions', [])]
+        attempts = getattr(self, 'preexisting_close_attempts', 0)
+        scope_limit(attempts + len(excluded) <= MAX_PREEXISTING_CLOSE_ATTEMPTS,
+                    'Pre-existing close attempt audit bound exceeded')
+        for pid in sorted(excluded):
+            candidate = candidates[pid]
+            require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity']
+                    and pid not in self.validated_owned_handles, 'Pre-existing original handle or identity changed')
+            key = (pid, candidate['identity']['creation_time_100ns'], candidate['identity']['image'])
+            index = next((i for i, item in enumerate(exclusions)
+                if (item['pid'], item['creation_time_100ns'], item['image']) == key), None)
+            if index is None:
+                scope_limit(len(exclusions) < MAX_PREEXISTING_IDENTITIES,
+                            'Pre-existing identity audit bound exceeded')
+                index = len(exclusions)
+                exclusions.append({'pid': pid, **candidate['identity'],
+                    'classification': 'created_before_all_authoritative_product_roots',
+                    'previously_authenticated': False, 'close_only': True,
+                    'close_attempts': 0, 'close_confirmed_count': 0, 'close_confirmed': False,
+                    'first_candidate_parent_graph_sha256': graph_sha256,
+                    'last_candidate_parent_graph_sha256': graph_sha256})
+            receipt = {'pid': pid, **candidate['identity'], 'first_parent': parents[pid],
+                       'confirmed_parent': confirmed[pid], 'aggregate_index': index,
+                       'previously_authenticated': False, 'close_only': True, 'close_confirmed': False}
+            scope['excluded_candidates'].append(receipt)
+        # Audit aggregation never decides ownership: every encounter above queried
+        # the newly opened object and both snapshots before consulting this table.
+        scope_limit(len(json.dumps(exclusions, ensure_ascii=True).encode('utf-8')) <= MAX_SCOPE_AUDIT_BYTES
+                    and len(json.dumps(scope, ensure_ascii=True).encode('utf-8')) <= MAX_SCOPE_AUDIT_BYTES,
+                    'Candidate scope audit byte bound exceeded')
+        self.preexisting_exclusions = exclusions
+        self.last_tree_scope = scope
+        for receipt in scope['excluded_candidates']:
+            pid = receipt['pid']
+            candidate = candidates[pid]
+            aggregate = exclusions[receipt['aggregate_index']]
+            require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity']
+                    and pid not in self.validated_owned_handles, 'Pre-existing original handle or identity changed')
+            self.preexisting_close_attempts = getattr(self, 'preexisting_close_attempts', 0) + 1
+            aggregate['close_attempts'] += 1
+            aggregate['close_confirmed'] = False
+            aggregate['last_candidate_parent_graph_sha256'] = graph_sha256
+            try:
+                require(self.kernel.CloseHandle(candidate['handle']), 'Pre-existing original handle close failed: pid=' + str(pid))
+                receipt['close_confirmed'] = True
+                aggregate['close_confirmed'] = True
+                aggregate['close_confirmed_count'] += 1
+                require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity']
+                        and pid not in self.validated_owned_handles, 'Pre-existing slot changed during close')
+            except BaseException as error:
+                self.preexisting_scope_error = str(error)
+                receipt['error'] = str(error)
+                aggregate['error'] = str(error)
+                raise
+            del self.handles[pid]
+            del self.identities[pid]
+        for pid, certificate in certificates.items():
+            verify_certificate(pid, certificate)
+        require(root_scope() == original_roots, 'Authoritative product roots changed before promotion')
+        scope_limit(len(json.dumps(exclusions, ensure_ascii=True).encode('utf-8')) <= MAX_SCOPE_AUDIT_BYTES
+                    and len(json.dumps(scope, ensure_ascii=True).encode('utf-8')) <= MAX_SCOPE_AUDIT_BYTES,
+                    'Candidate scope audit byte bound exceeded')
+        for pid, candidate in eligible.items():
+            require(self.handles.get(pid) == candidate['handle'] and self.identities.get(pid) == candidate['identity'],
+                    'Candidate retained handle or identity changed before promotion')
         # A complete query alone is insufficient: every edge and original object
         # must validate before any newly opened candidate can be terminated.
-        self.validated_owned_handles.update({pid: candidate for pid, candidate in candidates.items() if pid not in certificates})
-        return [observations[pid] for pid in sorted(owned)]
+        self.validated_owned_handles.update({pid: candidate for pid, candidate in eligible.items() if pid not in certificates})
+        scope['complete'] = True
+        return [observations[pid] for pid in sorted(eligible)]
 
     def observe(self):
         # Before Desktop starts, calibration may inspect only this fixture's
@@ -466,6 +610,7 @@ class Native:
         fg = self.user.GetForegroundWindow()
         foreground = next((w for w in windows if w['hwnd'] == fg), None)
         return {'processes': processes, 'windows': windows, 'foreground': foreground or {'kind': 'other-uninspected'},
+                'ownership_scope': getattr(self, 'last_tree_scope', None),
                 'target_hwnd': int(self.target), 'edit_hwnd': int(self.edit),
                 'alternate_hwnd': int(self.alternate),
                 'target_focus': self.focus_snapshot(),
@@ -726,6 +871,9 @@ ConvertTo-Json -InputObject $rows -Depth 5 -Compress
                    'unconfirmed_known_pids': unconfirmed,
                    'unvalidated_pids': pending, 'unvalidated_handles_closed': pending_closed,
                    'forced_cleanup_pids': forced, 'final_owned_processes': final_processes,
+                   'excluded_preexisting_candidates': list(getattr(self, 'preexisting_exclusions', [])),
+                   'preexisting_close_attempts': getattr(self, 'preexisting_close_attempts', 0),
+                   'last_ownership_scope': getattr(self, 'last_tree_scope', None),
                    'target_closed': not bool(self.user.IsWindow(self.target)),
                    'alternate_target_closed': not bool(self.user.IsWindow(self.alternate)),
                    'errors': errors, 'natural_application_shutdown_tested': False}

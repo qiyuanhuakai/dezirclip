@@ -9,7 +9,7 @@ import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
-REVIEWED_TARGET_LF_SHA256 = 'ac2ff1dbd3794cafd70adfcac31318d7a08f01ee87a88cdb69a10c121d4e5a87'
+REVIEWED_TARGET_LF_SHA256 = '09c3f743b479dbcaeaa0c0f91f792458e7f611567cc254bbb35796ad3980e9a2'
 REVIEWED_CONTROLLER_LF_SHA256 = '55ec72ffdd43340b955c22563b3a8ecedb2a2eedf210963850585f1c9ffff27f'
 REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
@@ -162,6 +162,7 @@ def derive_sources(controller, original_target, crash_events):
                 'The measured retained main window must still belong to the original Desktop')
         foreground = self.user.GetForegroundWindow()
         return {'processes': processes, 'observed_monotonic_ns': str(time.monotonic_ns()),
+                'ownership_scope': getattr(self, 'last_tree_scope', None),
                 'panel': {'hwnd': hwnd, 'pid': pid, 'visible': bool(self.user.IsWindowVisible(hwnd)),
                           'foreground': foreground == hwnd},
                 'main': {'hwnd': main, 'visible': bool(self.user.IsWindowVisible(main))},
@@ -227,7 +228,12 @@ def generate(repository, destination):
                      'scope': 'Prior reference only; the current controller has additional bounded failure cleanup.'}},
              'functional_lifecycle_provenance': {'reviewed_lf_sha256': REVIEWED_LIFECYCLE_LF_SHA256},
              'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
-                  'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-and-checked-snapshot-eof',
+                   'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification',
+                  'ownership_scope_audit': {'candidate_pid_limit': 2048, 'excluded_identity_limit': 64,
+                      'close_attempt_limit': 65536, 'per_scope_and_aggregate_json_byte_limit': 256 * 1024,
+                      'creation_time_ordering': 'UTC FILETIME under the existing nondecreasing authenticated parent-chain rule; not a monotonic clock or proof that the host clock was not adjusted',
+                      'previously_authenticated_objects_excluded': False,
+                      'aggregate_table_skips_fresh_queries': False},
                  'original_target_reference': {'commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
                      'lf_sha256': 'cf3ad99a1c21a1267dd3011567a9a9bc434baa8d7214f7e1c8c730bdc30c5780',
                      'scope': 'Prior reference only; the current diagnostic target is bound by its reviewed LF hash, not attributed to this commit.'}},
