@@ -2,9 +2,9 @@
 
 更新日期：2026-11-01。Phase 6 尚未通过，Phase 7 未启动，默认仍使用 Tauri。
 
-Linux X11 的新四轮受控对照已完成并独立复算。MyGo 在此配置下减少应用进程组合的内存及静态显示 CPU；已预热窗口呼出到原生可见且前台的 p95 从 62.534 ms 变为 65.642 ms，增加约 3.11 ms。此计时终点是原生窗口代理，首次可交互帧、搜索就绪等仍未测量；没有据此认定默认迁移门槛或 Phase 6 验收通过。[完整要求](v0.2-mygo-ready.md#p66-性能评估)
+Linux X11 冻结源码 `5d6af007` 的四轮受控对照已完成并独立复算。MyGo 在此配置下减少应用进程组合的内存及静态显示 CPU；已预热窗口呼出到原生可见且前台的 p95 从 62.534 ms 变为 65.642 ms，增加约 3.11 ms。此计时终点是原生窗口代理，首次可交互帧、搜索就绪等仍未测量；结果不自动归属后续产品源码，没有据此认定默认迁移门槛或 Phase 6 验收通过。[完整要求](v0.2-mygo-ready.md#p66-性能评估)
 
-Windows 尚无完整且可接受的四轮对照。`0988d5c` 的 A1 在正式粘贴完成后因日志上限失败，`0702748` 又在自身 Service 前置清理中失败。后续 `73e1d1a` 自身普通 CI 通过，但先前 MyGo helper 退出 2 与 Desktop 清理前堆损坏的根因仍未关闭。首次重排的 `b62476f` 与 `73e1d1a` 文件树相同；Linux CI 磁盘修复后的当前候选为 `b39d93f`，仍需自身审查、CI 和新的完整前置及四轮对照。各次失败和部分原件分别保留，未拼接成完整结果。
+Windows 尚无完整且可接受的四轮对照。重排后的 8 个新头及权限夹具 `a4f098e` 的普通 CI 均成功，但 `b39d93f` 的唯一新手动运行整体失败；其中独立 release 诊断完成五例、未复现堆损坏，没有执行 ABBA。当前供应器候选 `3c9f5e6` 自身 CI 尚待结果，旧 MyGo helper 退出 2、Desktop 清理前堆损坏及本次权限拒绝的根因均未关闭。各次失败和部分原件分别保留，未拼接成完整结果。
 
 ## Linux X11 受限合成配置结果
 
@@ -108,9 +108,17 @@ Windows 尚无完整且可接受的四轮对照。`0988d5c` 的 A1 在正式粘�
 
 包含列表帧修复的 `73e1d1a820fc1914c3b7ffb9e4d6cd6ab9789031` 自身 CI [41289634097](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41289634097)（attempt 1，报告合并提交 `5e17ea74fd19bf25fb3140baf138829dc21c52e6`）为 17 项成功、1 项可选跳过。自身 Surface 13 项、Service 3 个场景及四个 GUI NSIS 场景的五个阶段原件分别复核通过。新增 9 个纯模型测试函数位于现有 `go test ./...` 的覆盖范围，该源码的现有 Go 测试步骤通过；这与前述 116 项 Python／Node 纯检查分别归属，未在本机执行 Go 或原生程序。这次成功不证明 Panel 风险就是 helper 4604 的实际退出原因，也不关闭 Desktop 8336 的堆损坏根因。
 
-为使 #154 和 #158 自身包含安装夹具修复，已将 #159 的三次提交从 `0702748` 后前移到 #151 的 `f7ef5ab` 后，再顺序重排 #154、#157、#158、#160、#161、#162、#163。各 PR 改动范围与 23 次提交的差异核对均保持一致；该次重排的 #163 为 `b62476fb217cb3141f02df5cfdd91e61681d8c4b`，完整 Git tree 与原 `73e1d1a` 相同。各新提交仍待自身普通 CI 与自动审查结果，不能继承旧提交的通过结论；截至此次更新，尚未发起新的手动发布版前置或 ABBA 对照。
+为使 #154 和 #158 自身包含安装夹具修复，已将 #159 的三次提交从 `0702748` 后前移到 #151 的 `f7ef5ab` 后，再顺序重排 #154、#157、#158、#160、#161、#162、#163。各 PR 改动范围与 23 次提交的差异核对均保持一致；该次重排的 #163 为 `b62476fb217cb3141f02df5cfdd91e61681d8c4b`，完整 Git tree 与原 `73e1d1a` 相同。重排未将旧失败改写为通过，各新头按自身运行归属。
 
-首次重排后，#154 的自身 CI [41291290029](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41291290029) 中，Linux x64 实际构建、测试、兼容性及挂载检查均通过，但 Rust 缓存收尾执行 `cargo metadata --all-features` 时失败，runner 随后记录磁盘耗尽。该 job 的 Rust 缓存未命中，失败前尚未开始 Rust 归档，不能将根因断定为缓存恢复或归档峰值。修复仅在该 Linux x64 CI 中设置 dev/test 的 debug 信息为 0，保留全部检查、Windows、NSIS 和 release 配置，并记录缓存前、主检查后两个固定目录的磁盘及 inode 元数据；这两个时点不覆盖 post-cache 峰值。改动接入后的 #163 为 `b39d93f4b6dc05be127be2361faff7b70908ad26`，当前各受影响提交仍需自身 CI 与审查结果，不能提前声称磁盘压力已解决或获得性能结论。#159 的 `c098011` 未受此次调整影响。
+首次重排后，#154 的自身 CI [41291290029](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41291290029) 中，Linux x64 实际构建、测试、兼容性及挂载检查均通过，但 Rust 缓存收尾执行 `cargo metadata --all-features` 时失败，runner 随后记录磁盘耗尽。该 job 的 Rust 缓存未命中，失败前尚未开始 Rust 归档，不能将根因断定为缓存恢复或归档峰值。修复仅在该 Linux x64 CI 中设置 dev/test 的 debug 信息为 0，保留全部检查、Windows、NSIS 和 release 配置，并记录缓存前、主检查后两个固定目录的磁盘及 inode 元数据；这两个时点不覆盖 post-cache 峰值。改动接入后的 #163 为 `b39d93f4b6dc05be127be2361faff7b70908ad26`，重排后的 8 个新头各自普通 CI 均为 17 项成功、1 项可选跳过；未受调整的 #159 `c098011` 自身 CI [41291146886](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41291146886) 也为 17 项成功。#157、#158、#160、#161、#162、#163 当前提交的外部自动审查已于 11:36—11:37 UTC 明确无新增意见。现有证据仍无法确定旧磁盘故障的完整原因，也不产生性能结论。
+
+唯一新手动运行 [41302851457](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41302851457) 绑定 `b39d93f`，整体失败。其 debug Surface 的 13 项功能检查通过，但原响应 136 在打开 PID 6704 时收到 AccessDenied：请求权限 `0x101011`，没有保留原句柄。随后 3 个未认证候选只关闭句柄，发现不完整、剩余对象无法确认，清理失败；不能补推这些 PID 的身份或归属，也没有本次 heap 失败的证据。
+
+同一运行的独立 release 诊断完成 5 个新配置、65 项功能检查，结果为 `not_reproduced_5`。125 份元数据的原件／副本哈希、40 份原始输出日志以及源码绑定、WER 和配置恢复分别复核通过，没有 dump，也没有 ABBA。元数据包未包含实际 PE 字节，不能重新计算二进制哈希；各 Desktop 的退出 1 均为计划清理终止，不能冒充自然退出保证。五次未复现仍不关闭历史堆损坏根因。
+
+[PR #164](https://github.com/qiyuanhuakai/dezirclip/pull/164) 的 `a4f098e164fb150aae321dd8340f58ec45661d2e` 仅在 5 个夹具／测试／说明文件中移除当前 API 未使用的 `PROCESS_VM_READ`，没有产品改动；Root 117 项、独立复核者 78 项纯检查及源码审查通过，当前提交自动审查 `6558075233` 无新增意见，自身 CI [41307309602](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41307309602) 为 17 项成功、1 项可选跳过，其 Surface 13 项、Service 3 项及 24 份原始输出流分别复核通过。这不证明 PID 6704 权限拒绝或 heap 根因已修复；旧 Windows assessor-v5 仍绑定 `b39d93f`，最终新源码需要新的完整 cohort 与绑定。
+
+[PR #165](https://github.com/qiyuanhuakai/dezirclip/pull/165) 的 `3c9f5e65760f153b7035bf9d4e6d1c487cb81d40` 在 #164 之上增加 4 文件、默认关闭的 Linux release 输入供给，自身 CI 尚待结果，真实供应步骤尚未执行。Linux count-v1 仍只属于 `5d6af007`，新增 MyGo O(n) 帧快照后不能归属当前源码；当前还缺 release Desktop／Surface 原输入和各自 proof，以及新源码的 functional 19 项、idle 13 项资格。普通 CI 的 CLI／Flatpak 产物不能替代，当前源码的新 prerequisites 与 ABBA 均未执行。
 
 首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 尚无完成且可接受的性能对照。任何夹具源码或方法变更都需新完整四轮，旧失败原件不改写、部分样本不混合。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
 
