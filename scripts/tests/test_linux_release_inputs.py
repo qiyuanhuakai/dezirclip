@@ -398,7 +398,11 @@ class Inputs(unittest.TestCase):
         text = (Path(__file__).parents[2] / '.github/workflows/ci.yml').read_text(encoding='utf-8')
         input_block = text[text.index('      linux_release_inputs:'):text.index('      windows_surface_performance:')]
         self.assertIn('type: boolean', input_block); self.assertIn('default: false', input_block)
-        self.assertIn('      - name: Test optional Linux release input contracts without building\n'
+        self.assertIn('      - name: Setup Python for Linux release input contracts\n'
+                      '        uses: actions/setup-python@v6\n'
+                      '        with:\n'
+                      "          python-version: '3.13.15'\n\n"
+                      '      - name: Test optional Linux release input contracts without building\n'
                       '        run: python -B -m unittest discover -s scripts/tests -p test_linux_release_inputs.py -v', text)
         start = text.index('      - name: Supply optional Linux x64 release inputs')
         end = text.index('      - name: Record Linux x64 disk after main checks', start)

@@ -5,7 +5,9 @@ defaulting to false. It adds work only to the hosted Linux x64 `tauri` job after
 its original checks. Windows, NSIS, release settings, caching and the existing
 checks retain their behavior. It does not repeat the frontend or Surface build.
 The existing Frontend CI job also runs the focused standard-library fake contract
-tests, including when this dispatch input is false.
+tests, including when this dispatch input is false. That job explicitly selects
+Python 3.13.15 before the tests so the standard-library `tomllib` module is
+available, matching the existing native CI runtime pin.
 
 The producer reuses the original frontend and native Surface build receipt. It
 checks their bytes, clean source identity, target, toolkit patch and recorded

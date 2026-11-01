@@ -69,6 +69,11 @@ jobs:
       - name: Test independent Surface build identity
         run: node --test scripts/tests/surface-build.node.mjs scripts/tests/mygo-surface-patch.node.mjs
 
+      - name: Setup Python for Linux release input contracts
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13.15'
+
       - name: Test optional Linux release input contracts without building
         run: python -B -m unittest discover -s scripts/tests -p test_linux_release_inputs.py -v
 
