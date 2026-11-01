@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyPresented, verifyNativePanel, verifyNativeTauriPanel, verifyMainDestroyed, mainBridgeReady } from './native-windows-surface.mjs';
 
 const source = 'a'.repeat(40);
@@ -126,4 +129,42 @@ test('the observed initial navigation sequence waits for IPC rather than accepti
     { href: 'http://tauri.localhost/', ready_state: 'interactive', invoke_type: 'function' },
   ];
   assert.equal(snapshots.findIndex(mainBridgeReady), 2);
+});
+
+function nativeChannelFixture() {
+  const source = readFileSync(new URL('./native-windows-surface.mjs', import.meta.url), 'utf8');
+  const result = source.slice(source.indexOf('function nativeReplyResult('), source.indexOf('class NativeChannel extends LoggedProcess {'));
+  const native = source.slice(source.indexOf('class NativeChannel extends LoggedProcess {'), source.indexOf('export class Bridge {'));
+  const child = new EventEmitter(), writes = [];
+  child.stdout = new EventEmitter();
+  child.stdin = { write(value) { writes.push(JSON.parse(value)); } };
+  class FakeLoggedProcess {
+    constructor() { this.child = child; this.record = {}; this.overflow = false; this.closed = new Promise(() => {}); }
+  }
+  const scope = { assert, Error, Promise, setTimeout, clearTimeout, LoggedProcess: FakeLoggedProcess,
+    nativeSource: 'not-executed.py', environment: () => ({}) };
+  vm.createContext(scope); vm.runInContext(result + native + '\nthis.NativeChannel = NativeChannel;', scope);
+  const channel = new scope.NativeChannel('not-executed-python', '.', 'source', 1);
+  child.stdout.emit('data', Buffer.from('{"event":"ready"}\n'));
+  return { channel, child, writes };
+}
+
+test('actual functional Native callback rejects error-field presence and a missing value', async () => {
+  for (const envelope of [{ error: '' }, { error: null }, { error: false }, { error: 0 },
+    { error: 'original native failure' }, { error: '', value: 'must not win' }, {}]) {
+    const { channel, child, writes } = nativeChannelFixture(); await channel.ready;
+    const request = channel.request('observe'), rejected = assert.rejects(request, /Native target|original native failure/);
+    child.stdout.emit('data', Buffer.from(JSON.stringify({ id: writes[0].id, ...envelope }) + '\n'));
+    await rejected;
+    assert.equal(channel.pending.size, 0); assert.equal(writes.length, 1);
+  }
+});
+
+test('actual functional Native callback preserves successful falsy values', async () => {
+  for (const value of [null, false, 0, '']) {
+    const { channel, child, writes } = nativeChannelFixture(); await channel.ready;
+    const request = channel.request('observe');
+    child.stdout.emit('data', Buffer.from(JSON.stringify({ id: writes[0].id, value }) + '\n'));
+    assert.equal(await request, value); assert.equal(channel.pending.size, 0); assert.equal(writes.length, 1);
+  }
 });

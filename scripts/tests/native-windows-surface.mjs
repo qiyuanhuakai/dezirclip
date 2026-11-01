@@ -248,6 +248,14 @@ export async function completedCommand(process, milliseconds, timers = globalThi
   }
 }
 
+function nativeReplyResult(value) {
+  if (Object.hasOwn(value, 'error')) {
+    throw new Error(typeof value.error === 'string' && value.error.length ? value.error : 'Native target reported an empty or invalid error');
+  }
+  assert(Object.hasOwn(value, 'value'), 'Native target reply is missing its value field');
+  return value.value;
+}
+
 class NativeChannel extends LoggedProcess {
   constructor(python, root, source, port) {
     super(python, ['-B', nativeSource, '--root', root, '--source', source, '--port', String(port)], root, 'native-target', environment(root, true), true);
@@ -261,7 +269,10 @@ class NativeChannel extends LoggedProcess {
         try { value = JSON.parse(raw); } catch (error) { this.readyError(error); continue; }
         if (value.event === 'ready') this.onReady(value);
         const pending = this.pending.get(value.id);
-        if (pending) { this.pending.delete(value.id); clearTimeout(pending.timeout); value.error ? pending.reject(new Error(value.error)) : pending.resolve(value.value); }
+        if (pending) {
+          this.pending.delete(value.id); clearTimeout(pending.timeout);
+          try { pending.resolve(nativeReplyResult(value)); } catch (error) { pending.reject(error); }
+        }
       }
     });
     this.closed.then(result => {

@@ -314,3 +314,16 @@ Finalization attempts each file's fsync and close and verifies its persisted byt
 a 64 KiB readback buffer. A missing stdio close or any error cannot be marked complete.
 This changes raw-log transport only: the four arms, 5 warmups plus 30 formal trials,
 250 ms resource cadence, 240-second resource spans and input/target checks are unchanged.
+
+Both functional and generated performance Native channels reject a reply whenever its
+`error` field is present, including an empty string or a non-string payload. A reply
+without its required `value` field also rejects the pending operation; legitimate
+`value` fields containing null, false, zero or an empty string retain their meaning.
+These checks run in the actual channel callbacks and do not retry an operation or
+change its deadline. The original raw reply remains in its log. A well-formed error
+reply can have a complete byte-transport receipt while the operation still fails.
+
+An owned Surface UIA request with no matching visible original window reports a fixed
+error before creating a UIA reader process. It uses the same single window observation
+and owner scope. This diagnostic does not explain or repair a Surface helper's earlier
+natural exit; such an exit and its original process evidence remain separate failures.

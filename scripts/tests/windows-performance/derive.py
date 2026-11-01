@@ -9,8 +9,8 @@ import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
-REVIEWED_TARGET_LF_SHA256 = '09c3f743b479dbcaeaa0c0f91f792458e7f611567cc254bbb35796ad3980e9a2'
-REVIEWED_CONTROLLER_LF_SHA256 = '55ec72ffdd43340b955c22563b3a8ecedb2a2eedf210963850585f1c9ffff27f'
+REVIEWED_TARGET_LF_SHA256 = '5f51c6a10471b4257e207112669f966f6c755d43f024f4b347a2071354afc55e'
+REVIEWED_CONTROLLER_LF_SHA256 = 'cb43b44d4278d18b6d3a5b9ea704a3b945863859694fb13759de41e22efc1313'
 REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
 
@@ -55,7 +55,10 @@ def native_streaming_plumbing(plumbing):
         try { value = JSON.parse(raw); } catch (error) { this.readyError(error); continue; }
         if (value.event === 'ready') this.onReady(value);
         const pending = this.pending.get(value.id);
-        if (pending) { this.pending.delete(value.id); clearTimeout(pending.timeout); value.error ? pending.reject(new Error(value.error)) : pending.resolve(value.value); }
+        if (pending) {
+          this.pending.delete(value.id); clearTimeout(pending.timeout);
+          try { pending.resolve(nativeReplyResult(value)); } catch (error) { pending.reject(error); }
+        }
       }
     });"""
     native = replace_once(native, original_parser, """    this.ready.catch(() => {});
@@ -64,7 +67,7 @@ def native_streaming_plumbing(plumbing):
       const pending = this.pending.get(value.id);
       if (pending && (!this.nativeLog.failure || pending.operation === 'stop')) {
         this.pending.delete(value.id); clearTimeout(pending.timeout);
-        value.error ? pending.reject(new Error(value.error)) : pending.resolve(value.value);
+        try { pending.resolve(nativeReplyResult(value)); } catch (error) { pending.reject(error); }
       }
     });
     this.child.stdout.on('data', chunk => this.parser.push(chunk));
@@ -126,7 +129,8 @@ def derive_sources(controller, original_target, crash_events):
                  "elif operation == 'accessibility': value = native.accessibility(request.get('pid'), request.get('panel_hwnd'))")
     replace_once("""    def accessibility(self, pid):
         observation = self.observe()
-        window = next(w for w in observation['windows'] if w['pid'] == pid and w['visible'])
+        window = next((w for w in observation['windows'] if w['pid'] == pid and w['visible']), None)
+        require(window is not None, 'No visible window for the original owned Surface UIA query')
         require(any(p['pid'] == pid and Path(p['image']).resolve() == (self.root / 'candidate/dzc-surface.exe').resolve() for p in observation['processes']), 'UIA is limited to the actual owned Surface')
 """, """    def accessibility(self, pid, panel_hwnd=None):
         observation = self.observe()
@@ -141,7 +145,8 @@ def derive_sources(controller, original_target, crash_events):
                     and self.process(self.desktop)['running'],
                     'UIA requires the exact original foreground 480x360 Tauri panel')
         else:
-            window = next(w for w in observation['windows'] if w['pid'] == pid and w['visible'])
+            window = next((w for w in observation['windows'] if w['pid'] == pid and w['visible']), None)
+            require(window is not None, 'No visible window for the original owned Surface UIA query')
             require(any(p['pid'] == pid and Path(p['image']).resolve() == (self.root / 'candidate/dzc-surface.exe').resolve() for p in observation['processes']), 'UIA is limited to the actual owned Surface')
             require(panel_hwnd == window['hwnd'] and observation['foreground'].get('hwnd') == panel_hwnd,
                     'UIA requires the original foreground Surface panel')
@@ -222,13 +227,13 @@ def generate(repository, destination):
              'functional_controller_base_commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
              'functional_controller_base_scope': ['native-windows-crash-events.mjs'],
              'functional_controller_provenance': {'reviewed_lf_sha256': REVIEWED_CONTROLLER_LF_SHA256,
-                 'diagnostic_delta': 'bounded-original-child-and-socket-finalization',
+                 'diagnostic_delta': 'bounded-original-child-and-socket-finalization-with-explicit-native-error-envelope-rejection',
                  'original_controller_reference': {'commit': FUNCTIONAL_CONTROLLER_BASE_COMMIT,
                      'lf_sha256': 'c1950a6bff4cf51f91e9d5f5cc4d8bf554d6c9c5361c6b733c676f6374e812cf',
                      'scope': 'Prior reference only; the current controller has additional bounded failure cleanup.'}},
              'functional_lifecycle_provenance': {'reviewed_lf_sha256': REVIEWED_LIFECYCLE_LF_SHA256},
              'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
-                   'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification',
+                   'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification-and-explicit-no-visible-uia-window-error',
                   'ownership_scope_audit': {'candidate_pid_limit': 2048, 'excluded_identity_limit': 64,
                       'close_attempt_limit': 65536, 'per_scope_and_aggregate_json_byte_limit': 256 * 1024,
                       'creation_time_ordering': 'UTC FILETIME under the existing nondecreasing authenticated parent-chain rule; not a monotonic clock or proof that the host clock was not adjusted',
