@@ -756,7 +756,8 @@ class OwnershipCleanupTests(unittest.TestCase):
                     name = {'times': 'GetProcessTimes', 'exit': 'GetExitCodeProcess', 'image': 'QueryFullProcessImageNameW'}[failure]
                     original = getattr(native.kernel, name)
                     setattr(native.kernel, name, lambda handle, *args: False if handle == 600 else original(handle, *args))
-                with self.assertRaises(RuntimeError): native.tree()
+                with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+                    with self.assertRaises(RuntimeError): native.tree()
                 self.assertEqual(set(native.validated_owned_handles), {50, 60})
 
     def test_live_certificate_drift_is_fatal_during_queries_or_stable_parent_confirmation(self):
