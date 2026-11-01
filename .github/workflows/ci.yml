@@ -239,6 +239,34 @@ jobs:
         with:
           arch: ${{ matrix.msvc_arch }}
 
+      - name: Limit Linux x64 CI debug data and record disk before cache
+        if: runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        shell: python
+        run: |
+          import json, os, pathlib, re, shutil, subprocess, sys
+          assert sys.platform == 'linux' and os.environ.get('RUNNER_ARCH') == 'X64'
+          assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+          assert os.environ.get('GITHUB_REPOSITORY') == 'qiyuanhuakai/dezirclip' and os.environ.get('GITHUB_JOB') == 'tauri'
+          source = os.environ['GITHUB_SHA']
+          assert re.fullmatch('[0-9a-f]{40}', source), 'Immutable CI checkout required'
+          workspace = pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          assert workspace.is_dir() and temporary.is_dir() and workspace == pathlib.Path.cwd().resolve(strict=True)
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=workspace, text=True, timeout=10).strip() == source
+          def usage(root):
+              disk, inode = shutil.disk_usage(root), os.statvfs(root)
+              return {'bytes_total': disk.total, 'bytes_used': disk.used, 'bytes_free': disk.free,
+                      'inodes_total': inode.f_files, 'inodes_free': inode.f_ffree, 'inodes_available': inode.f_favail}
+          value = {'stage': 'before-cache', 'source_revision': source,
+                   'workspace': usage(workspace), 'runner_temp': usage(temporary)}
+          encoded = json.dumps(value, sort_keys=True)
+          assert len(encoded.encode('ascii')) <= 2048, 'Bounded disk summary required'
+          environment = pathlib.Path(os.environ['GITHUB_ENV'])
+          assert environment.is_file() and not environment.is_symlink() and environment.resolve(strict=True).is_relative_to(temporary)
+          with environment.open('a', encoding='utf-8', newline='\n') as output:
+              output.write('CARGO_PROFILE_DEV_DEBUG=0\nCARGO_PROFILE_TEST_DEBUG=0\n')
+          print('DEZIRCLIP_CI_DISK', encoded, flush=True)
+
       - name: Cache Rust artifacts
         uses: swatinem/rust-cache@v2
         with:
@@ -415,6 +443,30 @@ jobs:
           assert (saved['before'] in ('0', '1') and saved['after'] == current == '0') if key.exists() else saved['before'] is saved['after'] is current is None, 'Userns prerequisite no longer matches its original readback'
           print('DEZIRCLIP_USERNS_PREREQUISITE_RETAINED', {'original': saved, 'current': current}, flush=True)
           subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
+
+      - name: Record Linux x64 disk after main checks
+        if: always() && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        shell: python
+        run: |
+          import json, os, pathlib, re, shutil, subprocess, sys
+          assert sys.platform == 'linux' and os.environ.get('RUNNER_ARCH') == 'X64'
+          assert os.environ.get('GITHUB_ACTIONS') == 'true' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted'
+          assert os.environ.get('GITHUB_REPOSITORY') == 'qiyuanhuakai/dezirclip' and os.environ.get('GITHUB_JOB') == 'tauri'
+          source = os.environ['GITHUB_SHA']
+          assert re.fullmatch('[0-9a-f]{40}', source), 'Immutable CI checkout required'
+          workspace = pathlib.Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
+          temporary = pathlib.Path(os.environ['RUNNER_TEMP']).resolve(strict=True)
+          assert workspace.is_dir() and temporary.is_dir() and workspace == pathlib.Path.cwd().resolve(strict=True)
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=workspace, text=True, timeout=10).strip() == source
+          def usage(root):
+              disk, inode = shutil.disk_usage(root), os.statvfs(root)
+              return {'bytes_total': disk.total, 'bytes_used': disk.used, 'bytes_free': disk.free,
+                      'inodes_total': inode.f_files, 'inodes_free': inode.f_ffree, 'inodes_available': inode.f_favail}
+          value = {'stage': 'after-main', 'source_revision': source,
+                   'workspace': usage(workspace), 'runner_temp': usage(temporary)}
+          encoded = json.dumps(value, sort_keys=True)
+          assert len(encoded.encode('ascii')) <= 2048, 'Bounded disk summary required'
+          print('DEZIRCLIP_CI_DISK', encoded, flush=True)
 
   windows-surface-performance:
     name: Optional Windows release Surface comparison
