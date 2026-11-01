@@ -1,10 +1,10 @@
 # Phase 6 MyGo / Tauri 性能对照记录
 
-更新日期：2026-11-01。Phase 6 尚未通过，Phase 7 未启动，默认仍使用 Tauri。
+更新日期：2026-11-02。Phase 6 尚未通过，Phase 7 未启动，默认仍使用 Tauri。
 
 Linux X11 冻结源码 `5d6af007` 的四轮受控对照已完成并独立复算。MyGo 在此配置下减少应用进程组合的内存及静态显示 CPU；已预热窗口呼出到原生可见且前台的 p95 从 62.534 ms 变为 65.642 ms，增加约 3.11 ms。此计时终点是原生窗口代理，首次可交互帧、搜索就绪等仍未测量；结果不自动归属后续产品源码，没有据此认定默认迁移门槛或 Phase 6 验收通过。[完整要求](v0.2-mygo-ready.md#p66-性能评估)
 
-Windows 尚无完整且可接受的四轮对照。重排后的 8 个新头及权限夹具 `a4f098e` 的普通 CI 均成功，但 `b39d93f` 的唯一新手动运行整体失败；其中独立 release 诊断完成五例、未复现堆损坏，没有执行 ABBA。当前供应器候选 `1fe685c` 自身 CI 尚待结果，旧 MyGo helper 退出 2、Desktop 清理前堆损坏及本次权限拒绝的根因均未关闭。各次失败和部分原件分别保留，未拼接成完整结果。
+Windows `2a2521f` 的新完整四轮对照已通过冻结评估器及独立原件、数学复核：MyGo 更快交付粘贴全文，但原生可见／前台代理的 pooled p95 为 39.606 ms，Tauri 为 27.303 ms；MyGo 收起后的工作集约为 Tauri 的两倍，PrivateCommit 也更高。当前结果不满足更快呼出的候选目标，不据此迁移默认渲染器。旧 MyGo helper 退出 2、Desktop 清理前堆损坏、权限拒绝及映像查询失败的根因仍未关闭；新完整运行与五次未复现不构成根因修复。
 
 ## Linux X11 受限合成配置结果
 
@@ -53,6 +53,21 @@ Windows 尚无完整且可接受的四轮对照。重排后的 8 个新头及权
 旧 v6 在 MyGo 收起态只有 958 个原样本、2 个漏点，仍为原质量门禁失败；停止记录 SHA-256 `d395a9c6feb6c8ca301aa7da8b3a2af7437651f055978fd5b8f4d00fc1cabd29` 保留。此次 count-v1 从头执行不同的资源估计方法，旧样本未拼入或重新标为通过。最终 A2 采用第二人 v2 元数据复核；原 v1 的 MyGo 可见字段标签误用已注明并保留，原采样和 Root 评估未改。
 
 ## Windows 与剩余验收
+
+最新[完整运行 41327394886](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41327394886) 的 attempt 1 直接绑定 `2a2521f3a1b04e8bc5c4f44a7d372998aa22577f`，整体成功。现有 `windows-latest` release job 在发布版 13 项功能门禁通过后，于 17:03:57—17:44:54 UTC 顺序执行 Tauri／MyGo／MyGo／Tauri；每轮 5 次预热、30 次正式试次，显示及收起各有 961 个实际样本、约 240 秒观察。总计 120 次正式试次和 7,688 个资源点，没有补点或拼入旧轮。
+
+| 轮次 | 可见／前台代理 p50 / p95，ms | Enter 到完整目标全文 p50 / p95，ms | 显示／收起 WorkingSet p50，MiB | 显示／收起 PrivateCommit p50，MiB |
+| --- | ---: | ---: | ---: | ---: |
+| A1 Tauri | 18.305 / 29.148 | 269.175 / 277.704 | 240.08 / 64.94 | 207.20 / 207.66 |
+| B1 MyGo | 12.465 / 41.548 | 47.703 / 57.416 | 153.63 / 127.21 | 222.85 / 221.96 |
+| B2 MyGo | 27.580 / 30.859 | 47.467 / 63.849 | 152.43 / 126.54 | 224.30 / 224.01 |
+| A2 Tauri | 16.180 / 26.769 | 274.122 / 293.841 | 222.36 / 64.41 | 207.10 / 208.08 |
+
+两轮每侧的 60 次正式试次按原 nearest-rank 合并描述：可见／前台代理的 Tauri p50／p95 为 17.393／27.303 ms，MyGo 为 27.201／39.606 ms；Enter 到完整目标全文分别为 272.787／288.079 ms 与 47.703／62.302 ms。每侧只有两轮实验；trial 和资源快照不作为独立重复实验，也不推导统计显著性。显示态观察 CPU 为单核 0.352%—0.410%，收起态为 0.072%—0.085%；这是从首次看到的保留进程身份起算的 CPU 计数器范围，未观察到的短命进程和此前 CPU 未计入。WorkingSet、PrivateCommit 分别保留原含义，不能替代 PSS／USS；Windows PSS／USS、GPU、唤醒、首次可交互帧及搜索就绪仍为 null。
+
+原[产物 13094245927](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41327394886/artifacts/13094245927) 为 8,838,796 字节，SHA-256 `2297ed21d15962e5231c5f14e3094ff5861fab47a4e7c7a24d6fe73af5288bad`。134 个原成员、8 份运行源码和 40 路原输出的字节／哈希分别匹配，原帧无 error／overflow／Node kill；原身份、输入／canary、五个 profile 的 bootstrap 与 WebView 策略恢复及清理原件均复核。各 Desktop 的退出 1 为记录的清理终止，不冒称自然退出保证。冻结 v9 评估输出为 `offline_consistency_verified`，`phase6_pass=false`；第二份原资源流与试次数学复算另行确认上述分位数和计数。原 Windows handle／父图没有离线重放；本轮 excluded 分支为空，不能宣称排除分支获得实际覆盖。与 Linux `1fe685c` 相比，`2a2521f` 仅有四个诊断、测试及说明文件变化，产品目录及 Cargo／包清单无差异；不同系统、工具链、二进制及计量方法仍分别归属，不跨平台混样。
+
+以下历史失败及修订继续保留；新完整结果不将它们改写为通过。
 
 [PR #154](https://github.com/qiyuanhuakai/dezirclip/pull/154) 修正验收控制器有界退出、已认证原句柄清理及父子创建代际校验，产品源码和 release 优化参数保持原值。Linux 5d6 与 Windows a11 在 `src`、`src-tauri`、`crates`、`frontends` 及根 Cargo/包清单中的产品文件一致；平台、工具链、build_id 和实际二进制各自绑定，不跨系统混样。
 
@@ -118,9 +133,17 @@ Windows 尚无完整且可接受的四轮对照。重排后的 8 个新头及权
 
 [PR #164](https://github.com/qiyuanhuakai/dezirclip/pull/164) 的 `a4f098e164fb150aae321dd8340f58ec45661d2e` 仅在 5 个夹具／测试／说明文件中移除当前 API 未使用的 `PROCESS_VM_READ`，没有产品改动；Root 117 项、独立复核者 78 项纯检查及源码审查通过，当前提交自动审查 `6558075233` 无新增意见，自身 CI [41307309602](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41307309602) 为 17 项成功、1 项可选跳过，其 Surface 13 项、Service 3 项及 24 份原始输出流分别复核通过。这不证明 PID 6704 权限拒绝或 heap 根因已修复；旧 Windows assessor-v5 仍绑定 `b39d93f`，最终新源码需要新的完整 cohort 与绑定。
 
-[PR #165](https://github.com/qiyuanhuakai/dezirclip/pull/165) 的首个提交 `3c9f5e65760f153b7035bf9d4e6d1c487cb81d40` 在 #164 之上增加 4 文件、默认关闭的 Linux release 输入供给。其 CI [41313186568](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41313186568) 的 Frontend 任务 [124867667311](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41313186568/job/124867667311) 在 Python 3.10 导入 `tomllib` 时失败，该新增纯测试与供应器均未执行。修订提交 `1fe685c424602b2bc1892f1deb0794c2e0b90ad5` 仅为该测试固定 Python 3.13.15 并更新合同／说明，供应器保持不变；新提交自身 CI 尚待结果，真实供应步骤仍未执行。Linux count-v1 仍只属于 `5d6af007`，新增 MyGo O(n) 帧快照后不能归属当前源码；当前还缺 release Desktop／Surface 原输入和各自 proof，以及新源码的 functional 19 项、idle 13 项资格。普通 CI 的 CLI／Flatpak 产物不能替代，当前源码的新 prerequisites 与 ABBA 均未执行。
+[PR #165](https://github.com/qiyuanhuakai/dezirclip/pull/165) 的首个提交 `3c9f5e65760f153b7035bf9d4e6d1c487cb81d40` 在 #164 之上增加 4 文件、默认关闭的 Linux release 输入供给。其 CI [41313186568](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41313186568) 的 Frontend 任务 [124867667311](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41313186568/job/124867667311) 在 Python 3.10 导入 `tomllib` 时失败，该新增纯测试与供应器均未执行。修订提交 `1fe685c424602b2bc1892f1deb0794c2e0b90ad5` 仅为该测试固定 Python 3.13.15 并更新合同／说明，供应器保持不变；新提交自身 CI [41314890080](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41314890080) 已终态成功，17 项成功、1 项可选跳过。唯一新手动运行 [41317927879](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41317927879) 的 Linux x64 供给步骤和整个 producer job 成功；原产物 `13088123731` 为 12,133,498 字节，SHA-256 `1098ba1a989db9dd42d2728b7101f582d2683e414aad943f15e132aa8311a0f0`。13 个原成员、11 份清单校验、973 行 Cargo 原 JSON、两个 ELF 与原 proof 分别核验；Rust/Cargo 为实际 1.99.1，Go 为 1.27.3。Desktop proof 明确记录 GHA 构建及 Cargo artifact 身份绑定、producer 未执行 Desktop，不冒称旧命名空间离线构建收据。Linux count-v1 的已有数值仍只属于 `5d6af007`，不归属新增 MyGo O(n) 帧快照后的源码。
 
-首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 尚无完成且可接受的性能对照。任何夹具源码或方法变更都需新完整四轮，旧失败原件不改写、部分样本不混合。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
+新 `1fe685c` release pair 已完成一次原有 19 项 Linux 功能验收，Root 与第二人分别读取原件复核通过；31 份原记录、91 次原生观察、87 个目标事件及 39 个目标回复分别核验。MyGo 的单次 Return 产生一轮原目标 Ctrl+V 与一次 SelectionNotify，Tauri 产生一轮 Shift+Insert 与一次 SelectionNotify，两者均交付同一 row7 全文；热复用、真实隐私 epoch、焦点恢复、Host 捕获所有权与原对象清理通过。六命名空间、私有凭据、HOME/XDG/DBus/Secret Service/X11 边界保持原值。启动前的首个授权助手因已有 Xvfb 名称停止，未生成 GO 或执行 cohort；经独立审查的新助手只将 Xvfb/Marco 记为来源未认证且未操作的既有显示服务，未认证整机空闲，Windows 进程／空闲字段为 null。
+
+同一新 release pair 的原 R3 13 项随后单次执行成功，Root 与第二人独立读取 25 份原记录复核：两个静默区间为 35.154086779 与 35.006903618 秒，各 141 次原对象观察；43 次完整 driver 事件均不与静默区间重叠，调用计数分别保持 34→34 与 39→39。原 helper 的 PID／创建代际／会话／XID 不变；一次 Enter 只产生一次 Ctrl+V 和 SelectionNotify，并交付 row7 全文。10 条历史、捕获所有权、隐私 epoch、正常停用的原 helper pidfd 退出和最终私有对象清理通过。原授权助手的工具完成输出曾丢失，因此其退出状态仍为 unknown；另经源审和 18 项纯模拟检查，以新 Root 单次决定对既有三份授权文件执行只读持久化／回读及新观察，保留原件后才单独启动一次原 R3，未重跑旧助手。新的恢复入口及实际 outer 均保留退出 0；这不补推旧助手退出状态。19 项和 R3 均为功能范围，新的 Linux 四轮对照仍待执行，不认证整机安静、性能或 Phase6。
+
+同一手动运行的 Windows 普通前置及 release 13 项功能门禁通过，但第三轮 MyGo 仅完成 5 次预热和 29/30 次正式试次，尚无该轮资源数据；原 Native 响应 855 报 `Owned image unavailable`，第四轮没有 report。原 ZIP `13090360051` 为 5,633,793 字节，SHA-256 `64d29a1819b04b5d3fe0614d4849d52fe8cadf194055fa7d1a12d8713dfbe3f4`；32 路原日志字节及哈希完整、没有丢帧或 overflow。唯一未认证清理 PID 5404 只关闭句柄，没有其创建时间、映像或父边，不能补推为已认证错误对象。该轮发现不完整、剩余对象为 null，bootstrap 与 policy 恢复收据缺失；Desktop 6972 的退出 1 在清理开始后且属于强制列表，不能断言为堆损坏，也不能认证正常恢复。冻结 v7 离线评估拒绝这份 2 个已发布通过轮次、3 份发现 report 的不完整 ABBA；前两轮数值不作为完整新结论发布。
+
+[PR #166](https://github.com/qiyuanhuakai/dezirclip/pull/166) 的 `2a2521f3a1b04e8bc5c4f44a7d372998aa22577f` 仅补 Windows 原映像失败的有界错误上下文、派生绑定及模拟测试，未新增原生查询或放宽身份、权限、采样及失败规则。Root 73 项目标、10 项派生和 13 项 Node 纯检查通过，独立目标／派生 AST 复核通过；首提交 `7923f73` 的五个 Linux CI 失败均为同一既有纯测试漏模拟 Windows 错误读取接口，保留原失败。修订仅补该受控模拟，双方在移除 Windows accessor 的条件下各自 73 项通过；自身 CI [41326398315](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41326398315) 为 17 项成功、1 项可选跳过，当前提交的自动审查 `6560479435` 无新增确定问题。自身 Surface 13 项、Service 3 项和 24 路原输出流独立核验通过。新的[完整同源对照 41327394886](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41327394886) 及其原件已完成，冻结 v9 的 20 项纯测试、8 个源码绑定、原算法及完整实际产物分别复核，结果与限制见本节开头。
+
+首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前完成的 Linux 历史及 Windows 新四轮均限于所述原生窗口代理、合成配置和各自资源范围；没有认定全部性能要求或故障隔离通过。任何夹具源码或方法变更都需新完整四轮，旧失败原件不改写、部分样本不混合。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
 
 ## 补测方法与环境条件
 
