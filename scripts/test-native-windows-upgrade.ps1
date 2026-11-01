@@ -424,6 +424,21 @@ function New-FixtureWebViewEnvironment([int]$Port, [string]$UserDataDirectory) {
     if ($Port -lt 1024 -or $Port -gt 65535 -or [string]::IsNullOrWhiteSpace($UserDataDirectory)) { throw 'A fixture WebView port and private user-data directory are required.' }
     return @{ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"; WEBVIEW2_USER_DATA_FOLDER = $UserDataDirectory }
 }
+function Restore-FixtureWebViewEnvironmentEntry([string]$Name, [hashtable]$Prior) {
+    $environmentPath = switch -Exact ($Name) {
+        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS' { 'Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS' }
+        'WEBVIEW2_USER_DATA_FOLDER' { 'Env:WEBVIEW2_USER_DATA_FOLDER' }
+        default { throw 'Only the two fixture WebView environment entries may be restored.' }
+    }
+    if ($Prior.existed -isnot [bool] -or ($Prior.existed -and $Prior.value -isnot [string])) { throw 'An original environment-entry presence and string value are required.' }
+    if ($Prior.existed) {
+        Set-Item -LiteralPath $environmentPath -Value $Prior.value -ErrorAction Stop
+    } elseif (Test-Path -LiteralPath $environmentPath) {
+        Remove-Item -LiteralPath $environmentPath -ErrorAction Stop
+    }
+    if ((Test-Path -LiteralPath $environmentPath) -ne $Prior.existed) { throw 'The original environment-entry presence was not restored.' }
+    if ($Prior.existed -and (Get-Item -LiteralPath $environmentPath).Value -cne $Prior.value) { throw 'The original environment-entry value was not restored.' }
+}
 function Get-OriginalGuiHint([System.Diagnostics.Process]$Application, [string]$Stage, $Identity) {
     $hint = [ordered]@{ stage = $Stage; observedAt = [DateTime]::UtcNow.ToString('o'); processId = $Application.Id; hasExited = $null; exitCode = $null; startTimeUtc = $null; mainWindowHandle = $null; pathFromVerifiedIdentity = $(if ($Identity -and $Identity.verified) { $Identity.expectedPath } else { $null }); errors = @(); scope = 'Same original Process object. A zero main-window handle does not establish whether a WebView was created.' }
     try {
@@ -437,6 +452,74 @@ function Get-OriginalGuiHint([System.Diagnostics.Process]$Application, [string]$
         }
     } catch { $hint.errors += $_.Exception.GetType().FullName + ': ' + $_.Exception.Message }
     return [pscustomobject]$hint
+}
+function Assert-FixtureWebViewEnvironmentRestoration {
+    if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:OS -ne 'Windows_NT' -or -not $env:RUNNER_TEMP) { throw 'Environment restoration acceptance requires a disposable GitHub-hosted Windows runner.' }
+    $paths = @{ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = 'Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'; WEBVIEW2_USER_DATA_FOLDER = 'Env:WEBVIEW2_USER_DATA_FOLDER' }
+    $original = @{}
+    foreach ($name in $paths.Keys) {
+        $present = Test-Path -LiteralPath $paths[$name]
+        $original[$name] = @{ existed = $present; value = $(if ($present) { (Get-Item -LiteralPath $paths[$name]).Value } else { $null }) }
+    }
+    $receipt = [ordered]@{ policy = 'webview-env-provider-restoration-v2'; powershellVersion = $PSVersionTable.PSVersion.ToString(); status = 'running'; cases = @(); originalEnvironmentRestored = $false; scope = 'Only the two known Env-provider entries. The synthetic exception is not an actual Start-Process failure.' }
+    $firstError = $null
+    $restoreFailed = $false
+    $environmentTouched = $false
+    try {
+        if ($PSVersionTable.PSVersion -lt [version]'7.5') { throw 'Environment restoration acceptance requires PowerShell 7.5 or later for present empty-string support.' }
+        $states = @(@{ label = 'absent'; existed = $false; value = $null }, @{ label = 'empty'; existed = $true; value = '' }, @{ label = 'text'; existed = $true; value = 'synthetic-original-webview-value' })
+        $environmentTouched = $true
+        foreach ($name in $paths.Keys) {
+            foreach ($state in $states) {
+                foreach ($mode in @('normal', 'synthetic-exception')) {
+                    $case = [ordered]@{ key = $name; testPriorState = $state.label; mode = $mode; syntheticExceptionObserved = $false; status = 'running'; originalEnvironmentRestored = $false }
+                    $caseError = $null
+                    $synthetic = [System.InvalidOperationException]::new('Synthetic fixture launch-path exception')
+                    try {
+                        Restore-FixtureWebViewEnvironmentEntry $name $state
+                        try {
+                            Restore-FixtureWebViewEnvironmentEntry $name @{ existed = $true; value = 'synthetic-webview-override' }
+                            if ($mode -eq 'synthetic-exception') { throw $synthetic }
+                        } catch {
+                            if ($mode -eq 'synthetic-exception' -and $_.Exception -eq $synthetic) { $case.syntheticExceptionObserved = $true }
+                            else { $caseError = $_ }
+                        } finally {
+                            try { Restore-FixtureWebViewEnvironmentEntry $name $state }
+                            catch { if (-not $caseError) { $caseError = $_ } }
+                        }
+                        if ($mode -eq 'synthetic-exception' -and -not $case.syntheticExceptionObserved -and -not $caseError) { throw 'The synthetic exception did not enter the restoration path.' }
+                    } catch { if (-not $caseError) { $caseError = $_ } }
+                    finally {
+                        $caseRestored = $true
+                        foreach ($restoreName in $paths.Keys) {
+                            try { Restore-FixtureWebViewEnvironmentEntry $restoreName $original[$restoreName] }
+                            catch { $caseRestored = $false; $restoreFailed = $true; if (-not $caseError) { $caseError = $_ } }
+                        }
+                        $case.originalEnvironmentRestored = $caseRestored
+                    }
+                    $case.status = $(if ($caseError) { 'failed' } else { 'passed' })
+                    $receipt.cases += [pscustomobject]$case
+                    if ($caseError) { throw $caseError }
+                }
+            }
+        }
+        if ($receipt.cases.Count -ne 12) { throw 'All twelve environment-restoration cases are required.' }
+    } catch { $firstError = $_ }
+    finally {
+        $finalRestored = $true
+        if ($environmentTouched) {
+            foreach ($name in $paths.Keys) {
+                try { Restore-FixtureWebViewEnvironmentEntry $name $original[$name] }
+                catch { $finalRestored = $false; $restoreFailed = $true; if (-not $firstError) { $firstError = $_ } }
+            }
+        }
+        $receipt.originalEnvironmentRestored = $finalRestored
+        $receipt.status = $(if ($firstError -or $restoreFailed) { 'failed' } else { 'passed' })
+        try { $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $fixtureRoot 'webview-environment-restoration.json') -Encoding utf8 }
+        catch { if (-not $firstError) { $firstError = $_ } }
+    }
+    if ($firstError) { throw $firstError }
+    if ($restoreFailed) { throw 'An environment-restoration operation failed.' }
 }
 function Convert-GuiConfigurationJson($Manifest, [string]$ProfileDirectory, [string]$Marker, [bool]$AcquireOwnership, [bool]$VerifyCapture) {
     return (@{ expectedVersion = $Manifest.version; expectedBuildInfo = $Manifest.buildInfo; profileDirectory = $ProfileDirectory; marker = $Marker; acquireOwnership = $AcquireOwnership; verifyCapture = $VerifyCapture } | ConvertTo-Json -Depth 10)
@@ -468,7 +551,7 @@ function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCaptu
     $previousEnvironment = @{}
     foreach ($key in $overrides.Keys) {
         $existed = Test-Path -LiteralPath ("Env:" + $key)
-        $previousEnvironment[$key] = @{ existed = $existed; value = $(if ($existed) { [Environment]::GetEnvironmentVariable($key, 'Process') } else { $null }) }
+        $previousEnvironment[$key] = @{ existed = $existed; value = $(if ($existed) { (Get-Item -LiteralPath ("Env:" + $key)).Value } else { $null }) }
     }
     try {
         try {
@@ -478,10 +561,7 @@ function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCaptu
         finally {
             foreach ($key in $overrides.Keys) {
                 try {
-                    $prior = $previousEnvironment[$key]
-                    [Environment]::SetEnvironmentVariable($key, $(if ($prior.existed) { $prior.value } else { $null }), 'Process')
-                    if ((Test-Path -LiteralPath ("Env:" + $key)) -ne $prior.existed) { throw 'The original environment-entry presence was not restored.' }
-                    if ($prior.existed -and [Environment]::GetEnvironmentVariable($key, 'Process') -cne $prior.value) { throw 'The original environment-entry value was not restored.' }
+                    Restore-FixtureWebViewEnvironmentEntry $key $previousEnvironment[$key]
                 }
                 catch { $cleanupErrors += 'Runtime environment restore: ' + $_.Exception.Message }
             }
@@ -550,6 +630,7 @@ function Assert-Uninstalled {
 }
 
 try {
+    Assert-FixtureWebViewEnvironmentRestoration
     $env:DEZIRCLIP_DB_PATH = Join-Path $profileDirectory 'clipboard.db'
     Initialize-SharedProfile
     $initial = if ($Scenario -eq 'OwnedUpgrade') { $PreviousCandidate } elseif ($candidateInitial) { $NewInstaller } else { $OldInstaller }
