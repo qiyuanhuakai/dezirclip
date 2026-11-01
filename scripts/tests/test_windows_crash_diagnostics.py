@@ -3,6 +3,7 @@ import copy
 import datetime as dt
 import importlib.util
 import io
+import json
 from pathlib import Path, PureWindowsPath
 import struct
 import tempfile
@@ -250,6 +251,155 @@ class RegistryLifecycleTests(unittest.TestCase):
                     self.assertFalse(DIAGNOSTICS.probe_registry_api(winreg)['registry_writes'])
             self.assertEqual(queried, [200])
             self.assertEqual(closed, [200])
+
+
+class DebugBuildTests(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(self.scratch.cleanup)
+        self.repo = Path(self.scratch.name).resolve()
+        self.build = self.repo / 'target/debug'
+        self.build.mkdir(parents=True)
+        (self.repo / 'artifacts').mkdir()
+        self.desktop = self.build / 'dezirclip.exe'
+        self.pdb = self.build / 'dezirclip.pdb'
+        self.receipt = self.repo / 'artifacts/windows-debug-build/dezirclip.debug-build.json'
+        self.desktop.write_bytes(b'synthetic debug EXE, never executed')
+        self.pdb.write_bytes(b'synthetic PDB bytes, no symbols loaded')
+        self.helper = self.repo / 'helper.exe'
+        self.helper.write_bytes(b'synthetic helper, never executed')
+        self.proof = self.repo / 'helper.proof.json'
+        self.workflow = {'source_revision': 'a' * 40, 'run_id': '123', 'run_attempt': '1'}
+        self.proof.write_text(json.dumps({'expected': {'source_revision': 'a' * 40},
+                                         'sha256': DIAGNOSTICS.digest_file(self.helper)['sha256']}), encoding='utf-8')
+        entry = self.repo / 'dist/web/index.html'
+        entry.parent.mkdir(parents=True)
+        entry.write_bytes(b'synthetic compiled frontend entry')
+        self.args = SimpleNamespace(profile='debug', desktop=str(self.desktop), desktop_pdb=str(self.pdb),
+                                    build_receipt=str(self.receipt), helper=str(self.helper), helper_proof=str(self.proof))
+        self.env = {'DZC_WINDOWS_CRASH_BUILD_PROFILE': 'debug', **DIAGNOSTICS.DEBUG_SETTINGS}
+
+    def create(self):
+        def fake(command, **kwargs):
+            if command == ['git', 'rev-parse', 'HEAD']:
+                return SimpleNamespace(stdout='a' * 40 + '\n', stderr='')
+            if command in (['rustc', '--version', '--verbose'], ['cargo', '--version']):
+                return SimpleNamespace(stdout='synthetic version\n', stderr='')
+            self.fail('Unexpected tool or product command')
+        with patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), patch.dict(DIAGNOSTICS.os.environ, self.env), \
+                patch.object(DIAGNOSTICS.subprocess, 'run', side_effect=fake):
+            return DIAGNOSTICS.record_debug_build(self.args, self.workflow)
+
+    def inputs(self):
+        with patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), patch.dict(DIAGNOSTICS.os.environ, self.env):
+            return DIAGNOSTICS.debug_inputs(self.args, self.workflow)
+
+    def test_default_release_and_explicit_debug_route_without_mutating_workflow(self):
+        self.assertEqual(DIAGNOSTICS.select_profile(SimpleNamespace(), {}), 'release')
+        self.assertIsNone(DIAGNOSTICS.debug_inputs(SimpleNamespace(), self.workflow))
+        for args, env in [(self.args, {}), (SimpleNamespace(profile='debug'), self.env),
+                          (SimpleNamespace(profile='release', desktop_pdb='not-allowed'), {}),
+                          (SimpleNamespace(profile='other'), {})]:
+            with self.assertRaises(ValueError):
+                DIAGNOSTICS.select_profile(args, env)
+        self.create()
+        bound = self.inputs()
+        self.assertEqual(bound['symbol_matching'], 'unverified_not_loaded')
+        self.assertEqual(bound['stack_symbolization'], 'not_performed')
+        self.assertEqual(set(self.workflow), {'source_revision', 'run_id', 'run_attempt'})
+        self.assertEqual(bound['desktop']['sha256'], DIAGNOSTICS.digest_file(self.desktop)['sha256'])
+
+    def test_build_receipt_is_exclusive_and_symbol_bytes_are_rechecked(self):
+        self.create()
+        with self.assertRaises(ValueError):
+            self.create()
+        self.pdb.write_bytes(b'changed synthetic PDB')
+        with self.assertRaisesRegex(ValueError, 'pdb'):
+            self.inputs()
+
+    def test_preexisting_receipt_directory_is_preserved_before_tools(self):
+        self.receipt.parent.mkdir(parents=True)
+        sentinel = self.receipt.parent / 'prior.txt'
+        sentinel.write_bytes(b'preserve original directory')
+        with patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), patch.dict(DIAGNOSTICS.os.environ, self.env), \
+                patch.object(DIAGNOSTICS.subprocess, 'run') as tool:
+            with self.assertRaisesRegex(ValueError, 'Preserve'):
+                DIAGNOSTICS.record_debug_build(self.args, self.workflow)
+            tool.assert_not_called()
+        self.assertEqual(sentinel.read_bytes(), b'preserve original directory')
+        self.assertFalse(self.receipt.exists())
+
+    def test_missing_PDB_or_wrong_fixed_path_refuses_before_compiler_queries_or_receipt(self):
+        self.pdb.unlink()
+        with patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), patch.dict(DIAGNOSTICS.os.environ, self.env), \
+                patch.object(DIAGNOSTICS.subprocess, 'run', return_value=SimpleNamespace(stdout='a' * 40, stderr='')) as tool:
+            with self.assertRaises((ValueError, OSError)):
+                DIAGNOSTICS.record_debug_build(self.args, self.workflow)
+            self.assertEqual(tool.call_count, 1)
+            self.assertFalse(self.receipt.exists())
+        changed = SimpleNamespace(**{**vars(self.args), 'desktop_pdb': str(self.repo / 'other.pdb')})
+        with patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), self.assertRaises(ValueError):
+            DIAGNOSTICS.debug_paths(changed)
+
+    def test_wrong_source_profile_or_fake_symbol_load_claim_is_rejected(self):
+        original = self.create()
+        for key, replacement in [('workflow', {**self.workflow, 'source_revision': 'b' * 40}),
+                                 ('profile', 'release'), ('symbol_matching', 'loaded'),
+                                 ('stack_symbolization', 'completed'), ('schema_version', True),
+                                 ('debugger_loaded', True)]:
+            self.receipt.write_text(json.dumps({**original, key: replacement}), encoding='utf-8')
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.inputs()
+
+    def test_build_input_drift_or_missing_debug_setting_never_creates_receipt(self):
+        with patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), patch.dict(DIAGNOSTICS.os.environ,
+                {**self.env, 'CARGO_PROFILE_DEV_DEBUG': '0'}), patch.object(DIAGNOSTICS.subprocess, 'run') as tool:
+            with self.assertRaises(ValueError):
+                DIAGNOSTICS.record_debug_build(self.args, self.workflow)
+            tool.assert_not_called()
+        def fake(command, **kwargs):
+            if command == ['git', 'rev-parse', 'HEAD']:
+                return SimpleNamespace(stdout='a' * 40, stderr='')
+            self.pdb.write_bytes(b'synthetic drift during version capture')
+            return SimpleNamespace(stdout='synthetic version', stderr='')
+        with patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), patch.dict(DIAGNOSTICS.os.environ, self.env), \
+                patch.object(DIAGNOSTICS.subprocess, 'run', side_effect=fake):
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                DIAGNOSTICS.record_debug_build(self.args, self.workflow)
+        self.assertFalse(self.receipt.exists())
+
+    def test_collector_keeps_original_failure_and_restores_WER_on_symbol_drift(self):
+        temporary = self.repo / 'runner-temp'
+        temporary.mkdir()
+        output = self.repo / 'github-output'
+        output.write_bytes(b'')
+        build = {'profile': 'debug', 'symbol_matching': 'unverified_not_loaded', 'stack_symbolization': 'not_performed'}
+        def private(path):
+            path.mkdir()
+            return 'synthetic runner SID'
+        for original_exit in (13, 0xc0000374, 0):
+            with self.subTest(original_exit=original_exit), patch.object(DIAGNOSTICS, 'REPOSITORY', self.repo), \
+                    patch.dict(DIAGNOSTICS.os.environ, {**self.env, 'RUNNER_TEMP': str(temporary), 'GITHUB_OUTPUT': str(output)}), \
+                    patch.object(DIAGNOSTICS, 'debug_inputs', side_effect=[build, ValueError('synthetic PDB drift')]), \
+                    patch.object(DIAGNOSTICS.subprocess, 'run', return_value=SimpleNamespace(stdout='a' * 40)), \
+                    patch.object(DIAGNOSTICS, 'private_directory', side_effect=private), \
+                    patch.dict(DIAGNOSTICS.sys.modules, {'winreg': SimpleNamespace()}), \
+                    patch.object(DIAGNOSTICS, 'probe_registry_api', return_value={'synthetic': True}), \
+                    patch.object(DIAGNOSTICS, 'tools_inventory', return_value=[]), \
+                    patch.object(DIAGNOSTICS, 'configure_wer') as configure, \
+                    patch.object(DIAGNOSTICS, 'run_controller', return_value=original_exit), \
+                    patch.object(DIAGNOSTICS, 'collect_dump') as collect, \
+                    patch.object(DIAGNOSTICS, 'restore_wer', return_value={'status': 'restored'}) as restore:
+                result = DIAGNOSTICS.run(self.args, self.workflow)
+                self.assertEqual(result, original_exit or 1)
+                configure.assert_called_once()
+                restore.assert_called_once()
+                collect.assert_not_called()
+                original = DIAGNOSTICS.read_json(restore.call_args.args[0] / 'diagnostics.json')
+                self.assertEqual(original['functional_exit_code'], original_exit)
+                self.assertEqual(original['cleanup']['status'], 'restored')
+                self.assertEqual(original['kind'], 'windows_debug_crash_diagnostics')
+                self.assertIn('synthetic PDB drift', original['diagnostics_error'])
 
 
 if __name__ == '__main__':

@@ -34,6 +34,15 @@ LIMITATIONS = [
     'The release profile and symbol stripping are unchanged. A dump does not guarantee a symbolic stack or the corruption origin.',
     'Normal finally and an always cleanup step restore only this run\'s matching child key; forced runner loss cannot guarantee execution of cleanup.',
 ]
+DEBUG_LIMITATIONS = [
+    'Diagnostic-only debug build of the original thirteen functional checks; no ABBA or performance qualification.',
+    'The EXE and PDB are preserved from this successful exact-source build, not recovered from an earlier crash.',
+    'PDB bytes are retained but debugger matching, symbol loading and stack symbolization are unverified.',
+    *LIMITATIONS[1:4], *LIMITATIONS[5:],
+]
+DEBUG_COMMAND = ['cargo', 'build', '--locked', '--manifest-path', 'src-tauri/Cargo.toml',
+                 '--features', 'tauri/custom-protocol', '--bin', 'dezirclip']
+DEBUG_SETTINGS = {'CARGO_PROFILE_DEV_DEBUG': '2', 'CARGO_PROFILE_DEV_STRIP': 'none'}
 
 
 def require(condition, message):
@@ -241,6 +250,96 @@ def read_json(path, limit=4 * 1024 * 1024):
     return json.loads(path.read_text(encoding='utf-8'))
 
 
+def file_record(path, limit=MAX_DUMP):
+    path = plain_path(path)
+    return {'path': str(path), **digest_file(path, limit)}
+
+
+def select_profile(args, env):
+    profile = getattr(args, 'profile', 'release')
+    require(profile in ('release', 'debug'), 'Only release or debug diagnostics are supported')
+    require(env.get('DZC_WINDOWS_CRASH_BUILD_PROFILE', 'release') == profile, 'Diagnostic profile differs from dispatch')
+    symbols = (getattr(args, 'desktop_pdb', None), getattr(args, 'build_receipt', None))
+    require(all(symbols) if profile == 'debug' else not any(symbols),
+            'Debug requires both fixed symbol inputs; release cannot borrow debug symbols')
+    return profile
+
+
+def debug_paths(args):
+    expected = {'desktop': REPOSITORY / 'target/debug/dezirclip.exe',
+                'pdb': REPOSITORY / 'target/debug/dezirclip.pdb',
+                'receipt': REPOSITORY / 'artifacts/windows-debug-build/dezirclip.debug-build.json'}
+    for name, value in [('desktop', args.desktop), ('pdb', args.desktop_pdb), ('receipt', args.build_receipt)]:
+        require(os.path.normcase(os.path.abspath(value)) == os.path.normcase(str(expected[name])),
+                'Debug input must use its fixed build output path: ' + name)
+    return expected
+
+
+def record_debug_build(args, workflow):
+    require(select_profile(args, os.environ) == 'debug', 'Only an explicit debug dispatch creates a build receipt')
+    paths = debug_paths(args)
+    require(not paths['receipt'].exists() and not paths['receipt'].parent.exists()
+            and not paths['receipt'].parent.is_symlink(), 'Preserve any existing debug build receipt directory')
+    plain_path(paths['receipt'].parent.parent, REPOSITORY, directory=True)
+    require(all(os.environ.get(key) == value for key, value in DEBUG_SETTINGS.items()),
+            'The debug build step must explicitly retain full dev debuginfo and symbols')
+    revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=REPOSITORY, capture_output=True,
+                              text=True, timeout=10, check=True).stdout.strip()
+    require(revision == workflow['source_revision'], 'Build receipt must use the exact workflow checkout')
+    before = {'desktop': file_record(paths['desktop'], 256 * 1024 * 1024), 'pdb': file_record(paths['pdb']),
+              'helper': file_record(args.helper, 256 * 1024 * 1024),
+              'helper_proof': file_record(args.helper_proof, MAX_METADATA_READ),
+              'frontend_entry': file_record(REPOSITORY / 'dist/web/index.html', MAX_METADATA_READ)}
+    proof = read_json(args.helper_proof)
+    require(proof.get('expected', {}).get('source_revision') == revision and proof.get('sha256') == before['helper']['sha256'],
+            'Matching exact-source Surface build proof required')
+    tools = {}
+    for name, command in [('rustc', ['rustc', '--version', '--verbose']), ('cargo', ['cargo', '--version'])]:
+        result = subprocess.run(command, cwd=REPOSITORY, capture_output=True, text=True, timeout=10, check=True)
+        require(len(result.stdout.encode('utf-8')) <= 8192 and len(result.stderr.encode('utf-8')) <= 8192,
+                'Bounded compiler version output required')
+        tools[name] = {'command': command, 'stdout': result.stdout, 'stderr': result.stderr}
+    for name, item in before.items():
+        require(file_record(item['path'], MAX_METADATA_READ if name in ('helper_proof', 'frontend_entry') else
+                            MAX_DUMP if name == 'pdb' else 256 * 1024 * 1024) == item,
+                'Build/symbol input changed before receipt publication')
+    value = {'schema_version': 1, 'kind': 'windows_debug_build_and_symbols', 'workflow': workflow,
+             'profile': 'debug', 'command': DEBUG_COMMAND, 'profile_environment': dict(DEBUG_SETTINGS),
+             'created_at': utc_now(), 'inputs': before, 'tools': tools,
+             'symbol_matching': 'unverified_not_loaded', 'stack_symbolization': 'not_performed',
+             'scope': 'This hosted step records outputs after its successful fixed debug build. The frontend entry alone is not an independent audit of all compiled assets. No earlier EXE/PDB or historical stack is reconstructed.'}
+    paths['receipt'].parent.mkdir()
+    plain_path(paths['receipt'].parent, REPOSITORY, directory=True)
+    write_json(paths['receipt'], value)
+    require(read_json(paths['receipt']) == value, 'Debug build receipt readback differs')
+    return value
+
+
+def debug_inputs(args, workflow):
+    profile = select_profile(args, os.environ)
+    if profile == 'release':
+        return None
+    paths = debug_paths(args)
+    receipt = file_record(paths['receipt'], MAX_METADATA_READ)
+    value = read_json(paths['receipt'])
+    require(set(value) == {'schema_version', 'kind', 'workflow', 'profile', 'command', 'profile_environment',
+            'created_at', 'inputs', 'tools', 'symbol_matching', 'stack_symbolization', 'scope'} and
+            type(value.get('schema_version')) is int and value['schema_version'] == 1 and value.get('kind') == 'windows_debug_build_and_symbols' and
+            value.get('workflow') == workflow and value.get('profile') == 'debug' and value.get('command') == DEBUG_COMMAND and
+            value.get('profile_environment') == DEBUG_SETTINGS and value.get('symbol_matching') == 'unverified_not_loaded' and
+            value.get('stack_symbolization') == 'not_performed', 'Debug receipt source/profile/symbol status differs')
+    expected_paths = {'desktop': paths['desktop'], 'pdb': paths['pdb'], 'helper': Path(args.helper),
+                      'helper_proof': Path(args.helper_proof), 'frontend_entry': REPOSITORY / 'dist/web/index.html'}
+    require(type(value.get('inputs')) is dict and set(value['inputs']) == set(expected_paths), 'Exact debug input map required')
+    for name, path in expected_paths.items():
+        limit = MAX_METADATA_READ if name in ('helper_proof', 'frontend_entry') else MAX_DUMP if name == 'pdb' else 256 * 1024 * 1024
+        require(value['inputs'][name] == file_record(path, limit), 'Debug symbol/build bytes changed: ' + name)
+    require(file_record(paths['receipt'], MAX_METADATA_READ) == receipt, 'Debug build receipt changed while checking')
+    return {'profile': 'debug', 'build_receipt': receipt, 'desktop': value['inputs']['desktop'],
+            'symbol_inputs': [value['inputs']['pdb']], 'symbol_matching': 'unverified_not_loaded',
+            'stack_symbolization': 'not_performed'}
+
+
 def registry_snapshot(key, winreg):
     subkeys, count, written = winreg.QueryInfoKey(key)
     values = []
@@ -441,6 +540,8 @@ def emit_output(name, value):
 
 
 def run(args, workflow):
+    profile = select_profile(args, os.environ)
+    build = debug_inputs(args, workflow)
     revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=REPOSITORY, capture_output=True, text=True, check=True).stdout.strip()
     require(revision == workflow['source_revision'], 'Diagnostics must use this workflow\'s exact checkout')
     temporary = plain_path(os.environ['RUNNER_TEMP'], directory=True)
@@ -454,9 +555,11 @@ def run(args, workflow):
     emit_output('functional_root', str(functional))
     journal = {'schema_version': 1, 'workflow': workflow, 'root': str(root), 'created_child': False, 'created_parent': False}
     write_json(root / 'registry-journal.json', journal)
-    result = {'schema_version': 1, 'kind': 'windows_release_crash_diagnostics', 'workflow': workflow,
-              'started_at': utc_now(), 'limits': LIMITATIONS, 'root': str(root), 'runner_sid': sid,
+    result = {'schema_version': 1, 'kind': 'windows_debug_crash_diagnostics' if profile == 'debug' else 'windows_release_crash_diagnostics', 'workflow': workflow,
+              'started_at': utc_now(), 'limits': DEBUG_LIMITATIONS if profile == 'debug' else LIMITATIONS, 'root': str(root), 'runner_sid': sid,
               'functional_root': str(functional), 'functional_exit_code': None, 'cleanup': None}
+    if build is not None:
+        result['debug_build'] = build
     exit_code = 1
     try:
         import winreg
@@ -470,6 +573,8 @@ def run(args, workflow):
         result['functional_exit_code'] = run_controller(command, cwd=REPOSITORY, output_root=functional)
         # The outer controller deadline leaves this collector's WER restoration in its original finally.
         exit_code = result['functional_exit_code']
+        if build is not None:
+            require(debug_inputs(args, workflow) == build, 'Debug build/symbol inputs changed during the original functional case')
         result['collection'] = collect_dump(root, functional, workflow)
         if result['collection']['accepted']:
             emit_output('accepted_dump', result['collection']['accepted']['path'])
@@ -494,17 +599,25 @@ def run(args, workflow):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('mode', choices=('run', 'cleanup'))
+    parser.add_argument('mode', choices=('run', 'cleanup', 'build-receipt'))
+    parser.add_argument('--profile', choices=('release', 'debug'), default='release')
     parser.add_argument('--desktop')
     parser.add_argument('--helper')
     parser.add_argument('--helper-proof')
     parser.add_argument('--root')
+    parser.add_argument('--desktop-pdb')
+    parser.add_argument('--build-receipt')
     args = parser.parse_args()
     workflow = context(os.environ)
     if args.mode == 'cleanup':
         root = owned_root(args.root)
         result = restore_wer(root, workflow)
         write_json(root / 'always-cleanup.json', result)
+        return 0
+    if args.mode == 'build-receipt':
+        require(all((args.desktop, args.desktop_pdb, args.build_receipt, args.helper, args.helper_proof)),
+                'Fixed debug EXE/PDB/receipt and matching helper inputs required')
+        record_debug_build(args, workflow)
         return 0
     require(all((args.desktop, args.helper, args.helper_proof)), 'Release binaries and matching proof are required')
     return run(args, workflow)
