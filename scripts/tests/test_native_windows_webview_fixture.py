@@ -164,6 +164,22 @@ class WebViewFixtureSourceTests(unittest.TestCase):
         self.assertIn("$application.WaitForExit(20000)", launch)
         self.assertIn("$attempt -lt 50", launch)
 
+    def test_policy_lifecycle_is_single_launch_and_failure_preserving(self):
+        source = UPGRADE.read_text(encoding="utf-8")
+        launch = source[source.index("function Invoke-ActualGui("):source.index("function Assert-Uninstalled {")]
+        self.assertLess(launch.index("$policyAdapter fresh"), launch.index("$policyConfigureAttempted = $true"))
+        self.assertLess(launch.index("$policyAdapter configure"), launch.index("$launchAttempted = $true"))
+        self.assertLess(launch.index("$policyAdapter inspect"), launch.index("& node"))
+        self.assertIn("$application.StartTime.ToFileTimeUtc()", launch)
+        self.assertIn("if (-not $launchAttempted -or ($application -and $waitConfirmed -and $final.hasExited -eq $true -and $portFree))", launch)
+        self.assertIn("$policyRestoreWithheld = $true", launch)
+        self.assertIn("} elseif ($policyConfigured) {", launch)
+        self.assertIn("snapshot disappeared; restoration is unconfirmed.", launch)
+        self.assertIn("'--require-complete'", launch)
+        self.assertIn("if (-not $policyRestored)", launch)
+        self.assertEqual(launch.count("Start-Process -FilePath"), 1)
+        self.assertIn("if ($primaryError) { throw $primaryError }", launch)
+
     @unittest.skipUnless(shutil.which("node"), "Node is needed for pure fake-clock checks")
     def test_discovery_budget_and_phases_with_fake_clock(self):
         source = OWNERSHIP.read_text(encoding="utf-8")
