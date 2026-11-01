@@ -338,3 +338,14 @@ measurements, ownership certification, single-call API failure and cleanup rules
 retain their original behavior. This removes an unused requested right; it does
 not establish which right or process condition caused the earlier PID 6704 denial,
 repair a heap-corruption root cause or make any earlier failed cohort acceptable.
+
+An image-query identity failure now retains a bounded JSON diagnostic: original
+PID, observation phase, immediate `QueryFullProcessImageNameW` error, fixed buffer
+capacity, the earlier exit-code and creation-time observations, and whether a
+handle, cached identity and matching certificate already existed. A failed
+query's buffer size is not interpreted as a valid image length. No image path is
+invented and no second exit query, process-open retry or ownership relaxation is
+introduced. A new unvalidated candidate remains close-only and fails the cohort.
+These fields help distinguish future failures; they cannot recover the missing
+PID or API error from the original `1fe685c` third-arm failure, establish an exit
+race as its cause, or turn the two completed arms into a full comparison.
