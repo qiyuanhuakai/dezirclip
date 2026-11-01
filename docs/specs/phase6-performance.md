@@ -96,7 +96,7 @@ Windows 尚无完整且可接受的四轮对照。`0988d5c` 的 A1 在正式粘�
 
 当时的候选 `3cc1513f4bdcdaad348d0918d0d2565c07abe84b` 的普通 CI [41278991285](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41278991285) 已结束：12 项成功、5 项失败、1 项可选跳过。自身 Windows 后端的 Surface 13 项与 Service 3 项均通过，原件的 Native 退出 0 且 stdio 已关闭，归属清理的 pending、unconfirmed、remaining 和错误均空。本次两包的排除列表为空、仅关闭候选计数为 0，不能称已在实际运行中触发新的负归属分支。
 
-五项失败是四个 NSIS 场景未发现主 WebView，以及 ARM64 Flatpak 在 OCR 英文、中文检查通过后等待隔离 Xvfb 就绪超时，尚未执行粘贴验收。四项 NSIS 均已进入主 WebView 发现阶段；仅此运行 LegacyUninstall 的原收据明确记录 PowerShell 7.6.7 下 12 个环境状态／正常及合成异常场景全通过，不能替其他任务出具同一结论。Xvfb 原脚本把 stderr 接入 PIPE，却未读取或输出，启动根因仍未确定。这次没有发起手动发布版对照，不以普通 Windows 功能成功覆盖整次 CI 的失败。
+五项失败是四个 NSIS 场景未发现主 WebView，以及 ARM64 Flatpak 在 OCR 英文、中文检查通过后等待隔离 Xvfb 就绪超时，尚未执行粘贴验收。四项 NSIS 均已进入主 WebView 发现阶段；该次运行已复核的 LegacyUninstall 与 OldToNew 原收据均记录 PowerShell 7.6.7 下 12 个环境状态／正常及合成异常场景全通过，不能替其他任务出具同一结论。Xvfb 原脚本把 stderr 接入 PIPE，却未读取或输出，启动根因仍未确定。这次没有发起手动发布版对照，不以普通 Windows 功能成功覆盖整次 CI 的失败。
 
 后续 [PR #161](https://github.com/qiyuanhuakai/dezirclip/pull/161) 为 Xvfb 保留直接 stderr、单次启动的原 15 秒就绪期限及有界原进程清理。其原提交 `c3943ae` 的 CI [41283880025](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41283880025) 中，x64 和 ARM64 最终 Platform OCR／粘贴门禁均通过；历史 Xvfb 超时原因仍未知。同一次 CI 的四个 NSIS 场景失败，Surface 第 9 项受保护搜索未完成；原件记录 MyGo helper 4604 退出 2，未记录对它的清理终止请求，整轮仍失败，不能据此认定完整候选合格。
 
