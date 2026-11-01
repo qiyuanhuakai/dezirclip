@@ -2,11 +2,42 @@
 
 更新日期：2026-11-02。Phase 6 尚未通过，Phase 7 未启动，默认仍使用 Tauri。
 
-Linux X11 冻结源码 `5d6af007` 的四轮受控对照已完成并独立复算。MyGo 在此配置下减少应用进程组合的内存及静态显示 CPU；已预热窗口呼出到原生可见且前台的 p95 从 62.534 ms 变为 65.642 ms，增加约 3.11 ms。此计时终点是原生窗口代理，首次可交互帧、搜索就绪等仍未测量；结果不自动归属后续产品源码，没有据此认定默认迁移门槛或 Phase 6 验收通过。[完整要求](v0.2-mygo-ready.md#p66-性能评估)
+Linux X11 新源码 `1fe685c` 的独立完整四轮已完成，并从原件独立复算。MyGo 在此受限合成配置下减少应用进程组合的内存及静态显示 CPU；已预热窗口呼出到原生可见且前台的 p95 从 Tauri 的 62.332 ms 变为 MyGo 的 71.367 ms，增加约 14.5%。此终点是原生窗口代理，首次可交互帧、搜索就绪等仍未测量。新方法不采集线程／上下文切换，观察成本已改变，不能把与旧方法的差异宣称为产品优化。[完整要求](v0.2-mygo-ready.md#p66-性能评估)
 
 Windows `2a2521f` 的新完整四轮对照已通过冻结评估器及独立原件、数学复核：MyGo 更快交付粘贴全文，但原生可见／前台代理的 pooled p95 为 39.606 ms，Tauri 为 27.303 ms；MyGo 收起后的工作集约为 Tauri 的两倍，PrivateCommit 也更高。当前结果不满足更快呼出的候选目标，不据此迁移默认渲染器。旧 MyGo helper 退出 2、Desktop 清理前堆损坏、权限拒绝及映像查询失败的根因仍未关闭；新完整运行与五次未复现不构成根因修复。
 
-## Linux X11 受限合成配置结果
+## Linux X11 新源码完整对照：process-resource-only-v2
+
+本组使用 `1fe685c424602b2bc1892f1deb0794c2e0b90ad5` 的实际 release pair，Rust 1.99.1、Go 1.27.3。Desktop 为 16,722,680 字节、SHA-256 `e7fe7ba757c4d337e385acb9aa25f545922fecf12e77b8f21c983633bf54bde8`；Surface 为 10,735,879 字节、SHA-256 `8b0e442f1fa1be730a02ef600bae9f343433ee54e14386c814d64c75fe51ab68`。输入来自原 producer [41317927879 / 13088123731](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41317927879/artifacts/13088123731)，原供给及构建身份见后文。
+
+原线程采集 A1 失败后，另行审查、冻结新方法并从头执行 Tauri／MyGo／MyGo／Tauri；没有补点或混入失败轮。新方法保留进程族、创建代际、PSS／USS、CPU 原端点、采集时钟、原生窗口资格、隔离与原对象清理规则，明确不读取线程目录，线程数、上下文切换、稳定线程集及唤醒均为 null／not collected。原生可见且前台的计时代理与资格期限不变。
+
+四个原始 outer 均只执行一次并退出 0。每轮使用新配置，5 次预热、30 次正式激活，显示／收起各 960 次采集；合计 120 次正式激活和 7,680 次资源采集及对应时钟记录。每个状态先稳定 30 秒，以实际前一次开始加 250 ms 为下一到期点，不追赶；首末计数器读窗之间的 CPU 与尾部实际等待分别保留。每侧仅两轮，快照及试次不能视为独立实验重复。
+
+| 指标 | Tauri | MyGo |
+|---|---:|---:|
+| 已预热原生可见／前台代理 p50 / p95，ms（每侧 60 次） | 52.182 / 62.332 | 51.722 / 71.367 |
+| 显示态 PSS / USS 快照 p50，MiB | 597.293 / 456.016 | 465.045 / 378.926 |
+| 收起态 PSS / USS 快照 p50，MiB | 594.568 / 453.871 | 461.991 / 375.832 |
+| 显示态 CPU 计数器速率，单核 % | 7.03737 | 0.43149 |
+| 收起态 CPU 计数器速率，单核 % | 0.13550 | 0.11881 |
+
+| 顺序 / 渲染器 | 正式代理 p50 / p95，ms | 显示 / 收起 PSS 快照 p50，MiB | 显示 / 收起 CPU，单核 % |
+|---|---:|---:|---:|
+| A1 Tauri | 52.273 / 62.356 | 596.050 / 593.397 | 7.04575 / 0.12924 |
+| B1 MyGo | 61.269 / 81.677 | 464.308 / 461.991 | 0.42524 / 0.11673 |
+| B2 MyGo | 51.606 / 71.367 | 466.263 / 461.489 | 0.43774 / 0.12089 |
+| A2 Tauri | 52.131 / 62.332 | 600.021 / 596.978 | 7.02899 / 0.14175 |
+
+p50／p95 为 pooled nearest-rank；内存是等捕获次数的经验快照分布，CPU 是两轮增量之和除以实际读取中点跨度之和。原汇总同时保留 first／last counter-read 的区间归一化范围，不能解释为共同时间 CPU 上下界、时钟计数量化界或置信区间。显示态 PSS 中位数约减少 22.1%，但呼出代理尾延迟回退；不据此通过默认迁移或全部性能验收。
+
+显示环境仍为私有 Xvfb 1280×900×24、480×360 应用窗口，固定关闭 WebKit DMABUF／合成及三项 Linux 后台服务。六命名空间、凭据、私有 HOME／XDG／DBus／Secret Service／X11 边界保持；每轮原目标、driver、WM、Desktop pidfd、keeper 及私有服务均按原收据完成清理，errors／forced／remaining 为空。本任务暂停其他本机写入、测试及下载，只是任务调度约束，整台宿主安静、GPU、唤醒、首次交互、搜索／IME／DPI／多屏继续未经验证。
+
+[新机器可读原汇总](../evidence/phase6-linux-process-only-v2.json) 为 92,439 字节，SHA-256 `3c9e9b1d8162859efc11aa5a30cede300b5bf77418559c52f5cb389367807b86`，绑定 136 份闭合原件、11 个实际输入身份、冻结源码和四轮独立原件审查。每轮实际截图均由 Root 查看后才评估；原生资格另由原采样时段的元数据验证，未声称所有资源点都有截图。第二人未导入或执行采样器、评估器及汇总器，从原 performance、八份资源流及八份时钟流独立重算全部分位数与 CPU 区间，结果一致。独立汇总审计为 74,139 字节、SHA-256 `39044e15012b6e4a31e9a97af33fa8260a0edbf456e05225144f2e0ed0b4e04c`；四轮原件及来源前后哈希保持不变。离线一致性不重做原生、隔离、图像或宿主安静验收。
+
+[新公开复算包与入口](../evidence/phase6-linux-process-only-v2/README.md) 提供全部 136 份闭合原记录、58 份控制／评估／截图／审查文件、38 份冻结源码与 11 份 proof／审计，共 243 份原文件及显式路径映射。ZIP 为 2,189,789 字节，SHA-256 `130f8a7c4d728407323d7131e97bb47dc9f89095814daefa3c7666e30e3b2178`。独立汇总审计另有[直接可读原件](../evidence/phase6-linux-process-only-v2/independent-summary-audit.json)。标准库入口只读 ZIP、重算全部正式样本、资源／时钟及汇总，不解压或执行包内代码。七个 ELF 输入只留历史身份及头部元数据，不校验缺席全文；保存的原生、隔离和实际看图收据不等于重新执行这些验收。旧包保持原字节。
+
+## Linux X11 旧源码受限合成配置结果（5d6af007）
 
 本组使用私有 Xvfb 1280×900×24，固定 `WEBKIT_DISABLE_DMABUF_RENDERER=1`、`WEBKIT_DISABLE_COMPOSITING_MODE=1` 与 `TAURI_WEBVIEW_AUTOMATION=true`；`window_tracker,edge_docking,mouse_hotkey` 三项 Linux 后台服务由固定环境关闭。保留的命名空间调用记录没有 GPU 设备或 tracefs 绑定。这限定了所测显示、合成和自动化路径，当前 CPU/内存差异不能外推常规硬件合成桌面；GPU 显存与后台唤醒继续保留未测量，不能由这些配置补写为 0。
 
@@ -71,7 +102,9 @@ Windows `2a2521f` 的新完整四轮对照已通过冻结评估器及独立原�
 
 [PR #154](https://github.com/qiyuanhuakai/dezirclip/pull/154) 修正验收控制器有界退出、已认证原句柄清理及父子创建代际校验，产品源码和 release 优化参数保持原值。Linux 5d6 与 Windows a11 在 `src`、`src-tauri`、`crates`、`frontends` 及根 Cargo/包清单中的产品文件一致；平台、工具链、build_id 和实际二进制各自绑定，不跨系统混样。
 
-当前 a11 普通 CI [41100126715](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41100126715) 17 项成功，其 debug 原生 13 项、退出和清理原件已核对。报告的 PR 合并 SHA `54f05234fddae6435c48ee535e12311a5538be65` 与 a11 的 Git tree 一致。保留一次原只读观察内的父快照拒绝：同一原进程由先前运行变为退出 0，后续观察在原期限内接受，没有新输入或失败场景重跑。
+当前 #154 head `bb2f2b28d554d99b66fcbd26d24663fcc7d871bd` 的自身 CI [41295306086](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41295306086)，以及 [#158](https://github.com/qiyuanhuakai/dezirclip/pull/158) head `3381c24b3dd61525eb6fb88449ed9a9be5299713` 的自身 CI [41295317229](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41295317229)，均为 17 项成功、1 项可选跳过；各自当前提交的自动审查无新增意见。旧 CI 的失败保留，不是当前 head 仍失败，也不借此覆盖报告 #156 的独立堆损坏失败。
+
+历史 a11 普通 CI [41100126715](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41100126715) 17 项成功，其 debug 原生 13 项、退出和清理原件已核对。报告的 PR 合并 SHA `54f05234fddae6435c48ee535e12311a5538be65` 与 a11 的 Git tree 一致。保留一次原只读观察内的父快照拒绝：同一原进程由先前运行变为退出 0，后续观察在原期限内接受，没有新输入或失败场景重跑。
 
 新手动运行 [41106374215](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41106374215) 直接绑定 a11；其独立 debug 前置也已 13 项通过。发布版任务于 2026-10-30 18:55:13 UTC 结束失败：`Verify these release bytes before sequential ABBA` 原步骤退出 1，前 12 项通过，第 13 项开头绑定原主窗口的 `observe` 响应 136 报 `Candidate parent PID changed or disappeared between snapshots: pid=7624`。此前响应 134 已记录同一原句柄、创建时间和镜像的 7624 退出 0。该观察位于设置 idle、切换渲染器和隐藏窗口之前，不能当作产品 idle 重建失败；合并报错没有保留两份快照内容，无法硬判 changed 或 disappeared 分支。
 
@@ -139,13 +172,23 @@ Windows `2a2521f` 的新完整四轮对照已通过冻结评估器及独立原�
 
 同一新 release pair 的原 R3 13 项随后单次执行成功，Root 与第二人独立读取 25 份原记录复核：两个静默区间为 35.154086779 与 35.006903618 秒，各 141 次原对象观察；43 次完整 driver 事件均不与静默区间重叠，调用计数分别保持 34→34 与 39→39。原 helper 的 PID／创建代际／会话／XID 不变；一次 Enter 只产生一次 Ctrl+V 和 SelectionNotify，并交付 row7 全文。10 条历史、捕获所有权、隐私 epoch、正常停用的原 helper pidfd 退出和最终私有对象清理通过。原授权助手的工具完成输出曾丢失，因此其退出状态仍为 unknown；另经源审和 18 项纯模拟检查，以新 Root 单次决定对既有三份授权文件执行只读持久化／回读及新观察，保留原件后才单独启动一次原 R3，未重跑旧助手。新的恢复入口及实际 outer 均保留退出 0；这不补推旧助手退出状态。19 项和 R3 均为功能范围，不认证整机安静、性能或 Phase6。
 
-新 `1fe685c` count-v1 的单次 A1 Tauri 随后失败，余下三轮均未启动。原 5 次预热、30 次正式试次及显示态 960 次采集完成；收起态第 460 次调用在读取 `/proc/68/task/546/stat` 时收到 ENOENT，只有 459 条完整样本／时钟流记录。原 progress 的第 460 条仅有 due／start／late，没有 capture／序列化／写入终点；不作为完成样本。首错为 `process sampling failed stage=thread-stat pid=68 tid=546`，该路径不存在本身不足以证明整个 Desktop 退出或正常线程退出。原 outer 退出 1，整轮保持 failed，没有补点、重跑或合成完整四轮结果；已有 Linux 性能表继续只归属旧 `5d6af007`。原目标退出 0、driver 记录 -15、WM 退出 0、Desktop pidfd 退出及清理 errors=[]；keeper 的 child 退出 1、forced／remaining 均为空，私有 Secret Service 的 command 退出 1 也继续保留为本次子任务失败，不能把整个收据改成通过。独立失败审计复核 228 份原文件、47,805,016 字节及 47 项来源／输入／前提记录，前后哈希均保持；1,419 条已写样本与原时钟逐项匹配，第 460 次失败捕获未算入。后续若调整线程采集方法，须重新冻结方法、独立审查并从头执行新四轮，不能接续本次部分数据。
+新 `1fe685c` count-v1 的单次 A1 Tauri 随后失败，余下三轮均未启动。原 5 次预热、30 次正式试次及显示态 960 次采集完成；收起态第 460 次调用在读取 `/proc/68/task/546/stat` 时收到 ENOENT，只有 459 条完整样本／时钟流记录。原 progress 的第 460 条仅有 due／start／late，没有 capture／序列化／写入终点；不作为完成样本。首错为 `process sampling failed stage=thread-stat pid=68 tid=546`，该路径不存在本身不足以证明整个 Desktop 退出或正常线程退出。原 outer 退出 1，整轮保持 failed，没有补点、重跑或合成完整四轮结果；当时已有 Linux 性能表只归属旧 `5d6af007`。原目标退出 0、driver 记录 -15、WM 退出 0、Desktop pidfd 退出及清理 errors=[]；keeper 的 child 退出 1、forced／remaining 均为空，私有 Secret Service 的 command 退出 1 也继续保留为本次子任务失败，不能把整个收据改成通过。独立失败审计复核 228 份原文件、47,805,016 字节及 47 项来源／输入／前提记录，前后哈希均保持；1,419 条已写样本与原时钟逐项匹配，第 460 次失败捕获未算入。后续另经方法冻结及独立审查，从头执行的 process-resource-only-v2 完整四轮见文首；本次部分数据没有贡献到新汇总。
 
 同一手动运行的 Windows 普通前置及 release 13 项功能门禁通过，但第三轮 MyGo 仅完成 5 次预热和 29/30 次正式试次，尚无该轮资源数据；原 Native 响应 855 报 `Owned image unavailable`，第四轮没有 report。原 ZIP `13090360051` 为 5,633,793 字节，SHA-256 `64d29a1819b04b5d3fe0614d4849d52fe8cadf194055fa7d1a12d8713dfbe3f4`；32 路原日志字节及哈希完整、没有丢帧或 overflow。唯一未认证清理 PID 5404 只关闭句柄，没有其创建时间、映像或父边，不能补推为已认证错误对象。该轮发现不完整、剩余对象为 null，bootstrap 与 policy 恢复收据缺失；Desktop 6972 的退出 1 在清理开始后且属于强制列表，不能断言为堆损坏，也不能认证正常恢复。冻结 v7 离线评估拒绝这份 2 个已发布通过轮次、3 份发现 report 的不完整 ABBA；前两轮数值不作为完整新结论发布。
 
 [PR #166](https://github.com/qiyuanhuakai/dezirclip/pull/166) 的 `2a2521f3a1b04e8bc5c4f44a7d372998aa22577f` 仅补 Windows 原映像失败的有界错误上下文、派生绑定及模拟测试，未新增原生查询或放宽身份、权限、采样及失败规则。Root 73 项目标、10 项派生和 13 项 Node 纯检查通过，独立目标／派生 AST 复核通过；首提交 `7923f73` 的五个 Linux CI 失败均为同一既有纯测试漏模拟 Windows 错误读取接口，保留原失败。修订仅补该受控模拟，双方在移除 Windows accessor 的条件下各自 73 项通过；自身 CI [41326398315](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41326398315) 为 17 项成功、1 项可选跳过，当前提交的自动审查 `6560479435` 无新增确定问题。自身 Surface 13 项、Service 3 项和 24 路原输出流独立核验通过。新的[完整同源对照 41327394886](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41327394886) 及其原件已完成，冻结 v9 的 20 项纯测试、8 个源码绑定、原算法及完整实际产物分别复核，结果与限制见本节开头。
 
-首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前完成的 Linux 历史及 Windows 新四轮均限于所述原生窗口代理、合成配置和各自资源范围；没有认定全部性能要求或故障隔离通过。任何夹具源码或方法变更都需新完整四轮，旧失败原件不改写、部分样本不混合。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
+报告旧提交 `3956cb6106ecc3336d67d679a686f032f206d079` 的自身 CI [41338558022](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41338558022) 为 16 项成功、1 项失败、1 项可选跳过，不能沿用前次 CI 的绿色状态。Windows x64 原生门禁在第九项 MainShow 失败，实际 Desktop PID 1584、创建时间 `134380336864210807` 于 19:08:13.861 UTC 在清理前退出 `3221226356 = 0xc0000374`，比 19:08:34.134 UTC 的清理早 20.273 秒；原句柄已记录同一异常退出，kill 请求为 false。此前八项通过，上一项粘贴全文在 19:08:13.593 UTC 已通过；这次尚未进入 idle destroy／recreate，不能据此归因为销毁重建。11 份原证书对象终态及配置恢复完成，不改变产品提前崩溃的事实。原 WER reader 约 8.025 秒超时后被终止，没有模块偏移、转储或符号栈；具体原因仍未定位。
+
+该失败原[产物 13097072391](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41338558022/artifacts/13097072391) 为 59,547 字节、SHA-256 `d784513b72817e2c2b1f738d61fd0cbe6ea35359e7dd72eab28ac91df960d02b`；独立原件审计为 11,459 字节、SHA-256 `6e5f6681b39ac9bacbb8a2948887181f807c1e2793eeff40febee398643b85ce`。旧报告与基线的产品、工作流及构建清单差异为空，失败保留，不将它解释为文档修复或新性能结果。
+
+[PR #167](https://github.com/qiyuanhuakai/dezirclip/pull/167) `e751e70da17a4304636a3c223777a43a26e1c30d` 增加默认关闭的 debug 诊断选项，保留实际 EXE、PDB 及同源 build receipt。只在诊断构建步设置 dev debug=2／strip=none，release、ABBA、产品及原身份／WER／恢复规则不变。Root 与独立复核者各自 48 项纯模拟检查通过，当前提交自动审查 `6563027536` 无新增确定问题，自身普通 CI [41343649947](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41343649947) 为 17 项成功、1 项可选跳过。
+
+唯一新 hosted debug 诊断 [41343726885](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41343726885) attempt 1 直接绑定 `e751e70d`，整体 18 项成功；五个新配置各 13 项检查通过，结果 `not_reproduced_5`，没有执行 release／ABBA。原 metadata [13099852050](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41343726885/artifacts/13099852050) 为 862,214 字节、SHA-256 `4ee0bef03242944b4e0387219324e31cda59a833bdcc547646216a56c7b15087`，符号 [13100016520](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41343726885/artifacts/13100016520) 为 93,767,258 字节、SHA-256 `2621e50b9be12ff05ae5412853b44a34ea4b116b088a1305dc0aafebde82d671`。独立复核两份整包及其中 162／3 个成员的字节、SHA 和 CRC；125 份保存元数据、40 路原日志、五例输入前后链、WER 及配置恢复分别匹配。仅末例 25 份原路径文件同时留在包内，不声称同时取得全部 125 对原路径文件与副本。
+
+实际 EXE 49,565,696 字节、PDB 328,085,504 字节，均与 2,543 字节 build receipt 及五例前后哈希链一致。五个 Desktop 的退出 1 属于记录的清理强制终止，不能称自然退出；本次没有清理前异常或 dump 候选，未加载符号、未形成符号栈，EXE／PDB 签名匹配仍为 unverified。新诊断链实际走通与五次未复现不关闭 `3956cb6` 或更早 heap 根因，也无法补建历史转储。
+
+首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前完成的 Linux 新旧及 Windows 四轮均限于所述原生窗口代理、合成配置和各自资源范围；没有认定全部性能要求或故障隔离通过。任何夹具源码或方法变更都需新完整四轮，旧失败原件不改写、部分样本不混合。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
 
 ## 补测方法与环境条件
 

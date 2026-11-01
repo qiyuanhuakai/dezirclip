@@ -1,0 +1,1911 @@
+{
+  "kind": "complete_F2_process_only_v2_limited_comparison",
+  "status": "completed_limited_process_only_consistency",
+  "source_revision": "1fe685c424602b2bc1892f1deb0794c2e0b90ad5",
+  "observer_method": "process-resource-only-v2",
+  "thread_context_switch_collection": "not_collected",
+  "performance_eligible": false,
+  "phase6_passed": false,
+  "phase7_authorized": false,
+  "next_arm_authorized": false,
+  "whole_host_idle": null,
+  "quiet_window": null,
+  "performance_acceptance": null,
+  "context_switches": null,
+  "wakeup_count": null,
+  "integration_manifest": {
+    "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/integration-manifest.json",
+    "bytes": 12687,
+    "sha256": "63d0f6f062a5be89db5c534e72ca175677c3a6be6492655879acdcacebb7f30f"
+  },
+  "root_final_review": {
+    "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/complete-process-only-v2.root-summary-review.json",
+    "bytes": 6145,
+    "sha256": "1c03cb4c3654df48f329d974f03cb9da1151a98a7d36c411e859a8eb99ceaad9"
+  },
+  "summarizer": {
+    "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/summarize_descriptive.py",
+    "bytes": 9777,
+    "sha256": "be33ee777ed570f2458e3e6bb751e16d7dbfb492e25789b02c8adc2bf9463237"
+  },
+  "inputs": {
+    "desktop": {
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dezirclip",
+      "bytes": 16722680,
+      "sha256": "e7fe7ba757c4d337e385acb9aa25f545922fecf12e77b8f21c983633bf54bde8"
+    },
+    "helper": {
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dzc-surface",
+      "bytes": 10735879,
+      "sha256": "8b0e442f1fa1be730a02ef600bae9f343433ee54e14386c814d64c75fe51ab68"
+    },
+    "desktop_proof": {
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dezirclip.proof.json",
+      "bytes": 724,
+      "sha256": "23a682df4238d75e929e92e6f37abf5f80b27bcc8613b84a365c521b59989794"
+    },
+    "helper_proof": {
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dzc-surface.proof.json",
+      "bytes": 9284,
+      "sha256": "99f3f7b28dc5c4c56b5d55b248beb1adf979b283f78674f99fcb6aecb8267f0a"
+    },
+    "private_ss_helper": {
+      "sha256": "e17337851ecdc886ed942eeec69b9fa3aaee795c31c95d34c8333baa448ec3be",
+      "bytes": 17633752,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-alpha5-release/dezirclip/.harness/alpha5-linux-performance-M844e8b4-recovery-20261026/inputs/preseed-linux-x86_64"
+    },
+    "paste_tool_proof": {
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-dependencies/xdotool-noble-amd64-20261029/dependency-proof-v2.json",
+      "bytes": 11522,
+      "sha256": "59b337921bf01ec715286d432137bbfa44c9abe0d9cf802e46f68f4f86f6b87f"
+    },
+    "paste_tool": {
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-dependencies/xdotool-noble-amd64-20261029/extracted/usr/bin/xdotool",
+      "bytes": 84696,
+      "sha256": "a21dba4297e197ef27035071f6a36061cc8604ac360df19792db99ad3fd9a5f5"
+    },
+    "python": {
+      "sha256": "bb4d05c1f88e8568985e8704afe1822e82700a54bad9317c05c8eb96d3186701",
+      "bytes": 31508264,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/python-runtime/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13"
+    },
+    "webkit_driver": {
+      "sha256": "488118541ba1dbeaca658073af84322900485b9435bc4fbb43eb1faf21db8b70",
+      "bytes": 1735024,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/linux-tools/driver/usr/bin/WebKitWebDriver"
+    },
+    "screenshot_tool": {
+      "sha256": "5b55f6bdec35ab6f5ae502f93c0308bf37aba3f23324c17a713363473fad7294",
+      "bytes": 14656,
+      "path": "/usr/bin/import-im6.q16"
+    },
+    "quiet_window_note": {
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/prepared-only-note.json",
+      "bytes": 523,
+      "sha256": "324de21f9f6c1d162bfba17873866c4b27f47039bd6bf96ecd633e8c3c7ffcc4"
+    }
+  },
+  "arms_in_execution_order": [
+    {
+      "arm": "process-v2-1fe685c-1-tauri",
+      "renderer": "tauri",
+      "assessment": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-1-tauri.assessment.json",
+        "bytes": 26925,
+        "sha256": "5dc3b6666d56184cf23369e1fb0fe9beb61647a9b63003fdf765049982382dff"
+      },
+      "independent_review": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-1-tauri.independent-raw-review.json",
+        "bytes": 13564,
+        "sha256": "32185a1f7beb4652fd0643ddb320f76f6f4de653ae973ffa6f4fb034ce855725"
+      },
+      "root_png": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-1-tauri.root-png.json",
+        "bytes": 698,
+        "sha256": "71a9e1c131120db4c3dd4cdbc80fa66192194e67df63ff0c656948609741d93a"
+      },
+      "copy_proof": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-1-tauri.setup-copy-proof.json",
+        "bytes": 4358,
+        "sha256": "56cfe0ec739ab16608b0d68ff09ec49e6a686ef21e4660946f1b7ae466dc74b4"
+      },
+      "raw_evidence": [
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/credential-boundary.json",
+          "bytes": 8662,
+          "sha256": "fc20e101c6c27e26cb4be3a62296f235eee3a5e51b987313d0f0769d88571881"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/native-observations.jsonl",
+          "bytes": 1387949,
+          "sha256": "4eef70779cab5cd0e46ae4d42dfd16c7418c483ebc5046bef0d676c3c9452908"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/performance.json",
+          "bytes": 830472,
+          "sha256": "0bd1586ea15221e9c50463738eef714faf497fb92788072e9c191cc70a71c9cd"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "b6dfeaec581609550bc4300e3b1a354b1bfdfd5a2512cc94ab3a478da8af1f23"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-clock-hidden.jsonl",
+          "bytes": 203963,
+          "sha256": "c58f9d80e9cbd3fd68913cafc6a7dfb6e118e964d8f67ae7b2abb5dbb7606755"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-clock-visible.jsonl",
+          "bytes": 204010,
+          "sha256": "d9a246432857d3bf3c042646e9776c54987269e193f31dfefd83e76960e1ce57"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-visible-query.png",
+          "bytes": 4136,
+          "sha256": "e04bf6a7fb991bea8bf44b6ad783ad75b34dfcf6643c1153ee7caafa54097955"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resources-hidden.jsonl",
+          "bytes": 2169932,
+          "sha256": "73700acdd050a152b99c075de2e54e99f3d49ec4d7cae614e48dd6132282f425"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resources-visible.jsonl",
+          "bytes": 2170674,
+          "sha256": "5b9ee68a64cb06cd11dd60db6ba6b3a168e4ba3d969a7c1292a858f33b1fb658"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/show-status-qualification.jsonl",
+          "bytes": 52939,
+          "sha256": "5618faf50ff605104fa9a3cc74ec88a66e6f7099844024c852268762316c7189"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-before-warmup.png",
+          "bytes": 7416,
+          "sha256": "1e1c7dac4ea0234fe5f76b2f16211c40c79a02ddfc67e1f27e0f33141fb7987a"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/target.stdout.jsonl",
+          "bytes": 7105,
+          "sha256": "02776063673f20061d637306d90b2232fee75971ad4af62c248d37cc5ef2bf6b"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/webdriver.log",
+          "bytes": 6690,
+          "sha256": "3e8022a94b53b76df20cfc5e03a030211e33baf910e416f1163bf70b9e864904"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/wm.stderr.log",
+          "bytes": 8996,
+          "sha256": "f6aa7bea450cf66d3ff551acb2c5e76113e6c95bd4cd3485c08fd8bb6b4c55e5"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/host-load.jsonl",
+          "bytes": 200625,
+          "sha256": "95771c73273f7bf41084f64f4b200d902c691d0aefb0f282a0dc00e4ab2919a4"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/host-preflight.json",
+          "bytes": 447,
+          "sha256": "819fed34a83a6c18fab43242695797340a12de8422f4cd83f2da459d7b10523f"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/receipt.json",
+          "bytes": 8224,
+          "sha256": "04ee9b17b4d32e99f702e9d94ddcb4a9534fda8eeeb716db1d957ab6e36fb787"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/runtime.json",
+          "bytes": 16683,
+          "sha256": "1c85c68eee95de58360a0f4c099eb618e6c8d530eede20ee88652a77fe67e5c9"
+        }
+      ],
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.126737188,
+          "sample_span_seconds": 239.862401146,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 602287,
+            "max": 611628,
+            "mean": 609019.9822916667,
+            "p50": 610355,
+            "p95": 610596
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 463500,
+            "max": 466960,
+            "mean": 465515.49583333335,
+            "p50": 465892,
+            "p95": 465932
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 9.487414,
+            "max": 27.796068,
+            "mean": 11.679809945833334,
+            "p50": 11.445762,
+            "p95": 13.640445
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.042193,
+            "max": 254.052866,
+            "mean": 250.11720661730968,
+            "p50": 250.10505,
+            "p95": 250.152589
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.004427,
+            "max": 4.052866,
+            "mean": 0.11708913854166667,
+            "p50": 0.105048,
+            "p95": 0.152448
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.023291,
+            "max": 0.237821,
+            "mean": 0.03410322708333333,
+            "p50": 0.032323,
+            "p95": 0.046777
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.013271,
+            "max": 0.244267,
+            "mean": 0.026856884375,
+            "p50": 0.024953,
+            "p95": 0.038847
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007844,
+            "max": 0.065621,
+            "mean": 0.010362199999999998,
+            "p50": 0.009418,
+            "p95": 0.01477
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              419341896049825,
+              419341908230935
+            ],
+            "last": [
+              419581758252128,
+              419581767879301
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 1690,
+            "interval_min_ns": 239850021193,
+            "interval_max_ns": 239871829476,
+            "twice_nominal_interval_ns": 479721850669,
+            "nominal_percent_one_core": 7.04574952190815,
+            "read_window_normalization_percent_range": [
+              7.045429234820133,
+              7.046069838118165
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 7.04574952190815,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.116017596,
+          "sample_span_seconds": 239.855501562,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 599399,
+            "max": 608838,
+            "mean": 606414.7291666666,
+            "p50": 607639,
+            "p95": 608756
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 461380,
+            "max": 464764,
+            "mean": 463636.4083333333,
+            "p50": 463760,
+            "p95": 464764
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 9.863897,
+            "max": 18.465759,
+            "mean": 11.516668757291665,
+            "p50": 11.31742,
+            "p95": 13.397961
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.055671,
+            "max": 251.141177,
+            "mean": 250.11001205630865,
+            "p50": 250.103121,
+            "p95": 250.142786
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.00307,
+            "max": 1.141177,
+            "mean": 0.10990065833333333,
+            "p50": 0.103053,
+            "p95": 0.14213
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.023061,
+            "max": 0.181585,
+            "mean": 0.033091777083333336,
+            "p50": 0.031795,
+            "p95": 0.042443
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.013004,
+            "max": 0.235471,
+            "mean": 0.026510169791666666,
+            "p50": 0.025419,
+            "p95": 0.039169
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007777,
+            "max": 0.183934,
+            "mean": 0.011331916666666667,
+            "p50": 0.009899,
+            "p95": 0.01598
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              419612071917212,
+              419612081675534
+            ],
+            "last": [
+              419851927973722,
+              419851938532351
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 31,
+            "interval_min_ns": 239846298188,
+            "interval_max_ns": 239866615139,
+            "twice_nominal_interval_ns": 479712913327,
+            "nominal_percent_one_core": 0.12924396712609906,
+            "read_window_normalization_percent_range": [
+              0.12923849357709014,
+              0.12924944113876255
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.12924396712609906,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 41.225384,
+        "max": 62.492454,
+        "mean": 54.30149446666667,
+        "p50": 52.272818,
+        "p95": 62.35586
+      }
+    },
+    {
+      "arm": "process-v2-1fe685c-2-mygo",
+      "renderer": "mygo",
+      "assessment": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-2-mygo.assessment.json",
+        "bytes": 26888,
+        "sha256": "d745cf806ae123f511b8bbb3abcf71f2d209510793958a56aa6b90f01271c2f8"
+      },
+      "independent_review": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-2-mygo.independent-raw-review.json",
+        "bytes": 13527,
+        "sha256": "48724c969aca2c688336a8108d3fca2e219cd6c3a46260e0f8bac86ebe1ab94e"
+      },
+      "root_png": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-2-mygo.root-png.json",
+        "bytes": 705,
+        "sha256": "f633f2162bf511984be693480521224680184840c08c15a200ecd32c53f8cc51"
+      },
+      "copy_proof": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-2-mygo.setup-copy-proof.json",
+        "bytes": 4350,
+        "sha256": "c807c2c075c3151b1f03959beb3c8e79d2c7d23361c4d3d0c29717660288586a"
+      },
+      "raw_evidence": [
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/credential-boundary.json",
+          "bytes": 8646,
+          "sha256": "81285fc993d6be8895142583b9aecc963ed7816c7d2656737ece9b07ead96b1b"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/native-observations.jsonl",
+          "bytes": 1395360,
+          "sha256": "4deb72f771425b929c5d66f9f23ffdaace1e0ec78d3dc503eadc26f1676c69ed"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/performance.json",
+          "bytes": 846074,
+          "sha256": "b98265be2553f6a965345523f0ce9ce920b5089c1280a287d61656383b77fbc5"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "9ed227b4e3e010adbd8854c3fdd01707a8ffdacf7c354ce9b0e1b4b0590805c9"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-clock-hidden.jsonl",
+          "bytes": 204077,
+          "sha256": "9da57231233d96987b9158d11f42228e2e4927d0bfaf5420ac6fedd122766cbb"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-clock-visible.jsonl",
+          "bytes": 204021,
+          "sha256": "ae178588c0a9fe5eaad15e332eb76df09a0bb536f3bed45ee4556b0f8ae0fffc"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-visible-query.png",
+          "bytes": 9091,
+          "sha256": "69e70b38d984d30a43bad6e61f16ce8afbc0b0975b52c70575dd1b257c710d6b"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resources-hidden.jsonl",
+          "bytes": 2166749,
+          "sha256": "6818b3c721de5ca727d2af338c1f436bc6aeb457d4925f321720caa667b73f43"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resources-visible.jsonl",
+          "bytes": 2166414,
+          "sha256": "e4ef55c3746dc03ea5aed96413640c0124d3bc35ae2c04f9b83139e363fc3905"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/show-status-qualification.jsonl",
+          "bytes": 41829,
+          "sha256": "09250ff3c8bf6fa17d791758a1669b1af7ae6920b5947e7bf36d772b739f89a7"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-before-warmup.png",
+          "bytes": 25163,
+          "sha256": "9fd33a0519487acd3de05ed59b24e7a1c767f44bbf0a31cf0fc6414b7d39a9e9"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/target.stdout.jsonl",
+          "bytes": 5675,
+          "sha256": "0524e93a19f7f04c96fc817af7a0cc27bc4f4f534ec92097c97b3e50f459a4a2"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/webdriver.log",
+          "bytes": 28259,
+          "sha256": "c9ce8694a2a6a60512d238823dac1424ea04750fe5945e081efe3ac7dd2f40ae"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/wm.stderr.log",
+          "bytes": 18043,
+          "sha256": "e1ae2955a8edd8eac495640f241000288a243d51d74ea8a63ea77de2d0b6ddbf"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/host-load.jsonl",
+          "bytes": 199774,
+          "sha256": "9ea5f5a78b8d45d2fa6eb902b2c6aaa45024008ed29802fd42161c90e7bd820c"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/host-preflight.json",
+          "bytes": 454,
+          "sha256": "c0e30946570e81926d06a412aa45a906a50c36ad565f0ad1a939523c2beec3eb"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/receipt.json",
+          "bytes": 8206,
+          "sha256": "e9ba0a3bdc254007ee1158ddc8332125e8b8e6f03866ff150b6041781d5a5a8c"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/runtime.json",
+          "bytes": 16681,
+          "sha256": "317765ed79fc1e140730e1b412c2fd5f3b36750adf158fc3bf28030b8f4a2a33"
+        }
+      ],
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.129323179,
+          "sample_span_seconds": 239.865514775,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 475262,
+            "max": 476206,
+            "mean": 475529.83229166665,
+            "p50": 475451,
+            "p95": 476115
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 387104,
+            "max": 388048,
+            "mean": 387358.13333333336,
+            "p50": 387292,
+            "p95": 387888
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 9.276265,
+            "max": 15.058992,
+            "mean": 10.226550849999999,
+            "p50": 10.076613,
+            "p95": 11.347146
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.032882,
+            "max": 255.682192,
+            "mean": 250.12045336287798,
+            "p50": 250.106091,
+            "p95": 250.181663
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.003034,
+            "max": 5.682192,
+            "mean": 0.12033105104166666,
+            "p50": 0.106049,
+            "p95": 0.181083
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.022214,
+            "max": 0.126378,
+            "mean": 0.029969285416666665,
+            "p50": 0.028961,
+            "p95": 0.036856
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.012265,
+            "max": 0.149383,
+            "mean": 0.02223192083333333,
+            "p50": 0.021482,
+            "p95": 0.032053
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007983,
+            "max": 0.08665,
+            "mean": 0.009962126041666667,
+            "p50": 0.0095,
+            "p95": 0.011821
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              420344898094769,
+              420344907428009
+            ],
+            "last": [
+              420584763885335,
+              420584773023580
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 102,
+            "interval_min_ns": 239856457326,
+            "interval_max_ns": 239874928811,
+            "twice_nominal_interval_ns": 479731386137,
+            "nominal_percent_one_core": 0.42523796836119954,
+            "read_window_normalization_percent_range": [
+              0.4252215957106834,
+              0.42525434227258296
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.42523796836119954,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.134487121,
+          "sample_span_seconds": 239.868864874,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 472378,
+            "max": 473390,
+            "mean": 472904.66770833335,
+            "p50": 473079,
+            "p95": 473386
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 383856,
+            "max": 384896,
+            "mean": 384507.12083333335,
+            "p50": 384852,
+            "p95": 384864
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 9.275473,
+            "max": 13.496629,
+            "mean": 10.161359818749998,
+            "p50": 10.061194,
+            "p95": 11.160497
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.075003,
+            "max": 254.872998,
+            "mean": 250.12394668821688,
+            "p50": 250.108279,
+            "p95": 250.173284
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.002417,
+            "max": 4.872998,
+            "mean": 0.12382009479166665,
+            "p50": 0.108225,
+            "p95": 0.171916
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.023758,
+            "max": 0.103264,
+            "mean": 0.030648230208333335,
+            "p50": 0.029749,
+            "p95": 0.039077
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.01073,
+            "max": 0.108908,
+            "mean": 0.023394859375,
+            "p50": 0.022609,
+            "p95": 0.033399
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.008358,
+            "max": 0.133187,
+            "mean": 0.010788934375,
+            "p50": 0.010033,
+            "p95": 0.012703
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              420615078015544,
+              420615088561786
+            ],
+            "last": [
+              420854946989409,
+              420854955665194
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 28,
+            "interval_min_ns": 239858427623,
+            "interval_max_ns": 239877649650,
+            "twice_nominal_interval_ns": 479736077273,
+            "nominal_percent_one_core": 0.11673084984211533,
+            "read_window_normalization_percent_range": [
+              0.11672617286710188,
+              0.11673552719193712
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.11673084984211533,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 31.08596,
+        "max": 81.799724,
+        "mean": 56.57422203333333,
+        "p50": 61.269132,
+        "p95": 81.67683
+      }
+    },
+    {
+      "arm": "process-v2-1fe685c-3-mygo",
+      "renderer": "mygo",
+      "assessment": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-3-mygo.assessment.json",
+        "bytes": 26874,
+        "sha256": "4a3c0d08d72c1fb50321d8f843fa21ebb254e77ab6b22e141d27475f698304d1"
+      },
+      "independent_review": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-3-mygo.independent-raw-review.json",
+        "bytes": 13527,
+        "sha256": "5f19851e74bab8f0876645a8b844ba3dc7fa1248fe4178455835975472f8e94e"
+      },
+      "root_png": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-3-mygo.root-png.json",
+        "bytes": 705,
+        "sha256": "225104305a9e2eedc6846a54a02348fe985968bea60b8578e3ae1340d3519846"
+      },
+      "copy_proof": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-3-mygo.setup-copy-proof.json",
+        "bytes": 4350,
+        "sha256": "f6a189a27a04c3ba6eea2835aa879eff6269fe93e65aaa05d70c85c3d1294c9d"
+      },
+      "raw_evidence": [
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/credential-boundary.json",
+          "bytes": 8646,
+          "sha256": "4866cd777306c9044ac6131b57fba5691849a8dc9829033ccd332106de86cc98"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/native-observations.jsonl",
+          "bytes": 1389309,
+          "sha256": "5c3c2832e61b5a4f1a0ad2114762dfac8a125ac1f98530a98686f8cb731fb2bf"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/performance.json",
+          "bytes": 846163,
+          "sha256": "e23ccf7ead8f43eb1f9606e665da694f65f406e50382e4de7f207d152de23f37"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "dcdb2c13e6024bc12b32e2a5e8daffd0cd87f17dec024de9e831b83e3b5f05d8"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-clock-hidden.jsonl",
+          "bytes": 204115,
+          "sha256": "2c36d547268a5e1cec92c0116639b71629ec734b3291f0a758176ee9046f9c00"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-clock-visible.jsonl",
+          "bytes": 204094,
+          "sha256": "21e0ca250164c357b721720164c0a4fe8083f05c1fe07b14fe708544b7193516"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-visible-query.png",
+          "bytes": 9091,
+          "sha256": "69e70b38d984d30a43bad6e61f16ce8afbc0b0975b52c70575dd1b257c710d6b"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resources-hidden.jsonl",
+          "bytes": 2166771,
+          "sha256": "ea077a0fdd74a6a741606ea10e4197b02b55d380e9537f48a7ac7698969e1149"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resources-visible.jsonl",
+          "bytes": 2166469,
+          "sha256": "f159cce52a2f79823737b8c8edbc4558bb24616d5a4080a07971c74b899caac7"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/show-status-qualification.jsonl",
+          "bytes": 41838,
+          "sha256": "b78271fc70342b5cc5e318bdd400181c51400858cb8fcf6344c2b010545c61d1"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-before-warmup.png",
+          "bytes": 25163,
+          "sha256": "9fd33a0519487acd3de05ed59b24e7a1c767f44bbf0a31cf0fc6414b7d39a9e9"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/target.stdout.jsonl",
+          "bytes": 5676,
+          "sha256": "ebf3c6df1e8f06d7743427a5579e1fbf62586fd4303e109aecda4bf8a24df770"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/webdriver.log",
+          "bytes": 28256,
+          "sha256": "c26729cb14956c672be323bad01c6e1d874dbace5676f3ef2be49c98ef04e97a"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/wm.stderr.log",
+          "bytes": 18043,
+          "sha256": "e1ae2955a8edd8eac495640f241000288a243d51d74ea8a63ea77de2d0b6ddbf"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/host-load.jsonl",
+          "bytes": 200076,
+          "sha256": "1b0847a7311d458413e8c34fa6df8e56c85aa42387122e51b790037b20d407c7"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/host-preflight.json",
+          "bytes": 454,
+          "sha256": "e0d221c930af79a8387f5b8e58e0dc0f41907059c8f6bd7e1baa690eecb9e14d"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/receipt.json",
+          "bytes": 8206,
+          "sha256": "34ec91eab8e0b16c730e96679bb99ece8b61423430b89e83c2d235b8a4e3335f"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/runtime.json",
+          "bytes": 16681,
+          "sha256": "4ff1d02fffe58a86ae9176539ff6be12c2729b49bd6c90a4b3977060a5e84e43"
+        }
+      ],
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.159973849,
+          "sample_span_seconds": 239.869699208,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 477211,
+            "max": 478318,
+            "mean": 477492.071875,
+            "p50": 477453,
+            "p95": 477726
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 388020,
+            "max": 389128,
+            "mean": 388301.7083333333,
+            "p50": 388264,
+            "p95": 388536
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 9.264762,
+            "max": 16.210715,
+            "mean": 10.214081572916665,
+            "p50": 10.04668,
+            "p95": 11.405942
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.028994,
+            "max": 255.701747,
+            "mean": 250.12481669238792,
+            "p50": 250.108587,
+            "p95": 250.201752
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.003854,
+            "max": 5.701747,
+            "mean": 0.12469068958333333,
+            "p50": 0.10848,
+            "p95": 0.198669
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.022212,
+            "max": 0.155243,
+            "mean": 0.029764609374999997,
+            "p50": 0.028325,
+            "p95": 0.039151
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.011626,
+            "max": 0.072273,
+            "mean": 0.02245008854166667,
+            "p50": 0.021569,
+            "p95": 0.032931
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007775,
+            "max": 0.099073,
+            "mean": 0.010284822916666667,
+            "p50": 0.009505,
+            "p95": 0.013128
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              421190248638964,
+              421190263641701
+            ],
+            "last": [
+              421430118166610,
+              421430126821700
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 105,
+            "interval_min_ns": 239854524909,
+            "interval_max_ns": 239878182736,
+            "twice_nominal_interval_ns": 479732707645,
+            "nominal_percent_one_core": 0.4377437615852514,
+            "read_window_normalization_percent_range": [
+              0.4377221754908768,
+              0.4377653498087503
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.4377437615852514,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.143731214,
+          "sample_span_seconds": 239.879431218,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 472550,
+            "max": 474242,
+            "mean": 473197.18333333335,
+            "p50": 472565,
+            "p95": 474202
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 383368,
+            "max": 385052,
+            "mean": 384006.37083333335,
+            "p50": 383372,
+            "p95": 385012
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 9.224246,
+            "max": 16.081319,
+            "mean": 10.19674856875,
+            "p50": 10.05332,
+            "p95": 11.3386
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.058371,
+            "max": 256.718112,
+            "mean": 250.13496477372263,
+            "p50": 250.109932,
+            "p95": 250.190682
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.002756,
+            "max": 6.718112,
+            "mean": 0.13482705625,
+            "p50": 0.109913,
+            "p95": 0.189664
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.022767,
+            "max": 0.134488,
+            "mean": 0.030221945833333333,
+            "p50": 0.028981,
+            "p95": 0.038686
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.011911,
+            "max": 0.142808,
+            "mean": 0.022754484374999998,
+            "p50": 0.021974,
+            "p95": 0.03347
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.008135,
+            "max": 0.129019,
+            "mean": 0.010378288541666668,
+            "p50": 0.00964,
+            "p95": 0.013348
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              421460458379370,
+              421460469069121
+            ],
+            "last": [
+              421700338098212,
+              421700346838257
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 29,
+            "interval_min_ns": 239869029091,
+            "interval_max_ns": 239888458887,
+            "twice_nominal_interval_ns": 479757487978,
+            "nominal_percent_one_core": 0.12089441322625,
+            "read_window_normalization_percent_range": [
+              0.1208895172971223,
+              0.12089930955195621
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.12089441322625,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 31.195764,
+        "max": 81.675963,
+        "mean": 54.527425666666666,
+        "p50": 51.605844,
+        "p95": 71.367361
+      }
+    },
+    {
+      "arm": "process-v2-1fe685c-4-tauri",
+      "renderer": "tauri",
+      "assessment": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-4-tauri.assessment.json",
+        "bytes": 26896,
+        "sha256": "ba82d2a076f00c04e00fe2b635aace3c91da743d10cf51c0ebe94c5f3295ddd8"
+      },
+      "independent_review": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-4-tauri.independent-raw-review.json",
+        "bytes": 13564,
+        "sha256": "7201987fdc7df2a840e3fb0268493586c398277225d99ff14d7e2e1209f2119c"
+      },
+      "root_png": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-4-tauri.root-png.json",
+        "bytes": 706,
+        "sha256": "7e2eab41da0c5fcdd33b29d1fd0c05dc166d924f61da8bc179e9b6ad165e7670"
+      },
+      "copy_proof": {
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-4-tauri.setup-copy-proof.json",
+        "bytes": 4358,
+        "sha256": "65dcf97f2f5ea8c3ea954293dd143d77e134ba02af35cf0fedcb537d4d5e5647"
+      },
+      "raw_evidence": [
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/credential-boundary.json",
+          "bytes": 8662,
+          "sha256": "0e4c66e9645347ca100cb0c4bd2e6e7570ba9da6ab3bd3eb11d397274546336a"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/keeper.json",
+          "bytes": 888,
+          "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/keeper.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/keeper.stdout.log",
+          "bytes": 63,
+          "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/native-observations.jsonl",
+          "bytes": 1382205,
+          "sha256": "205cf7284d50a4b064e856ff30245808bb47f79fa77327d2508a45587a073354"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/paste-tool-version.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/paste-tool-version.stdout.log",
+          "bytes": 29,
+          "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/performance.json",
+          "bytes": 830571,
+          "sha256": "dc6645a6a1a8c135d322e027fc317f3e5944fe08cf89ec51a0d02d4dcfa81699"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/private-ss/proof.json",
+          "bytes": 1511,
+          "sha256": "1db801e00da9954a216c3d9ce784ca0d41653ea56eed5d6cfa7706c2ace9f11f"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-clock-hidden.jsonl",
+          "bytes": 204089,
+          "sha256": "9afc3536e443d8fe83c33f19676c581d133514e7863b324105a2a027a46e957d"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-clock-visible.jsonl",
+          "bytes": 204072,
+          "sha256": "4c9ba58c23277701c215635cfd4d56dd8437176e11400a18e210003060b5e267"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-visible-query.png",
+          "bytes": 4136,
+          "sha256": "e04bf6a7fb991bea8bf44b6ad783ad75b34dfcf6643c1153ee7caafa54097955"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-visible-query.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-visible-query.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resources-hidden.jsonl",
+          "bytes": 2170061,
+          "sha256": "e9b7551f09d05867711e1b5fccf19a9f9deec872b44e11c16f0ef10e7c1f7205"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resources-visible.jsonl",
+          "bytes": 2170761,
+          "sha256": "58e6f0439720e973f54864bfe8acf2f7335012d4a579140e5ba355730fe7990d"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/show-status-qualification.jsonl",
+          "bytes": 52937,
+          "sha256": "9a7715228431fb02f06cfa88ed353c1cc3e17764277fb7886e5c9dd90481836a"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-before-warmup.png",
+          "bytes": 7416,
+          "sha256": "1e1c7dac4ea0234fe5f76b2f16211c40c79a02ddfc67e1f27e0f33141fb7987a"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-before-warmup.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-before-warmup.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-build-info.stderr",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-build-info.stdout",
+          "bytes": 446,
+          "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/target.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/target.stdout.jsonl",
+          "bytes": 7105,
+          "sha256": "6eb9c020329aa4526bfc9a8201383d75be9d015e0898b0c1cee715c61cff4fbf"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/webdriver.log",
+          "bytes": 6617,
+          "sha256": "62150aa9a9b442cd401a60aa2ad0eb2b77605255c505c43c66a8f6b464d7b757"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/wm.stderr.log",
+          "bytes": 8996,
+          "sha256": "f6aa7bea450cf66d3ff551acb2c5e76113e6c95bd4cd3485c08fd8bb6b4c55e5"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/wm.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/host-load.jsonl",
+          "bytes": 200786,
+          "sha256": "5decbc87e10eff27f223e5a5dd6f823169ad62b512a886ecf5e6e3244d63bcce"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/host-preflight.json",
+          "bytes": 455,
+          "sha256": "809c896176a040d2f3184f2bd2c856f0b1745cfef7e9139d37d0fde554e01ca7"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/outer.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/outer.stdout.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/plan.json",
+          "bytes": 273,
+          "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/receipt.json",
+          "bytes": 8224,
+          "sha256": "aff29b8cbcbae1939eae736dc7285da0768d80f6033472514d0c4e6374fdadc1"
+        },
+        {
+          "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/runtime.json",
+          "bytes": 16683,
+          "sha256": "2c6a2bdd0e5d3eec92ea4e3c43cfc5d9b48204fd3700e18493a9ac91b5d7f7fe"
+        }
+      ],
+      "resources": {
+        "visible": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.128181666,
+          "sample_span_seconds": 239.865355254,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 614408,
+            "max": 615453,
+            "mean": 614429.603125,
+            "p50": 614421,
+            "p95": 614489
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 468152,
+            "max": 469204,
+            "mean": 468180.725,
+            "p50": 468172,
+            "p95": 468240
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 11.677523,
+            "max": 17.789003,
+            "mean": 13.060801136458334,
+            "p50": 12.878018,
+            "p95": 14.775791
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.051824,
+            "max": 253.081147,
+            "mean": 250.1202870218978,
+            "p50": 250.108101,
+            "p95": 250.204836
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.003962,
+            "max": 3.081147,
+            "mean": 0.12016585,
+            "p50": 0.108014,
+            "p95": 0.203417
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.024801,
+            "max": 0.161775,
+            "mean": 0.03514546145833333,
+            "p50": 0.033263,
+            "p95": 0.045124
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.012762,
+            "max": 0.336545,
+            "mean": 0.02529088541666667,
+            "p50": 0.024014,
+            "p95": 0.033449
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.008287,
+            "max": 0.092127,
+            "mean": 0.010790503125,
+            "p50": 0.009819,
+            "p95": 0.013405
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              422028372086766,
+              422028385896276
+            ],
+            "last": [
+              422268237268046,
+              422268248560244
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 1686,
+            "interval_min_ns": 239851371770,
+            "interval_max_ns": 239876473478,
+            "twice_nominal_interval_ns": 479727845248,
+            "nominal_percent_one_core": 7.0289853578476595,
+            "read_window_normalization_percent_range": [
+              7.028617586187041,
+              7.0293531679975185
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 7.0289853578476595,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        },
+        "hidden": {
+          "sampling_protocol": "event-anchored-count-v1",
+          "actual_elapsed_seconds": 240.130930818,
+          "sample_span_seconds": 239.861034628,
+          "sample_count": 960,
+          "pss_kib": {
+            "count": 960,
+            "min": 611305,
+            "max": 612925,
+            "mean": 611589.4208333333,
+            "p50": 611305,
+            "p95": 612817
+          },
+          "uss_kib": {
+            "count": 960,
+            "min": 465732,
+            "max": 467352,
+            "mean": 466017.0291666667,
+            "p50": 465732,
+            "p95": 467244
+          },
+          "snapshot_summary_scope": "960 protocol-selected snapshots; not a time mean, equal exposure duration or 960 independent experimental repetitions.",
+          "observer_cost_ms": {
+            "count": 960,
+            "min": 11.672969,
+            "max": 18.86827,
+            "mean": 12.795363564583333,
+            "p50": 12.61418,
+            "p95": 14.116019
+          },
+          "observation_intervals_ms": {
+            "count": 959,
+            "min": 250.03696,
+            "max": 250.581601,
+            "mean": 250.1157816767466,
+            "p50": 250.109427,
+            "p95": 250.179419
+          },
+          "late_ms": {
+            "count": 960,
+            "min": 0.002445,
+            "max": 0.581601,
+            "mean": 0.11566361770833335,
+            "p50": 0.109204,
+            "p95": 0.176985
+          },
+          "serialization_cost_ms": {
+            "count": 960,
+            "min": 0.025188,
+            "max": 0.19873,
+            "mean": 0.03282685625,
+            "p50": 0.031643,
+            "p95": 0.039142
+          },
+          "sample_write_cost_ms": {
+            "count": 960,
+            "min": 0.012912,
+            "max": 0.193095,
+            "mean": 0.02544255625,
+            "p50": 0.023824,
+            "p95": 0.036176
+          },
+          "clock_log_cost_ms": {
+            "count": 960,
+            "min": 0.007987,
+            "max": 0.03744,
+            "mean": 0.010456285416666666,
+            "p50": 0.009784,
+            "p95": 0.013681
+          },
+          "stable_process_membership": true,
+          "stable_thread_membership": null,
+          "observer_method": "process-resource-only-v2",
+          "thread_context_switch_collection": "not_collected",
+          "cpu_counter_read_windows_ns": {
+            "first": [
+              422298552615486,
+              422298565638936
+            ],
+            "last": [
+              422538414181331,
+              422538425219725
+            ]
+          },
+          "cpu_clock_ticks_per_second": 100,
+          "cpu_counter_normalization": {
+            "counter_delta_ticks": 34,
+            "interval_min_ns": 239848542395,
+            "interval_max_ns": 239872604239,
+            "twice_nominal_interval_ns": 479721146634,
+            "nominal_percent_one_core": 0.14174901497907103,
+            "read_window_normalization_percent_range": [
+              0.14174190549131524,
+              0.14175612518005773
+            ],
+            "scope": "Read-point timing uncertainty only, not a statistical confidence interval, common-time family CPU bound, tick-quantization bound or whole-window CPU average."
+          },
+          "cpu_percent_one_core": 0.14174901497907103,
+          "cpu_scope": "Observed process-family counter delta normalized approximately to read-window midpoint separation; uncertainty range is not a common-time CPU bound, statistical CI, tick-quantization bound or whole-window average. Short-lived processes may be missed.",
+          "observed_thread_context_switch_delta": null,
+          "context_switch_scope": "Not collected by process-resource-only-v2; no task/thread probes. Not wakeups.",
+          "cpu_or_context_counters_with_changing_membership": "Process CPU with changing membership is unverified; thread counters are not collected; no zero substitution",
+          "wakeup_count": null
+        }
+      },
+      "warm_activation_proxy_ms": {
+        "count": 30,
+        "min": 21.113158,
+        "max": 80.193714,
+        "mean": 51.99244263333333,
+        "p50": 52.131029,
+        "p95": 62.332279
+      }
+    }
+  ],
+  "variants": {
+    "tauri": {
+      "warm_activation_proxy_ms": {
+        "count": 60,
+        "min": 21.113158,
+        "max": 80.193714,
+        "mean": 53.14696855,
+        "p50": 52.182223,
+        "p95": 62.332279
+      },
+      "resources": {
+        "visible": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 602287,
+            "max": 615453,
+            "mean": 611724.7927083333,
+            "p50": 611628,
+            "p95": 614425
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 463500,
+            "max": 469204,
+            "mean": 466848.11041666666,
+            "p50": 466960,
+            "p95": 468176
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 3376,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959449695917,
+            "nominal_percent_one_core": 7.037367387507205,
+            "read_window_normalization_percent_range": [
+              7.037023329134533,
+              7.0377114795253375
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          },
+          "stable_thread_membership": null,
+          "observed_thread_context_switch_delta": null,
+          "wakeup_count": null,
+          "thread_context_switch_collection": "not_collected"
+        },
+        "hidden": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 599399,
+            "max": 612925,
+            "mean": 609002.075,
+            "p50": 608838,
+            "p95": 612177
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 461380,
+            "max": 467352,
+            "mean": 464826.71875,
+            "p50": 464764,
+            "p95": 466604
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 65,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959434059961,
+            "nominal_percent_one_core": 0.13549654470812134,
+            "read_window_normalization_percent_range": [
+              0.13549027758096358,
+              0.1355028124150801
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          },
+          "stable_thread_membership": null,
+          "observed_thread_context_switch_delta": null,
+          "wakeup_count": null,
+          "thread_context_switch_collection": "not_collected"
+        }
+      }
+    },
+    "mygo": {
+      "warm_activation_proxy_ms": {
+        "count": 60,
+        "min": 31.08596,
+        "max": 81.799724,
+        "mean": 55.55082385,
+        "p50": 51.721614,
+        "p95": 71.367361
+      },
+      "resources": {
+        "visible": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 475262,
+            "max": 478318,
+            "mean": 476510.95208333334,
+            "p50": 476206,
+            "p95": 477683
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 387104,
+            "max": 389128,
+            "mean": 387829.92083333334,
+            "p50": 388020,
+            "p95": 388492
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 207,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959464093782,
+            "nominal_percent_one_core": 0.4314908735855883,
+            "read_window_normalization_percent_range": [
+              0.43147192799336503,
+              0.4315098208416567
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          },
+          "stable_thread_membership": null,
+          "observed_thread_context_switch_delta": null,
+          "wakeup_count": null,
+          "thread_context_switch_collection": "not_collected"
+        },
+        "hidden": {
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "min": 472378,
+            "max": 474242,
+            "mean": 473050.92552083335,
+            "p50": 473079,
+            "p95": 474198
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "min": 383368,
+            "max": 385052,
+            "mean": 384256.74583333335,
+            "p50": 384852,
+            "p95": 385008
+          },
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 57,
+            "ticks_per_second": 100,
+            "sum_twice_nominal_intervals_ns": 959493565251,
+            "nominal_percent_one_core": 0.11881267798828647,
+            "read_window_normalization_percent_range": [
+              0.11880789198264952,
+              0.11881746437953372
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval."
+          },
+          "stable_thread_membership": null,
+          "observed_thread_context_switch_delta": null,
+          "wakeup_count": null,
+          "thread_context_switch_collection": "not_collected"
+        }
+      }
+    }
+  },
+  "limits": [
+    "Only four fresh process-only arms; old failed count-v1 A1 remains failed and contributes no samples.",
+    "Thread/context counters were not collected and are null, not zero, not wakeup measurements.",
+    "Unchanged process CPU read-window arithmetic; snapshot distributions are correlated and not equal-time means.",
+    "Windows host metadata/whole-host quiet/GPU/first-interactive/search/IME/DPI/multimonitor remain unverified.",
+    "Descriptive consistency only; no adoption, Phase6/Phase7 or statistical-significance qualification."
+  ]
+}
