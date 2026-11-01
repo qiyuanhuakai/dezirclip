@@ -4,7 +4,7 @@
 
 Linux X11 冻结源码 `5d6af007` 的四轮受控对照已完成并独立复算。MyGo 在此配置下减少应用进程组合的内存及静态显示 CPU；已预热窗口呼出到原生可见且前台的 p95 从 62.534 ms 变为 65.642 ms，增加约 3.11 ms。此计时终点是原生窗口代理，首次可交互帧、搜索就绪等仍未测量；结果不自动归属后续产品源码，没有据此认定默认迁移门槛或 Phase 6 验收通过。[完整要求](v0.2-mygo-ready.md#p66-性能评估)
 
-Windows 尚无完整且可接受的四轮对照。重排后的 8 个新头及权限夹具 `a4f098e` 的普通 CI 均成功，但 `b39d93f` 的唯一新手动运行整体失败；其中独立 release 诊断完成五例、未复现堆损坏，没有执行 ABBA。当前供应器候选 `3c9f5e6` 自身 CI 尚待结果，旧 MyGo helper 退出 2、Desktop 清理前堆损坏及本次权限拒绝的根因均未关闭。各次失败和部分原件分别保留，未拼接成完整结果。
+Windows 尚无完整且可接受的四轮对照。重排后的 8 个新头及权限夹具 `a4f098e` 的普通 CI 均成功，但 `b39d93f` 的唯一新手动运行整体失败；其中独立 release 诊断完成五例、未复现堆损坏，没有执行 ABBA。当前供应器候选 `1fe685c` 自身 CI 尚待结果，旧 MyGo helper 退出 2、Desktop 清理前堆损坏及本次权限拒绝的根因均未关闭。各次失败和部分原件分别保留，未拼接成完整结果。
 
 ## Linux X11 受限合成配置结果
 
@@ -118,7 +118,7 @@ Windows 尚无完整且可接受的四轮对照。重排后的 8 个新头及权
 
 [PR #164](https://github.com/qiyuanhuakai/dezirclip/pull/164) 的 `a4f098e164fb150aae321dd8340f58ec45661d2e` 仅在 5 个夹具／测试／说明文件中移除当前 API 未使用的 `PROCESS_VM_READ`，没有产品改动；Root 117 项、独立复核者 78 项纯检查及源码审查通过，当前提交自动审查 `6558075233` 无新增意见，自身 CI [41307309602](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41307309602) 为 17 项成功、1 项可选跳过，其 Surface 13 项、Service 3 项及 24 份原始输出流分别复核通过。这不证明 PID 6704 权限拒绝或 heap 根因已修复；旧 Windows assessor-v5 仍绑定 `b39d93f`，最终新源码需要新的完整 cohort 与绑定。
 
-[PR #165](https://github.com/qiyuanhuakai/dezirclip/pull/165) 的 `3c9f5e65760f153b7035bf9d4e6d1c487cb81d40` 在 #164 之上增加 4 文件、默认关闭的 Linux release 输入供给，自身 CI 尚待结果，真实供应步骤尚未执行。Linux count-v1 仍只属于 `5d6af007`，新增 MyGo O(n) 帧快照后不能归属当前源码；当前还缺 release Desktop／Surface 原输入和各自 proof，以及新源码的 functional 19 项、idle 13 项资格。普通 CI 的 CLI／Flatpak 产物不能替代，当前源码的新 prerequisites 与 ABBA 均未执行。
+[PR #165](https://github.com/qiyuanhuakai/dezirclip/pull/165) 的首个提交 `3c9f5e65760f153b7035bf9d4e6d1c487cb81d40` 在 #164 之上增加 4 文件、默认关闭的 Linux release 输入供给。其 CI [41313186568](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41313186568) 的 Frontend 任务 [124867667311](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41313186568/job/124867667311) 在 Python 3.10 导入 `tomllib` 时失败，该新增纯测试与供应器均未执行。修订提交 `1fe685c424602b2bc1892f1deb0794c2e0b90ad5` 仅为该测试固定 Python 3.13.15 并更新合同／说明，供应器保持不变；新提交自身 CI 尚待结果，真实供应步骤仍未执行。Linux count-v1 仍只属于 `5d6af007`，新增 MyGo O(n) 帧快照后不能归属当前源码；当前还缺 release Desktop／Surface 原输入和各自 proof，以及新源码的 functional 19 项、idle 13 项资格。普通 CI 的 CLI／Flatpak 产物不能替代，当前源码的新 prerequisites 与 ABBA 均未执行。
 
 首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 尚无完成且可接受的性能对照。任何夹具源码或方法变更都需新完整四轮，旧失败原件不改写、部分样本不混合。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
 
