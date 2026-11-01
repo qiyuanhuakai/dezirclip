@@ -6,6 +6,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForNativeProcess } from "./native-process-deadline.mjs";
 
+export const ownershipDiscoveryPolicy = Object.freeze({ maximumAttempts: 180, requestTimeoutMs: 1500, pauseMs: 250, totalBudgetMs: 180 * (1500 + 250) });
+export function ownershipDiscoveryBudget(started, now, attempt) {
+  assert(Number.isFinite(started) && Number.isFinite(now) && now >= started, "Discovery clock must advance monotonically");
+  assert(Number.isSafeInteger(attempt) && attempt >= 0, "Invalid discovery attempt");
+  const remainingMs = Math.max(0, ownershipDiscoveryPolicy.totalBudgetMs - (now - started));
+  return { active: attempt < ownershipDiscoveryPolicy.maximumAttempts && remainingMs >= 1,
+    remainingMs, requestTimeoutMs: Math.floor(Math.min(ownershipDiscoveryPolicy.requestTimeoutMs, remainingMs)),
+    pauseMs: Math.floor(Math.min(ownershipDiscoveryPolicy.pauseMs, remainingMs)) };
+}
+export function ownershipDiscoveryStage(error, status, mainPage) {
+  if (error?.cause?.code === "ECONNREFUSED") return "tcp-refused";
+  if (error?.name === "TimeoutError" || error?.name === "AbortError") return "request-aborted";
+  if (error) return "request-or-body-failed";
+  return mainPage ? "http-main-page" : "http-without-main-page";
+}
+
 // This bridge observes the installed GUI; it never mocks invoke or emits fixture events.
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted" || process.platform !== "win32" || !process.env.RUNNER_TEMP) {
   throw new Error("Native ownership acceptance requires a disposable GitHub-hosted Windows runner");
@@ -90,16 +106,38 @@ function comparablePath(value) {
   return path.resolve(value.replace(/^\\\\\?\\/, "")).replace(/[\\/]+$/, "").toLowerCase();
 }
 try {
-  for (let attempt = 0; attempt < 180; attempt++) {
+  const discoveryStarted = performance.now();
+  evidence.discovery = { policy: ownershipDiscoveryPolicy, started_monotonic_ms: discoveryStarted,
+    scope: "Existing bounded CDP requests only; no process query, installation or GUI launch is repeated." };
+  for (let attempt = 0; attempt < ownershipDiscoveryPolicy.maximumAttempts; attempt++) {
+    const budget = ownershipDiscoveryBudget(discoveryStarted, performance.now(), attempt);
+    if (!budget.active) break;
+    const observation = { attempt, started_monotonic_ms: performance.now(), request_timeout_ms: budget.requestTimeoutMs };
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1500) });
-      const targets = await response.json();
-      evidence.observations.push({ attempt, status: response.status, targets });
-      page = targets.find(target => target.type === "page" && target.webSocketDebuggerUrl && /^(?:https?:\/\/tauri\.localhost(?:[:/]|$)|tauri:\/\/)/.test(target.url) && !/[?&]window=/.test(target.url));
-      if (page) break;
-    } catch (error) { evidence.observations.push({ attempt, error: String(error), cause: String(error.cause ?? "") }); }
-    await delay(250);
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(budget.requestTimeoutMs) });
+      observation.status = response.status;
+      const targets = await response.json(); observation.targets = targets;
+      assert.equal(response.status, 200, "Fixture CDP discovery did not return HTTP 200");
+      assert(Array.isArray(targets), "Fixture CDP discovery did not return a target list");
+      const candidate = targets.find(target => target.type === "page" && target.webSocketDebuggerUrl && /^(?:https?:\/\/tauri\.localhost(?:[:/]|$)|tauri:\/\/)/.test(target.url) && !/[?&]window=/.test(target.url));
+      observation.stage = ownershipDiscoveryStage(null, response.status, Boolean(candidate));
+      const completed = performance.now();
+      if (candidate && ownershipDiscoveryBudget(discoveryStarted, completed, attempt).active) page = candidate;
+      else if (candidate) observation.stage = "main-page-after-deadline";
+    } catch (error) {
+      observation.error = String(error); observation.cause = String(error.cause ?? "");
+      observation.stage = ownershipDiscoveryStage(error, observation.status, false);
+    } finally {
+      observation.completed_monotonic_ms = performance.now(); evidence.observations.push(observation);
+    }
+    if (page) break;
+    const rest = ownershipDiscoveryBudget(discoveryStarted, performance.now(), attempt + 1);
+    if (!rest.active) break;
+    await delay(rest.pauseMs);
   }
+  evidence.discovery.completed_monotonic_ms = performance.now();
+  evidence.discovery.elapsed_ms = evidence.discovery.completed_monotonic_ms - discoveryStarted;
+  evidence.discovery.attempts = evidence.observations.length;
   if (!page) throw new Error("Fixture application did not expose its main WebView");
   evidence.page = page;
   const debuggerUrl = new URL(page.webSocketDebuggerUrl);

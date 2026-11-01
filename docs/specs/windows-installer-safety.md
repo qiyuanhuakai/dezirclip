@@ -305,3 +305,14 @@ The original installer binaries are not automatically uploaded by that step.
 Local parser checks, guard rejection and pure path/manifest contract checks are
 the only permitted local validation; all actual package/capture claims await
 the integrated GitHub-hosted jobs at their final source revision.
+
+
+## Disposable fixture WebView startup
+
+The same-source alpha.1/alpha.2 NSIS fixtures keep the production window browser-argument configuration. Their one GUI launch receives a process-scoped `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` and a scenario-owned `WEBVIEW2_USER_DATA_FOLDER`. The caller restores only these two environment entries immediately after launching the retained original process. Wry 0.57.0's `Some(additional_browser_args)` skips its default argument builder; leaving the production configuration intact avoids that fixture-only difference. [WebView2 documents](https://learn.microsoft.com/en-us/microsoft-edge/webview2/reference/win32/webview2-idl?view=webview2-1.0.4258.31#createcorewebview2environmentwithoptions) that the environment's extra arguments append to environment options, while the user-data-folder environment value replaces the corresponding folder parameter.
+
+One new `RUNNER_TEMP/dezirclip-nsis-webview-<scenario-id>` directory is shared by the previous and upgraded GUI within the scenario. It is outside the recursively uploaded `dezirclip-upgrade-<scenario-id>` evidence directory. The existing shared application SQL profile and settings are retained. The browser directory is reused only after the original GUI confirms exit and the existing CDP-port-release check succeeds; it remains disposable runner data.
+
+Discovery retains at most 180 existing requests, each with the existing 1500 ms request timeout and 250 ms pause. A monotonic deadline additionally caps their previous theoretical 315 second maximum and rejects a main page returned after that deadline. Observations identify HTTP, missing-main-page, connection-refused and timeout stages from those requests. The installed application is never relaunched to obtain a passing observation.
+
+Hints before discovery, after discovery and after cleanup come from the same retained `Process` object and previously verified image path. They include original start time, exit state and a main-window-handle hint. A zero handle, configured debug arguments or a live process does not prove WebView creation. Cleanup writes a final original-process receipt; a cleanup or receipt error cannot replace the first acceptance failure. Existing installer, GUI ownership, database retention and actual clipboard-capture requirements remain mandatory. This fixture correction is not an attribution of the earlier missing-CDP failures and has no effect on the separately frozen performance cohort.
