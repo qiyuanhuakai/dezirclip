@@ -328,7 +328,7 @@ class Native:
 
     def process(self, pid, phase='observation'):
         if pid not in self.handles:
-            access = 0x00100000 | 0x1000 | 0x10 | 1
+            access = 0x00100000 | 0x1000 | 1
             handle = self.kernel.OpenProcess(access, False, pid)
             if not handle:
                 error = ctypes.get_last_error()
