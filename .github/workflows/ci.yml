@@ -11,6 +11,11 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      linux_release_inputs:
+        description: Supply source-bound Linux x64 release Desktop and existing Surface inputs without native acceptance
+        type: boolean
+        required: false
+        default: false
       windows_surface_performance:
         description: Run the optional release Windows Tauri/MyGo comparison after functional checks
         type: boolean
@@ -63,6 +68,9 @@ jobs:
 
       - name: Test independent Surface build identity
         run: node --test scripts/tests/surface-build.node.mjs scripts/tests/mygo-surface-patch.node.mjs
+
+      - name: Test optional Linux release input contracts without building
+        run: python -B -m unittest discover -s scripts/tests -p test_linux_release_inputs.py -v
 
       - name: Test disposable native Surface fixture contracts
         run: |
@@ -483,6 +491,21 @@ jobs:
           assert (saved['before'] in ('0', '1') and saved['after'] == current == '0') if key.exists() else saved['before'] is saved['after'] is current is None, 'Userns prerequisite no longer matches its original readback'
           print('DEZIRCLIP_USERNS_PREREQUISITE_RETAINED', {'original': saved, 'current': current}, flush=True)
           subprocess.run([sys.executable, '-I', '-B', 'scripts/tests/test_release_identities.py', 'ReleaseIdentities.test_real_readonly_directory_requires_the_nested_file_mountpoint', '-v'], check=True)
+
+      - name: Supply optional Linux x64 release inputs
+        if: github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        timeout-minutes: 60
+        env:
+          DEZIRCLIP_LINUX_RELEASE_INPUTS: 'true'
+        run: python -B scripts/build-linux-release-inputs.py
+
+      - name: Preserve optional Linux x64 release inputs and original build failures
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.linux_release_inputs && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-inputs-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dezirclip-linux-release-inputs-${{ github.run_id }}-${{ github.run_attempt }}/
+          if-no-files-found: warn
 
       - name: Record Linux x64 disk after main checks
         if: always() && runner.os == 'Linux' && runner.arch == 'X64' && matrix.name == 'linux-x86_64'
