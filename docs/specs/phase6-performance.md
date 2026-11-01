@@ -1,10 +1,10 @@
 # Phase 6 MyGo / Tauri 性能对照记录
 
-日期：2026-10-31。Phase 6 尚未通过，Phase 7 未启动，默认仍使用 Tauri。
+更新日期：2026-11-01。Phase 6 尚未通过，Phase 7 未启动，默认仍使用 Tauri。
 
 Linux X11 的新四轮受控对照已完成并独立复算。MyGo 在此配置下减少应用进程组合的内存及静态显示 CPU；已预热窗口呼出到原生可见且前台的 p95 从 62.534 ms 变为 65.642 ms，增加约 3.11 ms。此计时终点是原生窗口代理，首次可交互帧、搜索就绪等仍未测量；没有据此认定默认迁移门槛或 Phase 6 验收通过。[完整要求](v0.2-mygo-ready.md#p66-性能评估)
 
-Windows 本次发布构建对照 [41106374215](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41106374215) 已结束失败，源码为 `a11cb83fab6e057d18301c05dca6cb3e3ce0a83f`。发布版功能前置 12 项通过，第 13 项开头的原生观察被夹具拒绝，零 ABBA 轮次，尚无 Windows 正式性能结论。
+Windows 尚无完整且可接受的四轮对照。`0988d5c` 的 A1 在正式粘贴完成后因日志上限失败，`0702748` 又在自身 Service 前置清理中失败。后续 `73e1d1a` 自身普通 CI 通过，但先前 MyGo helper 退出 2 与 Desktop 清理前堆损坏的根因仍未关闭。重排后的最终源码 `b62476f` 与 `73e1d1a` 文件树相同，仍需自身审查、CI 和新的完整前置及四轮对照。各次失败和部分原件分别保留，未拼接成完整结果。
 
 ## Linux X11 受限合成配置结果
 
@@ -82,7 +82,35 @@ Windows 本次发布构建对照 [41106374215](https://github.com/qiyuanhuakai/d
 
 另一次普通 CI [41127196755](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41127196755) 的 Surface 13 项通过，但独立 NSIS OwnedUpgrade 任务失败。它仅安装了旧 alpha.1 标签的同源码 debug 夹具；GUI 原进程仍运行，180 次访问其 CDP 端口均拒连，候选 alpha.2 安装尚未开始。实际 GUI 字节匹配旧构建收据且含调试端口常量，仍不足以确定运行时为何没有监听。原包 SHA-256 `58413e81877a9194d9eff6cfe71e44d6973a0721ee5b290432d0e1be42e64708`、独立失败复核 SHA-256 `ba60199ac50fa391d5b8b41ec318ec07d583870ebd787b8787c7d736126b8020` 保留；不把该失败归为已证实的升级替换错误，也不以手动运行的其他成功覆盖。
 
-首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 尚无完成且可接受的性能对照。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
+后续 [PR #157](https://github.com/qiyuanhuakai/dezirclip/pull/157) 将 Windows 粘贴绑定到操作开始时的原外部目标与保留进程句柄，复核实际前台和焦点，并在部分输入失败时保留记录/队列。Service 还需通过能力版本协商，且两阶段粘贴保留原目标，不能在 Finish 时改投新窗口。冻结源码 `0988d5cc072bd46761efb9ebdd8d7954fcdf2f42` 的普通 CI 17 项成功，原生 Surface 13 项和新增 Service 3 个场景分别经原件复核。这次包含产品改动，不能再把先前 5d6/9a1 的产品文件一致结论套用于它；Linux 仍为独立冻结的 5d6 四轮结果，没有重新测量。
+
+该源码的新手动运行 [41156806072](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41156806072) 自身 debug 前置及发布版原生 13 项通过。A1 Tauri 的 5 次预热和 30 次正式粘贴均已完成：每次仅一次 Enter，返回的唯一目标记录全文匹配。随后可见资源流只保存 602 行、首末跨度约 150.249 秒，旧 Native 日志遇到每流 16 MiB 上限，整轮失败；hidden、B1、B2、A2 尚未开始。stdout 丢失响应 1871，却仍保存较小的 stop 1872，因而它也不是完整前缀。不能把 35 次成功粘贴当作完整性能轮次，更不能将部分资源窗口补成完整 240 秒。原件 [13026307793](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41156806072/artifacts/13026307793) 为 1,227,622 字节，SHA-256 `a71af548c911888403cadd642b9be2ae58c9a3b546eed7c42f2805ffaf5d9d43`；原失败复核 SHA-256 `a04efc394442bb51fecbc526ee5f9e3dce4881c09009c5fac2c5c7bef50f686f`。本次已知原进程全部终结，Native 退出 0，无清理前 heap 退出证据，但日志上限错误使整组不合格。
+
+[PR #158](https://github.com/qiyuanhuakai/dezirclip/pull/158) 的 `0702748ea7a09f9b5a02cdbcd64b02374c5d2476` 只替换派生性能观察器的日志保存方式：stdout/stderr 原字节流式落盘，每轮合计 128 MiB、单帧 1 MiB；首次写入/解析/配额错误永久标记失败，分别核对接收与落盘计数、摘要、关闭和回读。240 秒、250 ms、5 次预热、30 次正式输入及四轮顺序保持原值，原功能和 Service 控制器不变。9 项 Python 与 24 项 Node 纯检查在本机及该源码普通 CI 分别通过；这些纯检查不等于实际 Windows 流式观察通过。该普通 CI 的 Surface 13 项和 Service 3 项成功，但独立 NSIS OwnedUpgrade 在主 WebView 调试发现阶段失败，整次 CI 失败，不能称所有检查通过。
+
+070 的新手动运行 [41163584925](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41163584925) 自身 Surface 13 项通过；Service 3 个场景也完成，但其 Native 清理退出 1，所以整个 Service 门禁仍失败，可选发布版/ABBA 任务被跳过。首次错误为候选 2036 的创建时间早于当前父 PID 2028：分别为 `134378901727430219` 和 `134378908812181480`（Windows FILETIME 原整数）。原 Service 10012 与 Desktop 4232 的创建时间分别为 `134378908804920500`、`134378908812120493`，2036 比两个原始产品根都早约 708 秒。旧校验正确拒绝了这个父代关系；新夹具修复尚须明确证明全部原根及负归属边界，不能宽泛忽略父代错误。
+
+该次 9 个新打开但未认证的候选句柄仅被关闭，未取得归属证书、未被终止；不能从一个候选的时间证据推断其余 8 个的归属或安全终态。两个已认证原产品根通过原句柄清理终止退出 1，supervisor 无超时/终止请求，但 `discovery_complete=false`、`remaining_owned_processes=null`，bootstrap 与 scoped policy 未恢复。原件 [13029000656](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41163584925/artifacts/13029000656) 为 33,420 字节，SHA-256 `b3ec14da6f10d58368504cdb438efc8f94613f9a8596e90d88f85959c07c233e`；独立原失败复核 SHA-256 `38afcc237f03f59e43f929be3fcb1f614e8af7fef66af405216f90c9f26553ed`。这次没有实际执行新的流式性能观察，也没有新的产品粘贴、资源或 heap 失败结论。
+
+随后 [PR #159](https://github.com/qiyuanhuakai/dezirclip/pull/159) 修正安装夹具的 WebView 参数及两项已知环境变量恢复；[PR #160](https://github.com/qiyuanhuakai/dezirclip/pull/160) 增加有界负归属分类：只有新打开、尚未认证、严格早于全部原产品根及旧认证锚点的候选，才能在完整校验后仅关闭句柄。API 失败、仍不合格的父边及关闭失败继续中止，已认证证书不被删除；FILETIME 的 UTC 创建顺序仍是既有父链规则的前提，未证明宿主时钟从未调整。
+
+当时的候选 `3cc1513f4bdcdaad348d0918d0d2565c07abe84b` 的普通 CI [41278991285](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41278991285) 已结束：12 项成功、5 项失败、1 项可选跳过。自身 Windows 后端的 Surface 13 项与 Service 3 项均通过，原件的 Native 退出 0 且 stdio 已关闭，归属清理的 pending、unconfirmed、remaining 和错误均空。本次两包的排除列表为空、仅关闭候选计数为 0，不能称已在实际运行中触发新的负归属分支。
+
+五项失败是四个 NSIS 场景未发现主 WebView，以及 ARM64 Flatpak 在 OCR 英文、中文检查通过后等待隔离 Xvfb 就绪超时，尚未执行粘贴验收。四项 NSIS 均已进入主 WebView 发现阶段；仅此运行 LegacyUninstall 的原收据明确记录 PowerShell 7.6.7 下 12 个环境状态／正常及合成异常场景全通过，不能替其他任务出具同一结论。Xvfb 原脚本把 stderr 接入 PIPE，却未读取或输出，启动根因仍未确定。这次没有发起手动发布版对照，不以普通 Windows 功能成功覆盖整次 CI 的失败。
+
+后续 [PR #161](https://github.com/qiyuanhuakai/dezirclip/pull/161) 为 Xvfb 保留直接 stderr、单次启动的原 15 秒就绪期限及有界原进程清理。其原提交 `c3943ae` 的 CI [41283880025](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41283880025) 中，x64 和 ARM64 最终 Platform OCR／粘贴门禁均通过；历史 Xvfb 超时原因仍未知。同一次 CI 的四个 NSIS 场景失败，Surface 第 9 项受保护搜索未完成；原件记录 MyGo helper 4604 退出 2，未记录对它的清理终止请求，整轮仍失败，不能据此认定完整候选合格。
+
+该 Surface 失败又暴露诊断问题：未找到匹配的可见 Surface 时 Python 发出空错误字符串，Node 按真假判断而错误地接受回复，随后报 `elements` 异常。原始子进程退出、空错误回复和完整归属清理证据分别保留。[PR #162](https://github.com/qiyuanhuakai/dezirclip/pull/162) 明确拒绝所有带 error 字段或缺 value 的回复，并保留合法空值；作者、Root 与独立复核者各完成 116 项纯检查。这只是诊断修复，尚未证明 helper 的实际退出根因。另查到 Panel 原地清零列表状态、旧 MyGo 渲染帧仍引用它的可达风险；[PR #163](https://github.com/qiyuanhuakai/dezirclip/pull/163) 改为替换列表状态实例，并为渲染及提交回调增加可撤销快照、代际与记录 ID 校验。撤销清除快照已存文字，但不承诺主动清洗上游已经物化的渲染／UIA 树。
+
+安装夹具的后续提交 `5374742` 复用既有可恢复的 WebView 权限配置事务。自身 CI [41285988531](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41285988531) 为 17 项成功、1 项可选跳过，当前源码自动审查无新增缺陷。四个 GUI NSIS 场景的五个阶段原件均独立核验：实际高权限配置、原进程身份、CDP、旧历史、相应捕获及配置恢复通过。该结论只属于自身源码与运行；#154 和 #158 尚未包含该修复时的 OwnedUpgrade 失败继续保留，不能借后续成功视为旧 CI 全绿。
+
+另一旧候选 `96058c13ac2eaacc4b6934c9361349ca92fa4b61` 的自身 CI [41286629791](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41286629791) 中，Windows x64 的 Surface 前 8 项通过，第 9 项在显示主窗口时未完成。原 Desktop 8336 在清理前退出 `0xC0000374`，未记录对它的 kill／forced 终止；这与 `c3943ae` 的 MyGo helper 4604 退出 2 是不同原进程、不同失败。原件 [13076740430](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41286629791/artifacts/13076740430) 为 59,601 字节，SHA-256 `b6dc5fd32d148628a8743209c9fecbc78c68c74841314e18a2d14bc0217fb8ee`。该堆损坏记录不能改写为正常清理退出，根因仍未关闭。
+
+包含列表帧修复的 `73e1d1a820fc1914c3b7ffb9e4d6cd6ab9789031` 自身 CI [41289634097](https://github.com/qiyuanhuakai/dezirclip/actions/runs/41289634097)（attempt 1，报告合并提交 `5e17ea74fd19bf25fb3140baf138829dc21c52e6`）为 17 项成功、1 项可选跳过。自身 Surface 13 项、Service 3 个场景及四个 GUI NSIS 场景的五个阶段原件分别复核通过。新增 9 个纯模型测试函数位于现有 `go test ./...` 的覆盖范围，该源码的现有 Go 测试步骤通过；这与前述 116 项 Python／Node 纯检查分别归属，未在本机执行 Go 或原生程序。这次成功不证明 Panel 风险就是 helper 4604 的实际退出原因，也不关闭 Desktop 8336 的堆损坏根因。
+
+为使 #154 和 #158 自身包含安装夹具修复，已将 #159 的三次提交从 `0702748` 后前移到 #151 的 `f7ef5ab` 后，再顺序重排 #154、#157、#158、#160、#161、#162、#163。各 PR 改动范围与 23 次提交的差异核对均保持一致；最终 #163 为 `b62476fb217cb3141f02df5cfdd91e61681d8c4b`，完整 Git tree 与原 `73e1d1a` 相同。各新提交仍待自身普通 CI 与自动审查结果，不能继承旧提交的通过结论；截至此次更新，尚未发起新的手动发布版前置或 ABBA 对照。
+
+首次冷启动、首次可交互帧、搜索/键盘延迟、GPU/显存、后台唤醒、IME、DPI 与多屏仍未完成同口径对照。当前仅证明所述 Linux 窗口代理与资源范围；Windows 尚无完成且可接受的性能对照。任何夹具源码或方法变更都需新完整四轮，旧失败原件不改写、部分样本不混合。Phase 6 和 Phase 7 继续保留未通过/未启动状态。
 
 ## 补测方法与环境条件
 
