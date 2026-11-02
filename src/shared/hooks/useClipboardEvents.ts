@@ -53,7 +53,7 @@ export const useClipboardEvents = ({ onUpdated, onRemoved, onChanged }: UseClipb
       captured.invalidate();
       onChangedRef.current();
     });
-    const stopPrivacy = subscribePrivacyInvalidation(() => { captured.invalidate(); });
+    const stopPrivacy = subscribePrivacyInvalidation(scope => { if (scope === "all") captured.invalidate(); });
     void Promise.all([unlistenCaptured, unlistenUpdate, unlistenRemove, unlistenChanged])
       .catch(() => {
         if (!disposed) onChangedRef.current();

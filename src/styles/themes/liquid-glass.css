@@ -602,6 +602,12 @@ body.has-custom-bg.theme-liquid-glass #root *::after {
 }
 
 /* Glass material texture overlay — simulates frosted glass grain */
+.theme-liquid-glass.quick-paste #root,
+.theme-liquid-glass.region-select #root {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .theme-liquid-glass #root::before {
   content: "";
   position: absolute;

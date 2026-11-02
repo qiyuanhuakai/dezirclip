@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "lucide-react";
+import { schedulePreview } from "../../../shared/lib/previewQueue";
 
 interface EmojiPanelProps {
   t: (key: string) => string;
@@ -18,16 +19,26 @@ type EmojiGroup = { name: string; emojis: string[] };
 type EmojiData = { groups?: EmojiGroup[] };
 
 function FavoriteImage({ path, name }: { path: string; name: string }) {
+  const image = useRef<HTMLImageElement>(null);
+  const [visible, setVisible] = useState(false);
   const [result, setResult] = useState<{ path: string; src: string } | null>(null);
   useEffect(() => {
-    let disposed = false;
+    const target = image.current;
+    if (!target) return;
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { rootMargin: "80px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
     setResult(null);
-    void invoke<string>("get_emoji_favorite_resource", { path }).then(src => {
-      if (!disposed && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src)) setResult({ path, src });
+    if (!visible) return;
+    void schedulePreview(controller.signal, () => invoke<string>("get_emoji_favorite_resource", { path })).then(src => {
+      if (!controller.signal.aborted && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(src)) setResult({ path, src });
     }).catch(() => undefined);
-    return () => { disposed = true; };
-  }, [path]);
-  return <img src={result?.path === path ? result.src : undefined} alt={name} />;
+    return () => controller.abort();
+  }, [path, visible]);
+  return <img ref={image} decoding="async" src={visible && result?.path === path ? result.src : undefined} alt={name} />;
 }
 
 const FALLBACK_GROUPS: EmojiGroup[] = [

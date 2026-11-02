@@ -9,6 +9,7 @@ import { privacyBlurScope, samePrivacyAuthority, sharesPrivacyFocusLifecycle } f
 import type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 import { isPinnedPreviewLabel } from "./previewWindowLabels";
 import { createHiddenPreparationGate } from "./hiddenPreparation";
+import { readResumeAuthority } from "./mainWindowResume";
 export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
 export interface PrivacyViewState {
@@ -18,6 +19,7 @@ export interface PrivacyViewState {
   generation: number;
 }
 const fence = createPrivacyFence();
+const listFence = createPrivacyFence();
 const reveals = new WeakMap<ClipboardEntry, ReturnType<typeof fence.capture>>();
 let model: PrivacyViewState = { phase: "loading", snapshot: null, pending: false, generation: 0 };
 const observers = new Set<() => void>();
@@ -50,7 +52,10 @@ const publish = (next: Partial<PrivacyViewState>) => {
   observers.forEach(observer => observer());
 };
 const revoke = (scope: PrivacyInvalidationScope = "all") => {
-  hiddenPreparation.revoke();
+  if (scope === "all") {
+    hiddenPreparation.revoke();
+    listFence.revoke();
+  }
   fence.revoke();
   invalidators.forEach(invalidate => { try { invalidate(scope); } catch { /* The request fence remains revoked. */ } });
 };
@@ -267,17 +272,25 @@ export async function setPrivacySession(enabled: boolean, durationMs: number | n
 
 export async function invokePrivacyBound<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (model.phase !== "ready" || (command === "get_privacy_entry" && args?.reveal !== false && !activeView)) throw new Error("PrivacyStateUnavailable");
-  const token = fence.capture();
+  // Only commands whose backend projects protected records to placeholders can survive blur.
+  const guard = publicReadCommands.has(command) ? listFence : fence;
+  const token = guard.capture();
   const result = await invoke<T>(command, args);
-  if (!fence.isCurrent(token) || model.phase !== "ready") throw new Error("PrivacyEpochChanged");
+  if (!guard.isCurrent(token) || model.phase !== "ready") throw new Error("PrivacyEpochChanged");
   return result;
 }
 
-export function beginPrivacyAccess() {
+const publicReadCommands = new Set(["get_clipboard_history", "search_clipboard_history", "get_tag_items_page",
+  "get_captured_entry_summary", "get_history_resource_preview", "get_all_tags_info"]);
+
+export const privacyListGeneration = () => listFence.current();
+
+export function beginPrivacyAccess(scope: "reveal" | "list" = "reveal") {
   const epoch = model.snapshot?.privacy_epoch;
   if (model.phase !== "ready" || epoch === undefined) return null;
-  const token = fence.capture();
-  return { epoch, isCurrent: () => fence.isCurrent(token) && model.phase === "ready" };
+  const guard = scope === "list" ? listFence : fence;
+  const token = guard.capture();
+  return { epoch, isCurrent: () => guard.isCurrent(token) && model.phase === "ready" };
 }
 
 /** An owner-authorized preview can prepare offscreen without pretending it received focus. */
@@ -319,19 +332,23 @@ export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurren
 export async function prepareMainWindowResume(requestIsCurrent: () => boolean) {
   if (getCurrentWindow().label !== "main" || !requestIsCurrent()) throw new Error("PrivacyStateUnavailable");
   const started = lifecycle;
-  const token = fence.capture();
+  const token = listFence.capture();
   visibilityRevision += 1;
   const lease = hiddenPreparation.begin("main", () => requestIsCurrent()
-    && started === lifecycle && fence.isCurrent(token));
+    && started === lifecycle && listFence.isCurrent(token));
   viewSuspended = false;
   activeView = false;
   try {
-  await refreshPrivacyState();
+  const status = await invoke<{ state: { history_revision: number }; privacy: { active: boolean; expires_at_ms: number | null } }>("get_clipboard_host_status");
+  const authority = readResumeAuthority(status);
+  if (!lease.isCurrent() || !requestIsCurrent()) throw new Error("PrivacyEpochChanged");
+  accept({ history_revision: status.state.history_revision, privacy_epoch: authority.epoch,
+    session: { active: status.privacy.active, expires_at_ms: status.privacy.expires_at_ms } });
   await releaseVisiblePreparation(lease);
-  if (!requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token) || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
-  const access = beginPrivacyAccess();
+  if (!requestIsCurrent() || started !== lifecycle || !listFence.isCurrent(token) || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
+  const access = beginPrivacyAccess("list");
   if (!access) throw new Error("PrivacyStateUnavailable");
-  return { ...access, release: lease.release };
+  return { ...access, authority, release: lease.release };
   } catch (error) {
     lease.release();
     throw error;

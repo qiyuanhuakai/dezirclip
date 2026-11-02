@@ -6,6 +6,7 @@ import { beginPrivacyAccess, forgetPrivacyReveal, getPrivacyEntry, getPrivacyVie
 import { concealSensitiveEntry, isSensitiveEntry } from '../../../shared/lib/privacyRuntime';
 import { clearRichTextSnapshots } from '../../../shared/lib/richTextSnapshot';
 import { usePlatformCapabilities } from '../../../shared/hooks/usePlatformCapabilities';
+import { schedulePreview } from '../../../shared/lib/previewQueue';
 import { ask } from '@tauri-apps/plugin-dialog';
 import { capturePrivacyMetadataIntent, needsMetadataPersistenceConfirmation, privacyMetadataWriteArgs } from '../../../shared/lib/privacyMetadataIntent';
 import type { PrivacyMetadataIntent } from '../../../shared/lib/privacyMetadataIntent';
@@ -95,6 +96,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
     }, []);
     useEffect(() => () => forgetPrivacyReveal(item), [item]);
     useEffect(() => subscribePrivacyInvalidation(scope => {
+        if (scope === 'reveal' && !isSensitiveEntry(currentItem.current)) return;
         detailGeneration.current += 1;
         pendingReveal.current = null;
         setRevealPending(false);
@@ -129,10 +131,11 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
         if (!needsResource) { setResourceState(null); return; }
         if (privacy.phase !== 'ready' || epoch === undefined) return;
         if (resourceState?.source === item && resourceState.epoch === epoch && resourceState.phase === 'ready') return;
-        const access = beginPrivacyAccess();
+        const access = beginPrivacyAccess("list");
+        const controller = new AbortController();
         if (access) {
             setResourceState({ source: item, epoch, phase: 'loading', value: null });
-            void invokePrivacyBound<ClipboardEntry>('get_history_resource_preview', { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, maxDimension: 480 })
+            void schedulePreview(controller.signal, () => invokePrivacyBound<ClipboardEntry>('get_history_resource_preview', { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, maxDimension: 480 }))
                 .then(value => {
                     if (disposed || !mounted.current || !access.isCurrent() || currentItem.current !== item) return;
                     if (!matchesEntryIdentity(value, item.id, item.host_instance_id) || isSensitiveEntry(value)) throw new Error('PrivacyReadSuperseded');
@@ -143,7 +146,7 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
                     }
                 });
         }
-        return () => { disposed = true; };
+        return () => { disposed = true; controller.abort(); };
     }, [item, needsResource, privacy.phase, privacy.snapshot?.privacy_epoch, privacy.generation]);
 
     useEffect(() => {

@@ -1,5 +1,5 @@
 export interface ResumeAuthority { instanceId: string; epoch: number }
-export interface ResumeAccess { epoch: number; isCurrent: () => boolean; release?: () => void }
+export interface ResumeAccess { epoch: number; authority: ResumeAuthority; isCurrent: () => boolean; release?: () => void }
 export interface PreparedResume { requestId: number | null; authority: ResumeAuthority; isCurrent: () => boolean; isRequestCurrent: () => boolean }
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
@@ -35,10 +35,11 @@ export function createMainWindowResume(deps: {
         owner.access = access;
         if (!current()) { access.release?.(); return; }
         const authorized = () => current() && access.isCurrent();
-        const before = readResumeAuthority(await deps.readAuthority());
+        const before = access.authority;
         if (!authorized() || before.epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
         if (!(await deps.loadHistory())) throw new Error("HistoryResumeFailed");
-        const after = readResumeAuthority(await deps.readAuthority());
+        // The native show command validates ownership at commit. An already visible window has no native commit.
+        const after = requestId === null ? readResumeAuthority(await deps.readAuthority()) : before;
         if (!authorized() || after.epoch !== before.epoch || after.instanceId !== before.instanceId) throw new Error("ClipboardHostInstanceChanged");
         deps.prepared({ requestId, authority: after, isCurrent: authorized, isRequestCurrent: current });
       } catch {

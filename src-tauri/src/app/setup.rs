@@ -120,7 +120,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     setup_tray(app, settings.hide_tray_icon);
 
     // 9. Theme Initial Application
-    apply_initial_theme(app);
+    apply_initial_theme(app.handle());
 
     // 9a. Idle Webview Destroyer (low-memory optimization)
     crate::app::idle_destroyer::spawn_idle_destroyer(app_handle.clone());
@@ -508,19 +508,27 @@ fn setup_state(
     app.manage(SearchHistory::default());
 }
 
+fn apply_saved_size(window: &tauri::WebviewWindow, width: Option<u32>, height: Option<u32>) {
+    if let (Some(w), Some(h)) = (width, height) {
+        if w >= 360 && h >= 240 {
+            let _ = window.set_size(tauri::PhysicalSize::new(w, h));
+        }
+    }
+}
+
+pub(super) fn restore_recreated_appearance(app: &AppHandle, window: &tauri::WebviewWindow) {
+    let db = app.state::<DbState>();
+    let dimension = |key| db.settings_repo.get(key).ok().flatten().and_then(|s| s.parse().ok());
+    apply_saved_size(window, dimension("app.window_width"), dimension("app.window_height"));
+    apply_initial_theme(app);
+}
+
 fn setup_main_window(app: &App, s: &StartupSettings) {
     let effective_pinned = s.window_pinned && !dzc_platform::runtime::is_native_wayland();
     WINDOW_PINNED.store(effective_pinned, Ordering::Relaxed);
 
     if let Some(window) = app.get_webview_window("main") {
-        if let (Some(w), Some(h)) = (s.window_width, s.window_height) {
-            if w >= 360 && h >= 240 {
-                let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
-                    width: w,
-                    height: h,
-                }));
-            }
-        }
+        apply_saved_size(&window, s.window_width, s.window_height);
         let _ = window.set_always_on_top(effective_pinned);
         let _ = window.set_focusable(!effective_pinned);
 
@@ -1483,7 +1491,7 @@ mod tray_tests {
     }
 }
 
-fn apply_initial_theme(app: &App) {
+fn apply_initial_theme(app: &AppHandle) {
     let db_state = app.state::<DbState>();
     let theme = db_state
         .settings_repo
@@ -1497,7 +1505,7 @@ fn apply_initial_theme(app: &App) {
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = crate::app::commands::set_theme(
-            app.handle().clone(),
+            app.clone(),
             window,
             app.state::<SettingsState>(),
             db_state,

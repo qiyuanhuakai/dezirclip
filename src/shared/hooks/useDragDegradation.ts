@@ -37,9 +37,15 @@ export const useDragDegradation = () => {
       if (isDragHandleTarget(e.target)) actions.enter();
     };
     const onWindowBlur = () => actions.reset();
+    const onListScroll = (event: Event) => {
+      if (event.target instanceof HTMLElement && event.target.closest(".virtual-list-wrapper")) actions.hold();
+    };
 
     document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("scroll", onListScroll, { capture: true, passive: true });
     window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("resize", actions.hold);
+    window.visualViewport?.addEventListener("resize", actions.hold);
 
     let disposed = false;
     let unlisten: (() => void) | null = null;
@@ -61,7 +67,10 @@ export const useDragDegradation = () => {
     return () => {
       disposed = true;
       document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("scroll", onListScroll, true);
       window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("resize", actions.hold);
+      window.visualViewport?.removeEventListener("resize", actions.hold);
       actions.reset();
       if (unlisten) unlisten();
     };

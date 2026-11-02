@@ -43,9 +43,10 @@ export const useHistoryFetch = ({
   const historyLengthRef = useRef(historyLength);
   const [appliedSearch, setAppliedSearch] = useState<string | null>(null);
   useEffect(() => subscribePrivacyInvalidation((scope) => {
+    if (scope === "reveal") return;
     fetchSeqRef.current += 1;
     lastRequestedOffsetRef.current = null;
-    if (scope === "all") setAppliedSearch(null);
+    setAppliedSearch(null);
   }), []);
 
   useEffect(() => {
@@ -74,7 +75,7 @@ export const useHistoryFetch = ({
 
         const selectedTag = hasSearch ? parseTagFilter(debouncedSearch) : null;
         if (selectedTag !== null) {
-          const access = beginPrivacyAccess();
+          const access = beginPrivacyAccess("list");
           if (!access) throw new Error("PrivacyStateUnavailable");
           const page = selectedTag ? await invokePrivacyBound<TagItemsPage>("get_tag_items_page", {
             tag: selectedTag, query: "", sortBy: "time", limit: Math.min(pageSize, 100), offset: baseOffset, expectedEpoch: access.epoch

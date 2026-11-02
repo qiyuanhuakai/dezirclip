@@ -690,7 +690,6 @@ pub fn set_navigation_mode(active: bool) -> Result<(), String> {
 pub fn notify_main_window_painted(app: AppHandle) -> Result<(), String> {
     idle_destroyer::mark_main_window_painted();
     crate::app::surface_supervisor::notify_main_shown(&app);
-    crate::app::auxiliary_windows::schedule_prewarm(app);
     Ok(())
 }
 

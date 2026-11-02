@@ -257,6 +257,7 @@ pub fn set_theme(
         }
 
         if plan.force_transparent_webview {
+            crate::infrastructure::windows_api::webview_environment::extend_main_frame(&window);
             webview_memory::force_transparent_background(&window);
         }
     }

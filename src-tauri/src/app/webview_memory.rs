@@ -50,8 +50,7 @@ fn apply_transparent_background(window: &tauri::WebviewWindow) {
     let label_for_err = label.clone();
     if let Err(err) = window.with_webview(move |webview| {
         let result = unsafe {
-            webview
-                .controller()
+            webview.controller()
                 .cast::<ICoreWebView2Controller2>()
                 .and_then(|controller| {
                     controller.SetDefaultBackgroundColor(COREWEBVIEW2_COLOR {
@@ -93,10 +92,12 @@ fn apply_memory_target(
     let label = window.label().to_string();
     let label_for_err = label.clone();
     if let Err(err) = window.with_webview(move |webview| {
+        let controller = webview.controller();
+        if let Err(err) = unsafe { controller.SetIsVisible(target == WebviewMemoryTarget::Normal) } {
+            crate::warn!("[webview-memory] Failed to update {label} controller visibility ({reason}): {err:?}");
+        }
         let result = unsafe {
-            webview
-                .controller()
-                .CoreWebView2()
+            controller.CoreWebView2()
                 .and_then(|core| core.cast::<ICoreWebView2_19>())
                 .and_then(|core| {
                     core.SetMemoryUsageTargetLevel(match target {

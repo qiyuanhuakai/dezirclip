@@ -1,11 +1,9 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-use crate::app_state::SettingsState;
-use crate::global_state::{IS_DESTROYED, WINDOW_LIFECYCLE};
 
 // Creation and showing must be one operation: the idle collector otherwise
 // sees a newly built, still-hidden overlay and destroys it before its first use.
@@ -16,7 +14,6 @@ static REGION_SELECT_ACTIVITY_MS: AtomicU64 = AtomicU64::new(0);
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(0);
 static QUICK_PASTE_INSTANCE: AuxiliaryInstance = AuxiliaryInstance::new();
 static REGION_SELECT_INSTANCE: AuxiliaryInstance = AuxiliaryInstance::new();
-static PREWARM_PENDING: AtomicBool = AtomicBool::new(false);
 
 struct AuxiliaryInstance {
     generation: AtomicU64,
@@ -129,64 +126,6 @@ fn wait_until_ready(label: &str) -> Result<(), String> {
         return Err(format!("Auxiliary window '{label}' is not ready"));
     }
     Ok(())
-}
-
-fn can_prewarm(app: &AppHandle) -> bool {
-    WINDOW_LIFECYCLE.load(Ordering::SeqCst) == crate::app::idle_destroyer::LIFECYCLE_OPEN
-        && !IS_DESTROYED.load(Ordering::SeqCst)
-        && app.get_webview_window("main").is_some()
-}
-
-fn uses_webview_overlay(label: &str, mygo_selected: bool) -> bool {
-    label != "quick-paste" || !mygo_selected
-}
-
-fn prewarm_enabled_windows(app: &AppHandle) {
-    for label in ["quick-paste", "region-select"] {
-        let enabled = app
-            .try_state::<SettingsState>()
-            .map(|settings| match label {
-                "quick-paste" => settings.quick_paste_enabled.load(Ordering::Relaxed),
-                _ => settings.screenshot_enabled.load(Ordering::Relaxed),
-            })
-            .unwrap_or(false);
-        if !enabled || !can_prewarm(app)
-            || !uses_webview_overlay(label, crate::app::surface_supervisor::enabled(app)) {
-            continue;
-        }
-        let _guard = match WINDOW_OPERATIONS.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        if !can_prewarm(app) {
-            return;
-        }
-        // The selected renderer may change while creation waits for this lock.
-        if !uses_webview_overlay(label, crate::app::surface_supervisor::enabled(app)) {
-            continue;
-        }
-        if app.get_webview_window(label).is_none() {
-            match build_window(app, label) {
-                Ok(window) => {
-                    crate::app::webview_memory::lower_window_memory(&window, "auxiliary-prewarm");
-                }
-                Err(err) => crate::warn!("[auxiliary-windows] Prewarm failed: {err}"),
-            }
-        }
-    }
-}
-
-/// Warm enabled overlays after the main frontend is ready, keeping the first
-/// frame and fully idle periods free of auxiliary creation work.
-pub fn schedule_prewarm(app: AppHandle) {
-    if PREWARM_PENDING.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(250));
-        prewarm_enabled_windows(&app);
-        PREWARM_PENDING.store(false, Ordering::SeqCst);
-    });
 }
 
 fn activity_clock_ms() -> u64 {
@@ -314,14 +253,11 @@ fn destroy_windows_locked(app: &AppHandle, labels: &[&str], keep_visible: bool, 
 
 #[cfg(test)]
 mod tests {
-    use super::{append_instance_query, should_collect, uses_webview_overlay, wait_for_instance_ready, AuxiliaryInstance, Ordering};
+    use super::{append_instance_query, should_collect, wait_for_instance_ready, AuxiliaryInstance, Ordering};
     use std::time::Duration;
 
     #[test]
-    fn mygo_does_not_prewarm_a_second_renderer_or_discard_a_visible_fallback() {
-        assert!(!uses_webview_overlay("quick-paste", true));
-        assert!(uses_webview_overlay("quick-paste", false));
-        assert!(uses_webview_overlay("region-select", true));
+    fn collector_preserves_a_visible_fallback() {
         assert!(should_collect(false, false, 9_000, 9_001, 0));
         assert!(!should_collect(true, false, 9_000, 9_001, 0));
     }

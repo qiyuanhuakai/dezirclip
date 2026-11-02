@@ -8,7 +8,6 @@ interface UseScrollToSelectionOptions {
   selectedIndex: number;
   isKeyboardMode: boolean;
   idPrefix?: string;
-  pinnedCount?: number;
   virtualListRef?: RefObject<VirtualClipboardListHandle | null>;
 }
 
@@ -17,24 +16,13 @@ export const useScrollToSelection = ({
   selectedIndex,
   isKeyboardMode,
   idPrefix = "clipboard-item-",
-  pinnedCount = 0,
   virtualListRef
 }: UseScrollToSelectionOptions) => {
   useEffect(() => {
     if (isKeyboardMode && selectedIndex >= 0 && selectedIndex < filteredHistory.length) {
       const item = filteredHistory[selectedIndex];
-      const isPinned = selectedIndex < pinnedCount;
-      if (isPinned && virtualListRef?.current?.scrollToTop) {
-        virtualListRef.current.scrollToTop();
-        return;
-      }
-
-      const targetIndex = selectedIndex - pinnedCount;
-      if (virtualListRef?.current && targetIndex >= 0) {
-        virtualListRef.current.scrollToItem(targetIndex);
-        return;
-      } else if (virtualListRef?.current && pinnedCount > 0) {
-        virtualListRef.current.scrollToItem(0);
+      if (virtualListRef?.current) {
+        virtualListRef.current.scrollToItem(selectedIndex);
         return;
       }
 
@@ -43,7 +31,7 @@ export const useScrollToSelection = ({
         el.scrollIntoView({ behavior: "auto", block: "nearest" });
       }
     }
-  }, [filteredHistory, selectedIndex, isKeyboardMode, idPrefix, pinnedCount, virtualListRef]);
+  }, [filteredHistory, selectedIndex, isKeyboardMode, idPrefix, virtualListRef]);
 };
 
 

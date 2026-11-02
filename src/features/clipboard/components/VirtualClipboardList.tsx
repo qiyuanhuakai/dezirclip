@@ -1,19 +1,26 @@
 import React, { useRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import type { ListRange } from 'react-virtuoso';
+import type { ListRange, ScrollSeekPlaceholderProps } from 'react-virtuoso';
 import type { ClipboardEntry } from "../../../shared/types";
 import { createScrollCoalescer } from "../../../shared/lib/scrollCoalesce";
+import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import type { VirtualClipboardListHandle, VirtualClipboardListProps } from "../types";
 
 type VirtuosoListContext = {
-    header?: React.ReactNode;
+    items: ClipboardEntry[];
     hasMore: boolean;
     isLoading: boolean;
 };
 
-const ListHeader = ({ context }: { context?: VirtuosoListContext }) => {
-    const header = context?.header;
-    return header ? <div className="list-header">{header}</div> : null;
+const ScrollingRow = ({ index, height, context }: ScrollSeekPlaceholderProps & { context?: VirtuosoListContext }) => {
+    const item = context?.items[index];
+    const summary = item && !isSensitiveEntry(item) && item.content_type === "text" ? item.preview.slice(0, 160) : "•••";
+    return <div className="history-scroll-preview" style={{ height }} aria-hidden="true">{summary}</div>;
+};
+
+const fastScroll = {
+    enter: (velocity: number) => Math.abs(velocity) > 1200,
+    exit: (velocity: number) => Math.abs(velocity) < 350,
 };
 
 const ListFooter = ({ context }: { context?: VirtuosoListContext }) => {
@@ -46,8 +53,7 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
             isKeyboardMode,
             onScroll,
             onScrollFrame,
-            compactMode,
-            header
+            compactMode
         } = props;
 
         const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -169,15 +175,15 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
         }, [compactMode, renderItem]);
 
         const components = useMemo(() => ({
-            Header: ListHeader,
+            ScrollSeekPlaceholder: ScrollingRow,
             Footer: ListFooter
         }), []);
 
         const context = useMemo(() => ({
-            header,
+            items,
             hasMore,
             isLoading
-        }), [header, hasMore, isLoading]);
+        }), [items, hasMore, isLoading]);
 
         return (
             <div
@@ -195,7 +201,8 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
                     style={{ height: '100%' }}
                     endReached={handleEndReached}
                     rangeChanged={handleRangeChanged}
-                    overscan={200} // Pre-render 200px of content for smoother scrolling
+                    scrollSeekConfiguration={fastScroll}
+                    overscan={120}
                 />
             </div>
         );

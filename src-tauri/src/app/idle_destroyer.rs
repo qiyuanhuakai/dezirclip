@@ -51,6 +51,7 @@ pub const FIRST_PAINT_TIMEOUT_MS: u64 = 1_500;
 const FIRST_PAINT_POLL: Duration = Duration::from_millis(8);
 static RESUME_REQUIRED_REQUEST: AtomicU64 = AtomicU64::new(0);
 static RESUME_READY_REQUEST: AtomicU64 = AtomicU64::new(0);
+static GPU_SWITCH_WAITING: AtomicBool = AtomicBool::new(false);
 static EDGE_SHOW_PENDING: AtomicBool = AtomicBool::new(false);
 
 pub fn should_queue_edge_resume(show_pending: bool, edge_pending: bool) -> bool {
@@ -367,14 +368,14 @@ pub fn try_destroy_idle(app: &AppHandle) -> bool {
         now_ms().saturating_sub(hidden_since) / 1000
     );
 
-    if !destroy_main_window(app, false) {
+    if !destroy_main_window(app) {
         abort_closing();
         return false;
     }
 
     destroy_discardable_overlays(app, true);
 
-    finish_main_destroy(app, false);
+    finish_main_destroy(app, None);
 
     if WINDOW_LIFECYCLE.load(Ordering::SeqCst) == LIFECYCLE_CLOSED {
         service_pending_recreate(app);
@@ -438,28 +439,13 @@ fn collect_parked_overlays_while_destroyed(app: &AppHandle) {
     destroy_discardable_overlays(app, true);
 }
 
-fn destroy_main_window(app: &AppHandle, wait_for_browser_exit: bool) -> bool {
+fn destroy_main_window(app: &AppHandle) -> bool {
     crate::app::window_manager::disable_main_navigation();
-    let Some(win) = app.get_webview_window("main") else {
-        webview_environment::mark_main_browser_process_exited();
-        return true;
-    };
-
-    if wait_for_browser_exit {
-        webview_environment::reset_main_browser_process_exit();
-        if !webview_environment::watch_main_browser_process_exit(&win) {
-            webview_environment::mark_main_browser_process_exited();
-            return false;
-        }
-    } else {
-        webview_environment::mark_main_browser_process_exited();
-    }
-
+    let Some(win) = app.get_webview_window("main") else { return true; };
     // A rejected destroy leaves the label registered, so the caller must unwind
     // instead of waiting for a release that can never arrive.
     if let Err(err) = win.destroy() {
         crate::warn!("[idle-destroyer] destroy() failed for the main window: {err}");
-        webview_environment::mark_main_browser_process_exited();
         return false;
     }
     true
@@ -477,28 +463,15 @@ fn wait_for_label_release(app: &AppHandle, timeout: Duration) -> bool {
     true
 }
 
-fn finish_main_destroy(app: &AppHandle, wait_for_browser_exit: bool) -> bool {
+fn finish_main_destroy(app: &AppHandle, browser: Option<&webview_environment::BrowserProcess>) -> bool {
     let label_released = wait_for_label_release(app, LABEL_RELEASE_TIMEOUT);
-    let mut browser_exited = if wait_for_browser_exit {
-        webview_environment::wait_for_main_browser_process_exit(BROWSER_PROCESS_EXIT_TIMEOUT)
-    } else {
-        true
-    };
-
+    let browser_exited = browser.is_none_or(|process| process.exited_within(BROWSER_PROCESS_EXIT_TIMEOUT));
     if !label_released {
-        crate::warn!("[idle-destroyer] Timed out waiting for label to be freed after destroy.");
+        crate::warn!("[idle-destroyer] Timed out waiting for the main window label");
     }
-    if wait_for_browser_exit && !browser_exited {
-        crate::warn!(
-            "[idle-destroyer] Timed out waiting for WebView2 browser process exit after destroy."
-        );
-        // Stop waiting on a browser process that already blew its own budget:
-        // `complete_pending_destroy` treats this flag as a hard precondition, so
-        // leaving it clear would strand the lifecycle in `Closing` forever.
-        webview_environment::mark_main_browser_process_exited();
-        browser_exited = true;
+    if !browser_exited {
+        crate::warn!("[idle-destroyer] GPU switch could not confirm browser exit; reopening remains available");
     }
-
     LAST_HIDDEN_TIMESTAMP.store(0, Ordering::SeqCst);
     let (lifecycle, is_destroyed, completed) =
         destroy_completion_state(label_released, browser_exited);
@@ -523,6 +496,7 @@ fn destroy_completion_state(label_released: bool, browser_exited: bool) -> (u8, 
 /// Runs on the ticker thread, never on a caller's thread, so the bounded waits
 /// it performs cannot block the main thread.
 fn complete_pending_destroy(app: &AppHandle) -> bool {
+    if GPU_SWITCH_WAITING.load(Ordering::Acquire) { return false; }
     let expired = closing_watchdog_expired(
         CLOSING_SINCE_MS.load(Ordering::SeqCst),
         now_ms(),
@@ -533,7 +507,6 @@ fn complete_pending_destroy(app: &AppHandle) -> bool {
         crate::warn!(
             "[idle-destroyer] Teardown exceeded the {CLOSING_WATCHDOG_MS}ms budget; forcing it to settle."
         );
-        webview_environment::mark_main_browser_process_exited();
     }
 
     if app.get_webview_window("main").is_some() {
@@ -545,10 +518,6 @@ fn complete_pending_destroy(app: &AppHandle) -> bool {
             IS_DESTROYED.store(false, Ordering::SeqCst);
             RECREATE_PENDING.store(false, Ordering::SeqCst);
         }
-        return false;
-    }
-
-    if !webview_environment::main_browser_process_exited() {
         return false;
     }
 
@@ -655,7 +624,8 @@ pub fn recreate_main_window(app: &AppHandle) -> bool {
     cancel_pending_show();
 
     match WebviewWindowBuilder::from_config(app, config).and_then(|b| b.build()) {
-        Ok(_) => {
+        Ok(window) => {
+            super::setup::restore_recreated_appearance(app, &window);
             WINDOW_LIFECYCLE.store(LIFECYCLE_OPEN, Ordering::SeqCst);
             IS_DESTROYED.store(false, Ordering::SeqCst);
             // Defensive: clear the hidden timestamp so a racing tick from the
@@ -808,6 +778,12 @@ where
         .is_some_and(|window| main_view_needs_resume(window.is_visible().unwrap_or(false), IS_HIDDEN.load(Ordering::Acquire)));
     if needs_resume {
         arm_main_window_resume(request);
+        if let Some(window) = app.get_webview_window("main") {
+            if !window.is_visible().unwrap_or(true) {
+                // Layout and thumbnail work may resume while the native window still shields the page.
+                crate::app::webview_memory::restore_window_memory(&window, "prepare-hidden-main");
+            }
+        }
         let _ = app.emit_to("main", "main-window-prepare-show", request);
     }
     if ready_to_show(
@@ -974,13 +950,24 @@ pub fn restart_main_window_for_gpu_switch(app: &AppHandle, disabled: bool) -> bo
         .and_then(|window| window.is_visible().ok())
         .unwrap_or(false);
 
+    let browser = if let Some(window) = app.get_webview_window("main") {
+        let Some(process) = webview_environment::browser_process(&window) else {
+            abort_closing();
+            return false;
+        };
+        Some(process)
+    } else {
+        None
+    };
+    GPU_SWITCH_WAITING.store(true, Ordering::Release);
     destroy_discardable_overlays(app, false);
-
-    if !destroy_main_window(app, true) {
+    if !destroy_main_window(app) {
+        GPU_SWITCH_WAITING.store(false, Ordering::Release);
         abort_closing();
         return false;
     }
-    let teardown_completed = finish_main_destroy(app, true);
+    let teardown_completed = finish_main_destroy(app, browser.as_ref());
+    GPU_SWITCH_WAITING.store(false, Ordering::Release);
     if !teardown_completed {
         if was_visible {
             request_recreate_after_destroy();

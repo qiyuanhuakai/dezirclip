@@ -36,7 +36,7 @@ pub fn managed_emoji_path(data_dir: &Path, requested: &Path) -> Result<PathBuf, 
     Ok(candidate)
 }
 
-fn image_data_url(bytes: &[u8]) -> Result<String, String> {
+fn image_data_url(bytes: &[u8], long_edge: u32, short_edge: u32) -> Result<String, String> {
     let format = image::guess_format(bytes).map_err(|_| UNAVAILABLE)?;
     let mime = match format {
         ImageFormat::Png => "image/png", ImageFormat::Jpeg => "image/jpeg",
@@ -47,10 +47,25 @@ fn image_data_url(bytes: &[u8]) -> Result<String, String> {
     if width == 0 || height == 0 || width > 16_384 || height > 16_384 || u64::from(width) * u64::from(height) > 40_000_000 {
         return Err(UNAVAILABLE.into());
     }
-    Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+    if width.max(height) <= long_edge && width.min(height) <= short_edge {
+        return Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)));
+    }
+    let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(160 * 1024 * 1024);
+    reader.limits(limits);
+    let (w, h) = if width >= height { (long_edge, short_edge) } else { (short_edge, long_edge) };
+    let preview = reader.decode().map_err(|_| UNAVAILABLE)?.thumbnail(w, h);
+    let mut output = Cursor::new(Vec::new());
+    preview.write_to(&mut output, ImageFormat::Png).map_err(|_| UNAVAILABLE)?;
+    Ok(format!("data:image/png;base64,{}", STANDARD.encode(output.into_inner())))
 }
 
 pub fn read_image(path: &Path) -> Result<String, String> {
+    read_display_image(path, 3840, 2160)
+}
+
+pub fn read_display_image(path: &Path, long_edge: u32, short_edge: u32) -> Result<String, String> {
     let file = crate::infrastructure::local_file::open_regular_nofollow(path).map_err(|_| UNAVAILABLE)?;
     let before = file.metadata().map_err(|_| UNAVAILABLE)?;
     if before.len() == 0 || before.len() > MAX_BYTES { return Err(UNAVAILABLE.into()); }
@@ -61,7 +76,7 @@ pub fn read_image(path: &Path) -> Result<String, String> {
         || before.modified().map_err(|_| UNAVAILABLE)? != after.modified().map_err(|_| UNAVAILABLE)? {
         return Err(UNAVAILABLE.into());
     }
-    image_data_url(&bytes)
+    image_data_url(&bytes, long_edge, short_edge)
 }
 
 #[cfg(test)]
@@ -99,6 +114,18 @@ mod tests {
         std::fs::write(&path, png()).unwrap(); assert!(read_image(&path).unwrap().starts_with("data:image/png;base64,"));
         std::fs::OpenOptions::new().write(true).open(&path).unwrap().set_len(MAX_BYTES + 1).unwrap();
         assert!(read_image(&path).is_err());
+    }
+    #[test]
+    fn favorite_preview_is_bounded_and_leaves_original_bytes_available_for_paste() {
+        let fixture = Fixture::new();
+        let path = fixture.0.join("large.png");
+        image::DynamicImage::new_rgba8(128, 1024).save(&path).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let preview = read_display_image(&path, 256, 256).unwrap();
+        let bytes = STANDARD.decode(preview.strip_prefix("data:image/png;base64,").unwrap()).unwrap();
+        let image = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((image.width(), image.height()), (32, 256));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
     }
     #[test]
     fn background_cannot_read_history_assets_through_settings() {

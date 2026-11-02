@@ -50,7 +50,6 @@ export interface VirtualClipboardListProps {
   onScroll?: (offset: number) => void;
   onScrollFrame?: (offset: number) => void;
   compactMode: boolean;
-  header?: ReactNode;
 }
 
 export interface VirtualClipboardListHandle {
