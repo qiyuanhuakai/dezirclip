@@ -597,6 +597,19 @@ impl HistoryService {
         include_protected_metadata: bool,
         now_ms: i64,
     ) -> PrivacyResult<()> {
+        self.project_gui_entries(entries, include_protected_metadata, now_ms, false)
+    }
+
+    /// Keep textual list summaries, but let mounted rows request their media by ID and epoch.
+    pub fn entries_for_gui_list(
+        &self, entries: &mut Vec<ClipboardEntry>, include_protected_metadata: bool, now_ms: i64,
+    ) -> PrivacyResult<()> {
+        self.project_gui_entries(entries, include_protected_metadata, now_ms, true)
+    }
+
+    fn project_gui_entries(
+        &self, entries: &mut Vec<ClipboardEntry>, include_protected_metadata: bool, now_ms: i64, defer_media: bool,
+    ) -> PrivacyResult<()> {
         let permit = self.privacy().authorize_read(
             PrivacyAccessIntent::InteractiveRead,
             SensitiveAccess::Denied,
@@ -626,8 +639,19 @@ impl HistoryService {
                 if !crate::database::has_sensitive_tag(&entry.tags) {
                     entry.tags.push("sensitive".into());
                 }
+                safe.push(entry);
+                continue;
             }
-            if !protected {
+            let defer = defer_media && entry.id != 0;
+            if defer {
+                entry.html_content = None;
+            }
+            if defer && entry.content_type == "image" {
+                entry.content.clear();
+                entry.preview.clear();
+                entry.source_app_path = None;
+                entry.is_external = false;
+            } else {
                 entry = match super::clipboard_payload::preview_entry(entry.clone(), Some(384)) {
                     Ok(entry) => entry,
                     Err(_) => {

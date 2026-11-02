@@ -65,6 +65,7 @@ const SortableItem = ({
   index,
   renderItem,
   isFirst,
+  dragging,
   onDragStart,
   onDragEnd
 }: {
@@ -72,12 +73,15 @@ const SortableItem = ({
   index: number;
   renderItem: RenderItem;
   isFirst?: boolean;
+  dragging: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
 }) => {
   const controls = useDragControls();
   return (
-    <Reorder.Item
+    <Reorder.Item as="div"
+      layout="position"
+      transition={dragging ? undefined : { layout: { duration: 0 } }}
       value={item.id}
       dragListener={false}
       dragControls={controls}
@@ -185,6 +189,7 @@ const AppMainContent = ({
     [orderedPinnedItems]
   );
 
+  const rows = useMemo(() => [...orderedPinnedItems, ...unpinnedItems], [orderedPinnedItems, unpinnedItems]);
   const handlePinnedIdsReorder = useCallback((nextIds: number[]) => {
     setPinnedOrderIds(nextIds);
     pinnedOrderRef.current = nextIds;
@@ -291,37 +296,21 @@ const AppMainContent = ({
         ) : (
           <div className="history-list-container">
             <VirtualClipboardList
+              pinnedIds={orderedPinnedIds}
+              onReorder={handlePinnedIdsReorder}
+              draggingPinned={isDraggingPinned}
               ref={virtualListRef}
-              items={unpinnedItems}
+              items={rows}
               compactMode={compactMode}
-              selectedIndex={selectedIndex - pinnedItems.length}
+              selectedIndex={selectedIndex}
               isKeyboardMode={isKeyboardMode}
-              header={
-                pinnedItems.length > 0 ? (
-                  <Reorder.Group
-                    axis="y"
-                    values={orderedPinnedIds}
-                    onReorder={handlePinnedIdsReorder}
-                    className={isDraggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}
-                    style={{ listStyle: "none", padding: 0 }}
-                  >
-                    {orderedPinnedItems.map((item, index) => (
-                      <SortableItem
-                        key={item.id}
-                        item={item}
-                        index={index}
-                        renderItem={renderItemContent}
-                        isFirst={index === 0}
-                        onDragStart={handlePinnedDragStart}
-                        onDragEnd={handlePinnedDragEnd}
-                      />
-                    ))}
-                  </Reorder.Group>
-                ) : null
-              }
               renderItem={(item, index, isFirst?: boolean) => {
-                const el = renderItemContent(item, pinnedItems.length + index, undefined, true);
-                if (isFirst && pinnedItems.length === 0) {
+                if (index < orderedPinnedItems.length) {
+                  return <SortableItem item={item} index={index} renderItem={renderItemContent} isFirst={isFirst} dragging={isDraggingPinned}
+                    onDragStart={handlePinnedDragStart} onDragEnd={handlePinnedDragEnd} />;
+                }
+                const el = renderItemContent(item, index, undefined, true);
+                if (isFirst) {
                   return (
                     <div className="first-virtual-item" style={{ height: "100%", paddingTop: "4px" }}>
                       {el}

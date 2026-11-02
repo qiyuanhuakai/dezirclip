@@ -12,7 +12,7 @@ import {
 } from "../../../shared/lib/quickPasteSelection";
 import type { ClipboardEntry } from "../../../shared/types";
 import { usePrivacySession } from "../../../shared/hooks/usePrivacySession";
-import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { invokePrivacyBound, privacyListGeneration, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { entryInstanceArgs } from "../../../shared/lib/historyIdentity";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { PrivacyStatusBanner } from "../../../shared/components/PrivacyStatusBanner";
@@ -77,6 +77,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     setEntries(next);
   }, []);
 
+  const listGeneration = privacyListGeneration();
   const refreshReader = useMemo(() => createSnapshotRefresh(
     () => invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
       limit: MAX_ENTRIES,
@@ -85,7 +86,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
     }),
     (data) => replaceEntries((data ?? []).filter(entry => !isSensitiveEntry(entry))),
     () => replaceEntries([]),
-  ), [replaceEntries, privacyState.generation]);
+  ), [replaceEntries, listGeneration]);
   const fetchRecent = useCallback(() => {
     void refreshReader.refresh().finally(() => setInitialFetchSettled(true));
   }, [refreshReader]);
@@ -137,7 +138,8 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       captured.invalidate();
       fetchRecent();
     });
-    const stopPrivacy = subscribePrivacyInvalidation(() => {
+    const stopPrivacy = subscribePrivacyInvalidation(scope => {
+      if (scope === "reveal") return;
       captured.invalidate();
       refreshReader.invalidate();
       replaceEntries([]);
@@ -162,7 +164,7 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
   useEffect(() => {
     if (privacyState.phase === "ready") fetchRecent();
     else if (privacyState.phase === "unavailable") setInitialFetchSettled(true);
-  }, [privacyState.phase, privacyState.generation, fetchRecent]);
+  }, [privacyState.phase, fetchRecent]);
 
   useEffect(() => {
     document.body.classList.add("quick-paste");

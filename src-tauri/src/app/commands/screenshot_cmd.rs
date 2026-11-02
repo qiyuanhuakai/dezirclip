@@ -125,8 +125,15 @@ fn park_selector_window(app: &AppHandle) -> Result<(), String> {
         crate::infrastructure::capture_visibility::confirm_hidden_selector(&window)?;
         let _ = window.set_focusable(false);
         crate::app::webview_memory::lower_window_memory(&window, "region-select-hide");
+        shrink_parked_selector(&window)?;
     }
     Ok(())
+}
+
+fn shrink_parked_selector(window: &tauri::WebviewWindow) -> Result<(), String> {
+    *LAST_OVERLAY_RECT.lock().map_err(|_| "RegionCaptureUnavailable")? = None;
+    OVERLAY_SIZE_UNCONFIRMED.store(false, Ordering::SeqCst);
+    window.set_size(tauri::PhysicalSize::new(1_u32, 1_u32)).map_err(|error| error.to_string())
 }
 
 fn take_region_capture(session: &mut Option<RegionCapture>, token: &str) -> Result<RegionCapture, String> {
@@ -192,6 +199,8 @@ pub async fn present_region_capture(app: AppHandle, window: tauri::WebviewWindow
                 crate::warn!("[screenshot] Failed to hide region selector after presentation failed: {error}");
                 return;
             }
+            crate::app::webview_memory::lower_window_memory(&window, "region-select-present-failed");
+            let _ = shrink_parked_selector(&window);
             if check_region_generation(generation).is_ok() { clear_region_capture(); }
         };
         let result = window.show().and_then(|_| window.set_focus())
@@ -518,6 +527,8 @@ pub async fn show_region_selector(app: AppHandle) -> Result<(), String> {
             }
             check_region_generation(generation)?;
             let token = REGION_CAPTURE.lock().map_err(|_| "RegionCaptureUnavailable")?.owner.clone();
+            // Decode the frozen frame offscreen. The native presentation command still checks its ticket.
+            crate::app::webview_memory::restore_window_memory(window, "region-select-prepare");
             publish_region_session(token, generation);
             Ok(())
         })

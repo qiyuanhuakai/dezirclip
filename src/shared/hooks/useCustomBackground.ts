@@ -23,13 +23,14 @@ export const useCustomBackground = ({
   reportError.current = onError;
   useEffect(() => () => {
     document.documentElement.style.removeProperty("--custom-bg-image");
-    document.body.classList.remove("has-custom-bg");
+    document.body.classList.remove("has-custom-bg", "opaque-background-image");
     if (appliedUrl.current) URL.revokeObjectURL(appliedUrl.current);
     appliedUrl.current = null;
   }, []);
   useEffect(() => {
     const opacity = Number.isFinite(customBackgroundOpacity) ? Math.min(100, Math.max(0, customBackgroundOpacity)) / 100 : 0.45;
     document.documentElement.style.setProperty("--custom-bg-opacity", String(opacity));
+    document.body.classList.toggle("opaque-background-image", opacity === 1);
   }, [customBackgroundOpacity]);
   useEffect(() => {
     const root = document.documentElement;

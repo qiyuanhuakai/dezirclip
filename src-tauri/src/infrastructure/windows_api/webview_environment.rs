@@ -1,61 +1,31 @@
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use std::sync::mpsc;
 use std::time::Duration;
+use windows::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
+use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
 
-use webview2_com::BrowserProcessExitedEventHandler;
-use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment5;
-use windows::core::Interface;
+pub struct BrowserProcess(OwnedHandle);
 
-pub fn watch_main_browser_process_exit(window: &tauri::WebviewWindow) -> bool {
-    let (tx, rx) = mpsc::channel();
-    let result = window.with_webview(move |webview| {
-        let registered = unsafe {
-            webview
-                .environment()
-                .cast::<ICoreWebView2Environment5>()
-                .and_then(|environment| {
-                    let mut token = 0;
-                    let handler = BrowserProcessExitedEventHandler::create(Box::new(|_, args| {
-                        if let Some(args) = args {
-                            let mut pid = 0;
-                            let _ = args.BrowserProcessId(&mut pid);
-                            crate::info!(
-                                "[webview-environment] WebView2 browser process exited: pid={}",
-                                pid
-                            );
-                        } else {
-                            crate::info!("[webview-environment] WebView2 browser process exited");
-                        }
-                        crate::infrastructure::webview_environment::mark_main_browser_process_exited();
-                        Ok(())
-                    }));
-                    environment.add_BrowserProcessExited(
-                        &handler,
-                        &mut token,
-                    )
-                })
-        };
-
-        match registered {
-            Ok(()) => {
-                let _ = tx.send(true);
-            }
-            Err(err) => {
-                crate::warn!(
-                    "[webview-environment] Failed to watch WebView2 browser process exit: {:?}",
-                    err
-                );
-                let _ = tx.send(false);
-            }
-        }
-    });
-
-    if let Err(err) = result {
-        crate::warn!(
-            "[webview-environment] Failed to access WebView2 environment before destroy: {}",
-            err
-        );
-        return false;
+impl BrowserProcess {
+    pub fn exited_within(&self, timeout: Duration) -> bool {
+        let handle = HANDLE(self.0.as_raw_handle());
+        unsafe { WaitForSingleObject(handle, timeout.as_millis() as u32) == WAIT_OBJECT_0 }
     }
+}
 
-    rx.recv_timeout(Duration::from_millis(500)).unwrap_or(false)
+// Open the handle while the controller still owns this browser. PID reuse and
+// callbacks from an earlier WebView environment cannot satisfy the wait.
+pub fn browser_process(window: &tauri::WebviewWindow) -> Option<BrowserProcess> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    window.with_webview(move |view| {
+        let process = unsafe {
+            let mut pid = 0;
+            view.controller().CoreWebView2()
+                .and_then(|core| core.BrowserProcessId(&mut pid))
+                .and_then(|_| OpenProcess(PROCESS_SYNCHRONIZE, false, pid))
+                .map(|handle| BrowserProcess(OwnedHandle::from_raw_handle(handle.0)))
+        };
+        let _ = tx.send(process.ok());
+    }).ok()?;
+    rx.recv_timeout(Duration::from_millis(500)).ok().flatten()
 }

@@ -135,7 +135,7 @@ export function useTagLibrary() {
         publishPage(EMPTY_PAGE);
         setError(false);
         setLoadingMore(false);
-        const access = beginPrivacyAccess();
+        const access = beginPrivacyAccess("list");
         if (!selectedTag || privacy.phase !== 'ready' || !access) {
             setLoading(false);
             return;
@@ -166,7 +166,7 @@ export function useTagLibrary() {
     const loadMore = useCallback(() => {
         const current = pageRef.current;
         const active = requestState.current;
-        const access = beginPrivacyAccess();
+        const access = beginPrivacyAccess("list");
         if (!access || !active.selectedTag || active.loading || active.error || !current.has_more || current.next_offset === null) return;
         const request = generation.current;
         const key = `${request}:${current.next_offset}`;

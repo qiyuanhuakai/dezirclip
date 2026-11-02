@@ -1,5 +1,6 @@
-export interface ResumeAuthority { instanceId: string; epoch: number }
-export interface ResumeAccess { epoch: number; isCurrent: () => boolean; release?: () => void }
+import type { PageStamp } from "./resumePage";
+export type ResumeAuthority = PageStamp;
+export interface ResumeAccess { epoch: number; authority: ResumeAuthority; isCurrent: () => boolean; release?: () => void }
 export interface PreparedResume { requestId: number | null; authority: ResumeAuthority; isCurrent: () => boolean; isRequestCurrent: () => boolean }
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
@@ -7,14 +8,17 @@ export function readResumeAuthority(value: unknown): ResumeAuthority {
   if (!record(value) || !record(value.state) || !record(value.privacy)
     || typeof value.state.service_instance_id !== "string" || !value.state.service_instance_id
     || !Number.isSafeInteger(value.privacy.privacy_epoch) || Number(value.privacy.privacy_epoch) < 0
+    || !Number.isSafeInteger(value.state.history_revision) || Number(value.state.history_revision) < 0
+    || typeof value.privacy.active !== "boolean"
     || value.state.privacy_epoch !== value.privacy.privacy_epoch) throw new Error("ClipboardHostUnavailable");
-  return { instanceId: value.state.service_instance_id, epoch: Number(value.privacy.privacy_epoch) };
+  return { instanceId: value.state.service_instance_id, epoch: Number(value.privacy.privacy_epoch),
+    revision: Number(value.state.history_revision), sessionActive: value.privacy.active };
 }
 
 export function createMainWindowResume(deps: {
   prepare: (current: () => boolean) => Promise<ResumeAccess>;
   readAuthority: () => Promise<unknown>;
-  loadHistory: () => Promise<boolean>;
+  loadHistory: (stamp: PageStamp) => Promise<boolean>;
   pending: (requestId: number | null) => void;
   prepared: (value: PreparedResume) => void;
   failed: (requestId: number | null) => void;
@@ -35,10 +39,11 @@ export function createMainWindowResume(deps: {
         owner.access = access;
         if (!current()) { access.release?.(); return; }
         const authorized = () => current() && access.isCurrent();
-        const before = readResumeAuthority(await deps.readAuthority());
+        const before = access.authority;
         if (!authorized() || before.epoch !== access.epoch) throw new Error("PrivacyEpochChanged");
-        if (!(await deps.loadHistory())) throw new Error("HistoryResumeFailed");
-        const after = readResumeAuthority(await deps.readAuthority());
+        if (!(await deps.loadHistory(before))) throw new Error("HistoryResumeFailed");
+        // The native show command validates ownership at commit. An already visible window has no native commit.
+        const after = requestId === null ? readResumeAuthority(await deps.readAuthority()) : before;
         if (!authorized() || after.epoch !== before.epoch || after.instanceId !== before.instanceId) throw new Error("ClipboardHostInstanceChanged");
         deps.prepared({ requestId, authority: after, isCurrent: authorized, isRequestCurrent: current });
       } catch {

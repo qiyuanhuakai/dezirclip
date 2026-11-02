@@ -3,12 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createMainWindowResume, type PreparedResume } from "../lib/mainWindowResume";
 import { prepareMainWindowResume } from "../lib/privacySession";
+import type { PageStamp } from "../lib/resumePage";
 
-export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (reset?: boolean) => Promise<boolean>, historyCount: number, historyViewActive: boolean) {
-  const [phase, setPhase] = useState<"idle" | "preparing" | "prepared" | "committing" | "failed">("preparing");
+export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (reset?: boolean, stamp?: PageStamp) => Promise<boolean>, historyViewActive: boolean) {
+  const [phase, setPhase] = useState<"idle" | "preparing" | "prepared" | "failed">("preparing");
   const [prepared, setPrepared] = useState<PreparedResume | null>(null);
   const fetchRef = useRef(fetchHistory);
   fetchRef.current = fetchHistory;
+  const historyView = useRef(historyViewActive);
+  historyView.current = historyViewActive;
   const retryRef = useRef(() => {});
   const cancelRef = useRef(() => {});
   const nativeActiveRef = useRef(false);
@@ -22,7 +25,7 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
     const controller = createMainWindowResume({
       prepare: prepareMainWindowResume,
       readAuthority: () => invoke("get_clipboard_host_status"),
-      loadHistory: () => fetchRef.current(true),
+      loadHistory: stamp => historyView.current ? fetchRef.current(true, stamp) : Promise.resolve(true),
       pending: requestId => { nativeActiveRef.current = requestId !== null; setPrepared(null); setPhase("preparing"); },
       prepared: value => { setPrepared(value); setPhase("prepared"); },
       failed: () => { nativeActiveRef.current = false; visibleRecoveryPending.current = false; setPrepared(null); setPhase("failed"); }
@@ -86,20 +89,7 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
   }, [settingsLoaded]);
   useLayoutEffect(() => {
     if (!prepared || phase !== "prepared") return;
-    const root = document.querySelector(".main-resume-page");
-    if (!root) return;
-    const check = () => {
-      if (!prepared.isRequestCurrent()) return;
-      if (!prepared.isCurrent()) { cancelRef.current(); nativeActiveRef.current = false; visibleRecoveryPending.current = false; setPhase("failed"); return; }
-      if (!historyViewActive || historyCount === 0 || root.querySelector(".history-item")) setPhase("committing");
-    };
-    const observer = new MutationObserver(check);
-    observer.observe(root, { childList: true, subtree: true });
-    check();
-    return () => { observer.disconnect(); };
-  }, [prepared, phase, historyCount, historyViewActive]);
-  useLayoutEffect(() => {
-    if (!prepared || phase !== "committing") return;
+    // The masked page has committed. A hidden virtualizer may not measure its first row until show.
     let disposed = false;
     const failed = () => { cancelRef.current(); nativeActiveRef.current = false; visibleRecoveryPending.current = false; setPhase("failed"); };
     if (!prepared.isRequestCurrent()) return;

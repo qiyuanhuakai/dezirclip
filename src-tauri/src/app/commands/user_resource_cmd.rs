@@ -68,7 +68,7 @@ pub async fn get_emoji_favorite_resource(app: AppHandle, path: String) -> Result
     let data_dir = app.state::<AppDataDir>().0.lock().map_err(|_| "UserResourceUnavailable")?.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let selected = user_resource::managed_emoji_path(&data_dir, Path::new(&path))?;
-        let data = user_resource::read_image(&selected)?;
+        let data = user_resource::read_display_image(&selected, 256, 256)?;
         if user_resource::managed_emoji_path(&data_dir, Path::new(&path))? != selected {
             return Err("UserResourceUnavailable".into());
         }

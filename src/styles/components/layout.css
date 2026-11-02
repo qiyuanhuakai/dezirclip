@@ -106,6 +106,14 @@ select.search-input option {
   flex: 1;
 }
 
+/* The scroller owns its viewport. Keep offscreen tiles and row paints from
+   overlapping the surrounding window and its wallpaper. */
+.history-list-container > .virtual-list-wrapper {
+  contain: strict;
+  isolation: isolate;
+  overflow: clip;
+}
+
 .scroll-top-button {
   position: absolute;
   right: 16px;

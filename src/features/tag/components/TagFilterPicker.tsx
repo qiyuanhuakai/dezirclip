@@ -3,7 +3,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Tag } from 'lucide-react';
 import { getTagColor } from '../../../shared/lib/utils';
 import { usePrivacySession } from '../../../shared/hooks/usePrivacySession';
-import { invokePrivacyBound, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
+import { invokePrivacyBound, privacyListGeneration, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
 import { matchesTagName } from '../../../shared/lib/tagQuery';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 
@@ -33,7 +33,8 @@ export default function TagFilterPicker({ ref, id, tags, colors, query, isCompos
     const [catalogError, setCatalogError] = useState(false);
     const [revision, setRevision] = useState(0);
     const debouncedQuery = useDebounce(query, 300, !isComposing);
-    useEffect(() => subscribePrivacyInvalidation(() => { setCatalog(null); setActive(-1); }), []);
+    const listGeneration = privacyListGeneration();
+    useEffect(() => subscribePrivacyInvalidation(scope => { if (scope === 'all') { setCatalog(null); setActive(-1); } }), []);
     useEffect(() => {
         let disposed = false;
         if (privacy.phase !== 'ready') return;
@@ -41,7 +42,7 @@ export default function TagFilterPicker({ ref, id, tags, colors, query, isCompos
             if (!disposed) { setCatalog(Object.keys(info).sort((a, b) => a.localeCompare(b))); setCatalogError(false); }
         }).catch(() => { if (!disposed) setCatalogError(true); });
         return () => { disposed = true; };
-    }, [revision, privacy.phase, privacy.generation]);
+    }, [revision, privacy.phase, listGeneration]);
     const filtered = useMemo(() => {
         return privacy.phase === 'ready' ? (catalog ?? tags).filter(tag => matchesTagName(tag, debouncedQuery)) : [];
     }, [catalog, tags, debouncedQuery, privacy.phase]);

@@ -4,6 +4,7 @@ import type { DragControls } from "framer-motion";
 import ClipboardItem, { hideCompactPreviewGlobal } from "./ClipboardItem";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
 import { beginPrivacyAccess, forgetPrivacyReveal, getPrivacyEntry, invokePrivacyBound, registerPrivacyReveal, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
+import { schedulePreview } from "../../../shared/lib/previewQueue";
 import { concealSensitiveEntry, isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "../../../shared/lib/richTextSnapshot";
 import type { PrivacyMetadataIntent } from "../../../shared/lib/privacyMetadataIntent";
@@ -118,6 +119,7 @@ const ClipboardItemRenderer = ({
     useEffect(() => {
         mounted.current = true;
         const stop = subscribePrivacyInvalidation(scope => {
+            if (scope === "reveal" && !isSensitiveEntry(currentItem.current)) return;
             detailGeneration.current += 1; pendingReveal.current = null; setRevealPending(false); setDetail(null);
             if (scope !== "reveal") setResourceState(null);
         });
@@ -154,10 +156,11 @@ const ClipboardItemRenderer = ({
         if (privacy.phase !== "ready" || epoch === undefined) return;
         // A normal focus change does not discard an ordinary preview from the same source and epoch.
         if (resourceState?.source === item && resourceState.epoch === epoch && resourceState.phase === "ready") return;
-        const access = beginPrivacyAccess();
+        const access = beginPrivacyAccess("list");
+        const controller = new AbortController();
         if (access) {
             setResourceState({ source: item, epoch, phase: "loading", value: null });
-            void invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, maxDimension: 480 })
+            void schedulePreview(controller.signal, () => invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id: item.id, expectedHostInstanceId: item.host_instance_id, expectedEpoch: access.epoch, maxDimension: 480 }))
                 .then(value => {
                     if (disposed || !mounted.current || !access.isCurrent() || currentItem.current !== item) return;
                     if (!matchesEntryIdentity(value, item.id, item.host_instance_id) || isSensitiveEntry(value)) throw new Error("PrivacyReadSuperseded");
@@ -168,7 +171,7 @@ const ClipboardItemRenderer = ({
                     }
                 });
         }
-        return () => { disposed = true; };
+        return () => { disposed = true; controller.abort(); };
     }, [item, needsResource, privacy.phase, privacy.snapshot?.privacy_epoch, privacy.generation]);
     const itemId = item.id;
     const itemContent = item.content;

@@ -361,14 +361,16 @@ fn show_quick_paste_window_on_ui(app: &AppHandle, window: &tauri::WebviewWindow,
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.set_always_on_top(true);
     let _ = window.set_focusable(true);
-    crate::app::webview_memory::restore_window_memory(window, "quick-paste-show");
     if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
-    window
-        .show()
-        .map_err(|e| format!("Failed to show quick-paste window: {e}"))?;
+    crate::app::webview_memory::restore_window_memory(window, "quick-paste-show");
+    if let Err(error) = window.show() {
+        crate::app::webview_memory::lower_window_memory(window, "quick-paste-show-failed");
+        return Err(format!("Failed to show quick-paste window: {error}"));
+    }
     let _ = window.set_always_on_top(true);
     if !ticket.current(app) {
         let _ = window.hide();
+        crate::app::webview_memory::lower_window_memory(window, "quick-paste-show-cancelled");
         return Err("QuickPasteRequestCancelled".into());
     }
     #[cfg(target_os = "linux")]

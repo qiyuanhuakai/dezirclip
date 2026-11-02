@@ -98,15 +98,17 @@ export default function TagManager({ t, theme, language = 'zh', compactMode = fa
     const clearRevealError = useCallback(() => { if (mounted.current) setActionError(false); }, []);
     const changed = useCallback(() => { setDetailRevision(current => current + 1); refresh(); }, [refresh]);
     const excludeBulkReveal = useCallback((id: number) => setBulkRevealExcluded(previous => new Set(previous).add(id)), []);
-    useEffect(() => subscribePrivacyInvalidation(() => {
+    useEffect(() => subscribePrivacyInvalidation(scope => {
         detailSequence.current += 1;
-        setQrEntry(null);
+        setQrEntry(entry => scope === 'all' || (entry && isSensitiveEntry(entry)) ? null : entry);
+        setRevealedScope(null);
+        if (scope === 'reveal' && !(dialog?.kind === 'editItem' && dialog.protectedContent)
+            && !(dialog?.kind === 'deleteItem' && isSensitiveEntry(dialog.item))) return;
         setDialog(null);
         setValue('');
         setConfirmPersistence(false);
         setMenuOpen(false);
-        setRevealedScope(null);
-    }), []);
+    }), [dialog]);
 
     useEffect(() => {
         mounted.current = true;

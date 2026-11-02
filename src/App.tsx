@@ -53,7 +53,7 @@ import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import { usePrivacySession } from "./shared/hooks/usePrivacySession";
 import { usePreviewPreferences } from "./shared/hooks/usePreviewPreferences";
-import { beginPrivacyAccess, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
+import { beginPrivacyAccess, privacyListGeneration, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "./shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
 import { PrivacyStatusBanner } from "./shared/components/PrivacyStatusBanner";
@@ -239,9 +239,9 @@ const App = () => {
   // Local matching must use the same settled query as the backend request.
   const filteredHistory = useFilteredHistory({ history, debouncedSearch, search: debouncedSearch, typeFilter });
   const searchResultsReady = !isComposing && search === debouncedSearch && search === appliedSearch;
-  const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, filteredHistory.length,
-    !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel);
-  const mainResumePending = mainResume.phase === "preparing" || mainResume.phase === "prepared" || mainResume.phase === "failed" || privacyState.phase !== "ready";
+  const historyViewActive = !showSettings && !effectiveShowTagManager && !effectiveShowEmojiPanel;
+  const mainResume = useMainWindowResume(settingsLoaded, fetchHistory, historyViewActive);
+  const mainResumePending = mainResume.phase !== "idle" || privacyState.phase !== "ready";
 
   const t = useCallback((key: string) => {
     const k = key as keyof typeof translations['zh'];
@@ -346,18 +346,24 @@ const App = () => {
   useEffect(() => subscribePrivacyInvalidation((scope) => {
     setHistory(previous => scope === "all" ? [] : previous.map(item => isSensitiveEntry(item) ? concealSensitiveEntry(item) : item));
     setRevealedIds(new Set());
-    setQrEntry(null);
-    setEditingTagsId(null);
-    setTagInput("");
+    setQrEntry(entry => scope === "all" || (entry && isSensitiveEntry(entry)) ? null : entry);
+    if (scope === "all" || (editingTagsId !== null && history.some(item => item.id === editingTagsId && isSensitiveEntry(item)))) {
+      setEditingTagsId(null);
+      setTagInput("");
+    }
+    // HTML previews can originate from the separate tag view's reveal grant.
     clearRichTextSnapshots();
-    closeConfirm();
-  }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm]);
+    if (scope === "all" || revealedIds.size > 0) closeConfirm();
+  }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm, editingTagsId, history, revealedIds]);
   // Search changes have their own trigger; this refresh belongs to privacy/resume transitions.
-  const fetchHistoryRef = useRef(fetchHistory);
-  fetchHistoryRef.current = fetchHistory;
+  const initialPage = useRef({ fetchHistory, needed: true });
+  initialPage.current = { fetchHistory, needed: appliedSearch !== debouncedSearch };
+  const listGeneration = privacyListGeneration();
   useEffect(() => {
-    if (privacyState.phase === "ready" && mainResume.phase === "idle") void fetchHistoryRef.current(true);
-  }, [privacyState.phase, privacyState.generation, mainResume.phase]);
+    if (historyViewActive && privacyState.phase === "ready" && mainResume.phase === "idle" && initialPage.current.needed) {
+      void initialPage.current.fetchHistory(true);
+    }
+  }, [historyViewActive, privacyState.phase, listGeneration, mainResume.phase]);
 
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
@@ -693,7 +699,6 @@ const App = () => {
     filteredHistory,
     selectedIndex,
     isKeyboardMode,
-    pinnedCount: pinnedItems.length,
     virtualListRef
   });
 

@@ -289,7 +289,9 @@ const ClipboardItem = ({
     const ocrText = !isSensitiveHidden && ocrSource === item ? ocrTextValue : null;
     const ocrStatus = !isSensitiveHidden && ocrSource === item ? ocrStatusValue : null;
     const [ocrTextExpanded, setOcrTextExpanded] = useState(false);
-    useEffect(() => subscribePrivacyInvalidation(() => {
+    const sensitiveContent = isSensitiveEntry(item);
+    useEffect(() => subscribePrivacyInvalidation(scope => {
+        if (scope === "reveal" && !sensitiveContent) return;
         contentIdentity.current.generation += 1;
         setOcrSource(null);
         setOcrText(null);
@@ -297,7 +299,7 @@ const ClipboardItem = ({
         setOcrTextExpanded(false);
         setRichTextSnapshotSrc(null);
         setContextMenuState(null);
-    }), []);
+    }), [sensitiveContent]);
     const imagePreview = useImagePreview(
         item.id, item.content, item.timestamp,
         item.content_type === "image" && !isSensitiveHidden && !(item.is_external && item.file_preview_exists === false),

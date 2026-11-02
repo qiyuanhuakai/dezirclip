@@ -7,9 +7,9 @@ import {
 
 /**
  * Drops the theme's `backdrop-filter` layers for as long as the window is
- * being dragged, and puts them back one settle window after it stops.
+ * moving, resizing or scrolling, and puts them back once the viewport settles.
  *
- * Dragging is the one interaction in this app that is genuinely per-frame:
+ * These interactions invalidate the sampled backdrop on successive frames:
  * every pixel the window moves invalidates the whole painted area behind it,
  * so all 137 blur layers across the themes get recomputed from scratch on
  * each frame. Nothing about the drag depends on those layers being live, and
@@ -27,6 +27,17 @@ import {
 export const useDragDegradation = () => {
   useEffect(() => {
     const root = document.documentElement;
+    const page = document.getElementById("root");
+    let layoutWidth = window.innerWidth;
+    let layoutHeight = window.innerHeight;
+    let resizeTimer = 0;
+    const finishResize = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = 0;
+      page?.removeAttribute("data-viewport-resizing");
+      layoutWidth = window.innerWidth;
+      layoutHeight = window.innerHeight;
+    };
     const { actions } = createDragState(
       root,
       (fn, ms) => window.setTimeout(fn, ms),
@@ -36,10 +47,30 @@ export const useDragDegradation = () => {
     const onPointerDown = (e: PointerEvent) => {
       if (isDragHandleTarget(e.target)) actions.enter();
     };
-    const onWindowBlur = () => actions.reset();
+    const onWindowBlur = () => { actions.reset(); finishResize(); };
+    const onResize = () => {
+      if (!page || document.hidden || !layoutWidth || !layoutHeight) { finishResize(); return; }
+      if (!resizeTimer) {
+        page.style.setProperty("--resize-layout-width", layoutWidth + "px");
+        page.style.setProperty("--resize-layout-height", layoutHeight + "px");
+        page.setAttribute("data-viewport-resizing", "");
+      }
+      page.style.setProperty("--resize-scale-x", String(window.innerWidth / layoutWidth));
+      page.style.setProperty("--resize-scale-y", String(window.innerHeight / layoutHeight));
+      actions.hold();
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(finishResize, 220);
+    };
+    const onListScroll = (event: Event) => {
+      if (event.target instanceof HTMLElement && event.target.closest(".virtual-list-wrapper")) actions.hold();
+    };
 
     document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("scroll", onListScroll, { capture: true, passive: true });
     window.addEventListener("blur", onWindowBlur);
+    window.addEventListener("resize", onResize);
+    window.visualViewport?.addEventListener("resize", onResize);
+    document.addEventListener("visibilitychange", finishResize);
 
     let disposed = false;
     let unlisten: (() => void) | null = null;
@@ -61,7 +92,12 @@ export const useDragDegradation = () => {
     return () => {
       disposed = true;
       document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("scroll", onListScroll, true);
       window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("resize", onResize);
+      window.visualViewport?.removeEventListener("resize", onResize);
+      document.removeEventListener("visibilitychange", finishResize);
+      finishResize();
       actions.reset();
       if (unlisten) unlisten();
     };
