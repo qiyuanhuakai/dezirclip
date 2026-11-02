@@ -40,6 +40,52 @@ def wrapper(base_native, string_at=None, save=None):
 
 
 class ServiceWrapperTests(unittest.TestCase):
+    def root_fixture(self):
+        kind = wrapper(object)
+        native = kind.__new__(kind)
+        native.service, native.service_binding_attempted, native.service_binding_attempted_pid = 70, True, 70
+        native.desktop, native.binding_attempted_pid = 50, 50
+        native.expected_bindings = {'service', 'desktop'}
+        return native
+
+    def test_authoritative_roots_include_both_original_roles_and_deny_first_call_role_drift(self):
+        native = self.root_fixture()
+        self.assertEqual(native.authoritative_product_roots(), {'desktop_original': 50, 'service_original': 70})
+        for role in ('service', 'desktop'):
+            native = self.root_fixture()
+            setattr(native, role, 90)
+            with self.assertRaisesRegex(RuntimeError, 'root binding changed'):
+                native.authoritative_product_roots()
+
+    def test_service_only_cleanup_alias_never_creates_a_desktop_root_or_forgives_missing_reservation(self):
+        native = self.root_fixture()
+        native.binding_attempted_pid = None
+        native.desktop = native.service
+        native.expected_bindings = {'service'}
+        self.assertEqual(native.authoritative_product_roots(), {'service_original': 70})
+        native.expected_bindings.add('desktop')
+        with self.assertRaisesRegex(RuntimeError, 'binding is incomplete'):
+            native.authoritative_product_roots()
+        native.expected_bindings = {'service', 'unknown'}
+        with self.assertRaisesRegex(RuntimeError, 'Unknown authoritative'):
+            native.authoritative_product_roots()
+
+    def test_service_only_missing_desktop_cleanup_keeps_the_failure_and_actual_role(self):
+        class Base:
+            def cleanup(self):
+                self.authoritative_product_roots()
+                raise AssertionError('Missing root cannot complete discovery')
+        kind = wrapper(Base)
+        native = kind.__new__(kind)
+        native.root = Path('synthetic-root')
+        native.service, native.service_binding_attempted, native.service_binding_attempted_pid = 70, True, 70
+        native.desktop, native.binding_attempted_pid = None, None
+        native.expected_bindings = {'service', 'desktop'}
+        with self.assertRaisesRegex(RuntimeError, 'binding is incomplete'):
+            native.cleanup()
+        self.assertIsNone(native.desktop)
+        self.assertIn('Unconfirmed reserved originals: desktop', native.binding_error)
+
     def test_producer_reservation_denies_restore_on_stop_eof_or_finally_until_close_proof(self):
         kind = wrapper(object)
         native = kind.__new__(kind)
@@ -80,8 +126,8 @@ class ServiceWrapperTests(unittest.TestCase):
         main = next(node for node in ast.parse(SOURCE.read_text(encoding='utf-8')).body
                     if isinstance(node, ast.FunctionDef) and node.name == 'main')
         for via_eof in [True, False]:
-            for confirmed in [True, False]:
-                with self.subTest(via_eof=via_eof, confirmed=confirmed):
+            for confirmed, cleanup_failed in [(True, False), (False, False), (True, True)]:
+                with self.subTest(via_eof=via_eof, confirmed=confirmed, cleanup_failed=cleanup_failed):
                     events = []
                     class Parser:
                         def __init__(self, **kwargs):
@@ -98,10 +144,15 @@ class ServiceWrapperTests(unittest.TestCase):
                     def require(value, message):
                         if not value:
                             raise RuntimeError(message)
+                    def cleanup():
+                        events.append('known-root-cleanup')
+                        if cleanup_failed:
+                            raise RuntimeError('Authoritative product root binding is incomplete')
+                        return {'errors': []}
                     native = types.SimpleNamespace(
                         clipboard_producer_expected=True, clipboard_producer_proof={'pid': 17} if confirmed else None,
                         pump_messages=lambda: None, bootstrap_restore_permitted=lambda: confirmed,
-                        cleanup=lambda: events.append('known-root-cleanup') or {'errors': []})
+                        cleanup=cleanup)
                     scope = {'__doc__': 'All fake main', 'argparse': types.SimpleNamespace(ArgumentParser=Parser),
                         'base': types.SimpleNamespace(require=require, guarded_root=lambda *args: Path('fixture'),
                             bootstrap=lambda *args: (1, 2, 3, 4),
@@ -113,16 +164,17 @@ class ServiceWrapperTests(unittest.TestCase):
                         'json': json, 'traceback': __import__('traceback')}
                     exec(compile(ast.fix_missing_locations(ast.Module(body=[main], type_ignores=[])), str(SOURCE), 'exec'), scope)
                     with contextlib.redirect_stdout(io.StringIO()):
-                        if confirmed:
+                        if confirmed and not cleanup_failed:
                             scope['main']()
                         else:
                             with self.assertRaises(RuntimeError):
                                 scope['main']()
                     self.assertEqual(events[0], 'known-root-cleanup')
-                    self.assertEqual('restore' in events, confirmed)
+                    self.assertEqual('restore' in events, confirmed and not cleanup_failed)
                     saved = next(item[1] for item in events if isinstance(item, tuple))
                     self.assertEqual(saved['clipboard_producer']['confirmed'], confirmed)
                     self.assertEqual('bootstrap_error' in saved, not confirmed)
+                    self.assertEqual('native_error' in saved, cleanup_failed)
 
     def test_epoch_archives_complete_old_ring_before_clear_and_never_accepts_another_label(self):
         from collections import deque
