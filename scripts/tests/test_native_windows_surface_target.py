@@ -1,5 +1,6 @@
 import ctypes
 import importlib.util
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -339,7 +340,8 @@ class OwnershipCleanupTests(unittest.TestCase):
         for failure, message in [('times', 'process times unavailable'), ('image', 'Owned image unavailable')]:
             with self.subTest(failure=failure):
                 native, calls = self.fixture(failure)
-                with self.assertRaisesRegex(RuntimeError, message): native.bind(50)
+                with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+                    with self.assertRaisesRegex(RuntimeError, message): native.bind(50)
                 self.assertEqual(native.identities, {})
                 self.assertEqual(native.validated_owned_handles, {})
                 with patch.object(TARGET, 'save') as saved:
@@ -347,6 +349,89 @@ class OwnershipCleanupTests(unittest.TestCase):
                 self.assertFalse(any(call[0] == 'terminate' for call in calls))
                 self.assertIn(('close', 500), calls)
                 self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_image_failure_records_first_error_without_another_native_query(self):
+        native, calls = self.fixture('image')
+        order = []
+        original_times, original_exit = native.kernel.GetProcessTimes, native.kernel.GetExitCodeProcess
+        native.kernel.GetProcessTimes = lambda *args: order.append('times') or original_times(*args)
+        native.kernel.GetExitCodeProcess = lambda *args: order.append('exit') or original_exit(*args)
+        native.kernel.QueryFullProcessImageNameW = lambda *args: order.append('image') or False
+        native.psapi.GetProcessMemoryInfo = lambda *args: self.fail('Memory must not follow incomplete identity')
+        with patch.object(TARGET.ctypes, 'get_last_error', side_effect=lambda: order.append('last-error') or 87, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Owned image unavailable: ') as raised:
+                native.process(50, phase='tree')
+        detail = json.loads(str(raised.exception).split(': ', 1)[1])
+        self.assertEqual(order, ['times', 'exit', 'image', 'last-error'])
+        self.assertEqual(detail, {'pid': 50, 'phase': 'tree', 'api': 'QueryFullProcessImageNameW',
+            'winerror': 87, 'buffer_capacity_chars': 32768, 'observed_exit_code': 259,
+            'creation_time_100ns': '500', 'had_retained_handle': False,
+            'had_cached_identity': False, 'validated_certificate_matches': False})
+        self.assertEqual(calls, [('exit', 500)])
+        self.assertEqual(native.identities, {})
+        self.assertEqual(native.validated_owned_handles, {})
+
+    def test_running_cached_identity_still_fails_without_exit_reread_or_reauthentication(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        identity = dict(native.identities[50])
+        certificate = dict(native.validated_owned_handles[50])
+        calls.clear()
+        native.kernel.QueryFullProcessImageNameW = lambda *args: False
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=6, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Owned image unavailable: ') as raised:
+                native.process(50, phase='authenticated-tree')
+        detail = json.loads(str(raised.exception).split(': ', 1)[1])
+        self.assertTrue(detail['had_retained_handle'])
+        self.assertTrue(detail['had_cached_identity'])
+        self.assertTrue(detail['validated_certificate_matches'])
+        self.assertEqual(detail['observed_exit_code'], 259)
+        self.assertEqual(calls, [('exit', 500)])
+        self.assertEqual(native.identities[50], identity)
+        self.assertEqual(native.validated_owned_handles[50], certificate)
+
+    def test_new_terminal_candidate_image_failure_remains_uncertified_and_close_only(self):
+        native, calls = self.fixture('image')
+        native.kernel.GetExitCodeProcess = lambda handle, output: setattr(output._obj, 'value', 1) or True
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Owned image unavailable: ') as raised:
+                native.process(50, phase='tree' * 1000)
+        detail = json.loads(str(raised.exception).split(': ', 1)[1])
+        self.assertEqual(detail['observed_exit_code'], 1)
+        self.assertEqual(len(detail['phase']), 64)
+        self.assertLess(len(str(raised.exception).encode()), 1024)
+        self.assertFalse(detail['had_cached_identity'])
+        self.assertFalse(detail['validated_certificate_matches'])
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+        self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [50])
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+        self.assertFalse(any(call[0] == 'terminate' for call in calls))
+
+    def test_existing_terminal_cached_image_fallback_retains_its_original_behavior(self):
+        native, calls = self.fixture()
+        original = native.bind(50)
+        native.kernel.GetExitCodeProcess = lambda handle, output: setattr(output._obj, 'value', 1) or True
+        native.kernel.QueryFullProcessImageNameW = lambda *args: False
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+            observed = native.process(50)
+        self.assertFalse(observed['running'])
+        self.assertEqual(observed['exit_code'], 1)
+        self.assertEqual(observed['image'], original['image'])
+        self.assertEqual(observed['creation_time_100ns'], original['creation_time_100ns'])
+
+    def test_diagnostic_handles_incomplete_certificate_without_masking_original_image_error(self):
+        native, calls = self.fixture('image')
+        native.identities[50] = {'image': 'cached-image'}
+        native.validated_owned_handles[50] = {'handle': 500}
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=87, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Owned image unavailable: ') as raised:
+                native.process(50, phase=None)
+        detail = json.loads(str(raised.exception).split(': ', 1)[1])
+        self.assertEqual(detail['winerror'], 87)
+        self.assertEqual(detail['phase'], 'invalid_phase')
+        self.assertFalse(detail['validated_certificate_matches'])
+        self.assertEqual(calls, [('exit', 500)])
 
     def test_failed_open_retains_failed_binding_even_without_any_opened_handle(self):
         native, calls = self.fixture()
@@ -671,7 +756,8 @@ class OwnershipCleanupTests(unittest.TestCase):
                     name = {'times': 'GetProcessTimes', 'exit': 'GetExitCodeProcess', 'image': 'QueryFullProcessImageNameW'}[failure]
                     original = getattr(native.kernel, name)
                     setattr(native.kernel, name, lambda handle, *args: False if handle == 600 else original(handle, *args))
-                with self.assertRaises(RuntimeError): native.tree()
+                with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+                    with self.assertRaises(RuntimeError): native.tree()
                 self.assertEqual(set(native.validated_owned_handles), {50, 60})
 
     def test_live_certificate_drift_is_fatal_during_queries_or_stable_parent_confirmation(self):

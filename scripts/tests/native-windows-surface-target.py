@@ -327,6 +327,7 @@ class Native:
         return receipt
 
     def process(self, pid, phase='observation'):
+        had_retained_handle = pid in self.handles
         if pid not in self.handles:
             access = 0x00100000 | 0x1000 | 1
             handle = self.kernel.OpenProcess(access, False, pid)
@@ -344,9 +345,22 @@ class Native:
         size = W.DWORD(32768)
         name = ctypes.create_unicode_buffer(size.value)
         queried = bool(self.kernel.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(size)))
-        require(queried or code.value != 259 and pid in self.identities, 'Owned image unavailable')
-        image = name.value if queried else self.identities[pid]['image']
+        image_error = None if queried else ctypes.get_last_error()
         value = lambda t: (t.dwHighDateTime << 32) | t.dwLowDateTime
+        if not (queried or code.value != 259 and pid in self.identities):
+            cached = self.identities.get(pid)
+            certificate = self.validated_owned_handles.get(pid)
+            certificate_matches = bool(isinstance(certificate, dict) and isinstance(cached, dict)
+                and certificate.get('handle') == handle and certificate.get('identity') == cached
+                and cached.get('creation_time_100ns') == str(value(created)))
+            raise RuntimeError('Owned image unavailable: ' + json.dumps({
+                'pid': pid, 'phase': phase[:64] if isinstance(phase, str) else 'invalid_phase',
+                'api': 'QueryFullProcessImageNameW',
+                'winerror': image_error, 'buffer_capacity_chars': 32768,
+                'observed_exit_code': code.value, 'creation_time_100ns': str(value(created)),
+                'had_retained_handle': had_retained_handle, 'had_cached_identity': cached is not None,
+                'validated_certificate_matches': certificate_matches}))
+        image = name.value if queried else self.identities[pid]['image']
         identity = {'creation_time_100ns': str(value(created)), 'image': image}
         require(pid not in self.identities or self.identities[pid] == identity, 'Original process identity changed')
         self.identities[pid] = identity
