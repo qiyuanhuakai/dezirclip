@@ -174,6 +174,8 @@ pub struct CaptureBeginParams {
     pub expected_epoch: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub copy_to_clipboard: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_paste_target: Option<WindowsPasteTarget>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -247,6 +249,18 @@ pub struct DesktopCopyParams {
     pub delete_after_use: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_to_top: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_paste_target: Option<WindowsPasteTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsPasteTarget {
+    pub hwnd: String,
+    pub root_hwnd: String,
+    pub pid: u32,
+    pub thread_id: u32,
+    pub creation_time_100ns: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -136,6 +136,7 @@ type CaptureBeginParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
     CopyToClipboard *bool `json:"copy_to_clipboard,omitempty"`
+    ExpectedPasteTarget *WindowsPasteTarget `json:"expected_paste_target,omitempty"`
 }
 
 type CaptureBeginResult struct {
@@ -190,6 +191,15 @@ type DesktopCopyParams struct {
     ImageAsBase64 *bool `json:"image_as_base64,omitempty"`
     DeleteAfterUse *bool `json:"delete_after_use,omitempty"`
     MoveToTop *bool `json:"move_to_top,omitempty"`
+    ExpectedPasteTarget *WindowsPasteTarget `json:"expected_paste_target,omitempty"`
+}
+
+type WindowsPasteTarget struct {
+    Hwnd string `json:"hwnd"`
+    RootHwnd string `json:"root_hwnd"`
+    Pid uint32 `json:"pid"`
+    ThreadId uint32 `json:"thread_id"`
+    CreationTime100ns string `json:"creation_time_100ns"`
 }
 
 type ProtocolVersion struct {

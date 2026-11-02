@@ -23,7 +23,7 @@ pub use capture::{CaptureManager, CaptureHooks};
 pub use work::CaptureWork;
 pub use server::{serve, serve_listener};
 pub use authorization::{Grant, GrantAuthority, Session};
-pub use router::{Host, HostActions, HostOptions, HostLifecycle};
+pub use router::{Host, HostActions, HostOptions, HostLifecycle, PreparedPaste};
 pub use dzc_protocol::wire;
 
 /// Inventory for an executable that actually routes through this Host library.

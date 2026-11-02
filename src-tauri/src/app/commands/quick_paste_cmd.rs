@@ -439,6 +439,7 @@ pub async fn paste_quick_paste_selection(
     if entry_id == 0 {
         return Err(format!("Invalid entry id: {entry_id}"));
     }
+    let paste_target=clipboard_ops::capture_paste_target(true).map_err(|error|error.to_string())?;
     let bridge=app.state::<crate::app::ipc_host::DesktopHost>();
     bridge.check_instance(entry_id,expected_host_instance_id.as_deref())?;
 
@@ -464,7 +465,7 @@ pub async fn paste_quick_paste_selection(
     // The paste pipeline hides the overlay before it returns to its caller.
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
 
-    clipboard_ops::copy_to_clipboard(
+    clipboard_ops::copy_to_clipboard_bound(
         app,
         state,
         session,
@@ -479,6 +480,7 @@ pub async fn paste_quick_paste_selection(
         None,
         None,
         expected_host_instance_id,
+        paste_target,
     )
     .await
     .map_err(|e| e.to_string())
