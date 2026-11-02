@@ -36,16 +36,28 @@ class FakeUser:
         self.exists, self.visible, self.enabled, self.iconic = True, True, True, False
         self.sent, self.focus_received, self.calls, self.input = 3, True, 0, []
         self.foreground, self.focus = 30, 0
+        self.point_probes = []
 
     def GetWindowThreadProcessId(self, window, pid):
-        pid._obj.value = self.pid
-        return self.thread
+        pid._obj.value = 100 if window == 30 else self.pid
+        return 8 if window == 30 else self.thread
 
     def IsWindow(self, window): return self.exists
     def IsWindowVisible(self, window): return self.visible
     def IsWindowEnabled(self, window): return self.enabled
     def IsIconic(self, window): return self.iconic
-    def GetParent(self, window): return self.parent
+    def GetForegroundWindow(self): return self.foreground
+    def GetParent(self, window): return self.parent if window == 20 else 0
+    def GetAncestor(self, window, flag): return self.parent if window == 20 else window
+    def GetWindow(self, window, flag): return 0
+
+    def GetClassNameW(self, window, name, length):
+        name.value = {10: 'Static', 20: 'Edit', 30: 'MyGoWindow'}.get(window, 'Other')
+        return len(name.value)
+
+    def GetWindowRect(self, window, rect):
+        rect._obj.left, rect._obj.top, rect._obj.right, rect._obj.bottom = 0, 0, 100, 100
+        return True
 
     def GetClientRect(self, window, rect):
         rect._obj.left, rect._obj.top, rect._obj.right, rect._obj.bottom = 0, 0, 560, 42
@@ -59,7 +71,9 @@ class FakeUser:
     def GetSystemMetrics(self, index):
         return {76: -1920, 77: 0, 78: 3840, 79: 1080}[index]
 
-    def WindowFromPoint(self, point): return self.hit
+    def WindowFromPoint(self, point):
+        self.point_probes.append((point.x, point.y))
+        return self.hit
 
     def SendInput(self, count, inputs, size):
         self.calls += 1
@@ -74,6 +88,11 @@ def fixture():
     native = TARGET.Native.__new__(TARGET.Native)
     native.user, native.kernel = FakeUser(), SimpleNamespace(GetCurrentThreadId=lambda: 7)
     native.desktop, native.window_thread_id, native.alternate, native.alternate_edit = 50, 7, 10, 20
+    native.root = Path(__file__).parent / 'synthetic-native-root'
+    surface = {'pid': 100, 'image': str(native.root / 'candidate/dzc-surface.exe'), 'running': True,
+               'creation_time_100ns': '123', 'original_handle_retained': True}
+    native.tree = lambda: [surface]
+    native.process = lambda pid: surface
     native.Input, native.Mouse = Input, Mouse
     native.pump_messages = lambda: None
     native.focus_snapshot = lambda: {'foreground_hwnd': native.user.foreground, 'own_thread_focus_hwnd': native.user.focus}
@@ -81,7 +100,7 @@ def fixture():
 
 
 class AlternateClickTests(unittest.TestCase):
-    def test_one_batch_click_uses_fixed_owned_point_and_real_focus_result(self):
+    def test_one_batch_click_prefers_original_left_point_and_real_focus_result(self):
         native = fixture()
         receipt = native.click_alternate()
         self.assertEqual(native.user.calls, 1)
@@ -91,6 +110,45 @@ class AlternateClickTests(unittest.TestCase):
         self.assertEqual([item[0] for item in native.user.input], [0, 0, 0])
         self.assertEqual([item[3] for item in native.user.input], [0xC001, 2, 4])
         self.assertEqual(list(native.user.input[0][1:3]), receipt['absolute_point'])
+        self.assertEqual(len(native.user.point_probes), 4)
+        self.assertEqual(receipt['click_plan']['selected_index'], 0)
+        self.assertEqual(receipt['click_plan']['recheck']['hit']['parent_hwnd'], 10)
+        self.assertNotIn('title', receipt['click_plan']['recheck']['hit'])
+
+    def test_readonly_right_candidate_is_used_when_only_original_left_is_covered(self):
+        native = fixture()
+        def hit(point):
+            native.user.point_probes.append((point.x, point.y))
+            return 99 if point.x == -1792 else 20
+        native.user.WindowFromPoint = hit
+        receipt = native.click_alternate()
+        self.assertEqual(receipt['screen_point'], [-1248, 421])
+        self.assertEqual(receipt['click_plan']['selected_index'], 1)
+        self.assertEqual((len(native.user.point_probes), native.user.calls), (4, 1))
+
+    def test_changed_foreground_during_probes_never_sends_or_replans(self):
+        native = fixture()
+        def hit(point):
+            native.user.point_probes.append((point.x, point.y))
+            if len(native.user.point_probes) == 3:
+                native.user.foreground = 99
+            return 20
+        native.user.WindowFromPoint = hit
+        with self.assertRaisesRegex(RuntimeError, 'changed before input'):
+            native.click_alternate()
+        self.assertEqual((len(native.user.point_probes), native.user.calls), (4, 0))
+
+    def test_changed_selected_hit_identity_during_recheck_never_sends(self):
+        native = fixture()
+        def hit(point):
+            native.user.point_probes.append((point.x, point.y))
+            if len(native.user.point_probes) == 4:
+                native.user.parent = 99
+            return 20
+        native.user.WindowFromPoint = hit
+        with self.assertRaisesRegex(RuntimeError, 'changed before input'):
+            native.click_alternate()
+        self.assertEqual((len(native.user.point_probes), native.user.calls), (4, 0))
 
     def test_unbound_or_wrong_caller_thread_never_sends_input(self):
         for change in ('unbound', 'wrong-thread'):
@@ -100,6 +158,15 @@ class AlternateClickTests(unittest.TestCase):
                 else: native.kernel.GetCurrentThreadId = lambda: 8
                 with self.assertRaises(RuntimeError): native.click_alternate()
                 self.assertEqual(native.user.calls, 0)
+
+    def test_foreground_requires_the_retained_original_surface_process(self):
+        for field, value in (('original_handle_retained', False), ('running', False), ('image', 'unrelated.exe')):
+            with self.subTest(field=field):
+                native = fixture()
+                native.process(100)[field] = value
+                with self.assertRaisesRegex(RuntimeError, 'not foreground'):
+                    native.click_alternate()
+                self.assertEqual((len(native.user.point_probes), native.user.calls), (0, 0))
 
     def test_changed_window_identity_or_unavailable_editor_never_sends_input(self):
         for field, value in [('pid', os.getpid() + 1), ('thread', 8), ('parent', 99), ('exists', False),
@@ -214,6 +281,697 @@ class KeyboardDiagnosticTests(unittest.TestCase):
         self.assertEqual(native.focus_messages[0]['message'], 0x0104)
         self.assertTrue(all(item['role'] == 'target-edit' and item['hwnd'] == 20 for item in native.focus_messages))
         self.assertEqual(list(native.callback_errors), [])
+
+
+class OwnershipCleanupTests(unittest.TestCase):
+    def fixture(self, failure=None):
+        class Memory(ctypes.Structure):
+            _fields_ = [('cb', ctypes.c_ulong), ('WorkingSetSize', ctypes.c_size_t), ('PrivateUsage', ctypes.c_size_t)]
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.root, native.desktop, native.target, native.alternate = Path('fake-root'), None, 0, 0
+        native.Memory, native.handles, native.identities, native.validated_owned_handles = Memory, {}, {}, {}
+        native.binding_attempted_pid, native.binding_error = None, None
+        calls, live = [], {500: True, 600: True, 700: True}
+        expected = str((native.root / 'candidate/dezirclip.exe').resolve())
+
+        def times(handle, created, exited, kernel, user):
+            if failure == 'times': return False
+            created._obj.dwLowDateTime = handle
+            return True
+
+        def code(handle, output):
+            calls.append(('exit', handle))
+            output._obj.value = 259 if live[handle] else 1
+            return True
+
+        def image(handle, flags, name, size):
+            if failure == 'image': return False
+            name.value = expected if failure != 'wrong-image' and handle == 500 else 'unvalidated-image'
+            return True
+
+        def terminate(handle, code):
+            calls.append(('terminate', handle, code)); live[handle] = False; return True
+
+        native.kernel = SimpleNamespace(OpenProcess=lambda access, inherit, pid: pid * 10,
+            GetProcessTimes=times, GetExitCodeProcess=code, QueryFullProcessImageNameW=image,
+            TerminateProcess=terminate, WaitForSingleObject=lambda handle, milliseconds: 0,
+            CloseHandle=lambda handle: calls.append(('close', handle)) or True)
+        native.psapi = SimpleNamespace(GetProcessMemoryInfo=lambda *args: True)
+        native.user = SimpleNamespace(IsWindow=lambda window: False)
+        native.tree = lambda: []
+        return native, calls
+
+    def test_wrong_image_bind_is_close_only_and_cannot_claim_cleanup_or_restore(self):
+        native, calls = self.fixture('wrong-image')
+        with self.assertRaisesRegex(RuntimeError, 'Desktop original image differs'): native.bind(50)
+        self.assertIsNone(native.desktop)
+        self.assertEqual(native.validated_owned_handles, {})
+        saved = []
+        with patch.object(TARGET, 'save', side_effect=lambda path, value: saved.append(value)):
+            with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+        self.assertFalse(any(call[0] == 'terminate' for call in calls))
+        self.assertIn(('close', 500), calls)
+        self.assertIsNone(saved[0]['remaining_owned_processes'])
+        self.assertFalse(saved[0]['discovery_complete'])
+        self.assertEqual(saved[0]['unvalidated_handles_closed'], [50])
+
+    def test_incomplete_first_identity_is_never_authorized_to_terminate(self):
+        for failure, message in [('times', 'process times unavailable'), ('image', 'Owned image unavailable')]:
+            with self.subTest(failure=failure):
+                native, calls = self.fixture(failure)
+                with self.assertRaisesRegex(RuntimeError, message): native.bind(50)
+                self.assertEqual(native.identities, {})
+                self.assertEqual(native.validated_owned_handles, {})
+                with patch.object(TARGET, 'save') as saved:
+                    with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+                self.assertFalse(any(call[0] == 'terminate' for call in calls))
+                self.assertIn(('close', 500), calls)
+                self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_failed_open_retains_failed_binding_even_without_any_opened_handle(self):
+        native, calls = self.fixture()
+        native.kernel.OpenProcess = lambda *args: 0
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot retain'): native.bind(50)
+        self.assertEqual(native.handles, {})
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'ownership validation failed'): native.cleanup()
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+        self.assertFalse(saved.call_args.args[1]['discovery_complete'])
+        self.assertFalse(any(call[0] == 'terminate' for call in calls))
+        with self.assertRaisesRegex(RuntimeError, 'One original Desktop binding'): native.bind(50)
+
+    def test_full_original_bind_authenticates_the_exact_handle_and_identity(self):
+        native, calls = self.fixture()
+        original = native.bind(50)
+        self.assertEqual(native.validated_owned_handles[50], {'handle': 500,
+            'identity': {'image': original['image'], 'creation_time_100ns': original['creation_time_100ns']}})
+        with patch.object(TARGET, 'save'):
+            receipt = native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertEqual(receipt['remaining_owned_processes'], [])
+        self.assertEqual(receipt['unvalidated_pids'], [])
+
+    def test_mixed_authenticated_and_pending_handles_only_terminate_the_authenticated_object(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        native.process(60, phase='tree')
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('discovery failed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'discovery failed'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('close', 600), calls)
+        receipt = saved.call_args.args[1]
+        self.assertEqual(receipt['forced_cleanup_pids'], [50])
+        self.assertEqual(receipt['unvalidated_pids'], [60])
+        self.assertIsNone(receipt['remaining_owned_processes'])
+
+    def test_a_changed_handle_does_not_inherit_an_earlier_authentication(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        native.handles[50] = 600
+        with patch.object(TARGET, 'save'):
+            with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+        self.assertFalse(any(call[0] == 'terminate' for call in calls))
+        self.assertIn(('close', 600), calls)
+
+    def attach_tree(self, native, snapshots=None):
+        class Entry(ctypes.Structure):
+            _fields_ = [('dwSize', ctypes.c_ulong), ('th32ProcessID', ctypes.c_ulong), ('th32ParentProcessID', ctypes.c_ulong)]
+        native.ProcessEntry = Entry
+        native.test_snapshot_calls = 0
+        snapshots = snapshots or [[(50, 1), (60, 50)]]
+        entries, cursor, snapshot_index = [[]], [0], [-1]
+        def fill(output):
+            if cursor[0] >= len(entries[0]): return False
+            output._obj.th32ProcessID, output._obj.th32ParentProcessID = entries[0][cursor[0]]
+            return True
+        def first(snapshot, output): cursor[0] = 0; return fill(output)
+        def next_entry(snapshot, output): cursor[0] += 1; return fill(output)
+        def snapshot(*args):
+            native.test_snapshot_calls += 1
+            snapshot_index[0] += 1
+            entries[0] = snapshots[min(snapshot_index[0], len(snapshots) - 1)]
+            return 900
+        native.kernel.CreateToolhelp32Snapshot = snapshot
+        native.kernel.Process32FirstW, native.kernel.Process32NextW = first, next_entry
+        native.test_snapshot_error = 18
+        original_snapshot = TARGET.Native.parent_snapshot.__get__(native)
+        def parent_snapshot():
+            with patch.object(TARGET.ctypes, 'get_last_error', side_effect=lambda: native.test_snapshot_error, create=True):
+                return original_snapshot()
+        native.parent_snapshot = parent_snapshot
+        native.tree = TARGET.Native.tree.__get__(native)
+
+    def change_creation(self, native, values):
+        original = native.kernel.GetProcessTimes
+        def times(handle, created, *args):
+            result = original(handle, created, *args)
+            if handle in values: created._obj.dwLowDateTime = values[handle]
+            return result
+        native.kernel.GetProcessTimes = times
+
+    def test_old_parent_pid_generation_cannot_authenticate_or_terminate_an_older_child(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        self.change_creation(native, {600: 100})
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('close', 600), calls)
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_generation_is_checked_on_each_edge_not_just_against_the_root(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native, [[(50, 1), (60, 50), (70, 60)]])
+        self.change_creation(native, {700: 550})
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        with patch.object(TARGET, 'save'):
+            with self.assertRaises(RuntimeError): native.cleanup()
+        self.assertFalse(any(call[0] == 'terminate' and call[1] in (600, 700) for call in calls))
+
+    def test_first_snapshot_entry_cannot_authenticate_a_reused_pid_opened_afterwards(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1), (60, 99)]])
+        with self.assertRaisesRegex(RuntimeError, 'parent PID changed'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('ownership unconfirmed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'ownership unconfirmed'): native.cleanup()
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [60])
+
+    def test_missing_second_snapshot_candidate_cannot_be_promoted(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1)]])
+        with self.assertRaisesRegex(RuntimeError, 'disappeared'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+
+    def test_second_snapshot_confirmation_is_bound_to_the_captured_handle_and_identity(self):
+        for changed in ('handle', 'identity'):
+            with self.subTest(changed=changed):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                original = native.kernel.CreateToolhelp32Snapshot
+                def snapshot(*args):
+                    result = original(*args)
+                    if native.test_snapshot_calls == 2:
+                        if changed == 'handle': native.handles[60] = 700
+                        else: native.identities[60] = {**native.identities[60], 'creation_time_100ns': '700'}
+                    return result
+                native.kernel.CreateToolhelp32Snapshot = snapshot
+                with self.assertRaisesRegex(RuntimeError, 'retained handle or identity changed'): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50})
+
+    def test_later_bad_generation_preserves_only_previously_authenticated_objects(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.attach_tree(native, [[(50, 1), (60, 50), (70, 60)]])
+        self.change_creation(native, {700: 550})
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50, 60})
+        with patch.object(TARGET, 'save'):
+            with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertIn(('terminate', 600, 1), calls)
+        self.assertNotIn(('terminate', 700, 1), calls)
+
+    def terminal_exit(self, native, handle, exit_code=0):
+        original = native.kernel.GetExitCodeProcess
+        original_times = native.kernel.GetProcessTimes
+        def code(current, output):
+            if current == handle:
+                output._obj.value = exit_code
+                return True
+            return original(current, output)
+        def times(current, created, exited, kernel, user):
+            result = original_times(current, created, exited, kernel, user)
+            if current == handle:
+                kernel._obj.dwLowDateTime, user._obj.dwLowDateTime = 41, 59
+            return result
+        native.kernel.GetExitCodeProcess = code
+        native.kernel.GetProcessTimes = times
+
+    def test_authenticated_terminal_original_keeps_counters_without_a_current_parent_edge(self):
+        for second in ([ (50, 1) ], [ (50, 1), (60, 99) ]):
+            for exit_code in (0, 17):
+                with self.subTest(second=second, exit_code=exit_code):
+                    native, calls = self.fixture()
+                    native.bind(50)
+                    self.attach_tree(native)
+                    native.tree()
+                    authenticated = dict(native.validated_owned_handles[60])
+                    self.terminal_exit(native, 600, exit_code)
+                    terminal = native.process(60)
+                    self.attach_tree(native, [[(50, 1), (60, 50)], second])
+                    values = native.tree()
+                    self.assertEqual(next(item for item in values if item['pid'] == 60), terminal)
+                    self.assertFalse(terminal['running'])
+                    self.assertEqual(terminal['exit_code'], exit_code)
+                    self.assertEqual((terminal['cpu_kernel_100ns'], terminal['cpu_user_100ns']), (41, 59))
+                    self.assertEqual(native.validated_owned_handles[60], authenticated)
+                    self.assertEqual(native.test_snapshot_calls, 2)
+                    self.assertFalse(any(call[0] == 'terminate' for call in calls))
+
+    def test_new_terminal_candidate_is_not_authorized_by_disappearing_or_changed_parent(self):
+        for second in ([ (50, 1) ], [ (50, 1), (60, 99) ]):
+            with self.subTest(second=second):
+                native, calls = self.fixture()
+                native.bind(50)
+                self.terminal_exit(native, 600)
+                self.attach_tree(native, [[(50, 1), (60, 50)], second])
+                with self.assertRaisesRegex(RuntimeError, 'parent PID changed or disappeared'): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50})
+                native.tree = lambda: (_ for _ in ()).throw(RuntimeError('ownership unconfirmed'))
+                with patch.object(TARGET, 'save') as saved:
+                    with self.assertRaisesRegex(RuntimeError, 'ownership unconfirmed'): native.cleanup()
+                self.assertNotIn(('terminate', 600, 1), calls)
+                self.assertIn(('close', 600), calls)
+                self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [60])
+
+    def test_authenticated_live_original_keeps_current_state_when_parent_snapshots_change(self):
+        for second in ([ (50, 1) ], [ (50, 1), (60, 99) ]):
+            with self.subTest(second=second):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.attach_tree(native, [[(50, 1), (60, 50)], second])
+                observed = next(item for item in native.tree() if item['pid'] == 60)
+                self.assertTrue(observed['running'])
+                self.assertEqual(observed['creation_time_100ns'], '600')
+                self.assertEqual(native.validated_owned_handles[60]['handle'], 600)
+                self.assertEqual(native.test_snapshot_calls, 2)
+
+    def test_terminal_original_never_bypasses_changed_handle_identity_or_authentication_slot(self):
+        for changed in ('handle', 'identity', 'authentication'):
+            with self.subTest(changed=changed):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.terminal_exit(native, 600)
+                self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1)]])
+                original = native.kernel.CreateToolhelp32Snapshot
+                def snapshot(*args):
+                    result = original(*args)
+                    if native.test_snapshot_calls == 2:
+                        if changed == 'handle': native.handles[60] = 700
+                        elif changed == 'identity': native.identities[60] = {**native.identities[60], 'creation_time_100ns': '700'}
+                        else: native.validated_owned_handles[60] = {'handle': 700, 'identity': dict(native.identities[60])}
+                    return result
+                native.kernel.CreateToolhelp32Snapshot = snapshot
+                with self.assertRaisesRegex(RuntimeError, 'Authenticated retained handle, identity or certificate changed'): native.tree()
+
+    def test_authenticated_terminal_parent_does_not_promote_a_new_bad_generation(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.terminal_exit(native, 600)
+        self.change_creation(native, {700: 550})
+        self.attach_tree(native, [[(50, 1), (60, 50), (70, 60)], [(50, 1), (70, 60)]])
+        with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50, 60})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('ownership unconfirmed'))
+        with patch.object(TARGET, 'save'):
+            with self.assertRaisesRegex(RuntimeError, 'ownership unconfirmed'): native.cleanup()
+        self.assertNotIn(('terminate', 700, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('terminate', 500, 1), calls)
+
+    def test_authenticated_live_absence_in_first_or_second_snapshot_preserves_current_counters(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        original = native.kernel.GetProcessTimes
+        counter = [0]
+        def times(handle, created, exited, kernel, user):
+            result = original(handle, created, exited, kernel, user)
+            if handle == 600:
+                counter[0] += 1
+                kernel._obj.dwLowDateTime = counter[0] * 11
+            return result
+        native.kernel.GetProcessTimes = times
+        for first in ([(50, 1)], [(50, 1), (60, 50)]):
+            self.attach_tree(native, [first, [(50, 1)]])
+            observed = next(p for p in native.tree() if p['pid'] == 60)
+            self.assertTrue(observed['running'])
+            self.assertEqual(observed['cpu_kernel_100ns'], counter[0] * 11)
+            self.assertEqual(native.test_snapshot_calls, 2)
+        self.assertEqual(counter[0], 2)
+
+    def test_retained_terminal_parent_anchors_new_descendants_with_strict_generation_checks(self):
+        for child_creation in (550, 700):
+            with self.subTest(child_creation=child_creation):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.terminal_exit(native, 600)
+                self.change_creation(native, {700: child_creation})
+                self.attach_tree(native, [[(50, 1), (70, 60)]])
+                if child_creation == 550:
+                    with self.assertRaisesRegex(RuntimeError, 'Parent PID generation'): native.tree()
+                    self.assertEqual(set(native.validated_owned_handles), {50, 60})
+                else:
+                    values = native.tree()
+                    self.assertEqual([p['pid'] for p in values], [50, 60, 70])
+                    self.assertFalse(next(p for p in values if p['pid'] == 60)['running'])
+                    self.assertEqual(native.validated_owned_handles[70]['handle'], 700)
+                    self.assertEqual(native.test_snapshot_calls, 2)
+
+    def test_authenticated_query_failures_are_fatal_even_without_a_snapshot_entry(self):
+        for failure in ('times', 'exit', 'image', 'identity'):
+            with self.subTest(failure=failure):
+                native, _ = self.fixture()
+                native.bind(50)
+                self.attach_tree(native)
+                native.tree()
+                self.attach_tree(native, [[(50, 1)]])
+                if failure == 'identity':
+                    self.change_creation(native, {600: 700})
+                else:
+                    name = {'times': 'GetProcessTimes', 'exit': 'GetExitCodeProcess', 'image': 'QueryFullProcessImageNameW'}[failure]
+                    original = getattr(native.kernel, name)
+                    setattr(native.kernel, name, lambda handle, *args: False if handle == 600 else original(handle, *args))
+                with self.assertRaises(RuntimeError): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50, 60})
+
+    def test_live_certificate_drift_is_fatal_during_queries_or_stable_parent_confirmation(self):
+        for phase in ('query', 'confirmation'):
+            for changed in ('handle', 'identity', 'certificate', 'extra-certificate'):
+                with self.subTest(phase=phase, changed=changed):
+                    native, _ = self.fixture()
+                    native.bind(50)
+                    self.attach_tree(native)
+                    native.tree()
+                    self.attach_tree(native)
+                    def mutate():
+                        if changed == 'handle': native.handles[60] = 700
+                        elif changed == 'identity': native.identities[60] = {**native.identities[60], 'creation_time_100ns': '700'}
+                        elif changed == 'certificate': native.validated_owned_handles[60] = {'handle': 700, 'identity': dict(native.identities[60])}
+                        else: native.validated_owned_handles[70] = {'handle': 700, 'identity': dict(native.identities[60])}
+                    if phase == 'query':
+                        original = native.kernel.GetProcessTimes
+                        def times(handle, *args):
+                            result = original(handle, *args)
+                            if handle == 600: mutate()
+                            return result
+                        native.kernel.GetProcessTimes = times
+                    else:
+                        original = native.kernel.CreateToolhelp32Snapshot
+                        def snapshot(*args):
+                            handle = original(*args)
+                            if native.test_snapshot_calls == 2: mutate()
+                            return handle
+                        native.kernel.CreateToolhelp32Snapshot = snapshot
+                    with self.assertRaises(RuntimeError): native.tree()
+
+    def test_terminated_root_and_parent_certificates_can_anchor_a_still_live_descendant(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.terminal_exit(native, 500)
+        self.terminal_exit(native, 600)
+        self.attach_tree(native, [[(70, 60)]])
+        values = native.tree()
+        self.assertEqual([p['pid'] for p in values], [50, 60, 70])
+        self.assertEqual([p['pid'] for p in values if p['running']], [70])
+        self.assertEqual(set(native.validated_owned_handles), {50, 60, 70})
+
+    def test_pending_external_window_is_never_returned_or_read_as_owned_and_remains_close_only(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        native.process(60)
+        self.attach_tree(native, [[(50, 1)]])
+        reads = []
+        def pid(window, output): output._obj.value = 60; return 7
+        def title(*args): reads.append('pending caption read'); return 0
+        native.enum_callback = lambda callback: callback
+        native.edit, native.focus_snapshot = 0, lambda: {}
+        native.user = SimpleNamespace(EnumWindows=lambda callback, argument: callback(12345, argument),
+            GetWindowThreadProcessId=pid, GetWindowTextW=title, GetForegroundWindow=lambda: 0,
+            IsWindow=lambda window: False)
+        observed = native.observe()
+        self.assertEqual([p['pid'] for p in observed['processes']], [50])
+        self.assertEqual(observed['windows'], [])
+        self.assertEqual(reads, [])
+        self.assertIn(60, native.handles)
+        self.assertNotIn(60, native.validated_owned_handles)
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'Unvalidated'): native.cleanup()
+        self.assertIn(('close', 600), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_new_parent_confirmation_failure_records_bounded_identity_diagnostics(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.terminal_exit(native, 600)
+        self.attach_tree(native, [[(50, 1), (60, 50)], [(50, 1)]])
+        with self.assertRaisesRegex(RuntimeError, 'parent PID changed or disappeared') as caught: native.tree()
+        import json
+        diagnostic = json.loads(str(caught.exception).split(': ', 1)[1])
+        self.assertEqual(diagnostic, {'pid': 60, 'first_parent': 50, 'confirmed_parent': None,
+            'running': False, 'previously_authenticated': False})
+        self.assertEqual(set(native.validated_owned_handles), {50})
+
+    def test_second_snapshot_error_is_fatal_even_with_only_lifetime_certificates(self):
+        native, _ = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        native.tree()
+        self.attach_tree(native, [[(50, 1)]])
+        original = native.kernel.CreateToolhelp32Snapshot
+        def snapshot(*args):
+            handle = original(*args)
+            if native.test_snapshot_calls == 2:
+                native.test_snapshot_error = 5
+                native.kernel.Process32NextW = lambda *args: False
+            return handle
+        native.kernel.CreateToolhelp32Snapshot = snapshot
+        with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50, 60})
+
+    def test_anchored_fully_read_tree_authenticates_descendants_before_known_cleanup(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        self.assertEqual([item['pid'] for item in native.tree()], [50, 60])
+        self.assertEqual(native.test_snapshot_calls, 2)
+        self.assertEqual(native.validated_owned_handles[60], {'handle': 600, 'identity': dict(native.identities[60])})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('later discovery failed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'later discovery failed'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertIn(('terminate', 600, 1), calls)
+        self.assertEqual(saved.call_args.args[1]['unvalidated_pids'], [])
+        self.assertIsNone(saved.call_args.args[1]['remaining_owned_processes'])
+
+    def test_incomplete_descendant_identity_stays_pending_and_close_only(self):
+        native, calls = self.fixture()
+        native.bind(50)
+        self.attach_tree(native)
+        original = native.kernel.GetProcessTimes
+        native.kernel.GetProcessTimes = lambda handle, *args: False if handle == 600 else original(handle, *args)
+        with self.assertRaisesRegex(RuntimeError, 'process times unavailable'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        native.tree = lambda: (_ for _ in ()).throw(RuntimeError('discovery still failed'))
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'discovery still failed'): native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+        self.assertIn(('close', 600), calls)
+        self.assertEqual(saved.call_args.args[1]['unvalidated_pids'], [60])
+
+
+class SnapshotEnumerationTests(unittest.TestCase):
+    def fixture(self):
+        support = OwnershipCleanupTests()
+        native, calls = support.fixture()
+        native.bind(50)
+        support.attach_tree(native)
+        return native, calls
+
+    def test_normal_error18_eof_preserves_complete_parent_entries_and_closes_each_snapshot(self):
+        native, calls = self.fixture()
+        self.assertEqual(native.parent_snapshot(), {50: 1, 60: 50})
+        self.assertEqual(calls.count(('close', 900)), 1)
+        self.assertEqual([item['pid'] for item in native.tree()], [50, 60])
+        self.assertEqual(calls.count(('close', 900)), 3)
+
+    def test_empty_first_error18_is_the_explicit_eof_path_and_closes_snapshot(self):
+        native, calls = self.fixture()
+        native.kernel.Process32FirstW = lambda *args: False
+        self.assertEqual(native.parent_snapshot(), {})
+        self.assertEqual(calls.count(('close', 900)), 1)
+
+    def test_non_eof_first_and_partial_next_fail_with_original_phase_and_error_before_close(self):
+        for phase in ('first', 'next'):
+            with self.subTest(phase=phase):
+                native, calls = self.fixture()
+                native.test_snapshot_error = 5
+                if phase == 'first': native.kernel.Process32FirstW = lambda *args: False
+                else: native.kernel.Process32NextW = lambda *args: False
+                original_close = native.kernel.CloseHandle
+                def close(handle):
+                    native.test_snapshot_error = 6
+                    return original_close(handle)
+                native.kernel.CloseHandle = close
+                with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed') as caught:
+                    native.parent_snapshot()
+                self.assertIn('"phase": "' + phase + '"', str(caught.exception))
+                self.assertIn('"winerror": 5', str(caught.exception))
+                self.assertEqual(calls.count(('close', 900)), 1)
+
+    def test_enumeration_failure_never_certifies_discovery_or_promotes_an_unseen_child(self):
+        for phase in ('first', 'next'):
+            with self.subTest(phase=phase):
+                native, calls = self.fixture()
+                native.test_snapshot_error = 5
+                if phase == 'first': native.kernel.Process32FirstW = lambda *args: False
+                else: native.kernel.Process32NextW = lambda *args: False
+                with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.tree()
+                self.assertEqual(set(native.validated_owned_handles), {50})
+                with patch.object(TARGET, 'save') as saved:
+                    with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.cleanup()
+                receipt = saved.call_args.args[1]
+                self.assertFalse(receipt['discovery_complete'])
+                self.assertIsNone(receipt['remaining_owned_processes'])
+                self.assertTrue(receipt['errors'])
+                self.assertIn(('terminate', 500, 1), calls)
+                self.assertNotIn(('terminate', 600, 1), calls)
+
+    def test_second_snapshot_error_keeps_new_candidate_pending_and_close_only(self):
+        native, calls = self.fixture()
+        original = native.kernel.CreateToolhelp32Snapshot
+        def snapshot(*args):
+            handle = original(*args)
+            if native.test_snapshot_calls == 2:
+                native.test_snapshot_error = 5
+                native.kernel.Process32NextW = lambda *args: False
+            return handle
+        native.kernel.CreateToolhelp32Snapshot = snapshot
+        with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.tree()
+        self.assertEqual(set(native.validated_owned_handles), {50})
+        with patch.object(TARGET, 'save') as saved:
+            with self.assertRaisesRegex(RuntimeError, 'Process snapshot enumeration failed'): native.cleanup()
+        self.assertFalse(saved.call_args.args[1]['discovery_complete'])
+        self.assertEqual(saved.call_args.args[1]['unvalidated_handles_closed'], [60])
+        self.assertIn(('close', 600), calls)
+        self.assertNotIn(('terminate', 600, 1), calls)
+
+
+class CleanupTests(unittest.TestCase):
+    def test_open_failure_reports_pid_access_error_and_phase_without_retry(self):
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.handles, calls = {}, []
+        native.kernel = SimpleNamespace(OpenProcess=lambda *args: calls.append(args) or 0)
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot retain') as caught:
+                native.process(8123, phase='tree')
+        self.assertIn('"pid": 8123', str(caught.exception))
+        self.assertIn('"winerror": 5', str(caught.exception))
+        self.assertIn('"phase": "tree"', str(caught.exception))
+        self.assertEqual(calls, [(0x101011, False, 8123)])
+        self.assertEqual(native.handles, {})
+
+    def test_failed_memory_read_is_null_with_its_original_error(self):
+        class Memory(ctypes.Structure):
+            _fields_ = [('cb', ctypes.c_ulong), ('WorkingSetSize', ctypes.c_size_t), ('PrivateUsage', ctypes.c_size_t)]
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.Memory, native.handles, native.identities = Memory, {50: 500}, {}
+        def times(handle, created, exited, kernel, user):
+            created._obj.dwLowDateTime = 123
+            return True
+        def code(handle, result): result._obj.value = 259; return True
+        def image(handle, flags, text, size): text.value = 'owned-image'; return True
+        native.kernel = SimpleNamespace(GetProcessTimes=times, GetExitCodeProcess=code, QueryFullProcessImageNameW=image)
+        native.psapi = SimpleNamespace(GetProcessMemoryInfo=lambda *args: False)
+        with patch.object(TARGET.ctypes, 'get_last_error', return_value=299, create=True):
+            receipt = native.process(50)
+        self.assertIsNone(receipt['working_set_bytes'])
+        self.assertIsNone(receipt['private_commit_bytes'])
+        self.assertEqual(receipt['memory_query'], {'succeeded': False, 'winerror': 299})
+
+    def fixture(self, discovery_failure=False, wait_result=0):
+        native = TARGET.Native.__new__(TARGET.Native)
+        native.root, native.desktop, native.target, native.alternate = Path('fake-root'), 50, 10, 20
+        native.handles, native.identities = {50: 500}, {50: {'creation_time_100ns': '123', 'image': 'fake-desktop'}}
+        native.validated_owned_handles = {50: {'handle': 500, 'identity': dict(native.identities[50])}}
+        calls, live = [], {500: True}
+
+        def exit_code(handle, code):
+            calls.append(('exit', handle))
+            code._obj.value = 259 if live[handle] else 1
+            return True
+
+        def terminate(handle, code):
+            calls.append(('terminate', handle, code))
+            if wait_result == 0: live[handle] = False
+            return True
+
+        native.kernel = SimpleNamespace(GetExitCodeProcess=exit_code, TerminateProcess=terminate,
+            WaitForSingleObject=lambda handle, milliseconds: calls.append(('wait', handle, milliseconds)) or wait_result,
+            CloseHandle=lambda handle: calls.append(('close', handle)) or True)
+        windows = {10, 20}
+        native.user = SimpleNamespace(IsWindow=lambda window: window in windows,
+            DestroyWindow=lambda window: calls.append(('destroy', window)) or windows.remove(window) or True)
+
+        def discover():
+            calls.append(('discover',))
+            if discovery_failure: raise RuntimeError('Cannot retain an owned original process handle')
+            return []
+
+        native.tree = discover
+        return native, calls
+
+    def test_discovery_failure_still_cleans_retained_handles_and_preserves_failure(self):
+        native, calls = self.fixture(discovery_failure=True)
+        saved = []
+        with patch.object(TARGET, 'save', side_effect=lambda path, value: saved.append(value)), patch.object(TARGET.time, 'monotonic', return_value=100):
+            with self.assertRaisesRegex(RuntimeError, 'Cannot retain an owned original process handle'):
+                native.cleanup()
+        self.assertIn(('terminate', 500, 1), calls)
+        self.assertIn(('wait', 500, 5000), calls)
+        self.assertIn(('destroy', 10), calls)
+        self.assertIn(('destroy', 20), calls)
+        self.assertIn(('close', 500), calls)
+        self.assertFalse(saved[0]['discovery_complete'])
+        self.assertIsNone(saved[0]['remaining_owned_processes'])
+        self.assertEqual(saved[0]['forced_cleanup_pids'], [50])
+
+    def test_unconfirmed_termination_stays_unknown_and_cannot_restore(self):
+        native, calls = self.fixture(wait_result=258)
+        saved = []
+        with patch.object(TARGET, 'save', side_effect=lambda path, value: saved.append(value)), patch.object(TARGET.time, 'monotonic', return_value=100):
+            with self.assertRaisesRegex(RuntimeError, 'has not exited'): native.cleanup()
+        self.assertIsNone(saved[0]['remaining_owned_processes'])
+        self.assertEqual(saved[0]['forced_cleanup_pids'], [])
+        self.assertIn(('close', 500), calls)
+
+    def test_success_retains_original_cleanup_contract(self):
+        native, _ = self.fixture()
+        with patch.object(TARGET, 'save'), patch.object(TARGET.time, 'monotonic', return_value=100):
+            receipt = native.cleanup()
+        self.assertEqual(receipt['remaining_owned_processes'], [])
+        self.assertTrue(receipt['target_closed'] and receipt['alternate_target_closed'])
+        self.assertEqual(receipt['errors'], [])
 
 
 if __name__ == '__main__':

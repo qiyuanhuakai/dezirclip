@@ -9,6 +9,7 @@ import { performance } from 'node:perf_hooks';
 import { verifySurfaceIdentity } from '../build-surface.mjs';
 import { mainWebviewTargets } from '../release-windows-upgrade.mjs';
 import { collectOwnedCrashEvents, desktopExitVerdict } from './native-windows-crash-events.mjs';
+import { trackManagedChild, within, finalizeManagedChild, stopManagedChild, exitFailedController } from './native-windows-lifecycle.mjs';
 
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -202,12 +203,14 @@ class LoggedProcess {
     this.files = ['stdout', 'stderr'].map(stream => openSync(path.join(root, label + '.' + stream + '.log'), 'wx'));
     this.child = spawn(executable, argv, { env, cwd: repository, windowsHide: true, stdio: [pipeInput ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
     this.record = { executable, argv, pid: this.child.pid ?? null, started_at: new Date().toISOString() };
-    this.closed = new Promise(resolve => this.child.once('close', (exitCode, signal) => {
-      const result = { exit_code: exitCode, signal };
-      Object.assign(this.record, result, { closed_at: new Date().toISOString() });
-      if (this.finishRequested) this.finish();
-      resolve(result);
-    }));
+    this.closed = trackManagedChild(this.child, this.record, () => {
+      if (this.finishRequested) {
+        try { this.finish(); } catch (error) { this.error = String(error); this.record.log_finalization_error = this.error; }
+      }
+    }, undefined, error => {
+      this.error = String(error);
+      this.cancelPending?.(error);
+    });
     this.error = null;
     this.child.once('error', error => { this.error = String(error); this.record.error = this.error; });
     for (const [index, stream] of ['stdout', 'stderr'].entries()) this.child[stream].on('data', chunk => {
@@ -216,7 +219,7 @@ class LoggedProcess {
     });
   }
   finish() {
-    if (!this.record.closed_at) { this.finishRequested = true; return; }
+    if (!this.record.closed_at && !this.record.teardown?.stdio_detached) { this.finishRequested = true; return; }
     if (!this.logsClosed) {
       this.logsClosed = true;
       for (const fd of this.files) { fsyncSync(fd); closeSync(fd); }
@@ -227,22 +230,21 @@ class LoggedProcess {
   }
 }
 
-async function completedCommand(process, milliseconds) {
-  let timer;
+export async function completedCommand(process, milliseconds, timers = globalThis) {
+  let firstError;
   try {
-    const result = await Promise.race([process.closed, new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('Original metadata command exceeded its deadline')), milliseconds);
-    })]);
+    const result = await within(process.closed, milliseconds, 'Original metadata command exceeded its deadline', timers);
     assert(!process.error && !process.overflow);
     assert.equal(result.exit_code, 0);
     return result;
   } catch (error) {
-    process.child.kill();
-    await process.closed;
+    firstError = error;
+    try { await finalizeManagedChild(process, 0, timers); }
+    catch (cleanupError) { process.record.finalization_error = String(cleanupError); }
     throw error;
   } finally {
-    clearTimeout(timer);
-    process.finish();
+    try { process.finish(); }
+    catch (error) { if (!firstError) throw error; process.record.log_finalization_error = String(error); }
   }
 }
 
@@ -270,6 +272,7 @@ class NativeChannel extends LoggedProcess {
   }
   request(operation, args = {}, milliseconds = 15000) {
     assert(!this.overflow || operation === 'stop', 'Native raw observation log exceeded bound');
+    if (this.record.process_exit?.observed || this.record.closed_at) return Promise.reject(new Error('Original native target has already exited'));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => { this.pending.delete(id); reject(new Error('Native operation timed out: ' + operation)); }, milliseconds);
@@ -277,9 +280,14 @@ class NativeChannel extends LoggedProcess {
       this.child.stdin.write(JSON.stringify({ id, operation, ...args }) + '\n');
     });
   }
+  cancelPending(error) {
+    this.readyError(error);
+    for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(error); }
+    this.pending.clear();
+  }
 }
 
-class Bridge {
+export class Bridge {
   async connect(port, observations) {
     const started = performance.now(), deadline = started + 45000;
     const target = await poll('Actual main WebView', async () => {
@@ -295,6 +303,7 @@ class Bridge {
     assert.equal(Number(url.port), port);
     this.socket = new WebSocket(url);
     this.pending = new Map(); this.sequence = 0;
+    this.closed = new Promise(resolve => this.socket.addEventListener('close', resolve, { once: true }));
     await new Promise((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('Actual CDP connection timed out')), Math.max(1, Math.min(10000, deadline - performance.now())));
       this.socket.addEventListener('open', () => { clearTimeout(timeout); resolve(); }, { once: true });
@@ -341,6 +350,19 @@ class Bridge {
     return result.result?.value;
   }
   close() { this.socket?.close(); }
+  async finalize(milliseconds = 2000, timers = globalThis) {
+    if (!this.socket) return { close_confirmed: true, not_created: true };
+    let error;
+    try {
+      if (this.socket.readyState !== WebSocket.CLOSED) {
+        this.close();
+        await within(this.closed, milliseconds, 'Actual CDP socket close was not confirmed', timers);
+      }
+    } catch (caught) { error = String(caught); }
+    for (const pending of this.pending.values()) { timers.clearTimeout(pending.timeout); pending.reject(new Error('Actual CDP finalization')); }
+    this.pending.clear();
+    return { close_confirmed: this.socket.readyState === WebSocket.CLOSED, ...(error ? { error } : {}) };
+  }
 }
 
 async function poll(label, action, milliseconds = 12000, absoluteDeadline = null) {
@@ -397,7 +419,7 @@ export async function runSurfaceAcceptance(args, env = process.env) {
     canary = canarySnapshot(canaryDirectory); report.startup_canary_before = canary;
     const port = await availablePort(); report.cdp_port = port;
     native = new NativeChannel(args.python, root, expected.source_revision, port);
-    await Promise.race([native.ready, delay(20000).then(() => { throw new Error('Owned bootstrap did not become ready'); })]);
+    await within(native.ready, 20000, 'Owned bootstrap did not become ready');
     const seedText = 'nativeupgradefixturemarker' + randomUUID().replaceAll('-', '') + '-native-a';
     const clipboard = new LoggedProcess(args.python, ['-B', fileURLToPath(new URL('./native-windows-clipboard.py', import.meta.url))], root, 'synthetic-clipboard-seed',
       { ...environment(root, true), DEZIRCLIP_NATIVE_CAPTURE_TEXT: seedText });
@@ -722,22 +744,36 @@ export async function runSurfaceAcceptance(args, env = process.env) {
     const errors = [];
     if (bridge?.socket?.readyState === WebSocket.OPEN) {
       try { await bridge.invoke('hide_quick_paste'); await bridge.invoke('save_setting', { key: 'app.quick_paste_renderer', value: 'tauri' }); } catch (error) { errors.push(String(error)); }
-      bridge.close();
+    }
+    if (bridge) {
+      report.bridge_cleanup = await bridge.finalize();
+      if (!report.bridge_cleanup.close_confirmed) errors.push('Actual CDP socket close was not confirmed');
     }
     if (native) {
       try {
-        try { await native.request('stop'); } finally { native.child.stdin.end(); }
-        report.native_target_exit = await Promise.race([native.closed, delay(20000).then(() => { throw new Error('Owned cleanup did not finish'); })]);
+        report.native_lifecycle = await stopManagedChild(native, () => native.request('stop'), 15000);
+        report.native_process_exit = { ...native.record.process_exit };
+        if (report.native_lifecycle.stop_error) errors.push(report.native_lifecycle.stop_error);
+        if (report.native_lifecycle.input_error) errors.push(report.native_lifecycle.input_error);
+        if (report.native_lifecycle.close_deadline_exceeded) errors.push('Original native cleanup close deadline expired');
+        report.native_target_exit = native.record.closed_at ? await native.closed : null;
+        if (existsSync(path.join(root, 'native-cleanup.json'))) report.cleanup = json(path.join(root, 'native-cleanup.json'));
+        assert(report.native_lifecycle.close_confirmed, 'Owned cleanup did not finish; termination is unconfirmed');
         assert.equal(report.native_target_exit.exit_code, 0); assert(!native.overflow && !native.error);
-        report.cleanup = json(path.join(root, 'native-cleanup.json')); assert(!report.cleanup.native_error && !report.cleanup.bootstrap_error);
+        assert(report.cleanup && !report.cleanup.native_error && !report.cleanup.bootstrap_error);
         assert.deepEqual(report.cleanup.native.remaining_owned_processes, []); assert.equal(report.cleanup.native.target_closed, true);
         assert.equal(report.cleanup.native.alternate_target_closed, true);
       } catch (error) { errors.push(String(error)); }
-      finally { native.finish(); }
+      finally { try { native.finish(); } catch (error) { errors.push(String(error)); } }
     }
     if (desktop) {
       try {
-        report.desktop_exit = await Promise.race([desktop.closed, delay(5000).then(() => { throw new Error('Original Desktop still running'); })]);
+        report.desktop_lifecycle = await finalizeManagedChild(desktop, 5000);
+        report.desktop_process_exit = { ...desktop.record.process_exit };
+        report.desktop_exit = desktop.record.closed_at ? await desktop.closed : null;
+        if (report.desktop_lifecycle.kill_requested) errors.push('Original Desktop required controller fallback termination');
+        if (report.desktop_lifecycle.close_deadline_exceeded) errors.push('Original Desktop close deadline expired');
+        assert(report.desktop_lifecycle.close_confirmed, 'Original Desktop close was not confirmed');
         desktop.finish(); assert(!desktop.overflow && !desktop.error);
         const exitRecord = { ...desktop.record, ...report.desktop_exit };
         const verdict = desktopExitVerdict(exitRecord, cleanupStartedAt, report.cleanup?.native?.forced_cleanup_pids ?? []);
@@ -749,6 +785,7 @@ export async function runSurfaceAcceptance(args, env = process.env) {
         }
       }
       catch (error) { errors.push(String(error)); }
+      finally { try { desktop.finish(); } catch (error) { errors.push(String(error)); } }
     }
     if (movedHelper) {
       try { const helper = path.join(root, 'candidate/dzc-surface.exe'); assert(!existsSync(helper)); renameSync(movedHelper, helper); report.unavailable_helper_bytes_restored = true; }
@@ -779,5 +816,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     assert(!Object.hasOwn(args, key)); args[key] = process.argv[index + 1];
   }
   assert(['desktop', 'helper', 'helper-proof', 'python', 'output-root'].every(key => args[key]));
-  runSurfaceAcceptance(args).catch(error => { console.error(error.stack ?? error); process.exitCode = 1; });
+  runSurfaceAcceptance(args).catch(error => exitFailedController(error));
 }
