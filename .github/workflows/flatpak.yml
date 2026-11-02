@@ -28,8 +28,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check src-tauri/src/bin layout
-        run: node scripts/check-tauri-bin-dir.mjs
+      - name: Check binary layout and verifier contracts
+        run: |
+          node scripts/check-tauri-bin-dir.mjs
+          python3 -I -B -m unittest discover -s scripts/tests -p test_verify_flatpak.py -v
 
       - name: Install Linux system dependencies
         run: |

@@ -118,6 +118,8 @@ flatpak run io.github.qiyuanhuakai.dezirclip
 
 源码构建与验证：安装 `org.gnome.Platform//50`、`org.gnome.Sdk//50`、`flatpak-builder`、Xvfb 和 X11 开发库后，运行 `pnpm run tauri:build`、`pnpm run flatpak:prepare`、`pnpm run flatpak:build`，再运行 `python3 scripts/verify-flatpak.py flatpak/build`。验证使用最终 Platform 运行时识别中英文固定图片，并向隔离的 X11 窗口发送 Ctrl+V、检查剪贴板文本往返；不安装应用、不接触用户桌面的焦点或剪贴板。CI 和发布复用同一构建及验证流程。
 
+Xvfb 验证仅启动一次，准备期限仍为 15 秒；其标准错误直接保留在 CI 日志中，另记录原进程 PID、退出状态、单调耗时和最多 32 字节的 displayfd 原数据。只有完整的十进制显示号加换行且原进程仍运行才进入粘贴检查。Xvfb 与合成接收窗口均只清理原 `Popen` 对象：终止后最多等待 10 秒，必要时强杀并再等 10 秒；强杀或清理异常使验收失败，已有首个错误保持并输出清理诊断。这些诊断未证明此前 ARM64 启动失败的根因。[Python subprocess 文档](https://docs.python.org/3/library/subprocess.html)说明未消费的管道可阻塞子进程，`Popen.wait` 超时也不会自动清理子进程。
+
 ## 剪贴板捕获与内容保真
 
 X11 优先订阅 XFixes 的剪贴板所有者变化，纯图片复制同样会触发读取。XFixes 不可用或连接失败时，回退到 100 ms 轮询；指纹包含文本、文件 URI、图片尺寸和像素，不再只检查文本。轮询仍可能漏掉两次采样间已被覆盖的短暂内容，快速连续复制也会受到来源应用和剪贴板可读取时机影响。
