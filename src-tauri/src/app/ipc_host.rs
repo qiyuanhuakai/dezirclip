@@ -314,8 +314,18 @@ fn dispatch_embedded<T:DeserializeOwned>(host:&Host,method:Method,params:impl Se
     let (session,_)=match accepted {Ok(value)=>value,Err(_)=>{host.grants().revoke(&grant);return Err(failed());}};
     let response=host.dispatch(&session,Request{request_id:"embedded-desktop".into(),method,params});
     host.grants().revoke(&grant);
-    if let Some(error)=response.error {return Err(public_code(error.code));}
+    if let Some(error)=response.error {return Err(method_error(method, error.code));}
     serde_json::from_value(response.result.ok_or_else(failed)?).map_err(|_|failed())
+}
+fn method_error(method: Method, code: WireErrorCode) -> String {
+    if method == Method::PrivacyHotkeySet {
+        match code {
+            WireErrorCode::InvalidRequest | WireErrorCode::UnsupportedCapability => return "PrivacyHotkeyUnavailable".into(),
+            WireErrorCode::Busy => return "PrivacyHotkeyBusy".into(),
+            _ => {}
+        }
+    }
+    public_code(code)
 }
 fn public_code(code:WireErrorCode)->String {match code {
     WireErrorCode::PrivacyStateUnavailable=>"PrivacyStateUnavailable",WireErrorCode::PrivacyEpochChanged=>"PrivacyEpochChanged",
@@ -476,7 +486,12 @@ impl DesktopHost {
         }
         let mut client=self.service_client().await?;
         if client.hello.state.service_instance_id!=self.instance()? {return Err("ClipboardHostInstanceChanged".into());}
-        client.call(method,params,schema).await.map_err(remote_error)
+        client.call(method,params,schema).await.map_err(|error| {
+            match serde_json::from_str::<WireErrorCode>(&error.to_string()) {
+                Ok(code) => method_error(method, code),
+                Err(_) => remote_error(error),
+            }
+        })
     }
     pub(crate) fn call_embedded<T:DeserializeOwned>(&self,method:Method,params:impl Serialize)->Result<T,String> {
         let host=self.embedded()?.ok_or_else(failed)?;

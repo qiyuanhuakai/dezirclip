@@ -4,7 +4,7 @@ default-members = ["src-tauri"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0-alpha.7"
+version = "0.2.0-alpha.8"
 edition = "2021"
 authors = ["qiyuanhuakai"]
 
@@ -25,6 +25,7 @@ semver = "1"
 serde = { version = "1", features = ["derive"] }
 chrono = "0.4"
 cssparser = "0.37"
+dom_query = { version = "0.28", default-features = false }
 base64 = "0.22"
 rusqlite = { git = "https://github.com/rusqlite/rusqlite", rev = "661107f6eb5d7477c61be1221744de3ad96c53e7", default-features = false, features = ["bundled", "functions"] }
 arboard = "3"

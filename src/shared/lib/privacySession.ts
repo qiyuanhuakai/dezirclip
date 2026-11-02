@@ -297,7 +297,8 @@ export async function setPrivacySession(enabled: boolean, durationMs: number | n
 export async function invokePrivacyBound<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (model.phase !== "ready" || (command === "get_privacy_entry" && args?.reveal !== false && !activeView)) throw new Error("PrivacyStateUnavailable");
   // Only commands whose backend projects protected records to placeholders can survive blur.
-  const guard = publicReadCommands.has(command) ? listFence : fence;
+  const publicRead = publicReadCommands.has(command) || (command === "get_privacy_entry" && args?.reveal === false);
+  const guard = publicRead ? listFence : fence;
   const token = guard.capture();
   const result = await invoke<T>(command, args);
   if (!guard.isCurrent(token) || model.phase !== "ready") throw new Error("PrivacyEpochChanged");
@@ -322,28 +323,29 @@ export async function prepareOwnedPreview(expectedEpoch: number, requestIsCurren
   const current = getCurrentWindow();
   const pinned = isPinnedPreviewLabel(current.label);
   if (current.label !== "compact-preview" && !pinned) throw new Error("PrivacyStateUnavailable");
-  const token = fence.capture();
+  const guard = allowSensitive ? fence : listFence;
+  const token = guard.capture();
   const started = lifecycle;
   visibilityRevision += 1;
   const lease = hiddenPreparation.begin("preview", () => requestIsCurrent()
-    && started === lifecycle && fence.isCurrent(token));
+    && started === lifecycle && guard.isCurrent(token));
   try {
   // A pinned window can explicitly reveal again without reopening the clipboard panel.
   const owner = pinned && await current.isVisible() ? current
     : (await getAllWindows()).find(window => window.label === "main");
   if (!owner || !(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
-    || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token)) {
+    || !requestIsCurrent() || started !== lifecycle || !guard.isCurrent(token)) {
     throw new Error("PrivacyStateUnavailable");
   }
   viewSuspended = false;
   activeView = true;
   await refreshPrivacyState();
   if (!(await owner.isVisible()) || (allowSensitive && !(await owner.isFocused()))
-    || !requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token) || model.phase !== "ready"
+    || !requestIsCurrent() || started !== lifecycle || !guard.isCurrent(token) || model.phase !== "ready"
     || model.snapshot?.privacy_epoch !== expectedEpoch) throw new Error("PrivacyEpochChanged");
   await releaseVisiblePreparation(lease);
-  if (!requestIsCurrent() || started !== lifecycle || !fence.isCurrent(token)) throw new Error("PrivacyEpochChanged");
-  const access = beginPrivacyAccess();
+  if (!requestIsCurrent() || started !== lifecycle || !guard.isCurrent(token)) throw new Error("PrivacyEpochChanged");
+  const access = beginPrivacyAccess(allowSensitive ? "reveal" : "list");
   if (!access) throw new Error("PrivacyStateUnavailable");
   return { ...access, release: lease.release };
   } catch (error) {

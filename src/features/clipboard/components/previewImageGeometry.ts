@@ -13,13 +13,20 @@ export function fitPreviewZoom(viewport: ImageSize, image: ImageSize): number {
 // Coordinates are relative to the scroll viewport; centering margins are part
 // of the displayed image's origin and must be removed before scaling.
 export function zoomPreviewScroll(viewport: ImageSize, image: ImageSize, scroll: ImagePoint,
-    anchor: ImagePoint, before: number, after: number): ImagePoint {
+    anchor: ImagePoint, before: number, after: number, pan: ImagePoint = { x: 0, y: 0 }): ImagePoint {
     if (!Number.isFinite(before) || !Number.isFinite(after) || before <= 0 || after <= 0) return scroll;
-    const axis = (view: number, natural: number, offset: number, point: number) => {
+    const axis = (view: number, natural: number, offset: number, point: number, shift: number) => {
         const start = Math.max(0, (view - natural * before) / 2);
         const end = Math.max(0, (view - natural * after) / 2);
-        const imagePoint = (offset + point - start) / before;
+        const imagePoint = (offset + point - start - shift) / before;
         return Math.max(0, Math.min(Math.max(0, natural * after - view), imagePoint * after + end - point));
     };
-    return { x: axis(viewport.width, image.width, scroll.x, anchor.x), y: axis(viewport.height, image.height, scroll.y, anchor.y) };
+    return { x: axis(viewport.width, image.width, scroll.x, anchor.x, pan.x), y: axis(viewport.height, image.height, scroll.y, anchor.y, pan.y) };
+}
+
+// A fitted axis can pan inside the viewport. Keep a grip on the image so it can always be dragged back.
+export function fittedAxisPan(view: number, image: number, displacement: number): number {
+    if (image > view || view <= 0 || image <= 0) return 0;
+    const limit = (view + image) / 2 - Math.min(24, view, image);
+    return Math.max(-limit, Math.min(limit, displacement));
 }

@@ -104,7 +104,7 @@ const CompactPreviewWindow = () => {
     };
     const [previewListenerReady, setPreviewListenerReady] = useState(false);
     useEffect(() => subscribePrivacyInvalidation(scope => {
-        if (pinned && scope === "reveal" && payloadRef.current && !payloadRef.current.protectedContent) return;
+        if (scope === "reveal" && lastRequest.current?.allowSensitive === false && !payloadRef.current?.protectedContent) return;
         notifyPayloadInvalidated();
         payloadSequence.current += 1;
         setPreviewRequest(null);
@@ -308,24 +308,10 @@ const CompactPreviewWindow = () => {
         if (!payload) return null;
         if (payload.contentType === "image") {
             const src = isRamImageSource(payload.content) ? payload.content : undefined;
-            if (pinned && src) return <PreviewImage src={src} zoom={zoom} onZoomChange={setZoom}
+            const bounds = previewBoundsRef.current;
+            return src && <PreviewImage src={src} zoom={pinned ? zoom : "fit"} onZoomChange={setZoom}
+                hoverBounds={pinned ? undefined : { width: bounds.mediaWidth, height: bounds.mediaHeight }}
                 onFitZoom={setFitZoom} onLoad={() => requestResizeRef.current?.()} />;
-            return (
-                <img
-                    src={src}
-                    alt="preview"
-                    onError={() => requestResizeRef.current?.()}
-                    onLoad={() => {
-                        compactPreviewLog("image loaded, request resize");
-                        requestResizeRef.current?.();
-                    }}
-                    style={{
-                        width: "auto",
-                        height: "auto",
-                        borderRadius: "4px"
-                    }}
-                />
-            );
         }
         if (payload.contentType === "video") {
             const src = /^data:video\/(mp4|webm);base64,[A-Za-z0-9+/=]+$/.test(payload.content) ? payload.content : undefined;

@@ -16,6 +16,7 @@ export const tw = {
         privacy_session_start: "開啟隱私工作階段",
         privacy_session_renew: "更新保護時間",
         privacy_session_end: "結束隱私工作階段",
+        privacy_hotkey_busy: "快捷鍵已被占用或正在變更，請嘗試其他組合。",
         privacy_session_hotkey: "切換隱私工作階段快速鍵",
         privacy_session_hotkey_clear: "清除快捷鍵",
         privacy_session_hotkey_hint: "可嘗試 Ctrl+Alt+P；留空表示不註冊。儲存前會檢查衝突與目前系統能力。",

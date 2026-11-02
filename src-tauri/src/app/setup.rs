@@ -634,6 +634,10 @@ fn start_services(app: &App, _s: &StartupSettings, app_handle: AppHandle) {
     }
 }
 
+fn compact_preview_visible(app: &AppHandle) -> bool {
+    app.get_webview_window("compact-preview").is_some_and(|preview| preview.is_visible().unwrap_or(false))
+}
+
 #[cfg(target_os = "windows")]
 fn start_edge_docking_monitor(app_handle: AppHandle) {
     std::thread::spawn(move || {
@@ -805,7 +809,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 } else if dock != DockPosition::None {
                     // Don't dock while dragging (Left Mouse Button down)
                     let is_lbutton_down = unsafe { (GetAsyncKeyState(0x01) as u16 & 0x8000) != 0 };
-                    if is_mouse_in || is_lbutton_down {
+                    if is_mouse_in || is_lbutton_down || compact_preview_visible(&app_handle) {
                         continue;
                     }
 
@@ -1085,7 +1089,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         }
                     }
                 } else if dock != DockPosition::None {
-                    if is_pointer_button_down {
+                    if is_mouse_in || is_pointer_button_down || compact_preview_visible(&app_handle) {
                         continue;
                     }
 
@@ -1831,6 +1835,19 @@ fn main_blur_can_hide(window: &tauri::Window) -> bool {
     }
     if IGNORE_BLUR.load(Ordering::Relaxed) || WINDOW_PINNED.load(Ordering::Relaxed) {
         return false;
+    }
+
+    if window.app_handle().webview_windows().iter().any(|(label, preview)|
+        crate::infrastructure::preview_activation::is_preview_label(label) && preview.is_focused().unwrap_or(false)) {
+        return false;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(position) = window.cursor_position() {
+            if crate::infrastructure::preview_activation::hit_test(window.app_handle(), POINT { x: position.x as i32, y: position.y as i32 }) {
+                return false;
+            }
+        }
     }
 
     let settings = window.app_handle().state::<SettingsState>();

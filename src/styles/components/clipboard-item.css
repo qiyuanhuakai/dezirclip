@@ -286,11 +286,3 @@
   width: 20px;
   box-shadow: var(--icon-btn-current-shadow, var(--icon-btn-shadow, 1px 1px 0 0 var(--shadow-color)));
 }
-.history-scroll-preview {
-    box-sizing: border-box;
-    padding: 10px 12px;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    color: var(--text-secondary);
-}

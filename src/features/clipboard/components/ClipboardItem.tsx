@@ -446,7 +446,28 @@ const ClipboardItem = ({
                 && (!fromKeyboard || keyboardPreviewRef.current));
     };
 
-    useEffect(() => { void hideCompactPreviewGlobal(previewOwner.current); }, [item]);
+    const scheduleHover = () => {
+        if (hoverTimerRef.current !== null || !compactMode || isSensitiveHidden || contextMenuState) return;
+        hoverTimerRef.current = setTimeout(() => {
+            const anchor = hoverAnchorRef.current;
+            if (anchor && itemRootRef.current?.isConnected) void showCompactPreview(anchor);
+        }, 300);
+    };
+    const trackHover = (event: React.MouseEvent<HTMLElement>) => {
+        if (!compactMode || isSensitiveHidden || contextMenuState) return;
+        hoverAnchorThrottle.schedule({
+            clientX: event.clientX, clientY: event.clientY, screenX: event.screenX, screenY: event.screenY,
+            element: event.currentTarget
+        });
+        scheduleHover();
+    };
+    useEffect(() => {
+        void hideCompactPreviewGlobal(previewOwner.current);
+        if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
+        // A refreshed virtual row under a stationary pointer does not get another enter event.
+        if (hoverAnchorRef.current && itemRootRef.current?.matches(":hover")) scheduleHover();
+    }, [item]);
     useEffect(() => {
         if (!previewFromKeyboard || isSensitiveHidden) return;
         const timer = setTimeout(() => {
@@ -935,61 +956,11 @@ const ClipboardItem = ({
                         setContextMenuState(point);
                     });
             }}
-            onMouseEnter={(e) => {
-                if (!compactMode || isSensitiveHidden) return;
-                if (contextMenuState) return;
-                compactPreviewLog("mouseenter schedule preview", { itemId: item.id });
-                const target = e.currentTarget;
-
-                // Measured in the frame rather than here, for the same reason
-                // `onMouseMove` does it: a row entering under a stationary
-                // pointer can land while the list is still laying out, and a
-                // geometry read in the handler may force a synchronous layout.
-                // What that buys is measured and worth stating precisely: the
-                // synchronous reads drop to zero, and the layout count does not
-                // move, so the gain is getting the reads off the handler's
-                // synchronous path rather than fewer layouts. The hover timer
-                // does not fire immediately, so a frame's delay changes nothing
-                // about what the preview is placed against.
-                hoverAnchorThrottle.schedule({
-                    clientX: e.clientX,
-                    clientY: e.clientY,
-                    screenX: e.screenX,
-                    screenY: e.screenY,
-                    element: target
-                });
-
-                // Clear any pending hide timer
-                if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
-
-                // Set a delay to show
-                hoverTimerRef.current = setTimeout(() => {
-                    if (!target.isConnected) return;
-                    const anchor = hoverAnchorRef.current;
-                    if (!anchor) return;
-                    compactPreviewLog("mouseenter timer fired, show preview", { itemId: item.id });
-                    showCompactPreview(anchor);
-                }, 300);
-            }}
-            onMouseMove={(e) => {
-                if (!compactMode) return;
-                if (contextMenuState) return;
-                // The anchor is only read when the hover delay ends, when the preview
-                // timer fires, so the newest position in the frame is exactly
-                // as good as the newest position in the event queue. Measuring
-                // on every event was a forced synchronous layout per event, on
-                // the hottest path in the list; the element is captured here
-                // because `currentTarget` is gone by the time the frame runs.
-                hoverAnchorThrottle.schedule({
-                    clientX: e.clientX,
-                    clientY: e.clientY,
-                    screenX: e.screenX,
-                    screenY: e.screenY,
-                    element: e.currentTarget
-                });
-            }}
+            onMouseEnter={trackHover}
+            onMouseMove={trackHover}
             onMouseLeave={() => {
-                if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+                if (hoverTimerRef.current !== null) clearTimeout(hoverTimerRef.current);
+                hoverTimerRef.current = null;
                 // Drop a frame that is still queued: applying it after the
                 // pointer has already left would resurrect an anchor for an
                 // item the user is no longer on.

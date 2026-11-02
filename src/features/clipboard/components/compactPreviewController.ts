@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
-import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { currentMonitor, cursorPosition, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { beginPrivacyAccess, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { compactPreviewLog } from "../../../shared/lib/compactPreviewLog";
@@ -20,6 +20,7 @@ type Session = {
     owner: object;
     request: PreviewRequest | null;
     isHovered: () => boolean;
+    allowSensitive: boolean;
     pointerInside: boolean;
     pinning: boolean;
     requestId: string;
@@ -85,7 +86,6 @@ export function hideCompactPreviewGlobal(owner?: object): Promise<void> {
         if (leaveTimer !== null) clearTimeout(leaveTimer);
         leaveTimer = null;
         stopRequestTimer();
-        setIgnoreBlurSafe(false);
     }
     return result.catch(error => { compactPreviewLog("preview hide failed", error); });
 }
@@ -95,18 +95,32 @@ export function leaveCompactPreview(owner: object): void {
     const value = id === null ? null : sessions.get(id);
     if (!value?.shown) { void hideCompactPreviewGlobal(owner); return; }
     if (leaveTimer !== null) clearTimeout(leaveTimer);
-    leaveTimer = setTimeout(() => {
+    const needsCheck = () => id !== null && sessions.get(id) === value
+        && !value.pointerInside && !value.isHovered() && !value.pinning;
+    const check = async () => {
         leaveTimer = null;
-        if (id !== null && sessions.get(id) === value && !value.pointerInside && !value.isHovered() && !value.pinning) {
-            void hideCompactPreviewGlobal(owner);
-        }
-    }, 500);
+        if (!needsCheck()) return;
+        // A no-activate WebView can miss pointer-enter when the pointer crosses native windows.
+        const overPreview = await (async () => {
+            if (!value.window || !await value.window.isVisible()) return false;
+            const [pointer, origin, size] = await Promise.all([cursorPosition(), value.window.innerPosition(), value.window.innerSize()]);
+            return pointer.x >= origin.x && pointer.x < origin.x + size.width
+                && pointer.y >= origin.y && pointer.y < origin.y + size.height;
+        })().catch(() => false);
+        if (!needsCheck()) return;
+        if (overPreview) leaveTimer = setTimeout(check, 500);
+        else void hideCompactPreviewGlobal(owner);
+    };
+    leaveTimer = setTimeout(check, 500);
 }
 async function ensureListeners() {
     if (listeners) return listeners;
     listeners = (async () => {
         const close = () => { void hideCompactPreviewGlobal(); };
-        subscribePrivacyInvalidation(close);
+        subscribePrivacyInvalidation(scope => {
+            const id = sessions.current();
+            if (scope === "all" || id === null || sessions.get(id)?.allowSensitive) close();
+        });
         window.addEventListener("scroll", close, true);
         await Promise.all([
             getCurrentWindow().listen<{ label: string }>("compact-preview-mounted", event => {
@@ -232,7 +246,6 @@ async function present(layout: PreviewLayout) {
             async value => {
                 if (value.shown) return;
                 if (!(await getCurrentWindow().isVisible()) || !sessions.get(id)) return;
-                setIgnoreBlurSafe(true);
                 await invoke("show_compact_preview_without_activation");
                 if (!sessions.get(id)) return;
                 await emitTo(COMPACT_PREVIEW_LABEL, "privacy-view-shown", null);
@@ -248,10 +261,10 @@ async function present(layout: PreviewLayout) {
 }
 export async function showCompactPreview(owner: object, anchor: CompactPreviewAnchor, options: RequestOptions,
     stillHovered: () => boolean, sourceIsCurrent: () => boolean = stillHovered) {
-    const access = beginPrivacyAccess();
+    const access = beginPrivacyAccess(options.allowSensitive ? "reveal" : "list");
     if (!access || !stillHovered()) return;
     stopRequestTimer();
-    const value: Session = { owner, request: null, isHovered: stillHovered, pointerInside: false, pinning: false,
+    const value: Session = { owner, allowSensitive: options.allowSensitive, request: null, isHovered: stillHovered, pointerInside: false, pinning: false,
         requestId: "", window: null, anchor, scale: 1, origin: { x: 0, y: 0 },
         mainSize: { width: 0, height: 0 }, workArea: { position: { x: 0, y: 0 }, size: { width: 1280, height: 720 } },
         maxWidth: 560, maxHeight: 560, shown: false };
@@ -274,7 +287,7 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
             maxWidth: value.maxWidth, maxHeight: value.maxHeight };
         value.request = request;
         await sessions.run(id, [
-            async () => { setIgnoreBlurSafe(false); await clearWindow(); },
+            clearWindow,
             async () => { await window.setSize(new PhysicalSize(Math.ceil(value.maxWidth * scale), Math.ceil(value.maxHeight * scale))); },
             async () => { await emitTo(window.label, "compact-preview-update", request); }
         ]);

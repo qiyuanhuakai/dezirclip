@@ -45,7 +45,9 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     consumed.current = true;
     const handler = callbacks.current;
     handler.onCancelled();
-    handler.onRecorded(hotkey);
+    // Release temporary recording grabs before the shortcut owner registers the chosen chord.
+    modeQueue = modeQueue.catch(() => undefined).then(() => invoke<void>("set_recording_mode", { enabled: false }));
+    void modeQueue.then(() => handler.onRecorded(hotkey), error => handler.onError?.(error));
   }, []);
 
   useEffect(() => {

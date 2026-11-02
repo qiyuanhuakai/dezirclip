@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { boundedPreviewZoom, fitPreviewZoom, zoomPreviewScroll } from "./previewImageGeometry";
+import { boundedPreviewZoom, fitPreviewZoom, fittedAxisPan, zoomPreviewScroll } from "./previewImageGeometry";
 
 describe("preview image geometry", () => {
     it("fits wide and tall images without growing a small image", () => {
         expect(fitPreviewZoom({ width: 400, height: 300 }, { width: 2000, height: 1000 })).toBe(0.2);
         expect(fitPreviewZoom({ width: 400, height: 300 }, { width: 100, height: 100 })).toBe(1);
         expect(fitPreviewZoom({ width: 400, height: 300 }, { width: 1000, height: 6000 })).toBe(0.05);
+    });
+    it("pans a fitted axis and keeps a reachable part of the image inside", () => {
+        expect(fittedAxisPan(300, 150, 32)).toBe(32);
+        expect(fittedAxisPan(300, 300, -1000)).toBe(-276);
+        expect(fittedAxisPan(300, 150, 1000)).toBe(201);
+        expect(fittedAxisPan(300, 350, 32)).toBe(0);
+        expect(zoomPreviewScroll({ width: 300, height: 300 }, { width: 300, height: 300 },
+            { x: 0, y: 0 }, { x: 150, y: 150 }, 1, 2, { x: 50, y: -40 })).toEqual({ x: 50, y: 230 });
     });
     it("bounds explicit zoom and rejects nonfinite factors", () => {
         expect(boundedPreviewZoom(Infinity)).toBe(1);
