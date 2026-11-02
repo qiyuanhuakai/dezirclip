@@ -9,8 +9,9 @@ impl SqliteClipboardRepository {
             .map_err(|error| CoreError::from(error.to_string()))?;
         let values = query.query_map([], |row| row.get::<_,String>(0)).map_err(|error| CoreError::from(error.to_string()))?
             .collect::<Result<Vec<_>,_>>().map_err(|error| CoreError::from(error.to_string()))?;
-        if values.iter().any(|value| value.len() > 128 || value.chars().any(char::is_control)) { return Err(CoreError::validation("ShortcutSettingsInvalid")); }
-        Ok(values.into_iter().filter(|value| !value.is_empty()).collect())
+        let chords: Vec<_> = values.iter().flat_map(|value| value.split(['\r', '\n'])).map(str::trim).filter(|chord| !chord.is_empty()).collect();
+        if chords.iter().any(|chord| chord.len() > 128 || chord.chars().any(char::is_control)) { return Err(CoreError::validation("ShortcutSettingsInvalid")); }
+        Ok(chords.into_iter().map(str::to_owned).collect())
     }
     pub(crate) fn capture_settings_snapshot(&self) -> CoreResult<CaptureSettings> {
         let connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
@@ -59,7 +60,10 @@ mod tests {
         let repository=SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
         let mut values=repository.reserved_shortcuts().unwrap();values.sort();
         assert_eq!(values,vec!["Alt+V","Ctrl+Shift+V"]);
-        repository.conn.lock().unwrap().execute("UPDATE settings SET value=char(10) WHERE key='app.hotkey'",[]).unwrap();
+        repository.conn.lock().unwrap().execute("UPDATE settings SET value='Win+V'||char(13)||char(10)||'Ctrl+V' WHERE key='app.hotkey'",[]).unwrap();
+        let mut chords = repository.reserved_shortcuts().unwrap(); chords.sort();
+        assert_eq!(chords, vec!["Alt+V","Ctrl+V","Win+V"]);
+        repository.conn.lock().unwrap().execute("UPDATE settings SET value='Ctrl+'||char(0)||'V' WHERE key='app.hotkey'",[]).unwrap();
         assert!(repository.reserved_shortcuts().is_err());
     }
 }

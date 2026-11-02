@@ -16,6 +16,7 @@ export const en = {
         privacy_session_start: "Start privacy session",
         privacy_session_renew: "Update duration",
         privacy_session_end: "End privacy session",
+        privacy_hotkey_busy: "The shortcut is in use or being changed. Try a different combination.",
         privacy_session_hotkey: "Toggle privacy session shortcut",
         privacy_session_hotkey_clear: "Clear shortcut",
         privacy_session_hotkey_hint: "Try Ctrl+Alt+P, or leave empty to disable. Saving checks conflicts and current platform support.",

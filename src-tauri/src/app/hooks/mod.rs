@@ -353,7 +353,7 @@ pub unsafe extern "system" fn mouse_proc(n_code: i32, w_param: WPARAM, l_param: 
                                     || point.y < rect.top - margin
                                     || point.y > rect.bottom + margin;
 
-                                if is_outside {
+                                if is_outside && !crate::infrastructure::preview_activation::hit_test(handle, point) {
                                     // Status check before hiding
                                     if !WindowExt::is_window_visible(main_hwnd) {
                                         return CallNextHookEx(None, n_code, w_param, l_param);

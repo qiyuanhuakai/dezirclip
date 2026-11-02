@@ -34,7 +34,6 @@ export function PrivacySessionSection({ t, appSettings }: {
     setError(null);
     setBusy(true);
     try {
-      if (value && value.toUpperCase() !== hotkey.toUpperCase()) await invoke<boolean>("test_hotkey_available", { hotkey: value });
       const persisted = await invoke<string>("set_privacy_session_hotkey", { hotkey: value });
       setHotkey(persisted);
       void emit("settings-changed").catch(console.error);
@@ -42,7 +41,9 @@ export function PrivacySessionSection({ t, appSettings }: {
     }
     catch (failure) {
       const detail = failure instanceof Error ? failure.message : String(failure ?? t("hotkey_unavailable"));
-      setError(t("hotkey_register_failed") + detail);
+      const reason = detail === "PrivacyHotkeyBusy" ? t("privacy_hotkey_busy")
+        : detail === "PrivacyHotkeyUnavailable" ? t("hotkey_unavailable") : detail;
+      setError(t("hotkey_register_failed") + reason);
       return false;
     }
     finally { setBusy(false); }

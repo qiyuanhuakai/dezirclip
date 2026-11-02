@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { boundedPreviewZoom, fitPreviewZoom, zoomPreviewScroll } from "./previewImageGeometry";
+import { boundedPreviewZoom, fitPreviewZoom, fittedAxisPan, zoomPreviewScroll } from "./previewImageGeometry";
 
 interface PreviewImageProps {
     src: string;
@@ -13,7 +13,13 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad }: Pre
     const viewport = useRef<HTMLDivElement>(null);
     const [natural, setNatural] = useState({ width: 1, height: 1 });
     const [fit, setFit] = useState(1);
-    const drag = useRef<{ id: number; x: number; y: number; left: number; top: number } | null>(null);
+    const picture = useRef<HTMLImageElement>(null);
+    const pan = useRef({ x: 0, y: 0 });
+    const movePicture = (x: number, y: number) => {
+        pan.current = { x, y };
+        if (picture.current) picture.current.style.transform = x || y ? `translate(${x}px, ${y}px)` : "";
+    };
+    const drag = useRef<{ id: number; x: number; y: number; left: number; top: number; panX: number; panY: number } | null>(null);
     const anchor = useRef<{ x: number; y: number } | null>(null);
     const previous = useRef({ source: src, scale: 1 });
     const [dragging, setDragging] = useState(false);
@@ -49,10 +55,11 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad }: Pre
         if (previous.current.source === src) {
             const next = zoomPreviewScroll({ width: node.clientWidth, height: node.clientHeight }, natural,
                 { x: node.scrollLeft, y: node.scrollTop }, anchor.current ?? { x: node.clientWidth / 2, y: node.clientHeight / 2 },
-                previous.current.scale, scale);
+                previous.current.scale, scale, pan.current);
             node.scrollLeft = next.x;
             node.scrollTop = next.y;
         } else { node.scrollLeft = 0; node.scrollTop = 0; }
+        movePicture(0, 0);
         anchor.current = null;
         previous.current = { source: src, scale };
     }, [scale, natural, src]);
@@ -60,22 +67,27 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad }: Pre
         onPointerDown={event => {
             if (event.button !== 0) return;
             const node = event.currentTarget;
-            drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, left: node.scrollLeft, top: node.scrollTop };
+            drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, left: node.scrollLeft, top: node.scrollTop, panX: pan.current.x, panY: pan.current.y };
             node.setPointerCapture(event.pointerId);
             setDragging(true);
             event.preventDefault();
         }} onPointerMove={event => {
             const active = drag.current;
             if (!active || active.id !== event.pointerId) return;
-            event.currentTarget.scrollLeft = active.left + active.x - event.clientX;
-            event.currentTarget.scrollTop = active.top + active.y - event.clientY;
+            const node = event.currentTarget;
+            const dx = event.clientX - active.x;
+            const dy = event.clientY - active.y;
+            node.scrollLeft = active.left - dx;
+            node.scrollTop = active.top - dy;
+            movePicture(fittedAxisPan(node.clientWidth, Math.round(natural.width * scale), active.panX + dx),
+                fittedAxisPan(node.clientHeight, Math.round(natural.height * scale), active.panY + dy));
         }} onPointerUp={event => {
             if (drag.current?.id !== event.pointerId) return;
             drag.current = null;
             if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
             setDragging(false);
         }} onLostPointerCapture={() => { drag.current = null; setDragging(false); }}>
-        <div className="preview-image-canvas" style={{ width: Math.round(natural.width * scale), height: Math.round(natural.height * scale) }}><img src={src} alt="" draggable={false}
+        <div className="preview-image-canvas" style={{ width: Math.round(natural.width * scale), height: Math.round(natural.height * scale) }}><img ref={picture} src={src} alt="" draggable={false}
             width={Math.round(natural.width * scale)} height={Math.round(natural.height * scale)}
             onLoad={event => {
                 setNatural({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight });

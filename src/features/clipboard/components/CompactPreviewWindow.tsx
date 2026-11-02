@@ -104,7 +104,7 @@ const CompactPreviewWindow = () => {
     };
     const [previewListenerReady, setPreviewListenerReady] = useState(false);
     useEffect(() => subscribePrivacyInvalidation(scope => {
-        if (pinned && scope === "reveal" && payloadRef.current && !payloadRef.current.protectedContent) return;
+        if (scope === "reveal" && lastRequest.current?.allowSensitive === false && !payloadRef.current?.protectedContent) return;
         notifyPayloadInvalidated();
         payloadSequence.current += 1;
         setPreviewRequest(null);

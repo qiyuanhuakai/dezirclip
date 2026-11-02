@@ -2,6 +2,21 @@ use tauri::WebviewWindow;
 
 pub fn caller_allowed(label: &str) -> bool { label == "main" }
 
+pub fn is_preview_label(label: &str) -> bool {
+    label == "compact-preview" || label.strip_prefix("pinned-preview-")
+        .is_some_and(|suffix| uuid::Uuid::parse_str(suffix).is_ok())
+}
+
+#[cfg(target_os = "windows")]
+pub fn hit_test(app: &tauri::AppHandle, point: ::windows::Win32::Foundation::POINT) -> bool {
+    use ::windows::Win32::UI::WindowsAndMessaging::{GetAncestor, WindowFromPoint, GA_ROOT};
+    use tauri::Manager;
+    let root = unsafe { GetAncestor(WindowFromPoint(point), GA_ROOT) };
+    !root.0.is_null() && app.webview_windows().iter().any(|(label, window)| {
+        is_preview_label(label) && window.hwnd().is_ok_and(|hwnd| hwnd == root)
+    })
+}
+
 #[cfg(any(target_os = "windows", test))]
 fn blocks_event(target: usize, code: i32, candidate: usize, child: bool) -> bool {
     target != 0 && candidate != 0

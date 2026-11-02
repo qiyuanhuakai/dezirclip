@@ -309,17 +309,20 @@ pub(super) fn preview_entry(
         }
         _ => {}
     }
-    entry.html_content = entry
-        .html_content
-        .as_deref()
-        .map(|html| match maximum {
-            Some(maximum) => {
-                crate::infrastructure::protected_resources::thumbnail_html(html, maximum)
+    if let Some(html) = entry.html_content.take() {
+        let normalized = match maximum {
+            Some(bound) => crate::infrastructure::protected_resources::thumbnail_html(&html, bound),
+            None => crate::infrastructure::protected_resources::normalize_html(&html),
+        };
+        match normalized {
+            Ok(html) => entry.html_content = Some(html),
+            Err(_) if entry.content_type == "rich_text" => {
+                // Render only the already-authorized plain-text representation.
+                entry.content_type = "text".into();
             }
-            None => crate::infrastructure::protected_resources::normalize_html(html),
-        })
-        .transpose()
-        .map_err(unavailable)?;
+            Err(error) => return Err(unavailable(error)),
+        }
+    }
     entry.source_app_path = None;
     Ok(entry)
 }
@@ -378,6 +381,26 @@ impl HistoryService {
         )?;
         self.privacy().check_read(permit, now_ms)?;
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod preview_fallback_tests {
+    use super::*;
+
+    #[test]
+    fn rich_text_with_unrecognized_styles_has_plain_text_in_hover_and_pinned_views() {
+        let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({
+            "id":1, "content_type":"rich_text", "content":"WinDirStat 2.9.3", "preview":"WinDirStat 2.9.3",
+            "html_content":"<span style='background:url(https://invalid.example/image)'>WinDirStat 2.9.3</span>",
+            "timestamp":1, "source_app":"Fixture", "is_pinned":false
+        })).unwrap();
+        for bound in [Some(560), None] {
+            let result = preview_entry(entry.clone(), bound).unwrap();
+            assert_eq!(result.content_type, "text");
+            assert_eq!(result.content, "WinDirStat 2.9.3");
+            assert!(result.html_content.is_none());
+        }
     }
 }
 

@@ -23,6 +23,7 @@ export const zh = {
         privacy_duration_indefinite: "直到手动结束",
         privacy_session_start: "开启隐私会话",
         privacy_session_renew: "更新保护时长",
+        privacy_hotkey_busy: "快捷键已被占用或正在更改，请尝试其他组合。",
         privacy_session_hotkey: "切换隐私会话快捷键",
         privacy_session_hotkey_clear: "清除快捷键",
         privacy_session_hotkey_hint: "可尝试 Ctrl+Alt+P；留空表示不注册。保存前会检查冲突与当前系统能力。",
