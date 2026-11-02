@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emitTo } from "@tauri-apps/api/event";
-import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { currentMonitor, cursorPosition, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { beginPrivacyAccess, subscribePrivacyInvalidation } from "../../../shared/lib/privacySession";
 import { compactPreviewLog } from "../../../shared/lib/compactPreviewLog";
@@ -95,12 +95,23 @@ export function leaveCompactPreview(owner: object): void {
     const value = id === null ? null : sessions.get(id);
     if (!value?.shown) { void hideCompactPreviewGlobal(owner); return; }
     if (leaveTimer !== null) clearTimeout(leaveTimer);
-    leaveTimer = setTimeout(() => {
+    const needsCheck = () => id !== null && sessions.get(id) === value
+        && !value.pointerInside && !value.isHovered() && !value.pinning;
+    const check = async () => {
         leaveTimer = null;
-        if (id !== null && sessions.get(id) === value && !value.pointerInside && !value.isHovered() && !value.pinning) {
-            void hideCompactPreviewGlobal(owner);
-        }
-    }, 500);
+        if (!needsCheck()) return;
+        // A no-activate WebView can miss pointer-enter when the pointer crosses native windows.
+        const overPreview = await (async () => {
+            if (!value.window || !await value.window.isVisible()) return false;
+            const [pointer, origin, size] = await Promise.all([cursorPosition(), value.window.innerPosition(), value.window.innerSize()]);
+            return pointer.x >= origin.x && pointer.x < origin.x + size.width
+                && pointer.y >= origin.y && pointer.y < origin.y + size.height;
+        })().catch(() => false);
+        if (!needsCheck()) return;
+        if (overPreview) leaveTimer = setTimeout(check, 500);
+        else void hideCompactPreviewGlobal(owner);
+    };
+    leaveTimer = setTimeout(check, 500);
 }
 async function ensureListeners() {
     if (listeners) return listeners;

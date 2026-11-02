@@ -572,6 +572,32 @@ pub(crate) mod tests {
         let mut request = hello(ClientRole::Cli); request.protocol_version.major = 2;
         assert!(matches!(host.hello(request), Err(WireErrorCode::ProtocolMismatch)));
     }
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn desktop_can_register_replace_and_clear_the_native_privacy_shortcut() {
+        use dzc_platform::ipc::CaptureLease;
+        struct Owner(Arc<CaptureLease>);
+        impl HostLifecycle for Owner {
+            fn stop_capture(&self) -> Result<(), WireErrorCode> { Ok(()) }
+            fn capture_lease(&self) -> Option<Arc<CaptureLease>> { Some(self.0.clone()) }
+        }
+
+        let _serial = crate::work::native_test_guard();
+        let host = synthetic_host();
+        host.attach_lifecycle(Arc::new(Owner(CaptureLease::acquire().unwrap()))).unwrap();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (session, _) = host.hello(request).unwrap();
+        for value in ["Ctrl+Alt+F23", "Ctrl+Alt+F24", "Ctrl+Alt+F24", ""] {
+            let changed = dispatch(&host, &session, Method::PrivacyHotkeySet, serde_json::json!({"hotkey":value}));
+            assert_eq!(changed.result.unwrap()["hotkey"], value);
+            let stored = dispatch(&host, &session, Method::PrivacyHotkeyGet, serde_json::json!({}));
+            assert_eq!(stored.result.unwrap()["hotkey"], value);
+        }
+        host.shutdown().unwrap();
+    }
+
     #[test]
     fn failed_stop_is_not_acknowledged_and_can_be_retried() {
         struct Lifecycle(AtomicBool);

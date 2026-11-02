@@ -202,6 +202,7 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
                     style={{ height: '100%' }}
                     endReached={handleEndReached}
                     rangeChanged={handleRangeChanged}
+                    increaseViewportBy={320}
                     overscan={120}
                 />
             </div>

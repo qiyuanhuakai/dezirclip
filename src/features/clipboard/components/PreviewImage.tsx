@@ -7,9 +7,10 @@ interface PreviewImageProps {
     onZoomChange: (zoom: number | "fit") => void;
     onFitZoom: (zoom: number) => void;
     onLoad: () => void;
+    hoverBounds?: { width: number; height: number };
 }
 
-export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad }: PreviewImageProps) {
+export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad, hoverBounds }: PreviewImageProps) {
     const viewport = useRef<HTMLDivElement>(null);
     const [natural, setNatural] = useState({ width: 1, height: 1 });
     const [fit, setFit] = useState(1);
@@ -36,7 +37,7 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad }: Pre
     }, [natural, onFitZoom]);
     useEffect(() => {
         const node = viewport.current;
-        if (!node) return;
+        if (!node || hoverBounds) return;
         const wheel = (event: WheelEvent) => {
             if (event.deltaY === 0) return;
             event.preventDefault();
@@ -47,7 +48,7 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad }: Pre
         };
         node.addEventListener("wheel", wheel, { passive: false });
         return () => node.removeEventListener("wheel", wheel);
-    }, [zoom, fit, onZoomChange]);
+    }, [zoom, fit, onZoomChange, hoverBounds]);
     const scale = zoom === "fit" ? fit : zoom;
     useLayoutEffect(() => {
         const node = viewport.current;
@@ -63,7 +64,11 @@ export function PreviewImage({ src, zoom, onZoomChange, onFitZoom, onLoad }: Pre
         anchor.current = null;
         previous.current = { source: src, scale };
     }, [scale, natural, src]);
-    return <div className={`preview-image-viewport${dragging ? " dragging" : ""}`} ref={viewport}
+    const hoverFit = hoverBounds && fitPreviewZoom(hoverBounds, natural);
+    const hoverSize = hoverFit === undefined ? undefined : {
+        width: Math.round(natural.width * hoverFit), height: Math.round(natural.height * hoverFit),
+    };
+    return <div style={hoverSize} className={`preview-image-viewport${dragging ? " dragging" : ""}`} ref={viewport}
         onPointerDown={event => {
             if (event.button !== 0) return;
             const node = event.currentTarget;

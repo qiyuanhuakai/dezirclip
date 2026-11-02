@@ -255,6 +255,8 @@ body.pinned-preview .compact-preview-root .pinned-image-content { display: flex;
 .preview-image-viewport { flex: 1; min-width: 0; min-height: 0; overflow: auto; cursor: grab; touch-action: none; user-select: none; }
 .preview-image-viewport.dragging { cursor: grabbing; }
 .preview-image-canvas { overflow: clip; min-width: 100%; min-height: 100%; display: grid; place-items: center; }
-body.pinned-preview .compact-preview-root .preview-image-viewport img {
+.compact-preview-root .preview-image-viewport img {
     display: block; max-width: none; max-height: none; margin: auto; object-fit: contain;
 }
+
+body:not(.pinned-preview) .preview-image-viewport { margin: auto; overflow: hidden; }

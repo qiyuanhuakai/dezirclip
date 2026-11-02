@@ -103,6 +103,7 @@ fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = GrabGuard { conn: &conn };
     let _ = conn.flush();
 
+    let mut recorded = None;
     while IS_RECORDING.load(Ordering::SeqCst) {
         match conn.poll_for_event()? {
             Some(event) => match event {
@@ -130,7 +131,11 @@ fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
                     let key_name = keysym_to_name(keysym);
                     let hotkey = build_hotkey_string(ctrl, shift, alt, win, &key_name);
 
-                    if let Some(handle) = GLOBAL_APP_HANDLE.get() {
+                    recorded.get_or_insert((event.detail, hotkey));
+                }
+                x11rb::protocol::Event::KeyRelease(event) => {
+                    if !recorded.as_ref().is_some_and(|(key, _)| *key == event.detail) { continue; }
+                    if let (Some(handle), Some((_, hotkey))) = (GLOBAL_APP_HANDLE.get(), recorded.take()) {
                         let _ = handle.emit("hotkey-recorded", hotkey);
                     }
                     IS_RECORDING.store(false, Ordering::SeqCst);
