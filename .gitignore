@@ -17,6 +17,7 @@ src-tauri/target/
 /target/
 src-tauri/binaries/
 artifacts/dzc/
+artifacts/dzc-surface/
 
 # Runtime files
 __pycache__/

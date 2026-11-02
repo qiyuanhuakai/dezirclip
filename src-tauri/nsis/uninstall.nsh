@@ -1,5 +1,8 @@
 !include "LogicLib.nsh"
 
+; Every packaged file is required, including during a silent update.
+AllowSkipFiles off
+
 !macro NSIS_HOOK_PREUNINSTALL
   ${If} $UpdateMode = 1
     DetailPrint "Keeping Windows settings during update."

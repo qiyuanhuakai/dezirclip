@@ -159,7 +159,16 @@ pub fn spawn_background(executable: &Path, arguments: &[OsString]) -> io::Result
 /// Query a known sibling helper with bounded output and lifetime. Only the
 /// exact child created here is terminated on timeout or excessive output.
 pub fn inspect_helper(executable: &Path, arguments: &[&str], timeout: std::time::Duration, maximum: usize) -> io::Result<Vec<u8>> {
+    inspect_command(Command::new(executable),arguments,timeout,maximum)
+}
+/// A managed Surface inherits only the explicit runtime environment, including
+/// its metadata-only probe. Grants never travel through environment variables.
+pub fn inspect_private_helper(executable:&Path,arguments:&[&str],timeout:std::time::Duration,maximum:usize,environment:&[(OsString,OsString)])->io::Result<Vec<u8>> {
     let mut command = Command::new(executable);
+    command.env_clear().envs(environment.iter().cloned());
+    inspect_command(command,arguments,timeout,maximum)
+}
+fn inspect_command(mut command:Command,arguments:&[&str],timeout:std::time::Duration,maximum:usize)->io::Result<Vec<u8>> {
     command.args(arguments).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     #[cfg(target_os="windows")]
     { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }

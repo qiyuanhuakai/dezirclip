@@ -21,6 +21,7 @@ interface ToolsSettingsGroupProps {
     readonly quickPasteEnabled: boolean;
     readonly setQuickPasteEnabled: (val: boolean) => void;
     readonly quickPasteHotkey: string;
+    readonly quickPasteRenderer: string;
     readonly ocrEnabled: boolean;
     readonly setOcrEnabled: (val: boolean) => void;
     readonly saveAppSetting: (key: string, val: string) => void;
@@ -38,6 +39,7 @@ const ToolsSettingsGroup = ({
     quickPasteEnabled,
     setQuickPasteEnabled,
     quickPasteHotkey,
+    quickPasteRenderer,
     ocrEnabled,
     setOcrEnabled,
     saveAppSetting,
@@ -59,6 +61,7 @@ const ToolsSettingsGroup = ({
                     quickPasteEnabled={quickPasteEnabled}
                     setQuickPasteEnabled={setQuickPasteEnabled}
                     quickPasteHotkey={quickPasteHotkey}
+                    quickPasteRenderer={quickPasteRenderer}
                     ocrEnabled={ocrEnabled}
                     setOcrEnabled={setOcrEnabled}
                     saveAppSetting={saveAppSetting}

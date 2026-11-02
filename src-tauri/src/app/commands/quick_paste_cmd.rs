@@ -33,7 +33,6 @@ use crate::services::clipboard_ops;
 /// Window label, matches `tauri.conf.json` (Task 22) and the main label used
 /// elsewhere in the app.
 const QUICK_PASTE_LABEL: &str = "quick-paste";
-const MAIN_LABEL: &str = "main";
 
 /// Fallback dimensions when the window's `outer_size()` is unavailable.
 /// Mirror the values declared in `tauri.conf.json` (480×360).
@@ -165,9 +164,11 @@ fn record_dispatch(id: i64) {
 #[tauri::command]
 pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
     super::capability_cmd::require_desktop_interaction()?;
+    if !app.state::<crate::app_state::SettingsState>().quick_paste_enabled.load(Ordering::Acquire) {return Err("QuickPasteDisabled".into());}
+    let Some(ticket)=show_surface(&app,false).await? else {return Ok(());};
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, _created| {
-            show_quick_paste_window(&app, window)
+            show_quick_paste_window(&app, window,&ticket)
         })
     })
     .await
@@ -178,12 +179,14 @@ pub async fn show_quick_paste(app: AppHandle) -> Result<(), String> {
 /// hotkey presses during creation still open and then close the overlay.
 pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
     super::capability_cmd::require_desktop_interaction()?;
+    if !app.state::<crate::app_state::SettingsState>().quick_paste_enabled.load(Ordering::Acquire) {return Err("QuickPasteDisabled".into());}
+    let Some(ticket)=show_surface(&app,true).await? else {return Ok(());};
     tauri::async_runtime::spawn_blocking(move || {
         crate::app::auxiliary_windows::with_window(&app, QUICK_PASTE_LABEL, |window, created| {
             if !created && window.is_visible().unwrap_or(false) {
                 hide_quick_paste(app.clone())
             } else {
-                show_quick_paste_window(&app, window)
+                show_quick_paste_window(&app, window,&ticket)
             }
         })
     })
@@ -191,7 +194,148 @@ pub async fn toggle_quick_paste(app: AppHandle) -> Result<(), String> {
     .map_err(|err| format!("Quick-paste toggle worker failed: {err}"))?
 }
 
-fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Result<(), String> {
+async fn show_surface(app:&AppHandle,toggle:bool)->Result<Option<crate::app::surface_supervisor::SurfaceFallback>,String> {
+    use crate::app::surface_supervisor::{self,SurfaceSupervisor};
+    if !surface_supervisor::enabled(app) {return Ok(Some(surface_supervisor::SurfaceFallback::original_tauri(app, surface_supervisor::route_ticket(app)).await?));}
+    let manager=app.state::<SurfaceSupervisor>();
+    let closing=toggle && manager.is_open();
+    let mut request=manager.begin_request()?;
+    let result=if closing {manager.hide_request(&mut request).await}else{manager.show_request(app,&mut request).await};
+    match result {
+        Ok(())=>Ok(None),
+        Err(error)=>{
+            let ticket=manager.failed_request(&request,&error,closing).await?;
+            if ticket.is_some() {let _=app.emit("quick-paste-renderer-unavailable","mygo");}
+            Ok(ticket)
+        }
+    }
+}
+
+fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow,ticket:&crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let handle = app.clone();
+    let shown_window = window.clone();
+    let shown_ticket = ticket.clone();
+    let deadline = ticket.deadline();
+    // with_window owns its creation lock on this worker. The UI closure must
+    // not build/collect auxiliary windows or wait for any worker operation.
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            if send.is_closed() || !shown_ticket.current(&handle) {
+                return Err("QuickPasteRequestCancelled".into());
+            }
+            crate::app::window_manager::hide_main_for_quick_paste(
+                &handle, shown_ticket.revision(), deadline, || !send.is_closed())?;
+            show_quick_paste_window_on_ui(&handle, &shown_window, &shown_ticket)
+        })();
+        let _ = send.send(result);
+    }).map_err(|error| error.to_string())?;
+    let result = tauri::async_runtime::block_on(async {
+        tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), receive)
+            .await.map_err(|_| "QuickPasteRequestCancelled".to_string())?
+            .map_err(|_| "QuickPasteRequestCancelled".to_string())??;
+        #[cfg(target_os = "linux")]
+        if !dzc_platform::runtime::is_native_wayland() {
+            finish_x11_presentation(app, window, ticket).await?;
+        }
+        Ok(())
+    });
+    #[cfg(target_os = "linux")]
+    if result.is_err() && !dzc_platform::runtime::is_native_wayland() {
+        let handle = app.clone();
+        let window = window.clone();
+        let revision = ticket.revision();
+        let _ = app.run_on_main_thread(move || {
+            // Expiry/context failure may clean this route, but a newer request
+            // owns the reused label and must never be hidden by this callback.
+            if crate::app::surface_supervisor::route_current(&handle, revision) {
+                let _ = window.set_focusable(false);
+                let _ = window.hide();
+            }
+        });
+    }
+    result
+}
+
+/// Tao queues GTK visibility, but set_focus synchronously ignores a still-hidden
+/// window. Observe the real GTK state from the worker before one focus request.
+/// Every UI reply shares the original deadline; no blocking getter runs here.
+#[cfg(target_os = "linux")]
+async fn finish_x11_presentation(app: &AppHandle, window: &tauri::WebviewWindow,
+    ticket: &crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
+    wait_for_quick_paste_state(app, window, ticket, false).await?;
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let handle = app.clone();
+    let window = window.clone();
+    let ticket = ticket.clone();
+    let deadline = ticket.deadline();
+    let observed_window = window.clone();
+    let observed_ticket = ticket.clone();
+    app.run_on_main_thread(move || {
+        let result = (|| {
+            if send.is_closed() || !ticket.current(&handle)
+                || !window.is_visible().map_err(|error| error.to_string())? {
+                return Err("QuickPasteRequestCancelled".into());
+            }
+            if send.is_closed() || !ticket.current(&handle) { return Err("QuickPasteRequestCancelled".into()); }
+            crate::infrastructure::surface_focus::present_tauri_with_time(
+                &window, ticket.request_timestamp()?, deadline,
+                || !send.is_closed() && ticket.current(&handle))
+        })();
+        let _ = send.send(result);
+    }).map_err(|error| error.to_string())?;
+    tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), receive)
+        .await.map_err(|_| "QuickPasteRequestCancelled".to_string())?
+        .map_err(|_| "QuickPasteRequestCancelled".to_string())??;
+    // A queued focus request is not an acknowledgement from the window manager.
+    wait_for_quick_paste_state(app, &observed_window, &observed_ticket, true).await
+}
+
+#[cfg(target_os = "linux")]
+async fn wait_for_quick_paste_state(app: &AppHandle, window: &tauri::WebviewWindow,
+    ticket: &crate::app::surface_supervisor::SurfaceFallback, focused: bool) -> Result<(), String> {
+    wait_for_native_presentation(ticket.deadline(), || {
+        let (send, receive) = tokio::sync::oneshot::channel();
+        let handle = app.clone();
+        let window = window.clone();
+        let ticket = ticket.clone();
+        let queued = app.run_on_main_thread(move || {
+            let result = (|| {
+                if send.is_closed() || !ticket.current(&handle) {
+                    return Err("QuickPasteRequestCancelled".into());
+                }
+                let ready = window.is_visible().map_err(|error| error.to_string())?
+                    && (!focused || window.is_focused().map_err(|error| error.to_string())?);
+                if send.is_closed() || !ticket.current(&handle) { return Err("QuickPasteRequestCancelled".into()); }
+                if ready && focused { let _ = handle.emit_to(QUICK_PASTE_LABEL, "quick-paste-shown", ()); }
+                Ok(ready)
+            })();
+            let _ = send.send(result);
+        });
+        async move {
+            queued.map_err(|error| error.to_string())?;
+            receive.await.map_err(|_| "QuickPasteRequestCancelled".to_string())?
+        }
+    }).await
+}
+
+#[cfg(any(target_os = "linux", test))]
+async fn wait_for_native_presentation<F: std::future::Future<Output = Result<bool, String>>>(
+    deadline: std::time::Instant, mut observe: impl FnMut() -> F,
+) -> Result<(), String> {
+    loop {
+        if std::time::Instant::now() >= deadline { return Err("QuickPasteRequestCancelled".into()); }
+        let ready = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), observe())
+            .await.map_err(|_| "QuickPasteRequestCancelled".to_string())??;
+        if std::time::Instant::now() >= deadline { return Err("QuickPasteRequestCancelled".into()); }
+        if ready { return Ok(()); }
+        tokio::time::sleep_until(tokio::time::Instant::from_std(
+            deadline.min(std::time::Instant::now() + std::time::Duration::from_millis(10)))).await;
+    }
+}
+
+fn show_quick_paste_window_on_ui(app: &AppHandle, window: &tauri::WebviewWindow,ticket:&crate::app::surface_supervisor::SurfaceFallback) -> Result<(), String> {
+    if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
     crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
     if let Ok(cursor) = window.cursor_position() {
         let cursor_x = cursor.x.round() as i32;
@@ -214,26 +358,22 @@ fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Re
         let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
     }
 
-    if let Some(main) = app.get_webview_window(MAIN_LABEL) {
-        if main.is_visible().unwrap_or(false) {
-            let _ = main.set_focusable(false);
-            let _ = main.hide();
-            crate::app::webview_memory::lower_window_memory(&main, "quick-paste-hide-main");
-            crate::app::idle_destroyer::mark_hidden();
-        }
-    }
-
     let _ = window.set_ignore_cursor_events(false);
     let _ = window.set_always_on_top(true);
     let _ = window.set_focusable(true);
     crate::app::webview_memory::restore_window_memory(window, "quick-paste-show");
+    if !ticket.current(app) {return Err("QuickPasteRequestCancelled".into());}
     window
         .show()
         .map_err(|e| format!("Failed to show quick-paste window: {e}"))?;
     let _ = window.set_always_on_top(true);
-    window
-        .set_focus()
-        .map_err(|e| format!("Failed to focus quick-paste window: {e}"))?;
+    if !ticket.current(app) {
+        let _ = window.hide();
+        return Err("QuickPasteRequestCancelled".into());
+    }
+    #[cfg(target_os = "linux")]
+    if !dzc_platform::runtime::is_native_wayland() { return Ok(()); }
+    window.set_focus().map_err(|e| format!("Failed to focus quick-paste window: {e}"))?;
     // Tell the panel it is on screen.
     //
     // A capture is only pushed to the frontend while the main window is on
@@ -251,6 +391,7 @@ fn show_quick_paste_window(app: &AppHandle, window: &tauri::WebviewWindow) -> Re
 /// global hotkey without worrying about a teardown race.
 #[tauri::command]
 pub fn hide_quick_paste(app: AppHandle) -> Result<(), String> {
+    crate::app::surface_supervisor::hide_blocking(&app)?;
     match app.get_webview_window(QUICK_PASTE_LABEL) {
         Some(window) => {
             crate::app::auxiliary_windows::record_activity(QUICK_PASTE_LABEL);
@@ -269,10 +410,17 @@ pub fn hide_quick_paste(app: AppHandle) -> Result<(), String> {
 /// window is missing (treated identically to "hidden").
 #[tauri::command]
 pub fn is_quick_paste_visible(app: AppHandle) -> bool {
+    if app.try_state::<crate::app::surface_supervisor::SurfaceSupervisor>().is_some_and(|manager|manager.visible()) {return true;}
     let raw = app
         .get_webview_window(QUICK_PASTE_LABEL)
         .and_then(|w| w.is_visible().ok());
     resolve_visibility_flag(raw)
+}
+
+#[tauri::command]
+pub fn get_quick_paste_surface_status(app:AppHandle,window:tauri::WebviewWindow)->Result<crate::app::surface_supervisor::SurfaceStatus,String> {
+    if window.label()!="main" {return Err("MainWindowRequired".into());}
+    app.state::<crate::app::surface_supervisor::SurfaceSupervisor>().status(&app)
 }
 
 /// Paste a stored entry by id. The actual clipboard write + keystroke
@@ -339,6 +487,50 @@ pub async fn paste_quick_paste_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_presentation_waits_for_observed_visibility() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let observations = std::cell::Cell::new(0);
+        runtime.block_on(wait_for_native_presentation(std::time::Instant::now() + std::time::Duration::from_secs(1), || {
+            observations.set(observations.get() + 1);
+            std::future::ready(Ok(observations.get() == 2))
+        })).unwrap();
+        assert_eq!(observations.get(), 2, "queued show alone must not authorize focus");
+    }
+
+    #[test]
+    fn native_presentation_deadline_drops_the_pending_ui_reply() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let (send, receive) = tokio::sync::oneshot::channel::<Result<bool, String>>();
+        let mut receive = Some(receive);
+        let result = runtime.block_on(wait_for_native_presentation(
+            std::time::Instant::now() + std::time::Duration::from_millis(20), || {
+                let reply = receive.take().expect("one queued observation only");
+                async move { reply.await.unwrap() }
+            }));
+        assert_eq!(result.unwrap_err(), "QuickPasteRequestCancelled");
+        assert!(send.is_closed(), "late UI callback must see the abandoned request");
+    }
+
+    #[test]
+    fn native_presentation_expiry_and_context_cancellation_never_retry() {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let observations = std::cell::Cell::new(0);
+        let result = runtime.block_on(wait_for_native_presentation(std::time::Instant::now(), || {
+            observations.set(observations.get() + 1);
+            std::future::ready(Ok(true))
+        }));
+        assert!(result.is_err());
+        assert_eq!(observations.get(), 0);
+        let result = runtime.block_on(wait_for_native_presentation(
+            std::time::Instant::now() + std::time::Duration::from_secs(1), || {
+                observations.set(observations.get() + 1);
+                std::future::ready(Err("SurfaceFocusChanged".to_owned()))
+            }));
+        assert_eq!(result.unwrap_err(), "SurfaceFocusChanged");
+        assert_eq!(observations.get(), 1);
+    }
 
     #[test]
     fn test_hide_when_not_visible() {

@@ -51,8 +51,8 @@ body.quick-paste #root::before {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-panel);
   color: var(--text-primary);
-  font-size: var(--font-size-md);
-  font-family: var(--font-main);
+  font-size: var(--font-size-md, var(--dzc-surface-font-size));
+  font-family: var(--font-main, var(--dzc-surface-font-family));
   outline: none;
   box-sizing: border-box;
 }
@@ -95,7 +95,7 @@ body.quick-paste #root::before {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  transition: background-color 0.1s ease;
+  transition: background-color var(--dzc-surface-transition-ms) var(--dzc-surface-transition-curve);
 }
 
 .quick-paste-window__item:last-child {

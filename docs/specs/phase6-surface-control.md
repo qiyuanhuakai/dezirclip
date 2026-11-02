@@ -68,13 +68,13 @@ target. Desktop keeps that target in an internal request-bound ticket.
 
 | Direction | Type | Additional payload |
 |---|---|---|
-| Desktop → helper | `show` | `state`, `rect:{x,y,width,height}`, `scale`, `locale`, `theme` |
+| Desktop → helper | `show` | `state`, `rect:{x,y,width,height}`, `scale`, `locale`, `theme`, optional generic `notice` |
 | helper → Desktop | `shown` | actual `state`; acknowledgement after the current panel is presented |
 | Desktop → helper | `hide` | `reason` (`cancel`, `paste`, `host_changed`, `privacy_changed`, `disabled`, `update`) |
 | helper → Desktop | `hidden` | acknowledgement only for that display and hide request |
 | helper → Desktop | `paste` | `action_id`, `entry_id`, selected `state` |
 | Desktop → helper | `paste-result` | `action_id`, `performed`, stable `error_code` or null |
-| helper → Desktop | `dismiss` | current display ID, no selected entry/body |
+| helper → Desktop | `dismiss` | current display ID, `reason` (`cancel`, `blur`), no selected entry/body |
 | Desktop → helper | `shutdown` | `reason` (`disabled`, `update`, `exit`, `host_changed`) |
 | helper → Desktop | `stopped` | same session; Desktop still confirms actual process exit |
 
@@ -93,6 +93,32 @@ and checks remain owned by Desktop. A late hide ACK, action, old Host response
 or cancelled display never resumes an old paste. An uncertain paste result is
 not a reason to repeat the keystroke. Success does not authorize deleting an
 entry or consuming an unrelated queue item.
+
+An explicit Esc/close cancellation can restore only that display's original
+native target, while its generation remains current and the foreground is
+still the managed helper/owned Desktop or the original target. A blur dismiss
+never restores focus. Cancellation remains effective while the parent awaits
+a hidden ACK or Host response. A delayed restore worker checks the request
+generation again before native activation; new shows/Host changes invalidate it.
+
+The parent-only `desktop.surface.copy` extension carries `entry_id` and the
+original selected `RuntimeState`. It requires the private Desktop grant,
+rechecks instance/epoch/revision around Core `SensitiveAccess::Denied` selected
+copy, and performs no paste, queue consumption, use-count update or deletion.
+The helper is never granted this method. Desktop rechecks the same state after
+copy and immediately before native paste, and checks the retained target again.
+
+A failed action retains only `paste_unavailable`, without its entry/body/action.
+The next explicit Surface show can carry this notice as a persistent warning
+independent of query success. Alternatively the next painted, visible main
+window receives the translated toast. Hidden-window emission alone does not
+consume the pending notice. Neither path reopens an old display or repeats input.
+
+Before granting access or starting the UI, Desktop runs the fixed sibling's
+bounded `--build-info` path and requires the same verified build set, MyGo
+v0.6.4/source 6255ea40139d06e0762a7c4a32626148ba410478 and toolkit patch
+`mygo-v0.6.4-no-startup-cleanup-v1`. This branch returns before App.Run. An old
+unpatched/unknown helper is rejected before the upstream startup cleanup can run.
 
 ## Read-only Surface IPC
 
@@ -118,6 +144,15 @@ parent channel. Embedded and Service modes use the same actual capture owner;
 an unavailable Service does not authorize reading a local database instead.
 Desktop revokes the finite grant on child exit, renderer/Host switch or update.
 Only Host owns global shortcuts, native target focus and clipboard capture.
+
+Desktop control requests use a fresh authenticated connection to the original
+typed endpoint. Each connection must still identify the original Host instance
+and grant the private Desktop permissions. A closed idle connection is never
+reused, and a failed or uncertain write is never replayed. State checks retain
+the selected instance, privacy epoch and history revision. Copy includes its
+authentication and before/after checks in one five-second deadline; revocation
+has the same total budget and requires a positive operation receipt for the
+original grant. An epoch change does not prevent revoking that old grant.
 
 ## Lifecycle acceptance boundary
 

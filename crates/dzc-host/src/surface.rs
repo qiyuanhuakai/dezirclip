@@ -4,6 +4,15 @@ use dzc_core::api::{self, PrivacyAccessIntent, SensitiveAccess};
 use dzc_protocol::wire::*;
 use serde_json::Value;
 
+pub fn same_surface_state(a: &RuntimeState, b: &RuntimeState) -> bool {
+    a.service_instance_id == b.service_instance_id && a.privacy_epoch == b.privacy_epoch && a.history_revision == b.history_revision
+}
+fn selected_state(expected: &RuntimeState, actual: &RuntimeState) -> Result<(), WireErrorCode> {
+    if expected.service_instance_id != actual.service_instance_id { return Err(WireErrorCode::PrivacyBlocked); }
+    if expected.privacy_epoch != actual.privacy_epoch { return Err(WireErrorCode::PrivacyEpochChanged); }
+    if expected.history_revision != actual.history_revision { return Err(WireErrorCode::HistoryRevisionChanged); }
+    Ok(())
+}
 pub(crate) fn check_state(request: &SurfacePageParams, state: &RuntimeState) -> Result<(), WireErrorCode> {
     if request.service_instance_id != state.service_instance_id { return Err(WireErrorCode::PrivacyBlocked); }
     if request.expected_epoch != state.privacy_epoch { return Err(WireErrorCode::PrivacyEpochChanged); }
@@ -11,6 +20,30 @@ pub(crate) fn check_state(request: &SurfacePageParams, state: &RuntimeState) -> 
     Ok(())
 }
 impl Host {
+    /// Parent-only copy of an unchanged ordinary selection. This cannot paste,
+    /// consume a queue, increment use counts or delete a record.
+    pub(crate) fn desktop_surface_copy(&self, session: &Session, request: DesktopSurfaceCopyParams) -> Result<Value, WireErrorCode> {
+        self.desktop_permission(session, &request.state.service_instance_id)?;
+        session.require(Permission::ClipboardCopy)?;
+        if !self.actions.can_copy() { return Err(WireErrorCode::UnsupportedCapability); }
+        selected_state(&request.state, &self.snapshot()?)?;
+        let now = crate::router::now_ms()?;
+        let permit = self.history.privacy().authorize_selected_copy(request.entry_id, Some(&request.state.service_instance_id),
+            SensitiveAccess::Denied, Some(request.state.privacy_epoch), now).map_err(crate::router::privacy_error)?;
+        let payload = if request.entry_id < 0 {
+            let rows = self.session.lock().map_err(|_| WireErrorCode::Unavailable)?;
+            let entry = rows.iter().find(|entry| entry.id == request.entry_id).ok_or(WireErrorCode::NotFound)?;
+            self.history.session_clipboard_payload_for_host_authorized(entry, &request.state.service_instance_id, &permit, now)
+        } else { self.history.clipboard_payload_authorized(request.entry_id, &permit, now) }.map_err(crate::router::privacy_error)?;
+        selected_state(&request.state, &self.snapshot()?)?;
+        self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        self.copy_payload(payload)?;
+        // A changed clipboard writer/owner result never authorizes the parent
+        // to continue with a keystroke using the old selection.
+        self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        selected_state(&request.state, &self.snapshot()?)?;
+        Ok(serde_json::json!({"performed":true}))
+    }
     pub(crate) fn surface_capability(&self) -> Value {
         let info = crate::build_info(dzc_protocol::build_info::Component::Desktop, api::DATABASE_SCHEMA_VERSION);
         serde_json::json!({"version":1,"max_page_size":100,"build":{
@@ -170,5 +203,65 @@ mod tests {
         let snapshot:BodySnapshot=serde_json::from_value(dispatch(&desktop,Method::DesktopHistorySummary,serde_json::json!({"id":-9,"service_instance_id":actual.service_instance_id,"expected_epoch":actual.privacy_epoch,"reveal":false})).result.unwrap()).unwrap();assert_eq!(snapshot.state,actual);
         let page:SurfacePage=serde_json::from_value(call(&host,&reader,&request(&host)).result.unwrap()).unwrap();assert_eq!(page.state,actual);
         assert_eq!(host.history.runtime_snapshot(crate::router::now_ms().unwrap()).unwrap().history_revision,before.history_revision,"Core's DB-only type was not redefined");
+    }
+    #[test]
+    fn parent_copy_rejects_old_positive_and_negative_selections_and_never_pastes_or_consumes() {
+        use std::sync::{Arc,atomic::{AtomicUsize,Ordering}};
+        #[derive(Default)]struct Copies(AtomicUsize);
+        impl crate::HostActions for Copies {
+            fn platform_capabilities(&self)->Value {serde_json::json!({})}
+            fn can_copy(&self)->bool {true}
+            fn copy(&self,_:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode>{self.0.fetch_add(1,Ordering::SeqCst);Ok(())}
+            fn can_paste(&self)->bool {true}
+            fn paste(&self)->Result<(),WireErrorCode>{panic!("parent-only selected copy cannot send native input")}
+            fn stop_helpers(&self)->Result<(),WireErrorCode>{Ok(())}
+        }
+        for mode in [HostMode::Embedded,HostMode::Service] {
+            let original=crate::router::tests::synthetic_host();let copies=Arc::new(Copies::default());
+            let host=Host::new(crate::HostOptions{mode,history:original.history.clone(),directory:original.directory.clone(),actions:copies.clone()}).unwrap();
+            let row=|id,tags|serde_json::from_value(serde_json::json!({"id":id,"content_type":"text","content":"unchanged selected body","preview":"preview","source_app":"synthetic","timestamp":1,"is_pinned":false,"tags":tags})).unwrap();
+            let persistent=host.history.save(&row(0,vec![] as Vec<&str>),None).unwrap();
+            let protected=host.history.save(&row(0,vec!["sensitive"]),None).unwrap();
+            host.session.lock().unwrap().push_back(row(-1,vec![]));host.session.lock().unwrap().push_back(row(-2,vec!["sensitive"]));
+            let grant=host.grants().issue_control(ClientRole::Desktop).unwrap();
+            let (desktop,_)=host.hello(HelloParams{protocol_version:VERSION,client_version:"synthetic".into(),client_role:ClientRole::Desktop,capabilities:vec![],required_capabilities:vec![],grant:Some(grant.token().into())}).unwrap();
+            let (_,reader)=grant_session(&host);
+            let dispatch=|session:&Session,id,state|host.dispatch(session,Request{request_id:"surface-copy".into(),method:Method::DesktopSurfaceCopy,params:serde_json::to_value(DesktopSurfaceCopyParams{entry_id:id,state}).unwrap()});
+            for id in [persistent,-1] {
+                let current=host.snapshot().unwrap();
+                for field in 0..3 {let mut stale=current.clone();match field {0=>stale.service_instance_id="other-owner".into(),1=>stale.privacy_epoch+=1,_=>stale.history_revision+=1}
+                    assert!(dispatch(&desktop,id,stale).error.is_some());}
+                assert_eq!(dispatch(&reader,id,current.clone()).error.unwrap().code,WireErrorCode::PermissionDenied);
+                assert!(dispatch(&desktop,id,current.clone()).result.is_some());assert_eq!(host.snapshot().unwrap(),current);
+            }
+            for id in [protected,-2] {assert!(dispatch(&desktop,id,host.snapshot().unwrap()).error.is_some());}
+            assert_eq!(copies.0.load(Ordering::SeqCst),2);
+            assert_eq!(host.session.lock().unwrap().len(),2);
+            let rows=host.history.query(&dzc_core::api::HistoryQuery{id:Some(persistent),metadata:true,limit:1,..Default::default()}).unwrap();
+            assert_eq!(rows[0].use_count,0);assert_eq!(rows[0].timestamp,1);
+        }
+    }
+    #[test]
+    fn a_writer_that_changes_state_cannot_return_paste_authority() {
+        use std::sync::Arc;
+        struct Changed {history:api::HistoryService}
+        impl crate::HostActions for Changed {
+            fn platform_capabilities(&self)->Value {serde_json::json!({})}
+            fn can_copy(&self)->bool {true}
+            fn copy(&self,_:dzc_core::ports::ClipboardPayload)->Result<(),WireErrorCode>{
+                let entry=serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":"concurrent mutation","preview":"new","source_app":"synthetic","timestamp":2,"is_pinned":false})).unwrap();
+                self.history.save(&entry,None).unwrap();Ok(())
+            }
+            fn can_paste(&self)->bool {true}
+            fn paste(&self)->Result<(),WireErrorCode>{panic!("copy is not a paste grant")}
+            fn stop_helpers(&self)->Result<(),WireErrorCode>{Ok(())}
+        }
+        let original=crate::router::tests::synthetic_host();insert(&original,"original",false);
+        let id=original.history.query(&api::HistoryQuery{limit:1,..Default::default()}).unwrap()[0].id;
+        let host=Host::new(crate::HostOptions{mode:HostMode::Service,history:original.history.clone(),directory:original.directory.clone(),actions:Arc::new(Changed{history:original.history.clone()})}).unwrap();
+        let grant=host.grants().issue_control(ClientRole::Desktop).unwrap();
+        let (desktop,_)=host.hello(HelloParams{protocol_version:VERSION,client_version:"synthetic".into(),client_role:ClientRole::Desktop,capabilities:vec![],required_capabilities:vec![],grant:Some(grant.token().into())}).unwrap();
+        let response=host.dispatch(&desktop,Request{request_id:"state-change".into(),method:Method::DesktopSurfaceCopy,params:serde_json::to_value(DesktopSurfaceCopyParams{entry_id:id,state:host.snapshot().unwrap()}).unwrap()});
+        assert_eq!(response.error.unwrap().code,WireErrorCode::HistoryRevisionChanged);
     }
 }

@@ -882,7 +882,8 @@
         "desktop.privacy.decision",
         "desktop.privacy.feedback",
         "desktop.privacy.remove_rule",
-        "surface.history.page"
+        "surface.history.page",
+        "desktop.surface.copy"
       ]
     },
     "WireErrorCode": {
@@ -1842,6 +1843,22 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/SurfacePageParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.surface.copy"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopSurfaceCopyParams"
               }
             }
           }
@@ -2846,6 +2863,12 @@
         },
         "theme": {
           "$ref": "#/$defs/SurfaceTheme"
+        },
+        "notice": {
+          "type": "string",
+          "enum": [
+            "paste_unavailable"
+          ]
         }
       },
       "required": [
@@ -3039,11 +3062,19 @@
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "cancel",
+            "blur"
+          ]
         }
       },
       "required": [
         "surface_session_id",
-        "display_request_id"
+        "display_request_id",
+        "reason"
       ],
       "additionalProperties": false
     },
@@ -3379,6 +3410,25 @@
           }
         }
       ]
+    },
+    "DesktopSurfaceCopyParams": {
+      "type": "object",
+      "properties": {
+        "entry_id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "entry_id",
+        "state"
+      ],
+      "additionalProperties": false
     }
   }
 }

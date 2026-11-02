@@ -247,6 +247,7 @@ const (
     MethodDesktopPrivacyFeedback Method = "desktop.privacy.feedback"
     MethodDesktopPrivacyRemoveRule Method = "desktop.privacy.remove_rule"
     MethodSurfaceHistoryPage Method = "surface.history.page"
+    MethodDesktopSurfaceCopy Method = "desktop.surface.copy"
 )
 
 type WireErrorCode string
@@ -534,6 +535,7 @@ type SurfaceShow struct {
     Scale float64 `json:"scale"`
     Locale string `json:"locale"`
     Theme SurfaceTheme `json:"theme"`
+    Notice *string `json:"notice,omitempty"`
 }
 
 type SurfaceShown struct {
@@ -572,6 +574,7 @@ type SurfacePasteResult struct {
 type SurfaceDismiss struct {
     SurfaceSessionId string `json:"surface_session_id"`
     DisplayRequestId string `json:"display_request_id"`
+    Reason string `json:"reason"`
 }
 
 type SurfaceShutdown struct {
@@ -609,4 +612,9 @@ type SurfaceControlMessage struct {
     RequestId string `json:"request_id"`
     Type SurfaceControlType `json:"type"`
     Payload json.RawMessage `json:"payload"`
+}
+
+type DesktopSurfaceCopyParams struct {
+    EntryId int64 `json:"entry_id"`
+    State RuntimeState `json:"state"`
 }

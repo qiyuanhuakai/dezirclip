@@ -1,4 +1,5 @@
 @import "./semantic.tokens.css";
+@import "./surface.generated.css";
 
 :root {
   --bg-body: #dcdcdc;

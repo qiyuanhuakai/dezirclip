@@ -174,7 +174,6 @@ const QuickPasteWindow = forwardRef<HTMLDivElement>(function QuickPasteWindow(
       const selected = entriesRef.current.find(entry => entry.id === entryId);
       if (!selected) return;
       await invoke("paste_quick_paste_selection", { entryId, ...entryInstanceArgs(selected.host_instance_id) });
-      await invoke("hide_quick_paste");
     } catch {
       // paste failed — window stays open
     }

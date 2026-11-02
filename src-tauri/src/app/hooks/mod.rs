@@ -248,6 +248,12 @@ pub unsafe extern "system" fn keyboard_proc(
             let is_enter = vk == 0x0D;
 
             if is_navigation_key && is_down {
+                if WINDOW_LIFECYCLE.load(Ordering::Acquire) != crate::app::idle_destroyer::LIFECYCLE_OPEN
+                    || !WindowExt::main_navigation_window_is_visible()
+                    || WINDOW_LIFECYCLE.load(Ordering::Acquire) != crate::app::idle_destroyer::LIFECYCLE_OPEN
+                {
+                    return CallNextHookEx(None, n_code, w_param, l_param);
+                }
                 // Only Enter requires navigation mode to be active
                 // Escape can always close the window when it's visible
                 if is_enter && !NAVIGATION_MODE_ACTIVE.load(Ordering::Relaxed) {
@@ -277,8 +283,7 @@ pub unsafe extern "system" fn keyboard_proc(
                             if action == "escape" {
                                 let handle_clone = handle.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    let _ = handle_clone.emit("navigation-action", "escape");
-                                    toggle_window(&handle_clone);
+                                    crate::app::window_manager::hide_main_navigation_window(handle_clone);
                                 });
                             } else {
                                 let _ = handle.emit("navigation-action", action);

@@ -14,6 +14,7 @@ mod upload;
 mod ocr;
 mod surface;
 mod history_version;
+pub use surface::same_surface_state;
 pub use ocr::schedule_capture_ocr;
 pub mod data;
 pub mod controller;

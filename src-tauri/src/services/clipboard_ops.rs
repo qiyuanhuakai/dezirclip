@@ -360,6 +360,7 @@ async fn hide_quick_paste_before_paste(app_handle: &tauri::AppHandle) -> bool {
 
     let _ = window.set_focusable(false);
     let _ = window.hide();
+    crate::app::webview_memory::lower_window_memory(&window, "quick-paste-hide-before-paste");
     let _ = restore_focus_before_paste(app_handle).await;
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     true

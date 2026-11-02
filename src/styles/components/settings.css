@@ -14,6 +14,8 @@
 .about-build-details dt { color: var(--text-primary); font-weight: 700; }
 .about-build-details dd { margin: 0; }
 .about-build-error p { color: var(--text-secondary); }
+.quick-paste-renderer-setting { flex-wrap: wrap; }
+.quick-paste-renderer-error { flex-basis: 100%; margin: 4px 0; color: var(--color-error); font-size: var(--font-size-sm); }
 .settings-value { min-width: 0; color: var(--text-secondary); font-size: var(--font-size-sm); overflow-wrap: anywhere; user-select: text; }
 .settings-description { margin: 6px 0; color: var(--text-secondary); font-size: var(--font-size-sm); line-height: 1.6; }
 

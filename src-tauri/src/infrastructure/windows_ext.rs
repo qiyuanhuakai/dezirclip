@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use windows::Win32::Foundation::{GetLastError, SetLastError, HWND, RECT, WIN32_ERROR};
 use windows::Win32::System::Threading::AttachThreadInput;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -14,7 +15,48 @@ use windows::Win32::UI::WindowsAndMessaging::{
 /// 安全封装的窗口辅助工具
 pub struct WindowExt;
 
+// The keyboard hook must not synchronously ask Tauri's UI thread for an HWND.
+static MAIN_NAVIGATION_WINDOW: AtomicUsize = AtomicUsize::new(0);
+
+fn clear_navigation_snapshot(snapshot: &AtomicUsize, expected: Option<usize>) {
+    if let Some(expected) = expected {
+        let _ = snapshot.compare_exchange(expected, 0, Ordering::AcqRel, Ordering::Acquire);
+    } else {
+        snapshot.store(0, Ordering::Release);
+    }
+}
+
+fn native_navigation_visible(handle: usize) -> bool {
+    if handle == 0 { return false; }
+    let hwnd = HWND(handle as *mut _);
+    unsafe {
+        let mut process_id = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id)) != 0
+            && process_id == std::process::id()
+            && IsWindowVisible(hwnd).as_bool()
+            && !IsIconic(hwnd).as_bool()
+    }
+}
+
 impl WindowExt {
+    /// Publish only from the UI thread after resolving the current main window.
+    pub fn publish_main_navigation_window(hwnd: HWND) -> bool {
+        let handle = hwnd.0 as usize;
+        if !native_navigation_visible(handle) { return false; }
+        MAIN_NAVIGATION_WINDOW.store(handle, Ordering::Release);
+        true
+    }
+
+    pub fn clear_main_navigation_window(expected: Option<HWND>) {
+        clear_navigation_snapshot(&MAIN_NAVIGATION_WINDOW, expected.map(|hwnd| hwnd.0 as usize));
+    }
+
+    pub fn main_navigation_window_is_visible() -> bool {
+        let handle = MAIN_NAVIGATION_WINDOW.load(Ordering::Acquire);
+        native_navigation_visible(handle)
+            && MAIN_NAVIGATION_WINDOW.load(Ordering::Acquire) == handle
+    }
+
     pub fn allow_activation(hwnd: HWND) -> Result<(), String> {
         unsafe {
             SetLastError(WIN32_ERROR(0));
@@ -176,5 +218,26 @@ impl WindowExt {
                 },
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod navigation_snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn late_clear_does_not_revoke_replacement_window() {
+        let snapshot = AtomicUsize::new(200);
+        clear_navigation_snapshot(&snapshot, Some(100));
+        assert_eq!(snapshot.load(Ordering::Acquire), 200);
+        clear_navigation_snapshot(&snapshot, Some(200));
+        assert_eq!(snapshot.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn disable_revokes_current_window_snapshot() {
+        let snapshot = AtomicUsize::new(200);
+        clear_navigation_snapshot(&snapshot, None);
+        assert_eq!(snapshot.load(Ordering::Acquire), 0);
     }
 }
