@@ -7,10 +7,24 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Resume original alpha.2 assets without rebuilding or moving its tag
+        description: Synchronize a published update channel, or recover original alpha.2 assets
         required: true
         type: choice
-        options: [resume-existing-alpha2]
+        default: sync-published-channel
+        options: [sync-published-channel, resume-existing-alpha2]
+      tag:
+        description: Published version tag to synchronize (sync-published-channel only)
+        required: false
+        type: string
+      release-run-id:
+        description: Successful original tag-triggered Release run ID (sync-published-channel only)
+        required: false
+        type: string
+      release-run-attempt:
+        description: Successful original Release attempt (sync-published-channel only)
+        required: false
+        type: string
+        default: '1'
 
 permissions:
   contents: write
@@ -21,11 +35,13 @@ env:
 
 concurrency:
   group: release-updater-channels
+  queue: max
   cancel-in-progress: false
 
 jobs:
   create-release:
     name: Create GitHub release
+    if: github.event_name == 'push' || inputs.mode == 'resume-existing-alpha2'
     runs-on: ubuntu-24.04
     outputs:
       release_id: ${{ steps.release.outputs.release_id || steps.recovery.outputs.release_id }}
@@ -361,10 +377,13 @@ jobs:
       release-id: ${{ needs.create-release.outputs.release_id }}
 
   verify-publish-and-promote:
-    name: Verify signed artifacts and publish before public acceptance
+    name: Verify signed artifacts, publish and synchronize update channel
     needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade]
     if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.collect-release-identities.result == 'success' && needs.verify-final-windows-upgrade.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success')) }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -378,8 +397,81 @@ jobs:
         with:
           node-version: 22
 
-      - name: Verify all four signed updater artifacts before publication
+      - name: Download the exact final Windows upgrade gate
+        if: github.event_name == 'push'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-windows-upgrade-gate-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/updater-release-gates
+
+      - name: Verify, publish and synchronize the signed updater channel
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: node scripts/updater-release.mjs publish-only "${{ needs.create-release.outputs.tag }}"
+          DZC_RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node scripts/updater-release.mjs publish-and-sync "$DZC_RELEASE_TAG" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$RUNNER_TEMP/updater-release-gates/windows-upgrade.json" | tee "$RUNNER_TEMP/updater-channel-sync.json"
+
+      - name: Publish the fixed historical recovery without changing its channel policy
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'resume-existing-alpha2'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          DZC_RELEASE_TAG: ${{ needs.create-release.outputs.tag }}
+        run: node scripts/updater-release.mjs publish-only "$DZC_RELEASE_TAG"
+
+      - name: Retain the synchronized channel receipt
+        if: always() && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-channel-sync-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/updater-channel-sync.json
+          if-no-files-found: error
+
+  sync-published-channel:
+    name: Synchronize an already published update channel
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'sync-published-channel'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Require reviewed synchronization tooling
+        run: test "$GITHUB_REF" = refs/heads/master
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download the original successful release upgrade gate
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.release-run-id }}
+          name: release-windows-upgrade-gate-attempt-${{ inputs.release-run-attempt }}
+          path: ${{ runner.temp }}/updater-release-gates
+
+      - name: Verify the original release gates and synchronize without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_RELEASE_TAG: ${{ inputs.tag }}
+          DZC_RELEASE_RUN_ID: ${{ inputs.release-run-id }}
+          DZC_RELEASE_RUN_ATTEMPT: ${{ inputs.release-run-attempt }}
+        run: |
+          set -euo pipefail
+          node scripts/updater-release.mjs sync-published "$DZC_RELEASE_TAG" "$DZC_RELEASE_RUN_ID" "$DZC_RELEASE_RUN_ATTEMPT" "$RUNNER_TEMP/updater-release-gates/windows-upgrade.json" | tee "$RUNNER_TEMP/updater-channel-sync.json"
+
+      - name: Retain the synchronization receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-channel-backfill-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/updater-channel-sync.json
+          if-no-files-found: error

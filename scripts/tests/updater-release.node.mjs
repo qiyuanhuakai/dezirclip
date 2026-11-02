@@ -4,7 +4,7 @@ import { existsSync, readFileSync, mkdtempSync, writeFileSync, rmSync, mkdirSync
 import { basename, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
+import { compareVersions, makeManifest, parseVersion, promotionChannel, publishOnly, publishAndSync, syncPublished, promote as promoteFile, repository, shouldPromote, verifyTauriSignature } from '../updater-release.mjs';
 
 const gateNames = ['public_assets', 'appimage_updates', 'windows_upgrade', 'performance'];
 const gateReport = (receipt, kind) => ({ schema_version: 1, kind, status: 'passed',
@@ -87,7 +87,7 @@ test('channel progression follows SemVer and refuses equal versions and downgrad
 // All publisher calls use the injected in-memory transport. Test signing keys
 // exist only in memory; no GitHub process, production key or remote write runs.
 function publisherFixture(options = {}) {
-  const version = '0.2.0-alpha.1';
+  const version = options.version ?? '0.2.0-alpha.1';
   const tag = `v${version}`;
   const keyPair = generateKeyPairSync('ed25519');
   const keyId = Buffer.from('0102030405060708', 'hex');
@@ -98,11 +98,12 @@ function publisherFixture(options = {}) {
   const state = {
     calls: [], mutations: [], uploadPaths: [], draftIdsRead: [], listCalls: 0,
     product: { id: 10, tag_name: tag, draft: options.published !== true,
-      prerelease: true, body: 'Synthetic release notes', assets: [] },
+      prerelease: Boolean(parseVersion(version).pre.length), body: 'Synthetic release notes', assets: [] },
     channel: null,
   };
   const asset = (name, data) => {
-    const value = { id: nextId++, name, size: data.length, updated_at: '2026-10-20T00:00:00Z' };
+    const value = { id: nextId++, name, size: data.length, updated_at: '2026-10-20T00:00:00Z',
+      state: 'uploaded', digest: `sha256:${createHash('sha256').update(data).digest('hex')}` };
     bytes.set(value.id, Buffer.from(data));
     return value;
   };
@@ -123,6 +124,40 @@ function publisherFixture(options = {}) {
   for (const arch of ['x86_64', 'aarch64']) {
     state.product.assets.push(asset(`DezirClip-${version}-linux-${arch}.flatpak`, Buffer.from('flatpak')));
   }
+  if (options.sync) {
+    for (const arch of ['amd64', 'arm64']) {
+      const name = `DezirClip_${version}_${arch}.deb`;
+      state.product.assets.push(asset(name, Buffer.from('deb')), asset(`${name}.sig`, Buffer.from('signature')));
+    }
+    const parsed = parseVersion(version);
+    for (const arch of ['x86_64', 'aarch64']) {
+      state.product.assets.push(asset(`DezirClip-${parsed.numbers.join('.')}-${parsed.pre.length ? `0.${parsed.pre.join('.')}` : '1'}.${arch}.rpm`, Buffer.from('rpm')));
+    }
+    state.workflow = { id: 303481695, path: '.github/workflows/release.yml', state: 'active' };
+    state.run = { id: 7001, run_attempt: 1, workflow_id: state.workflow.id, path: state.workflow.path,
+      event: 'push', head_branch: tag, head_sha: 'a'.repeat(40),
+      repository: { full_name: repository }, head_repository: { full_name: repository },
+      status: options.running ? 'in_progress' : 'completed', conclusion: options.running ? null : 'success' };
+    const names = [
+      'Create GitHub release', 'Publish verified standalone archives',
+      ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'].map(platform => `Tauri release (${platform})`),
+      ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64']
+        .map(platform => `Build compatible standalone CLI / Standalone (${platform})`),
+      ...['linux-x86_64', 'linux-aarch64'].map(platform => `Verified Flatpak release / Flatpak (${platform})`),
+      'Verify actual signed Windows upgrades / Verify final signed upgrade inputs',
+      'Collect actual final package identities / Bind final source and all fourteen assets',
+      'Verify actual signed Windows upgrades / Bind all actual final installer upgrades',
+      ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64']
+        .map(platform => `Collect actual final package identities / Release identities (${platform})`),
+      ...['LegacyToAlpha2', 'PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease']
+        .map(scenario => `Verify actual signed Windows upgrades / Final published upgrade (${scenario})`),
+      options.oldPublisher ? 'Verify signed artifacts and publish before public acceptance'
+        : 'Verify signed artifacts, publish and synchronize update channel',
+    ];
+    state.jobs = names.map((name, index) => ({ id: 8000 + index, name, run_id: 7001, run_attempt: 1,
+      head_sha: 'a'.repeat(40), status: options.running && index === names.length - 1 ? 'in_progress' : 'completed',
+      conclusion: options.running && index === names.length - 1 ? null : 'success', started_at: '2026-10-21T00:00:00Z' }));
+  }
   if (options.tampered) bytes.get(state.product.assets[0].id)[0] ^= 1;
   if (options.channel) {
     state.channel = { id: 20, tag_name: 'updater-channels', draft: options.channel === 'draft',
@@ -137,6 +172,7 @@ function publisherFixture(options = {}) {
     if (args[0] === 'api') {
       const path = args[1].replace(`repos/${repository}/`, '');
       assert.equal(args[1], `repos/${repository}/${path}`);
+      options.onApi?.(path, state);
       if (path === 'releases?per_page=100') {
         assert.deepEqual(args.slice(2), ['--paginate', '--slurp']);
         if (++state.listCalls === options.listErrorAt) throw options.apiError;
@@ -148,6 +184,17 @@ function publisherFixture(options = {}) {
       }
       if (path.startsWith('releases/tags/')) {
         assert.fail('Publisher must not use the published-only by-tag endpoint for drafts');
+      }
+      if (path === 'actions/workflows/release.yml') return json(state.workflow);
+      if (path === 'actions/runs/7001' || path === 'actions/runs/7001/attempts/1') {
+        if (path.endsWith('/attempts/1') && ++state.runReads === options.changeRunAt) state.run.head_sha = 'b'.repeat(40);
+        return json(state.run);
+      }
+      if (path === 'actions/runs/7001/attempts/1/jobs?per_page=100') {
+        assert.deepEqual(args.slice(2), ['--paginate', '--slurp']);
+        const jobs = options.incompleteJobs ? state.jobs.slice(1) : state.jobs;
+        return json([{ total_count: state.jobs.length, jobs: jobs.slice(0, 4) },
+          { total_count: state.jobs.length, jobs: jobs.slice(4) }]);
       }
       if (path === `git/ref/tags/${tag}`) return json({ object: { type: 'commit', sha: 'a'.repeat(40) } });
       if (path === 'releases/10' || path === 'releases/20') {
@@ -203,14 +250,16 @@ function publisherFixture(options = {}) {
       return '';
     }
     if (action === 'upload' && target === 'updater-channels') {
+      if (options.failUpload) throw new Error('Synthetic upload failed');
       const path = args[3];
       state.uploadPaths.push(path);
       state.channel.assets.push(asset(basename(path), readFileSync(path)));
       state.mutations.push('upload:channel');
+      options.afterUpload?.(state, bytes);
       return '';
     }
     if (action === 'edit' && (target === tag || target === 'updater-channels')) {
-      assert.ok(args.includes('--draft=false') && args.includes('--latest=false'));
+      assert.ok(args.includes('--draft=false') && args.includes(target === tag && !state.product.prerelease ? '--latest' : '--latest=false'));
       const release = target === tag ? state.product : state.channel;
       release.draft = false;
       state.mutations.push(target === tag ? 'publish:product' : 'publish:channel');
@@ -218,12 +267,253 @@ function publisherFixture(options = {}) {
     }
     assert.fail('Unexpected fake release command: ' + args.join(' '));
   };
+  state.runReads = 0;
   return { state, transport, config: { plugins: { updater: { pubkey: signingKey } } },
+    replaceIndex: (name, value) => {
+      const found = state.channel.assets.find(item => item.name === name);
+      assert.ok(found);
+      const raw = Buffer.from(JSON.stringify(value)); bytes.set(found.id, raw);
+      found.size = raw.length; found.digest = `sha256:${createHash('sha256').update(raw).digest('hex')}`;
+    },
     active: name => {
       const found = state.channel?.assets.find(value => value.name === name);
       return found ? JSON.parse(bytes.get(found.id)) : null;
     } };
 }
+
+function withSynchronization(options, body) {
+  const fixture = publisherFixture({ sync: true, ...options });
+  const version = options.version ?? '0.2.0-alpha.1';
+  const directory = mkdtempSync(join(tmpdir(), 'dezirclip-sync-test-'));
+  const file = join(directory, 'windows-upgrade.json');
+  const gate = { schema_version: 1, kind: 'windows_upgrade', status: 'passed', version,
+    source_revision: 'a'.repeat(40), release_id: 10, policy_sha256: 'c'.repeat(64),
+    signed_assets: fixture.state.product.assets.slice(0, 8).map(({ name, id, size, updated_at, digest }) =>
+      ({ name, id, size, updated_at, sha256: digest.slice(7) })),
+    checks: ['LegacyToAlpha2', 'PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease'].map(name =>
+      ({ name, status: 'passed', report_sha256: 'd'.repeat(64), raw_native_sha256: 'e'.repeat(64) })) };
+  const invoke = (mode = 'publish-and-sync', runId = '7001', attempt = '1') => {
+    writeFileSync(file, JSON.stringify(gate));
+    return (mode === 'sync-published' ? syncPublished : publishAndSync)(version, fixture.config,
+      runId, attempt, file, () => {}, fixture.transport);
+  };
+  try { return body(fixture, gate, invoke, file); }
+  finally { assert.equal(dirname(resolve(directory)), resolve(tmpdir())); rmSync(directory, { recursive: true, force: true }); }
+}
+
+test('release synchronization accepts the complete paginated gates and the unique running publisher', () => {
+  withSynchronization({ running: true }, (fixture, gate, invoke) => {
+    const receipt = invoke();
+    assert.equal(receipt.status, 'synchronized');
+    assert.equal(receipt.source_revision, 'a'.repeat(40));
+    assert.equal(receipt.workflow.run_id, 7001);
+    assert.equal(receipt.workflow.run_attempt, 1);
+    assert.equal(receipt.signed_assets.length, 8);
+    assert.equal(receipt.windows_upgrade_gate_sha256, createHash('sha256').update(JSON.stringify(gate)).digest('hex'));
+    assert.equal(fixture.state.product.assets.length, 24);
+    assert.equal(fixture.state.product.draft, false);
+    assert.equal(fixture.state.channel.draft, false);
+    assert.equal(fixture.active('preview.json').version, receipt.version);
+    assert.equal(fixture.state.runReads, 2);
+  });
+});
+
+for (const [label, change] of [
+  ['foreign repository', fixture => { fixture.state.run.repository.full_name = 'other/repo'; }],
+  ['foreign head repository', fixture => { fixture.state.run.head_repository.full_name = 'other/repo'; }],
+  ['wrong workflow', fixture => { fixture.state.run.path = '.github/workflows/ci.yml'; }],
+  ['wrong workflow ID', fixture => { fixture.state.run.workflow_id++; }],
+  ['dispatch event', fixture => { fixture.state.run.event = 'workflow_dispatch'; }],
+  ['wrong tag', fixture => { fixture.state.run.head_branch = 'master'; }],
+  ['wrong source', fixture => { fixture.state.run.head_sha = 'b'.repeat(40); }],
+  ['wrong attempt', fixture => { fixture.state.run.run_attempt = 2; }],
+  ['wrong job source', fixture => { fixture.state.jobs[0].head_sha = 'b'.repeat(40); }],
+  ['wrong job run', fixture => { fixture.state.jobs[0].run_id++; }],
+  ['wrong job attempt', fixture => { fixture.state.jobs[0].run_attempt++; }],
+  ['missing aggregate', fixture => { fixture.state.jobs.splice(13, 1); }],
+  ['missing actual upgrade', fixture => { fixture.state.jobs.splice(19, 1); }],
+  ['duplicate job ID', fixture => { fixture.state.jobs[1].id = fixture.state.jobs[0].id; }],
+  ['duplicate publisher', fixture => { fixture.state.jobs.push({ ...fixture.state.jobs.at(-1), id: 9001, name: 'Verify signed artifacts and publish before public acceptance' }); }],
+  ['nonpublisher running', fixture => { Object.assign(fixture.state.jobs[0], { status: 'in_progress', conclusion: null }); }],
+  ['failed prerequisite', fixture => { fixture.state.jobs[0].conclusion = 'failure'; }],
+  ['cancelled prerequisite', fixture => { fixture.state.jobs[0].conclusion = 'cancelled'; }],
+  ['skipped prerequisite', fixture => { fixture.state.jobs[0].conclusion = 'skipped'; }],
+  ['missing identity time', fixture => { delete fixture.state.jobs.find(job => job.name.includes('Release identities (')).started_at; }],
+]) {
+  test(`synchronization rejects ${label} without publication or channel writes`, () => {
+    withSynchronization({}, (fixture, gate, invoke) => {
+      change(fixture); assert.throws(() => invoke());
+      assert.deepEqual(fixture.state.mutations, []);
+      assert(fixture.state.calls.every(args => !args.includes('Accept: application/octet-stream')));
+    });
+  });
+}
+
+test('only the exact conditional backfill job may be skipped on a push release', () => {
+  withSynchronization({}, (fixture, gate, invoke) => {
+    fixture.state.jobs.push({ ...fixture.state.jobs[0], id: 9001,
+      name: 'Synchronize an already published update channel', conclusion: 'skipped' });
+    assert.equal(invoke().status, 'synchronized');
+  });
+});
+
+test('an incomplete paginated job listing or drifting gate source blocks every write', () => {
+  for (const options of [{ incompleteJobs: true }, { changeRunAt: 2 }]) {
+    withSynchronization(options, (fixture, gate, invoke) => {
+      assert.throws(() => invoke()); assert.deepEqual(fixture.state.mutations, []);
+    });
+  }
+});
+
+for (const [label, change] of [
+  ['missing file', fixture => { fixture.state.product.assets.pop(); }],
+  ['duplicate ID', fixture => { fixture.state.product.assets[1].id = fixture.state.product.assets[0].id; }],
+  ['missing digest', fixture => { delete fixture.state.product.assets[0].digest; }],
+  ['not uploaded', fixture => { fixture.state.product.assets[0].state = 'new'; }],
+  ['post-gate replacement', fixture => { fixture.state.product.assets[0].updated_at = '2026-10-22T00:00:00Z'; }],
+  ['wrong signed digest', fixture => { fixture.state.product.assets[0].digest = 'sha256:' + '0'.repeat(64); }],
+]) {
+  test(`all public release files are required: ${label}`, () => {
+    withSynchronization({}, (fixture, gate, invoke) => {
+      change(fixture); assert.throws(() => invoke()); assert.deepEqual(fixture.state.mutations, []);
+    });
+  });
+}
+
+for (const [label, change] of [
+  ['failed gate', gate => { gate.status = 'failed'; }],
+  ['other source', gate => { gate.source_revision = 'b'.repeat(40); }],
+  ['other release', gate => { gate.release_id++; }],
+  ['other signed bytes', gate => { gate.signed_assets[0].sha256 = '0'.repeat(64); }],
+  ['other signed ID', gate => { gate.signed_assets[0].id++; }],
+  ['missing native scenario', gate => { gate.checks.pop(); }],
+  ['failed native scenario', gate => { gate.checks[0].status = 'failed'; }],
+  ['missing original binding', gate => { delete gate.checks[0].report_sha256; }],
+  ['missing native binding', gate => { delete gate.checks[0].raw_native_sha256; }],
+]) {
+  test(`the original Windows gate is mandatory: ${label}`, () => {
+    withSynchronization({}, (fixture, gate, invoke) => {
+      change(gate); assert.throws(() => invoke()); assert.deepEqual(fixture.state.mutations, []);
+    });
+  });
+}
+
+test('sync-published repairs the old successful publisher without republishing the product', () => {
+  withSynchronization({ published: true, channel: 'published', oldPublisher: true }, (fixture, gate, invoke) => {
+    const stable = fixture.active('stable.json');
+    assert.equal(invoke('sync-published').status, 'synchronized');
+    assert.deepEqual(fixture.active('stable.json'), stable);
+    assert(fixture.state.mutations.every(value => !value.startsWith('publish:product')));
+  });
+});
+
+test('sync-published permits only the unique publisher failure in an otherwise successful completed run', () => {
+  withSynchronization({ published: true, channel: 'published' }, (fixture, gate, invoke) => {
+    fixture.state.run.conclusion = 'failure'; fixture.state.jobs.at(-1).conclusion = 'failure';
+    assert.throws(() => invoke(), /eligible/);
+    assert.deepEqual(fixture.state.mutations, []);
+    assert.equal(invoke('sync-published').status, 'synchronized');
+  });
+  for (const options of [{}, { published: true, running: true }]) {
+    withSynchronization(options, (fixture, gate, invoke) => {
+      assert.throws(() => invoke('sync-published'), /public release and completed/);
+      assert.deepEqual(fixture.state.mutations, []);
+    });
+  }
+  withSynchronization({ published: true }, (fixture, gate, invoke) => {
+    fixture.state.run.conclusion = 'failure'; fixture.state.jobs[0].conclusion = 'failure';
+    assert.throws(() => invoke('sync-published')); assert.deepEqual(fixture.state.mutations, []);
+  });
+});
+
+test('the same channel version is idempotent only for the complete verified manifest', () => {
+  withSynchronization({ published: true, channel: 'published' }, (fixture, gate, invoke) => {
+    assert.equal(invoke('sync-published').status, 'synchronized');
+    fixture.state.mutations = [];
+    assert.equal(invoke('sync-published').status, 'already_synchronized');
+    assert.deepEqual(fixture.state.mutations, []);
+    const corrupt = fixture.active('preview.json'); corrupt.platforms['windows-x86_64'].signature = 'wrong';
+    fixture.replaceIndex('preview.json', corrupt);
+    assert.throws(() => invoke('sync-published'), /Equal-version/);
+    assert.deepEqual(fixture.state.mutations, []);
+  });
+});
+
+test('newer Preview is retained and a formal release advances only Stable', () => {
+  withSynchronization({ published: true, channel: 'published' }, (fixture, gate, invoke) => {
+    fixture.replaceIndex('preview.json', { version: '0.2.0-alpha.2' });
+    assert.equal(invoke().status, 'newer_channel_preserved');
+    assert.deepEqual(fixture.state.mutations, []);
+  });
+  withSynchronization({ version: '0.2.0', channel: 'published' }, (fixture, gate, invoke) => {
+    const preview = fixture.active('preview.json');
+    assert.equal(invoke().channel, 'stable');
+    assert.equal(fixture.active('stable.json').version, '0.2.0');
+    assert.deepEqual(fixture.active('preview.json'), preview);
+  });
+});
+
+test('channel failures retain the old index and a lost activation response resolves by exact readback', () => {
+  for (const options of [{ failRename: true }, { lostOldRenameResponse: true }, { failUpload: true }]) {
+    withSynchronization({ published: true, channel: 'published', ...options }, (fixture, gate, invoke) => {
+      const preview = fixture.active('preview.json');
+      assert.throws(() => invoke()); assert.deepEqual(fixture.active('preview.json'), preview);
+      assert.equal(fixture.state.product.draft, false);
+    });
+  }
+  withSynchronization({ published: true, channel: 'published', lostRenameResponse: true }, (fixture, gate, invoke) => {
+    assert.equal(invoke().status, 'synchronized'); assert.equal(fixture.state.lostResponse, true);
+  });
+});
+
+test('a newer index arriving during upload is preserved rather than overwritten by a stale old index', () => {
+  withSynchronization({ published: true, channel: 'published', afterUpload(state, payloads) {
+    const active = state.channel.assets.find(asset => asset.name === 'preview.json');
+    const raw = Buffer.from('{"version":"0.2.0-alpha.9"}'); payloads.set(active.id, raw); active.size = raw.length;
+  } }, (fixture, gate, invoke) => {
+    assert.throws(() => invoke(), /changed during staging/);
+    assert.equal(fixture.active('preview.json').version, '0.2.0-alpha.9');
+    assert(fixture.state.mutations.every(value => !value.startsWith('rename:')));
+  });
+});
+
+test('gate bytes, unsigned asset identities and the tag are rechecked before the first write', () => {
+  for (const kind of ['gate', 'unsigned-asset', 'tag']) {
+    let gatePath;
+    withSynchronization({ onApi(route, state) {
+      if (route !== 'actions/runs/7001/attempts/1' || state.runReads !== 1) return;
+      if (kind === 'gate') writeFileSync(gatePath, '{}');
+      if (kind === 'unsigned-asset') state.product.assets.at(-1).digest = 'sha256:' + '0'.repeat(64);
+      if (kind === 'tag') state.run.head_sha = 'b'.repeat(40);
+    } }, (fixture, gate, invoke, file) => {
+      gatePath = file; assert.throws(() => invoke()); assert.deepEqual(fixture.state.mutations, []);
+    });
+  }
+});
+
+test('a successful run cannot conceal a failed publisher even in repair mode', () => {
+  withSynchronization({ published: true }, (fixture, gate, invoke) => {
+    fixture.state.jobs.at(-1).conclusion = 'failure';
+    assert.throws(() => invoke('sync-published')); assert.deepEqual(fixture.state.mutations, []);
+  });
+});
+
+test('assets cannot change between native identity collection and the later aggregate', () => {
+  withSynchronization({}, (fixture, gate, invoke) => {
+    fixture.state.jobs.find(job => job.name.includes('all fourteen')).started_at = '2026-10-22T00:00:00Z';
+    fixture.state.jobs.find(job => job.name.includes('Bind all actual')).started_at = '2026-10-22T00:00:00Z';
+    fixture.state.product.assets.at(-1).updated_at = '2026-10-21T00:00:01Z';
+    assert.throws(() => invoke(), /pre-gate identities/); assert.deepEqual(fixture.state.mutations, []);
+  });
+});
+
+test('an early Windows aggregate does not reject final uploads preceding all four identity collectors', () => {
+  withSynchronization({}, (fixture, gate, invoke) => {
+    fixture.state.jobs.find(job => job.name.includes('Bind all actual')).started_at = '2026-10-19T00:00:00Z';
+    fixture.state.jobs.find(job => job.name.includes('all fourteen')).started_at = '2026-10-22T00:00:00Z';
+    assert.equal(invoke().status, 'synchronized');
+  });
+});
 
 test('publish verifies a product draft and a fresh channel draft through paginated lookup and release IDs', () => {
   const fixture = publisherFixture();
