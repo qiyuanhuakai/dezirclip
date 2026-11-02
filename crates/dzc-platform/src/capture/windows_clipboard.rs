@@ -385,66 +385,19 @@ pub unsafe fn get_clipboard_files() -> Option<Vec<String>> {
         };
 
         let h_global = HGLOBAL(h_drop.0 as *mut _);
+        let size = GlobalSize(h_global);
+        if size < 20 || size > isize::MAX as usize {
+            return None;
+        }
         let p_drop = GlobalLock(h_global);
         if p_drop.is_null() {
             return None;
         }
 
-        // DROPFILES struct manually parsed
-        // offset 0: pFiles (DWORD)
-        // offset 16: fWide (BOOL)
-        let p_base = p_drop as *const u8;
-        let p_files_val = *(p_base as *const u32);
-        let f_wide = *(p_base.add(16) as *const i32);
-
-        let mut files = Vec::new();
-        let files_start = p_base.add(p_files_val as usize);
-
-        if f_wide != 0 {
-            // Unicode (UTF-16)
-            let mut ptr = files_start as *const u16;
-            loop {
-                let mut len = 0;
-                while *ptr.add(len) != 0 {
-                    len += 1;
-                }
-                if len == 0 {
-                    break;
-                } // Double null terminator found
-
-                let slice = std::slice::from_raw_parts(ptr, len);
-                if let Ok(path) = String::from_utf16(slice) {
-                    files.push(path);
-                }
-                ptr = ptr.add(len + 1);
-            }
-        } else {
-            // ANSI - Basic ASCII support as fallback
-            let mut ptr = files_start as *const u8;
-            loop {
-                let mut len = 0;
-                while *ptr.add(len) != 0 {
-                    len += 1;
-                }
-                if len == 0 {
-                    break;
-                }
-
-                let slice = std::slice::from_raw_parts(ptr, len);
-                if let Ok(path) = std::str::from_utf8(slice) {
-                    files.push(path.to_string());
-                }
-                ptr = ptr.add(len + 1);
-            }
-        }
-
+        let raw = std::slice::from_raw_parts(p_drop as *const u8, size);
+        let files = super::dropfiles::parse_dropfiles(raw);
         let _ = GlobalUnlock(h_global);
-
-        if files.is_empty() {
-            None
-        } else {
-            Some(files)
-        }
+        files
     })();
 
     let _ = CloseClipboard();
