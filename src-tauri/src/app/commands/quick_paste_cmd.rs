@@ -423,6 +423,12 @@ pub fn get_quick_paste_surface_status(app:AppHandle,window:tauri::WebviewWindow)
     app.state::<crate::app::surface_supervisor::SurfaceSupervisor>().status(&app)
 }
 
+#[tauri::command]
+pub fn is_quick_paste_surface_helper_installed(window: tauri::WebviewWindow) -> Result<bool, String> {
+    if window.label() != "main" { return Err("MainWindowRequired".into()); }
+    Ok(crate::app::surface_supervisor::helper_installed())
+}
+
 /// Paste a stored entry by id. The actual clipboard write + keystroke
 /// simulation goes through [`clipboard_ops::copy_to_clipboard`] so focus
 /// restore, hotkey dispatch, sound cues, and post-paste bookkeeping all

@@ -249,6 +249,9 @@ fn helper() -> Result<PathBuf, String> {
     }
     Ok(path)
 }
+pub fn helper_installed() -> bool {
+    helper().is_ok()
+}
 fn environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
     SURFACE_ENV_KEYS.iter().copied()
     .filter_map(|key| std::env::var_os(key).map(|value| (key.into(), value)))
