@@ -117,6 +117,7 @@ test('each fsync/close/readback is attempted and a missing stdio close cannot be
 
 function channelFixture() {
   const source = readFileSync(new URL('./native-plumbing.mjs', import.meta.url), 'utf8');
+  const reply = source.slice(source.indexOf('function nativeReplyResult('), source.indexOf('class NativeChannel extends LoggedProcess {'));
   const logged = source.slice(source.indexOf('class LoggedProcess {'), source.indexOf('export async function completedCommand('));
   const native = source.slice(source.indexOf('class NativeChannel extends LoggedProcess {'), source.indexOf('export class Bridge {'));
   const children = [], outputs = [], files = new Map(); let nextFd = 0;
@@ -140,7 +141,7 @@ function channelFixture() {
     save: (file, value) => outputs.push({ file, value }), fsyncSync, closeSync, writeSync,
     regular: () => { throw new Error('Streaming logs must not call whole-file regular()'); },
   };
-  vm.createContext(scope); vm.runInContext(logged + native + '\nthis.NativeChannel = NativeChannel; this.LoggedProcess = LoggedProcess;', scope);
+  vm.createContext(scope); vm.runInContext(reply + logged + native + '\nthis.NativeChannel = NativeChannel; this.LoggedProcess = LoggedProcess;', scope);
   const channel = new scope.NativeChannel('fake-python', '.', 'source', 1);
   return { channel, child: children[0], outputs, scope };
 }
@@ -193,4 +194,30 @@ test('preserving stop after a pipe error cannot accept an original child exit wi
   await rejected; await channel.closed; channel.finish();
   assert.equal(channel.pending.size, 0); assert.equal(outputs[0].value.native_stream.complete, false);
   assert.equal(outputs[0].value.process_exit.exit_code, 1);
+});
+
+test('actual derived Native callback rejects every error envelope and a missing value for ordinary and stop replies', async () => {
+  for (const operation of ['observe', 'stop']) {
+    for (const envelope of [{ error: '' }, { error: null }, { error: false }, { error: 0 },
+      { error: 'original native failure' }, { error: '', value: 'must not win' }, {}]) {
+      const { channel, child, outputs } = channelFixture();
+      child.stdout.emit('data', Buffer.from('{"event":"ready"}\n')); await channel.ready;
+      const request = channel.request(operation), rejected = assert.rejects(request, /Native target|original native failure/);
+      child.stdout.emit('data', Buffer.from(JSON.stringify({ id: child.lastInput.id, ...envelope }) + '\n'));
+      await rejected; assert.equal(channel.pending.size, 0);
+      child.stdout.emit('end'); child.emit('exit', 0, null); child.emit('close', 0, null); await channel.closed;
+      channel.finish(); assert.equal(outputs[0].value.native_stream.complete, true);
+    }
+  }
+});
+
+test('actual derived Native callback preserves successful falsy values', async () => {
+  for (const value of [null, false, 0, '']) {
+    const { channel, child } = channelFixture();
+    child.stdout.emit('data', Buffer.from('{"event":"ready"}\n')); await channel.ready;
+    const request = channel.request('observe');
+    child.stdout.emit('data', Buffer.from(JSON.stringify({ id: child.lastInput.id, value }) + '\n'));
+    assert.equal(await request, value); assert.equal(channel.pending.size, 0);
+    child.stdout.emit('end'); child.emit('exit', 0, null); child.emit('close', 0, null); await channel.closed; channel.finish();
+  }
 });

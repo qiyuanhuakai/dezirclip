@@ -784,7 +784,8 @@ class Native:
 
     def accessibility(self, pid):
         observation = self.observe()
-        window = next(w for w in observation['windows'] if w['pid'] == pid and w['visible'])
+        window = next((w for w in observation['windows'] if w['pid'] == pid and w['visible']), None)
+        require(window is not None, 'No visible window for the original owned Surface UIA query')
         require(any(p['pid'] == pid and Path(p['image']).resolve() == (self.root / 'candidate/dzc-surface.exe').resolve() for p in observation['processes']), 'UIA is limited to the actual owned Surface')
         script = r'''[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 Add-Type -AssemblyName UIAutomationClient

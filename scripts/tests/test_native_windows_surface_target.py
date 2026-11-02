@@ -1178,5 +1178,22 @@ class PreexistingScopeTests(unittest.TestCase):
         self.assertNotIn(60, native.validated_owned_handles)
 
 
+class AccessibilityDiagnosticsTests(unittest.TestCase):
+    def test_missing_visible_owned_surface_window_has_a_fixed_error_without_a_uia_process(self):
+        for windows in ([], [{'pid': 60, 'hwnd': 7, 'visible': False}],
+                        [{'pid': 61, 'hwnd': 7, 'visible': True}]):
+            native = TARGET.Native.__new__(TARGET.Native)
+            observed = []
+            def observe():
+                observed.append(True)
+                return {'windows': windows, 'processes': []}
+            native.observe = observe
+            with self.subTest(windows=windows), patch.object(TARGET.subprocess, 'run') as reader:
+                with self.assertRaisesRegex(RuntimeError, 'No visible window for the original owned Surface UIA query'):
+                    native.accessibility(60)
+                reader.assert_not_called()
+            self.assertEqual(observed, [True])
+
+
 if __name__ == '__main__':
     unittest.main()
