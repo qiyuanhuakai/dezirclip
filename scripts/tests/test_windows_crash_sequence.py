@@ -236,6 +236,33 @@ class FilesAndReceiptTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Actual candidate bytes'):
             self.bind()
 
+    def test_debug_receipt_is_separate_from_three_functional_inputs(self):
+        pdb, receipt = self.base / 'debug.pdb', self.base / 'debug-build.json'
+        pdb.write_bytes(b'synthetic unloaded PDB')
+        receipt.write_bytes(b'synthetic build receipt previously validated by the caller')
+        build = {'profile': 'debug', 'build_receipt': {'path': str(receipt), **SEQUENCE.COLLECTOR.digest_file(receipt)},
+                 'desktop': self.inputs[0], 'symbol_inputs': [{'path': str(pdb), **SEQUENCE.COLLECTOR.digest_file(pdb)}],
+                 'symbol_matching': 'unverified_not_loaded', 'stack_symbolization': 'not_performed'}
+        self.diagnostics['kind'] = 'windows_debug_crash_diagnostics'
+        self.diagnostics['debug_build'] = copy.deepcopy(build)
+        self.assertTrue(SEQUENCE.bind_success(self.diagnostics, self.report, self.journal, WORKFLOW,
+                        self.root, self.functional, self.inputs, 0, 'debug', build))
+        self.assertEqual(len(self.report['input_bytes']), 3)
+        with self.assertRaises(ValueError):
+            self.bind()
+        for key, replacement in [('symbol_matching', 'loaded'), ('stack_symbolization', 'completed'),
+                                 ('profile', 'release'), ('debugger_loaded', True)]:
+            changed = {**build, key: replacement}
+            self.diagnostics['debug_build'] = changed
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                SEQUENCE.bind_success(self.diagnostics, self.report, self.journal, WORKFLOW,
+                                      self.root, self.functional, self.inputs, 0, 'debug', changed)
+        self.diagnostics['debug_build'] = build
+        pdb.write_bytes(b'changed original PDB')
+        with self.assertRaisesRegex(ValueError, 'symbol'):
+            SEQUENCE.bind_success(self.diagnostics, self.report, self.journal, WORKFLOW,
+                                  self.root, self.functional, self.inputs, 0, 'debug', build)
+
     def test_output_tail_reads_only_new_bounded_bytes(self):
         path = self.base / 'github-output'
         prefix = b'sequence_root=old\n' * 1000
@@ -312,7 +339,18 @@ class FakeRunTests(unittest.TestCase):
         self.calls = []
         self.child_roots = []
 
-    def run_fake(self, failed=0, storage_failure=False):
+    def run_fake(self, failed=0, storage_failure=False, debug=False, drift_symbol=False):
+        debug_build = None
+        if debug:
+            self.args.profile = 'debug'
+            self.args.desktop_pdb = str(self.repo / 'debug.pdb')
+            self.args.build_receipt = str(self.repo / 'debug-build.json')
+            Path(self.args.desktop_pdb).write_bytes(b'synthetic PDB, never loaded')
+            Path(self.args.build_receipt).write_bytes(b'synthetic build receipt already validated by fake caller')
+            debug_build = {'profile': 'debug', 'build_receipt': SEQUENCE.symbol_snapshot([self.args.build_receipt])[0],
+                           'desktop': SEQUENCE.input_snapshot([self.args.desktop])[0],
+                           'symbol_inputs': SEQUENCE.symbol_snapshot([self.args.desktop_pdb]),
+                           'symbol_matching': 'unverified_not_loaded', 'stack_symbolization': 'not_performed'}
         def subprocess_fake(command, **kwargs):
             if command == ['git', 'rev-parse', 'HEAD']:
                 return SimpleNamespace(stdout=WORKFLOW['source_revision'] + '\n')
@@ -322,7 +360,14 @@ class FakeRunTests(unittest.TestCase):
             root, functional, diagnostics, _, _ = case_receipts(self.temporary, len(self.calls), inputs)
             code = 0xc0000374 if len(self.calls) == failed else 0
             diagnostics['exit_code'] = code
+            if debug:
+                self.assertIn('--profile', command)
+                self.assertEqual(command[command.index('--profile') + 1], 'debug')
+                diagnostics['kind'] = 'windows_debug_crash_diagnostics'
+                diagnostics['debug_build'] = copy.deepcopy(debug_build)
             save(root / 'diagnostics.json', diagnostics)
+            if drift_symbol and len(self.calls) == 2:
+                Path(self.args.desktop_pdb).write_bytes(b'synthetic PDB changed during second child')
             self.child_roots.append(root)
             with self.output.open('a', encoding='utf-8') as stream:
                 stream.write('root=' + str(root) + '\nfunctional_root=' + str(functional) + '\n')
@@ -340,7 +385,9 @@ class FakeRunTests(unittest.TestCase):
                 patch.object(SEQUENCE.COLLECTOR, 'private_directory', side_effect=lambda path: path.mkdir()), \
                 patch.object(SEQUENCE.subprocess, 'run', side_effect=subprocess_fake), \
                 patch.object(SEQUENCE.COLLECTOR, 'write_json', side_effect=write_fake), \
-                patch.dict(os.environ, RUNNER_TEMP=str(self.temporary), GITHUB_OUTPUT=str(self.output)), redirect_stderr(io.StringIO()):
+                patch.object(SEQUENCE.COLLECTOR, 'debug_inputs', return_value=debug_build), \
+                patch.dict(os.environ, RUNNER_TEMP=str(self.temporary), GITHUB_OUTPUT=str(self.output),
+                           DZC_WINDOWS_CRASH_BUILD_PROFILE='debug' if debug else 'release'), redirect_stderr(io.StringIO()):
             return SEQUENCE.run(self.args, WORKFLOW)
 
     def sequence_root(self):
@@ -370,6 +417,31 @@ class FakeRunTests(unittest.TestCase):
         self.assertEqual(state['cases'][3]['status'], 'not_started')
         for name in SEQUENCE.CASES[:3]:
             self.assertTrue((self.sequence_root() / name / 'wer' / 'diagnostics.json').is_file())
+
+    def test_debug_fake_sequence_preserves_profile_and_symbols_without_metadata_binary_copy(self):
+        self.assertEqual(self.run_fake(debug=True), 0)
+        state = json.loads((self.sequence_root() / 'sequence.json').read_text(encoding='utf-8'))
+        self.assertEqual(state['kind'], 'windows_debug_crash_sequence')
+        self.assertEqual(state['status'], 'not_reproduced_5')
+        self.assertEqual(state['debug_build']['symbol_matching'], 'unverified_not_loaded')
+        for item in state['cases']:
+            self.assertEqual(item['symbol_inputs_before'], item['symbol_inputs_after'])
+            self.assertFalse(list((self.sequence_root() / item['id']).rglob('*.pdb')))
+            self.assertFalse(list((self.sequence_root() / item['id']).rglob('*.exe')))
+
+    def test_debug_symbol_drift_stops_before_another_case(self):
+        self.assertEqual(self.run_fake(debug=True, drift_symbol=True), 1)
+        self.assertEqual(len(self.calls), 2)
+        state = json.loads((self.sequence_root() / 'sequence.json').read_text(encoding='utf-8'))
+        self.assertEqual(state['cases'][2]['status'], 'not_started')
+        self.assertEqual(state['status'], 'stopped_failure')
+
+    def test_debug_original_failure_still_stops_without_replacement(self):
+        self.assertEqual(self.run_fake(failed=1, debug=True), 0xc0000374)
+        self.assertEqual(len(self.calls), 1)
+        original = json.loads((self.child_roots[0] / 'diagnostics.json').read_text(encoding='utf-8'))
+        self.assertEqual(original['kind'], 'windows_debug_crash_diagnostics')
+        self.assertEqual(original['exit_code'], 0xc0000374)
 
     def test_post_child_persistence_failure_preserves_original_exit_and_receipt(self):
         self.assertEqual(self.run_fake(failed=1, storage_failure=True), 0xc0000374)

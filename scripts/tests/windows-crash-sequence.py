@@ -113,11 +113,26 @@ def metadata_digest(path):
     return COLLECTOR.digest_file(path, METADATA_FILE_LIMIT)
 
 
-def bind_success(diagnostics, report, journal, workflow, root, functional, fixed_inputs, collector_exit_code):
+def bind_success(diagnostics, report, journal, workflow, root, functional, fixed_inputs, collector_exit_code,
+                 profile='release', debug_build=None):
     """Zero alone never permits the next case; every original receipt must agree."""
     require(type(collector_exit_code) is int and collector_exit_code == 0, 'Original collector failed')
-    require(diagnostics.get('schema_version') == 1 and diagnostics.get('kind') == 'windows_release_crash_diagnostics',
+    require(profile in ('release', 'debug'), 'Unknown diagnostic build profile')
+    kind = 'windows_debug_crash_diagnostics' if profile == 'debug' else 'windows_release_crash_diagnostics'
+    require(diagnostics.get('schema_version') == 1 and diagnostics.get('kind') == kind,
             'Invalid diagnostics receipt')
+    if profile == 'debug':
+        require(type(debug_build) is dict and set(debug_build) == {'profile', 'build_receipt', 'desktop', 'symbol_inputs',
+                'symbol_matching', 'stack_symbolization'} and type(debug_build.get('symbol_inputs')) is list and
+                len(debug_build['symbol_inputs']) == 1 and debug_build.get('profile') == 'debug' and
+                diagnostics.get('debug_build') == debug_build and
+                debug_build.get('symbol_matching') == 'unverified_not_loaded' and
+                debug_build.get('stack_symbolization') == 'not_performed', 'Exact debug build and honest symbol status required')
+        require(len(fixed_inputs) == 3 and debug_build['desktop'] == fixed_inputs[0], 'Debug EXE differs from the original functional input')
+        for item in [debug_build['build_receipt'], *debug_build['symbol_inputs']]:
+            require(symbol_snapshot([item['path']]) == [item], 'Debug symbol/receipt bytes changed')
+    else:
+        require(debug_build is None and 'debug_build' not in diagnostics, 'Release cannot borrow a debug receipt')
     require(diagnostics.get('workflow') == workflow and journal.get('workflow') == workflow,
             'Diagnostics or journal belongs to another workflow')
     require(same_path(diagnostics.get('root', ''), root) and same_path(journal.get('root', ''), root)
@@ -166,6 +181,10 @@ def input_snapshot(paths):
     return [{'path': str(COLLECTOR.plain_path(path)), **COLLECTOR.digest_file(path, 256 * 1024 * 1024)} for path in paths]
 
 
+def symbol_snapshot(paths):
+    return [{'path': str(COLLECTOR.plain_path(path)), **COLLECTOR.digest_file(path, COLLECTOR.MAX_DUMP)} for path in paths]
+
+
 def stop_sequence(manifest, error, persist=None, item=None):
     code = next((entry['collector_exit_code'] for entry in reversed(manifest['cases'])
                  if type(entry.get('collector_exit_code')) is int and entry['collector_exit_code'] != 0), 1)
@@ -208,9 +227,10 @@ def run_cases(manifest, execute, persist):
 
 
 def run(args, workflow):
+    profile = COLLECTOR.select_profile(args, os.environ)
     temporary = COLLECTOR.plain_path(os.environ['RUNNER_TEMP'], directory=True)
     sequence_root = temporary / ('dezirclip-crash-sequence-' + uuid.uuid4().hex)
-    manifest = {'schema_version': 1, 'kind': 'windows_release_crash_sequence', 'workflow': workflow,
+    manifest = {'schema_version': 1, 'kind': 'windows_debug_crash_sequence' if profile == 'debug' else 'windows_release_crash_sequence', 'workflow': workflow,
                 'root': str(sequence_root), 'started_at': COLLECTOR.utc_now(), 'status': 'preparing',
                 'maximum_cases': 5, 'cases': [{'id': name, 'status': 'not_started'} for name in CASES],
                 'limits': ['Diagnostic only; no resource or ABBA measurement.',
@@ -232,6 +252,8 @@ def run(args, workflow):
         persist(manifest)
         revision = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=REPOSITORY, capture_output=True, text=True, check=True).stdout.strip()
         require(revision == workflow['source_revision'], 'Sequence must use the exact workflow checkout')
+        debug_build = COLLECTOR.debug_inputs(args, workflow)
+        symbols = [] if debug_build is None else [debug_build['build_receipt'], *debug_build['symbol_inputs']]
         binaries = input_snapshot([Path(os.path.abspath(value)) for value in (args.desktop, args.helper, args.helper_proof)])
         sources = input_snapshot([REPOSITORY / value for value in SOURCE_PATHS])
         proof = COLLECTOR.read_json(args.helper_proof)
@@ -244,6 +266,9 @@ def run(args, workflow):
         require(proof_paths, 'Helper proof must freeze its original source inputs')
         helper_sources = input_snapshot(proof_paths)
         manifest.update(status='running', fixed_inputs=binaries, source_inputs=sources, helper_source_inputs=helper_sources)
+        if debug_build is not None:
+            require(debug_build['desktop'] == binaries[0], 'Debug EXE must be the exact fixed functional input')
+            manifest['debug_build'] = debug_build
         persist(manifest)
         previous = set()
         output_path = COLLECTOR.plain_path(os.environ['GITHUB_OUTPUT'])
@@ -253,12 +278,18 @@ def run(args, workflow):
             expected = binaries + sources + helper_sources
             item['inputs_before'] = input_snapshot(paths)
             require(item['inputs_before'] == expected, 'Fixed input bytes changed before this case')
+            if debug_build is not None:
+                item['symbol_inputs_before'] = symbol_snapshot([entry['path'] for entry in symbols])
+                require(item['symbol_inputs_before'] == symbols and COLLECTOR.debug_inputs(args, workflow) == debug_build,
+                        'Debug build/symbol inputs changed before this case')
             destination = sequence_root / item['id']
             destination.mkdir()
             offset = COLLECTOR.plain_path(output_path).stat().st_size
             item['github_output_offset'] = offset
             command = [sys.executable, '-B', str(REPOSITORY / 'scripts/tests/windows-crash-diagnostics.py'), 'run',
                        '--desktop', args.desktop, '--helper', args.helper, '--helper-proof', args.helper_proof]
+            if profile == 'debug':
+                command += ['--profile', 'debug', '--desktop-pdb', args.desktop_pdb, '--build-receipt', args.build_receipt]
             item.update(command=command, child_launch_attempted=True)
             persist(manifest)
             # The child inherits the original GITHUB_OUTPUT so always-cleanup tracks the only active WER transaction.
@@ -276,11 +307,16 @@ def run(args, workflow):
             item['metadata'] = copy_metadata(root, functional, destination)
             item['inputs_after'] = input_snapshot(paths)
             require(item['inputs_after'] == expected, 'Fixed input bytes changed during this case')
+            if debug_build is not None:
+                item['symbol_inputs_after'] = symbol_snapshot([entry['path'] for entry in symbols])
+                require(item['symbol_inputs_after'] == symbols and COLLECTOR.debug_inputs(args, workflow) == debug_build,
+                        'Debug build/symbol inputs changed during this case')
             require('accepted_dump' not in outputs, 'An accepted dump stops the sequence')
             diagnostics = COLLECTOR.read_json(destination / 'wer' / 'diagnostics.json')
             report = COLLECTOR.read_json(destination / 'functional' / 'report.json')
             journal = COLLECTOR.read_json(destination / 'wer' / 'registry-journal.json')
-            return bind_success(diagnostics, report, journal, workflow, root, functional, binaries, item['collector_exit_code'])
+            return bind_success(diagnostics, report, journal, workflow, root, functional, binaries,
+                                item['collector_exit_code'], profile, debug_build)
 
         return run_cases(manifest, execute, persist)
     except BaseException as error:
@@ -289,6 +325,9 @@ def run(args, workflow):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--profile', choices=('release', 'debug'), default='release')
+    parser.add_argument('--desktop-pdb')
+    parser.add_argument('--build-receipt')
     for name in ('desktop', 'helper', 'helper-proof'):
         parser.add_argument('--' + name, required=True)
     args = parser.parse_args()

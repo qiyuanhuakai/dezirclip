@@ -22,10 +22,18 @@ on:
         required: false
         default: false
       windows_surface_crash_diagnostics:
-        description: Run up to five fresh-profile release Windows diagnostic cases, stopping on first failure, without ABBA
+        description: Run up to five fresh-profile Windows diagnostic cases, stopping on first failure, without ABBA
         type: boolean
         required: false
         default: false
+      windows_crash_build_profile:
+        description: Diagnostic-only Desktop profile; debug preserves its exact EXE and PDB
+        type: choice
+        required: false
+        default: release
+        options:
+          - release
+          - debug
 
 permissions:
   contents: read
@@ -537,7 +545,7 @@ jobs:
           print('DEZIRCLIP_CI_DISK', encoded, flush=True)
 
   windows-surface-performance:
-    name: Optional Windows release Surface comparison
+    name: Optional Windows Surface comparison or crash diagnostics
     if: >-
       ${{ !cancelled() && github.event_name == 'workflow_dispatch' &&
           (inputs.windows_surface_crash_diagnostics == true ||
@@ -549,6 +557,7 @@ jobs:
     env:
       DZC_WINDOWS_PERFORMANCE_ENABLED: ${{ inputs.windows_surface_performance && 'true' || 'false' }}
       DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED: ${{ inputs.windows_surface_crash_diagnostics && 'true' || 'false' }}
+      DZC_WINDOWS_CRASH_BUILD_PROFILE: ${{ inputs.windows_crash_build_profile || 'release' }}
       GOTOOLCHAIN: local
     steps:
       - name: Require exactly one optional Windows mode
@@ -556,6 +565,10 @@ jobs:
         run: |
           if (($env:DZC_WINDOWS_PERFORMANCE_ENABLED -eq 'true') -eq ($env:DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED -eq 'true')) {
             throw 'Select either performance or diagnostic-only functional checks'
+          }
+          if ($env:DZC_WINDOWS_CRASH_BUILD_PROFILE -notin @('release', 'debug')) { throw 'Unknown diagnostic build profile' }
+          if ($env:DZC_WINDOWS_CRASH_BUILD_PROFILE -eq 'debug' -and $env:DZC_WINDOWS_CRASH_DIAGNOSTICS_ENABLED -ne 'true') {
+            throw 'Debug symbols are restricted to diagnostic-only dispatches'
           }
 
       - name: Checkout
@@ -580,11 +593,11 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache release Rust artifacts
+      - name: Cache matching Rust artifacts
         uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: windows-surface-release-performance
+          key: windows-surface-${{ inputs.windows_surface_crash_diagnostics && inputs.windows_crash_build_profile == 'debug' && 'debug-diagnostics' || 'release-performance' }}
 
       - name: Setup pinned Go toolchain
         uses: actions/setup-go@v6
@@ -603,7 +616,20 @@ jobs:
           pnpm run surface:build
 
       - name: Build the actual release Desktop with embedded frontend
+        if: inputs.windows_surface_crash_diagnostics != true || inputs.windows_crash_build_profile != 'debug'
         run: cargo build --release --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
+
+      - name: Build the exact debug Desktop and retain its symbol receipt
+        if: inputs.windows_surface_crash_diagnostics && inputs.windows_crash_build_profile == 'debug'
+        shell: pwsh
+        env:
+          CARGO_PROFILE_DEV_DEBUG: '2'
+          CARGO_PROFILE_DEV_STRIP: none
+        run: |
+          cargo build --locked --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bin dezirclip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -B scripts/tests/windows-crash-diagnostics.py build-receipt --profile debug --desktop target/debug/dezirclip.exe --desktop-pdb target/debug/dezirclip.pdb --build-receipt artifacts/windows-debug-build/dezirclip.debug-build.json --helper artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe --helper-proof artifacts/dzc-surface/x86_64-pc-windows-msvc/dzc-surface.exe.proof.json
+          exit $LASTEXITCODE
 
       - name: Derive the comparison fixture from reviewed functional sources
         if: inputs.windows_surface_performance
@@ -662,12 +688,12 @@ jobs:
           subprocess.run(['node', '.harness/windows-performance-runtime/controller.mjs', *common,
               '--functional-report', str(functional / 'report.json'), '--quiet-note', str(quiet), '--output-root', str(comparison)], check=True)
 
-      - name: Run up to five success-only diagnostic release cases
+      - name: Run up to five success-only diagnostic cases on the selected build
         id: crash-diagnostics
         if: inputs.windows_surface_crash_diagnostics
         timeout-minutes: 55
         shell: pwsh
-        run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode run
+        run: ./scripts/tests/windows-crash-diagnostics.ps1 -Mode run -Profile $env:DZC_WINDOWS_CRASH_BUILD_PROFILE
 
       - name: Restore only the matching owned WER child key
         if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.root != ''
@@ -680,7 +706,7 @@ jobs:
         if: always() && inputs.windows_surface_crash_diagnostics && (steps.crash-diagnostics.outputs.sequence_root != '' || steps.crash-diagnostics.outputs.root != '')
         uses: actions/upload-artifact@v4
         with:
-          name: windows-surface-release-crash-metadata-${{ github.run_attempt }}
+          name: windows-surface-${{ inputs.windows_crash_build_profile == 'debug' && 'debug' || 'release' }}-crash-metadata-${{ github.run_attempt }}
           retention-days: 3
           path: |
             ${{ steps.crash-diagnostics.outputs.sequence_root != '' && format('{0}/**/*', steps.crash-diagnostics.outputs.sequence_root) || '' }}
@@ -694,10 +720,23 @@ jobs:
         if: always() && inputs.windows_surface_crash_diagnostics && steps.crash-diagnostics.outputs.accepted_dump != ''
         uses: actions/upload-artifact@v4
         with:
-          name: windows-surface-release-owned-crash-dump-${{ github.run_attempt }}
+          name: windows-surface-${{ inputs.windows_crash_build_profile == 'debug' && 'debug' || 'release' }}-owned-crash-dump-${{ github.run_attempt }}
           retention-days: 3
           compression-level: 1
           path: ${{ steps.crash-diagnostics.outputs.accepted_dump }}
+          if-no-files-found: error
+
+      - name: Preserve the exact debug EXE, PDB and build receipt
+        if: always() && inputs.windows_surface_crash_diagnostics && inputs.windows_crash_build_profile == 'debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-surface-debug-build-symbols-${{ github.run_attempt }}
+          retention-days: 3
+          compression-level: 1
+          path: |
+            target/debug/dezirclip.exe
+            target/debug/dezirclip.pdb
+            artifacts/windows-debug-build/dezirclip.debug-build.json
           if-no-files-found: error
 
       - name: Preserve original comparison sources, observations and failures

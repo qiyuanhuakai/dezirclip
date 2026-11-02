@@ -7,7 +7,7 @@ exact bytes before measurement starts. Ordinary push and PR runs never start
 the comparison job.
 
 The separate `windows_surface_crash_diagnostics` dispatch input runs the original
-thirteen release functional checks in up to five predeclared, sequential fresh-profile
+thirteen functional checks in up to five predeclared, sequential fresh-profile
 cases with no comparison. The two optional modes
 are mutually exclusive. Diagnostic-only dispatches can collect the target crash
 after ordinary checks fail; those failures remain failed. Performance still
@@ -30,6 +30,45 @@ WER cleanup is confirmed restored, and collection says `not_reproduced` with no
 candidate or accepted dump. Every failure, exception or invalid receipt stops the
 sequence immediately; failed cases are never retried or replaced. Five qualified
 successes are only `not_reproduced_5`, and do not establish a fix.
+
+`windows_crash_build_profile` defaults to `release`, preserving the original
+release diagnostic path. Selecting `debug` requires diagnostic-only mode and
+uses the same default-dev Desktop command as ordinary Windows acceptance,
+with `CARGO_PROFILE_DEV_DEBUG=2` and `CARGO_PROFILE_DEV_STRIP=none` limited to
+that build step. The release Cargo profile and performance mode are unchanged.
+The debug build succeeds before the collector's `build-receipt` subcommand
+records the exact checkout/run/attempt, fixed command, tool versions and
+EXE/PDB/helper/proof/frontend-entry hashes. The frontend entry alone is not an
+independent audit of all compiled assets. Debug input paths are fixed to
+`target/debug/dezirclip.exe`, `target/debug/dezirclip.pdb` and
+`artifacts/windows-debug-build/dezirclip.debug-build.json`. The new receipt
+directory is created exclusively; any existing directory or receipt is preserved
+and rejected. It is outside the Rust target cache, which never authorizes reuse
+of an old workflow's receipt. No cache or old file is deleted.
+Missing or changed files or a mismatched source/profile stop collection before
+WER configuration. These are new build bytes, never reconstructed symbols or
+executables from a historical failure.
+
+Debug receipts use `windows_debug_crash_diagnostics` and
+`windows_debug_crash_sequence`; the workflow identity remains exactly source
+revision, run ID and attempt. The three original functional inputs remain
+EXE/helper/proof. PDB and build receipt have a separate, rehashed symbol-input
+chain before and after every case. The fixed EXE/PDB/receipt are uploaded in a
+separate three-day `windows-surface-debug-build-symbols-*` artifact; they are
+not included in recursive profile/candidate collection or in the per-case
+16 MiB metadata copies. Each symbol file is capped at 1 GiB. Original dump
+identity, private WER ownership, 1 GiB dump limit, stop rules and restoration
+remain unchanged.
+
+Retaining a PDB does not prove its matching signature, successful symbol loading
+or a symbolized stack. Receipts explicitly keep `symbol_matching` as
+`unverified_not_loaded` and `stack_symbolization` as `not_performed`. A later
+offline debugger must verify the exact EXE/PDB match before interpreting a
+stack; a stack may show where heap corruption was detected without identifying
+the earlier corrupting operation. A debug failure remains a failure, and five
+non-reproductions do not close the historical heap defect or qualify release
+performance. The ordinary bounded Application event reader does not configure
+LocalDumps and cannot recover a dump that was never captured.
 
 The private sequence manifest records all five planned cases, exact workflow identity,
 fixed inputs, each started case's outputs and exit, qualification or stop reason,
