@@ -10,6 +10,7 @@ import type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 import { isPinnedPreviewLabel } from "./previewWindowLabels";
 import { createHiddenPreparationGate } from "./hiddenPreparation";
 import { readResumeAuthority } from "./mainWindowResume";
+import type { PageStamp } from "./resumePage";
 export type { PrivacyInvalidationScope } from "./privacyViewLifecycle";
 
 export interface PrivacyViewState {
@@ -20,10 +21,12 @@ export interface PrivacyViewState {
 }
 const fence = createPrivacyFence();
 const listFence = createPrivacyFence();
+let mainPageStamp: PageStamp | null = null;
+export const getMainPageStamp = () => mainPageStamp;
 const reveals = new WeakMap<ClipboardEntry, ReturnType<typeof fence.capture>>();
 let model: PrivacyViewState = { phase: "loading", snapshot: null, pending: false, generation: 0 };
 const observers = new Set<() => void>();
-const invalidators = new Set<(scope: PrivacyInvalidationScope) => void>();
+const invalidators = new Set<(scope: PrivacyInvalidationScope, hidden: boolean) => void>();
 let stopEvents: (() => void) | null = null;
 let lifecycle = 0;
 let expiryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -51,15 +54,16 @@ const publish = (next: Partial<PrivacyViewState>) => {
   model = { ...model, ...next, generation: fence.current() };
   observers.forEach(observer => observer());
 };
-const revoke = (scope: PrivacyInvalidationScope = "all") => {
+const revoke = (scope: PrivacyInvalidationScope = "all", hidden = false) => {
   if (scope === "all") {
+    mainPageStamp = null;
     hiddenPreparation.revoke();
     listFence.revoke();
   }
   fence.revoke();
-  invalidators.forEach(invalidate => { try { invalidate(scope); } catch { /* The request fence remains revoked. */ } });
+  invalidators.forEach(invalidate => { try { invalidate(scope, hidden); } catch { /* The request fence remains revoked. */ } });
 };
-export function subscribePrivacyInvalidation(invalidate: (scope: PrivacyInvalidationScope) => void): () => void {
+export function subscribePrivacyInvalidation(invalidate: (scope: PrivacyInvalidationScope, hidden: boolean) => void): () => void {
   invalidators.add(invalidate);
   return () => { invalidators.delete(invalidate); };
 }
@@ -79,6 +83,20 @@ const accept = (value: unknown) => {
   scheduleExpiry();
 };
 
+async function readMainStatus() {
+  const status = await invoke<{ state: { history_revision: number }; privacy: { active: boolean; expires_at_ms: number | null } }>("get_clipboard_host_status");
+  const authority = readResumeAuthority(status);
+  const snapshot = parsePrivacySnapshot({ history_revision: status.state.history_revision, privacy_epoch: authority.epoch,
+    session: { active: status.privacy.active, expires_at_ms: status.privacy.expires_at_ms } });
+  return { snapshot, stamp: authority };
+}
+
+function acceptMainStatus(snapshot: PrivacyRuntimeSnapshot, stamp: PageStamp) {
+  if (mainPageStamp && mainPageStamp.instanceId !== stamp.instanceId) revoke();
+  accept(snapshot);
+  mainPageStamp = stamp;
+}
+
 export async function refreshPrivacyState(): Promise<void> {
   if (viewSuspended) return;
   if (model.phase !== "ready") publish({ phase: "loading" });
@@ -86,12 +104,17 @@ export async function refreshPrivacyState(): Promise<void> {
   refreshRequest = (async () => {
     for (;;) {
       if (viewSuspended) return;
-      const token = fence.capture();
+      const token = listFence.capture();
       try {
-        const value = await invoke<unknown>("get_privacy_status");
-        if (fence.isCurrent(token)) { accept(value); return; }
+        if (getCurrentWindow().label === "main") {
+          const { snapshot, stamp } = await readMainStatus();
+          if (listFence.isCurrent(token)) { acceptMainStatus(snapshot, stamp); return; }
+        } else {
+          const value = await invoke<unknown>("get_privacy_status");
+          if (listFence.isCurrent(token)) { accept(value); return; }
+        }
       } catch {
-        if (fence.isCurrent(token)) { revoke(); publish({ phase: "unavailable", snapshot: null }); return; }
+        if (listFence.isCurrent(token)) { revoke(); publish({ phase: "unavailable", snapshot: null }); return; }
       }
       if (observers.size === 0) return;
     }
@@ -112,7 +135,7 @@ const onFocus = () => {
       hiddenPreparation.revoke();
       viewSuspended = false;
       activeView = true;
-      void refreshPrivacyState();
+      if (model.phase !== "ready") void refreshPrivacyState();
     }, () => undefined);
     return;
   }
@@ -126,9 +149,10 @@ const onFocus = () => {
     }, () => undefined);
     return;
   }
+  const needsRefresh = !activeView || model.phase !== "ready";
   viewSuspended = false;
   activeView = true;
-  void refreshPrivacyState();
+  if (needsRefresh) void refreshPrivacyState();
 };
 const onHide = () => {
   nativeBlurPending = false;
@@ -137,7 +161,7 @@ const onHide = () => {
   activeView = false;
   if (expiryTimer !== null) clearTimeout(expiryTimer);
   expiryTimer = null;
-  revoke();
+  revoke("all", true);
   publish({ phase: "loading" });
 };
 const onDomHidden = () => {
@@ -339,16 +363,14 @@ export async function prepareMainWindowResume(requestIsCurrent: () => boolean) {
   viewSuspended = false;
   activeView = false;
   try {
-  const status = await invoke<{ state: { history_revision: number }; privacy: { active: boolean; expires_at_ms: number | null } }>("get_clipboard_host_status");
-  const authority = readResumeAuthority(status);
+  const { snapshot, stamp } = await readMainStatus();
   if (!lease.isCurrent() || !requestIsCurrent()) throw new Error("PrivacyEpochChanged");
-  accept({ history_revision: status.state.history_revision, privacy_epoch: authority.epoch,
-    session: { active: status.privacy.active, expires_at_ms: status.privacy.expires_at_ms } });
+  acceptMainStatus(snapshot, stamp);
   await releaseVisiblePreparation(lease);
   if (!requestIsCurrent() || started !== lifecycle || !listFence.isCurrent(token) || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
   const access = beginPrivacyAccess("list");
   if (!access) throw new Error("PrivacyStateUnavailable");
-  return { ...access, authority, release: lease.release };
+  return { ...access, authority: stamp, release: lease.release };
   } catch (error) {
     lease.release();
     throw error;

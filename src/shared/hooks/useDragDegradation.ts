@@ -7,9 +7,9 @@ import {
 
 /**
  * Drops the theme's `backdrop-filter` layers for as long as the window is
- * being dragged, and puts them back one settle window after it stops.
+ * moving, resizing or scrolling, and puts them back once the viewport settles.
  *
- * Dragging is the one interaction in this app that is genuinely per-frame:
+ * These interactions invalidate the sampled backdrop on successive frames:
  * every pixel the window moves invalidates the whole painted area behind it,
  * so all 137 blur layers across the themes get recomputed from scratch on
  * each frame. Nothing about the drag depends on those layers being live, and

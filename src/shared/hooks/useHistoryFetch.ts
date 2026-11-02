@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { beginPrivacyAccess, invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
+import { beginPrivacyAccess, getMainPageStamp, invokePrivacyBound, subscribePrivacyInvalidation } from "../lib/privacySession";
+import { createResumePage, type PageStamp } from "../lib/resumePage";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
 import { HISTORY_SEARCH_LIMIT } from "../../features/app/constants/pagination";
@@ -42,12 +43,14 @@ export const useHistoryFetch = ({
   const currentOffsetRef = useRef(currentOffset);
   const historyLengthRef = useRef(historyLength);
   const [appliedSearch, setAppliedSearch] = useState<string | null>(null);
-  useEffect(() => subscribePrivacyInvalidation((scope) => {
+  const [resumePage] = useState(createResumePage);
+  useEffect(() => subscribePrivacyInvalidation((scope, hidden) => {
     if (scope === "reveal") return;
+    if (!hidden) resumePage.clear();
     fetchSeqRef.current += 1;
     lastRequestedOffsetRef.current = null;
     setAppliedSearch(null);
-  }), []);
+  }), [resumePage]);
 
   useEffect(() => {
     currentOffsetRef.current = currentOffset;
@@ -57,7 +60,7 @@ export const useHistoryFetch = ({
     historyLengthRef.current = historyLength;
   }, [historyLength]);
   const fetchHistory = useCallback(
-    async (reset = false) => {
+    async (reset = false, resume?: PageStamp) => {
       const seq = ++fetchSeqRef.current;
       try {
         if (reset) {
@@ -106,7 +109,10 @@ export const useHistoryFetch = ({
           setHasMore(false);
         } else {
           const requestedLimit = pageSize + 1; // Use standard page size for DB limit
-          const rawData = await invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
+          const stamp = reset ? resume ?? getMainPageStamp() : null;
+          const key = JSON.stringify([typeFilter, requestedLimit]);
+          const cached = resume && stamp ? resumePage.read(stamp, key) : null;
+          const rawData = cached ?? await invokePrivacyBound<ClipboardEntry[]>("get_clipboard_history", {
             limit: requestedLimit,
             offset: baseOffset,
             content_type: typeFilter || undefined
@@ -114,6 +120,7 @@ export const useHistoryFetch = ({
 
           if (seq !== fetchSeqRef.current) return false;
 
+          if (stamp && !cached) resumePage.save(stamp, key, rawData);
           const hasMoreNow = rawData.length > pageSize;
           const data = hasMoreNow ? rawData.slice(0, pageSize) : rawData;
 
@@ -155,6 +162,7 @@ export const useHistoryFetch = ({
       debouncedSearch,
       typeFilter,
       pageSize,
+      resumePage,
       setCurrentOffset,
       setHasMore,
       setHistory

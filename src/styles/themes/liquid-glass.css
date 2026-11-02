@@ -543,7 +543,7 @@ body.dark-mode.theme-liquid-glass {
 /* ============================================================
    2b. Custom background image support
    ============================================================ */
-body.theme-liquid-glass::before {
+body.has-custom-bg.theme-liquid-glass::before {
   content: '';
   position: fixed;
   top: 0;
@@ -555,25 +555,13 @@ body.theme-liquid-glass::before {
   background-position: center;
   background-repeat: no-repeat;
   z-index: -1;
-  opacity: 0.18;
+  opacity: var(--custom-bg-opacity, 0.45);
   pointer-events: none;
   border-radius: var(--radius-window);
   clip-path: inset(0 round var(--radius-window));
 }
 
-body.has-custom-bg.theme-liquid-glass::before {
-  opacity: var(--custom-bg-opacity, 0.45);
-}
-
-/* A custom background image replaces the desktop as the thing seen through the
-   glass, and the user picked it in order to look at it. The frosted blur exists
-   to fake refraction of the desktop wallpaper; this theme is the only one that
-   blurs the shell itself, and at 40px on a 352px window that turns any image
-   into a flat colour block. So while a custom background is active the whole
-   stack drops the blur, shell and layers alike — mica and acrylic only ever
-   blur modal scrims, which is why their wallpapers stay crisp.
-   Layer alphas are deliberately untouched: how much of the image shows through
-   is the 界面底板透明度 slider's job, and readability comes back by raising it. */
+/* Keep the selected wallpaper sharp through local glass surfaces. */
 body.has-custom-bg.theme-liquid-glass #root,
 body.has-custom-bg.theme-liquid-glass #root *,
 body.has-custom-bg.theme-liquid-glass #root *::before,
@@ -597,15 +585,20 @@ body.has-custom-bg.theme-liquid-glass #root *::after {
     0 -1px 0 var(--glass-edge-bottom) inset,
     0 20px 48px var(--shadow-color),
     0 0 80px var(--glass-glow-dark) !important;
-  backdrop-filter: blur(40px) saturate(145%);
-  -webkit-backdrop-filter: blur(40px) saturate(145%);
-}
-
-/* Glass material texture overlay — simulates frosted glass grain */
-.theme-liquid-glass.quick-paste #root,
-.theme-liquid-glass.region-select #root {
+  /* The only image behind the shell is the optional wallpaper, already shown unblurred. */
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+/* Glass material texture overlay */
+body.has-custom-bg.opaque-background-image.theme-liquid-glass::before {
+  content: none;
+}
+
+/* At full image opacity the tint and wallpaper can share one painted background. */
+body.has-custom-bg.opaque-background-image.theme-liquid-glass #root {
+  background: linear-gradient(var(--glass-shell-bg), var(--glass-shell-bg)),
+    var(--custom-bg-image) center / cover no-repeat !important;
 }
 
 .theme-liquid-glass #root::before {

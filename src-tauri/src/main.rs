@@ -163,13 +163,6 @@ fn main() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}));
     }
 
-    let context = tauri::generate_context!();
-    #[cfg(target_os = "windows")]
-    let context = {
-        let mut context = context;
-        crate::infrastructure::windows_api::webview_environment::configure_main_surface(&mut context);
-        context
-    };
     let app = builder
         .setup(|app| {
             setup::init(app)?;
@@ -345,7 +338,7 @@ fn main() {
         .on_window_event(|window, event| {
             setup::handle_window_event(window, event);
         })
-        .build(context);
+        .build(tauri::generate_context!());
 
     match app {
         Ok(app) => {

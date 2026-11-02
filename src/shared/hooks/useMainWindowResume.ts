@@ -3,8 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createMainWindowResume, type PreparedResume } from "../lib/mainWindowResume";
 import { prepareMainWindowResume } from "../lib/privacySession";
+import type { PageStamp } from "../lib/resumePage";
 
-export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (reset?: boolean) => Promise<boolean>, historyViewActive: boolean) {
+export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (reset?: boolean, stamp?: PageStamp) => Promise<boolean>, historyViewActive: boolean) {
   const [phase, setPhase] = useState<"idle" | "preparing" | "prepared" | "failed">("preparing");
   const [prepared, setPrepared] = useState<PreparedResume | null>(null);
   const fetchRef = useRef(fetchHistory);
@@ -24,7 +25,7 @@ export function useMainWindowResume(settingsLoaded: boolean, fetchHistory: (rese
     const controller = createMainWindowResume({
       prepare: prepareMainWindowResume,
       readAuthority: () => invoke("get_clipboard_host_status"),
-      loadHistory: () => historyView.current ? fetchRef.current(true) : Promise.resolve(true),
+      loadHistory: stamp => historyView.current ? fetchRef.current(true, stamp) : Promise.resolve(true),
       pending: requestId => { nativeActiveRef.current = requestId !== null; setPrepared(null); setPhase("preparing"); },
       prepared: value => { setPrepared(value); setPhase("prepared"); },
       failed: () => { nativeActiveRef.current = false; visibleRecoveryPending.current = false; setPrepared(null); setPhase("failed"); }

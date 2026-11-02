@@ -65,6 +65,7 @@ const SortableItem = ({
   index,
   renderItem,
   isFirst,
+  dragging,
   onDragStart,
   onDragEnd
 }: {
@@ -72,12 +73,15 @@ const SortableItem = ({
   index: number;
   renderItem: RenderItem;
   isFirst?: boolean;
+  dragging: boolean;
   onDragStart?: () => void;
   onDragEnd?: () => void;
 }) => {
   const controls = useDragControls();
   return (
     <Reorder.Item as="div"
+      layout="position"
+      transition={dragging ? undefined : { layout: { duration: 0 } }}
       value={item.id}
       dragListener={false}
       dragControls={controls}
@@ -290,9 +294,11 @@ const AppMainContent = ({
             )}
           </div>
         ) : (
-          <Reorder.Group as="div" axis="y" values={orderedPinnedIds} onReorder={handlePinnedIdsReorder}
-            className={isDraggingPinned ? "history-list-container pinned-reorder dragging" : "history-list-container pinned-reorder"}>
+          <div className="history-list-container">
             <VirtualClipboardList
+              pinnedIds={orderedPinnedIds}
+              onReorder={handlePinnedIdsReorder}
+              draggingPinned={isDraggingPinned}
               ref={virtualListRef}
               items={rows}
               compactMode={compactMode}
@@ -300,7 +306,7 @@ const AppMainContent = ({
               isKeyboardMode={isKeyboardMode}
               renderItem={(item, index, isFirst?: boolean) => {
                 if (index < orderedPinnedItems.length) {
-                  return <SortableItem item={item} index={index} renderItem={renderItemContent} isFirst={isFirst}
+                  return <SortableItem item={item} index={index} renderItem={renderItemContent} isFirst={isFirst} dragging={isDraggingPinned}
                     onDragStart={handlePinnedDragStart} onDragEnd={handlePinnedDragEnd} />;
                 }
                 const el = renderItemContent(item, index, undefined, true);
@@ -330,7 +336,7 @@ const AppMainContent = ({
                 <ArrowUp size={16} />
               </button>
             )}
-          </Reorder.Group>
+          </div>
         )}
       </div>
     </>

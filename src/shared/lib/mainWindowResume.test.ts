@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createMainWindowResume, readResumeAuthority, type PreparedResume } from "./mainWindowResume";
 
-const status = (instance = "host-a", epoch = 4) => ({ state: { service_instance_id: instance, privacy_epoch: epoch }, privacy: { privacy_epoch: epoch } });
+const status = (instance = "host-a", epoch = 4) => ({ state: { service_instance_id: instance, privacy_epoch: epoch, history_revision: 7 }, privacy: { privacy_epoch: epoch, active: false } });
 function deferred<T>() {
   let resolve: (value: T) => void = () => {};
   let reject: (error: Error) => void = () => {};
@@ -29,7 +29,7 @@ describe("main window resume", () => {
     expect(f.calls).toEqual(["pending:null", "privacy", "history", "authority", "prepared"]);
   });
   it("requires a complete owner identity and matching status epochs", () => {
-    expect(readResumeAuthority(status())).toEqual({ instanceId: "host-a", epoch: 4 });
+    expect(readResumeAuthority(status())).toEqual({ instanceId: "host-a", epoch: 4, revision: 7, sessionActive: false });
     for (const value of [null, {}, status(""), status("a", -1), { ...status(), privacy: { privacy_epoch: 5 } }]) {
       expect(() => readResumeAuthority(value)).toThrow();
     }

@@ -1,16 +1,30 @@
 import React, { useRef, useImperativeHandle, useCallback, useMemo } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import type { ListRange, ScrollSeekPlaceholderProps } from 'react-virtuoso';
+import type { ListProps, ListRange, ScrollSeekPlaceholderProps } from 'react-virtuoso';
+import { Reorder } from "framer-motion";
 import type { ClipboardEntry } from "../../../shared/types";
 import { createScrollCoalescer } from "../../../shared/lib/scrollCoalesce";
 import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import type { VirtualClipboardListHandle, VirtualClipboardListProps } from "../types";
 
 type VirtuosoListContext = {
+    pinnedIds: number[];
+    onReorder: (ids: number[]) => void;
+    draggingPinned: boolean;
     items: ClipboardEntry[];
     hasMore: boolean;
     isLoading: boolean;
 };
+
+const SortableList = React.forwardRef<HTMLDivElement, ListProps & { context?: VirtuosoListContext }>(
+    ({ context, style, children, ...props }, ref) => (
+        <Reorder.Group as="div" ref={ref} axis="y" values={context?.pinnedIds ?? []}
+            onReorder={ids => context?.onReorder(ids)} style={style} {...props}
+            className={context?.draggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}>
+            {children}
+        </Reorder.Group>
+    )
+);
 
 const ScrollingRow = ({ index, height, context }: ScrollSeekPlaceholderProps & { context?: VirtuosoListContext }) => {
     const item = context?.items[index];
@@ -53,7 +67,7 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
             isKeyboardMode,
             onScroll,
             onScrollFrame,
-            compactMode
+            compactMode, pinnedIds, onReorder, draggingPinned
         } = props;
 
         const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -175,15 +189,17 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
         }, [compactMode, renderItem]);
 
         const components = useMemo(() => ({
+            List: SortableList,
             ScrollSeekPlaceholder: ScrollingRow,
             Footer: ListFooter
         }), []);
 
         const context = useMemo(() => ({
+            pinnedIds, onReorder, draggingPinned,
             items,
             hasMore,
             isLoading
-        }), [items, hasMore, isLoading]);
+        }), [items, hasMore, isLoading, pinnedIds, onReorder, draggingPinned]);
 
         return (
             <div
@@ -201,7 +217,7 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
                     style={{ height: '100%' }}
                     endReached={handleEndReached}
                     rangeChanged={handleRangeChanged}
-                    scrollSeekConfiguration={fastScroll}
+                    scrollSeekConfiguration={draggingPinned ? false : fastScroll}
                     overscan={120}
                 />
             </div>

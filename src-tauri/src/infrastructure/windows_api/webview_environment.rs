@@ -6,27 +6,6 @@ use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCES
 
 pub struct BrowserProcess(OwnedHandle);
 
-pub fn configure_main_surface(context: &mut tauri::Context<tauri::Wry>) {
-    if windows_version::OsVersion::current().build >= 22000 {
-        if let Some(main) = context.config_mut().app.windows.iter_mut().find(|window| window.label == "main") {
-            main.transparent = false;
-            main.background_color = Some(tauri::webview::Color(0, 0, 0, 0));
-        }
-    }
-}
-
-pub fn extend_main_frame(window: &tauri::WebviewWindow) {
-    use windows::Win32::{Foundation::HWND, Graphics::Dwm::DwmExtendFrameIntoClientArea, UI::Controls::MARGINS};
-    if window.label() == "main" && windows_version::OsVersion::current().build >= 22000 {
-        if let Ok(hwnd) = window.hwnd() {
-            let margins = MARGINS { cxLeftWidth: i32::MAX, ..Default::default() };
-            if let Err(error) = unsafe { DwmExtendFrameIntoClientArea(HWND(hwnd.0), &margins) } {
-                crate::warn!("[main-window] Failed to extend the native frame: {error}");
-            }
-        }
-    }
-}
-
 impl BrowserProcess {
     pub fn exited_within(&self, timeout: Duration) -> bool {
         let handle = HANDLE(self.0.as_raw_handle());
