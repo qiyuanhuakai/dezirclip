@@ -1,0 +1,1453 @@
+{
+  "actual_native_or_product_executed": false,
+  "arms": [
+    {
+      "arm": "process-v2-1fe685c-1-tauri",
+      "counter_intervals_recomputed_from_raw": {
+        "hidden": {
+          "delta": 31,
+          "first_read_window_ns": [
+            419612071917212,
+            419612081675534
+          ],
+          "high": 239866615139,
+          "hz": 100,
+          "last_read_window_ns": [
+            419851927973722,
+            419851938532351
+          ],
+          "low": 239846298188,
+          "nominal_percent_one_core": 0.12924396712609906,
+          "normalization_range": [
+            0.12923849357709014,
+            0.12924944113876255
+          ],
+          "twice": 479712913327
+        },
+        "visible": {
+          "delta": 1690,
+          "first_read_window_ns": [
+            419341896049825,
+            419341908230935
+          ],
+          "high": 239871829476,
+          "hz": 100,
+          "last_read_window_ns": [
+            419581758252128,
+            419581767879301
+          ],
+          "low": 239850021193,
+          "nominal_percent_one_core": 7.04574952190815,
+          "normalization_range": [
+            7.045429234820133,
+            7.046069838118165
+          ],
+          "twice": 479721850669
+        }
+      },
+      "discarded_warmups": 5,
+      "formal_activations": 30,
+      "independent_review": {
+        "bytes": 13564,
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-1-tauri.independent-raw-review.json",
+        "sha256": "32185a1f7beb4652fd0643ddb320f76f6f4de653ae973ffa6f4fb034ce855725"
+      },
+      "original_main": {
+        "pid": 68,
+        "started": 41930139,
+        "xid": 8388623
+      },
+      "original_panel": {
+        "pid": 68,
+        "session_id": null,
+        "started": 41930139,
+        "xid": 8388645
+      },
+      "raw_clock_rows_per_state": 960,
+      "renderer": "tauri",
+      "resources_per_state": 960
+    },
+    {
+      "arm": "process-v2-1fe685c-2-mygo",
+      "counter_intervals_recomputed_from_raw": {
+        "hidden": {
+          "delta": 28,
+          "first_read_window_ns": [
+            420615078015544,
+            420615088561786
+          ],
+          "high": 239877649650,
+          "hz": 100,
+          "last_read_window_ns": [
+            420854946989409,
+            420854955665194
+          ],
+          "low": 239858427623,
+          "nominal_percent_one_core": 0.11673084984211533,
+          "normalization_range": [
+            0.11672617286710188,
+            0.11673552719193712
+          ],
+          "twice": 479736077273
+        },
+        "visible": {
+          "delta": 102,
+          "first_read_window_ns": [
+            420344898094769,
+            420344907428009
+          ],
+          "high": 239874928811,
+          "hz": 100,
+          "last_read_window_ns": [
+            420584763885335,
+            420584773023580
+          ],
+          "low": 239856457326,
+          "nominal_percent_one_core": 0.42523796836119954,
+          "normalization_range": [
+            0.4252215957106834,
+            0.42525434227258296
+          ],
+          "twice": 479731386137
+        }
+      },
+      "discarded_warmups": 5,
+      "formal_activations": 30,
+      "independent_review": {
+        "bytes": 13527,
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-2-mygo.independent-raw-review.json",
+        "sha256": "48724c969aca2c688336a8108d3fca2e219cd6c3a46260e0f8bac86ebe1ab94e"
+      },
+      "original_main": {
+        "pid": 68,
+        "started": 42030571,
+        "xid": 8388623
+      },
+      "original_panel": {
+        "pid": 394,
+        "session_id": "5ffbbd8d4272464b85c32253462e5ecf",
+        "started": 42030844,
+        "xid": 20971523
+      },
+      "raw_clock_rows_per_state": 960,
+      "renderer": "mygo",
+      "resources_per_state": 960
+    },
+    {
+      "arm": "process-v2-1fe685c-3-mygo",
+      "counter_intervals_recomputed_from_raw": {
+        "hidden": {
+          "delta": 29,
+          "first_read_window_ns": [
+            421460458379370,
+            421460469069121
+          ],
+          "high": 239888458887,
+          "hz": 100,
+          "last_read_window_ns": [
+            421700338098212,
+            421700346838257
+          ],
+          "low": 239869029091,
+          "nominal_percent_one_core": 0.12089441322625,
+          "normalization_range": [
+            0.1208895172971223,
+            0.12089930955195621
+          ],
+          "twice": 479757487978
+        },
+        "visible": {
+          "delta": 105,
+          "first_read_window_ns": [
+            421190248638964,
+            421190263641701
+          ],
+          "high": 239878182736,
+          "hz": 100,
+          "last_read_window_ns": [
+            421430118166610,
+            421430126821700
+          ],
+          "low": 239854524909,
+          "nominal_percent_one_core": 0.4377437615852514,
+          "normalization_range": [
+            0.4377221754908768,
+            0.4377653498087503
+          ],
+          "twice": 479732707645
+        }
+      },
+      "discarded_warmups": 5,
+      "formal_activations": 30,
+      "independent_review": {
+        "bytes": 13527,
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-3-mygo.independent-raw-review.json",
+        "sha256": "5f19851e74bab8f0876645a8b844ba3dc7fa1248fe4178455835975472f8e94e"
+      },
+      "original_main": {
+        "pid": 68,
+        "started": 42115092,
+        "xid": 8388623
+      },
+      "original_panel": {
+        "pid": 395,
+        "session_id": "f67d3f4fb1384184ba2d1d0e1c1f36ab",
+        "started": 42115374,
+        "xid": 20971523
+      },
+      "raw_clock_rows_per_state": 960,
+      "renderer": "mygo",
+      "resources_per_state": 960
+    },
+    {
+      "arm": "process-v2-1fe685c-4-tauri",
+      "counter_intervals_recomputed_from_raw": {
+        "hidden": {
+          "delta": 34,
+          "first_read_window_ns": [
+            422298552615486,
+            422298565638936
+          ],
+          "high": 239872604239,
+          "hz": 100,
+          "last_read_window_ns": [
+            422538414181331,
+            422538425219725
+          ],
+          "low": 239848542395,
+          "nominal_percent_one_core": 0.14174901497907103,
+          "normalization_range": [
+            0.14174190549131524,
+            0.14175612518005773
+          ],
+          "twice": 479721146634
+        },
+        "visible": {
+          "delta": 1686,
+          "first_read_window_ns": [
+            422028372086766,
+            422028385896276
+          ],
+          "high": 239876473478,
+          "hz": 100,
+          "last_read_window_ns": [
+            422268237268046,
+            422268248560244
+          ],
+          "low": 239851371770,
+          "nominal_percent_one_core": 7.0289853578476595,
+          "normalization_range": [
+            7.028617586187041,
+            7.0293531679975185
+          ],
+          "twice": 479727845248
+        }
+      },
+      "discarded_warmups": 5,
+      "formal_activations": 30,
+      "independent_review": {
+        "bytes": 13564,
+        "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-4-tauri.independent-raw-review.json",
+        "sha256": "7201987fdc7df2a840e3fb0268493586c398277225d99ff14d7e2e1209f2119c"
+      },
+      "original_main": {
+        "pid": 68,
+        "started": 42198828,
+        "xid": 8388623
+      },
+      "original_panel": {
+        "pid": 68,
+        "session_id": null,
+        "started": 42198828,
+        "xid": 8388645
+      },
+      "raw_clock_rows_per_state": 960,
+      "renderer": "tauri",
+      "resources_per_state": 960
+    }
+  ],
+  "author_summarizer_executed": false,
+  "closed_raw_originals_total": 136,
+  "context_switches": null,
+  "current_source_and_input_records_before_after_identical": {
+    "foundation/canonical/credential-deny.bpf": {
+      "bytes": 80,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-recovery-20261028/canonical/credential-deny.bpf",
+      "sha256": "426b69b2f07c9bb6a71c0327d9b4f76eabc5752f2276fa11a9937d264ae739cd"
+    },
+    "foundation/canonical/credential_guard.py": {
+      "bytes": 4045,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-recovery-20261028/canonical/credential_guard.py",
+      "sha256": "0d5cd12943814fcd52238db3953499869334a6360aad17c60bcb5596bd2cea2f"
+    },
+    "foundation/canonical/credential_launcher.py": {
+      "bytes": 3995,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-recovery-20261028/canonical/credential_launcher.py",
+      "sha256": "496e77f826397306bc384c126d2d48d6fa4549ce5339de445e95d5f9fe368c2c"
+    },
+    "foundation/inner.py": {
+      "bytes": 18549,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-recovery-20261028/inner.py",
+      "sha256": "8a5d3ffe10829cc5e9b78313b26de0f7c19bf2d504766082e5def973994464d2"
+    },
+    "foundation/original/native_capture.py": {
+      "bytes": 49103,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-recovery-20261028/original/native_capture.py",
+      "sha256": "17ac33fa87ded6d31e3bf285466c744881490fa5c402042c24e7247a4486576b"
+    },
+    "foundation/original/short_private_ss.py": {
+      "bytes": 6514,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-recovery-20261028/original/short_private_ss.py",
+      "sha256": "a00bb20183051c648bb17d26b652a08d6ea015d7d79ba1b19bde7384ecbdf988"
+    },
+    "foundation/original/sqlite_history_fixture.py": {
+      "bytes": 8279,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-recovery-20261028/original/sqlite_history_fixture.py",
+      "sha256": "8282c65e7051e70e2d269f63cc18c51a205cd3187281c4a31473a887a163933a"
+    },
+    "input/desktop": {
+      "bytes": 16722680,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dezirclip",
+      "sha256": "e7fe7ba757c4d337e385acb9aa25f545922fecf12e77b8f21c983633bf54bde8"
+    },
+    "input/desktop_proof": {
+      "bytes": 724,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dezirclip.proof.json",
+      "sha256": "23a682df4238d75e929e92e6f37abf5f80b27bcc8613b84a365c521b59989794"
+    },
+    "input/helper": {
+      "bytes": 10735879,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dzc-surface",
+      "sha256": "8b0e442f1fa1be730a02ef600bae9f343433ee54e14386c814d64c75fe51ab68"
+    },
+    "input/helper_proof": {
+      "bytes": 9284,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/original/dzc-surface.proof.json",
+      "sha256": "99f3f7b28dc5c4c56b5d55b248beb1adf979b283f78674f99fcb6aecb8267f0a"
+    },
+    "input/paste_tool": {
+      "bytes": 84696,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-dependencies/xdotool-noble-amd64-20261029/extracted/usr/bin/xdotool",
+      "sha256": "a21dba4297e197ef27035071f6a36061cc8604ac360df19792db99ad3fd9a5f5"
+    },
+    "input/paste_tool_proof": {
+      "bytes": 11522,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-dependencies/xdotool-noble-amd64-20261029/dependency-proof-v2.json",
+      "sha256": "59b337921bf01ec715286d432137bbfa44c9abe0d9cf802e46f68f4f86f6b87f"
+    },
+    "input/private_ss_helper": {
+      "bytes": 17633752,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-alpha5-release/dezirclip/.harness/alpha5-linux-performance-M844e8b4-recovery-20261026/inputs/preseed-linux-x86_64",
+      "sha256": "e17337851ecdc886ed942eeec69b9fa3aaee795c31c95d34c8333baa448ec3be"
+    },
+    "input/python": {
+      "bytes": 31508264,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/python-runtime/cpython-3.13.15-linux-x86_64-gnu/bin/python3.13",
+      "sha256": "bb4d05c1f88e8568985e8704afe1822e82700a54bad9317c05c8eb96d3186701"
+    },
+    "input/quiet_window_note": {
+      "bytes": 523,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/prepared-only-note.json",
+      "sha256": "324de21f9f6c1d162bfba17873866c4b27f47039bd6bf96ecd633e8c3c7ffcc4"
+    },
+    "input/screenshot_tool": {
+      "bytes": 14656,
+      "path": "/usr/bin/import-im6.q16",
+      "sha256": "5b55f6bdec35ab6f5ae502f93c0308bf37aba3f23324c17a713363473fad7294"
+    },
+    "input/webkit_driver": {
+      "bytes": 1735024,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/linux-tools/driver/usr/bin/WebKitWebDriver",
+      "sha256": "488118541ba1dbeaca658073af84322900485b9435bc4fbb43eb1faf21db8b70"
+    },
+    "integration/authorize_arm.py": {
+      "bytes": 31596,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/authorize_arm.py",
+      "sha256": "708bda05e07289cfc782e642503f7b89320371008dd9d9e3e160e13e6a26ed3b"
+    },
+    "integration/postflight_arm.py": {
+      "bytes": 4807,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/postflight_arm.py",
+      "sha256": "c8c9554d2dcbf488c4bd81b83c50f089ee87da8586c56215ad809c355b096985"
+    },
+    "integration/prepare_packet.py": {
+      "bytes": 8789,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/prepare_packet.py",
+      "sha256": "bd37ca59f72c849a73bc90c7cf2a8ca09fc8f9049285a038c024fa6a0869c982"
+    },
+    "integration/source-plan.json": {
+      "bytes": 10326,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/source-plan.json",
+      "sha256": "fc29660de7f582e70d9d613ce09fe262d5a8b227ae87fdf378063150df195c7d"
+    },
+    "integration/summarize_descriptive.py": {
+      "bytes": 9777,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/summarize_descriptive.py",
+      "sha256": "be33ee777ed570f2458e3e6bb751e16d7dbfb492e25789b02c8adc2bf9463237"
+    },
+    "integration/test_integration.py": {
+      "bytes": 24872,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/test_integration.py",
+      "sha256": "44025fb842e5893069768f27b08519cd965f6d7f92610928b72f2747e112954d"
+    },
+    "method/assess.py": {
+      "bytes": 23312,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/assess.py",
+      "sha256": "0fc00e55941e5cc13212751bd7ed0880eab554de0f9bfa8afbdd9af05153a1bc"
+    },
+    "method/inner.py": {
+      "bytes": 44549,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/inner.py",
+      "sha256": "aded2edcd7671cab1a6c599aeaa78bc1193bdcfe5ac842343c2e9147fb1b3cc5"
+    },
+    "method/outer.py": {
+      "bytes": 18875,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/outer.py",
+      "sha256": "66c73be5cb8c456bcda18ac710e2aea6ac1e10795da077df9e3ef987a8fa364e"
+    },
+    "method/pacer.py": {
+      "bytes": 4227,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/pacer.py",
+      "sha256": "827ca33173ed87665e28abf72cf57316667dc85382ca84ba4e611558519ed2c5"
+    },
+    "method/paste_prerequisite.py": {
+      "bytes": 4686,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/paste_prerequisite.py",
+      "sha256": "6e76b3c4a1318611947a4f00debb9e5f3f47616654fd418241edda11c18c9607"
+    },
+    "method/test_assess.py": {
+      "bytes": 5931,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/test_assess.py",
+      "sha256": "c696e8ab6913c26c20a2e55a264d7e4fdd03dd864073d5a0d3eecf2995b8726c"
+    },
+    "method/test_pacer.py": {
+      "bytes": 8727,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/test_pacer.py",
+      "sha256": "3ed1b860bc7af2e255d2604aaccebf97d8160105620a15efbf370945b050ee14"
+    },
+    "method/test_source.py": {
+      "bytes": 3766,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/test_source.py",
+      "sha256": "7d1cc9ad276a6bcfdcd826e3d4cd19fc5ea5ce36ae6ed8506fcc105457c1cdce"
+    },
+    "method/x11_target.py": {
+      "bytes": 14448,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/x11_target.py",
+      "sha256": "490e4260b811a0d6dd4d5ecc2573630309356258a66655328ca3a9f95b766fb1"
+    },
+    "native/assess_descriptive.py": {
+      "bytes": 28970,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-method-20261102/assess_descriptive.py",
+      "sha256": "9aa09fafb2f39c53acff4ee8cec1deda4bb17748423499e00ca34218d572975f"
+    },
+    "native/inner.py": {
+      "bytes": 44549,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-method-20261102/inner.py",
+      "sha256": "aded2edcd7671cab1a6c599aeaa78bc1193bdcfe5ac842343c2e9147fb1b3cc5"
+    },
+    "native/source-plan.json": {
+      "bytes": 8363,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-method-20261102/source-plan.json",
+      "sha256": "dd03720e11c502016066c43a641b35080a4c432cc87bc6f84e8148ef2bed13ad"
+    },
+    "native/test_process_only.py": {
+      "bytes": 21082,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-method-20261102/test_process_only.py",
+      "sha256": "70e396dfdab1986447f9a41d8276eca28e33fb879ed492d6ed912a28ac3d79a8"
+    },
+    "pending/process-v2-1fe685c-1-tauri": {
+      "bytes": 15936,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-1-tauri.pending.json",
+      "sha256": "af04940bebee15f2a041fa2079ba73d11827921989706d277b56951d7e915494"
+    },
+    "pending/process-v2-1fe685c-2-mygo": {
+      "bytes": 15934,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-2-mygo.pending.json",
+      "sha256": "1cbfc7faa14dd0714fb66798b52a16b9149c5002a37d72b0787bbddd3b6b9889"
+    },
+    "pending/process-v2-1fe685c-3-mygo": {
+      "bytes": 15934,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-3-mygo.pending.json",
+      "sha256": "c60c78cd3b5b3af56558e88ad48e0aa8decae4bd1caf524123da260bf1195c33"
+    },
+    "pending/process-v2-1fe685c-4-tauri": {
+      "bytes": 15936,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/process-v2-1fe685c-4-tauri.pending.json",
+      "sha256": "b7912561dacf6ccc38e93941e906eb0992d4cc4913b04da14f07cc8b4f11cc20"
+    },
+    "plan": {
+      "bytes": 15910,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/comparison-count-v1.plan.json",
+      "sha256": "e4969e87289bc5438a15f5ffcbad2e403e51b6082da06d6bf084dda15e16a7d8"
+    },
+    "policy": {
+      "bytes": 10326,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-integration-20261102/source-plan.json",
+      "sha256": "fc29660de7f582e70d9d613ce09fe262d5a8b227ae87fdf378063150df195c7d"
+    },
+    "preparation": {
+      "bytes": 23665,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/preparation.json",
+      "sha256": "37f09bbcb4949f616122a1b831f14ec127a37285e55248d645e702a9346d4961"
+    },
+    "prerequisites/idle_R3_assessment": {
+      "bytes": 41372,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-idle-focused-1fe685c-r3-20261101/completed.root-assessment.json",
+      "sha256": "9f8ea181fefb870be112c8787972479c838b17e749fff99c1e2587174df14871"
+    },
+    "prerequisites/idle_R3_independent_review": {
+      "bytes": 51799,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-idle-focused-1fe685c-r3-20261101/actual13-independent-review.json",
+      "sha256": "dd5816ed7a3196e3ae68c8ff81830292e8cc39b10cd6c39c1e3e5158237f19cf"
+    },
+    "prerequisites/input_provenance": {
+      "bytes": 2305,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-inputs-1fe685c-20261101/input-provenance.json",
+      "sha256": "525509b44787603a99b751b2e3e460abe5e8463c149b0c59832039509c789ddd"
+    },
+    "prerequisites/original19_assessment": {
+      "bytes": 30858,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-functional-1fe685c-20261101/functional-1fe685c.root-assessment.json",
+      "sha256": "aa2f2c687080f511db6b51469439617715e392b0a1025938dfd938b5dee252f8"
+    },
+    "prerequisites/original19_independent_review": {
+      "bytes": 49536,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-functional-1fe685c-20261101/actual19-independent-review.json",
+      "sha256": "101b62bed1a72fd34234bc666db101ae46ba9c3b4a9a2fd010d338899dccaed7"
+    },
+    "reader/review_arm.py": {
+      "bytes": 52564,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-independent-reader-20261102/review_arm.py",
+      "sha256": "d32cf419ae5e90bde54ac673d33023aaa8cfd1fed5559c63d3992ee29d0e043e"
+    },
+    "reader/source-plan.json": {
+      "bytes": 10625,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-independent-reader-20261102/source-plan.json",
+      "sha256": "2991fc5e399e6679c7e0377f27aa0181facd946d63a7746ae2701c41a59cf96e"
+    },
+    "reader/test_review_arm.py": {
+      "bytes": 38196,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-independent-reader-20261102/test_review_arm.py",
+      "sha256": "c05bc4020e0e1c7d4b392409b86e59b4e1a1714b785f884063b57730c1f7aa2c"
+    },
+    "reader_source_freeze": {
+      "bytes": 2110,
+      "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-independent-reader-review-20261102-root/source-freeze.json",
+      "sha256": "8078f18ed9f13846fef7e71bfadc508a431817e3c04d4be4fc73d22d0b177f25"
+    }
+  },
+  "formal_activations_per_renderer": 60,
+  "formal_activations_total": 120,
+  "independent_audit_reader": {
+    "bytes": 27628,
+    "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-process-only-v2-summary-audit-20261102/audit_summary.py",
+    "sha256": "cb270b6ed32cbc264c21f79f0a1c643e94522882cdfa25d5d06fc4f76824ec1c"
+  },
+  "integration_manifest": {
+    "bytes": 12687,
+    "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/integration-manifest.json",
+    "sha256": "63d0f6f062a5be89db5c534e72ca175677c3a6be6492655879acdcacebb7f30f"
+  },
+  "kind": "phase6_F2_process_only_v2_independent_summary_audit",
+  "limits": [
+    "Independent numeric/clock/current-byte consistency only; actual per-arm native/privacy/visual checks remain the original separately bound four reviews.",
+    "Snapshot empirical distributions are correlated; pooled nearest-rank percentiles are not equal-time means or independent repetitions.",
+    "Duration-weighted disjoint counter-read intervals only; neither full-window CPU nor a common-time family bound, tick-quantization bound or statistical confidence interval.",
+    "Thread/context/wakeup probes were not collected; removing them changes observer cost. No v1 sample or failed v1 A1 contributes to these four v2 arms.",
+    "Whole-host quiet, Windows names, GPU, first-interactive/search-ready/IME/DPI/multimonitor and performance adoption remain unverified."
+  ],
+  "next_arm_authorized": false,
+  "observer_method": "process-resource-only-v2",
+  "original_136_raw_records": [
+    {
+      "bytes": 8662,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/credential-boundary.json",
+      "sha256": "fc20e101c6c27e26cb4be3a62296f235eee3a5e51b987313d0f0769d88571881"
+    },
+    {
+      "bytes": 888,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/keeper.json",
+      "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/keeper.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 63,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/keeper.stdout.log",
+      "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+    },
+    {
+      "bytes": 1387949,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/native-observations.jsonl",
+      "sha256": "4eef70779cab5cd0e46ae4d42dfd16c7418c483ebc5046bef0d676c3c9452908"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/paste-tool-version.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 29,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/paste-tool-version.stdout.log",
+      "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+    },
+    {
+      "bytes": 830472,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/performance.json",
+      "sha256": "0bd1586ea15221e9c50463738eef714faf497fb92788072e9c191cc70a71c9cd"
+    },
+    {
+      "bytes": 1511,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/private-ss/proof.json",
+      "sha256": "b6dfeaec581609550bc4300e3b1a354b1bfdfd5a2512cc94ab3a478da8af1f23"
+    },
+    {
+      "bytes": 203963,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-clock-hidden.jsonl",
+      "sha256": "c58f9d80e9cbd3fd68913cafc6a7dfb6e118e964d8f67ae7b2abb5dbb7606755"
+    },
+    {
+      "bytes": 204010,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-clock-visible.jsonl",
+      "sha256": "d9a246432857d3bf3c042646e9776c54987269e193f31dfefd83e76960e1ce57"
+    },
+    {
+      "bytes": 4136,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-visible-query.png",
+      "sha256": "e04bf6a7fb991bea8bf44b6ad783ad75b34dfcf6643c1153ee7caafa54097955"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-visible-query.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resource-visible-query.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2169932,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resources-hidden.jsonl",
+      "sha256": "73700acdd050a152b99c075de2e54e99f3d49ec4d7cae614e48dd6132282f425"
+    },
+    {
+      "bytes": 2170674,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/resources-visible.jsonl",
+      "sha256": "5b9ee68a64cb06cd11dd60db6ba6b3a168e4ba3d969a7c1292a858f33b1fb658"
+    },
+    {
+      "bytes": 52939,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/show-status-qualification.jsonl",
+      "sha256": "5618faf50ff605104fa9a3cc74ec88a66e6f7099844024c852268762316c7189"
+    },
+    {
+      "bytes": 7416,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-before-warmup.png",
+      "sha256": "1e1c7dac4ea0234fe5f76b2f16211c40c79a02ddfc67e1f27e0f33141fb7987a"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-before-warmup.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-before-warmup.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-build-info.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 446,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/surface-build-info.stdout",
+      "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/target.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7105,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/target.stdout.jsonl",
+      "sha256": "02776063673f20061d637306d90b2232fee75971ad4af62c248d37cc5ef2bf6b"
+    },
+    {
+      "bytes": 6690,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/webdriver.log",
+      "sha256": "3e8022a94b53b76df20cfc5e03a030211e33baf910e416f1163bf70b9e864904"
+    },
+    {
+      "bytes": 8996,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/wm.stderr.log",
+      "sha256": "f6aa7bea450cf66d3ff551acb2c5e76113e6c95bd4cd3485c08fd8bb6b4c55e5"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/functional/wm.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 200625,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/host-load.jsonl",
+      "sha256": "95771c73273f7bf41084f64f4b200d902c691d0aefb0f282a0dc00e4ab2919a4"
+    },
+    {
+      "bytes": 447,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/host-preflight.json",
+      "sha256": "819fed34a83a6c18fab43242695797340a12de8422f4cd83f2da459d7b10523f"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/outer.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/outer.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 273,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/plan.json",
+      "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+    },
+    {
+      "bytes": 8224,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/receipt.json",
+      "sha256": "04ee9b17b4d32e99f702e9d94ddcb4a9534fda8eeeb716db1d957ab6e36fb787"
+    },
+    {
+      "bytes": 16683,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-1-tauri/runtime.json",
+      "sha256": "1c85c68eee95de58360a0f4c099eb618e6c8d530eede20ee88652a77fe67e5c9"
+    },
+    {
+      "bytes": 8646,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/credential-boundary.json",
+      "sha256": "81285fc993d6be8895142583b9aecc963ed7816c7d2656737ece9b07ead96b1b"
+    },
+    {
+      "bytes": 888,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/keeper.json",
+      "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/keeper.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 63,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/keeper.stdout.log",
+      "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+    },
+    {
+      "bytes": 1395360,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/native-observations.jsonl",
+      "sha256": "4deb72f771425b929c5d66f9f23ffdaace1e0ec78d3dc503eadc26f1676c69ed"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/paste-tool-version.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 29,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/paste-tool-version.stdout.log",
+      "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+    },
+    {
+      "bytes": 846074,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/performance.json",
+      "sha256": "b98265be2553f6a965345523f0ce9ce920b5089c1280a287d61656383b77fbc5"
+    },
+    {
+      "bytes": 1511,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/private-ss/proof.json",
+      "sha256": "9ed227b4e3e010adbd8854c3fdd01707a8ffdacf7c354ce9b0e1b4b0590805c9"
+    },
+    {
+      "bytes": 204077,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-clock-hidden.jsonl",
+      "sha256": "9da57231233d96987b9158d11f42228e2e4927d0bfaf5420ac6fedd122766cbb"
+    },
+    {
+      "bytes": 204021,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-clock-visible.jsonl",
+      "sha256": "ae178588c0a9fe5eaad15e332eb76df09a0bb536f3bed45ee4556b0f8ae0fffc"
+    },
+    {
+      "bytes": 9091,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-visible-query.png",
+      "sha256": "69e70b38d984d30a43bad6e61f16ce8afbc0b0975b52c70575dd1b257c710d6b"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-visible-query.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resource-visible-query.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2166749,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resources-hidden.jsonl",
+      "sha256": "6818b3c721de5ca727d2af338c1f436bc6aeb457d4925f321720caa667b73f43"
+    },
+    {
+      "bytes": 2166414,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/resources-visible.jsonl",
+      "sha256": "e4ef55c3746dc03ea5aed96413640c0124d3bc35ae2c04f9b83139e363fc3905"
+    },
+    {
+      "bytes": 41829,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/show-status-qualification.jsonl",
+      "sha256": "09250ff3c8bf6fa17d791758a1669b1af7ae6920b5947e7bf36d772b739f89a7"
+    },
+    {
+      "bytes": 25163,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-before-warmup.png",
+      "sha256": "9fd33a0519487acd3de05ed59b24e7a1c767f44bbf0a31cf0fc6414b7d39a9e9"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-before-warmup.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-before-warmup.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-build-info.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 446,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/surface-build-info.stdout",
+      "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/target.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 5675,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/target.stdout.jsonl",
+      "sha256": "0524e93a19f7f04c96fc817af7a0cc27bc4f4f534ec92097c97b3e50f459a4a2"
+    },
+    {
+      "bytes": 28259,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/webdriver.log",
+      "sha256": "c9ce8694a2a6a60512d238823dac1424ea04750fe5945e081efe3ac7dd2f40ae"
+    },
+    {
+      "bytes": 18043,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/wm.stderr.log",
+      "sha256": "e1ae2955a8edd8eac495640f241000288a243d51d74ea8a63ea77de2d0b6ddbf"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/functional/wm.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 199774,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/host-load.jsonl",
+      "sha256": "9ea5f5a78b8d45d2fa6eb902b2c6aaa45024008ed29802fd42161c90e7bd820c"
+    },
+    {
+      "bytes": 454,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/host-preflight.json",
+      "sha256": "c0e30946570e81926d06a412aa45a906a50c36ad565f0ad1a939523c2beec3eb"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/outer.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/outer.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 273,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/plan.json",
+      "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+    },
+    {
+      "bytes": 8206,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/receipt.json",
+      "sha256": "e9ba0a3bdc254007ee1158ddc8332125e8b8e6f03866ff150b6041781d5a5a8c"
+    },
+    {
+      "bytes": 16681,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-2-mygo/runtime.json",
+      "sha256": "317765ed79fc1e140730e1b412c2fd5f3b36750adf158fc3bf28030b8f4a2a33"
+    },
+    {
+      "bytes": 8646,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/credential-boundary.json",
+      "sha256": "4866cd777306c9044ac6131b57fba5691849a8dc9829033ccd332106de86cc98"
+    },
+    {
+      "bytes": 888,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/keeper.json",
+      "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/keeper.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 63,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/keeper.stdout.log",
+      "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+    },
+    {
+      "bytes": 1389309,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/native-observations.jsonl",
+      "sha256": "5c3c2832e61b5a4f1a0ad2114762dfac8a125ac1f98530a98686f8cb731fb2bf"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/paste-tool-version.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 29,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/paste-tool-version.stdout.log",
+      "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+    },
+    {
+      "bytes": 846163,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/performance.json",
+      "sha256": "e23ccf7ead8f43eb1f9606e665da694f65f406e50382e4de7f207d152de23f37"
+    },
+    {
+      "bytes": 1511,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/private-ss/proof.json",
+      "sha256": "dcdb2c13e6024bc12b32e2a5e8daffd0cd87f17dec024de9e831b83e3b5f05d8"
+    },
+    {
+      "bytes": 204115,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-clock-hidden.jsonl",
+      "sha256": "2c36d547268a5e1cec92c0116639b71629ec734b3291f0a758176ee9046f9c00"
+    },
+    {
+      "bytes": 204094,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-clock-visible.jsonl",
+      "sha256": "21e0ca250164c357b721720164c0a4fe8083f05c1fe07b14fe708544b7193516"
+    },
+    {
+      "bytes": 9091,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-visible-query.png",
+      "sha256": "69e70b38d984d30a43bad6e61f16ce8afbc0b0975b52c70575dd1b257c710d6b"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-visible-query.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resource-visible-query.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2166771,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resources-hidden.jsonl",
+      "sha256": "ea077a0fdd74a6a741606ea10e4197b02b55d380e9537f48a7ac7698969e1149"
+    },
+    {
+      "bytes": 2166469,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/resources-visible.jsonl",
+      "sha256": "f159cce52a2f79823737b8c8edbc4558bb24616d5a4080a07971c74b899caac7"
+    },
+    {
+      "bytes": 41838,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/show-status-qualification.jsonl",
+      "sha256": "b78271fc70342b5cc5e318bdd400181c51400858cb8fcf6344c2b010545c61d1"
+    },
+    {
+      "bytes": 25163,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-before-warmup.png",
+      "sha256": "9fd33a0519487acd3de05ed59b24e7a1c767f44bbf0a31cf0fc6414b7d39a9e9"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-before-warmup.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-before-warmup.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-build-info.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 446,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/surface-build-info.stdout",
+      "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/target.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 5676,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/target.stdout.jsonl",
+      "sha256": "ebf3c6df1e8f06d7743427a5579e1fbf62586fd4303e109aecda4bf8a24df770"
+    },
+    {
+      "bytes": 28256,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/webdriver.log",
+      "sha256": "c26729cb14956c672be323bad01c6e1d874dbace5676f3ef2be49c98ef04e97a"
+    },
+    {
+      "bytes": 18043,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/wm.stderr.log",
+      "sha256": "e1ae2955a8edd8eac495640f241000288a243d51d74ea8a63ea77de2d0b6ddbf"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/functional/wm.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 200076,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/host-load.jsonl",
+      "sha256": "1b0847a7311d458413e8c34fa6df8e56c85aa42387122e51b790037b20d407c7"
+    },
+    {
+      "bytes": 454,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/host-preflight.json",
+      "sha256": "e0d221c930af79a8387f5b8e58e0dc0f41907059c8f6bd7e1baa690eecb9e14d"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/outer.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/outer.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 273,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/plan.json",
+      "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+    },
+    {
+      "bytes": 8206,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/receipt.json",
+      "sha256": "34ec91eab8e0b16c730e96679bb99ece8b61423430b89e83c2d235b8a4e3335f"
+    },
+    {
+      "bytes": 16681,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-3-mygo/runtime.json",
+      "sha256": "4ff1d02fffe58a86ae9176539ff6be12c2729b49bd6c90a4b3977060a5e84e43"
+    },
+    {
+      "bytes": 8662,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/credential-boundary.json",
+      "sha256": "0e4c66e9645347ca100cb0c4bd2e6e7570ba9da6ab3bd3eb11d397274546336a"
+    },
+    {
+      "bytes": 888,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/keeper.json",
+      "sha256": "cb2de4f90acb9b642f7c906202dc1ad3192d2afd2493d745073ba18adfc9c7ad"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/keeper.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 63,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/keeper.stdout.log",
+      "sha256": "995b8c6c6962f0574f45dd0da6568f216ce88d835a0ac85ce868cb9804c561ea"
+    },
+    {
+      "bytes": 1382205,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/native-observations.jsonl",
+      "sha256": "205cf7284d50a4b064e856ff30245808bb47f79fa77327d2508a45587a073354"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/paste-tool-version.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 29,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/paste-tool-version.stdout.log",
+      "sha256": "401de0daffbc56ab12132441f10dbcd0d83ab52e8be518e5f0ae16cf9a5db3e9"
+    },
+    {
+      "bytes": 830571,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/performance.json",
+      "sha256": "dc6645a6a1a8c135d322e027fc317f3e5944fe08cf89ec51a0d02d4dcfa81699"
+    },
+    {
+      "bytes": 1511,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/private-ss/proof.json",
+      "sha256": "1db801e00da9954a216c3d9ce784ca0d41653ea56eed5d6cfa7706c2ace9f11f"
+    },
+    {
+      "bytes": 204089,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-clock-hidden.jsonl",
+      "sha256": "9afc3536e443d8fe83c33f19676c581d133514e7863b324105a2a027a46e957d"
+    },
+    {
+      "bytes": 204072,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-clock-visible.jsonl",
+      "sha256": "4c9ba58c23277701c215635cfd4d56dd8437176e11400a18e210003060b5e267"
+    },
+    {
+      "bytes": 4136,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-visible-query.png",
+      "sha256": "e04bf6a7fb991bea8bf44b6ad783ad75b34dfcf6643c1153ee7caafa54097955"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-visible-query.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resource-visible-query.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2170061,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resources-hidden.jsonl",
+      "sha256": "e9b7551f09d05867711e1b5fccf19a9f9deec872b44e11c16f0ef10e7c1f7205"
+    },
+    {
+      "bytes": 2170761,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/resources-visible.jsonl",
+      "sha256": "58e6f0439720e973f54864bfe8acf2f7335012d4a579140e5ba355730fe7990d"
+    },
+    {
+      "bytes": 52937,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/show-status-qualification.jsonl",
+      "sha256": "9a7715228431fb02f06cfa88ed353c1cc3e17764277fb7886e5c9dd90481836a"
+    },
+    {
+      "bytes": 7416,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-before-warmup.png",
+      "sha256": "1e1c7dac4ea0234fe5f76b2f16211c40c79a02ddfc67e1f27e0f33141fb7987a"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-before-warmup.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-before-warmup.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-build-info.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 446,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/surface-build-info.stdout",
+      "sha256": "1ffd610e3bdbacfe0e8afb058f7fdd69bccf98e60290b7156c608988713019df"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/target.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7105,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/target.stdout.jsonl",
+      "sha256": "6eb9c020329aa4526bfc9a8201383d75be9d015e0898b0c1cee715c61cff4fbf"
+    },
+    {
+      "bytes": 6617,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/webdriver.log",
+      "sha256": "62150aa9a9b442cd401a60aa2ad0eb2b77605255c505c43c66a8f6b464d7b757"
+    },
+    {
+      "bytes": 8996,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/wm.stderr.log",
+      "sha256": "f6aa7bea450cf66d3ff551acb2c5e76113e6c95bd4cd3485c08fd8bb6b4c55e5"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/functional/wm.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 200786,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/host-load.jsonl",
+      "sha256": "5decbc87e10eff27f223e5a5dd6f823169ad62b512a886ecf5e6e3244d63bcce"
+    },
+    {
+      "bytes": 455,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/host-preflight.json",
+      "sha256": "809c896176a040d2f3184f2bd2c856f0b1745cfef7e9139d37d0fde554e01ca7"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/outer.stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 0,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/outer.stdout.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 273,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/plan.json",
+      "sha256": "2a2bd5a776edbecc0ab0e2d5c80468fb2d1d2ca51587abfe0152a8d78e748501"
+    },
+    {
+      "bytes": 8224,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/receipt.json",
+      "sha256": "aff29b8cbcbae1939eae736dc7285da0768d80f6033472514d0c4e6374fdadc1"
+    },
+    {
+      "bytes": 16683,
+      "path": "/home/qiyuaner/.cache/dezirclip-v02/phase6-performance-recovered/1fe685c424602b2bc1892f1deb0794c2e0b90ad5/process-v2-1fe685c-4-tauri/runtime.json",
+      "sha256": "2c6a2bdd0e5d3eec92ea4e3c43cfc5d9b48204fd3700e18493a9ac91b5d7f7fe"
+    }
+  ],
+  "original_reader_rerun": false,
+  "performance_acceptance": null,
+  "performance_eligible": false,
+  "phase6_passed": false,
+  "phase7_authorized": false,
+  "quiet_window": null,
+  "raw_clock_rows_total": 7680,
+  "recursive_raw_inventories": {
+    "process-v2-1fe685c-1-tauri": {
+      "before_after_identical": true,
+      "bytes": 13446607,
+      "inventory_sha256": "7d25602275ee396acd3aea457c6f2237165b174a5b1e92c0457d6da7117c577d",
+      "regular_files": 228
+    },
+    "process-v2-1fe685c-2-mygo": {
+      "before_after_identical": true,
+      "bytes": 13418720,
+      "inventory_sha256": "7be91789d8237ab29c33f8de1701d5cd444c21d190de8219f16d35264f822b30",
+      "regular_files": 224
+    },
+    "process-v2-1fe685c-3-mygo": {
+      "before_after_identical": true,
+      "bytes": 13413255,
+      "inventory_sha256": "589ef52473efd921cc06f2d4f4ba45ba505d4e7c5828e680caac93c98ee233bb",
+      "regular_files": 224
+    },
+    "process-v2-1fe685c-4-tauri": {
+      "before_after_identical": true,
+      "bytes": 13441312,
+      "inventory_sha256": "aa82097a3c404f761e53cc336ec37c8eb59c6fa197178e44371e66266c5150c1",
+      "regular_files": 227
+    }
+  },
+  "resource_rows_total": 7680,
+  "root_final_review": {
+    "bytes": 6145,
+    "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/complete-process-only-v2.root-summary-review.json",
+    "sha256": "1c03cb4c3654df48f329d974f03cb9da1151a98a7d36c411e859a8eb99ceaad9"
+  },
+  "root_go": false,
+  "snapshots_per_state_per_renderer": 1920,
+  "source_revision": "1fe685c424602b2bc1892f1deb0794c2e0b90ad5",
+  "status": "passed_limited_independent_summary_consistency",
+  "summary": {
+    "bytes": 92439,
+    "path": "/mnt/c/Users/qiyuaner/.codex/worktrees/v02-phase6-recovery/dezirclip/.harness/phase6-linux-count-process-only-v2-1fe685c-20261102/comparison-process-only-v2.limited-descriptive.json",
+    "sha256": "3c9e9b1d8162859efc11aa5a30cede300b5bf77418559c52f5cb389367807b86"
+  },
+  "thread_context_switch_collection": "not_collected",
+  "variants_recomputed_from_original_raw": {
+    "mygo": {
+      "resources": {
+        "hidden": {
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 57,
+            "nominal_percent_one_core": 0.11881267798828647,
+            "read_window_normalization_percent_range": [
+              0.11880789198264952,
+              0.11881746437953372
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval.",
+            "sum_twice_nominal_intervals_ns": 959493565251,
+            "ticks_per_second": 100
+          },
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "max": 474242,
+            "mean": 473050.92552083335,
+            "min": 472378,
+            "p50": 473079,
+            "p95": 474198
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "max": 385052,
+            "mean": 384256.74583333335,
+            "min": 383368,
+            "p50": 384852,
+            "p95": 385008
+          },
+          "observed_thread_context_switch_delta": null,
+          "stable_thread_membership": null,
+          "thread_context_switch_collection": "not_collected",
+          "wakeup_count": null
+        },
+        "visible": {
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 207,
+            "nominal_percent_one_core": 0.4314908735855883,
+            "read_window_normalization_percent_range": [
+              0.43147192799336503,
+              0.4315098208416567
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval.",
+            "sum_twice_nominal_intervals_ns": 959464093782,
+            "ticks_per_second": 100
+          },
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "max": 478318,
+            "mean": 476510.95208333334,
+            "min": 475262,
+            "p50": 476206,
+            "p95": 477683
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "max": 389128,
+            "mean": 387829.92083333334,
+            "min": 387104,
+            "p50": 388020,
+            "p95": 388492
+          },
+          "observed_thread_context_switch_delta": null,
+          "stable_thread_membership": null,
+          "thread_context_switch_collection": "not_collected",
+          "wakeup_count": null
+        }
+      },
+      "warm_activation_proxy_ms": {
+        "count": 60,
+        "max": 81.799724,
+        "mean": 55.55082385,
+        "min": 31.08596,
+        "p50": 51.721614,
+        "p95": 71.367361
+      }
+    },
+    "tauri": {
+      "resources": {
+        "hidden": {
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 65,
+            "nominal_percent_one_core": 0.13549654470812134,
+            "read_window_normalization_percent_range": [
+              0.13549027758096358,
+              0.1355028124150801
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval.",
+            "sum_twice_nominal_intervals_ns": 959434059961,
+            "ticks_per_second": 100
+          },
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "max": 612925,
+            "mean": 609002.075,
+            "min": 599399,
+            "p50": 608838,
+            "p95": 612177
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "max": 467352,
+            "mean": 464826.71875,
+            "min": 461380,
+            "p50": 464764,
+            "p95": 466604
+          },
+          "observed_thread_context_switch_delta": null,
+          "stable_thread_membership": null,
+          "thread_context_switch_collection": "not_collected",
+          "wakeup_count": null
+        },
+        "visible": {
+          "cpu_counter_interval": {
+            "counter_delta_ticks": 3376,
+            "nominal_percent_one_core": 7.037367387507205,
+            "read_window_normalization_percent_range": [
+              7.037023329134533,
+              7.0377114795253375
+            ],
+            "scope": "Duration-weighted disjoint first/last counter-read intervals. Not elapsed-window/tail CPU, a common-time family bound, tick-quantization bound or statistical confidence interval.",
+            "sum_twice_nominal_intervals_ns": 959449695917,
+            "ticks_per_second": 100
+          },
+          "empirical_snapshot_pss_kib": {
+            "count": 1920,
+            "max": 615453,
+            "mean": 611724.7927083333,
+            "min": 602287,
+            "p50": 611628,
+            "p95": 614425
+          },
+          "empirical_snapshot_uss_kib": {
+            "count": 1920,
+            "max": 469204,
+            "mean": 466848.11041666666,
+            "min": 463500,
+            "p50": 466960,
+            "p95": 468176
+          },
+          "observed_thread_context_switch_delta": null,
+          "stable_thread_membership": null,
+          "thread_context_switch_collection": "not_collected",
+          "wakeup_count": null
+        }
+      },
+      "warm_activation_proxy_ms": {
+        "count": 60,
+        "max": 80.193714,
+        "mean": 53.14696855,
+        "min": 21.113158,
+        "p50": 52.182223,
+        "p95": 62.332279
+      }
+    }
+  },
+  "wakeup_count": null,
+  "whole_ABBA_raw_consistency_recomputed": true,
+  "whole_host_idle": null
+}

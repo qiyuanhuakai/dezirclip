@@ -12,6 +12,7 @@
 *.toml text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+docs/evidence/phase6-linux-process-only-v2/verify-linux-process-only-v2.py text eol=lf
 integrations/** text eol=lf
 src-tauri/src/cli/shell/** text eol=lf
 scripts/benchmark-windows.py export-ignore
