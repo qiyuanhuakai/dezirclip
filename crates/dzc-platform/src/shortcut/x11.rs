@@ -24,7 +24,7 @@ fn connect() -> PlatformResult<(RustConnection, usize)> {
     })?;
     x11rb::connect(None).map_err(|_| unsupported(UnsupportedReason::ConnectionUnavailable))
 }
-fn repeat(conn: &RustConnection) -> PlatformResult<()> {
+pub fn enable_x11_shortcut_events(conn: &RustConnection) -> PlatformResult<()> {
     let extension = conn
         .xkb_use_extension(1, 0)
         .map_err(|_| failed())?
@@ -56,7 +56,7 @@ fn repeat(conn: &RustConnection) -> PlatformResult<()> {
 }
 pub(super) fn probe(active: bool) -> CapabilityState {
     let result = connect().and_then(|(conn, _)| {
-        repeat(&conn)?;
+        enable_x11_shortcut_events(&conn)?;
         group_one(&conn)
     });
     match result {
@@ -206,7 +206,7 @@ pub(super) fn run(
     callback: &mut dyn FnMut(),
 ) -> PlatformResult<()> {
     let (conn, screen) = connect()?;
-    repeat(&conn)?;
+    enable_x11_shortcut_events(&conn)?;
     group_one(&conn)?;
     let mapping = Mapping::read(&conn)?;
     let (keycode, masks) = mapping.binding(&chord)?;

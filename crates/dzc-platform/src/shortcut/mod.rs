@@ -11,6 +11,8 @@ use std::time::Duration;
 mod windows;
 #[cfg(target_os = "linux")]
 mod x11;
+#[cfg(target_os = "linux")]
+pub use x11::enable_x11_shortcut_events;
 
 fn failed() -> PlatformError {
     PlatformError::failed(Capability::GlobalShortcut)

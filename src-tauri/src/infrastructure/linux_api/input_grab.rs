@@ -49,23 +49,37 @@ impl<'a> Drop for GrabGuard<'a> {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum RecordedInput { Chord(String), Cancelled }
+
 pub fn start_recording_grab() {
-    thread::spawn(|| {
-        if let Err(e) = recording_thread() {
-            eprintln!("input_grab error: {}", e);
+    thread::spawn(|| match recording_thread(|| {}) {
+        Ok(Some(input)) => {
+            IS_RECORDING.store(false, Ordering::SeqCst);
+            if let Some(handle) = GLOBAL_APP_HANDLE.get() {
+                match input {
+                    RecordedInput::Chord(chord) => { let _ = handle.emit("hotkey-recorded", chord); }
+                    RecordedInput::Cancelled => { let _ = handle.emit("recording-cancelled", ()); }
+                }
+            }
         }
+        Ok(None) => {}
+        Err(error) => eprintln!("input_grab error: {error}"),
     });
 }
 
-fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
+fn recording_thread(on_grabbed: impl FnOnce()) -> Result<Option<RecordedInput>, Box<dyn std::error::Error>> {
     let (conn, screen_num) = match x11rb::connect(None) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Failed to connect to X11: {}", e);
-            return Ok(());
+            return Ok(None);
         }
     };
 
+    // XKB detectable repeat is per connection. On legacy servers the release path also
+    // consults the live keymap before accepting a core autorepeat release/press pair.
+    let _ = dzc_platform::shortcut::enable_x11_shortcut_events(&conn);
     let screen = &conn.setup().roots[screen_num];
     let root = screen.root;
 
@@ -79,7 +93,7 @@ fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
     let kb_reply = kb_cookie.reply()?;
     if kb_reply.status != GrabStatus::SUCCESS {
         eprintln!("Failed to grab keyboard: {:?}", kb_reply.status);
-        return Ok(());
+        return Ok(None);
     }
 
     let ptr_cookie = conn.grab_pointer(
@@ -97,11 +111,12 @@ fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Failed to grab pointer: {:?}", ptr_reply.status);
         let _ = conn.ungrab_keyboard(x11rb::CURRENT_TIME);
         let _ = conn.flush();
-        return Ok(());
+        return Ok(None);
     }
 
     let _guard = GrabGuard { conn: &conn };
-    let _ = conn.flush();
+    conn.flush()?;
+    on_grabbed();
 
     let mut recorded = None;
     while IS_RECORDING.load(Ordering::SeqCst) {
@@ -121,11 +136,7 @@ fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if keysym == XK_ESCAPE {
-                        if let Some(handle) = GLOBAL_APP_HANDLE.get() {
-                            let _ = handle.emit("recording-cancelled", ());
-                        }
-                        IS_RECORDING.store(false, Ordering::SeqCst);
-                        break;
+                        return Ok(Some(RecordedInput::Cancelled));
                     }
 
                     let key_name = keysym_to_name(keysym);
@@ -135,19 +146,14 @@ fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 x11rb::protocol::Event::KeyRelease(event) => {
                     if !recorded.as_ref().is_some_and(|(key, _)| *key == event.detail) { continue; }
-                    if let (Some(handle), Some((_, hotkey))) = (GLOBAL_APP_HANDLE.get(), recorded.take()) {
-                        let _ = handle.emit("hotkey-recorded", hotkey);
-                    }
-                    IS_RECORDING.store(false, Ordering::SeqCst);
-                    break;
+                    let held = conn.query_keymap()?.reply()?;
+                    let key = usize::from(event.detail);
+                    if held.keys[key / 8] & (1 << (key % 8)) != 0 { continue; }
+                    return Ok(recorded.take().map(|(_, chord)| RecordedInput::Chord(chord)));
                 }
                 x11rb::protocol::Event::ButtonPress(event) => {
                     if event.detail == 2 {
-                        if let Some(handle) = GLOBAL_APP_HANDLE.get() {
-                            let _ = handle.emit("hotkey-recorded", "MouseMiddle");
-                        }
-                        IS_RECORDING.store(false, Ordering::SeqCst);
-                        break;
+                        return Ok(Some(RecordedInput::Chord("MouseMiddle".into())));
                     }
                 }
                 _ => {}
@@ -158,7 +164,7 @@ fn recording_thread() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    Ok(())
+    Ok(None)
 }
 
 fn is_modifier_key(keysym: u32) -> bool {
@@ -261,5 +267,70 @@ mod tests {
             build_hotkey_string(false, true, false, true, "1"),
             "Shift+Win+1"
         );
+    }
+}
+
+#[cfg(test)]
+mod native_repeat_tests {
+    use super::*;
+    use dzc_core::ports::{Shortcut, ShortcutProvider};
+    use dzc_platform::shortcut::NativeShortcutProvider;
+    use std::sync::mpsc;
+    use x11rb::protocol::{xproto::{KEY_PRESS_EVENT, KEY_RELEASE_EVENT}, xtest::ConnectionExt as _};
+
+    #[test]
+    #[ignore = "requires a disposable Xvfb display with keyboard autorepeat enabled"]
+    fn held_key_is_saved_only_after_release_and_registers_on_x11() {
+        let runtime = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap());
+        assert!(runtime.join("dezirclip-isolated-x11-recorder").is_file());
+        let (injector, screen) = x11rb::connect(None).unwrap();
+        let root = injector.setup().roots[screen].root;
+        let first = injector.setup().min_keycode;
+        let map = injector.get_keyboard_mapping(first, injector.setup().max_keycode - first + 1).unwrap().reply().unwrap();
+        let keycode = |symbol| first + map.keysyms.chunks(usize::from(map.keysyms_per_keycode))
+            .position(|row| row[0] == symbol).unwrap() as u8;
+        let ctrl = keycode(0xffe3);
+        let p = keycode(0x70);
+        let send = |kind, key| { injector.xtest_fake_input(kind, key, 0, root, 0, 0, 0).unwrap().check().unwrap(); };
+        // Prove this server actually produces legacy synthetic releases while the key is held.
+        let (legacy, _) = x11rb::connect(None).unwrap();
+        assert_eq!(legacy.grab_keyboard(false, root, 0u32, GrabMode::ASYNC, GrabMode::ASYNC).unwrap().reply().unwrap().status, GrabStatus::SUCCESS);
+        send(KEY_PRESS_EVENT, p);
+        thread::sleep(Duration::from_millis(900));
+        assert_ne!(injector.query_keymap().unwrap().reply().unwrap().keys[usize::from(p)/8] & (1 << (p % 8)), 0);
+        let mut releases = 0;
+        while let Some(event) = legacy.poll_for_event().unwrap() {
+            if matches!(event, x11rb::protocol::Event::KeyRelease(key) if key.detail == p) { releases += 1; }
+        }
+        send(KEY_RELEASE_EVENT, p);
+        legacy.ungrab_keyboard(0u32).unwrap().check().unwrap();
+        assert!(releases > 0, "the fixture must generate autorepeat");
+
+        let (ready, grabbed) = mpsc::channel();
+        let (finished, result) = mpsc::channel();
+        IS_RECORDING.store(true, Ordering::SeqCst);
+        let worker = thread::spawn(move || {
+            let chord = recording_thread(|| ready.send(()).unwrap()).unwrap();
+            finished.send(chord).unwrap();
+        });
+        grabbed.recv_timeout(Duration::from_secs(3)).unwrap();
+        send(KEY_PRESS_EVENT, ctrl);
+        send(KEY_PRESS_EVENT, p);
+        assert_eq!(result.recv_timeout(Duration::from_millis(900)), Err(mpsc::RecvTimeoutError::Timeout));
+        send(KEY_RELEASE_EVENT, p);
+        let Some(RecordedInput::Chord(chord)) = result.recv_timeout(Duration::from_secs(3)).unwrap() else { panic!("missing chord") };
+        assert_eq!(chord, "Ctrl+P");
+        IS_RECORDING.store(false, Ordering::SeqCst);
+        worker.join().unwrap();
+        send(KEY_RELEASE_EVENT, ctrl);
+        let provider = NativeShortcutProvider::default();
+        let (pressed, press) = mpsc::channel();
+        let mut registration = provider.register(&Shortcut { id: "recorded".into(), accelerator: chord }, Box::new(move || {
+            let _ = pressed.send(());
+        })).unwrap();
+        send(KEY_PRESS_EVENT, ctrl); send(KEY_PRESS_EVENT, p);
+        press.recv_timeout(Duration::from_secs(3)).unwrap();
+        send(KEY_RELEASE_EVENT, p); send(KEY_RELEASE_EVENT, ctrl);
+        registration.unregister().unwrap();
     }
 }
