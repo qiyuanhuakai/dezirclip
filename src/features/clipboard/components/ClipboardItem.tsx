@@ -255,7 +255,13 @@ const ClipboardItem = ({
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
     const [richTextSnapshotSrc, setRichTextSnapshotSrc] = useState<string | null>(null);
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
-    const [contextMenuState, setContextMenuState] = useState<{ x: number; y: number } | null>(null);
+    type MenuPoint = { x: number; y: number };
+    const [contextMenuState, setMenuPoint] = useState<MenuPoint | null>(null);
+    const currentMenu = useRef<MenuPoint | null>(null);
+    const setContextMenuState = useCallback((point: MenuPoint | null) => {
+        currentMenu.current = point;
+        setMenuPoint(point);
+    }, []);
     const [privacyFeedbackPending, setPrivacyFeedbackPending] = useState(false);
     const [metadataActionPending, setMetadataActionPending] = useState(false);
     const metadataActionRunning = useRef(false);
@@ -447,14 +453,14 @@ const ClipboardItem = ({
     };
 
     const scheduleHover = () => {
-        if (hoverTimerRef.current !== null || !compactMode || isSensitiveHidden || contextMenuState) return;
+        if (hoverTimerRef.current !== null || !compactMode || isSensitiveHidden || currentMenu.current) return;
         hoverTimerRef.current = setTimeout(() => {
             const anchor = hoverAnchorRef.current;
-            if (anchor && itemRootRef.current?.isConnected) void showCompactPreview(anchor);
+            if (!currentMenu.current && anchor && itemRootRef.current?.isConnected) void showCompactPreview(anchor);
         }, 300);
     };
     const trackHover = (event: React.MouseEvent<HTMLElement>) => {
-        if (!compactMode || isSensitiveHidden || contextMenuState) return;
+        if (!compactMode || isSensitiveHidden || currentMenu.current) return;
         hoverAnchorThrottle.schedule({
             clientX: event.clientX, clientY: event.clientY, screenX: event.screenX, screenY: event.screenY,
             element: event.currentTarget
@@ -931,30 +937,15 @@ const ClipboardItem = ({
                     height: window.innerHeight,
                     scale: window.devicePixelRatio || 1
                 };
-                const currentWindowLabel = windowLabelRef.current;
-                invoke<boolean>("is_window_topmost", { label: COMPACT_PREVIEW_LABEL })
-                    .then((isCompactPreviewOnTop) => {
-                        const point = resolveContextMenuPoint({
-                            clientX: e.clientX,
-                            clientY: e.clientY,
-                            anchorRect,
-                            viewport,
-                            currentWindowLabel,
-                            isCompactPreviewOnTop
-                        });
-                        setContextMenuState(point);
-                    })
-                    .catch(() => {
-                        const point = resolveContextMenuPoint({
-                            clientX: e.clientX,
-                            clientY: e.clientY,
-                            anchorRect,
-                            viewport,
-                            currentWindowLabel,
-                            isCompactPreviewOnTop: false
-                        });
-                        setContextMenuState(point);
-                    });
+                const input = { clientX: e.clientX, clientY: e.clientY, anchorRect, viewport,
+                    currentWindowLabel: windowLabelRef.current };
+                const initial = resolveContextMenuPoint({ ...input, isCompactPreviewOnTop: false });
+                setContextMenuState(initial);
+                void invoke<boolean>("is_window_topmost", { label: COMPACT_PREVIEW_LABEL }).then(onTop => {
+                    if (onTop && currentMenu.current === initial) {
+                        setContextMenuState(resolveContextMenuPoint({ ...input, isCompactPreviewOnTop: true }));
+                    }
+                }).catch(() => undefined);
             }}
             onMouseEnter={trackHover}
             onMouseMove={trackHover}

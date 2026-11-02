@@ -1,7 +1,14 @@
 //! Build a display copy of styled clipboard HTML without loading external resources.
 use cssparser::{AtRuleParser, ParseError, Parser, ParserInput, ParserState, QualifiedRuleParser, StyleSheetParser, Token};
-use dom_query::{Document, NodeId};
-use std::collections::HashMap;
+use dom_query::{Document, NodeData, NodeId, NodeRef};
+use std::{collections::HashMap, rc::Rc};
+
+const SHEET_INPUT_LIMIT: usize = 512 * 1024;
+const DECLARATION_LIMIT: usize = 16 * 1024;
+const RULE_STYLE_LIMIT: usize = 64 * 1024;
+const SELECTOR_LIMIT: usize = 256;
+const MATCH_WORK_LIMIT: usize = 1024 * 1024;
+const OUTPUT_STYLE_LIMIT: usize = 4 * 1024 * 1024;
 
 fn formatting_property(name: &str) -> bool {
     matches!(name, "color" | "background" | "background-color" | "font" | "font-family" | "font-size"
@@ -34,7 +41,7 @@ fn formatting_value<'i>(input: &mut Parser<'i, '_>, depth: u8) -> Result<(), Par
     Ok(())
 }
 
-fn declarations(input: &mut Parser<'_, '_>) -> String {
+fn declarations(input: &mut Parser<'_, '_>, budget: usize) -> String {
     let mut output = String::new();
     while !input.is_exhausted() {
         let result = input.parse_until_before(cssparser::Delimiter::Semicolon, |p| {
@@ -43,9 +50,17 @@ fn declarations(input: &mut Parser<'_, '_>) -> String {
             p.expect_colon()?;
             let start = p.position();
             formatting_value(p, 0)?;
-            Ok(format!("{name}:{};", p.slice_from(start).trim()))
+            let value = p.slice_from(start).trim();
+            let bytes = name.len() + value.len() + 2;
+            if bytes > DECLARATION_LIMIT || bytes > budget - output.len() { return Err(p.new_custom_error(())); }
+            Ok((name, value))
         });
-        if let Ok(css) = result { output.push_str(&css); }
+        if let Ok((name, value)) = result {
+            output.push_str(&name);
+            output.push(':');
+            output.push_str(value);
+            output.push(';');
+        }
         let _ = input.expect_semicolon();
     }
     output
@@ -60,42 +75,77 @@ impl<'i> QualifiedRuleParser<'i> for Sheet {
     fn parse_prelude<'t>(&mut self, p: &mut Parser<'i, 't>) -> Result<String, ParseError<'i, ()>> {
         let start = p.position();
         p.expect_no_error_token()?;
-        Ok(p.slice_from(start).trim().to_owned())
+        let prelude = p.slice_from(start).trim();
+        if prelude.len() > DECLARATION_LIMIT { return Err(p.new_custom_error(())); }
+        Ok(prelude.to_owned())
     }
     fn parse_block<'t>(&mut self, selector: String, _: &ParserState, p: &mut Parser<'i, 't>) -> Result<Self::QualifiedRule, ParseError<'i, ()>> {
-        Ok((selector, declarations(p)))
+        Ok((selector, declarations(p, RULE_STYLE_LIMIT)))
     }
 }
 
-// Resolve ordinary document styles within this fragment only. Original selector names never enter the UI.
-fn sheet_styles(doc: &Document) -> HashMap<NodeId, String> {
+// Read raw style text only when all its parts fit. Html5ever represents style contents as text nodes.
+fn sheet_text(node: &NodeRef<'_>, remaining: usize) -> Option<String> {
+    let mut text = String::new();
+    for child in node.children_it(false) {
+        let fits = child.query_or(true, |child| {
+            if let NodeData::Text { contents } = &child.data {
+                if contents.len() > remaining - text.len() { return false; }
+                text.push_str(contents);
+            }
+            true
+        });
+        if !fits { return None; }
+    }
+    Some(text)
+}
+
+struct Rule {
+    specificity: (usize, usize, usize),
+    selector: String,
+    style: Rc<String>,
+}
+
+fn collect_rules(doc: &Document) -> Vec<Rule> {
     let mut rules = Vec::new();
+    let mut remaining = SHEET_INPUT_LIMIT;
     for sheet in doc.select("style").nodes() {
-        let text = sheet.text();
+        let Some(text) = sheet_text(sheet, remaining) else { continue; };
+        remaining -= text.len();
         let mut source = ParserInput::new(&text);
         let mut parser = Parser::new(&mut source);
         for (selectors, css) in StyleSheetParser::new(&mut parser, &mut Sheet).flatten() {
             if css.is_empty() { continue; }
+            let style = Rc::new(css);
             for selector in selectors.split(',').map(str::trim) {
-                if rules.len() >= 256 { break; }
                 if selector.is_empty() || selector.len() > 256 || !selector.bytes().all(|c| c.is_ascii_alphanumeric()
                     || b".#*_->+~ ".contains(&c)) { continue; }
                 let ids = selector.matches('#').count();
                 let classes = selector.matches('.').count();
                 let tags = selector.split([' ', '>', '+', '~']).filter(|token| token.starts_with(|c: char| c.is_ascii_alphabetic())).count();
-                rules.push(((ids, classes, tags), selector.to_owned(), css.clone()));
+                rules.push(Rule { specificity: (ids, classes, tags), selector: selector.to_owned(), style: Rc::clone(&style) });
+                if rules.len() == SELECTOR_LIMIT { return rules; }
             }
         }
     }
-    rules.sort_by_key(|(specificity, _, _)| *specificity);
+    rules
+}
+
+// Resolve ordinary document styles within this fragment only. Original selector names never enter the UI.
+fn sheet_styles(doc: &Document) -> HashMap<NodeId, String> {
+    let mut rules = collect_rules(doc);
+    if rules.is_empty() { return HashMap::new(); }
+    let nodes = doc.html_root().descendants_it().take(MATCH_WORK_LIMIT + 1).count().max(1);
+    rules.sort_by_key(|rule| rule.specificity);
     let mut result = HashMap::<NodeId, String>::new();
     let mut bytes = 0;
-    for (_, selector, css) in rules {
-        if let Some(matches) = doc.try_select(&selector) {
+    for rule in rules.iter().take(MATCH_WORK_LIMIT / nodes) {
+        let css = rule.style.as_str();
+        if let Some(matches) = doc.try_select(&rule.selector) {
             for node in matches.nodes() {
                 bytes += css.len();
-                if bytes > 4 * 1024 * 1024 { return result; }
-                result.entry(node.id).or_default().push_str(&css);
+                if bytes > OUTPUT_STYLE_LIMIT { return result; }
+                result.entry(node.id).or_default().push_str(css);
             }
         }
     }
@@ -135,6 +185,7 @@ pub(crate) fn project(html: &str, maximum: Option<u32>) -> Option<String> {
     };
     doc.select("script,iframe,frame,object,embed,svg,math,template,noscript,textarea,link,base,meta").remove();
     let mut styles = sheet_styles(&doc);
+    let mut remaining_style = OUTPUT_STYLE_LIMIT - styles.values().map(String::len).sum::<usize>();
     doc.select("style").remove();
     let body = doc.select_single("body");
     let body = body.nodes().first()?;
@@ -143,9 +194,11 @@ pub(crate) fn project(html: &str, maximum: Option<u32>) -> Option<String> {
         if node.is_comment() { node.remove_from_parent(); continue; }
         let Some(name) = node.node_name() else { continue; };
         let mut style = styles.remove(&node.id).unwrap_or_default();
-        if let Some(inline) = node.attr("style") {
+        if let Some(inline) = node.attr("style").filter(|v| v.len() <= RULE_STYLE_LIMIT && remaining_style > 0) {
             let mut input = ParserInput::new(&inline);
-            style.push_str(&declarations(&mut Parser::new(&mut input)));
+            let css = declarations(&mut Parser::new(&mut input), RULE_STYLE_LIMIT.min(remaining_style));
+            remaining_style -= css.len();
+            style.push_str(&css);
         }
         let image = if name.as_ref() == "img" {
             ["src", "data-src", "data-original", "data-lazy-src"].into_iter()
@@ -178,6 +231,21 @@ pub(crate) fn project(html: &str, maximum: Option<u32>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unmatched_selectors_share_one_style_and_oversize_values_never_enter_rules() {
+        let selectors = (0..256).map(|i| format!(".absent{i}")).collect::<Vec<_>>().join(",");
+        let input = |length| Document::from(format!("<style>{selectors}{{font-family:'{}';color:red}}</style><b>sample</b>", "a".repeat(length)));
+        let doc = input(8000);
+        let rules = collect_rules(&doc);
+        assert_eq!(rules.len(), 256);
+        assert!(rules.iter().all(|rule| Rc::ptr_eq(&rules[0].style, &rule.style)));
+        assert!(sheet_styles(&doc).is_empty());
+        let rules = collect_rules(&input(256 * 1024));
+        assert_eq!(rules.len(), 256);
+        assert!(rules.iter().all(|rule| rule.style.as_str() == "color:red;"));
+        assert!(collect_rules(&input(8 * 1024 * 1024)).is_empty());
+    }
 
     #[test]
     fn spreadsheet_cells_keep_the_table_style_span_and_alignment() {
