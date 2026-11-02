@@ -327,3 +327,14 @@ An owned Surface UIA request with no matching visible original window reports a 
 error before creating a UIA reader process. It uses the same single window observation
 and owner scope. This diagnostic does not explain or repair a Surface helper's earlier
 natural exit; such an exit and its original process evidence remain separate failures.
+
+The Native target opens an original candidate with `0x101001`: synchronization,
+limited query and termination rights. It does not request `PROCESS_VM_READ` because
+it never reads remote process memory; on supported modern Windows,
+[GetProcessMemoryInfo](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-getprocessmemoryinfo)
+accepts a query or limited-query handle. The documentation's additional VM-read
+requirement applies to Windows XP and Server 2003. Identity queries, resource
+measurements, ownership certification, single-call API failure and cleanup rules
+retain their original behavior. This removes an unused requested right; it does
+not establish which right or process condition caused the earlier PID 6704 denial,
+repair a heap-corruption root cause or make any earlier failed cohort acceptable.

@@ -881,18 +881,68 @@ class SnapshotEnumerationTests(unittest.TestCase):
 
 
 class CleanupTests(unittest.TestCase):
-    def test_open_failure_reports_pid_access_error_and_phase_without_retry(self):
+    def test_process_opens_only_required_rights_and_reuses_the_original_handle(self):
+        class Memory(ctypes.Structure):
+            _fields_ = [('cb', ctypes.c_ulong), ('WorkingSetSize', ctypes.c_size_t), ('PrivateUsage', ctypes.c_size_t)]
         native = TARGET.Native.__new__(TARGET.Native)
-        native.handles, calls = {}, []
-        native.kernel = SimpleNamespace(OpenProcess=lambda *args: calls.append(args) or 0)
-        with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
-            with self.assertRaisesRegex(RuntimeError, 'Cannot retain') as caught:
-                native.process(8123, phase='tree')
-        self.assertIn('"pid": 8123', str(caught.exception))
-        self.assertIn('"winerror": 5', str(caught.exception))
-        self.assertIn('"phase": "tree"', str(caught.exception))
-        self.assertEqual(calls, [(0x101011, False, 8123)])
-        self.assertEqual(native.handles, {})
+        native.Memory, native.handles, native.identities, native.validated_owned_handles = Memory, {}, {}, {}
+        calls = []
+        def opened(access, inherit, pid):
+            calls.append((access, inherit, pid))
+            return 500 if access == 0x101001 else 0
+        def times(handle, created, exited, kernel, user):
+            self.assertEqual(handle, 500)
+            created._obj.dwLowDateTime = 123
+            kernel._obj.dwLowDateTime = 456
+            user._obj.dwLowDateTime = 789
+            return True
+        def code(handle, result):
+            self.assertEqual(handle, 500)
+            result._obj.value = 259
+            return True
+        def image(handle, flags, text, size):
+            self.assertEqual((handle, flags), (500, 0))
+            text.value = 'synthetic-original-image'
+            return True
+        def memory(handle, result, size):
+            self.assertEqual(handle, 500)
+            result._obj.WorkingSetSize, result._obj.PrivateUsage = 1000, 2000
+            return True
+        native.kernel = SimpleNamespace(OpenProcess=opened, GetProcessTimes=times,
+            GetExitCodeProcess=code, QueryFullProcessImageNameW=image)
+        native.psapi = SimpleNamespace(GetProcessMemoryInfo=memory)
+        first = native.process(8123, phase='tree')
+        self.assertEqual(native.process(8123, phase='authenticated-tree'), first)
+        self.assertEqual(calls, [(0x101001, False, 8123)])
+        self.assertEqual(native.handles, {8123: 500})
+        self.assertEqual(native.identities[8123], {'creation_time_100ns': '123', 'image': 'synthetic-original-image'})
+        self.assertEqual(native.validated_owned_handles, {})
+        self.assertTrue(first['original_handle_retained'])
+        self.assertEqual(first['cpu_kernel_100ns'], 456)
+        self.assertEqual(first['cpu_user_100ns'], 789)
+        self.assertEqual((first['working_set_bytes'], first['private_commit_bytes']), (1000, 2000))
+
+    def test_open_failure_reports_pid_access_error_and_phase_without_retry(self):
+        for denied in (0x00100000, 0x1000, 1):
+            with self.subTest(denied_required_right=hex(denied)):
+                native = TARGET.Native.__new__(TARGET.Native)
+                native.handles, native.identities, native.validated_owned_handles, calls = {}, {}, {}, []
+                def opened(access, inherit, pid):
+                    calls.append((access, inherit, pid))
+                    return 0 if access & denied else 500
+                native.kernel = SimpleNamespace(OpenProcess=opened)
+                with patch.object(TARGET.ctypes, 'get_last_error', return_value=5, create=True):
+                    with self.assertRaisesRegex(RuntimeError, 'Cannot retain') as caught:
+                        native.process(8123, phase='tree')
+                self.assertIn('"pid": 8123', str(caught.exception))
+                self.assertIn('"winerror": 5', str(caught.exception))
+                self.assertIn('"phase": "tree"', str(caught.exception))
+                self.assertIn('"requested_access": "0x101001"', str(caught.exception))
+                self.assertIn('"had_retained_handle": false', str(caught.exception))
+                self.assertEqual(calls, [(0x101001, False, 8123)])
+                self.assertEqual(native.handles, {})
+                self.assertEqual(native.identities, {})
+                self.assertEqual(native.validated_owned_handles, {})
 
     def test_failed_memory_read_is_null_with_its_original_error(self):
         class Memory(ctypes.Structure):

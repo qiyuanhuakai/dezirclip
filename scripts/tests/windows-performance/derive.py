@@ -9,7 +9,7 @@ import re
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 FUNCTIONAL_CONTROLLER_BASE_COMMIT = 'c5083f9849d9543f81d71f0b57ce49522a51e9e4'
-REVIEWED_TARGET_LF_SHA256 = '5f51c6a10471b4257e207112669f966f6c755d43f024f4b347a2071354afc55e'
+REVIEWED_TARGET_LF_SHA256 = '96ce6cd0634bb7f512b3ab6850183d8e124944c5a1dbce4ebe055f308dbc8a84'
 REVIEWED_CONTROLLER_LF_SHA256 = 'cb43b44d4278d18b6d3a5b9ea704a3b945863859694fb13759de41e22efc1313'
 REVIEWED_LIFECYCLE_LF_SHA256 = '88a38835a31e00e5f767b3bc928ca8cd53a0c7f5d9d2cd4cdad6568dda7f3a15'
 
@@ -233,7 +233,7 @@ def generate(repository, destination):
                      'scope': 'Prior reference only; the current controller has additional bounded failure cleanup.'}},
              'functional_lifecycle_provenance': {'reviewed_lf_sha256': REVIEWED_LIFECYCLE_LF_SHA256},
              'functional_target_provenance': {'reviewed_lf_sha256': REVIEWED_TARGET_LF_SHA256,
-                   'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification-and-explicit-no-visible-uia-window-error',
+                   'diagnostic_delta': 'bounded-key-state-owned-message-timing-predeclared-click-planning-generation-verified-handle-cleanup-lifetime-owned-closure-certified-output-failure-only-parent-diagnostics-checked-snapshot-eof-and-bounded-pre-root-negative-classification-and-explicit-no-visible-uia-window-error-and-minimal-process-access-rights',
                   'ownership_scope_audit': {'candidate_pid_limit': 2048, 'excluded_identity_limit': 64,
                       'close_attempt_limit': 65536, 'per_scope_and_aggregate_json_byte_limit': 256 * 1024,
                       'creation_time_ordering': 'UTC FILETIME under the existing nondecreasing authenticated parent-chain rule; not a monotonic clock or proof that the host clock was not adjusted',
