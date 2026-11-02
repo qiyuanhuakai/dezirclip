@@ -2,13 +2,13 @@
 
 ## 统一版本管理
 
-发布前在仓库根目录运行 `pnpm run release:set-version v0.2.0-alpha.3`（替换为本次版本）。继续使用既有脚本统一更新 `package.json`、Tauri 配置、Cargo workspace 版本及 `Cargo.lock` 中全部本地成员；不逐个编辑版本，也不重写第三方依赖的锁定版本。脚本先读取全部目标并校验所需版本字段及成员清单，再写入改动；JSON 损坏、版本字段不完整或缺少成员时，在写入前失败。同一版本重复执行不会改动原文件格式。它检查版本管理所需的 TOML 结构，完整 Cargo 配置仍由 Cargo 检查。
+发布前在仓库根目录运行 `pnpm run release:set-version v0.2.0-alpha.6`（替换为本次版本）。继续使用既有脚本统一更新 `package.json`、Tauri 配置、Cargo workspace 版本及 `Cargo.lock` 中全部本地成员；不逐个编辑版本，也不重写第三方依赖的锁定版本。脚本先读取全部目标并校验所需版本字段及成员清单，再写入改动；JSON 损坏、版本字段不完整或缺少成员时，在写入前失败。同一版本重复执行不会改动原文件格式。它检查版本管理所需的 TOML 结构，完整 Cargo 配置仍由 Cargo 检查。
 
-`pnpm run release:set-version --check` 只读核对所有目标是否与 `package.json` 一致；`pnpm run release:set-version --check v0.2.0-alpha.3` 进一步核对指定版本或标签。普通 CI 执行前者，正式发布创建草稿前执行后者，版本漏改或 tag 不匹配时直接失败。独立 CLI 等只有 Node 的构建环境直接调用同一个 `scripts/set-release-version.mjs`。
+`pnpm run release:set-version --check` 只读核对所有目标是否与 `package.json` 一致；`pnpm run release:set-version --check v0.2.0-alpha.6` 进一步核对指定版本或标签。普通 CI 执行前者，正式发布创建草稿前执行后者，版本漏改或 tag 不匹配时直接失败。独立 CLI 等只有 Node 的构建环境直接调用同一个 `scripts/set-release-version.mjs`。
 
 身份采集、Windows 升级、AppImage 候选和 helper 均从同一份受版本控制的 `package.json` 获取候选版本。旧版升级基线的包哈希、源码和 schema 是独立的历史身份约束，不随版本脚本重写；增加新基线仍须绑定真实已发布制品。
 
-桌面更新使用官方 Tauri 2 Updater。v0.2 的首批原位更新制品仅包含 Windows NSIS 和 Linux AppImage，支持 x86_64 与 aarch64。`dzc-core`、独立 CLI、MCP 和捕获服务不因此联网，也不增加后台进程。P1-A 提供后端与发布门槛，P1-C 在“常规设置 → 软件更新”接入自动检查偏好、通道、手动检查及确认安装界面。
+桌面更新使用官方 Tauri 2 Updater。v0.2 的首批原位更新制品仅包含 Windows NSIS 和 Linux AppImage，支持 x86_64 与 aarch64。`dzc-core`、独立 CLI、MCP 和捕获服务不因此联网，也不增加后台进程。P1-A 提供后端与发布门槛，P1-C 在“设置 → 关于 → 软件更新”接入自动检查偏好、通道、手动检查及确认安装界面。
 
 ## 组件构建身份与 Host 生命周期
 
@@ -89,26 +89,32 @@ Stable 只读取 stable.json，排除全部预发布。Preview 分别读取两�
 
 使用 CLI 2.12.3 生成带 authenticated `version:` trusted comment 的官方签名，Updater 2.14 设置 `requireSignedVersion: true`。签名覆盖制品及版本；普通 SHA-256 文件只能用于传输校验，不能替代签名。没有版本的旧签名、元数据伪造版本配旧包、制品正文或签名被篡改时均拒绝安装。
 
+2026-11-02 按用户要求，将正常版本发布与对应自动更新通道同步。原先“公开后等待四份人工验收报告再推进通道”的规则保留为历史及显式 `promote` 入口，不再阻塞正常发行。新的同步入口使用实际 Release 门禁及其原始升级汇总，不将尚未执行的 AppImage 更新、正式性能或 MyGo Phase6 检查标成通过。
+
 现有 Release 工作流按以下顺序运行：
 
 1. 检查公钥、Secrets、固定 endpoint 与版本签名配置，并运行发布逻辑回归。
 2. 创建 draft release；四平台桌面包、四平台独立 CLI 和 Flatpak 均上传至 draft。
-3. 所有构建任务成功后，下载四个 NSIS/AppImage 制品及其 `.sig`，验证存在性、长度、Ed25519/BLAKE2b 签名、签名版本及文件名；发布前再次确认资产身份未变化。
-4. 发布版本 release，确认其已公开。
-5. 保持更新索引不变，完成公开资产、AppImage 两旧版更新、Windows 升级及正式性能验收。维护者据实际结果整理四份 JSON 通过报告及一个验收清单，均绑定版本、来源提交、release ID 和八个安装包/签名资产身份及 SHA-256。清单中的四个 `gates` 使用 `{ "file": "报告名.json", "sha256": "报告原始字节的64位小写哈希" }`，不接受只有哈希字符串的声明。
-6. 在相同可信 tag 的 checkout 内运行 `node scripts/updater-release.mjs promote v<version> ACCEPTANCE.json`。脚本先从验收清单所在目录读取四份真实报告，核对哈希、通过状态、报告种类、版本、来源、release ID、八项资产及非空且全部通过的 `checks`；再重新下载并验签，核对公开资产和来源仍一致，才比较当前通道版本并在严格较新时推进对应索引。索引先以版本名上传并回读核对内容，再重命名为活动索引。旧活动索引保留为 `*-previous-<asset-id>.json` 供恢复。
+3. 完成四平台最终包的十四份制品、三十四个 Desktop/CLI/Service 角色身份门禁，以及三个真实 Windows 签名升级场景和两个汇总任务。
+4. `publish-and-sync` 查询本仓库原始 tag push 的 Release 运行及指定 attempt 的全部任务，核对工作流、tag、源码和门禁结果。当前发布任务可以尚在执行，其余发行任务必须成功；独立的手动补同步任务在 tag 发布中按设计跳过。读取同一次运行封存的 Windows 升级汇总，绑定版本、源码、release ID 和八个安装包/签名的资产身份及 SHA-256。
+5. 重新下载四个 NSIS/AppImage 制品及其 `.sig`，验证长度、Ed25519/BLAKE2b 签名、签名版本及文件名，并与原汇总中的八项资产逐一匹配；写入前复核来源、运行及资产未变化。公开版本 release，确认其已公开。
+6. 在同一发布任务内推进对应索引：预发布只写 `preview.json`，正式版只写 `stable.json`。索引先以版本名上传并回读核对，再重命名为活动索引并再次回读；旧活动索引保留为 `*-previous-<asset-id>.json`。较新通道不会回退；相同版本须与本次完整索引内容一致才算已同步。通道失败会令发行任务失败，不能以安装包已公开冒充发布流程全部成功。
+
+已公开版本补同步无需重建安装包或移动 tag。在 Actions 的 **Release** 工作流选择 **Run workflow**，分支使用 `master`，`mode` 选择 `sync-published-channel`，填写版本 `tag`、原始 Release 的 `release-run-id` 与 `release-run-attempt`。该入口下载原运行的升级汇总，并执行 `sync-published`；它要求原运行已结束且版本已公开。原运行可以完整成功，或仅最后的发布/通道同步任务失败；构建、原生验收和汇总任务仍须全部成功，不接受取消或其他任务失败。它与正常发布使用相同串行锁和验签/防回退逻辑，能够恢复“安装包已公开、索引写入失败”的情况。alpha.6 对应 `v0.2.0-alpha.6`、`41393472118`、`1`。本次补同步只修改通道资产，不替换任何已发布安装包。
+
+旧 `node scripts/updater-release.mjs promote v<version> ACCEPTANCE.json` 仍要求四份真实 `public_assets`、`appimage_updates`、`windows_upgrade`、`performance` 报告及验收清单。其版本、来源提交、release ID 和八项签名资产必须匹配。每个 `gates` 仍使用 `{ "file": "报告名.json", "sha256": "报告原始字节的64位小写哈希" }`，不接受只有哈希字符串的声明；此兼容入口不自动生成验收结论。
 
 验收清单及每份报告必须是非空、最多 8 MiB 的普通 JSON 文件，禁止符号链接。报告只允许使用与清单同目录的 ASCII 文件名（字母或数字开头，其余为字母、数字、点、下划线或连字符，以 `.json` 结尾）；不接受目录、绝对路径、盘符、反斜线或文件流名称。哈希和 JSON 校验读取同一份有界字节，缺文件、篡改、失败、未完成或身份不匹配时均不写通道。
 
 报告由可信维护者依据实际验收输出整理，脚本校验文件及发布身份的一致性，不代替原生测试或证明报告制作过程。维护者须保留原始子报告与哈希，将已运行的具体检查列入 `checks`，不得把计划、旧源码的功能检查或未采样的性能检查填写为通过。现有原生报告的 `result` 等字段需按实际结果汇总为此发布格式，不能仅添加一个成功标记。完整格式和四项门槛见 [alpha.2 发布验收](specs/v0.2-alpha2-release.md)。
 
-整个 release 工作流串行，禁止取消正在运行的发布，避免 Stable/Preview 互相覆盖或旧版本后完成导致回退。签名缺失、缺包、验签失败及构建失败均保持 draft，不推进通道。已公开且有完整已验签制品的旧版本允许保留发布，但不覆盖较新通道。
+整个 release 工作流共用串行锁，配置 `queue: max` 保留排队任务且禁止取消正在运行的发布，避免补同步挤掉排队发行，或 Stable/Preview 互相覆盖。版本比较仍拒绝旧版本回退。签名缺失、缺包、验签失败及构建失败均保持 draft，不推进通道。已公开且有完整已验签制品的旧版本允许保留发布，但不覆盖较新通道。队列配置遵循 [GitHub Actions 并发规则](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
 Flatpak 构建用 deb 暂存根目录时显式关闭 updater artifact 生成；Flatpak 走包管理方式，不获取桌面更新签名私钥。正式桌面发布任务的 deb/rpm 可能额外产生签名，但它们不进入应用内更新索引。
 
 GitHub Release 资产重命名不提供事务：替换活动索引时可能短暂出现 404。脚本先保留旧资产，重命名失败会检查操作是否其实成功，并尝试恢复旧名称；断网或 GitHub 故障可能需要维护者恢复活动资产名。这影响索引可用性，不绕过客户端签名/版本检查。首次通道 release 也先建 draft，索引上传核验后才公开。遗留 draft channel release 会中止自动操作，维护者应检查后恢复，不自动猜测未完成状态。
 
-发布工作流的 `publish-only` 只公开经过验签的版本，不推进通道。如果版本已公开但通道推广失败，可在相同可信 tag 的 checkout 内使用仍匹配公开资产的验收文件重新运行 `promote`；脚本重新验证公开制品并拒绝降级。资产或来源发生变化时，必须重新验收。验收字段见 [alpha.2 发布验收](specs/v0.2-alpha2-release.md)。普通发布工作流拒绝重建已公开的同 tag，避免替换已安装版本的制品。
+`publish-only` 保留原语义：只公开经过验签的版本，不推进通道；仅固定 alpha.2 的历史恢复继续使用此路径。正常发布改用 `publish-and-sync`，已公开版本采用 `sync-published-channel` 补同步。资产或来源发生变化时拒绝复用原验收，不重建已公开的同 tag。旧四报告的字段仍见 [alpha.2 发布验收](specs/v0.2-alpha2-release.md)。
 
 ## 验证命令与边界
 

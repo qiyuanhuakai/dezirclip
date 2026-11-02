@@ -237,6 +237,144 @@ function githubClient(transport) {
   return { releaseByTag, downloadAsset, moveAsset, releaseCommit };
 }
 
+const publisherJobs = [
+  'Verify signed artifacts and publish before public acceptance',
+  'Verify signed artifacts, publish and synchronize update channel',
+];
+const releaseGateJobs = [
+  'Collect actual final package identities / Bind final source and all fourteen assets',
+  'Verify actual signed Windows upgrades / Bind all actual final installer upgrades',
+];
+const nativeReleaseJobs = [
+  'Create GitHub release', 'Publish verified standalone archives',
+  ...Object.keys(expectedPlatforms).map(platform => `Tauri release (${platform})`),
+  ...Object.keys(expectedPlatforms).map(platform => `Build compatible standalone CLI / Standalone (${platform})`),
+  ...['linux-x86_64', 'linux-aarch64'].map(platform => `Verified Flatpak release / Flatpak (${platform})`),
+  'Verify actual signed Windows upgrades / Verify final signed upgrade inputs',
+  ...Object.keys(expectedPlatforms).map(platform => `Collect actual final package identities / Release identities (${platform})`),
+  ...['LegacyToAlpha2', 'PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease']
+    .map(scenario => `Verify actual signed Windows upgrades / Final published upgrade (${scenario})`),
+];
+
+function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = false) {
+  if (!/^[1-9]\d*$/.test(String(runId)) || !Number.isSafeInteger(Number(runId))
+      || !/^[1-9]\d*$/.test(String(runAttempt)) || !Number.isSafeInteger(Number(runAttempt))) {
+    throw new Error('Synchronization requires an exact Release run and attempt');
+  }
+  const api = route => JSON.parse(transport(['api', `repos/${repository}/${route}`]));
+  const workflow = api('actions/workflows/release.yml');
+  const run = api(`actions/runs/${runId}/attempts/${runAttempt}`);
+  const latest = api(`actions/runs/${runId}`);
+  const validRun = value => value?.id === Number(runId) && value.run_attempt === Number(runAttempt)
+    && value.workflow_id === workflow.id && value.path === '.github/workflows/release.yml'
+    && value.event === 'push' && value.head_branch === tag && value.head_sha === commit
+    && value.repository?.full_name === repository && value.head_repository?.full_name === repository
+    && ((value.status === 'in_progress' && value.conclusion === null)
+      || (value.status === 'completed' && (value.conclusion === 'success' || (repair && value.conclusion === 'failure'))));
+  if (!Number.isSafeInteger(workflow?.id) || workflow.id <= 0 || workflow.path !== '.github/workflows/release.yml'
+      || workflow.state !== 'active' || !validRun(run) || !validRun(latest)
+      || latest.status !== run.status || latest.conclusion !== run.conclusion) {
+    throw new Error('Release workflow run/source/attempt is not eligible for synchronization');
+  }
+  const pages = JSON.parse(transport(['api',
+    `repos/${repository}/actions/runs/${runId}/attempts/${runAttempt}/jobs?per_page=100`, '--paginate', '--slurp']));
+  const count = pages?.[0]?.total_count;
+  if (!Array.isArray(pages) || !pages.length || !Number.isSafeInteger(count) || count <= 0
+      || pages.some(page => page.total_count !== count || !Array.isArray(page.jobs))) {
+    throw new Error('Release attempt job listing is incomplete');
+  }
+  const jobs = pages.flatMap(page => page.jobs);
+  if (jobs.length !== count || new Set(jobs.map(job => job.id)).size !== count
+      || new Set(jobs.map(job => job.name)).size !== count
+      || jobs.some(job => !Number.isSafeInteger(job.id) || job.id <= 0 || typeof job.name !== 'string'
+        || !job.name.trim() || job.run_id !== Number(runId) || job.run_attempt !== Number(runAttempt)
+        || job.head_sha !== commit)) {
+    throw new Error('Release attempt jobs have missing or conflicting identities');
+  }
+  const publishers = jobs.filter(job => publisherJobs.includes(job.name));
+  if (publishers.length !== 1 || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
+      && !(job.name === 'Synchronize an already published update channel'
+        && job.status === 'completed' && job.conclusion === 'skipped')
+      && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
+      && !(job === publishers[0] && job.status === 'in_progress' && job.conclusion === null))
+      || (run.status === 'completed' && publishers[0].status !== 'completed')
+      || (run.conclusion === 'failure' && publishers[0].conclusion !== 'failure')
+      || (run.conclusion === 'success' && publishers[0].conclusion !== 'success')
+      || [...releaseGateJobs, ...nativeReleaseJobs].some(name => !jobs.some(job => job.name === name))) {
+    throw new Error('Release native identity/upgrade gates or another job have not succeeded');
+  }
+  const identities = Object.keys(expectedPlatforms).map(platform => jobs.find(job =>
+    job.name === `Collect actual final package identities / Release identities (${platform})`));
+  const times = identities.map(job => Date.parse(job.started_at));
+  if (identities.some(job => typeof job.started_at !== 'string') || times.some(time => !Number.isFinite(time))) {
+    throw new Error('Native release identity start times are missing');
+  }
+  return { run_id: Number(runId), run_attempt: Number(runAttempt), workflow_id: workflow.id,
+    status: run.status, conclusion: run.conclusion, asset_cutoff: Math.min(...times),
+    jobs: jobs.map(job => ({ id: job.id, name: job.name, status: job.status, conclusion: job.conclusion,
+      started_at: job.started_at })).sort((a, b) => a.id - b.id) };
+}
+
+function verifiedReleaseAssets(release, version, cutoff) {
+  const parsed = parseVersion(version), value = parsed.value;
+  if (parsed.pre.length && !/^(alpha|beta|rc)\.(0|[1-9]\d*)$/.test(parsed.pre.join('.'))) {
+    throw new Error('Unsupported RPM release version');
+  }
+  const rpmVersion = parsed.numbers.join('.'), rpmRelease = parsed.pre.length ? `0.${parsed.pre.join('.')}` : '1';
+  const updater = Object.values(expectedPlatforms).map(suffix => `DezirClip_${value}_${suffix}`);
+  const cli = Object.keys(expectedPlatforms).map(platform => `dzc-${value}-${platform}.${platform.startsWith('windows-') ? 'zip' : 'tar.gz'}`);
+  const deb = ['amd64', 'arm64'].map(arch => `DezirClip_${value}_${arch}.deb`);
+  const names = [...updater.flatMap(name => [name, `${name}.sig`]), ...cli.flatMap(name => [name, `${name}.sha256`]),
+    ...deb.flatMap(name => [name, `${name}.sig`]),
+    ...['x86_64', 'aarch64'].map(arch => `DezirClip-${rpmVersion}-${rpmRelease}.${arch}.rpm`),
+    ...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`)];
+  const assets = release.assets;
+  if (!Array.isArray(assets) || assets.length !== names.length || new Set(assets.map(asset => asset.id)).size !== names.length
+      || names.some(name => assets.filter(asset => asset.name === name).length !== 1)
+      || assets.some(asset => !Number.isSafeInteger(asset.id) || asset.id <= 0
+        || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.state !== 'uploaded'
+        || !/^sha256:[a-f0-9]{64}$/.test(asset.digest ?? '') || typeof asset.updated_at !== 'string'
+        || !Number.isFinite(Date.parse(asset.updated_at))
+        || Date.parse(asset.updated_at) > cutoff)) {
+    throw new Error('All 24 release assets must retain their pre-gate identities');
+  }
+  return JSON.stringify(assets.map(({ id, name, size, state, digest, updated_at }) =>
+    ({ id, name, size, state, digest, updated_at })).sort((a, b) => a.name.localeCompare(b.name)));
+}
+
+function sameManifest(value, expected) {
+  return value && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(Object.keys(expected).sort())
+    && value.version === expected.version && value.notes === expected.notes && value.platforms
+    && JSON.stringify(Object.keys(value.platforms).sort()) === JSON.stringify(Object.keys(expected.platforms).sort())
+    && Object.entries(expected.platforms).every(([platform, item]) => {
+      const actual = value.platforms[platform];
+      return actual && Object.keys(actual).sort().join(',') === 'signature,url'
+        && actual.url === item.url && actual.signature === item.signature;
+    });
+}
+
+function channelWriteIdentity(release) {
+  if (release === null) return null;
+  return { id: release.id, tag_name: release.tag_name, draft: release.draft, prerelease: release.prerelease,
+    assets: release.assets.map(({ id, name, size, state, digest, updated_at }) =>
+      ({ id, name, size, state, digest, updated_at })).sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+function verifiedUpgradeGate(evidence, receipt) {
+  const gate = evidence.value;
+  const names = ['LegacyToAlpha2', 'PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease'];
+  if (gate?.schema_version !== 1 || gate.kind !== 'windows_upgrade' || gate.status !== 'passed'
+      || gate.version !== receipt.version || gate.source_revision !== receipt.source_revision
+      || gate.release_id !== receipt.release_id || !/^[a-f0-9]{64}$/.test(gate.policy_sha256 ?? '')
+      || assetIdentity(gate.signed_assets) !== assetIdentity(receipt.signed_assets)
+      || !Array.isArray(gate.checks) || gate.checks.length !== names.length
+      || names.some(name => gate.checks.filter(check => check?.name === name).length !== 1)
+      || gate.checks.some(check => check.status !== 'passed' || !/^[a-f0-9]{64}$/.test(check.report_sha256 ?? '')
+        || !/^[a-f0-9]{64}$/.test(check.raw_native_sha256 ?? ''))) {
+    throw new Error('Windows upgrade gate does not bind the exact source, eight signed assets and three native upgrades');
+  }
+}
+
 function publication(mode, version, config, log, transport, bundle) {
   const client = githubClient(transport);
   const parsed = parseVersion(version);
@@ -247,17 +385,31 @@ function publication(mode, version, config, log, transport, bundle) {
     throw new Error('Release tag or prerelease flag differs from the signed version');
   }
   const commit = client.releaseCommit(tag);
+  const synchronize = mode === 'publish-and-sync' || mode === 'sync-published';
+  const run = synchronize ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, mode === 'sync-published') : null;
+  const releaseAssets = synchronize ? verifiedReleaseAssets(release, parsed.value, run.asset_cutoff) : null;
+  if (synchronize && typeof release.draft !== 'boolean') throw new Error('Release draft state is missing');
+  if (mode === 'sync-published' && (release.draft !== false || run.status !== 'completed')) {
+    throw new Error('Published-channel synchronization requires a public release and completed eligible original run');
+  }
   if (mode === 'promote' && release.draft) throw new Error('Promotion requires an already published release');
   const signedAssets = [];
   const manifest = makeManifest(parsed.value, release.assets, name => {
     const asset = release.assets.find(asset => asset.name === name);
     const bytes = client.downloadAsset(asset);
+    if (synchronize && (bytes.length !== asset.size
+        || `sha256:${createHash('sha256').update(bytes).digest('hex')}` !== asset.digest)) {
+      throw new Error('Downloaded signed asset differs from GitHub digest');
+    }
     signedAssets.push({ name, id: asset.id, size: asset.size, updated_at: asset.updated_at,
       sha256: createHash('sha256').update(bytes).digest('hex') });
     return bytes;
   }, config.plugins.updater.pubkey, release.body ?? '');
   const receipt = { schema_version: 1, version: parsed.value, source_revision: commit,
     release_id: release.id, signed_assets: signedAssets };
+  if (synchronize) verifiedUpgradeGate(bundle.upgradeEvidence, receipt);
+  const syncReceipt = synchronize ? { ...receipt, workflow: run,
+    windows_upgrade_gate_sha256: bundle.upgradeEvidence.sha256 } : null;
   if (mode === 'promote') {
     const acceptance = bundle?.acceptance;
     if (acceptance?.status !== 'passed' || acceptance.schema_version !== 1
@@ -268,17 +420,26 @@ function publication(mode, version, config, log, transport, bundle) {
       throw new Error('Promotion requires matching completed public acceptance evidence');
     }
   }
-  let channels = mode === 'promote' ? client.releaseByTag(channelTag, true) : null;
+  let channels = mode !== 'publish-only' ? client.releaseByTag(channelTag, true) : null;
   if (channels?.draft) throw new Error('Existing channel release is still a draft; inspect it before retrying');
+  if (synchronize && channels && channels.assets.filter(asset => asset.name === `${channel}.json`).length > 1) {
+    throw new Error('Updater channel contains duplicate active manifests');
+  }
   const old = channels?.assets.find(asset => asset.name === `${channel}.json`);
-  const current = old ? JSON.parse(client.downloadAsset(old).toString('utf8')) : null;
+  const currentBytes = old ? client.downloadAsset(old) : null;
+  const current = currentBytes ? JSON.parse(currentBytes.toString('utf8')) : null;
   if (current) {
     parseVersion(current.version);
     if (channel === 'stable' && parseVersion(current.version).pre.length) {
       throw new Error('Stable channel contains a prerelease');
     }
+    if (synchronize && compareVersions(current.version, parsed.value) === 0 && !sameManifest(current, manifest)) {
+      throw new Error('Equal-version channel manifest does not exactly match the verified release');
+    }
   }
   // Check asset identity again before making the verified release public.
+  const currentRun = synchronize
+    ? verifiedReleaseRun(transport, tag, commit, bundle.runId, bundle.runAttempt, mode === 'sync-published') : null;
   const latest = client.releaseByTag(tag);
   if (latest.id !== release.id || client.releaseCommit(tag) !== commit) throw new Error('Release source changed during verification');
   for (const asset of release.assets) {
@@ -287,17 +448,45 @@ function publication(mode, version, config, log, transport, bundle) {
       throw new Error('Release assets changed during verification');
     }
   }
+  if (synchronize) {
+    if (latest.tag_name !== tag || latest.prerelease !== release.prerelease || latest.body !== release.body
+        || verifiedReleaseAssets(latest, parsed.value, run.asset_cutoff) !== releaseAssets
+        || JSON.stringify(currentRun) !== JSON.stringify(run)) {
+      throw new Error('Release workflow gates or asset identities changed before publication');
+    }
+    if (readEvidenceJson(bundle.upgradePath).sha256 !== bundle.upgradeEvidence.sha256) {
+      throw new Error('Windows upgrade gate changed before publication');
+    }
+    const freshChannels = client.releaseByTag(channelTag, true);
+    if (JSON.stringify(channelWriteIdentity(freshChannels)) !== JSON.stringify(channelWriteIdentity(channels))) {
+      throw new Error('Updater channel changed before synchronization');
+    }
+  }
   if (release.draft) {
     transport(['release', 'edit', tag, '--repo', repository, '--draft=false',
       parsed.pre.length ? '--latest=false' : '--latest']);
   }
-  if (client.releaseByTag(tag).draft) throw new Error('Release has not been published');
+  const published = client.releaseByTag(tag);
+  if (published.draft) throw new Error('Release has not been published');
+  if (synchronize && (published.draft !== false || published.id !== release.id || published.tag_name !== tag
+      || published.prerelease !== release.prerelease || published.body !== release.body
+      || client.releaseCommit(tag) !== commit || verifiedReleaseAssets(published, parsed.value, run.asset_cutoff) !== releaseAssets)) {
+    throw new Error('Published release readback differs from the verified release');
+  }
   if (mode === 'publish-only') {
     log(`Published ${tag}; updater channels await separate public acceptance.`);
     return { ...receipt, status: 'awaiting_acceptance' };
   }
   if (!shouldPromote(current?.version, parsed.value)) {
     log(`Published ${tag}; ${channel} already points to an equal or newer version.`);
+    if (synchronize) {
+      const active = client.releaseByTag(channelTag).assets.filter(asset => asset.name === `${channel}.json`);
+      if (active.length !== 1 || active[0].id !== old.id || !client.downloadAsset(active[0]).equals(currentBytes)) {
+        throw new Error('Existing updater channel readback differs');
+      }
+      return { ...syncReceipt, status: compareVersions(current.version, parsed.value) === 0
+        ? 'already_synchronized' : 'newer_channel_preserved', channel, channel_version: current.version };
+    }
     return;
   }
   const staging = mkdtempSync(join(tmpdir(), 'dezirclip-channel-'));
@@ -317,8 +506,19 @@ function publication(mode, version, config, log, transport, bundle) {
     channels = client.releaseByTag(channelTag);
     const staged = channels.assets.find(asset => asset.name === stagedName);
     if (!staged || !client.downloadAsset(staged).equals(contents)) throw new Error('Uploaded channel verification failed');
+    if (synchronize) {
+      const active = channels.assets.filter(asset => asset.name === `${channel}.json`);
+      if (active.length !== Number(Boolean(old)) || (old && (active[0].id !== old.id
+          || active[0].size !== old.size || active[0].updated_at !== old.updated_at
+          || !client.downloadAsset(active[0]).equals(currentBytes)))) {
+        throw new Error('Current updater channel changed during staging');
+      }
+    }
     try {
       if (old) client.moveAsset(old, `${channel}-previous-${old.id}.json`);
+      if (synchronize && client.releaseByTag(channelTag).assets.some(asset => asset.name === `${channel}.json`)) {
+        throw new Error('Another active updater channel appeared before activation');
+      }
       client.moveAsset(staged, `${channel}.json`);
     }
     catch (error) {
@@ -330,7 +530,14 @@ function publication(mode, version, config, log, transport, bundle) {
       }
     }
     if (fresh) transport(['release', 'edit', channelTag, '--repo', repository, '--draft=false', '--latest=false']);
+    if (synchronize) {
+      const readback = client.releaseByTag(channelTag);
+      const active = readback.assets.filter(asset => asset.name === `${channel}.json`);
+      if (readback.draft || active.length !== 1
+          || !client.downloadAsset(active[0]).equals(contents)) throw new Error('Active updater channel readback differs');
+    }
     log(`Published ${tag}; advanced ${channel}.json after verifying all four signed updater artifacts.`);
+    if (synchronize) return { ...syncReceipt, status: 'synchronized', channel, channel_version: parsed.value };
   } finally {
     if (resolve(staging).startsWith(resolve(tmpdir()) + (process.platform === 'win32' ? '\\' : '/'))
         && basename(staging).startsWith('dezirclip-channel-')) rmSync(staging, { recursive: true, force: true });
@@ -345,17 +552,34 @@ export function promote(version, config, acceptancePath, log = console.log, tran
   return publication('promote', version, config, log, transport, acceptanceBundle(acceptancePath));
 }
 
+function synchronizationBundle(runId, runAttempt, upgradePath) {
+  if (typeof upgradePath !== 'string' || !upgradePath) throw new Error('An original Windows upgrade gate file is required');
+  return { runId, runAttempt, upgradePath, upgradeEvidence: readEvidenceJson(upgradePath) };
+}
+
+export function publishAndSync(version, config, runId, runAttempt, upgradePath, log = console.log, transport = gh) {
+  return publication('publish-and-sync', version, config, log, transport, synchronizationBundle(runId, runAttempt, upgradePath));
+}
+
+export function syncPublished(version, config, runId, runAttempt, upgradePath, log = console.log, transport = gh) {
+  return publication('sync-published', version, config, log, transport, synchronizationBundle(runId, runAttempt, upgradePath));
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const config = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8'));
   const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
   preflight(config, pkg);
-  const [mode, version, acceptancePath] = process.argv.slice(2);
+  const [mode, version, acceptancePath, runAttempt, upgradePath] = process.argv.slice(2);
   if (mode === 'preflight') {
     parseVersion(version);
     if (!process.env.TAURI_SIGNING_PRIVATE_KEY) throw new Error('Release signing secret is not configured');
     console.log('Updater signing configuration is ready.');
   } else if (mode === 'publish-only') publishOnly(version, config);
+  else if (['publish-and-sync', 'sync-published'].includes(mode) && acceptancePath && runAttempt && upgradePath) {
+    const synchronize = mode === 'sync-published' ? syncPublished : publishAndSync;
+    console.log(JSON.stringify(synchronize(version, config, acceptancePath, runAttempt, upgradePath, console.error)));
+  }
   else if (mode === 'promote' && acceptancePath) {
     promote(version, config, acceptancePath);
-  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json');
+  } else throw new Error('Usage: node scripts/updater-release.mjs preflight|publish-only vVERSION; promote vVERSION ACCEPTANCE.json; publish-and-sync|sync-published vVERSION RUN_ID ATTEMPT WINDOWS_UPGRADE.json');
 }
