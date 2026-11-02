@@ -111,12 +111,17 @@ $candidate = if ($Scenario -ne 'LegacyUninstall') { Read-CandidateManifest $NewI
 if ($candidate -and $candidate.version -ne '0.2.0-alpha.2') { throw 'Current candidate must be the alpha.2 fixture.' }
 $previous = if ($Scenario -eq 'OwnedUpgrade') { Read-CandidateManifest $PreviousCandidate } else { $null }
 if ($previous -and $previous.version -ne '0.2.0-alpha.1') { throw 'Previous same-source ownership fixture must be labelled alpha.1; it is not a historical package migration.' }
-$fixtureRoot = Join-Path $env:RUNNER_TEMP ('dezirclip-upgrade-' + [guid]::NewGuid().ToString('N'))
+$scenarioId = [guid]::NewGuid().ToString('N')
+$fixtureRoot = Join-Path $env:RUNNER_TEMP ('dezirclip-upgrade-' + $scenarioId)
 $fixtureRoot = Resolve-RunnerFixturePath $fixtureRoot
 New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
 $installDirectory = Join-Path $fixtureRoot 'installed'
 $profileDirectory = Join-Path $fixtureRoot 'profile'
 New-Item -ItemType Directory -Path $profileDirectory | Out-Null
+$webviewPolicyRoot = Resolve-RunnerFixturePath (Join-Path $env:RUNNER_TEMP ('dezirclip-nsis-webview-' + $scenarioId))
+New-Item -ItemType Directory -Path $webviewPolicyRoot | Out-Null
+$webviewDirectory = Join-Path $webviewPolicyRoot 'browser'
+$webviewReuseReady = $true
 $previousDbOverride = $env:DEZIRCLIP_DB_PATH
 $marker = 'nativeupgradefixturemarker' + [guid]::NewGuid().ToString('N')
 if ($candidate) { Copy-Item -LiteralPath ($NewInstaller + '.manifest.json') -Destination (Join-Path $fixtureRoot 'candidate-build.json') }
@@ -416,11 +421,113 @@ function Wait-ActualProcessImage {
     $result.elapsedMilliseconds = $timer.ElapsedMilliseconds
     return [pscustomobject]$result
 }
+function New-FixtureWebViewEnvironment([int]$Port, [string]$UserDataDirectory) {
+    if ($Port -lt 1024 -or $Port -gt 65535 -or [string]::IsNullOrWhiteSpace($UserDataDirectory)) { throw 'A fixture WebView port and private user-data directory are required.' }
+    return @{ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"; WEBVIEW2_USER_DATA_FOLDER = $UserDataDirectory }
+}
+function Restore-FixtureWebViewEnvironmentEntry([string]$Name, [hashtable]$Prior) {
+    $environmentPath = switch -Exact ($Name) {
+        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS' { 'Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS' }
+        'WEBVIEW2_USER_DATA_FOLDER' { 'Env:WEBVIEW2_USER_DATA_FOLDER' }
+        default { throw 'Only the two fixture WebView environment entries may be restored.' }
+    }
+    if ($Prior.existed -isnot [bool] -or ($Prior.existed -and $Prior.value -isnot [string])) { throw 'An original environment-entry presence and string value are required.' }
+    if ($Prior.existed) {
+        Set-Item -LiteralPath $environmentPath -Value $Prior.value -ErrorAction Stop
+    } elseif (Test-Path -LiteralPath $environmentPath) {
+        Remove-Item -LiteralPath $environmentPath -ErrorAction Stop
+    }
+    if ((Test-Path -LiteralPath $environmentPath) -ne $Prior.existed) { throw 'The original environment-entry presence was not restored.' }
+    if ($Prior.existed -and (Get-Item -LiteralPath $environmentPath).Value -cne $Prior.value) { throw 'The original environment-entry value was not restored.' }
+}
+function Get-OriginalGuiHint([System.Diagnostics.Process]$Application, [string]$Stage, $Identity) {
+    $hint = [ordered]@{ stage = $Stage; observedAt = [DateTime]::UtcNow.ToString('o'); processId = $Application.Id; hasExited = $null; exitCode = $null; startTimeUtc = $null; mainWindowHandle = $null; pathFromVerifiedIdentity = $(if ($Identity -and $Identity.verified) { $Identity.expectedPath } else { $null }); errors = @(); scope = 'Same original Process object. A zero main-window handle does not establish whether a WebView was created.' }
+    try {
+        $Application.Refresh(); $hint.hasExited = $Application.HasExited
+        $hint.startTimeUtc = $Application.StartTime.ToUniversalTime().ToString('o')
+        if ($hint.hasExited) { $hint.exitCode = $Application.ExitCode }
+        elseif ($Identity -and $Identity.verified) {
+            $hint.mainWindowHandle = $Application.MainWindowHandle.ToInt64().ToString([Globalization.CultureInfo]::InvariantCulture)
+            $Application.Refresh(); $hint.hasExited = $Application.HasExited
+            if ($hint.hasExited) { $hint.mainWindowHandle = $null; $hint.exitCode = $Application.ExitCode }
+        }
+    } catch { $hint.errors += $_.Exception.GetType().FullName + ': ' + $_.Exception.Message }
+    return [pscustomobject]$hint
+}
+function Assert-FixtureWebViewEnvironmentRestoration {
+    if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:OS -ne 'Windows_NT' -or -not $env:RUNNER_TEMP) { throw 'Environment restoration acceptance requires a disposable GitHub-hosted Windows runner.' }
+    $paths = @{ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = 'Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'; WEBVIEW2_USER_DATA_FOLDER = 'Env:WEBVIEW2_USER_DATA_FOLDER' }
+    $original = @{}
+    foreach ($name in $paths.Keys) {
+        $present = Test-Path -LiteralPath $paths[$name]
+        $original[$name] = @{ existed = $present; value = $(if ($present) { (Get-Item -LiteralPath $paths[$name]).Value } else { $null }) }
+    }
+    $receipt = [ordered]@{ policy = 'webview-env-provider-restoration-v2'; powershellVersion = $PSVersionTable.PSVersion.ToString(); status = 'running'; cases = @(); originalEnvironmentRestored = $false; scope = 'Only the two known Env-provider entries. The synthetic exception is not an actual Start-Process failure.' }
+    $firstError = $null
+    $restoreFailed = $false
+    $environmentTouched = $false
+    try {
+        if ($PSVersionTable.PSVersion -lt [version]'7.5') { throw 'Environment restoration acceptance requires PowerShell 7.5 or later for present empty-string support.' }
+        $states = @(@{ label = 'absent'; existed = $false; value = $null }, @{ label = 'empty'; existed = $true; value = '' }, @{ label = 'text'; existed = $true; value = 'synthetic-original-webview-value' })
+        $environmentTouched = $true
+        foreach ($name in $paths.Keys) {
+            foreach ($state in $states) {
+                foreach ($mode in @('normal', 'synthetic-exception')) {
+                    $case = [ordered]@{ key = $name; testPriorState = $state.label; mode = $mode; syntheticExceptionObserved = $false; status = 'running'; originalEnvironmentRestored = $false }
+                    $caseError = $null
+                    $synthetic = [System.InvalidOperationException]::new('Synthetic fixture launch-path exception')
+                    try {
+                        Restore-FixtureWebViewEnvironmentEntry $name $state
+                        try {
+                            Restore-FixtureWebViewEnvironmentEntry $name @{ existed = $true; value = 'synthetic-webview-override' }
+                            if ($mode -eq 'synthetic-exception') { throw $synthetic }
+                        } catch {
+                            if ($mode -eq 'synthetic-exception' -and $_.Exception -eq $synthetic) { $case.syntheticExceptionObserved = $true }
+                            else { $caseError = $_ }
+                        } finally {
+                            try { Restore-FixtureWebViewEnvironmentEntry $name $state }
+                            catch { if (-not $caseError) { $caseError = $_ } }
+                        }
+                        if ($mode -eq 'synthetic-exception' -and -not $case.syntheticExceptionObserved -and -not $caseError) { throw 'The synthetic exception did not enter the restoration path.' }
+                    } catch { if (-not $caseError) { $caseError = $_ } }
+                    finally {
+                        $caseRestored = $true
+                        foreach ($restoreName in $paths.Keys) {
+                            try { Restore-FixtureWebViewEnvironmentEntry $restoreName $original[$restoreName] }
+                            catch { $caseRestored = $false; $restoreFailed = $true; if (-not $caseError) { $caseError = $_ } }
+                        }
+                        $case.originalEnvironmentRestored = $caseRestored
+                    }
+                    $case.status = $(if ($caseError) { 'failed' } else { 'passed' })
+                    $receipt.cases += [pscustomobject]$case
+                    if ($caseError) { throw $caseError }
+                }
+            }
+        }
+        if ($receipt.cases.Count -ne 12) { throw 'All twelve environment-restoration cases are required.' }
+    } catch { $firstError = $_ }
+    finally {
+        $finalRestored = $true
+        if ($environmentTouched) {
+            foreach ($name in $paths.Keys) {
+                try { Restore-FixtureWebViewEnvironmentEntry $name $original[$name] }
+                catch { $finalRestored = $false; $restoreFailed = $true; if (-not $firstError) { $firstError = $_ } }
+            }
+        }
+        $receipt.originalEnvironmentRestored = $finalRestored
+        $receipt.status = $(if ($firstError -or $restoreFailed) { 'failed' } else { 'passed' })
+        try { $receipt | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $fixtureRoot 'webview-environment-restoration.json') -Encoding utf8 }
+        catch { if (-not $firstError) { $firstError = $_ } }
+    }
+    if ($firstError) { throw $firstError }
+    if ($restoreFailed) { throw 'An environment-restoration operation failed.' }
+}
 function Convert-GuiConfigurationJson($Manifest, [string]$ProfileDirectory, [string]$Marker, [bool]$AcquireOwnership, [bool]$VerifyCapture) {
     return (@{ expectedVersion = $Manifest.version; expectedBuildInfo = $Manifest.buildInfo; profileDirectory = $ProfileDirectory; marker = $Marker; acquireOwnership = $AcquireOwnership; verifyCapture = $VerifyCapture } | ConvertTo-Json -Depth 10)
 }
 function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCapture, [string]$Label) {
     Assert-InstalledCandidate $Manifest $Label
+    if (-not $script:webviewReuseReady) { throw 'The prior original GUI has not confirmed exit and CDP port release.' }
     $port = 9222
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
     $listener.Start(); $listener.Stop()
@@ -431,12 +538,66 @@ function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCaptu
     $stdout = Join-Path $fixtureRoot ($Label + '-stdout.txt')
     $stderr = Join-Path $fixtureRoot ($Label + '-stderr.txt')
     $expectedApplication = Join-Path $installDirectory 'dezirclip.exe'
+    $overrides = New-FixtureWebViewEnvironment $port $webviewDirectory
+    @{ policy = 'production-window-args-plus-token-scoped-debug-v3'; scenarioUserDataDirectory = $webviewDirectory; applicationProfileDirectory = $profileDirectory; knownEnvironment = $overrides; scope = 'Standard-token hosts use environment overrides; an observed elevated host uses the existing exact per-app HKLM transaction. These settings do not prove WebView creation.' } |
+        ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $fixtureRoot ($Label + '-webview-launch.json')) -Encoding utf8
+    $policyAdapter = Join-Path $PSScriptRoot 'tests/native_windows_nsis_webview.py'
+    $policyArguments = @('--source', $Manifest.buildInfo.source_revision, '--fixture-root', $fixtureRoot, '--policy-root', $webviewPolicyRoot, '--scenario', $Scenario, '--label', $Label, '--port', $port.ToString([Globalization.CultureInfo]::InvariantCulture))
+    $policyState = Join-Path $webviewPolicyRoot ($Label + '-webview-policy.json')
     $identity = $null
-    $application = Start-Process -FilePath $expectedApplication -WorkingDirectory $installDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $primaryError = $null
+    $cleanupErrors = @()
+    $terminationRequested = $false
+    $waitConfirmed = $false
+    $portFree = $false
+    $final = $null
+    $policyConfigureAttempted = $false
+    $policyConfigured = $false
+    $launchAttempted = $false
+    $policyRestored = $false
+    $policyRestoreWithheld = $false
+    $script:webviewReuseReady = $false
+    $application = $null
+    $previousEnvironment = @{}
+    foreach ($key in $overrides.Keys) {
+        $existed = Test-Path -LiteralPath ("Env:" + $key)
+        $previousEnvironment[$key] = @{ existed = $existed; value = $(if ($existed) { (Get-Item -LiteralPath ("Env:" + $key)).Value } else { $null }) }
+    }
     try {
+        try {
+            & python -B $policyAdapter fresh @policyArguments
+            if ($LASTEXITCODE -ne 0) { throw 'This Label already has WebView policy receipts; configure was not attempted.' }
+            $policyConfigureAttempted = $true
+            & python -B $policyAdapter configure @policyArguments
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $policyState -PathType Leaf)) { throw 'The original per-app WebView policy was not configured.' }
+            $policyConfigured = $true
+            foreach ($key in $overrides.Keys) { [Environment]::SetEnvironmentVariable($key, $overrides[$key], 'Process') }
+            $launchAttempted = $true
+            $application = Start-Process -FilePath $expectedApplication -WorkingDirectory $installDirectory -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        } catch { $primaryError = $_ }
+        finally {
+            foreach ($key in $overrides.Keys) {
+                try {
+                    Restore-FixtureWebViewEnvironmentEntry $key $previousEnvironment[$key]
+                }
+                catch { $cleanupErrors += 'Runtime environment restore: ' + $_.Exception.Message }
+            }
+        }
+        if ($primaryError) { throw $primaryError }
+        if ($cleanupErrors.Count) { throw 'Fixture runtime environment was not restored.' }
         $identity = Wait-ActualProcessImage -ExpectedPath $expectedApplication -ReadProcess { Get-ActualProcessImageSnapshot $application }
         $identity | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $fixtureRoot ($Label + '-process-identity.json'))
         if (-not $identity.verified) { throw "Launched GUI process identity was not verified: $($identity.reason)." }
+        $application.Refresh()
+        if ($application.HasExited) { throw 'The original GUI exited before its token was inspected.' }
+        $originalCreationTime = $application.StartTime.ToFileTimeUtc().ToString([Globalization.CultureInfo]::InvariantCulture)
+        $originalProcessId = $application.Id.ToString([Globalization.CultureInfo]::InvariantCulture)
+        & python -B $policyAdapter inspect @policyArguments --pid $originalProcessId --created $originalCreationTime
+        if ($LASTEXITCODE -ne 0) { throw 'The actual original GUI token did not match the configured WebView policy.' }
+        $application.Refresh()
+        if ($application.HasExited) { throw 'The original GUI exited during token inspection.' }
+        Get-OriginalGuiHint $application 'before-cdp-discovery' $identity | ConvertTo-Json -Depth 7 |
+            Set-Content -LiteralPath (Join-Path $fixtureRoot ($Label + '-process-before-discovery.json'))
         & node (Join-Path $PSScriptRoot 'tests/native-windows-ownership.mjs') $port $evidence $configuration
         if ($LASTEXITCODE -ne 0) { throw 'Actual GUI profile, version, ownership or native capture acceptance failed.' }
         $observed = Get-Content -LiteralPath $evidence -Raw | ConvertFrom-Json
@@ -445,24 +606,72 @@ function Invoke-ActualGui($Manifest, [bool]$AcquireOwnership, [bool]$VerifyCaptu
             Assert-CliHistory $observed.capture.firstText $observed.capture.firstId ($Label + '-captured-a')
             Assert-CliHistory $observed.capture.secondText $observed.capture.secondId ($Label + '-captured-b')
         }
-    } finally {
-        $application.Refresh()
-        @{ Id = $application.Id; HasExited = $application.HasExited; ExitCode = $(if ($application.HasExited) { $application.ExitCode } else { $null }); Port = $port; ExpectedPath = $expectedApplication; Identity = $identity } |
-            ConvertTo-Json -Depth 7 | Set-Content (Join-Path $fixtureRoot ($Label + '-process.json'))
-        Get-Content -LiteralPath $stderr -Tail 60 -ErrorAction SilentlyContinue | Write-Output
-        if (-not $application.HasExited) {
-            $application.Kill($true)
-            if (-not $application.WaitForExit(20000)) { throw 'Fixture GUI process did not exit.' }
+    } catch { if (-not $primaryError) { $primaryError = $_ } }
+    finally {
+        if ($application) {
+        try {
+            $beforeCleanup = Get-OriginalGuiHint $application 'after-discovery-before-cleanup' $identity
+            @{ Id = $application.Id; HasExited = $beforeCleanup.hasExited; ExitCode = $beforeCleanup.exitCode; Port = $port; ExpectedPath = $expectedApplication; Identity = $identity; OriginalProcess = $beforeCleanup } |
+                ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fixtureRoot ($Label + '-process.json'))
+        } catch { $cleanupErrors += 'Original process observation: ' + $_.Exception.Message }
+        try { Get-Content -LiteralPath $stderr -Tail 60 -ErrorAction SilentlyContinue | Write-Output }
+        catch { $cleanupErrors += 'Fixture stderr receipt output: ' + $_.Exception.Message }
+        try {
+            $application.Refresh()
+            if (-not $application.HasExited) {
+                $terminationRequested = $true
+                $application.Kill($true)
+                $waitConfirmed = $application.WaitForExit(20000)
+                if (-not $waitConfirmed) { throw 'Fixture GUI process did not exit.' }
+            } else { $waitConfirmed = $true }
+        } catch { $cleanupErrors += 'Original process cleanup: ' + $_.Exception.Message }
+        try {
+            for ($attempt = 0; $attempt -lt 50; $attempt++) {
+                $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+                try { $probe.Start(); $portFree = $true; break }
+                catch { Start-Sleep -Milliseconds 100 }
+                finally { $probe.Stop() }
+            }
+            if (-not $portFree) { throw 'Fixture WebView process tree did not release its CDP port.' }
+        } catch { $cleanupErrors += 'CDP cleanup: ' + $_.Exception.Message }
+        try { $final = Get-OriginalGuiHint $application 'after-original-cleanup' $identity }
+        catch { $cleanupErrors += 'Final original process observation: ' + $_.Exception.Message }
         }
-        $portFree = $false
-        for ($attempt = 0; $attempt -lt 50; $attempt++) {
-            $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
-            try { $probe.Start(); $portFree = $true; break }
-            catch { Start-Sleep -Milliseconds 100 }
-            finally { $probe.Stop() }
+        if ($policyConfigureAttempted) {
+            if (Test-Path -LiteralPath $policyState -PathType Leaf) {
+                if (-not $launchAttempted -or ($application -and $waitConfirmed -and $final.hasExited -eq $true -and $portFree)) {
+                    try {
+                        & python -B $policyAdapter restore @policyArguments
+                        if ($LASTEXITCODE -ne 0) { throw 'The original WebView policy was not restored.' }
+                        $policyRestored = $true
+                    } catch { $cleanupErrors += 'WebView policy restoration: ' + $_.Exception.Message }
+                } else {
+                    $policyRestoreWithheld = $true
+                    $cleanupErrors += 'WebView policy preserved because the original GUI launch or its exit/port release is unconfirmed.'
+                }
+            } elseif ($policyConfigured) {
+                $cleanupErrors += 'The configured original WebView policy snapshot disappeared; restoration is unconfirmed.'
+            }
+            try {
+                $preserveArguments = @($policyArguments)
+                if (-not $primaryError -and $cleanupErrors.Count -eq 0 -and $policyRestored) { $preserveArguments += '--require-complete' }
+                & python -B $policyAdapter preserve @preserveArguments
+                if ($LASTEXITCODE -ne 0) { throw 'Original WebView policy receipts were not preserved.' }
+            } catch { $cleanupErrors += 'WebView policy receipt preservation: ' + $_.Exception.Message }
         }
-        if (-not $portFree) { throw 'Fixture WebView process tree did not release its CDP port.' }
+        if ($application) {
+            try { $application.Dispose() } catch { $cleanupErrors += 'Original process object disposal: ' + $_.Exception.Message }
+        }
+        $script:webviewReuseReady = $application -and $waitConfirmed -and $final.hasExited -eq $true -and $portFree -and $policyRestored -and $cleanupErrors.Count -eq 0
+        try {
+            @{ original = $final; terminationRequested = $terminationRequested; waitConfirmed = $waitConfirmed; portFree = $portFree; userDataReusable = $script:webviewReuseReady; policyConfigureAttempted = $policyConfigureAttempted; policyConfigured = $policyConfigured; launchAttempted = $launchAttempted; policyRestored = $policyRestored; policyRestoreWithheld = $policyRestoreWithheld; primaryFailure = $(if ($primaryError) { $primaryError.Exception.Message } else { $null }); cleanupErrors = $cleanupErrors } |
+                ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $fixtureRoot ($Label + '-process-final.json')) -Encoding utf8
+        } catch { $cleanupErrors += 'Final process receipt: ' + $_.Exception.Message }
+        if ($cleanupErrors.Count) { $script:webviewReuseReady = $false }
     }
+    if ($primaryError) { throw $primaryError }
+    if ($cleanupErrors.Count) { throw ($cleanupErrors -join '; ') }
+    if (-not $policyRestored) { throw 'Successful GUI acceptance requires confirmed original WebView policy restoration.' }
 }
 function Assert-Uninstalled {
     foreach ($name in @('dezirclip.exe', 'dzc.exe', 'dzc-service.exe')) {
@@ -472,6 +681,7 @@ function Assert-Uninstalled {
 }
 
 try {
+    Assert-FixtureWebViewEnvironmentRestoration
     $env:DEZIRCLIP_DB_PATH = Join-Path $profileDirectory 'clipboard.db'
     Initialize-SharedProfile
     $initial = if ($Scenario -eq 'OwnedUpgrade') { $PreviousCandidate } elseif ($candidateInitial) { $NewInstaller } else { $OldInstaller }

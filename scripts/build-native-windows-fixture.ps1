@@ -62,7 +62,6 @@ $sidecar = "src-tauri/binaries/dzc-$triple.exe"
 $override = Join-Path $env:RUNNER_TEMP ('dezirclip-native-fixture-' + [guid]::NewGuid().ToString('N') + '.json')
 $configuration = Get-Content -LiteralPath src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
 if ($configuration.build.beforeBundleCommand -ne 'pnpm run tauri:prepare-sidecars --phase bundle') { throw 'Native acceptance requires the production shared beforeBundle sidecar hook.' }
-$configuration.app.windows[0] | Add-Member -NotePropertyName additionalBrowserArgs -NotePropertyValue '--remote-debugging-port=9222' -Force
 @{bundle=@{createUpdaterArtifacts=$false};app=@{windows=$configuration.app.windows}} | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $override -Encoding utf8
 $buildStarted = [DateTime]::UtcNow
 & pnpm exec tauri build --debug --bundles nsis --no-sign --config $override -- --locked
