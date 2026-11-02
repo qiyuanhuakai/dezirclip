@@ -33,8 +33,9 @@ const ScrollingRow = ({ index, height, context }: ScrollSeekPlaceholderProps & {
 };
 
 const fastScroll = {
-    enter: (velocity: number) => Math.abs(velocity) > 1200,
-    exit: (velocity: number) => Math.abs(velocity) < 350,
+    // Virtuoso reports the offset delta over its 100 ms sample.
+    enter: (velocity: number) => Math.abs(velocity) > 120,
+    exit: (velocity: number) => Math.abs(velocity) < 35,
 };
 
 const ListFooter = ({ context }: { context?: VirtuosoListContext }) => {
