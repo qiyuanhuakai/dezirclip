@@ -353,6 +353,13 @@ function sameManifest(value, expected) {
     });
 }
 
+function channelWriteIdentity(release) {
+  if (release === null) return null;
+  return { id: release.id, tag_name: release.tag_name, draft: release.draft, prerelease: release.prerelease,
+    assets: release.assets.map(({ id, name, size, state, digest, updated_at }) =>
+      ({ id, name, size, state, digest, updated_at })).sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
 function verifiedUpgradeGate(evidence, receipt) {
   const gate = evidence.value;
   const names = ['LegacyToAlpha2', 'PublishedAlphaToAlpha2', 'PublishedAlpha2ToRelease'];
@@ -451,7 +458,9 @@ function publication(mode, version, config, log, transport, bundle) {
       throw new Error('Windows upgrade gate changed before publication');
     }
     const freshChannels = client.releaseByTag(channelTag, true);
-    if (JSON.stringify(freshChannels) !== JSON.stringify(channels)) throw new Error('Updater channel changed before synchronization');
+    if (JSON.stringify(channelWriteIdentity(freshChannels)) !== JSON.stringify(channelWriteIdentity(channels))) {
+      throw new Error('Updater channel changed before synchronization');
+    }
   }
   if (release.draft) {
     transport(['release', 'edit', tag, '--repo', repository, '--draft=false',

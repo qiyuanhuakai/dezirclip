@@ -515,6 +515,34 @@ test('an early Windows aggregate does not reject final uploads preceding all fou
   });
 });
 
+test('normal channel reads may increase download counts without changing writer identity', () => {
+  let reads = 0;
+  withSynchronization({ published: true, channel: 'published', onApi(route, state) {
+    if (route === 'releases/20' && ++reads === 2) {
+      for (const asset of state.channel.assets) asset.download_count = (asset.download_count ?? 0) + 1;
+    }
+  } }, (fixture, gate, invoke) => {
+    assert.equal(invoke().status, 'synchronized');
+    assert.equal(fixture.active('preview.json').version, '0.2.0-alpha.1');
+  });
+});
+
+for (const field of ['id', 'digest', 'updated_at']) {
+  test(`a changed active channel ${field} still blocks the first write`, () => {
+    let reads = 0;
+    withSynchronization({ published: true, channel: 'published', onApi(route, state) {
+      if (route !== 'releases/20' || ++reads !== 2) return;
+      const active = state.channel.assets.find(asset => asset.name === 'preview.json');
+      if (field === 'id') active.id++;
+      if (field === 'digest') active.digest = 'sha256:' + 'f'.repeat(64);
+      if (field === 'updated_at') active.updated_at = '2026-10-22T00:00:00Z';
+    } }, (fixture, gate, invoke) => {
+      assert.throws(() => invoke(), /Updater channel changed before synchronization/);
+      assert.deepEqual(fixture.state.mutations, []);
+    });
+  });
+}
+
 test('publish verifies a product draft and a fresh channel draft through paginated lookup and release IDs', () => {
   const fixture = publisherFixture();
   publish('0.2.0-alpha.1', fixture.config, () => {}, fixture.transport);
