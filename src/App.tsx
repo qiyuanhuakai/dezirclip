@@ -351,10 +351,9 @@ const App = () => {
       setEditingTagsId(null);
       setTagInput("");
     }
-    if (scope === "all" || revealedIds.size > 0) {
-      clearRichTextSnapshots();
-      closeConfirm();
-    }
+    // HTML previews can originate from the separate tag view's reveal grant.
+    clearRichTextSnapshots();
+    if (scope === "all" || revealedIds.size > 0) closeConfirm();
   }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm, editingTagsId, history, revealedIds]);
   // Search changes have their own trigger; this refresh belongs to privacy/resume transitions.
   const initialPage = useRef({ fetchHistory, needed: true });
