@@ -1557,6 +1557,7 @@ dependencies = [
  "chrono",
  "cssparser",
  "dirs 5.0.1",
+ "dom_query",
  "dzc-protocol",
  "image",
  "libc",

@@ -5,3 +5,4 @@ pub mod repository;
 pub mod local_file;
 
 pub(crate) mod protected_resources;
+pub(crate) mod rich_preview;
