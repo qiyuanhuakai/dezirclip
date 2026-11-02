@@ -28,7 +28,7 @@ describe("hidden first page", () => {
   });
   it("does not retain session records, oversized bodies or opened sensitive details", () => {
     const page = createResumePage();
-    for (const changed of [{ id: -1 }, { content: "a".repeat(100_000) }, { tags: ["sensitive"] }, { host_instance_id: "b" }]) {
+    for (const changed of [{ id: -1 }, { content: "a".repeat(400_000) }, { tags: ["sensitive"] }, { host_instance_id: "b" }]) {
       page.save(stamp, "all", [{ ...row, ...changed }]);
       expect(page.read(stamp, "all")).toBeNull();
     }

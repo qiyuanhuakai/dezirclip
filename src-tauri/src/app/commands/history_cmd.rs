@@ -156,7 +156,7 @@ pub async fn get_clipboard_history(
         history.truncate(limit as usize);
     }
 
-    state.history_service().entries_for_gui(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    state.history_service().entries_for_gui_list(&mut history,true,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
     history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
@@ -199,7 +199,7 @@ fn search_embedded_history(repository:&dzc_core::api::HistoryService,session:&Se
         history.truncate(limit as usize);
     }
 
-    repository.entries_for_gui(&mut history,false,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
+    repository.entries_for_gui_list(&mut history,false,chrono::Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?;
     normalize_entries_for_ui(&mut history);
 
     history.into_iter().map(|entry|bridge.hosted(entry).map_err(AppError::Validation)).collect()
@@ -614,6 +614,10 @@ mod capture_summary_tests {
         assert!(summary.content.starts_with("data:image/png;base64,"));
         assert!(!summary.content.contains("attachments"));
         let stored=repository.get_entry_by_id(id).unwrap().unwrap();
+        let mut page = vec![stored.clone()];
+        history.entries_for_gui_list(&mut page, true, chrono::Utc::now().timestamp_millis()).unwrap();
+        assert_eq!(page[0].id, id);
+        assert!(page[0].content.is_empty() && page[0].preview.is_empty() && page[0].html_content.is_none());
         assert!(std::path::Path::new(&stored.content).starts_with(directory.join("attachments")));
         assert_eq!(std::fs::read(stored.content).unwrap(),*encoded.get_ref());
         assert!(image.content.starts_with("data:"));

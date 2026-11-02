@@ -24,7 +24,7 @@ export const useImagePreview = (id: number, content: string | null, revision: nu
     const controller = new AbortController();
     setResult(null);
     if (needsRead) {
-      void schedulePreview(controller.signal, () => invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id, expectedEpoch: epoch, maxDimension: 480, expectedHostInstanceId: hostInstanceId }))
+      void schedulePreview(controller.signal, () => invokePrivacyBound<ClipboardEntry>("get_history_resource_preview", { id, expectedEpoch: epoch, maxDimension: 384, expectedHostInstanceId: hostInstanceId }))
         .then(entry => {
           if (!controller.signal.aborted) setResult({ id, revision, hostInstanceId, generation,
             src: isRamImageSource(entry.content) ? entry.content : null });

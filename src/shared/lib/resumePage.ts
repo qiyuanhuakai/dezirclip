@@ -8,6 +8,9 @@ export interface PageStamp {
   sessionActive: boolean;
 }
 
+// A standard page has 120 rows, each with up to 2,000 body and 500 preview characters.
+const MAX_PAGE_UNITS = 384 * 1024;
+
 /** One bounded ordinary first-page response, never hydrated card details or session history. */
 export function createResumePage() {
   let page: { stamp: PageStamp; key: string; rows: ClipboardEntry[] } | null = null;
@@ -27,7 +30,7 @@ export function createResumePage() {
             for (const value of field) if (typeof value === "string") units += value.length;
           }
         }
-        if (units > 96 * 1024) return;
+        if (units > MAX_PAGE_UNITS) return;
       }
       page = { stamp, key, rows: structuredClone(rows.map(row => isSensitiveEntry(row) ? concealSensitiveEntry(row) : row)) };
     },
