@@ -37,7 +37,8 @@ type Panel struct {
 	mode           string
 	opacity        float64
 	search         string
-	list           ui.ListState
+	list           *ui.ListState
+	viewRows       *model.View
 	out            chan outgoing
 	sequence       uint64
 	requests       map[string]bool
@@ -183,6 +184,18 @@ func (p *Panel) send(id string, kind protocol.SurfaceControlType, payload any, a
 
 func (p *Panel) nextID() string { p.sequence++; return "surface-" + strconv.FormatUint(p.sequence, 10) }
 
+func (p *Panel) revokeView() {
+	p.viewRows.Revoke()
+	p.viewRows = nil
+}
+
+func (p *Panel) resetList() {
+	p.revokeView()
+	// MyGo's previous render tree retains the old ListState's frame pointer.
+	// Replacing the instance leaves that frame valid until MyGo replaces it.
+	p.list = &ui.ListState{}
+}
+
 func (p *Panel) fail(id, code string) {
 	p.hideLocal()
 	session := ""
@@ -258,10 +271,10 @@ func (p *Panel) receive(message protocol.SurfaceControlMessage) {
 			return
 		}
 		p.displays[show.DisplayRequestId] = true
+		p.resetList()
 		p.model.Show(show.SurfaceSessionId, show.DisplayRequestId, show.State)
 		p.model.ShowNotice = show.Notice != nil && *show.Notice == "paste_unavailable"
 		p.search = ""
-		p.list = ui.ListState{}
 		p.locale, p.mode = show.Locale, show.Theme.Mode
 		p.opacity = show.Theme.Opacity
 		mygo.App.SetLocale(model.NativeLocale(show.Locale))
@@ -302,6 +315,7 @@ func (p *Panel) receive(message protocol.SurfaceControlMessage) {
 			if result.Performed {
 				p.hideLocal()
 			} else {
+				p.revokeView()
 				p.model.PendingAction = ""
 				p.model.Error = p.word("paste_failed")
 			}
@@ -397,9 +411,9 @@ func (p *Panel) connectDisplay(ctx context.Context, show protocol.SurfaceShow, b
 				}
 				if nextState.HistoryRevision != p.model.State.HistoryRevision {
 					p.cancelQuery()
+					p.resetList()
 					p.model.State = nextState
 					p.model.Begin(0)
-					p.list = ui.ListState{}
 					if !p.model.Composing {
 						p.scheduleQuery()
 					}
@@ -425,9 +439,10 @@ func (p *Panel) query(offset uint32) {
 		return
 	}
 	p.cancelQuery()
+	p.revokeView()
 	ticket := p.model.Begin(offset)
 	if offset == 0 {
-		p.list = ui.ListState{}
+		p.resetList()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	p.queryCancel = cancel
@@ -453,11 +468,11 @@ func (p *Panel) query(offset uint32) {
 				return
 			}
 			if err != nil {
-				if p.model.Fail(ticket, p.word("read_failed")) {
-					p.list = ui.ListState{}
-				}
+				p.resetList()
+				p.model.Fail(ticket, p.word("read_failed"))
 				return
 			}
+			p.revokeView()
 			if !p.model.Apply(ticket, page) {
 				p.fail(p.nextID(), "state_changed")
 			}
@@ -466,10 +481,13 @@ func (p *Panel) query(offset uint32) {
 }
 
 func (p *Panel) edit(query string, composing bool) {
+	if p.model.RawQuery == query && p.model.Composing == composing {
+		return
+	}
+	p.resetList()
 	if !p.model.Edit(query, composing) {
 		return
 	}
-	p.list = ui.ListState{}
 	p.cancelQuery()
 	p.debounceUntil = time.Now().Add(300 * time.Millisecond)
 	if composing {
@@ -487,6 +505,7 @@ func (p *Panel) scheduleQuery() {
 		p.query(0)
 		return
 	}
+	p.revokeView()
 	ticket := p.model.Begin(0)
 	p.debounce = time.AfterFunc(remaining, func() {
 		p.window.Update(func() {
@@ -497,7 +516,7 @@ func (p *Panel) scheduleQuery() {
 	})
 }
 
-func (p *Panel) paste() {
+func (p *Panel) paste(view *model.View) {
 	p.diagnosticGate("attempt")
 	// Read the current native input binding, not a value captured by an old frame.
 	if p.search != p.model.RawQuery {
@@ -505,15 +524,16 @@ func (p *Panel) paste() {
 		p.edit(p.search, p.model.Composing)
 		return
 	}
-	if !p.model.CanSelect() {
+	entryID, selectable := view.SelectedID(&p.model)
+	if !selectable {
 		p.diagnosticGate("selection_unavailable")
 		return
 	}
 	action := p.nextID()
+	p.revokeView()
 	p.model.PendingAction = action
-	row := p.model.Entries[p.model.Selected]
 	p.diagnosticStage("dispatch_requested")
-	p.send(action, protocol.SurfaceControlTypePaste, protocol.SurfacePaste{SurfaceSessionId: p.model.Session, DisplayRequestId: p.model.Display, ActionId: action, EntryId: row.Id, State: p.model.State}, nil)
+	p.send(action, protocol.SurfaceControlTypePaste, protocol.SurfacePaste{SurfaceSessionId: p.model.Session, DisplayRequestId: p.model.Display, ActionId: action, EntryId: entryID, State: p.model.State}, nil)
 	display := p.model.Display
 	p.actionDeadline = time.AfterFunc(5*time.Second, func() {
 		p.window.Update(func() {
@@ -548,9 +568,9 @@ func (p *Panel) hideLocal() bool {
 		p.actionDeadline.Stop()
 		p.actionDeadline = nil
 	}
+	p.resetList()
 	p.model.Clear()
 	p.search = ""
-	p.list = ui.ListState{}
 	if p.window != nil {
 		p.window.Hide()
 		return !p.window.IsVisible()
@@ -609,6 +629,7 @@ func (p *Panel) view(c *ui.Context) {
 		return
 	}
 	display := p.model.Display
+	var rows *model.View
 	ui.Column(c.Key("display-"+display)).Fill().Padding(float32(tokens.Padding)).Gap(float32(tokens.Gap)).Radius(float32(tokens.Radius)).Border(1, t.Border).Background(t.Background).Children(func() {
 		input := ui.TextInput(c.Key("query-"+p.model.Display), &p.search).Placeholder(p.word("search")).Label(p.word("search")).Height(float32(tokens.SearchHeight)).AutoFocus()
 		input.OnTextKey(func(key ui.TextKey) bool {
@@ -627,22 +648,32 @@ func (p *Panel) view(c *ui.Context) {
 				p.dismiss("cancel")
 				return true
 			case ui.KeyDown:
-				p.model.Move(1)
-				p.list.ScrollTo(p.model.Selected, ui.Center)
+				if _, selectable := rows.SelectedID(&p.model); selectable {
+					p.model.Move(1)
+					p.list.ScrollTo(p.model.Selected, ui.Center)
+				}
 				return true
 			case ui.KeyUp:
-				p.model.Move(-1)
-				p.list.ScrollTo(p.model.Selected, ui.Center)
+				if _, selectable := rows.SelectedID(&p.model); selectable {
+					p.model.Move(-1)
+					p.list.ScrollTo(p.model.Selected, ui.Center)
+				}
 				return true
 			case ui.KeyEnter:
 				if key.Text() == p.search {
-					p.paste()
+					p.paste(rows)
 				}
 				return true
 			}
 			return false
 		})
 		p.edit(p.search, input.Composing())
+		p.revokeView()
+		rows = p.model.CaptureView(p.word("hidden"))
+		p.viewRows = rows
+		if p.list == nil {
+			p.list = &ui.ListState{}
+		}
 		if p.model.ShowNotice {
 			ui.Text(c, p.word("paste_notice")).TextColor(t.Text).Padding(6).Border(1, t.Border).Radius(float32(tokens.Radius))
 		}
@@ -652,16 +683,27 @@ func (p *Panel) view(c *ui.Context) {
 			}
 		})
 		p.list.Selected = &p.model.Selected
-		p.list.Key = func(i int) any { return p.model.Entries[i].Id }
-		p.list.Label = func(i int) string { return model.DisplayText(p.model.Entries[i], p.word("hidden")) }
-		list := ui.List(c.Key("entries-"+display), &p.list, len(p.model.Entries), func(i int) {
-			entry := p.model.Entries[i]
+		p.list.Key = func(i int) any {
+			if row, current := rows.Row(&p.model, i); current {
+				return row.ID
+			}
+			return struct{ Index int }{i}
+		}
+		p.list.Label = func(i int) string {
+			row, _ := rows.Row(&p.model, i)
+			return row.Text
+		}
+		list := ui.List(c.Key("entries-"+display), p.list, rows.Len(&p.model), func(i int) {
+			row, current := rows.Row(&p.model, i)
+			if !current {
+				return
+			}
 			ui.Column(c).Height(float32(tokens.RowHeight)).Padding(4, 8).Children(func() {
-				ui.Text(c, model.DisplayText(entry, p.word("hidden"))).FontWeight(tokens.RegularWeight)
-				ui.Text(c, entry.SourceApp).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
+				ui.Text(c, row.Text).FontWeight(tokens.RegularWeight)
+				ui.Text(c, row.SourceApp).FontSize(float32(tokens.FontSize - 2)).TextColor(t.TextMuted)
 			})
 		}).Grow(1).Disabled(p.model.Loading || p.model.PendingAction != "").Children(func() {
-			if len(p.model.Entries) == 0 {
+			if rows.Len(&p.model) == 0 {
 				label := p.word("empty")
 				if p.model.Loading {
 					label = p.word("loading")
@@ -670,7 +712,7 @@ func (p *Panel) view(c *ui.Context) {
 			}
 		})
 		if list.Submitted() {
-			p.paste()
+			p.paste(rows)
 		}
 		if p.model.Error != "" {
 			ui.Text(c, p.model.Error).TextColor(t.Danger)
