@@ -1,10 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
-	"runtime"
+	"image"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 // snapshot and never sends full content or image bytes through JavaScript.
 type Preview struct {
 	owner        *client.Client
+	resident     *residentBridge
 	main, window *mygo.Window
 	generation   uint64
 	cancel       context.CancelFunc
@@ -93,9 +95,10 @@ func (p *Preview) clear() {
 }
 
 type previewAppearance struct {
-	Opacity    int
-	Dark       bool
-	Background *struct{ R, G, B uint8 }
+	Pin, Close, Retry, Concealed, Failed string
+	Opacity                              int
+	Dark                                 bool
+	Background                           *struct{ R, G, B uint8 }
 }
 
 func (a previewAppearance) theme() *ui.Theme {
@@ -142,23 +145,27 @@ func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, st
 	})
 }
 
-func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, placement *previewPlacement, appearance previewAppearance) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	host, err := p.owner.DesktopConnection(ctx)
-	if err != nil {
-		return
-	}
-	defer host.Close()
+type previewBody struct {
+	source, text string
+	bitmap       *ui.Bitmap
+	formatted    *richtext.Document
+}
+
+func readPreview(ctx context.Context, host *client.Client, params protocol.DesktopEntryParams, full bool) (*previewBody, protocol.RuntimeState, error) {
 	size := uint32(560)
-	params := protocol.DesktopEntryParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, ThumbnailDimension: &size, Reveal: reveal}
+	if !full {
+		params.ThumbnailDimension = &size
+	}
 	var snapshot protocol.BodySnapshot
-	if host.Call(ctx, protocol.MethodDesktopHistoryGet, params, "BodySnapshot", &snapshot) != nil {
-		return
+	if err := host.Call(ctx, protocol.MethodDesktopHistoryGet, params, "BodySnapshot", &snapshot); err != nil {
+		return nil, snapshot.State, err
 	}
 	var row protocol.DesktopEntry
-	if host.ReadSnapshot(ctx, snapshot, "DesktopEntry", &row) != nil || row.Id != id {
-		return
+	if err := host.ReadSnapshot(ctx, snapshot, "DesktopEntry", &row); err != nil {
+		return nil, snapshot.State, err
+	}
+	if row.Id != params.Id {
+		return nil, snapshot.State, client.ErrProtocol
 	}
 	var bitmap *ui.Bitmap
 	var formatted *richtext.Document
@@ -166,16 +173,21 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 	if row.ContentType == "image" {
 		header, encoded, ok := strings.Cut(text, ",")
 		if !ok || !strings.HasPrefix(header, "data:image/") || !strings.HasSuffix(header, ";base64") {
-			return
+			return nil, snapshot.State, client.ErrProtocol
 		}
 		raw, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
-			return
+			return nil, snapshot.State, client.ErrProtocol
+		}
+		config, _, err := image.DecodeConfig(bytes.NewReader(raw))
+		if err != nil || config.Height <= 0 || config.Width <= 0 || config.Width > 64*1024*1024/config.Height {
+			clear(raw)
+			return nil, snapshot.State, client.ErrProtocol
 		}
 		bitmap, err = ui.DecodeBitmap(raw)
 		clear(raw)
 		if err != nil {
-			return
+			return nil, snapshot.State, client.ErrProtocol
 		}
 		text = ""
 	} else if row.ContentType == "rich_text" && row.HtmlContent != nil && len(*row.HtmlContent) <= 64*1024 {
@@ -185,14 +197,58 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			text = row.Preview
 		}
 		// Bound shaping and layout work for long clipboard entries.
-		for index := range text {
-			if index >= 4096 {
-				text = strings.Clone(text[:index]) + "…"
-				break
+		if !full {
+			for index := range text {
+				if index >= 4096 {
+					text = strings.Clone(text[:index]) + "…"
+					break
+				}
 			}
 		}
 	}
-	sourceApp := row.SourceApp
+	if full && bitmap == nil && formatted == nil {
+		formatted = richtext.NewDocument(richtext.NewText(text))
+	}
+	return &previewBody{row.SourceApp, text, bitmap, formatted}, snapshot.State, nil
+}
+
+func (body *previewBody) draw(c *ui.Context) {
+	if body.bitmap != nil {
+		ui.Image(c, body.bitmap).Fill()
+	} else if body.formatted != nil {
+		drawRichPreview(c, body.formatted)
+	} else {
+		ui.Text(c, body.text).Wrap()
+	}
+}
+
+func (p *Preview) PointerInside(ctx context.Context, sequence uint64) bool {
+	main := mygo.CallerWindow(ctx)
+	inside := false
+	mygo.RunOnMain(func() {
+		if p.main != main || p.generation != sequence || p.window == nil {
+			return
+		}
+		b := p.window.Bounds()
+		pt := mygo.Screen.CursorScreenPoint()
+		inside = pt.X >= b.X && pt.X < b.X+b.Width && pt.Y >= b.Y && pt.Y < b.Y+b.Height
+	})
+	return inside
+}
+
+func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, placement *previewPlacement, appearance previewAppearance) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	host, err := p.owner.DesktopConnection(ctx)
+	if err != nil {
+		return
+	}
+	defer host.Close()
+	params := protocol.DesktopEntryParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Reveal: reveal}
+	body, _, err := readPreview(ctx, host, params, false)
+	if err != nil {
+		return
+	}
 	main.Update(func() {
 		if main != p.main || p.generation != sequence || p.cancel == nil || !main.IsFocused() {
 			return
@@ -218,25 +274,38 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		}
 		anchor := mygo.Rectangle{X: frame.X - bounds.X, Y: frame.Y - bounds.Y}
 		theme := appearance.theme()
+		pinning, failed := false, false
 		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: frame.Width, Height: frame.Height, Hidden: true, Content: ui.View(func(c *ui.Context) {
 			c.SetTheme(theme)
 			ui.Column(c).Fill().Padding(10).Children(func() {
-				ui.Text(c, sourceApp)
-				if bitmap != nil {
-					ui.Image(c, bitmap).Fill()
-				} else if formatted != nil {
-					drawRichPreview(c, formatted)
-				} else {
-					ui.Text(c, text).Wrap()
+				ui.Row(c).FillWidth().Children(func() {
+					ui.Text(c, body.source).Grow(1)
+					if appearance.Pin != "" && ui.Button(c, appearance.Pin).Disabled(pinning).Clicked() {
+						pinning = true
+						ticket := pinPreviewRequest{Params: params, Appearance: appearance, Bounds: p.window.Bounds()}
+						go func() {
+							err := p.resident.send(context.Background(), residentRequest{Operation: "pin-preview", Preview: &ticket}, 10*time.Second)
+							main.Update(func() {
+								if p.generation == sequence && p.window != nil {
+									if err == nil {
+										p.clear()
+									} else {
+										pinning = false
+										failed = true
+										p.window.Update(func() {})
+									}
+								}
+							})
+						}()
+					}
+				})
+				if failed {
+					ui.Text(c, appearance.Failed)
 				}
+				body.draw(c)
 			})
 		})})
 		p.window.SetTitle("DezirClip 悬浮预览")
-		// Windows implements IgnoreMouseEvents with a whole-window alpha layer,
-		// which masks the flyout's DirectComposition per-pixel background.
-		if runtime.GOOS != "windows" {
-			p.window.SetIgnoreMouseEvents(true)
-		}
 		p.window.ShowInactive()
 	})
 }

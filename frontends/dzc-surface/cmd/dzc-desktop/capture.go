@@ -11,13 +11,14 @@ import (
 
 // The resident owns the tray and native selector. Only its original WebView child has these pipes.
 type residentRequest struct {
-	ID        uint64 `json:"request_id"`
-	Epoch     uint64 `json:"epoch"`
-	Operation string `json:"operation"`
-	Directory string `json:"directory,omitempty"`
-	Disabled  bool   `json:"disabled,omitempty"`
-	Full      bool   `json:"full,omitempty"`
-	Visible   bool   `json:"visible,omitempty"`
+	Preview   *pinPreviewRequest `json:"preview,omitempty"`
+	ID        uint64             `json:"request_id"`
+	Epoch     uint64             `json:"epoch"`
+	Operation string             `json:"operation"`
+	Directory string             `json:"directory,omitempty"`
+	Disabled  bool               `json:"disabled,omitempty"`
+	Full      bool               `json:"full,omitempty"`
+	Visible   bool               `json:"visible,omitempty"`
 }
 type residentReply struct {
 	ID        uint64 `json:"request_id"`
@@ -102,6 +103,9 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 			}
 			if request.Operation == "capture" {
 				return errors.New("ScreenshotUnavailable")
+			}
+			if request.Operation == "pin-preview" {
+				return errors.New("PreviewUnavailable")
 			}
 			if request.Operation == "webview-gpu" {
 				return errors.New("WebViewRebuildUnavailable")

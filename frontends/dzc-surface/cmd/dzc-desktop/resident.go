@@ -67,6 +67,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		selector := screenshot.New(owner)
 		var tray *mygo.Tray
 		var setTrayVisible func(bool) error
+		pinnedCount := 0
 		var commands io.WriteCloser
 		gpuDisabled := false
 		stopping := false
@@ -216,6 +217,17 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									relaunch, closing = true, true
 									reply(nil)
 									_, _ = io.WriteString(input, "rebuild\n")
+								case "pin-preview":
+									err := openPinnedPreview(owner, request.Preview, func() {
+										pinnedCount--
+										if pinnedCount == 0 && commands == nil && !migrating && !moved && pending == nil && !reachable() && !panel.HasShortcut() && !selector.HasShortcut() {
+											mygo.App.Quit()
+										}
+									})
+									if err == nil {
+										pinnedCount++
+									}
+									reply(err)
 								case "capture":
 									selector.Capture(request.Full, request.Epoch, reply)
 								case "webview-gpu":
@@ -283,7 +295,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						command := reopen
 						reopen = ""
 						present(command)
-					} else if !stopping && !panel.HasShortcut() && !selector.HasShortcut() && !reachable() {
+					} else if !stopping && pinnedCount == 0 && !panel.HasShortcut() && !selector.HasShortcut() && !reachable() {
 						mygo.App.Quit()
 					}
 				})

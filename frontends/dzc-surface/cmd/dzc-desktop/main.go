@@ -239,7 +239,7 @@ func run() error {
 	mygo.Bind(library)
 	shell := &DesktopShell{resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
 	mygo.Bind(shell)
-	preview := &Preview{owner: actions}
+	preview := &Preview{owner: actions, resident: &shell.resident}
 	mygo.Bind(preview)
 	settings := library.windowPreferences(ctx)
 	follow := settings.FollowMouse != "false"

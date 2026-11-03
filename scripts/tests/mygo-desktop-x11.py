@@ -981,7 +981,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         alternate.destroy()
 
 
-def check(desktop, pinned, audio):
+def check(desktop, pinned, audio, pin_preview=False):
     import gi
     gi.require_version('Atspi', '2.0')
     gi.require_version('Gtk', '3.0')
@@ -1158,6 +1158,9 @@ def check(desktop, pinned, audio):
                     return
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.
+                if pin_preview:
+                    check_preview(row, Atspi, (desktop, process.pid, marker))
+                    return
                 time.sleep(32)
                 check_preview(row, Atspi)
                 break
@@ -1221,7 +1224,7 @@ def verify_storage_captures(db):
     print('Verified real captures enforce the enabled limit and preserve pinned and tagged rows')
 
 
-def check_preview(button, atspi):
+def check_preview(button, atspi, pin=None):
     import gi
     gi.require_version('Gdk', '3.0')
     from gi.repository import Gdk, GdkX11
@@ -1266,6 +1269,65 @@ def check_preview(button, atspi):
         assert time.monotonic() < deadline, 'Zero preview opacity must clear only the background and leave opaque content'
         time.sleep(.05)
     assert active() == focus, 'Hover preview took keyboard focus'
+    if pin:
+        desktop, resident, marker = pin
+        def wait(check, message):
+            deadline = time.monotonic()+7
+            while time.monotonic()<deadline:
+                value=check()
+                if value: return value
+                time.sleep(.05)
+            raise AssertionError((message, [(n,t[:80]) for _,n,_,t in mygo_nodes(atspi,desktop) if n or t]))
+        def pinned_window():
+            tree=subprocess.check_output(['xwininfo','-root','-tree'],text=True)
+            return next((int(line.split()[0],16) for line in tree.splitlines() if '"DezirClip 固定预览"' in line),None)
+        def click(x,y):
+            assert atspi.generate_mouse_event(x,y,'b1c')
+        x,y=hover.x+hover.width-40,hover.y+24
+        pointer.warp(screen,x,y)
+        screen.get_display().sync()
+        time.sleep(.9)
+        assert visible(), 'Hover preview closed before its pin button could be clicked'
+        click(x,y)
+        xid=wait(pinned_window,'Pin button did not create a resident preview')
+        assert str(resident) in subprocess.check_output(['xprop','-id',str(xid),'_NET_WM_PID'],text=True)
+        assert '_NET_WM_STATE_ABOVE' in subprocess.check_output(['xprop','-id',str(xid),'_NET_WM_STATE'],text=True)
+        main_xid=int(focus.split()[-1],16)
+        main_pid=int(subprocess.check_output(['xprop','-id',str(main_xid),'_NET_WM_PID'],text=True).split()[-1])
+        def close_window(window_id):
+            window=GdkX11.X11Window.foreign_new_for_display(screen.get_display(),window_id)
+            window.focus(Gdk.CURRENT_TIME)
+            screen.get_display().sync()
+            wait(lambda:int(active().split()[-1],16)==window_id,'Window to close did not gain focus')
+            keymap=Gdk.Keymap.get_for_display(screen.get_display())
+            for pressed in (True,False):
+                for key in ((Gdk.KEY_Alt_L,Gdk.KEY_F4) if pressed else (Gdk.KEY_F4,Gdk.KEY_Alt_L)):
+                    ok,codes=keymap.get_entries_for_keyval(key)
+                    assert ok and atspi.generate_keyboard_event(codes[0].keycode,None,
+                        atspi.KeySynthType.PRESS if pressed else atspi.KeySynthType.RELEASE)
+        close_window(main_xid)
+        wait(lambda: not Path(f'/proc/{main_pid}').exists(), 'Main WebView process did not exit')
+        assert pinned_window()==xid
+        def native_text(value):
+            return next((i for i,n,_,t in mygo_nodes(atspi,desktop) if value in (n,t) or value in t),None)
+        wait(lambda:native_text(marker),'Pinned native window did not retain the selected history')
+        cli=desktop.with_name('dzc')
+        subprocess.run([cli,'privacy','on'],check=True)
+        wait(lambda: not native_text(marker),'Pinned native window retained private content')
+        subprocess.run([cli,'privacy','off'],check=True)
+        assert pinned_window()==xid and not native_text(marker)
+        def native_button(names):
+            return next((i for i,n,interfaces,_ in mygo_nodes(atspi,desktop) if n in names and 'Action' in interfaces),None)
+        retry=wait(lambda:native_button(('Refresh state','重新读取','重新讀取')), 'Concealed preview has no restore control')
+        retry_box=atspi.Component.get_extents(retry,atspi.CoordType.SCREEN)
+        click(retry_box.x+retry_box.width//2,retry_box.y+retry_box.height//2)
+        wait(lambda:native_text(marker),'An explicit retry did not restore the original row')
+        close=wait(lambda:native_button(('Close preview','关闭预览','關閉預覽')), 'Pinned preview has no close control')
+        close_box=atspi.Component.get_extents(close,atspi.CoordType.SCREEN)
+        click(close_box.x+close_box.width//2,close_box.y+close_box.height//2)
+        wait(lambda: not pinned_window(), 'Pinned preview did not close')
+        print('Verified resident native pin, main WebView closure, original content, privacy concealment and explicit restore')
+        return
     pointer.warp(screen, 0, 0)
     screen.get_display().sync()
     deadline = time.monotonic() + 5
@@ -1407,7 +1469,7 @@ def check_profile_move(executable, home):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile'):
+    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview'):
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -1469,7 +1531,8 @@ with open(sys.argv[1], 'r+') as document:
                 recorder.write_text('#!/bin/sh\nprintf "%s\\n" "$1" > "$HOME/opened-guide"\n')
                 recorder.chmod(0o700)
                 env['PATH'] = str(recorder.parent) + os.pathsep + env['PATH']
-            subprocess.run(['xvfb-run', '-a', 'dbus-run-session', '--', sys.executable, __file__, desktop, path, *sys.argv[2:]],
+            display_options = ['-s','-screen 0 800x600x24'] if '--pin-preview' in sys.argv else []
+            subprocess.run(['xvfb-run', '-a', *display_options, 'dbus-run-session', '--', sys.executable, __file__, desktop, path, *sys.argv[2:]],
                            env=env, check=True, timeout=105)
     else:
         home = Path(sys.argv[2]).resolve(strict=True)
@@ -1487,8 +1550,8 @@ with open(sys.argv[1], 'r+') as document:
             if '--move-profile' in sys.argv[3:]:
                 check_profile_move(desktop, home)
             else:
-                with (contextlib.nullcontext() if pinned else private_audio(home)) as audio:
-                    check(desktop, pinned, audio)
+                with (contextlib.nullcontext() if pinned or '--pin-preview' in sys.argv else private_audio(home)) as audio:
+                    check(desktop, pinned, audio, '--pin-preview' in sys.argv)
         finally:
             wm.terminate()
             wm.wait(timeout=5)
