@@ -345,9 +345,26 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             wait_for(lambda: dict(db.execute("SELECT key, value FROM settings WHERE key IN ('app.theme','app.color_mode','app.language')"))
                      == {'app.theme': 'retro', 'app.color_mode': 'dark', 'app.language': 'en'}, 'Appearance changes did not reach the profile')
-        original = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
-        shortcut()
-        wait_for(lambda: subprocess.run(['xwininfo','-id',original], capture_output=True).returncode != 0, 'Settings WebView did not close')
+        # AT-SPI can operate on background controls. Address the actual WebView
+        # before asking the window manager to close it.
+        def settings_window():
+            for window in Gdk.Screen.get_default().get_window_stack() or []:
+                xid = str(window.get_xid())
+                props = subprocess.run(['xprop', '-id', xid, '_NET_WM_NAME', '_NET_WM_PID'],
+                                       capture_output=True, text=True)
+                if '_NET_WM_NAME(UTF8_STRING) = "DezirClip"' not in props.stdout:
+                    continue
+                pid = props.stdout.split()[-1]
+                if pid.isdecimal() and Path(f'/proc/{pid}/exe').resolve() == executable:
+                    return window
+        settings_main = wait_for(settings_window, 'Cannot identify MyGo settings window')
+        original = settings_main.get_xid()
+        settings_main.focus(Gdk.CURRENT_TIME)
+        wait_for(lambda: subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+                 == hex(original), 'Settings window did not receive focus')
+        shortcut((Gdk.KEY_Alt_L, Gdk.KEY_F4))
+        wait_for(lambda: subprocess.run(['xwininfo','-id',str(original)], capture_output=True).returncode != 0,
+                 'Settings WebView did not close')
         shortcut()
         wait_for(lambda: find_item('Image'), 'New WebView did not restore the selected language')
         selected = open_appearance('Settings', 'Appearance', 'Retro')
