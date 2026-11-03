@@ -408,20 +408,22 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
                          if label.casefold() == name.casefold() and 'Action' in interfaces), None)
         assert atspi.Action.do_action(action('Import Clipboard History'), 0)
         browse = wait_for(lambda: action('Browse File...'), 'Backup file chooser button unavailable')
-        previous_main = subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
-        assert atspi.Action.do_action(browse, 0)
-        wait_for(lambda: subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1] != previous_main
-                 and action('Open'), 'Backup file chooser did not open')
-        shortcut((Gdk.KEY_Control_L, Gdk.KEY_l))
-        location = wait_for(lambda: next((item for item, _, interfaces, _ in mygo_nodes(atspi, executable)
-                            if 'EditableText' in interfaces and item.get_state_set().contains(atspi.StateType.FOCUSED)), None),
-                            'Native file chooser location field did not take focus')
-        assert atspi.EditableText.set_text_contents(location, str(backup))
-        accept_file = wait_for(lambda: next((item for item, label, interfaces, _ in mygo_nodes(atspi, executable)
-                               if label == 'Open' and item.get_role() == atspi.Role.PUSH_BUTTON and 'Action' in interfaces
-                               and item.get_state_set().contains(atspi.StateType.SENSITIVE)), None),
-                               'Native chooser did not enable Open')
-        assert atspi.Action.do_action(accept_file, 0)
+        def choose_file(browse, path):
+            previous_main = subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+            assert atspi.Action.do_action(browse, 0)
+            wait_for(lambda: subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1] != previous_main
+                     and action('Open'), 'Native file chooser did not open')
+            shortcut((Gdk.KEY_Control_L, Gdk.KEY_l))
+            location = wait_for(lambda: next((item for item, _, interfaces, _ in mygo_nodes(atspi, executable)
+                                if 'EditableText' in interfaces and item.get_state_set().contains(atspi.StateType.FOCUSED)), None),
+                                'Native file chooser location field did not take focus')
+            assert atspi.EditableText.set_text_contents(location, str(path))
+            accept_file = wait_for(lambda: next((item for item, label, interfaces, _ in mygo_nodes(atspi, executable)
+                                   if label == 'Open' and item.get_role() == atspi.Role.PUSH_BUTTON and 'Action' in interfaces
+                                   and item.get_state_set().contains(atspi.StateType.SENSITIVE)), None),
+                                   'Native chooser did not enable Open')
+            assert atspi.Action.do_action(accept_file, 0)
+        choose_file(browse, backup)
         wait_for(lambda: find_item(imported_note, text=True), 'Selected backup did not show its preview')
         assert atspi.Action.do_action(action('Import Clipboard History'), 0)
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
@@ -446,7 +448,64 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
             except AssertionError as error:
                 raise AssertionError(f'Synthetic rule expected {rule!r}, persisted {read_rule()!r}, editor {atspi.Text.get_text(rules_field, 0, -1)!r}') from error
         print('Verified the last custom privacy rule edit persisted during continuous keyboard input')
-        full = open_settings_group('Tools', 'Full Screen Capture')
+        mica = open_settings_group('Appearance', 'Mica')
+        assert atspi.Action.do_action(mica, 0)
+        wait_for(lambda: action('Choose Background'), 'Custom background picker unavailable')
+        window = settings_window()
+        xid = window.get_xid()
+        window.focus(Gdk.CURRENT_TIME)
+        shortcut((Gdk.KEY_Alt_L, Gdk.KEY_F4))
+        wait_for(lambda: subprocess.run(['xwininfo','-id', str(xid)], capture_output=True).returncode != 0,
+                 'WebView did not close after switching themes')
+        shortcut()
+        choose = open_appearance('Settings', 'Appearance', 'Choose Background')
+        from gi.repository import GdkPixbuf
+        wallpaper = Path(os.environ['HOME'])/'mygo-background.png'
+        pixels = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 128, 128)
+        pixels.fill(0xff00ffff)
+        pixels.savev(str(wallpaper), 'png', [], [])
+        observed = {}
+        def painted():
+            window = settings_window()
+            if not window: return False
+            _, left, top = window.get_origin()
+            frame = Gdk.pixbuf_get_from_window(Gdk.get_default_root_window(), left, top, window.get_width(), window.get_height())
+            if not frame: return False
+            data = frame.get_pixels()
+            hits = 0
+            peak = 0
+            for y in range(0, frame.get_height(), 12):
+                for x in range(0, frame.get_width(), 12):
+                    offset = y * frame.get_rowstride() + x * frame.get_n_channels()
+                    r, g, b = data[offset:offset+3]
+                    chroma = min(r-g, b-g)
+                    peak = max(peak, chroma)
+                    hits += chroma > 60
+            observed.update(hits=hits, peak=peak)
+            return hits > 25
+        assert not painted()
+        baseline = observed.copy()
+        choose_file(choose, wallpaper)
+        wait_for(lambda: action('Clear Background'), 'Selected file did not appear in Settings')
+        def show_history():
+            close = wait_for(lambda: find_item('Close'), 'Settings close action unavailable')
+            assert atspi.Action.do_action(close, 0)
+            wait_for(lambda: find_item('Stickers'), 'Main window did not return to history')
+            settings_window().focus(Gdk.CURRENT_TIME)
+        show_history()
+        try:
+            wait_for(painted, 'Selected wallpaper did not paint its magenta pixels in the MyGo WebView')
+        except AssertionError as error:
+            with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+                settings = dict(db.execute("SELECT key,value FROM settings WHERE key IN ('app.custom_background','app.surface_opacity','app.custom_background_opacity','app.theme')"))
+            raise AssertionError(f'Isolated wallpaper config {settings}, original {baseline}, observed {observed}') from error
+        clear_bg = open_appearance('Settings', 'Appearance', 'Clear Background')
+        assert atspi.Action.do_action(clear_bg, 0)
+        wait_for(lambda: action('Choose Background'), 'Clear did not remove the selected file')
+        show_history()
+        wait_for(lambda: not painted(), 'Clearing the background left its pixels visible')
+        print('Verified selecting, visibly painting and clearing a custom background in the shared MyGo WebView')
+        full = open_appearance('Settings', 'Tools', 'Full Screen Capture')
         clipboard.set_text('waiting for explicit capture', -1)
         assert atspi.Action.do_action(full, 0)
         screen = Gdk.get_default_root_window()
@@ -454,6 +513,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
             image = clipboard.wait_for_image()
             return image is not None and (image.get_width(), image.get_height()) == (screen.get_width(), screen.get_height())
         wait_for(copied_screen, 'Settings full-screen capture did not copy the display')
+        wait_for(lambda: find_item('Copied to clipboard', text=True), 'Full-screen capture was not acknowledged')
         region = wait_for(lambda: action('Region Capture'), 'Region capture button unavailable')
         assert atspi.Action.do_action(region, 0)
         def active_region():
@@ -469,9 +529,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         wait_for(lambda: not active_region(), 'Resident screenshot selector did not dismiss')
         assert copied_screen()
         print('Verified full-screen and region capture buttons reached the resident screenshot implementation')
-        close_settings = wait_for(lambda: find_item('Close'), 'Settings close action unavailable')
-        assert atspi.Action.do_action(close_settings, 0)
-        wait_for(lambda: find_item('Stickers'), 'Main window did not return to history')
+        show_history()
         alternate.present()
         wait_for(alternate.is_active, 'Emoji editor did not acquire focus')
         other.set_text('')
@@ -503,6 +561,7 @@ def check(desktop, pinned):
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
         if pinned:
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.custom_background_opacity','100')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.emoji_panel_enabled','true')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.window_pinned','true')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.hotkey','Ctrl+Shift+F8')")

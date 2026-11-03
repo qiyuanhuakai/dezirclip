@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/egoist/mygo"
@@ -72,6 +73,17 @@ func (l *Library) OpenDataFolder(ctx context.Context) error {
 		return err
 	}
 	return mygo.Shell.OpenPath(profile.DataDirectory)
+}
+
+func (*DesktopShell) FileSize(path string) (int64, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	if !info.Mode().IsRegular() {
+		return 0, errors.New("FileUnavailable")
+	}
+	return info.Size(), nil
 }
 
 func (*DesktopShell) Version() string { return buildinfo.Version }

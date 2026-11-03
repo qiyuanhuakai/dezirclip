@@ -12,6 +12,13 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 
+func (l *Library) Background(ctx context.Context, epoch uint64, expected string) (*string, error) {
+	var result protocol.BackgroundResource
+	params := protocol.BackgroundParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, ExpectedPath: expected}
+	err := l.snapshot(ctx, protocol.MethodDesktopAppearanceBackground, params, "BackgroundResource", &result, epoch)
+	return result.Src, err
+}
+
 func (l *Library) PreviewBackup(ctx context.Context, epoch uint64, path string) ([]protocol.BackupPreviewRow, error) {
 	var result protocol.BackupPreview
 	params := protocol.BackupPreviewParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}

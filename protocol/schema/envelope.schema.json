@@ -71,6 +71,7 @@
         "desktop.history.summary",
         "desktop.platform.probe",
         "desktop.profile.info",
+        "desktop.appearance.background",
         "desktop.window.target",
         "desktop.window.pin",
         "desktop.tools.catalog",
@@ -933,6 +934,10 @@
               }
             }
           }
+        },
+        {
+          "if": { "properties": { "method": { "const": "desktop.appearance.background" } }, "required": ["method"] },
+          "then": { "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/BackgroundParams" } } }
         },
         {
           "if": {

@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
+	"image"
+	"image/png"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,6 +79,45 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("isolated status: %+v %v", status, err)
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
+	t.Run("selected background", func(t *testing.T) {
+		// Incompressible pixels exercise multiple protocol chunks and the renderer file-size check.
+		picture := image.NewNRGBA(image.Rect(0, 0, 768, 768))
+		rng := rand.New(rand.NewSource(17))
+		if _, err := rng.Read(picture.Pix); err != nil {
+			t.Fatal(err)
+		}
+		var original bytes.Buffer
+		if err := png.Encode(&original, picture); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "selected.png")
+		if err := os.WriteFile(path, original.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+		size, err := (&DesktopShell{}).FileSize(path)
+		if err != nil || size != int64(original.Len()) || size < 1<<20 {
+			t.Fatalf("file size: %d %v", size, err)
+		}
+		if data, err := library.Background(ctx, epoch, path); err != nil || data != nil {
+			t.Fatalf("unselected resource: %v", err)
+		}
+		if err := library.SetSetting(ctx, "app.custom_background", path, epoch); err != nil {
+			t.Fatal(err)
+		}
+		data, err := library.Background(ctx, epoch, path)
+		if err != nil || data == nil || *data != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(original.Bytes()) {
+			t.Fatalf("selected background did not roundtrip its pixels: %v", err)
+		}
+		if err := library.SetSetting(ctx, "app.custom_background_opacity", "38", epoch); err != nil {
+			t.Fatal(err)
+		}
+		if err := library.SetSetting(ctx, "app.custom_background", "", epoch); err != nil {
+			t.Fatal(err)
+		}
+		if data, err := library.Background(ctx, epoch, path); err != nil || data != nil {
+			t.Fatalf("cleared background was exposed: %v", err)
+		}
+	})
 	t.Run("managed favorites", func(t *testing.T) {
 		// Windows may return the long path even when TEMP used an 8.3 alias.
 		sameFile := func(actual, expected string) bool {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { invoke } from "./shared/lib/desktopInvoke";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import ToastContainer from "./shared/components/ToastContainer";
 import ConfirmDialog from "./shared/components/ConfirmDialog";
 import ProgressToast from "./features/shared/components/ProgressToast";
@@ -585,6 +585,7 @@ const App = () => {
         const request = backgroundSaveQueue.current.then(() => invoke<void>("save_setting", { key, value: path }));
         backgroundSaveQueue.current = request.catch(() => undefined);
         await request;
+        if (import.meta.env.MODE === "mygo") await emit("custom-background-changed", path);
       } else {
         await invoke("save_setting", { key, value: path });
       }

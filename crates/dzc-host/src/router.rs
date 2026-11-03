@@ -64,6 +64,7 @@ pub struct Host {
     pub(crate) after_backup_ticket: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
     pub(crate) manual_ocr_operation: Mutex<()>,
     font_scan: Mutex<()>,
+    background_read: Mutex<()>,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
@@ -108,7 +109,7 @@ impl Host {
         let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             #[cfg(test)] after_backup_ticket: Mutex::new(None),
-            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), background_read: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
             snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
@@ -299,6 +300,7 @@ impl Host {
                 }
                 methods.push("desktop.platform.probe");
                 methods.push("desktop.profile.info");
+                methods.push("desktop.appearance.background");
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
@@ -368,7 +370,7 @@ impl Host {
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
     }
     pub(crate) fn independent_dispatch(method: Method) -> bool {
-        matches!(method, Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+        matches!(method, Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
@@ -452,6 +454,12 @@ impl Host {
                 result("PrivacyHotkey", PrivacyHotkey { hotkey })
             }
             Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopAppearanceBackground => {
+                let request: BackgroundParams = params(request.params)?;
+                self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+                let _reading = self.background_read.lock().map_err(unavailable)?;
+                self.read_background(session, request)
+            }
             Method::DesktopProfileInfo => {
                 self.desktop_permission(session, self.instance_id())?;
                 let directory = self.directory.to_str().ok_or(WireErrorCode::Unavailable)?;

@@ -32,6 +32,12 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  get_file_size: async args => ({ size: await shellCall<number>("FileSize", args.path) }),
+  get_custom_background_resource: async args => {
+    const src = await library<string | null>("Background", currentEpoch(), args.expectedPath);
+    if (!src) throw "CustomBackgroundPending";
+    return src;
+  },
   show_region_selector: () => shellCall("Capture", false, currentEpoch()),
   capture_full_screen: async () => {
     await shellCall("Capture", true, currentEpoch());

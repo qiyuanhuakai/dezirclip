@@ -136,6 +136,21 @@ pub struct SurfaceActionParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct BackgroundParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub expected_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundResource {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub src: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DesktopProfileInfo {
     pub data_directory: String,
     pub database_schema_version: u32,
@@ -470,6 +485,8 @@ pub enum Method {
     DesktopPlatformProbe,
     #[serde(rename = "desktop.profile.info")]
     DesktopProfileInfo,
+    #[serde(rename = "desktop.appearance.background")]
+    DesktopAppearanceBackground,
     #[serde(rename = "desktop.window.target")]
     DesktopWindowTarget,
     #[serde(rename = "desktop.window.pin")]

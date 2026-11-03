@@ -11,6 +11,25 @@ impl Host {
         Ok(())
     }
 
+    pub(crate) fn read_background(&self, session: &Session, request: BackgroundParams) -> Result<Value, WireErrorCode> {
+        use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
+        use dzc_platform::user_resource;
+        let privacy = self.history.privacy();
+        let permit = privacy.authorize_read(PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied,
+            Some(request.expected_epoch), crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        let selected = || self.history.selected_background().map(|path| path == request.expected_path).map_err(|_| WireErrorCode::Unavailable);
+        let mut src = None;
+        if selected()? {
+            let path = user_resource::selected_background_path(&self.directory, request.expected_path.as_ref()).map_err(|_| WireErrorCode::Unavailable)?;
+            let data = user_resource::read_image(&path).map_err(|_| WireErrorCode::Unavailable)?;
+            if data.len() > 22_369_688 { return Err(WireErrorCode::FrameTooLarge); }
+            if selected()? { src = Some(data); }
+        }
+        if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+        privacy.check_read(&permit, crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        self.authorized_snapshot(session, &permit, &BackgroundResource { src })
+    }
+
     pub(crate) fn library_summary(&self, session: &Session, method: Method, params: Value) -> Result<Value, WireErrorCode> {
         use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
         let p: LibraryStateParams = serde_json::from_value(params).map_err(|_| WireErrorCode::InvalidRequest)?;

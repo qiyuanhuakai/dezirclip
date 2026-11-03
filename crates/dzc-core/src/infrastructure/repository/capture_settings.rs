@@ -28,6 +28,12 @@ impl SqliteClipboardRepository {
             .map_err(|error| CoreError::from(error.to_string()))?;
         rows.collect::<rusqlite::Result<_>>().map_err(|error| CoreError::from(error.to_string()))
     }
+    pub(crate) fn selected_background(&self) -> CoreResult<String> {
+        let connection = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        connection.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.custom_background'),'')",
+            [], |row| row.get(0)).map_err(|error| CoreError::from(error.to_string()))
+    }
+
     pub(crate) fn screen_preferences(&self) -> CoreResult<(bool, String, String)> {
         let conn = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
         conn.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.screenshot_enabled'),'true'),

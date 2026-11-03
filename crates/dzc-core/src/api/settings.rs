@@ -5,6 +5,7 @@ impl HistoryService {
     pub fn desktop_preferences(&self) -> CoreResult<std::collections::HashMap<String, String>> {
         self.repository.desktop_preferences()
     }
+    pub fn selected_background(&self) -> CoreResult<String> { self.repository.selected_background() }
     pub fn screen_preferences(&self) -> CoreResult<(bool, String, String)> {
         self.repository.screen_preferences()
     }
@@ -31,7 +32,7 @@ impl HistoryService {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono"
-            | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
+            | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
     }
 
     pub fn update_view_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
@@ -46,7 +47,8 @@ impl HistoryService {
             "app.language" => matches!(value, "zh" | "tw" | "en"),
             "app.clipboard_item_font_size" => value.parse::<u8>().is_ok_and(|v| (11..=18).contains(&v)),
             "app.clipboard_tag_font_size" => value.parse::<u8>().is_ok_and(|v| (8..=14).contains(&v)),
-            "app.surface_opacity" => value.parse::<u8>().is_ok_and(|v| v <= 100),
+            "app.custom_background" => value.is_empty() || (value.len() <= 32_768 && !value.contains('\0') && std::path::Path::new(value).is_absolute()),
+            "app.custom_background_opacity" | "app.surface_opacity" => value.parse::<u8>().is_ok_and(|v| v <= 100),
             _ => Self::is_view_setting(key) && matches!(value, "true" | "false"),
         };
         if !valid { return Err(super::CoreError::validation("ViewSettingInvalid")); }

@@ -388,6 +388,43 @@
         }
       ]
     },
+    "BackgroundParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "expected_path"
+      ],
+      "additionalProperties": false
+    },
+    "BackgroundResource": {
+      "type": "object",
+      "properties": {
+        "src": {
+          "type": "string",
+          "maxLength": 22369688
+        }
+      },
+      "additionalProperties": false
+    },
     "DesktopProfileInfo": {
       "type": "object",
       "properties": {
@@ -1299,6 +1336,7 @@
         "desktop.history.summary",
         "desktop.platform.probe",
         "desktop.profile.info",
+        "desktop.appearance.background",
         "desktop.window.target",
         "desktop.window.pin",
         "desktop.tools.catalog",
@@ -2158,6 +2196,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.appearance.background"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackgroundParams"
               }
             }
           }
@@ -5031,7 +5088,9 @@
             "app.font_mono",
             "app.emoji_panel_enabled",
             "app.emoji_panel_tab",
-            "app.emoji_favorites"
+            "app.emoji_favorites",
+            "app.custom_background",
+            "app.custom_background_opacity"
           ]
         },
         "value": {
@@ -5060,15 +5119,31 @@
         "if": {
           "properties": {
             "key": {
-              "const": "app.emoji_favorites"
+              "const": "app.custom_background"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "value": {
+              "maxLength": 32768
             }
           }
         },
         "else": {
-          "properties": {
-            "value": {
-              "minLength": 1,
-              "maxLength": 64
+          "if": {
+            "properties": {
+              "key": {
+                "const": "app.emoji_favorites"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "value": {
+                "minLength": 1,
+                "maxLength": 64
+              }
             }
           }
         }
