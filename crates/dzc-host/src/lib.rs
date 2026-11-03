@@ -8,6 +8,7 @@ mod client;
 mod work;
 mod desktop;
 mod library;
+mod backup;
 mod tools;
 mod desktop_actions;
 mod desktop_policy;

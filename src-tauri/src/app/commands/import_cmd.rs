@@ -1,86 +1,29 @@
-use crate::database::DbState;
-use crate::services::backup::{
-    decrypt_to_json, entries_from_json, import_from_json, ExportEntry, ImportMode,
-};
-use tauri::{AppHandle, Manager};
+use crate::app::ipc_host::DesktopHost;
+use dzc_host::wire::{BackupImportParams, BackupImportResult as ImportSummaryResponse, BackupPreview,
+    BackupPreviewParams, BackupPreviewRow, Method, RuntimeState};
+use tauri::State;
 
-const ENCRYPTED_HEADER_LEN: usize = 12 + 16;
-
-#[derive(Debug, serde::Serialize)]
-pub struct ImportSummaryResponse {
-    pub imported: usize,
-    pub skipped: usize,
-    pub mode: String,
+#[tauri::command]
+pub async fn import_from_file(host: State<'_, DesktopHost>, path: String, mode: String, passphrase: Option<String>) -> Result<ImportSummaryResponse, String> {
+    let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
+    host.backup(Method::DesktopBackupImport, BackupImportParams { service_instance_id: state.service_instance_id,
+        expected_epoch: state.privacy_epoch, path, mode, passphrase }, "BackupImportResult").await
 }
 
 #[tauri::command]
-pub fn import_from_file(
-    app: AppHandle,
-    path: String,
-    mode: String,
-    passphrase: Option<String>,
-) -> Result<ImportSummaryResponse, String> {
-    let import_mode = match mode.as_str() {
-        "merge" => ImportMode::Merge,
-        "replace" => ImportMode::Replace,
-        other => return Err(format!("mode must be 'merge' or 'replace', got '{other}'")),
-    };
-
-    let ticket=app.state::<DbState>().history_service().privacy().capture_ticket(chrono::Utc::now().timestamp_millis()).map_err(|error|error.to_string())?;
-    let data = std::fs::read(&path).map_err(|e| format!("failed to read file: {e}"))?;
-    if data.is_empty() {
-        return Err("import file is empty".to_string());
-    }
-
-    let (entries, summary) = if looks_encrypted(&data) {
-        let passphrase =
-            passphrase.ok_or_else(|| "passphrase is required for encrypted files".to_string())?;
-        if passphrase.is_empty() {
-            return Err("passphrase must not be empty".to_string());
-        }
-        let json = decrypt_to_json(&data, &passphrase).map_err(|e| e.to_string())?;
-        let entries = entries_from_json(&json).map_err(|e| e.to_string())?;
-        let summary = import_from_json(&json, import_mode).map_err(|e| e.to_string())?;
-        (entries, summary)
-    } else {
-        let json =
-            std::str::from_utf8(&data).map_err(|e| format!("file is not valid UTF-8: {e}"))?;
-        let entries = entries_from_json(json).map_err(|e| e.to_string())?;
-        let summary = import_from_json(json, import_mode).map_err(|e| e.to_string())?;
-        (entries, summary)
-    };
-
-    apply_import(app, import_mode, &entries, &ticket)?;
-
-    Ok(ImportSummaryResponse {
-        imported: summary.imported,
-        skipped: summary.skipped,
-        mode: summary.mode,
-    })
-}
-
-fn looks_encrypted(data: &[u8]) -> bool {
-    if data.len() < ENCRYPTED_HEADER_LEN {
-        return false;
-    }
-    if let Ok(json) = std::str::from_utf8(data) {
-        if json.trim_start().starts_with('{') {
-            return false;
-        }
-    }
-    true
-}
-
-fn apply_import(app: AppHandle, mode: ImportMode, entries: &[ExportEntry],ticket:&dzc_core::api::CaptureTicket) -> Result<(), String> {
-    let db = app.state::<DbState>();
-    dzc_core::api::BackupService::new(db.history_service()).apply_authorized(entries, mode,ticket).map_err(Into::into)
+pub async fn preview_backup_file(host: State<'_, DesktopHost>, path: String) -> Result<Vec<BackupPreviewRow>, String> {
+    let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
+    let result: BackupPreview = host.backup(Method::DesktopBackupPreview, BackupPreviewParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, path
+    }, "BackupPreview").await?;
+    Ok(result.entries)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::services::backup::{
-        export_to_json, import_from_encrypted, BackupError, ExportEntry, ImportSummary,
+        entries_from_json, export_to_json, import_from_encrypted, BackupError, ExportEntry, ImportMode, ImportSummary,
     };
 
     fn make_entry(id: i64) -> ExportEntry {
@@ -111,8 +54,8 @@ mod tests {
             mode: "merge".to_string(),
         };
         let response = ImportSummaryResponse {
-            imported: summary.imported,
-            skipped: summary.skipped,
+            imported: summary.imported as u64,
+            skipped: summary.skipped as u64,
             mode: summary.mode.clone(),
         };
         assert_eq!(response.imported, 5);

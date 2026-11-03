@@ -73,6 +73,9 @@
         "desktop.tools.classify",
         "desktop.tools.transform",
         "desktop.tools.qr",
+        "desktop.backup.preview",
+        "desktop.backup.import",
+        "desktop.backup.export",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -960,6 +963,63 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolQrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.preview"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/backup.schema.json#/$defs/BackupPreviewParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.import"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/backup.schema.json#/$defs/BackupImportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.export"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/backup.schema.json#/$defs/BackupExportParams"
               }
             }
           }

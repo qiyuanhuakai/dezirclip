@@ -4,6 +4,65 @@ use serde::{Deserialize, Serialize};
 pub const MAX_FRAME_BYTES: usize = 1048576;
 pub const MAX_JSON_DEPTH: usize = 64;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupPreviewParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupImportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passphrase: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupExportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+    pub format: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passphrase: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupPreviewRow {
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupPreview {
+    pub entries: Vec<BackupPreviewRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupImportResult {
+    pub imported: u64,
+    pub skipped: u64,
+    pub mode: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackupExportResult {
+    pub count: u64,
+    pub format: String,
+    pub encrypted: bool,
+    pub path: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Permission {
     #[serde(rename = "history_read")]
@@ -357,6 +416,12 @@ pub enum Method {
     DesktopToolsTransform,
     #[serde(rename = "desktop.tools.qr")]
     DesktopToolsQr,
+    #[serde(rename = "desktop.backup.preview")]
+    DesktopBackupPreview,
+    #[serde(rename = "desktop.backup.import")]
+    DesktopBackupImport,
+    #[serde(rename = "desktop.backup.export")]
+    DesktopBackupExport,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]

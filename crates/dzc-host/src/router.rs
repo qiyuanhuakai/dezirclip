@@ -57,6 +57,7 @@ pub struct Host {
     pub(crate) capture_owner: AtomicBool,
     pub(crate) lifecycle: Mutex<Option<Arc<dyn HostLifecycle>>>,
     pub(crate) requests: Mutex<()>,
+    pub(crate) backup_operation: Mutex<()>,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
@@ -96,7 +97,7 @@ impl Host {
         let epoch = options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.privacy_epoch;
         let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
-            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
             snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
@@ -128,6 +129,7 @@ impl Host {
     }
     fn stop(&self) -> Result<(), WireErrorCode> {
         if self.stopped.load(Ordering::Acquire) {return Ok(());}
+        let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         self.stop_requested.store(true, Ordering::Release);
         self.events.interrupt();
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.stop_capture()?; }
@@ -248,6 +250,7 @@ impl Host {
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
+            methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             methods.extend(["desktop.history.clear", "desktop.history.reorder", "desktop.tags.create", "desktop.tags.rename", "desktop.tags.remove"]);
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
@@ -294,6 +297,13 @@ impl Host {
         // mutation permit. Revalidate a delegated grant after the wait as well.
         if request.method == Method::EventsSubscribe {
             return match self.subscribe(session, request.params) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) };
+        }
+        // File IO and key derivation can take seconds. Keep privacy controls responsive.
+        if matches!(request.method, Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview) {
+            return match self.route(session, request) {
+                Ok(value) => Response::success(id, value),
+                Err(code) => Response::failure(id, code),
+            };
         }
         let Ok(_serial) = self.requests.lock() else { return Response::failure(id, WireErrorCode::Unavailable); };
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
@@ -377,6 +387,8 @@ impl Host {
             }
             Method::DesktopHistoryClear | Method::DesktopHistoryReorder | Method::DesktopTagsCreate
             | Method::DesktopTagsRename | Method::DesktopTagsRemove => self.edit_library(session, request.method, request.params),
+            Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview =>
+                self.backup(session, request.method, request.params),
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),

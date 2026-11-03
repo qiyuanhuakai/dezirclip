@@ -116,7 +116,11 @@ async fn exchange(stream: &mut Stream, request: Request, schema: &str, send_limi
         return Err(io::Error::new(io::ErrorKind::InvalidData, "NegotiatedFrameLimitExceeded"));
     }
     ipc::write_frame(stream, &bytes, Duration::from_secs(5)).await?;
-    let bytes = ipc::read_frame(stream, Duration::from_secs(15)).await?;
+    let timeout = match request.method {
+        Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview => Duration::from_secs(600),
+        _ => Duration::from_secs(15),
+    };
+    let bytes = ipc::read_frame(stream, timeout).await?;
     let response: Response = wire::decode("Response", &bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "InvalidLocalResponse"))?;
     if response.request_id != request.request_id { return Err(io::Error::new(io::ErrorKind::InvalidData, "ResponseCorrelationFailed")); }
     if let Some(error) = response.error { return Err(io::Error::new(io::ErrorKind::PermissionDenied, serde_json::to_string(&error.code)?)); }

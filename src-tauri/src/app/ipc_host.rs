@@ -480,6 +480,15 @@ impl DesktopHost {
         params.expected_paste_target=target;
         client.call(Method::DesktopClipboardCopy,params,"OperationResult").await.map_err(remote_error)
     }
+    pub async fn backup<T: DeserializeOwned + Send + 'static>(&self, method: Method, params: impl Serialize, schema: &str) -> Result<T, String> {
+        if let Some(host) = self.embedded()? {
+            let params = serde_json::to_value(params).map_err(|_| failed())?;
+            return tokio::task::spawn_blocking(move || dispatch_embedded(&host, method, params))
+                .await.map_err(|_| failed())?;
+        }
+        self.call(method, params, schema).await
+    }
+
     pub async fn call<T:DeserializeOwned>(&self,method:Method,params:impl Serialize,schema:&str)->Result<T,String> {
         if let Some(host)=self.embedded()? {
             return dispatch_embedded(&host,method,params);

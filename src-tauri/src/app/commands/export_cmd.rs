@@ -1,51 +1,18 @@
-use crate::database::DbState;
 #[cfg(test)]
 use crate::domain::models::ClipboardEntry;
 #[cfg(test)]
 use crate::infrastructure::repository::cli_query::CliQuery;
 #[cfg(test)]
 use crate::services::backup::{export_to_encrypted, export_to_json, ExportEntry};
-use dzc_core::api::BackupService;
-use tauri::{AppHandle, State};
-
-#[derive(Debug, serde::Serialize)]
-pub struct ExportSummary {
-    pub count: usize,
-    pub format: String,
-    pub encrypted: bool,
-    pub path: String,
-}
+use crate::app::ipc_host::DesktopHost;
+use dzc_host::wire::{BackupExportParams, BackupExportResult as ExportSummary, Method, RuntimeState};
+use tauri::State;
 
 #[tauri::command]
-pub fn export_to_file(
-    _app: AppHandle,
-    state: State<'_, DbState>,
-    path: String,
-    format: String,
-    passphrase: Option<String>,
-) -> Result<ExportSummary, String> {
-    let encrypted = match format.as_str() {
-        "json" => false,
-        "encrypted" => true,
-        _ => return Err("format must be 'json' or 'encrypted'".to_string()),
-    };
-    let password = if encrypted {
-        Some(
-            passphrase
-                .as_deref()
-                .ok_or("passphrase is required for encrypted format")?,
-        )
-    } else {
-        None
-    };
-    let count = BackupService::new(state.history_service())
-        .export_file(std::path::Path::new(&path), password)?;
-    Ok(ExportSummary {
-        count,
-        format,
-        encrypted,
-        path,
-    })
+pub async fn export_to_file(host: State<'_, DesktopHost>, path: String, format: String, passphrase: Option<String>) -> Result<ExportSummary, String> {
+    let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
+    host.backup(Method::DesktopBackupExport, BackupExportParams { service_instance_id: state.service_instance_id,
+        expected_epoch: state.privacy_epoch, path, format, passphrase }, "BackupExportResult").await
 }
 
 /// Pure helper: serialize `entries` and write to `path`.
@@ -56,7 +23,7 @@ pub(crate) fn export_entries(
     format: String,
     passphrase: Option<String>,
 ) -> Result<ExportSummary, String> {
-    let count = entries.len();
+    let count = entries.len() as u64;
     let export_entries: Vec<ExportEntry> = entries
         .iter()
         .map(crate::services::backup::prepare_export_entry)

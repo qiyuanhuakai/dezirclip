@@ -1,6 +1,196 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "BackupPreviewParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "BackupImportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "replace"
+          ]
+        },
+        "passphrase": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "BackupExportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "encrypted"
+          ]
+        },
+        "passphrase": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "BackupPreviewRow": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "BackupPreview": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/BackupPreviewRow"
+          }
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": false
+    },
+    "BackupImportResult": {
+      "type": "object",
+      "properties": {
+        "imported": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "replace"
+          ]
+        }
+      },
+      "required": [
+        "imported",
+        "skipped",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "BackupExportResult": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "encrypted"
+          ]
+        },
+        "encrypted": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "count",
+        "format",
+        "encrypted",
+        "path"
+      ],
+      "additionalProperties": false
+    },
     "Permission": {
       "type": "string",
       "enum": [
@@ -926,6 +1116,9 @@
         "desktop.tools.classify",
         "desktop.tools.transform",
         "desktop.tools.qr",
+        "desktop.backup.preview",
+        "desktop.backup.import",
+        "desktop.backup.export",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -1813,6 +2006,63 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/ToolQrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.preview"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackupPreviewParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.import"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackupImportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.export"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackupExportParams"
               }
             }
           }

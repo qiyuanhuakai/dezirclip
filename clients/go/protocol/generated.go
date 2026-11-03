@@ -6,6 +6,49 @@ import "encoding/json"
 const MaxFrameBytes = 1048576
 const MaxJSONDepth = 64
 
+type BackupPreviewParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+}
+
+type BackupImportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+    Mode string `json:"mode"`
+    Passphrase *string `json:"passphrase,omitempty"`
+}
+
+type BackupExportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+    Format string `json:"format"`
+    Passphrase *string `json:"passphrase,omitempty"`
+}
+
+type BackupPreviewRow struct {
+    Content string `json:"content"`
+}
+
+type BackupPreview struct {
+    Entries []BackupPreviewRow `json:"entries"`
+}
+
+type BackupImportResult struct {
+    Imported uint64 `json:"imported"`
+    Skipped uint64 `json:"skipped"`
+    Mode string `json:"mode"`
+}
+
+type BackupExportResult struct {
+    Count uint64 `json:"count"`
+    Format string `json:"format"`
+    Encrypted bool `json:"encrypted"`
+    Path string `json:"path"`
+}
+
 type Permission string
 const (
     PermissionHistoryRead Permission = "history_read"
@@ -254,6 +297,9 @@ const (
     MethodDesktopToolsClassify Method = "desktop.tools.classify"
     MethodDesktopToolsTransform Method = "desktop.tools.transform"
     MethodDesktopToolsQr Method = "desktop.tools.qr"
+    MethodDesktopBackupPreview Method = "desktop.backup.preview"
+    MethodDesktopBackupImport Method = "desktop.backup.import"
+    MethodDesktopBackupExport Method = "desktop.backup.export"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"

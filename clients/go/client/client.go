@@ -44,7 +44,12 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     defer client.mu.Unlock()
     if err := ctx.Err(); err != nil { return err }
     deadline, ok := ctx.Deadline()
-    if maximum := time.Now().Add(5 * time.Second); !ok || deadline.After(maximum) { deadline = maximum }
+    limitDuration := 5 * time.Second
+    switch method {
+    case protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview:
+        limitDuration = 10 * time.Minute
+    }
+    if maximum := time.Now().Add(limitDuration); !ok || deadline.After(maximum) { deadline = maximum }
     if err := client.conn.SetDeadline(deadline); err != nil { return err }
     cancellationDone := make(chan struct{})
     stop := context.AfterFunc(ctx, func() { client.conn.SetDeadline(time.Now()); close(cancellationDone) })

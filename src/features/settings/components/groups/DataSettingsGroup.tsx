@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Download, Upload } from "lucide-react";
+
+import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";
 
 interface DataSettingsGroupProps {
     t: (key: string) => string;
@@ -175,6 +177,17 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
     const [previewEntries, setPreviewEntries] = useState<Array<{ content: string }>>([]);
     const [showPreview, setShowPreview] = useState(false);
 
+    const selection = useRef(0);
+    useEffect(() => {
+        const clear = () => {
+            selection.current++;
+            setPreviewEntries([]);
+            setShowPreview(false);
+        };
+        const unsubscribe = subscribePrivacyInvalidation(clear);
+        return () => { selection.current++; unsubscribe(); };
+    }, []);
+
     const handleBrowse = async () => {
         const selected = await open({
             multiple: false,
@@ -182,6 +195,7 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
         });
         if (selected) {
             const path = selected as string;
+            const request = ++selection.current;
             setFilePath(path);
             setPreviewEntries([]);
             setShowPreview(false);
@@ -190,13 +204,12 @@ const ImportModal = ({ t, onClose }: ImportModalProps) => {
                 setPassphrase("");
             } else {
                 try {
-                    const data = await invoke<Array<{ content: string }>>("export_to_file", {
-                        path,
-                        format: "json",
-                    });
-                    setPreviewEntries(data.slice(0, 10));
+                    const data = await invokePrivacyBound<Array<{ content: string }>>("preview_backup_file", { path });
+                    if (request !== selection.current) return;
+                    setPreviewEntries(data);
                     setShowPreview(true);
                 } catch {
+                    if (request !== selection.current) return;
                     setPreviewEntries([]);
                     setShowPreview(false);
                 }

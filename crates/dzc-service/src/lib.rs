@@ -121,6 +121,39 @@ mod desktop_protocol_tests {
         if catalog.transforms.len() != 17 || classified.kinds != ["url"] || transformed.text != "AB" || !qr.text.contains("<svg") {
             return Err("standalone tool result mismatch".into());
         }
+        exercise_backups(&mut client, database, &state.state).await
+    }
+
+    async fn exercise_backups(client: &mut Client, database: &Path, state: &RuntimeState) -> Result<(), Box<dyn Error>> {
+        let source = database.with_file_name("source.json");
+        let encrypted = database.with_file_name("round-trip.dzc");
+        let fixture = serde_json::to_vec(&serde_json::json!({"version":"dezirclip-export-v2", "exported_at":1,
+            "entries":[{"id":1, "content_type":"text", "content":"fixture 汉字", "created_at":1, "updated_at":1}]}))?;
+        std::fs::write(&source, &fixture)?;
+        let base = |path: &Path| serde_json::json!({"service_instance_id":state.service_instance_id,
+            "expected_epoch":state.privacy_epoch, "path":path});
+        let preview: BackupPreview = client.call(Method::DesktopBackupPreview, base(&source), "BackupPreview").await?;
+        if preview.entries.first().map(|row|row.content.as_str()) != Some("fixture 汉字") || std::fs::read(&source)? != fixture {
+            return Err("backup preview modified the source or returned the wrong content".into());
+        }
+        let mut import = base(&source);
+        import["mode"] = "merge".into();
+        let result: BackupImportResult = client.call(Method::DesktopBackupImport, import, "BackupImportResult").await?;
+        if result.imported != 1 {return Err("backup import count mismatch".into());}
+        let mut export = base(&encrypted);
+        export["format"] = "encrypted".into();
+        export["passphrase"] = "synthetic long password".into();
+        let written: BackupExportResult = client.call(Method::DesktopBackupExport, export, "BackupExportResult").await?;
+        if written.count != 1 || !written.encrypted {return Err("encrypted backup not written".into());}
+        let mut restore = base(&encrypted);
+        restore["mode"] = "replace".into();
+        restore["passphrase"] = "wrong".into();
+        if client.call::<BackupImportResult>(Method::DesktopBackupImport, &restore, "BackupImportResult").await.is_ok() {
+            return Err("wrong backup password accepted".into());
+        }
+        restore["passphrase"] = "synthetic long password".into();
+        let restored: BackupImportResult = client.call(Method::DesktopBackupImport, restore, "BackupImportResult").await?;
+        if restored.imported != 1 || restored.mode != "replace" {return Err("encrypted restore mismatch".into());}
         Ok(())
     }
 }
