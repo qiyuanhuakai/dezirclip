@@ -10,7 +10,6 @@ fn parameters<T: DeserializeOwned>(value: Value) -> Result<T, WireErrorCode> {
 
 pub(super) fn run(method: Method, params: Value) -> Result<Value, WireErrorCode> {
     let result = match method {
-        Method::DesktopSettingsFonts => json!({ "fonts": dzc_platform::fonts::list_system_fonts() }),
         Method::DesktopToolsCatalog => json!({
             "content_kinds": classification::CONTENT_KINDS,
             "transforms": transforms::list_transform_kinds(),
@@ -37,6 +36,10 @@ pub(super) fn run(method: Method, params: Value) -> Result<Value, WireErrorCode>
         }
         _ => return Err(WireErrorCode::InvalidRequest),
     };
+    bounded(result)
+}
+
+pub(super) fn bounded(result: Value) -> Result<Value, WireErrorCode> {
     // Leave room for the response envelope and the request ID after JSON escaping.
     if serde_json::to_vec(&result).map_err(|_| WireErrorCode::Internal)?.len() > wire::MAX_FRAME_BYTES - 4096 {
         return Err(WireErrorCode::FrameTooLarge);

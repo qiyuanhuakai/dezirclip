@@ -9,6 +9,7 @@ pub trait PreparedPaste: Send {
     fn send(&self) -> Result<(), WireErrorCode>;
 }
 pub trait HostActions: Send + Sync {
+    fn system_fonts(&self) -> Vec<DesktopFont> { dzc_platform::fonts::list_system_fonts() }
     fn platform_capabilities(&self) -> Value;
     fn can_copy(&self) -> bool;
     fn copy(&self, payload: dzc_core::ports::ClipboardPayload) -> Result<(), WireErrorCode>;
@@ -62,6 +63,7 @@ pub struct Host {
     #[cfg(test)]
     pub(crate) after_backup_ticket: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
     pub(crate) manual_ocr_operation: Mutex<()>,
+    font_scan: Mutex<()>,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
@@ -106,7 +108,7 @@ impl Host {
         let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             #[cfg(test)] after_backup_ticket: Mutex::new(None),
-            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
             snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
@@ -365,7 +367,8 @@ impl Host {
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
     }
     pub(crate) fn independent_dispatch(method: Method) -> bool {
-        matches!(method, Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
+        matches!(method, Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+            Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
@@ -452,7 +455,14 @@ impl Host {
                 self.desktop_permission(session, self.instance_id())?;
                 result("DesktopPlatformReport", serde_json::json!({ "report": dzc_platform::runtime::session_capabilities() }))
             }
-            Method::DesktopSettingsFonts | Method::DesktopToolsCatalog | Method::DesktopToolsClassify | Method::DesktopToolsTransform | Method::DesktopToolsQr => {
+            Method::DesktopSettingsFonts => {
+                self.desktop_permission(session, self.instance_id())?;
+                let _scan = self.font_scan.try_lock().map_err(|_| WireErrorCode::Busy)?;
+                let fonts = self.actions.system_fonts();
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                crate::tools::bounded(serde_json::json!({ "fonts": fonts }))
+            }
+            Method::DesktopToolsCatalog | Method::DesktopToolsClassify | Method::DesktopToolsTransform | Method::DesktopToolsQr => {
                 self.desktop_permission(session, self.instance_id())?;
                 crate::tools::run(request.method, request.params)
             }

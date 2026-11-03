@@ -231,6 +231,57 @@ mod tests {
     }
 
     #[test]
+    fn blocked_system_fonts_leave_privacy_and_other_connections_responsive() {
+        struct SlowFonts {
+            entered: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+            resume: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
+        }
+        impl crate::HostActions for SlowFonts {
+            fn system_fonts(&self) -> Vec<DesktopFont> {
+                self.entered.lock().unwrap().take().unwrap().send(()).unwrap();
+                self.resume.lock().unwrap().recv_timeout(Duration::from_secs(8)).unwrap();
+                vec![DesktopFont { family: "Fixture".into(), is_mono: false, path: "fixture.ttf".into() }]
+            }
+            fn platform_capabilities(&self) -> serde_json::Value { serde_json::json!({}) }
+            fn can_copy(&self) -> bool { false }
+            fn copy(&self, _: dzc_core::ports::ClipboardPayload) -> Result<(), WireErrorCode> { unreachable!() }
+            fn can_paste(&self) -> bool { false }
+            fn paste(&self) -> Result<(), WireErrorCode> { unreachable!() }
+            fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
+        }
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = directory();
+            let original = crate::router::tests::synthetic_host();
+            let (entered, waiting) = tokio::sync::oneshot::channel();
+            let (resume, paused) = std::sync::mpsc::channel();
+            let host = Host::new(crate::HostOptions { mode: HostMode::Service, history: original.history.clone(),
+                directory: directory.clone(), actions: Arc::new(SlowFonts { entered: Some(entered).into(), resume: paused.into() }) }).unwrap();
+            let endpoint = Endpoint::in_directory(&directory).unwrap();
+            let listener = endpoint.bind().unwrap();
+            let credentials = ControlFile::publish(&host, &endpoint).unwrap();
+            let (shutdown, receiver) = watch::channel(false);
+            let server = tokio::spawn(serve_listener(host.clone(), listener, receiver));
+            let mut desktop = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let mut second = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let scan = tokio::spawn(async move { desktop.call::<DesktopFontList>(Method::DesktopSettingsFonts, serde_json::json!({}), "DesktopFontList").await });
+            tokio::time::timeout(Duration::from_secs(3), waiting).await.unwrap().unwrap();
+            let busy = tokio::time::timeout(Duration::from_secs(1), second.call::<DesktopFontList>(
+                Method::DesktopSettingsFonts, serde_json::json!({}), "DesktopFontList")).await.unwrap().unwrap_err();
+            assert_eq!(serde_json::from_str::<WireErrorCode>(&busy.to_string()).unwrap(), WireErrorCode::Busy);
+            let privacy = tokio::time::timeout(Duration::from_secs(1), second.call::<PrivacyState>(
+                Method::PrivacySet, serde_json::json!({"active":true}), "PrivacyState")).await.unwrap().unwrap();
+            assert!(privacy.active);
+            assert!(host.try_toggle_privacy().unwrap());
+            resume.send(()).unwrap();
+            assert_eq!(scan.await.unwrap().unwrap().fonts[0].family, "Fixture");
+            shutdown.send(true).unwrap();
+            server.await.unwrap().unwrap();
+            drop(credentials);
+            std::fs::remove_dir_all(directory).unwrap();
+        });
+    }
+
+    #[test]
     fn privacy_switch_on_second_connection_invalidates_inflight_backup() {
         tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
             let directory = directory();

@@ -47,11 +47,11 @@ impl FontSource for InstalledFonts {
 #[cfg(all(target_os = "linux", not(feature = "native-fonts")))]
 impl FontSource for InstalledFonts {
     fn all_fonts(&self) -> Result<Vec<FontInfo>, String> {
-        let list = std::process::Command::new("fc-list")
-            .args(["--format", "%{family[0]}\x1f%{spacing}\x1f%{file}\x1e"])
-            .output().map_err(|err| err.to_string())?;
-        if !list.status.success() { return Err("Fontconfig query failed".into()); }
-        let data = String::from_utf8_lossy(&list.stdout);
+        let mut command = std::process::Command::new("fc-list");
+        command.args(["--format", "%{family[0]}\x1f%{spacing}\x1f%{file}\x1e"]);
+        let output = fontconfig_output(command, std::time::Duration::from_secs(3), 4 * 1024 * 1024)
+            .map_err(|error| error.to_string())?;
+        let data = String::from_utf8_lossy(&output);
         let fonts = data.split('\x1e').filter_map(|line| {
             let mut fields = line.splitn(3, '\x1f');
             let family = fields.next()?;
@@ -62,6 +62,39 @@ impl FontSource for InstalledFonts {
         }).collect();
         Ok(sort_fonts(dedup_fonts(fonts)))
     }
+}
+
+#[cfg(all(target_os = "linux", not(feature = "native-fonts")))]
+fn fontconfig_output(mut command: std::process::Command, timeout: std::time::Duration, limit: usize) -> std::io::Result<Vec<u8>> {
+    use std::{io::{self, Read}, os::{fd::OwnedFd, unix::net::UnixStream}, process::Stdio, time::{Duration, Instant}};
+    let (mut reader, writer) = UnixStream::pair()?;
+    let mut child = command.stdout(Stdio::from(OwnedFd::from(writer))).stderr(Stdio::null()).stdin(Stdio::null()).spawn()?;
+    drop(command);
+    let deadline = Instant::now() + timeout;
+    let result = (|| {
+        let mut output = Vec::new();
+        let mut buffer = [0u8; 8192];
+        loop {
+            let remaining = deadline.checked_duration_since(Instant::now()).ok_or(io::ErrorKind::TimedOut)?;
+            reader.set_read_timeout(Some(remaining.max(Duration::from_millis(1))))?;
+            let count = reader.read(&mut buffer)?;
+            if count == 0 { break; }
+            if output.len() + count > limit { return Err(io::Error::other("Fontconfig output exceeded limit")); }
+            output.extend_from_slice(&buffer[..count]);
+        }
+        loop {
+            if let Some(status) = child.try_wait()? {
+                return if status.success() { Ok(output) } else { Err(io::Error::other("Fontconfig query failed")) };
+            }
+            if Instant::now() >= deadline { return Err(io::ErrorKind::TimedOut.into()); }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    })();
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
 }
 
 fn dedup_fonts(fonts: Vec<FontInfo>) -> Vec<FontInfo> {
@@ -99,6 +132,18 @@ fn list_system_fonts_with_source(source: &dyn FontSource) -> Vec<FontInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(target_os = "linux", not(feature = "native-fonts")))]
+    #[test]
+    fn fontconfig_child_cannot_hold_the_worker_or_flood_its_output() {
+        use std::{process::Command, time::{Duration, Instant}};
+        let mut hung = Command::new("sleep");
+        hung.arg("30");
+        let started = Instant::now();
+        assert!(fontconfig_output(hung, Duration::from_millis(100), 4096).is_err());
+        assert!(started.elapsed() < Duration::from_secs(3));
+        assert!(fontconfig_output(Command::new("yes"), Duration::from_secs(3), 4096).is_err());
+    }
 
     fn info(family: &str, mono: bool) -> FontInfo {
         FontInfo {
