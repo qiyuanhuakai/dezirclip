@@ -148,6 +148,7 @@ mod linux {
                 .map_err(|_| failed())?
                 .check()
                 .map_err(|_| failed())?;
+            let mut wait_for_manager = None;
             let result = (|| {
                 let focused = super::super::x11::checked_focus(conn)?;
                 while let Some(event) = conn.poll_for_event().map_err(|_| failed())? {
@@ -193,6 +194,9 @@ mod linux {
                         if window != self.client && owner(conn, window)? != peer {
                             return Err(failed());
                         }
+                        if window != self.client {
+                            wait_for_manager = Some(atom);
+                        }
                     }
                     let message = ClientMessageEvent::new(
                         32,
@@ -210,6 +214,9 @@ mod linux {
                     .check()
                     .map_err(|_| failed())?;
                 }
+                if wait_for_manager.is_some() {
+                    return Ok(());
+                }
                 conn.set_input_focus(InputFocus::PARENT, self.focus, x11rb::CURRENT_TIME)
                     .map_err(|_| failed())?
                     .check()
@@ -223,7 +230,46 @@ mod linux {
                 .map_err(|_| failed())?
                 .check()
                 .map_err(|_| failed())?;
-            result
+            result?;
+            if let Some(atom) = wait_for_manager {
+                self.settle_focus(atom, peer)?;
+            }
+            Ok(())
+        }
+
+        // A reparenting window manager may focus the application's toplevel
+        // after processing _NET_ACTIVE_WINDOW. Restore the exact child only
+        // when that toplevel is active and currently owns the keyboard.
+        fn settle_focus(&self, atom: u32, peer: u32) -> PlatformResult<()> {
+            let conn = &self.conn;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(250);
+            loop {
+                conn.grab_server().map_err(|_| failed())?.check().map_err(|_| failed())?;
+                let result = (|| {
+                    let active = conn.get_property(false, self.root, atom, AtomEnum::WINDOW, 0, 1)
+                        .map_err(|_| failed())?.reply().map_err(|_| failed())?
+                        .value32().and_then(|mut ids| ids.next()).ok_or_else(failed)?;
+                    let focus = super::super::x11::checked_focus(conn)?;
+                    if active != self.client {
+                        if owner(conn, active)? != peer || (focus != self.focus && focus != self.client && owner(conn, focus)? != peer) {
+                            return Err(failed());
+                        }
+                        return Ok(false);
+                    }
+                    if focus == self.focus { return Ok(true); }
+                    if owner(conn, focus)? == peer { return Ok(false); }
+                    if focus != self.client || owner(conn, focus)? != self.pid || owner(conn, self.focus)? != self.pid {
+                        return Err(failed());
+                    }
+                    conn.set_input_focus(InputFocus::PARENT, self.focus, x11rb::CURRENT_TIME)
+                        .map_err(|_| failed())?.check().map_err(|_| failed())?;
+                    Ok(super::super::x11::checked_focus(conn)? == self.focus)
+                })();
+                conn.ungrab_server().map_err(|_| failed())?.check().map_err(|_| failed())?;
+                if result? { return Ok(()); }
+                if std::time::Instant::now() >= deadline { return Err(failed()); }
+                std::thread::sleep(std::time::Duration::from_millis(4));
+            }
         }
     }
 }

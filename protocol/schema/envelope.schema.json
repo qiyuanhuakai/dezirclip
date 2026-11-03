@@ -97,6 +97,7 @@
         "desktop.queue.set",
         "desktop.queue.next",
         "desktop.queue.configure",
+        "desktop.screen.preferences",
         "desktop.quick.preferences",
         "desktop.quick.begin",
         "desktop.quick.dismiss",
@@ -1449,6 +1450,25 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/queue.schema.json#/$defs/QueueSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/envelope.schema.json#/$defs/EmptyParams"
               }
             }
           }

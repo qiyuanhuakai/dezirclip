@@ -3,14 +3,23 @@
 const search = document.querySelector("#search");
 const rows = document.querySelector("#rows");
 const status = document.querySelector("#status");
+document.querySelector("#close").addEventListener("click", () => mygo.window.close());
 const previous = document.querySelector("#previous");
 const next = document.querySelector("#next");
 let offset = 0;
 let generation = 0;
 let state;
 let timer;
+let previewTimer;
+let previewSequence = 0;
+
+function hidePreview() {
+  clearTimeout(previewTimer);
+  if (state) mygo.call("Preview.Select", ++previewSequence, 0, state).catch(() => {});
+}
 
 function clearPage() {
+  hidePreview();
   generation++;
   state = undefined;
   rows.replaceChildren();
@@ -40,6 +49,16 @@ async function refresh() {
         }
       });
       item.append(document.createTextNode((row.preview || row.kind) + " "), button);
+      const showPreview = () => {
+        hidePreview();
+        previewTimer = setTimeout(() => {
+          if (generation === pending) mygo.call("Preview.Select", ++previewSequence, row.id, page.state).catch(() => {});
+        }, 240);
+      };
+      item.addEventListener("pointerenter", showPreview);
+      item.addEventListener("pointerleave", hidePreview);
+      button.addEventListener("focus", showPreview);
+      button.addEventListener("blur", hidePreview);
       rows.append(item);
     }
     previous.disabled = offset === 0;
@@ -78,5 +97,6 @@ search.addEventListener("input", () => {
 previous.addEventListener("click", () => { offset = Math.max(0, offset - 40); refresh(); });
 next.addEventListener("click", () => { offset += 40; refresh(); });
 document.addEventListener("visibilitychange", refresh);
+window.addEventListener("scroll", hidePreview, true);
 refresh();
 watch();

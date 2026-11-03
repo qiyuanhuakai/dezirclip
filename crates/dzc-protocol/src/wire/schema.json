@@ -1140,6 +1140,7 @@
         "desktop.queue.set",
         "desktop.queue.next",
         "desktop.queue.configure",
+        "desktop.screen.preferences",
         "desktop.quick.preferences",
         "desktop.quick.begin",
         "desktop.quick.dismiss",
@@ -2492,6 +2493,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/QueueSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EmptyParams"
               }
             }
           }
@@ -4545,6 +4565,28 @@
       "required": [
         "copied",
         "recorded"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenPreferences": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "full": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "enabled",
+        "region",
+        "full"
       ],
       "additionalProperties": false
     },

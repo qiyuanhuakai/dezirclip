@@ -3,6 +3,14 @@ use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
 use std::collections::HashMap;
 
 impl SqliteClipboardRepository {
+    pub(crate) fn screen_preferences(&self) -> CoreResult<(bool, String, String)> {
+        let conn = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
+        conn.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.screenshot_enabled'),'true'),
+            COALESCE((SELECT value FROM settings WHERE key='app.screenshot_hotkey'),'Ctrl+Shift+A'),
+            COALESCE((SELECT value FROM settings WHERE key='app.screenshot_full_hotkey'),'Ctrl+Shift+F')", [],
+            |row| Ok((row.get::<_, String>(0)? == "true", row.get(1)?, row.get(2)?)))
+            .map_err(|error| CoreError::from(error.to_string()))
+    }
     pub(crate) fn quick_preferences(&self) -> CoreResult<(bool, String)> {
         let conn = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
         conn.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_enabled'),'true'),

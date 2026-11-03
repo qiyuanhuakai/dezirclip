@@ -252,6 +252,28 @@
         "recorded"
       ],
       "additionalProperties": false
+    },
+    "ScreenPreferences": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "full": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "enabled",
+        "region",
+        "full"
+      ],
+      "additionalProperties": false
     }
   }
 }

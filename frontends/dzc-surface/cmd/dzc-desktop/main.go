@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 
 	"github.com/egoist/mygo"
@@ -14,10 +15,14 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/screenshot"
 )
 
 //go:embed web
 var web embed.FS
+
+//go:embed tray-icon.png
+var trayIcon []byte
 
 type History struct {
 	actions *client.Client
@@ -103,14 +108,45 @@ func run() error {
 	mygo.SetFrontend(assets)
 	mygo.App.SetName("DezirClip MyGo")
 	mygo.Bind(&History{actions: actions, events: events})
+	preview := &Preview{owner: actions}
+	mygo.Bind(preview)
 	mygo.App.WhenReady(func() {
 		panel := quickpaste.NewDesktopPanel(actions)
-		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
-		win.OnFocus(panel.RefreshShortcut)
-		win.OnClosed(mygo.App.Quit)
-		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
-		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
-		win.Page().LoadURL("mygo://localhost/")
+		selector := screenshot.New(actions)
+		tray, err := mygo.NewTray(mygo.TrayOptions{Icon: trayIcon, ToolTip: "DezirClip"})
+		open := func() {
+			if win := preview.main; win != nil {
+				win.Show()
+				win.Focus()
+				return
+			}
+			win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
+			preview.main, preview.generation = win, 0
+			win.OnBlur(preview.clear)
+			win.OnFocus(panel.RefreshShortcut)
+			win.OnFocus(selector.Refresh)
+			win.OnClosed(func() {
+				preview.clear()
+				preview.main = nil
+				if tray == nil {
+					mygo.App.Quit()
+				}
+			})
+			win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
+			win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
+			win.Page().LoadURL("mygo://localhost/")
+		}
+		if err != nil {
+			log.Printf("Tray unavailable: %v", err)
+		} else {
+			tray.OnClick(open)
+			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+				{Label: "打开剪贴板", Click: func(*mygo.MenuItem, *mygo.Window) { open() }},
+				{Label: "退出", Role: mygo.RoleQuit},
+			}))
+			mygo.App.OnWillQuit(func(*mygo.QuitEvent) { tray.Destroy() })
+		}
+		open()
 	})
 	return mygo.App.Run()
 }

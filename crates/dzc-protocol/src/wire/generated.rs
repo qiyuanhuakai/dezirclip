@@ -464,6 +464,8 @@ pub enum Method {
     DesktopQueueNext,
     #[serde(rename = "desktop.queue.configure")]
     DesktopQueueConfigure,
+    #[serde(rename = "desktop.screen.preferences")]
+    DesktopScreenPreferences,
     #[serde(rename = "desktop.quick.preferences")]
     DesktopQuickPreferences,
     #[serde(rename = "desktop.quick.begin")]
@@ -1075,6 +1077,14 @@ pub struct ScreenChunk {
 pub struct ScreenFinishResult {
     pub copied: bool,
     pub recorded: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenPreferences {
+    pub enabled: bool,
+    pub region: String,
+    pub full: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

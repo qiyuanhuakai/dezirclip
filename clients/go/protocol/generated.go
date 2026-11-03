@@ -321,6 +321,7 @@ const (
     MethodDesktopQueueSet Method = "desktop.queue.set"
     MethodDesktopQueueNext Method = "desktop.queue.next"
     MethodDesktopQueueConfigure Method = "desktop.queue.configure"
+    MethodDesktopScreenPreferences Method = "desktop.screen.preferences"
     MethodDesktopQuickPreferences Method = "desktop.quick.preferences"
     MethodDesktopQuickBegin Method = "desktop.quick.begin"
     MethodDesktopQuickDismiss Method = "desktop.quick.dismiss"
@@ -760,6 +761,12 @@ type ScreenChunk struct {
 type ScreenFinishResult struct {
     Copied bool `json:"copied"`
     Recorded bool `json:"recorded"`
+}
+
+type ScreenPreferences struct {
+    Enabled bool `json:"enabled"`
+    Region string `json:"region"`
+    Full string `json:"full"`
 }
 
 type CaptureSettingParams struct {

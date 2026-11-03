@@ -2,6 +2,9 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 
 impl HistoryService {
+    pub fn screen_preferences(&self) -> CoreResult<(bool, String, String)> {
+        self.repository.screen_preferences()
+    }
     pub fn quick_preferences(&self) -> CoreResult<(bool, String)> {
         self.repository.quick_preferences()
     }

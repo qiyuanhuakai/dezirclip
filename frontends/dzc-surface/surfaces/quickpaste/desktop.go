@@ -139,6 +139,9 @@ func (p *Panel) finishDesktopDisplay(id int64, restore bool) {
 		} else {
 			err = host.DismissQuickPaste(ctx, ticket, restore)
 		}
+		if err != nil {
+			log.Printf("Quick paste action failed: %v", err)
+		}
 		p.window.Update(func() {
 			if p.model.Display != ticket.Token {
 				return
