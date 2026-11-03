@@ -261,6 +261,27 @@ func (l *Library) Preferences(ctx context.Context) (json.RawMessage, error) {
 	return preferences.Values, nil
 }
 
+func (l *Library) SetSetting(ctx context.Context, key, value string, epoch uint64) error {
+	instance := l.owner.Hello().State.ServiceInstanceId
+	var result protocol.OperationResult
+	var err error
+	switch key {
+	case "app.sequential_mode", "app.delete_after_paste", "app.paste_method":
+		params := protocol.QueueSettingParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: key, Value: value}
+		err = l.owner.DesktopCall(ctx, protocol.MethodDesktopQueueConfigure, params, "OperationResult", &result)
+	case "app.persistent", "app.deduplicate", "app.capture_files", "app.capture_rich_text", "app.privacy_protection",
+		"app.privacy_protection_kinds", "app.privacy_protection_custom_rules", "app.excluded_source_apps", "app.ocr_enabled":
+		params := protocol.CaptureSettingParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: key, Value: value}
+		err = l.owner.DesktopCall(ctx, protocol.MethodDesktopSettingsCaptureSet, params, "OperationResult", &result)
+	default:
+		return errors.New("UnsupportedDesktopSetting")
+	}
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
+
 func (l *Library) entry(ctx context.Context, method protocol.Method, params protocol.DesktopEntryParams) (hostedEntry, error) {
 	instance := l.owner.Hello().State.ServiceInstanceId
 	if (params.Id < 0 || params.ServiceInstanceId != "") && params.ServiceInstanceId != instance {

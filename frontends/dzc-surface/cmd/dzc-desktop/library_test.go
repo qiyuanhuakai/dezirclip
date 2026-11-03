@@ -61,15 +61,19 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err := library.SetWindowPinned(ctx, true, epoch); err != nil {
 		t.Fatal(err)
 	}
-	var updated protocol.OperationResult
-	if err := owner.DesktopCall(ctx, protocol.MethodDesktopSettingsCaptureSet, protocol.CaptureSettingParams{
-		ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: "app.capture_files", Value: "false",
-	}, "OperationResult", &updated); err != nil || !updated.Performed {
-		t.Fatalf("capture settings: %+v %v", updated, err)
+	if err := library.SetSetting(ctx, "app.capture_files", "false", epoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := library.SetSetting(ctx, "app.sequential_mode", "false", epoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := library.SetSetting(ctx, "app.capture_files", "invalid", epoch); err == nil {
+		t.Fatal("accepted invalid capture preference")
 	}
 	preferences, err := library.Preferences(ctx)
 	var settings map[string]string
-	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.capture_files"] != "false" || settings["app.window_pinned"] != "true" {
+	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.capture_files"] != "false" ||
+		settings["app.window_pinned"] != "true" || settings["app.sequential_mode"] != "false" {
 		t.Fatalf("desktop preferences: %s %v", preferences, err)
 	}
 	file := filepath.Join(profile, "backup.json")

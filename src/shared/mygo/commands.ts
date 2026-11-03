@@ -73,6 +73,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     return { deletedCount };
   },
   get_settings: () => library("Preferences"),
+  save_setting: args => library("SetSetting", args.key, args.value, currentEpoch()),
   copy_to_clipboard: args => window.mygo.call("History.CopyEntry", {
     id: args.id === 0 ? args.derivedFromId : args.id,
     service_instance_id: args.expectedHostInstanceId,

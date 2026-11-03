@@ -1,7 +1,7 @@
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useEffect, useState } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";

@@ -48,6 +48,8 @@ async function watchHost() {
           dispatch("clipboard-removed", data.entry_id);
         } else if (event === "HistoryReset") {
           dispatch("tag-colors-updated");
+        } else if (event === "ServiceStateChanged" && data.status === "capture_settings_changed") {
+          dispatch("settings-changed");
         } else if (event === "ServiceStateChanged" && data.status?.startsWith("paste_queue_changed:")) {
           const count = Number(data.status.slice("paste_queue_changed:".length));
           if (Number.isSafeInteger(count) && count >= 0) dispatch("paste-queue-changed", count);
