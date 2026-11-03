@@ -50,10 +50,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--tag", required=True)
+    parser.add_argument("--tag", help="For a tagged release, require the manifest to match this tag")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     version = json.loads((root / "package.json").read_text(encoding="utf-8"))["version"]
-    if args.tag != "v" + version:
+    if args.tag is not None and args.tag != "v" + version:
         raise ValueError("Package version must match the release tag")
     stage(root, args.output.resolve(), args.revision, version)
