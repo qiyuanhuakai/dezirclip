@@ -39,9 +39,17 @@ def verify_installed_profile_move(cli, profile, isolated_env):
     assert 'installed-profile-before-relocation' in run('get', 'latest')
     run('add', 'installed-profile-after-relocation')
     assert 'installed-profile-after-relocation' in run('get', 'latest')
-    assert 'installed-profile-before-relocation' in run('get', 'latest',
-        environment={**env, 'DEZIRCLIP_DB_PATH': str(config/'clipboard.db')})
-    print('Verified offline relocation rejects both live endpoints and a path override; fresh CLI processes discover the moved database')
+    old_env = {**env, 'DEZIRCLIP_DB_PATH': str(config/'clipboard.db')}
+    assert 'installed-profile-before-relocation' in run('get', 'latest', environment=old_env)
+    started = json.loads(run('service', 'start', '--no-capture', '--json'))
+    try:
+        discovered = json.loads(run('service', 'status', '--json',
+            environment={**env, 'DEZIRCLIP_DB_PATH': str(target/'clipboard.db')}))
+        assert discovered['state']['service_instance_id'] == started['state']['service_instance_id']
+        run('service', 'status', '--json', environment=old_env, success=False)
+    finally:
+        run('service', 'stop')
+    print('Verified offline relocation, old profile preservation and discovery of the moved profile by fresh CLI and Service processes')
 
 
 def main():

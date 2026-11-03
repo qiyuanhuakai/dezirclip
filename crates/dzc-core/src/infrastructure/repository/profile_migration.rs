@@ -75,9 +75,11 @@ fn migrate_data_directory(
         return Err(MigrationError::Validation("Data directories must not contain one another".into()));
     }
     let names = ["clipboard.db", "attachments", "emoji_favorites"];
-    for name in names.into_iter().chain(["clipboard.db-wal", "clipboard.db-shm"]) {
-        if new_base.join(name).symlink_metadata().is_ok() {
-            return Err(MigrationError::Validation(format!("Destination already contains {name}; choose an empty data directory")));
+    for name in names.into_iter().chain(["clipboard.db-wal", "clipboard.db-shm", "clipboard.db-journal"]) {
+        match new_base.join(name).symlink_metadata() {
+            Ok(_) => return Err(MigrationError::Validation(format!("Destination already contains {name}; choose an empty data directory"))),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.into()),
         }
     }
     let stage = new_base.join(format!(".dezirclip-migration-{}", uuid::Uuid::new_v4()));
@@ -151,17 +153,7 @@ fn prepare_attachment_path_rewrites(
     old_base: &std::path::Path,
     new_base: &std::path::Path,
 ) -> MigrationResult<Vec<AttachmentPathRewrite>> {
-    let old_attach = old_base.join("attachments");
-    let new_attach = new_base.join("attachments");
-    let old_prefix = old_attach.to_string_lossy().to_string();
-    let new_prefix = new_attach.to_string_lossy().to_string();
-    if old_prefix == new_prefix {
-        return Ok(Vec::new());
-    }
-
-    let old_prefix_slash = old_prefix.replace('\\', "/");
-    let new_prefix_slash = new_prefix.replace('\\', "/");
-
+    let paths = DirectoryRewrite::new(&old_base.join("attachments"), &new_base.join("attachments"))?;
     let conn = Connection::open(db_path).map_err(MigrationError::from)?;
 
     let mut stmt = conn
@@ -183,26 +175,14 @@ fn prepare_attachment_path_rewrites(
         let mut content_new: Option<String> = None;
         let mut html_new: Option<String> = None;
 
-        if let Some(updated) = rewrite_content_path(
-            &content_raw,
-            &old_prefix,
-            &new_prefix,
-            &old_prefix_slash,
-            &new_prefix_slash,
-        )
+        if let Some(updated) = rewrite_stored_text(&content_raw, |plain| paths.path(plain))
         .map_err(|error| MigrationError::Internal(error.to_string()))?
         {
             content_new = Some(updated);
         }
 
         if let Some(html) = html_raw.as_ref() {
-            if let Some(updated) = rewrite_html_paths(
-                html,
-                &old_prefix,
-                &new_prefix,
-                &old_prefix_slash,
-                &new_prefix_slash,
-            )
+            if let Some(updated) = rewrite_stored_text(html, |plain| paths.html(plain))
             .map_err(|error| MigrationError::Internal(error.to_string()))?
             {
                 html_new = Some(updated);
@@ -269,17 +249,7 @@ fn rewrite_emoji_favorites_in_db(
     old_base: &std::path::Path,
     new_base: &std::path::Path,
 ) -> MigrationResult<()> {
-    let old_dir = old_base.join("emoji_favorites");
-    let new_dir = new_base.join("emoji_favorites");
-    let old_prefix = old_dir.to_string_lossy().to_string();
-    let new_prefix = new_dir.to_string_lossy().to_string();
-    if old_prefix == new_prefix {
-        return Ok(());
-    }
-
-    let old_prefix_slash = old_prefix.replace('\\', "/");
-    let new_prefix_slash = new_prefix.replace('\\', "/");
-
+    let paths = DirectoryRewrite::new(&old_base.join("emoji_favorites"), &new_base.join("emoji_favorites"))?;
     let conn = Connection::open(db_path).map_err(MigrationError::from)?;
     let value: Option<String> = conn
         .query_row(
@@ -301,16 +271,12 @@ fn rewrite_emoji_favorites_in_db(
     let mut changed = false;
     let mut updated: Vec<String> = Vec::with_capacity(parsed.len());
     for path in parsed {
-        let mut next = path.clone();
-        if next.starts_with(&old_prefix) {
-            next = format!("{}{}", new_prefix, &next[old_prefix.len()..]);
-        } else if next.starts_with(&old_prefix_slash) {
-            next = format!("{}{}", new_prefix_slash, &next[old_prefix_slash.len()..]);
-        }
-        if next != path {
+        if let Some(next) = paths.path(&path) {
             changed = true;
+            updated.push(next);
+        } else {
+            updated.push(path);
         }
-        updated.push(next);
     }
 
     if changed {
@@ -325,37 +291,45 @@ fn rewrite_emoji_favorites_in_db(
     Ok(())
 }
 
-fn rewrite_content_path(
-    value: &str,
-    old_prefix: &str,
-    new_prefix: &str,
-    old_prefix_slash: &str,
-    new_prefix_slash: &str,
-) -> Result<Option<String>, EncryptionError> {
-    rewrite_stored_text(value, |plain| {
-        if let Some(suffix) = plain.strip_prefix(old_prefix) {
-            Some(format!("{new_prefix}{suffix}"))
-        } else {
-            plain
-                .strip_prefix(old_prefix_slash)
-                .map(|suffix| format!("{new_prefix_slash}{suffix}"))
-        }
-    })
+struct DirectoryRewrite {
+    pattern: regex::Regex,
+    native: String,
+    destination: String,
+    destination_slash: String,
 }
 
-fn rewrite_html_paths(
-    value: &str,
-    old_prefix: &str,
-    new_prefix: &str,
-    old_prefix_slash: &str,
-    new_prefix_slash: &str,
-) -> Result<Option<String>, EncryptionError> {
-    rewrite_stored_text(value, |plain| {
-        let updated = plain
-            .replace(old_prefix, new_prefix)
-            .replace(old_prefix_slash, new_prefix_slash);
-        (updated != plain).then_some(updated)
-    })
+impl DirectoryRewrite {
+    fn new(source: &Path, destination: &Path) -> MigrationResult<Self> {
+        let native = source.to_string_lossy().into_owned();
+        let destination = destination.to_string_lossy().into_owned();
+        let mut prefix = regex::escape(&native);
+        if cfg!(windows) {
+            prefix = format!("(?:{prefix}|{})[/\\\\]", regex::escape(&native.replace('\\', "/")));
+        } else {
+            prefix.push('/');
+        }
+        let pattern = regex::Regex::new(&prefix).map_err(|e| MigrationError::Internal(e.to_string()))?;
+        let destination_slash = destination.replace('\\', "/");
+        Ok(Self { pattern, native, destination, destination_slash })
+    }
+
+    fn replacement(&self, matched: &str) -> String {
+        let target = if matched.starts_with(&self.native) { &self.destination } else { &self.destination_slash };
+        format!("{target}{}", &matched[matched.len()-1..])
+    }
+
+    fn path(&self, text: &str) -> Option<String> {
+        let matched = self.pattern.find(text)?;
+        if matched.start() != 0 { return None; }
+        Some(self.replacement(matched.as_str()) + &text[matched.end()..])
+    }
+
+    fn html(&self, text: &str) -> Option<String> {
+        match self.pattern.replace_all(text, |parts: &regex::Captures<'_>| self.replacement(&parts[0])) {
+            std::borrow::Cow::Borrowed(_) => None,
+            std::borrow::Cow::Owned(updated) => Some(updated),
+        }
+    }
 }
 
 fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -435,6 +409,31 @@ mod path_rewrite_tests {
         assert_eq!(std::fs::read_to_string(&redirect).unwrap(), new.to_string_lossy());
         assert_eq!(std::fs::read(new.join("attachments/image.png")).unwrap(), b"fixture image");
         drop(history);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn directory_migration_preserves_lookalike_external_paths_and_rejects_an_existing_journal() {
+        let (root, old, new, mut conn) = migration_fixture();
+        let image = old.join("attachments-other").join("external.png");
+        let favorite = old.join("emoji_favorites-other").join("external.png");
+        let favorites = serde_json::to_string(&[favorite]).unwrap();
+        let html = format!("<img src='{}'>", image.display());
+        conn.execute("UPDATE clipboard_history SET content=?1, html_content=?2 WHERE id=1", params![image.to_string_lossy(), html]).unwrap();
+        conn.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.emoji_favorites',?1)", [&favorites]).unwrap();
+        let journal = new.join("clipboard.db-journal");
+        std::fs::write(&journal, b"existing journal").unwrap();
+        let redirect = root.join("datapath.txt");
+        assert!(migrate_with_connection(&mut conn, &old, &new, &redirect).is_err());
+        assert!(!redirect.exists() && !new.join("clipboard.db").exists());
+        assert_eq!(std::fs::read(&journal).unwrap(), b"existing journal");
+        std::fs::remove_file(journal).unwrap();
+        migrate_with_connection(&mut conn, &old, &new, &redirect).unwrap();
+        let dest = fixture_connection(&new.join("clipboard.db"));
+        let stored: (String,String) = dest.query_row("SELECT content,html_content FROM clipboard_history WHERE id=1", [], |r| Ok((r.get(0)?,r.get(1)?))).unwrap();
+        assert_eq!(stored, (image.to_string_lossy().into_owned(), html));
+        assert_eq!(dest.query_row("SELECT value FROM settings WHERE key='app.emoji_favorites'", [], |r| r.get::<_,String>(0)).unwrap(), favorites);
+        drop(dest); drop(conn);
         std::fs::remove_dir_all(root).unwrap();
     }
 
