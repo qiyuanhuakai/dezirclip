@@ -15,6 +15,34 @@ pub fn sibling_executable() -> io::Result<PathBuf> {
     let extension = current.extension().map(|value| format!(".{}", value.to_string_lossy())).unwrap_or_default();
     Ok(current.with_file_name(format!("dzc-service{extension}")))
 }
+/// Reserve both session endpoints until the new profile and its redirect are published.
+pub fn move_profile_offline(database: &Path, destination: &Path) -> io::Result<()> {
+    let executable = std::env::current_exe()?;
+    if std::env::var_os("DEZIRCLIP_DB_PATH").is_some() || std::env::var_os("TIEZ_DB_PATH").is_some() {
+        return Err(io::Error::other("A database path override is active; change the override to relocate the profile"));
+    }
+    if executable.with_file_name("data").is_dir() {
+        return Err(io::Error::other("Move the complete portable directory to relocate its data"));
+    }
+    let source = database.parent().ok_or_else(|| io::Error::other("Missing profile directory"))?;
+    let current = database.canonicalize()?;
+    let source_dir = source.canonicalize()?;
+    let target_dir = destination.canonicalize()?;
+    if !target_dir.is_dir() { return Err(io::Error::other("Destination is not a directory")); }
+    if source_dir == target_dir { return Ok(()); }
+    let reserve = |directory: &Path| {
+        Endpoint::for_current_session(directory)?.bind()
+            .map_err(|e| io::Error::new(e.kind(), format!("Could not reserve the profile; close its desktop Host or Service: {e}")))
+    };
+    let _source = reserve(&source_dir)?;
+    let _destination = reserve(&target_dir)?;
+    if data::database_path().map_err(io::Error::other)?.canonicalize()? != current {
+        return Err(io::Error::other("The active profile changed before migration"));
+    }
+    let redirect = data::installed_config_directory().map_err(io::Error::other)?.join("datapath.txt");
+    let history = dzc_core::api::HistoryService::open(database).map_err(io::Error::other)?;
+    history.migrate_profile(source, destination, &redirect).map_err(io::Error::other)
+}
 pub async fn status(database: &Path) -> io::Result<ServiceStatus> {
     let mut client = Client::connect(&endpoint(database)?, ClientRole::Cli, None).await?;
     client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await

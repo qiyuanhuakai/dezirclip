@@ -13,6 +13,8 @@ enum ServiceCommand {
     Stop,
     /// Query the current Host without starting one.
     Status { #[arg(long)] json: bool },
+    /// Move the installed profile to an existing directory while both profile Hosts are closed.
+    MoveData { directory: PathBuf },
     /// Resolve the authenticated desktop Host. Prints connection metadata only.
     DesktopEndpoint { #[arg(long)] start_if_missing: bool },
     /// Explicitly grant a Surface bounded access. The token is printed once.
@@ -42,6 +44,12 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 status_output(status,json)
             }
             ServiceCommand::Status { json } => status_output(controller::status(&database).await.map_err(|e|e.to_string())?,json),
+            ServiceCommand::MoveData { directory } => {
+                if cfg!(feature = "portable") {
+                    return Err("Move the complete portable directory to relocate its data".into());
+                }
+                controller::move_profile_offline(&database, &directory).map_err(|error| error.to_string())
+            }
             ServiceCommand::DesktopEndpoint { start_if_missing } => {
                 let descriptor = controller::desktop_endpoint(&database, start_if_missing).await.map_err(|error| error.to_string())?;
                 println!("{}", descriptor);

@@ -46,14 +46,14 @@ pub fn main_entry() -> Result<(), String> {
     let database = options.database.map(Ok).unwrap_or_else(dzc_host::data::database_path)?;
     let directory = dzc_host::data::canonical_directory(&database)?;
     dzc_platform::install_default_key_provider();
-    let history = HistoryService::open(&database).map_err(|_| "HostDatabaseUnavailable")?;
-    let host = Host::new(HostOptions { mode: HostMode::Service, history, directory: directory.clone(), actions: Arc::new(NativeActions { writer: Default::default() }) }).map_err(|_| "HostInitializationFailed")?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|_| "HostRuntimeUnavailable")?;
     runtime.block_on(async {
         let endpoint = dzc_platform::ipc::Endpoint::for_current_session(&directory).map_err(|_| "HostEndpointUnavailable")?;
-        // Bind before publishing grants or starting capture; an existing owner
-        // cannot have its credentials replaced by a losing startup attempt.
+        // A migration may own the target endpoint before it publishes clipboard.db.
+        // A competing startup must not create or initialize that database.
         let listener = endpoint.bind().map_err(|_| "HostAlreadyRunning")?;
+        let history = HistoryService::open(&database).map_err(|_| "HostDatabaseUnavailable")?;
+        let host = Host::new(HostOptions { mode: HostMode::Service, history, directory: directory.clone(), actions: Arc::new(NativeActions { writer: Default::default() }) }).map_err(|_| "HostInitializationFailed")?;
         let _credentials = ControlFile::publish(&host, &endpoint).map_err(|_| "HostCredentialsUnavailable")?;
         if options.no_capture {host.set_capture_diagnostic("disabled_by_request").map_err(|_|"HostInitializationFailed")?;}
         else {

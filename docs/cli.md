@@ -361,6 +361,8 @@ dzc stats --json
 
 ## 导出、导入和手动迁移
 
+安装版可以用 `dzc service move-data <目标目录>` 迁移完整数据目录。先关闭桌面入口和占用源或目标目录的 Service，选择一个已经存在、没有同名数据库或附件的目录。命令复制已提交的历史、附件和收藏表情，写入新位置后，下次启动会自动读取该目录。原目录会保留。便携版应移动整个便携目录；显式指定数据库路径时，此命令会提示调整路径配置。
+
 ```bash
 dzc export /tmp/backup.json
 dzc export /tmp/backup.dzc --encrypted --passphrase "my-strong-pass"
