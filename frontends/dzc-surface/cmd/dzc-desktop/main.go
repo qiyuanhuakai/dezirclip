@@ -145,6 +145,7 @@ func run() error {
 	}
 	mygo.SetFrontend(assets)
 	mygo.Bind(&History{actions: actions})
+	mygo.Bind(&Library{owner: actions})
 	mygo.Bind(&DesktopShell{})
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)

@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktopInvoke";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
 import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
@@ -300,7 +300,9 @@ export async function invokePrivacyBound<T>(command: string, args?: Record<strin
   const publicRead = publicReadCommands.has(command) || (command === "get_privacy_entry" && args?.reveal === false);
   const guard = publicRead ? listFence : fence;
   const token = guard.capture();
-  const result = await invoke<T>(command, args);
+  const boundArgs = import.meta.env.MODE === "mygo" && publicReadCommands.has(command)
+    ? { expectedEpoch: model.snapshot?.privacy_epoch, ...args } : args;
+  const result = await invoke<T>(command, boundArgs);
   if (!guard.isCurrent(token) || model.phase !== "ready") throw new Error("PrivacyEpochChanged");
   return result;
 }

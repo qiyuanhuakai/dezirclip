@@ -393,6 +393,18 @@ jobs:
           subprocess.run(["go", "build", "-o", str(fixture), "./cmd/host-fixture"], cwd="clients/go", check=True)
           subprocess.run(["python", "scripts/test-local-host.py", "--cli", str(binary), "--desktop-fixture", str(fixture)], check=True)
 
+      - name: Verify MyGo React library operations against the Rust Service
+        if: matrix.can_test
+        shell: python
+        run: |
+          import json, os, subprocess
+          from pathlib import Path
+          fixture = Path("target/debug", "mygo-library.test" + (".exe" if os.name == "nt" else "")).resolve()
+          version = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
+          subprocess.run(["go", "test", "-c", "-o", str(fixture), "./cmd/dzc-desktop"], cwd="frontends/dzc-surface", check=True)
+          subprocess.run([fixture, "-test.run=^TestReactLibraryWithService$", "-test.v", "-test.timeout=60s"],
+                         env={**os.environ, "DZC_TEST_LIBRARY_VERSION": version}, check=True)
+
       - name: Verify independent MyGo WebView history and native clipboard on X11
         if: runner.os == 'Linux' && matrix.can_test
         run: |

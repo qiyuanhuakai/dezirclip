@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { createMainWindowResume, type PreparedResume } from "../lib/mainWindowResume";
 import { prepareMainWindowResume } from "../lib/privacySession";
