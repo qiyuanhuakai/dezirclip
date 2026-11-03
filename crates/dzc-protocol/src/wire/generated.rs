@@ -422,6 +422,12 @@ pub enum Method {
     DesktopBackupImport,
     #[serde(rename = "desktop.backup.export")]
     DesktopBackupExport,
+    #[serde(rename = "desktop.ocr.recognize")]
+    DesktopOcrRecognize,
+    #[serde(rename = "desktop.ocr.status")]
+    DesktopOcrStatus,
+    #[serde(rename = "desktop.ocr.engine")]
+    DesktopOcrEngine,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]
@@ -716,6 +722,30 @@ pub struct LibraryOrderParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
     pub orders: Vec<LibraryPinOrder>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualOcrParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: i64,
+    pub reveal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualOcrText {
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OcrEngineInfo {
+    pub available: bool,
+    pub engine_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

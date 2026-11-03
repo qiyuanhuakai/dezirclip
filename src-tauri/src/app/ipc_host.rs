@@ -318,6 +318,14 @@ fn dispatch_embedded<T:DeserializeOwned>(host:&Host,method:Method,params:impl Se
     serde_json::from_value(response.result.ok_or_else(failed)?).map_err(|_|failed())
 }
 fn method_error(method: Method, code: WireErrorCode) -> String {
+    if method == Method::DesktopOcrRecognize {
+        match code {
+            WireErrorCode::UnsupportedCapability => return "OcrEngineUnavailable".into(),
+            WireErrorCode::InvalidRequest => return "OcrImageRequired".into(),
+            WireErrorCode::Unavailable => return "OcrRecognitionFailed".into(),
+            _ => {}
+        }
+    }
     if method == Method::PrivacyHotkeySet {
         match code {
             WireErrorCode::InvalidRequest | WireErrorCode::UnsupportedCapability => return "PrivacyHotkeyUnavailable".into(),
@@ -480,6 +488,31 @@ impl DesktopHost {
         params.expected_paste_target=target;
         client.call(Method::DesktopClipboardCopy,params,"OperationResult").await.map_err(remote_error)
     }
+    pub async fn manual_ocr(&self, method: Method, id: i64, original: Option<&str>, epoch: Option<u64>) -> Result<ManualOcrText, String> {
+        if id < 0 { return Err("SessionOcrUnavailable".into()); }
+        let state: RuntimeState = self.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
+        if original.is_some_and(|instance| instance != state.service_instance_id) {
+            return Err("ClipboardHostInstanceChanged".into());
+        }
+        let params = ManualOcrParams {
+            id, service_instance_id: state.service_instance_id.clone(),
+            expected_epoch: epoch.unwrap_or(state.privacy_epoch), reveal: epoch.is_some(),
+        };
+        let result = if let Some(host) = self.embedded()? {
+            tokio::task::spawn_blocking(move || host.manual_ocr(method, params).map(|(_, output)| output))
+                .await.map_err(|_| failed())?.map_err(|code| method_error(method, code))?
+        } else {
+            let mut client = self.service_client().await?;
+            if client.hello.state.service_instance_id != state.service_instance_id { return Err("ClipboardHostInstanceChanged".into()); }
+            let body: BodySnapshot = client.call(method, params, "BodySnapshot").await.map_err(|error| {
+                serde_json::from_str::<WireErrorCode>(&error.to_string()).map(|code| method_error(method, code)).unwrap_or_else(|_| remote_error(error))
+            })?;
+            client.read_snapshot(body, "ManualOcrText").await.map_err(remote_error)?
+        };
+        if self.instance()? != state.service_instance_id { return Err("ClipboardHostInstanceChanged".into()); }
+        Ok(result)
+    }
+
     pub async fn backup<T: DeserializeOwned + Send + 'static>(&self, method: Method, params: impl Serialize, schema: &str) -> Result<T, String> {
         if let Some(host) = self.embedded()? {
             let params = serde_json::to_value(params).map_err(|_| failed())?;

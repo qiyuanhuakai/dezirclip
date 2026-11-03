@@ -121,7 +121,40 @@ mod desktop_protocol_tests {
         if catalog.transforms.len() != 17 || classified.kinds != ["url"] || transformed.text != "AB" || !qr.text.contains("<svg") {
             return Err("standalone tool result mismatch".into());
         }
-        exercise_backups(&mut client, database, &state.state).await
+        exercise_backups(&mut client, database, &state.state).await?;
+        exercise_manual_ocr(&mut client, database, &state.state).await
+    }
+
+    async fn exercise_manual_ocr(client: &mut Client, database: &Path, state: &RuntimeState) -> Result<(), Box<dyn Error>> {
+        let source = database.with_file_name("image.json");
+        std::fs::write(&source, include_bytes!("../tests/fixtures/manual-ocr.json"))?;
+        let _: BackupImportResult = client.call(Method::DesktopBackupImport, serde_json::json!({
+            "service_instance_id":state.service_instance_id, "expected_epoch":state.privacy_epoch, "path":source, "mode":"replace"
+        }), "BackupImportResult").await?;
+        let page: BodySnapshot = client.call(Method::DesktopHistoryPage,
+            serde_json::json!({"limit": 1, "offset": 0, "kind": "image"}), "BodySnapshot").await?;
+        let page: DesktopEntries = client.read_snapshot(page, "DesktopEntries").await?;
+        let id = page.entries.first().ok_or("imported image missing")?.id;
+        let mut params = serde_json::json!({"service_instance_id":state.service_instance_id, "expected_epoch":state.privacy_epoch + 1,
+            "id":id, "reveal":false});
+        let rejected = client.call::<BodySnapshot>(Method::DesktopOcrRecognize, &params, "BodySnapshot").await;
+        if rejected.err().and_then(|err| serde_json::from_str::<WireErrorCode>(&err.to_string()).ok()) != Some(WireErrorCode::PrivacyEpochChanged) {
+            return Err("stale OCR request was not rejected".into());
+        }
+        params["expected_epoch"] = state.privacy_epoch.into();
+        let engine: OcrEngineInfo = client.call(Method::DesktopOcrEngine, serde_json::json!({}), "OcrEngineInfo").await?;
+        if !engine.available {
+            if std::env::var_os("DZC_TEST_REQUIRE_OCR").is_some() { return Err("native OCR engine required".into()); }
+            return Ok(());
+        }
+        for method in [Method::DesktopOcrRecognize, Method::DesktopOcrStatus] {
+            let body: BodySnapshot = client.call(method, &params, "BodySnapshot").await?;
+            let output: ManualOcrText = client.read_snapshot(body, "ManualOcrText").await?;
+            if output.status != "done" || !output.text.unwrap_or_default().to_uppercase().contains("DESKTOP") {
+                return Err("native OCR text did not match the fixture".into());
+            }
+        }
+        Ok(())
     }
 
     async fn exercise_backups(client: &mut Client, database: &Path, state: &RuntimeState) -> Result<(), Box<dyn Error>> {

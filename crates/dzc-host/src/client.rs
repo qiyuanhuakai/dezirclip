@@ -117,7 +117,7 @@ async fn exchange(stream: &mut Stream, request: Request, schema: &str, send_limi
     }
     ipc::write_frame(stream, &bytes, Duration::from_secs(5)).await?;
     let timeout = match request.method {
-        Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview => Duration::from_secs(600),
+        Method::DesktopOcrRecognize | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview => Duration::from_secs(600),
         _ => Duration::from_secs(15),
     };
     let bytes = ipc::read_frame(stream, timeout).await?;

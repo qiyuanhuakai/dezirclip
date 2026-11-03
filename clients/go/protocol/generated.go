@@ -300,6 +300,9 @@ const (
     MethodDesktopBackupPreview Method = "desktop.backup.preview"
     MethodDesktopBackupImport Method = "desktop.backup.import"
     MethodDesktopBackupExport Method = "desktop.backup.export"
+    MethodDesktopOcrRecognize Method = "desktop.ocr.recognize"
+    MethodDesktopOcrStatus Method = "desktop.ocr.status"
+    MethodDesktopOcrEngine Method = "desktop.ocr.engine"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"
@@ -507,6 +510,23 @@ type LibraryOrderParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
     Orders []LibraryPinOrder `json:"orders"`
+}
+
+type ManualOcrParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id int64 `json:"id"`
+    Reveal bool `json:"reveal"`
+}
+
+type ManualOcrText struct {
+    Status string `json:"status"`
+    Text *string `json:"text,omitempty"`
+}
+
+type OcrEngineInfo struct {
+    Available bool `json:"available"`
+    EngineName string `json:"engine_name"`
 }
 
 type DesktopPolicyParams struct {

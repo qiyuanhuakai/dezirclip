@@ -1,0 +1,13 @@
+{
+  "version": "dezirclip-export-v2",
+  "exported_at": 1,
+  "entries": [
+    {
+      "id": 1,
+      "content_type": "image",
+      "content": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAakAAABWAQAAAABd5FSOAAACbklEQVR4nO1WTY7TMBT+nKnaLCo1y+4IN+AAiJib9AgsRwgmDkLAkiNwlFRwgN6ALFm6UheZKpOH/Ow0bp1AmdUI5Vv4//N7fn+JIDwCRfQYFjDRAkwmeXImKZQ3IdGPt9Lf0ESfa2ChieqcqMGKiICcFJBrZE1GZQmsWixI44YMVCDtgAP3X7ndYWfkmOERRwAPVpeAptFyX3Nbcv/BLnBGl8O0Ks+5N1cDRdsANOP7stJIqnxaTvZ2YKs2ClgRsCBSc3EHtHFW57oqX5SgRg9L+4SE9fjJ9oqxAZrEjL8jrk7nL2kUY8l6JPz2xDyoTs3wI+YaEPWwtMT1cT/X0lsYtmQLRFb9sreSOUonSYPSUtjAYOsBWDm3GbHq2pjU6Nx2jnFaBaeWddufaY0EbvuNe/NcNkabAi99mhB+zJ9DJZ3bOnzxpRXibI9xLwTkvotOB7rKJClSaOsQi2NyDW2NX6g8ccI5PQLIJOQIFqpxfuzle9Jy0iGFCLhtEb3zV0fy7QKLHLNX3vzGdgOuPMcG8bN+1n2yA2mlc41xr0GiEmu8CvhxOnVJm53NHiRipBzC0T+X17jPoVFaBWKlmk4zYMat7gJriBZ1BQ/ytMutcAXvL0rW3GruQ59e0sQBB7ah5tCpTUrbYvC2i8dBaXeu4jznSxou5hwmmatgPq0QM5N3hZCZ+qaAvYhM4sj36rV7JlK56z85QZSkhcj7DSlNNLGRkq2k/aiSiVuyGZIynaMr9lMhoC2x5P4Nt2usuwo9x9w7RpdQuTdp0c/KrD8jpt/Qp/YXdBUmWoDJJAEmkwSYTBJgMkmA/9kkvwFpkPGr03D1xAAAAABJRU5ErkJggg==",
+      "created_at": 1,
+      "updated_at": 1
+    }
+  ]
+}

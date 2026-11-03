@@ -76,6 +76,9 @@
         "desktop.backup.preview",
         "desktop.backup.import",
         "desktop.backup.export",
+        "desktop.ocr.recognize",
+        "desktop.ocr.status",
+        "desktop.ocr.engine",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -1020,6 +1023,63 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/backup.schema.json#/$defs/BackupExportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.recognize"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/ocr.schema.json#/$defs/ManualOcrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.status"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/ocr.schema.json#/$defs/ManualOcrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.engine"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolCatalogParams"
               }
             }
           }

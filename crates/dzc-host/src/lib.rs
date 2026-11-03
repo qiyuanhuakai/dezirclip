@@ -18,7 +18,7 @@ mod ocr;
 mod surface;
 mod history_version;
 pub use surface::same_surface_state;
-pub use ocr::schedule_capture_ocr;
+pub use ocr::{engine_info, prepare_manual_ocr, schedule_capture_ocr, OCR_ENGINE_DISPLAY_NAME};
 pub mod data;
 pub mod controller;
 pub use client::{Client, ControlFile};

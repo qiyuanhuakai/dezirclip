@@ -1119,6 +1119,9 @@
         "desktop.backup.preview",
         "desktop.backup.import",
         "desktop.backup.export",
+        "desktop.ocr.recognize",
+        "desktop.ocr.status",
+        "desktop.ocr.engine",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -2071,6 +2074,63 @@
           "if": {
             "properties": {
               "method": {
+                "const": "desktop.ocr.recognize"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ManualOcrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.status"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ManualOcrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.engine"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
                 "const": "desktop.history.clear"
               }
             },
@@ -2917,6 +2977,71 @@
         "service_instance_id",
         "expected_epoch",
         "orders"
+      ],
+      "additionalProperties": false
+    },
+    "ManualOcrParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "reveal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id",
+        "reveal"
+      ],
+      "additionalProperties": false
+    },
+    "ManualOcrText": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 33554432
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "OcrEngineInfo": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "engine_name": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "available",
+        "engine_name"
       ],
       "additionalProperties": false
     },

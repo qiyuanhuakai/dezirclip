@@ -46,7 +46,7 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     deadline, ok := ctx.Deadline()
     limitDuration := 5 * time.Second
     switch method {
-    case protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview:
+    case protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview:
         limitDuration = 10 * time.Minute
     }
     if maximum := time.Now().Add(limitDuration); !ok || deadline.After(maximum) { deadline = maximum }
