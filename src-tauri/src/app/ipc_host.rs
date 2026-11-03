@@ -513,6 +513,17 @@ impl DesktopHost {
         Ok(result)
     }
 
+    pub(crate) async fn screen_client(&self) -> Result<Option<Client>, String> {
+        let instance = self.instance()?;
+        let endpoint = dzc_host::controller::endpoint(&self.0.database).map_err(remote_error)?;
+        let mut client = Client::control(&endpoint, ClientRole::Desktop).await.map_err(remote_error)?;
+        if client.hello.state.service_instance_id != instance {
+            return Err("ClipboardHostInstanceChanged".into());
+        }
+        let report: CapabilityReport = client.call(Method::Capabilities, serde_json::json!({}), "CapabilityReport").await.map_err(remote_error)?;
+        Ok(report.methods.iter().any(|method| method == "desktop.screen.begin").then_some(client))
+    }
+
     pub async fn backup<T: DeserializeOwned + Send + 'static>(&self, method: Method, params: impl Serialize, schema: &str) -> Result<T, String> {
         if let Some(host) = self.embedded()? {
             let params = serde_json::to_value(params).map_err(|_| failed())?;

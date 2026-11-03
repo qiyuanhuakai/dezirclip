@@ -37,3 +37,6 @@ pub fn set_diagnostic_sink(sink: fn(&str)) {
 }
 
 mod private_files;
+
+#[cfg(feature = "native-screen")]
+pub mod screenshot;

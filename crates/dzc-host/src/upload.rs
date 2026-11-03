@@ -74,21 +74,7 @@ impl Host {
                 || (cfg!(target_os="windows") || self.actions.supports_windows_bound_paste()) && upload.paste_target.is_none()) {
                 return Err(WireErrorCode::UnsupportedCapability);
             }
-            // This entry contains only the caller's new payload. It is never
-            // resolved as a history/session ID or allowed to name a local file.
-            if body.kind=="image" && !body.text.starts_with("data:image/") {return Err(WireErrorCode::InvalidRequest);}
-            let entry=dzc_core::api::ClipboardEntry {id:0,content_type:body.kind.clone(),content:body.text.clone(),html_content:body.html.clone(),
-                source_app:request.source_app.clone(),source_app_path:None,timestamp:upload.timestamp,preview:String::new(),is_pinned:false,tags:vec![],
-                use_count:0,is_external:false,pinned_order:0,file_preview_exists:true,content_kinds:vec![],ocr_text:None,ocr_status:None};
-            let payload=self.history.generated_clipboard_payload_authorized(&entry,&permit,now).map_err(crate::router::privacy_error)?;
-            if self.capture_owner.load(std::sync::atomic::Ordering::Acquire) {
-                if let Some(ticket)=upload.ticket {
-                    let frame=CaptureFrame{data:generated_data(body)?,metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),..Default::default()}};
-                    self.capture_generated(frame,CaptureSource{app_name:request.source_app,process_path:None},upload.timestamp)?;
-                }
-            }
-            self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
-            self.copy_payload(payload)?;
+            self.commit_generated_copy(body, &request.source_app, upload.timestamp, upload.ticket, &permit)?;
             if request.paste==Some(true) {
                 self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
                 if let Some(target)=upload.paste_target { target.send()?; } else { self.actions.paste()?; }
@@ -102,6 +88,26 @@ impl Host {
         let lifecycle=self.lifecycle.lock().map_err(|_|WireErrorCode::Unavailable)?.clone().ok_or(WireErrorCode::Unavailable)?;
         let performed=lifecycle.capture_generated(frame,CaptureSource{app_name:request.source_app,process_path:None},upload.timestamp)?;
         serde_json::to_value(OperationResult{performed}).map_err(|_|WireErrorCode::Internal)
+    }
+    pub(crate) fn commit_generated_copy(&self, body: GeneratedBody, source_app: &str, timestamp: i64,
+        ticket: Option<CaptureTicket>, permit: &PrivacyReadPermit) -> Result<bool, WireErrorCode> {
+        // This entry contains only the caller's new payload. It is never
+        // resolved as a history/session ID or allowed to name a local file.
+        if body.kind=="image" && !body.text.starts_with("data:image/") {return Err(WireErrorCode::InvalidRequest);}
+        let entry=dzc_core::api::ClipboardEntry {id:0,content_type:body.kind.clone(),content:body.text.clone(),html_content:body.html.clone(),
+            source_app:source_app.to_owned(),source_app_path:None,timestamp,preview:String::new(),is_pinned:false,tags:vec![],
+            use_count:0,is_external:false,pinned_order:0,file_preview_exists:true,content_kinds:vec![],ocr_text:None,ocr_status:None};
+        let payload=self.history.generated_clipboard_payload_authorized(&entry,permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        let mut recorded = false;
+        if self.capture_owner.load(std::sync::atomic::Ordering::Acquire) {
+            if let Some(ticket)=ticket {
+                let frame=CaptureFrame{data:generated_data(body)?,metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),..Default::default()}};
+                recorded = self.capture_generated(frame,CaptureSource{app_name:source_app.to_owned(),process_path:None},timestamp)?;
+            }
+        }
+        self.history.privacy().check_read(permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        self.copy_payload(payload)?;
+        Ok(recorded)
     }
     fn check_upload(&self,upload:&Upload,now:i64)->Result<(),WireErrorCode> {
         if let Some(ticket)=&upload.ticket {self.history.privacy().check_capture(ticket,now).map_err(|_|WireErrorCode::PrivacyBlocked)?;}

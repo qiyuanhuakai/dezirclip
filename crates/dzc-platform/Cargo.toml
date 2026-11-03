@@ -13,9 +13,12 @@ required-features = ["ipc"]
 [features]
 portable = ["dzc-core/portable"]
 ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
+native-screen = ["dep:xcap", "dep:zeroize"]
 native-ocr = ["dep:windows-core"]
 
 [dependencies]
+xcap = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
 dzc-protocol.workspace = true
 dzc-core.workspace = true
 uuid.workspace = true

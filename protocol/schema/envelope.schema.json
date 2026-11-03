@@ -81,6 +81,11 @@
         "desktop.ocr.engine",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
+        "desktop.screen.begin",
+        "desktop.screen.read",
+        "desktop.screen.crop",
+        "desktop.screen.finish",
+        "desktop.screen.cancel",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -1120,6 +1125,101 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/settings.schema.json#/$defs/CaptureSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/screen.schema.json#/$defs/ScreenBeginParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.read"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/screen.schema.json#/$defs/ScreenReadParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.crop"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/screen.schema.json#/$defs/ScreenCropParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.finish"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/screen.schema.json#/$defs/ScreenSessionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.cancel"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/screen.schema.json#/$defs/ScreenSessionParams"
               }
             }
           }

@@ -98,8 +98,10 @@ mod desktop_protocol_tests {
         }
         let database = scratch.join("history.db");
         let result = tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
-            controller::start(&database, &executable, true).await?;
-            let checks = exercise_tools(&database).await;
+            let capture = cfg!(target_os = "linux") && std::env::var_os("DZC_TEST_XVFB_SCREEN").is_some()
+                && std::env::var_os("DZC_TEST_XVFB_CAPTURE").is_some();
+            controller::start(&database, &executable, !capture).await?;
+            let checks = exercise_tools(&database, capture).await;
             controller::stop(&database).await?;
             checks
         });
@@ -107,10 +109,10 @@ mod desktop_protocol_tests {
         result
     }
 
-    async fn exercise_tools(database: &Path) -> Result<(), Box<dyn Error>> {
+    async fn exercise_tools(database: &Path, capture: bool) -> Result<(), Box<dyn Error>> {
         let mut client = Client::control(&controller::endpoint(database)?, ClientRole::Desktop).await?;
         let state: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
-        if state.mode != HostMode::Service || state.capture_owner { return Err("expected an isolated service".into()); }
+        if state.mode != HostMode::Service || state.capture_owner != capture { return Err("expected the requested isolated service mode".into()); }
         let catalog: ToolCatalog = client.call(Method::DesktopToolsCatalog, serde_json::json!({}), "ToolCatalog").await?;
         let classified: ToolClassification = client.call(Method::DesktopToolsClassify,
             serde_json::json!({"text":"https://example.org"}), "ToolClassification").await?;
@@ -123,7 +125,99 @@ mod desktop_protocol_tests {
         }
         exercise_settings(&mut client, &state.state).await?;
         exercise_backups(&mut client, database, &state.state).await?;
-        exercise_manual_ocr(&mut client, database, &state.state).await
+        exercise_manual_ocr(&mut client, database, &state.state).await?;
+        #[cfg(target_os = "linux")]
+        if std::env::var_os("DZC_TEST_XVFB_SCREEN").is_some() {
+            exercise_screen(database, &mut client, &state.state, capture).await?;
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn exercise_screen(database: &Path, client: &mut Client, state: &RuntimeState, capture: bool) -> Result<(), Box<dyn Error>> {
+        let base = serde_json::json!({"service_instance_id":state.service_instance_id, "expected_epoch":state.privacy_epoch});
+        let start: ScreenImage = client.call(Method::DesktopScreenBegin, &base, "ScreenImage").await?;
+        if (start.width, start.height) != (640, 480) { return Err("expected the isolated 640x480 Xvfb".into()); }
+        let with_token = |token: &str| {
+            let mut p = base.clone();
+            p["token"] = token.into();
+            p
+        };
+        let mut read = with_token(&start.token);
+        read["offset"] = 0.into();
+        let mut stranger = Client::control(&controller::endpoint(database)?, ClientRole::Desktop).await?;
+        if stranger.call::<ScreenChunk>(Method::DesktopScreenRead, &read, "ScreenChunk").await.is_ok() {
+            return Err("foreign connection read a frozen screenshot".into());
+        }
+        let first: ScreenChunk = client.call(Method::DesktopScreenRead, &read, "ScreenChunk").await?;
+        if !first.data_base64.starts_with("iVBORw0KGgo") { return Err("expected a PNG".into()); }
+        let pattern = std::env::var_os("DZC_TEST_XVFB_PATTERN").is_some();
+        if pattern && first.finished { return Err("pattern fixture did not span multiple IPC frames".into()); }
+        let mut chunk = first;
+        while !chunk.finished {
+            let offset = chunk.next_offset;
+            read["offset"] = offset.into();
+            chunk = client.call(Method::DesktopScreenRead, &read, "ScreenChunk").await?;
+            if chunk.next_offset <= offset { return Err("screenshot chunk did not advance".into()); }
+        }
+        if chunk.next_offset != start.png_bytes { return Err("incomplete frozen image".into()); }
+        let mut crop = with_token(&start.token);
+        crop["x"] = (start.x - 1).into();
+        crop["y"] = start.y.into();
+        crop["width"] = 16.into();
+        crop["height"] = 8.into();
+        if client.call::<ScreenImage>(Method::DesktopScreenCrop, &crop, "ScreenImage").await.is_ok() {
+            return Err("out-of-bounds crop accepted".into());
+        }
+        crop["x"] = start.x.into();
+        let selected: ScreenImage = client.call(Method::DesktopScreenCrop, crop, "ScreenImage").await?;
+        if (selected.width, selected.height) != (16, 8) || selected.token == start.token {
+            return Err("unexpected crop geometry or reused screenshot token".into());
+        }
+        if client.call::<ScreenChunk>(Method::DesktopScreenRead, &read, "ScreenChunk").await.is_ok() {
+            return Err("old token still read cropped pixels".into());
+        }
+        let finish = with_token(&selected.token);
+        let done: ScreenFinishResult = client.call(Method::DesktopScreenFinish, &finish, "ScreenFinishResult").await?;
+        if !done.copied || done.recorded != capture { return Err("unexpected screenshot recording outcome".into()); }
+        if pattern {
+            let check = std::process::Command::new("python3").args(["-c",
+                "import io, subprocess; from PIL import Image; data = subprocess.check_output(['xclip','-selection','clipboard','-target','image/png','-o'],timeout=4); im = Image.open(io.BytesIO(data)).convert('RGB'); assert im.size == (16,8) and im.getextrema() == ((234,234),(25,25),(75,75))"
+            ]).status()?;
+            if !check.success() { return Err("system clipboard pixels differ from the selected rectangle".into()); }
+        }
+        if capture {
+            let page: BodySnapshot = client.call(Method::DesktopHistoryPage, serde_json::json!({"kind":"image","offset":0,"limit":20}), "BodySnapshot").await?;
+            let entries: DesktopEntries = client.read_snapshot(page, "DesktopEntries").await?;
+            if entries.entries.iter().filter(|item| item.source_app == "DezirClip Screenshot").count() != 1 {
+                return Err("expected one recorded screenshot".into());
+            }
+        }
+        let replay = client.call::<ScreenFinishResult>(Method::DesktopScreenFinish, &finish, "ScreenFinishResult").await;
+        if replay.is_ok() { return Err("duplicate finish accepted".into()); }
+        let other: ScreenImage = stranger.call(Method::DesktopScreenBegin, &base, "ScreenImage").await?;
+        let _: OperationResult = stranger.call(Method::DesktopScreenCancel, with_token(&other.token), "OperationResult").await?;
+        let _: ScreenImage = stranger.call(Method::DesktopScreenBegin, &base, "ScreenImage").await?;
+        drop(stranger);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        let recovered = loop {
+            match client.call::<ScreenImage>(Method::DesktopScreenBegin, &base, "ScreenImage").await {
+                Ok(image) => break image,
+                Err(err) if tokio::time::Instant::now() < deadline
+                    && serde_json::from_str::<WireErrorCode>(&err.to_string()).ok() == Some(WireErrorCode::Busy) =>
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await,
+                Err(err) => return Err(err.into()),
+            }
+        };
+        let private: PrivacyState = client.call(Method::PrivacySet, serde_json::json!({"active": true}), "PrivacyState").await?;
+        let mut revoked = with_token(&recovered.token);
+        revoked["expected_epoch"] = private.privacy_epoch.into();
+        revoked["offset"] = 0.into();
+        if client.call::<ScreenChunk>(Method::DesktopScreenRead, revoked, "ScreenChunk").await.is_ok() {
+            return Err("revoked frame survived privacy transition".into());
+        }
+        let _: PrivacyState = client.call(Method::PrivacySet, serde_json::json!({"active": false}), "PrivacyState").await?;
+        Ok(())
     }
 
     async fn exercise_settings(client: &mut Client, state: &RuntimeState) -> Result<(), Box<dyn Error>> {

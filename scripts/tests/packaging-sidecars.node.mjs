@@ -85,7 +85,8 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
     assert(["dzc", "dzc-service"].includes(args[4]));
     assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", args[4], "--locked", "--no-default-features", "--target", target,
-      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : [])]);
+      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : []),
+      ...(args[4] === "dzc-service" ? ["--features", "native-screen"] : [])]);
     if (!omitOutput) {
       mkdirSync(dirname(source), { recursive: true });
       writeFileSync(args[4] === "dzc" ? source : serviceSource, args[4] === "dzc" ? payload : Buffer.from("service:"+payload.toString()));

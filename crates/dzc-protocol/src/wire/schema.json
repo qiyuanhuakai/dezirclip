@@ -1124,6 +1124,11 @@
         "desktop.ocr.engine",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
+        "desktop.screen.begin",
+        "desktop.screen.read",
+        "desktop.screen.crop",
+        "desktop.screen.finish",
+        "desktop.screen.cancel",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -2163,6 +2168,101 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/CaptureSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenBeginParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.read"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenReadParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.crop"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenCropParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.finish"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenSessionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.cancel"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenSessionParams"
               }
             }
           }
@@ -3325,6 +3425,257 @@
         "active"
       ],
       "additionalProperties": true
+    },
+    "ScreenPoint": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenBeginParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "cursor": {
+          "$ref": "#/$defs/ScreenPoint"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenImage": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "png_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "token",
+        "x",
+        "y",
+        "width",
+        "height",
+        "png_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenSessionParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenReadParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token",
+        "offset"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenCropParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenChunk": {
+      "type": "object",
+      "properties": {
+        "data_base64": {
+          "type": "string",
+          "maxLength": 262144
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "finished": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "data_base64",
+        "next_offset",
+        "finished"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenFinishResult": {
+      "type": "object",
+      "properties": {
+        "copied": {
+          "type": "boolean"
+        },
+        "recorded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "copied",
+        "recorded"
+      ],
+      "additionalProperties": false
     },
     "CaptureSettingParams": {
       "type": "object",

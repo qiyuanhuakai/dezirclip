@@ -305,6 +305,11 @@ const (
     MethodDesktopOcrEngine Method = "desktop.ocr.engine"
     MethodDesktopSettingsCaptureGet Method = "desktop.settings.capture.get"
     MethodDesktopSettingsCaptureSet Method = "desktop.settings.capture.set"
+    MethodDesktopScreenBegin Method = "desktop.screen.begin"
+    MethodDesktopScreenRead Method = "desktop.screen.read"
+    MethodDesktopScreenCrop Method = "desktop.screen.crop"
+    MethodDesktopScreenFinish Method = "desktop.screen.finish"
+    MethodDesktopScreenCancel Method = "desktop.screen.cancel"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"
@@ -580,6 +585,60 @@ type PrivacyState struct {
 type PrivacySetParams struct {
     Active bool `json:"active"`
     DurationMs *uint64 `json:"duration_ms,omitempty"`
+}
+
+type ScreenPoint struct {
+    X int64 `json:"x"`
+    Y int64 `json:"y"`
+}
+
+type ScreenBeginParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Cursor *ScreenPoint `json:"cursor,omitempty"`
+}
+
+type ScreenImage struct {
+    Token string `json:"token"`
+    X int64 `json:"x"`
+    Y int64 `json:"y"`
+    Width uint32 `json:"width"`
+    Height uint32 `json:"height"`
+    PngBytes uint32 `json:"png_bytes"`
+}
+
+type ScreenSessionParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+}
+
+type ScreenReadParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    Offset uint32 `json:"offset"`
+}
+
+type ScreenCropParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    X int64 `json:"x"`
+    Y int64 `json:"y"`
+    Width uint32 `json:"width"`
+    Height uint32 `json:"height"`
+}
+
+type ScreenChunk struct {
+    DataBase64 string `json:"data_base64"`
+    NextOffset uint32 `json:"next_offset"`
+    Finished bool `json:"finished"`
+}
+
+type ScreenFinishResult struct {
+    Copied bool `json:"copied"`
+    Recorded bool `json:"recorded"`
 }
 
 type CaptureSettingParams struct {

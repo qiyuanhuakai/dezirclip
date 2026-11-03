@@ -432,6 +432,16 @@ pub enum Method {
     DesktopSettingsCaptureGet,
     #[serde(rename = "desktop.settings.capture.set")]
     DesktopSettingsCaptureSet,
+    #[serde(rename = "desktop.screen.begin")]
+    DesktopScreenBegin,
+    #[serde(rename = "desktop.screen.read")]
+    DesktopScreenRead,
+    #[serde(rename = "desktop.screen.crop")]
+    DesktopScreenCrop,
+    #[serde(rename = "desktop.screen.finish")]
+    DesktopScreenFinish,
+    #[serde(rename = "desktop.screen.cancel")]
+    DesktopScreenCancel,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]
@@ -814,6 +824,77 @@ pub struct PrivacySetParams {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenPoint {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenBeginParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<ScreenPoint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenImage {
+    pub token: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub png_bytes: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenSessionParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenReadParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub offset: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenCropParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenChunk {
+    pub data_base64: String,
+    pub next_offset: u32,
+    pub finished: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenFinishResult {
+    pub copied: bool,
+    pub recorded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

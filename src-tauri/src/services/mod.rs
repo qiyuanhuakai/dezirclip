@@ -6,7 +6,7 @@ pub mod content_handler;
 pub mod image_png;
 pub mod ocr;
 pub mod paste_queue;
-pub mod screenshot;
+pub use dzc_platform::screenshot;
 pub mod search;
 pub mod sensitive_align;
 pub mod source_exclusion;

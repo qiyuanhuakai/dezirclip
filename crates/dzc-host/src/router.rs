@@ -64,6 +64,8 @@ pub struct Host {
     observed_epoch: Mutex<u64>,
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
     pub(crate) uploads: crate::upload::Uploads,
+    #[cfg(feature = "native-screen")]
+    pub(crate) screen: crate::screen::Screens,
     copy_echo:Mutex<Option<(dzc_platform::capture::ClipboardEcho,i64)>>,
     capture_diagnostic:Mutex<Option<String>>,
     history_version:Mutex<crate::history_version::HistoryVersion>,
@@ -99,6 +101,8 @@ impl Host {
         let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            #[cfg(feature = "native-screen")]
+            screen: Default::default(),
             snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
@@ -139,6 +143,8 @@ impl Host {
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
+        #[cfg(feature = "native-screen")]
+        self.screen.clear()?;
         self.actions.stop_helpers()?;
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.release_ownership()?; }
         self.stopped.store(true, Ordering::Release);
@@ -174,6 +180,8 @@ impl Host {
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
+        #[cfg(feature = "native-screen")]
+        self.screen.clear()?;
         let state = self.snapshot()?;
         self.events.push(EventKind::PrivacyStateChanged, state, EventData { entry_id: None, status: None }).map_err(unavailable)?;
         *observed = snapshot.privacy_epoch;
@@ -254,6 +262,11 @@ impl Host {
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
             methods.push("desktop.settings.capture.get");
             if can(Permission::PrivacyWrite) { methods.push("desktop.settings.capture.set"); }
+            #[cfg(feature = "native-screen")]
+            if crate::screen::supported() {
+                methods.extend(["desktop.screen.begin", "desktop.screen.read", "desktop.screen.crop", "desktop.screen.cancel"]);
+                if self.actions.can_copy() { methods.push("desktop.screen.finish"); }
+            }
             methods.extend(["desktop.ocr.recognize", "desktop.ocr.status", "desktop.ocr.engine"]);
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
@@ -412,6 +425,13 @@ impl Host {
                 })?;
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("capture_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop |
+            Method::DesktopScreenFinish | Method::DesktopScreenCancel => {
+                #[cfg(feature = "native-screen")]
+                { self.screen_request(session, request.method, request.params) }
+                #[cfg(not(feature = "native-screen"))]
+                { Err(WireErrorCode::UnsupportedCapability) }
             }
             Method::DesktopOcrEngine => {
                 self.desktop_permission(session, self.instance_id())?;

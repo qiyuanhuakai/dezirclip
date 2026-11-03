@@ -102,13 +102,21 @@ async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>
         Err(code) => { send(&mut stream, Response::failure(id, code)).await?; return Ok(()); },
     };
     send(&mut stream, Response::success(id, serde_json::to_value(hello)?)).await?;
-    requests(host, session, stream, state, stopped).await
+    #[cfg(feature = "native-screen")]
+    let screen_owner = session.id().to_owned();
+    let result = requests(host.clone(), session, stream, state, stopped).await;
+    #[cfg(feature = "native-screen")]
+    host.screen.disconnect(&screen_owner);
+    result
 }
 
 async fn requests(host: Arc<Host>, session: Session, mut stream: Stream, state: Arc<Connections>, mut stopped: watch::Receiver<bool>) -> io::Result<()> {
     let session = Arc::new(session);
     loop {
-        let bytes = read_request(&mut stream, &mut stopped, Duration::from_secs(30)).await?;
+        let timeout = Duration::from_secs(30);
+        #[cfg(feature = "native-screen")]
+        let timeout = if host.screen.owns(session.id()) { crate::screen::SELECTION_TIMEOUT } else { timeout };
+        let bytes = read_request(&mut stream, &mut stopped, timeout).await?;
         let request: Request = wire::decode("Request", &bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
         let method = request.method;
         let permit = if method == Method::EventsSubscribe { None } else {

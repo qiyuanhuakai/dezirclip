@@ -1301,7 +1301,6 @@ dependencies = [
  "winreg",
  "x11-clipboard",
  "x11rb",
- "xcap",
  "zeroize",
 ]
 
@@ -1586,6 +1585,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -1616,6 +1616,8 @@ dependencies = [
  "windows-core 0.62.2",
  "x11-clipboard",
  "x11rb",
+ "xcap",
+ "zeroize",
 ]
 
 [[package]]
