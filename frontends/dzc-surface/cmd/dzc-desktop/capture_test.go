@@ -13,12 +13,12 @@ func TestCaptureReplyBelongsToRequest(t *testing.T) {
 	input, output := io.Pipe()
 	defer input.Close()
 	defer output.Close()
-	shell := DesktopShell{capture: residentCapture{output: output}}
+	shell := DesktopShell{resident: residentBridge{output: output}}
 	decoder := json.NewDecoder(input)
-	start := func(ctx context.Context, full bool) (captureRequest, <-chan error) {
+	start := func(ctx context.Context, full bool) (residentRequest, <-chan error) {
 		done := make(chan error, 1)
 		go func() { done <- shell.Capture(ctx, full, 7) }()
-		var request captureRequest
+		var request residentRequest
 		if err := decoder.Decode(&request); err != nil {
 			t.Fatal(err)
 		}
@@ -28,11 +28,11 @@ func TestCaptureReplyBelongsToRequest(t *testing.T) {
 		return request, done
 	}
 	reply := func(id uint64, success bool) {
-		data, err := json.Marshal(captureReply{ID: id, Success: success})
+		data, err := json.Marshal(residentReply{ID: id, Success: success})
 		if err != nil {
 			t.Fatal(err)
 		}
-		shell.capture.accept(string(data))
+		shell.resident.accept(string(data))
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	old, stopped := start(ctx, true)

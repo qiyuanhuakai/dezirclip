@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,7 +56,7 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 
 // Only the main window loads the WebView runtime. Parent and child use
 // inherited pipes for window lifecycle, and authenticate separately to Rust.
-func runResident(owner *client.Client, minimized bool) error {
+func runResident(owner *client.Client, minimized, forceShow bool) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -63,15 +64,16 @@ func runResident(owner *client.Client, minimized bool) error {
 	mygo.App.WhenReady(func() {
 		panel := quickpaste.NewDesktopPanel(owner)
 		selector := screenshot.New(owner)
-		tray, err := mygo.NewTray(mygo.TrayOptions{Icon: trayIcon, ToolTip: "DezirClip"})
-		if err != nil {
-			log.Printf("Tray unavailable: %v", err)
-		}
+		var tray *mygo.Tray
+		var setTrayVisible func(bool) error
 		var commands io.WriteCloser
 		stopping := false
 		closing := false
 		reopen := ""
 		registered := make(map[string]bool)
+		reachable := func() bool {
+			return len(registered) > 0 || (tray != nil && trayHostAvailable(tray))
+		}
 		var toggle func()
 		var present func(string)
 		present = func(command string) {
@@ -121,12 +123,37 @@ func runResident(owner *client.Client, minimized bool) error {
 				for scanner.Scan() {
 					line := scanner.Text()
 					if strings.HasPrefix(line, "{") {
-						var request captureRequest
+						var request residentRequest
 						if json.Unmarshal([]byte(line), &request) == nil && request.ID != 0 {
 							mygo.RunOnMain(func() {
-								selector.Capture(request.Full, request.Epoch, func(err error) {
-									_ = json.NewEncoder(input).Encode(captureReply{ID: request.ID, Success: err == nil})
-								})
+								reply := func(err error) {
+									_ = json.NewEncoder(input).Encode(residentReply{ID: request.ID, Success: err == nil})
+								}
+								if stopping || commands != input {
+									reply(fmt.Errorf("main window closed"))
+									return
+								}
+								switch request.Operation {
+								case "capture":
+									selector.Capture(request.Full, request.Epoch, reply)
+								case "tray":
+									wasVisible := tray != nil
+									if err := setTrayVisible(request.Visible); err != nil {
+										reply(err)
+										return
+									}
+									ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+									err := (&Library{owner}).SetSetting(ctx, "app.hide_tray_icon", strconv.FormatBool(!request.Visible), request.Epoch)
+									cancel()
+									if err != nil {
+										if restoreErr := setTrayVisible(wasVisible); restoreErr != nil {
+											log.Printf("Restoring tray: %v", restoreErr)
+										}
+									}
+									reply(err)
+								default:
+									reply(fmt.Errorf("unknown resident request"))
+								}
 							})
 						}
 						continue
@@ -155,7 +182,7 @@ func runResident(owner *client.Client, minimized bool) error {
 						command := reopen
 						reopen = ""
 						present(command)
-					} else if !stopping && tray == nil && len(registered) == 0 {
+					} else if !stopping && !reachable() {
 						mygo.App.Quit()
 					}
 				})
@@ -164,15 +191,36 @@ func runResident(owner *client.Client, minimized bool) error {
 		toggle = func() { present("toggle") }
 		open := func() { present("show") }
 		startupSettings := refreshMainShortcuts(owner, registered, toggle)
-		if tray != nil {
+		setTrayVisible = func(visible bool) error {
+			if (tray != nil) == visible {
+				return nil
+			}
+			if !visible {
+				tray.Destroy()
+				tray = nil
+				return nil
+			}
+			created, err := mygo.NewTray(mygo.TrayOptions{Icon: trayIcon, ToolTip: "DezirClip"})
+			if err != nil {
+				return err
+			}
+			tray = created
 			tray.OnClick(open)
 			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 				{Label: "打开剪贴板", Click: func(*mygo.MenuItem, *mygo.Window) { open() }},
 				{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { present("settings") }},
 				{Label: "退出", Role: mygo.RoleQuit},
 			}))
-			mygo.App.OnWillQuit(func(*mygo.QuitEvent) { tray.Destroy() })
+			return nil
 		}
+		if err := setTrayVisible(startupSettings["app.hide_tray_icon"] != "true"); err != nil {
+			log.Printf("Tray unavailable: %v", err)
+		}
+		mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
+			if tray != nil {
+				tray.Destroy()
+			}
+		})
 		mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 			stopping = true
 			for key := range registered {
@@ -183,7 +231,7 @@ func runResident(owner *client.Client, minimized bool) error {
 			}
 		})
 		silent := startupSettings != nil && startupSettings["app.silent_start"] != "false"
-		if (!minimized && !silent) || (tray == nil && len(registered) == 0) {
+		if forceShow || (!minimized && !silent) || !reachable() {
 			open()
 		}
 	})

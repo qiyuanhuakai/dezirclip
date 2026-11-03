@@ -13,6 +13,17 @@ func (*DesktopShell) PlatformInfo() platformInfo {
 	return platformInfo{Platform: "linux", Linux: true}
 }
 
+// Creating an AppIndicator exports an item even on desktops without a tray host.
+func trayHostAvailable(_ *mygo.Tray) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "gdbus", "call", "--session",
+		"--dest", "org.kde.StatusNotifierWatcher", "--object-path", "/StatusNotifierWatcher",
+		"--method", "org.freedesktop.DBus.Properties.Get",
+		"org.kde.StatusNotifierWatcher", "IsStatusNotifierHostRegistered").Output()
+	return err == nil && strings.TrimSpace(string(out)) == "(<true>,)"
+}
+
 func (*DesktopShell) SystemThemeMode(ctx context.Context) string {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()

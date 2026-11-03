@@ -211,6 +211,7 @@ def mygo_nodes(atspi, executable):
 
 def tray_item(pid, label, activate=True):
     from gi.repository import Gio, GLib
+    from xml.etree import ElementTree
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     def call(owner, path, interface, method, params=None):
         return bus.call_sync(owner, path, interface, method, params, None, Gio.DBusCallFlags.NONE, 2000, None).unpack()
@@ -221,15 +222,44 @@ def tray_item(pid, label, activate=True):
         try:
             server, = call(*daemon, 'GetConnectionUnixProcessID', GLib.Variant('(s)', (name,)))
             if server != pid: continue
-            menu = (name, f'/org/ayatana/NotificationItem/mygo_{pid}_1/Menu', 'com.canonical.dbusmenu')
-            _, root = call(*menu, 'GetLayout', GLib.Variant('(iias)', (0, 1, ['label'])))
+            base = '/org/ayatana/NotificationItem'
+            xml, = call(name, base, 'org.freedesktop.DBus.Introspectable', 'Introspect')
+            nodes = ElementTree.fromstring(xml).findall('node')
         except GLib.Error:
             continue
-        item = next((item_id for item_id, props, _ in root[2] if props.get('label') == label), None)
-        if item is not None:
-            if activate:
-                call(*menu, 'Event', GLib.Variant('(isvu)', (item, 'clicked', GLib.Variant('i', 0), 0)))
-            return True
+        for node in nodes:
+            path = base + '/' + node.get('name', '')
+            try:
+                status, = call(name, path, 'org.freedesktop.DBus.Properties', 'Get',
+                               GLib.Variant('(ss)', ('org.kde.StatusNotifierItem', 'Status')))
+                if status == 'Passive': continue
+                menu = (name, path + '/Menu', 'com.canonical.dbusmenu')
+                _, root = call(*menu, 'GetLayout', GLib.Variant('(iias)', (0, 1, ['label'])))
+                item = next((item_id for item_id, props, _ in root[2] if props.get('label') == label), None)
+                if item is not None:
+                    if activate:
+                        call(*menu, 'Event', GLib.Variant('(isvu)', (item, 'clicked', GLib.Variant('i', 0), 0)))
+                    return True
+            except GLib.Error:
+                continue
+    return False
+
+
+def visible_main_window(resident, executable):
+    import re
+    windows = subprocess.check_output(['xprop', '-root', '_NET_CLIENT_LIST'], text=True)
+    for xid in re.findall(r'0x[0-9a-fA-F]+', windows):
+        props = subprocess.run(['xprop', '-id', xid, '_NET_WM_NAME', '_NET_WM_PID'], capture_output=True, text=True)
+        if '_NET_WM_NAME(UTF8_STRING) = "DezirClip"' not in props.stdout: continue
+        pid = props.stdout.split()[-1]
+        if not pid.isdecimal(): continue
+        try:
+            if Path(f'/proc/{pid}/exe').resolve(strict=True) != executable: continue
+            if int(Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[1]) != resident.pid: continue
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        info = subprocess.run(['xwininfo', '-id', xid], capture_output=True, text=True)
+        if 'Map State: IsViewable' in info.stdout: return True
     return False
 
 
@@ -461,6 +491,15 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         print('Verified About shows the running MyGo binary identity and Data Management shows the isolated Service profile')
         login = open_settings_group('General Settings', 'Launch at Startup')
         silent = wait_for(lambda: find_item('Silent Start'), 'Silent Start checkbox missing')
+        hide_tray = wait_for(lambda: find_item('Hide Tray Icon'), 'Hide Tray Icon checkbox missing')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            for hidden in [True, False]:
+                assert atspi.Action.do_action(hide_tray, 0)
+                wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hide_tray_icon'").fetchone() == (str(hidden).lower(),)
+                         and hide_tray.get_state_set().contains(atspi.StateType.CHECKED) == hidden
+                         and tray_item(resident, '打开剪贴板', activate=False) != hidden,
+                         'Resident tray visibility did not match the saved choice')
+        print('Verified Hide Tray Icon removes and restores the live native tray from the shared WebView')
         assert not silent.get_state_set().contains(atspi.StateType.CHECKED)
         assert atspi.Action.do_action(silent, 0)
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
@@ -803,6 +842,22 @@ def check(desktop, pinned):
                         assert process.poll() is None and time.monotonic() < deadline, 'Tray did not reopen the silent desktop'
                         time.sleep(.1)
                     print('Verified ordinary Silent Start retains only the native resident, and its tray opens the main window')
+                    # Xvfb exports AppIndicator objects but runs no notification-area host.
+                    watcher = Gio.bus_get_sync(Gio.BusType.SESSION, None).call_sync(
+                        'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'NameHasOwner',
+                        GLib.Variant('(s)', ('org.kde.StatusNotifierWatcher',)), None, Gio.DBusCallFlags.NONE, 2000, None)
+                    assert watcher.unpack() == (False,)
+                    for args, key in [([], ''), (['--show'], 'Ctrl+Shift+F8')]:
+                        assert tray_item(process.pid, '退出')
+                        assert process.wait(timeout=15) == 0
+                        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+                            db.execute("UPDATE settings SET value=? WHERE key='app.hotkey'", (key,))
+                        process = subprocess.Popen([desktop, *args], stdout=subprocess.DEVNULL)
+                        deadline = time.monotonic() + 15
+                        while not visible_main_window(process, desktop):
+                            assert process.poll() is None and time.monotonic() < deadline, f'No visible startup recovery for {args}'
+                            time.sleep(.1)
+                    print('Verified ordinary startup without a tray host or shortcut and explicit --show with a registered shortcut')
                     return
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.

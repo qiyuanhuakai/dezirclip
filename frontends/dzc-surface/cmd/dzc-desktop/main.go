@@ -208,7 +208,8 @@ func run() error {
 	}
 	mainWindow := len(os.Args) == 3 && os.Args[1] == "--main-window"
 	minimized := len(os.Args) == 2 && os.Args[1] == "--minimized"
-	if len(os.Args) != 1 && !mainWindow && !minimized {
+	forceShow := len(os.Args) == 2 && os.Args[1] == "--show"
+	if len(os.Args) != 1 && !mainWindow && !minimized && !forceShow {
 		return fmt.Errorf("unexpected desktop arguments")
 	}
 	// The Desktop always loads the packaged local UI even in a developer shell.
@@ -223,7 +224,7 @@ func run() error {
 	actions.Close()
 	mygo.App.SetName("DezirClip MyGo")
 	if !mainWindow {
-		return runResident(actions, minimized)
+		return runResident(actions, minimized, forceShow)
 	}
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol
@@ -233,7 +234,7 @@ func run() error {
 	history.rememberTarget(ctx)
 	mygo.Bind(history)
 	mygo.Bind(&Library{owner: actions})
-	shell := &DesktopShell{capture: residentCapture{output: os.Stdout, grantFocus: grantResidentFocus}}
+	shell := &DesktopShell{resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
 	mygo.Bind(shell)
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)
@@ -257,7 +258,7 @@ func run() error {
 			for commands.Scan() {
 				command := commands.Text()
 				if len(command) > 0 && command[0] == '{' {
-					shell.capture.accept(command)
+					shell.resident.accept(command)
 					continue
 				}
 				if command == "toggle" && win.IsFocused() {

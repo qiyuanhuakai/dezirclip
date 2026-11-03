@@ -14,7 +14,7 @@ import (
 )
 
 type DesktopShell struct {
-	capture         residentCapture
+	resident        residentBridge
 	settingsPending atomic.Bool
 }
 

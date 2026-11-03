@@ -93,6 +93,8 @@ const GeneralSettingsGroup = ({
 }: GeneralSettingsGroupProps) => {
     const [loginSaving, setLoginSaving] = useState(false);
     const [loginError, setLoginError] = useState("");
+    const [traySaving, setTraySaving] = useState(false);
+    const [trayError, setTrayError] = useState("");
     const [silentSaving, setSilentSaving] = useState(false);
     const [silentError, setSilentError] = useState("");
     const [idleDestroyDraft, setIdleDestroyDraft] = useState(idleDestroySeconds.toString());
@@ -162,14 +164,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={hideTrayIcon}
-                            onChange={(e) => {
+                            aria-label={t('hide_tray_icon')}
+                            disabled={traySaving}
+                            onChange={async (e) => {
                                 const val = e.target.checked;
-                                setHideTrayIcon(val);
-                                invoke("set_tray_visible", { visible: !val }).catch(console.error);
+                                setTraySaving(true);
+                                setTrayError("");
+                                try {
+                                    await invoke("set_tray_visible", { visible: !val });
+                                    setHideTrayIcon(val);
+                                } catch (error) {
+                                    setTrayError(String(error));
+                                } finally {
+                                    setTraySaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {trayError && <span role="alert">{trayError}</span>}
                 </div>
 
                 <NativeFeatureBoundary t={t}>

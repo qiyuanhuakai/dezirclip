@@ -105,3 +105,8 @@ func applyWindowAppearance(w *mygo.Window, theme, mode string, border bool) erro
 	}
 	return nil
 }
+
+func trayHostAvailable(tray *mygo.Tray) bool {
+	area := tray.Bounds()
+	return area.Width > 0 && area.Height > 0
+}

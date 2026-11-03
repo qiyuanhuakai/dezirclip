@@ -192,6 +192,7 @@ public class FixtureEditor {
 import os, sqlite3, sys
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.text',?)", (sys.argv[1],))
+    db.execute("UPDATE settings SET value='true' WHERE key='app.silent_start'")
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
     }
@@ -211,7 +212,9 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                 $_ -and !(Test-Path -LiteralPath (Join-Path $_ 'dzc.exe') -PathType Leaf)
             }) -join ';'
         }
-        $resident = Start-Process -FilePath $exe -RedirectStandardError (Join-Path $dir.FullName 'desktop.log') -PassThru
+        $launchOptions = @{}
+        if ($Capture) { $launchOptions.ArgumentList = '--show' }
+        $resident = Start-Process -FilePath $exe @launchOptions -RedirectStandardError (Join-Path $dir.FullName 'desktop.log') -PassThru
     } finally { $env:Path = $launchPath }
     $main = Wait-Until {
         if ($resident.HasExited) { throw 'Resident exited during startup' }
