@@ -11,7 +11,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 )
 
-type DesktopShell struct{}
+type DesktopShell struct{ capture residentCapture }
 
 type platformInfo struct {
 	Platform  string `json:"platform"`

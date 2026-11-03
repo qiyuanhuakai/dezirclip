@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -38,9 +38,13 @@ function Wait-Until([scriptblock]$Check, [string]$Failure, [int]$Seconds = 30) {
 }
 
 function Get-ControlPoint($root, [string]$Name) {
-    $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Name)
+    $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Name, [Windows.Automation.PropertyConditionFlags]::IgnoreCase)
     return Wait-Until {
         $row = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+        if ($row -and $row.Current.IsOffscreen) {
+            $scroll = $null
+            if ($row.TryGetCurrentPattern([Windows.Automation.ScrollItemPattern]::Pattern, [ref]$scroll)) { $scroll.ScrollIntoView() }
+        }
         if ($row -and !$row.Current.IsOffscreen -and !$row.Current.BoundingRectangle.IsEmpty) {
             $bounds = $row.Current.BoundingRectangle
             if ($bounds.Width -gt 0 -and $bounds.Height -gt 0) {
@@ -62,12 +66,8 @@ function Click-Control($main, $point) {
     [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
 }
 
-function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Editor, $Form) {
-    $Form.Activate()
-    $null = $Editor.Focus()
-    $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Independent editor did not regain foreground'
-    [Windows.Forms.SendKeys]::SendWait($Shortcut)
-    $panel = Wait-Until {
+function Get-ResidentPanel($Resident, [string]$Title) {
+    return Wait-Until {
         $window = [MyGoInput]::GetForegroundWindow()
         [uint32]$ownerId = 0
         $null = [MyGoInput]::GetWindowThreadProcessId($window, [ref]$ownerId)
@@ -77,6 +77,14 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
             if ($caption.ToString() -ceq $Title) { return $window }
         }
     } "Resident did not focus $Title" 12
+}
+
+function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Editor, $Form) {
+    $Form.Activate()
+    $null = $Editor.Focus()
+    $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Independent editor did not regain foreground'
+    [Windows.Forms.SendKeys]::SendWait($Shortcut)
+    $panel = Get-ResidentPanel $Resident $Title
     [Windows.Forms.SendKeys]::SendWait('{ESC}')
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
 }
@@ -153,6 +161,27 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         } finally {
             Write-Output ("DWM HRESULT/value, backdrop={0}, dark={1}, border={2}" -f $observed[38],$observed[20],$observed[34])
         }
+    }
+    if ($Capture) {
+        Click-Control $main (Get-ControlPoint $root 'Settings')
+        Click-Control $main (Get-ControlPoint $root 'Tools')
+        $point = Get-ControlPoint $root 'Full Screen Capture'
+        $bounds = [Windows.Forms.Screen]::FromPoint($point).Bounds
+        Click-Control $main $point
+        $null = Wait-Until {
+            try { $image = [Windows.Forms.Clipboard]::GetImage() }
+            catch [Runtime.InteropServices.ExternalException] { return $false }
+            if ($image) {
+                try { return $image.Width -eq $bounds.Width -and $image.Height -eq $bounds.Height }
+                finally { $image.Dispose() }
+            }
+        } 'Full Screen Capture did not copy the selected display'
+        Click-Control $main (Get-ControlPoint $root 'Region Capture')
+        $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u622a\u56fe'))
+        [Windows.Forms.SendKeys]::SendWait('{ESC}')
+        $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } 'Region Capture did not dismiss'
+        Write-Output 'Verified WebView2 buttons copy the full display and present the native resident region selector'
+        return
     }
     if ($Emoji) {
         Click-Control $main (Get-ControlPoint $root 'Stickers')

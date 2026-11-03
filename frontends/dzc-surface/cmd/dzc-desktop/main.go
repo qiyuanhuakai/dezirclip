@@ -232,7 +232,8 @@ func run() error {
 	history.rememberTarget(ctx)
 	mygo.Bind(history)
 	mygo.Bind(&Library{owner: actions})
-	mygo.Bind(&DesktopShell{})
+	shell := &DesktopShell{capture: residentCapture{output: os.Stdout}}
+	mygo.Bind(shell)
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)
 	mygo.App.WhenReady(func() {
@@ -254,6 +255,10 @@ func run() error {
 			commands := bufio.NewScanner(os.Stdin)
 			for commands.Scan() {
 				command := commands.Text()
+				if len(command) > 0 && command[0] == '{' {
+					shell.capture.accept(command)
+					continue
+				}
 				if command == "toggle" && win.IsFocused() {
 					mygo.RunOnMain(func() { win.Close() })
 					continue

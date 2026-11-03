@@ -1,6 +1,6 @@
 import { parsePrivacySnapshot } from "../lib/privacyRuntime";
 import { readResumeAuthority } from "../lib/mainWindowResume";
-import { hostGeneration } from "./events";
+import { emit, hostGeneration } from "./events";
 import { shellCall } from "./bridge";
 import { getCustomThemes } from "../lib/themeCatalog";
 import { resolveThemeSelection } from "../lib/themePackage";
@@ -32,6 +32,11 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  show_region_selector: () => shellCall("Capture", false, currentEpoch()),
+  capture_full_screen: async () => {
+    await shellCall("Capture", true, currentEpoch());
+    await emit("toast", "screenshot_captured");
+  },
   get_platform_info: () => shellCall("PlatformInfo"),
   list_system_fonts: () => library("SystemFonts"),
   send_emoji: args => window.mygo.call("History.SendEmoji", args.contentType, args.content, args.viewEpoch, args.paste),

@@ -2,6 +2,7 @@ package screenshot
 
 import (
 	"context"
+	"errors"
 	"log"
 	"math"
 	"runtime/debug"
@@ -25,6 +26,7 @@ type Selector struct {
 
 // A selection owns one private IPC connection and one frozen monitor image.
 type selection struct {
+	ready      func(error)
 	full       bool
 	host       *client.Client
 	state      protocol.RuntimeState
@@ -112,16 +114,42 @@ func (s *Selector) begin(full bool) {
 		}
 		return
 	}
+	s.start(full, nil, nil)
+}
+
+// Capture acknowledges a settings action when its selector is visible or its full frame has been copied.
+func (s *Selector) Capture(full bool, epoch uint64, ready func(error)) {
+	if s.window == nil || s.stopping || s.session != nil {
+		ready(errors.New("ScreenshotUnavailable"))
+		return
+	}
+	s.start(full, &epoch, ready)
+}
+
+func (shot *selection) notify(err error) {
+	if shot.ready != nil {
+		shot.ready(err)
+		shot.ready = nil
+	}
+}
+
+func (s *Selector) start(full bool, epoch *uint64, ready func(error)) {
 	pref, err := s.preferences()
 	if err != nil || !pref.Enabled {
+		if ready != nil {
+			ready(errors.New("ScreenshotUnavailable"))
+		}
 		return
 	}
 	target, ok := cursorTarget()
 	if !ok {
+		if ready != nil {
+			ready(errors.New("ScreenTargetUnavailable"))
+		}
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 115*time.Second)
-	shot := &selection{cancel: cancel, full: full}
+	shot := &selection{cancel: cancel, full: full, ready: ready}
 	s.session = shot
 	go func() {
 		host, err := s.owner.DesktopConnection(ctx)
@@ -130,6 +158,11 @@ func (s *Selector) begin(full bool) {
 			return
 		}
 		state := host.Hello().State
+		if epoch != nil && state.PrivacyEpoch != *epoch {
+			host.Close()
+			s.end(shot, errors.New("PrivacyEpochChanged"))
+			return
+		}
 		var frame protocol.ScreenImage
 		request := protocol.ScreenBeginParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Cursor: &target.point}
 		if err := host.Call(ctx, protocol.MethodDesktopScreenBegin, request, "ScreenImage", &frame); err != nil {
@@ -182,6 +215,7 @@ func (s *Selector) begin(full bool) {
 			s.window.Show()
 			s.window.Focus()
 			s.window.Invalidate()
+			shot.notify(nil)
 			go s.watch(ctx, shot, state)
 		})
 	}()
@@ -295,6 +329,7 @@ func (s *Selector) end(shot *selection, err error) {
 			if err != nil {
 				log.Printf("Screenshot ended: %v", err)
 			}
+			shot.notify(err)
 			next := s.pendingRegion && err == nil && !s.stopping
 			s.clear()
 			if next {
@@ -311,6 +346,7 @@ func (s *Selector) clear() {
 		return
 	}
 	s.session = nil
+	shot.notify(context.Canceled)
 	shot.cancel()
 	if shot.host != nil {
 		shot.host.Close()

@@ -446,6 +446,29 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
             except AssertionError as error:
                 raise AssertionError(f'Synthetic rule expected {rule!r}, persisted {read_rule()!r}, editor {atspi.Text.get_text(rules_field, 0, -1)!r}') from error
         print('Verified the last custom privacy rule edit persisted during continuous keyboard input')
+        full = open_settings_group('Tools', 'Full Screen Capture')
+        clipboard.set_text('waiting for explicit capture', -1)
+        assert atspi.Action.do_action(full, 0)
+        screen = Gdk.get_default_root_window()
+        def copied_screen():
+            image = clipboard.wait_for_image()
+            return image is not None and (image.get_width(), image.get_height()) == (screen.get_width(), screen.get_height())
+        wait_for(copied_screen, 'Settings full-screen capture did not copy the display')
+        region = wait_for(lambda: action('Region Capture'), 'Region capture button unavailable')
+        assert atspi.Action.do_action(region, 0)
+        def active_region():
+            window = subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+            props = subprocess.run(['xprop','-id',window,'_NET_WM_NAME','_NET_WM_PID'], capture_output=True, text=True)
+            if 'DezirClip 截图' in props.stdout:
+                pid = props.stdout.split()[-1]
+                if pid.isdecimal() and Path(f'/proc/{pid}/exe').resolve() == executable:
+                    return int(pid)
+        resident_pid = wait_for(active_region, 'Settings did not present the native screenshot window')
+        assert '--main-window' not in Path(f'/proc/{resident_pid}/cmdline').read_bytes().decode().split('\0')
+        shortcut((Gdk.KEY_Escape,))
+        wait_for(lambda: not active_region(), 'Resident screenshot selector did not dismiss')
+        assert copied_screen()
+        print('Verified full-screen and region capture buttons reached the resident screenshot implementation')
         close_settings = wait_for(lambda: find_item('Close'), 'Settings close action unavailable')
         assert atspi.Action.do_action(close_settings, 0)
         wait_for(lambda: find_item('Stickers'), 'Main window did not return to history')

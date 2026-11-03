@@ -108,7 +108,19 @@ func runResident(owner *client.Client) error {
 			go func() {
 				scanner := bufio.NewScanner(events)
 				for scanner.Scan() {
-					switch scanner.Text() {
+					line := scanner.Text()
+					if strings.HasPrefix(line, "{") {
+						var request captureRequest
+						if json.Unmarshal([]byte(line), &request) == nil && request.ID != 0 {
+							mygo.RunOnMain(func() {
+								selector.Capture(request.Full, request.Epoch, func(err error) {
+									_ = json.NewEncoder(input).Encode(captureReply{ID: request.ID, Success: err == nil})
+								})
+							})
+						}
+						continue
+					}
+					switch line {
 					case "closing":
 						mygo.RunOnMain(func() { closing = true })
 					case "focus":
