@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -168,13 +168,18 @@ function Get-WebViewBrowser($main) {
 
 function Click-Control($main, $point) {
     if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before click' }
+    Click-WindowPoint $main.MainWindowHandle $point
+}
+
+function Click-WindowPoint([IntPtr]$Window, $point) {
     if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not position pointer on the control' }
     $hit = New-Object MyGoInput+Point
     $hit.x, $hit.y = $point.X, $point.Y
-    if ([MyGoInput]::GetAncestor([MyGoInput]::WindowFromPoint($hit), 2) -ne $main.MainWindowHandle) {
-        throw 'Control coordinates do not belong to the original MyGo WebView window'
+    if ([MyGoInput]::GetAncestor([MyGoInput]::WindowFromPoint($hit), 2) -ne $Window) {
+        throw 'Control coordinates do not belong to the expected MyGo window'
     }
     [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 120
     [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
 }
 
@@ -224,7 +229,7 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
 }
 
-function Test-TransparentPreview($root, $main, [string]$marker) {
+function Open-HoverPreview($root, $main, [string]$marker) {
     $point = Get-ControlPoint $root $marker
     if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not hover the preview fixture' }
     $preview = Wait-Until {
@@ -232,6 +237,10 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
         if ($handle -and [MyGoInput]::IsWindowVisible($handle)) { return $handle }
     } 'Native hover preview did not open'
     if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'Preview took keyboard focus' }
+    return $preview
+}
+
+function Test-PreviewPixels([IntPtr]$preview, [switch]$HalfOpacity) {
     $bounds = New-Object MyGoInput+Rect
     if (![MyGoInput]::GetWindowRect($preview, [ref]$bounds)) { throw 'Cannot locate native preview' }
     $width = $bounds.right-$bounds.left
@@ -242,6 +251,7 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
         try { $graphics.CopyFromScreen($bounds.left,$bounds.top,0,0,$image.Size) } finally { $graphics.Dispose() }
         return $image
     }
+    $firstPixel = $null
     $firstColor = $null
     foreach ($white in @($false,$true)) {
         $backdrop = [MyGoInput]::PreviewBackdrop($preview,$bounds,$white)
@@ -260,7 +270,7 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
                 $expected = [Drawing.Color]::FromArgb(255,$color.R,$color.G,$color.B).ToArgb()
             } finally { $reference.Dispose() }
             if ($white -and [Math]::Abs([int]$color.R - [int]$firstColor.R) -lt 64) { throw 'Preview reference backdrops lack contrast' }
-            $firstColor = $color
+            if (!$white) { $firstColor = $color }
             $sampleX = [int]($width/2)
             $sampleY = $height-22
             $last = @{}
@@ -270,11 +280,18 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
                     $image = & $captureFrame
                     try {
                         $last.pixel = $image.GetPixel($sampleX,$sampleY).ToArgb()
-                        if ($last.pixel -ne $expected) { return $false }
+                        if ($HalfOpacity) {
+                            if (!$white -and $last.pixel -eq $expected) { return $false }
+                            if ($white) {
+                                $contrast = [Math]::Abs($image.GetPixel($sampleX,$sampleY).R - $firstPixel.R)
+                                $referenceContrast = [Math]::Abs($color.R - $firstColor.R)
+                                if ($contrast -le 3 -or $contrast -ge $referenceContrast - 5) { return $false }
+                            }
+                        } elseif ($last.pixel -ne $expected) { return $false }
                         $ink = 0
                         for ($y=8; $y -lt $height/2; $y+=2) {
                             for ($x=8; $x -lt $width-8; $x+=2) {
-                                if ($image.GetPixel($x,$y).ToArgb() -ne $expected) { $ink++ }
+                                if ($image.GetPixel($x,$y).ToArgb() -ne $last.pixel) { $ink++ }
                             }
                         }
                         return ($white -or $ink -ge 8) -and [MyGoInput]::IsWindowVisible($preview)
@@ -283,12 +300,42 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
             } finally {
                 Write-Output ("Preview bottom pixel={0:X8}, backdrop={1:X8}" -f $last.pixel,$expected)
             }
+            if (!$white) { $firstPixel = [Drawing.Color]::FromArgb($last.pixel) }
         } finally { $null = [MyGoInput]::DestroyWindow($backdrop) }
     }
+}
+
+function Test-TransparentPreview($root, $main, [string]$marker) {
+    $preview = Open-HoverPreview $root $main $marker
+    Test-PreviewPixels $preview
     $away = Get-ControlPoint $root 'Settings'
     if (![MyGoInput]::SetCursorPos($away.X,$away.Y)) { throw 'Could not leave the selected row' }
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Preview remained after leaving the row'
 
+}
+
+function Test-PinnedPreview($root, $main, $resident, [string]$marker) {
+    $hover = Open-HoverPreview $root $main $marker
+    $toolbar = [Windows.Automation.AutomationElement]::FromHandle($hover)
+    Click-WindowPoint $hover (Get-ControlPoint $toolbar 'Pin this preview')
+    $pin = Wait-Until {
+        $handle = [MyGoInput]::WindowWithTitle([regex]::Unescape('DezirClip \u56fa\u5b9a\u9884\u89c8'))
+        if ($handle -and [MyGoInput]::IsWindowVisible($handle)) { return $handle }
+    } 'Native pinned preview did not open'
+    [uint32]$ownerId = 0
+    $null = [MyGoInput]::GetWindowThreadProcessId($pin,[ref]$ownerId)
+    if ($ownerId -ne $resident.Id) { throw 'Pinned preview did not belong to the native resident' }
+    if (!$main.HasExited -and !$main.CloseMainWindow()) { throw 'Could not close the main WebView' }
+    $null = Wait-Until { $main.HasExited } 'Main WebView process did not exit'
+    Test-PreviewPixels $pin
+    $controls = [Windows.Automation.AutomationElement]::FromHandle($pin)
+    Click-WindowPoint $pin (Get-ControlPoint $controls 'Background opacity')
+    $null = Wait-Until {
+        $value = 'import os, sqlite3; print(sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]).execute("SELECT value FROM settings WHERE key=?", ("app.preview_opacity",)).fetchone()[0])' | python -
+        $LASTEXITCODE -eq 0 -and [int]$value -ge 45 -and [int]$value -le 55
+    } 'Native slider did not persist its midpoint after the WebView exited'
+    Test-PreviewPixels $pin -HalfOpacity
+    Write-Output 'Verified resident pin updates its on-screen background after the WebView process exits'
 }
 
 function Test-ExternalEdit($root, $main, [string]$marker) {
@@ -351,6 +398,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                    [("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
+    if ($Capture -or $PinPreview) {
+        @'
+import os, sqlite3
+with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
+    db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                   [('app.compact_mode','true'), ('app.preview_opacity','0')])
+'@ | python -
+        if ($LASTEXITCODE) { throw 'Could not seed the isolated preview preferences' }
+    }
     if ($Capture) {
         $fixtureEditor = Join-Path $dir.FullName 'Fixture Editor.exe'
         Add-Type -OutputAssembly $fixtureEditor -OutputType WindowsApplication -TypeDefinition @'
@@ -373,8 +429,6 @@ import os, sqlite3, sys
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.text',?)", (sys.argv[1],))
     db.execute("UPDATE settings SET value='true' WHERE key='app.silent_start'")
-    db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
-                   [('app.compact_mode','true'), ('app.preview_opacity','0')])
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
     }
@@ -451,6 +505,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         } finally {
             Write-Output ("DWM HRESULT/value, backdrop={0}, dark={1}, border={2}" -f $observed[38],$observed[20],$observed[34])
         }
+    }
+    if ($PinPreview) {
+        Test-PinnedPreview $root $main $resident $marker
+        return
     }
     if ($Capture) {
         Test-TransparentPreview $root $main $marker

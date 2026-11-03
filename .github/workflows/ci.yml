@@ -443,6 +443,11 @@ jobs:
         shell: powershell
         run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -Capture
 
+      - name: Verify resident pinned preview after the Windows WebView exits
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: powershell
+        run: ./scripts/tests/mygo-desktop-windows.ps1 -Desktop target/debug/dzc-desktop.exe -PinPreview
+
       - name: Verify private Windows clipboard leases on disposable runner
         if: runner.os == 'Windows' && matrix.can_test
         env:
