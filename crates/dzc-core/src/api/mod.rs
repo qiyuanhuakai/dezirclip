@@ -38,3 +38,5 @@ mod queue;
 pub use queue::PreparedQueueEntry;
 mod privacy_policy;
 pub use privacy_policy::{PrivacyPolicyService,PrivacyRuleKind,PrivacyRuleSummary,PrivacyFeedbackAction,PrivacyDecisionReport,PrivacyScanStatus};
+
+pub use crate::infrastructure::repository::profile_migration::MigrationError;

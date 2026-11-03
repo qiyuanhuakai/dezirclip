@@ -76,6 +76,11 @@ pub struct HistoryService {
 }
 
 impl HistoryService {
+    /// Publish a standalone profile snapshot and reserve this source connection for reads until restart.
+    pub fn migrate_profile(&self, source: &Path, destination: &Path, redirect: &Path) -> Result<(), super::MigrationError> {
+        self.repository.migrate_profile(source, destination, redirect)
+    }
+
     pub fn open(path: &Path) -> CoreResult<Self> {
         if path.as_os_str().is_empty() {
             return Err(CoreError::validation("database path is empty"));
