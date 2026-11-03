@@ -90,7 +90,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		}
 		text = ""
 	} else if row.ContentType == "rich_text" && row.HtmlContent != nil && len(*row.HtmlContent) <= 64*1024 {
-		formatted = richtext.NewDocument(richtext.ParseHTML(*row.HtmlContent))
+		formatted = richPreviewDocument(*row.HtmlContent)
 	} else {
 		if text == "" {
 			text = row.Preview
@@ -133,4 +133,10 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		p.window.SetPosition(max(area.X, x), max(area.Y, min(cursor.Y, area.Y+area.Height-height)))
 		p.window.ShowInactive()
 	})
+}
+
+func richPreviewDocument(html string) *richtext.Document {
+	doc := richtext.NewDocument(richtext.ParseHTML(html))
+	doc.SetSelection(0, 0)
+	return doc
 }
