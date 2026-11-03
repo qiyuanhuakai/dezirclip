@@ -59,6 +59,8 @@ pub struct Host {
     pub(crate) lifecycle: Mutex<Option<Arc<dyn HostLifecycle>>>,
     pub(crate) requests: Mutex<()>,
     pub(crate) backup_operation: Mutex<()>,
+    #[cfg(test)]
+    pub(crate) after_backup_ticket: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
     pub(crate) manual_ocr_operation: Mutex<()>,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
@@ -103,6 +105,7 @@ impl Host {
         let epoch = options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.privacy_epoch;
         let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
+            #[cfg(test)] after_backup_ticket: Mutex::new(None),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
@@ -338,7 +341,7 @@ impl Host {
             return match self.subscribe(session, request.params) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) };
         }
         // File IO and key derivation can take seconds. Keep privacy controls responsive.
-        if matches!(request.method, Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize | Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview) {
+        if Self::independent_dispatch(request.method) {
             return match self.route(session, request) {
                 Ok(value) => Response::success(id, value),
                 Err(code) => Response::failure(id, code),
@@ -346,6 +349,10 @@ impl Host {
         }
         let Ok(_serial) = self.requests.lock() else { return Response::failure(id, WireErrorCode::Unavailable); };
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
+    }
+    pub(crate) fn independent_dispatch(method: Method) -> bool {
+        matches!(method, Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
+            Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }

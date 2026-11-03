@@ -32,6 +32,11 @@ impl Host {
             Method::DesktopBackupPreview => {
                 let p: BackupPreviewParams = serde_json::from_value(params).map_err(invalid)?;
                 let ticket = self.backup_ticket(session, &p.service_instance_id, p.expected_epoch, &p.path)?;
+                #[cfg(test)]
+                if let Some((reached, resume)) = self.after_backup_ticket.lock().unwrap().take() {
+                    let _ = reached.send(());
+                    resume.recv_timeout(std::time::Duration::from_secs(5)).map_err(|_| WireErrorCode::Busy)?;
+                }
                 let rows = service.preview_file(Path::new(&p.path), &ticket).map_err(failure)?;
                 let entries = rows.into_iter().map(|content| BackupPreviewRow { content }).collect();
                 serde_json::to_value(BackupPreview { entries })

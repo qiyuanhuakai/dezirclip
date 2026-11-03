@@ -119,7 +119,7 @@ async fn requests(host: Arc<Host>, session: Session, mut stream: Stream, state: 
         let bytes = read_request(&mut stream, &mut stopped, timeout).await?;
         let request: Request = wire::decode("Request", &bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
         let method = request.method;
-        let permit = if method == Method::EventsSubscribe { None } else {
+        let permit = if method == Method::EventsSubscribe || Host::independent_dispatch(method) { None } else {
             match tokio::time::timeout(Duration::from_secs(5), state.dispatch_slots.clone().acquire_owned()).await {
                 Ok(Ok(permit)) => Some(permit),
                 _ => { send(&mut stream, Response::failure(request.request_id, WireErrorCode::Busy)).await?; continue; },
@@ -227,6 +227,39 @@ mod tests {
                 drop(credentials);
                 std::fs::remove_dir_all(directory).unwrap();
             }
+        });
+    }
+
+    #[test]
+    fn privacy_switch_on_second_connection_invalidates_inflight_backup() {
+        tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
+            let directory = directory();
+            let host = crate::router::tests::synthetic_host();
+            let endpoint = Endpoint::in_directory(&directory).unwrap();
+            let listener = endpoint.bind().unwrap();
+            let credentials = ControlFile::publish(&host, &endpoint).unwrap();
+            let (shutdown, receiver) = watch::channel(false);
+            let server = tokio::spawn(serve_listener(host.clone(), listener, receiver));
+            let mut desktop = Client::control(&endpoint, ClientRole::Desktop).await.unwrap();
+            let mut control = Client::control(&endpoint, ClientRole::Cli).await.unwrap();
+            let initial = host.snapshot().unwrap();
+            let (reached, waiting) = tokio::sync::oneshot::channel();
+            let (resume, paused) = std::sync::mpsc::channel();
+            *host.after_backup_ticket.lock().unwrap() = Some((reached, paused));
+            let request = BackupPreviewParams { service_instance_id: initial.service_instance_id,
+                expected_epoch: initial.privacy_epoch, path: directory.join("backup.json").to_str().unwrap().into() };
+            let preview = tokio::spawn(async move { desktop.call::<BackupPreview>(Method::DesktopBackupPreview, request, "BackupPreview").await });
+            tokio::time::timeout(Duration::from_secs(3), waiting).await.unwrap().unwrap();
+            let privacy = tokio::time::timeout(Duration::from_secs(1), control.call::<PrivacyState>(
+                Method::PrivacySet, serde_json::json!({"active":true}), "PrivacyState")).await.unwrap().unwrap();
+            assert!(privacy.active && privacy.privacy_epoch > initial.privacy_epoch);
+            resume.send(()).unwrap();
+            let err = preview.await.unwrap().unwrap_err();
+            assert_eq!(serde_json::from_str::<WireErrorCode>(&err.to_string()).unwrap(), WireErrorCode::PrivacySessionActive);
+            shutdown.send(true).unwrap();
+            server.await.unwrap().unwrap();
+            drop(credentials);
+            std::fs::remove_dir_all(directory).unwrap();
         });
     }
 
