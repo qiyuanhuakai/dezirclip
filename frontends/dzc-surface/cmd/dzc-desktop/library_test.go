@@ -237,17 +237,59 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err := os.WriteFile(file, []byte(backup), 0600); err != nil {
 		t.Fatal(err)
 	}
-	var imported protocol.BackupImportResult
-	if err := owner.DesktopCall(ctx, protocol.MethodDesktopBackupImport, protocol.BackupImportParams{
-		ServiceInstanceId: instance, ExpectedEpoch: epoch, Path: file, Mode: "merge",
-	}, "BackupImportResult", &imported); err != nil || imported.Imported != 1 {
+	preview, err := library.PreviewBackup(ctx, epoch, file)
+	if err != nil || len(preview) != 1 || preview[0].Content != "bridge-marker" {
+		t.Fatalf("backup preview: %+v %v", preview, err)
+	}
+	imported, err := library.ImportBackup(ctx, epoch, file, "merge", nil)
+	if err != nil || imported.Imported != 1 || imported.Mode != "merge" {
 		t.Fatalf("import: %+v %v", imported, err)
+	}
+	plain := filepath.Join(t.TempDir(), "clipboard-export.json")
+	exportedBackup, err := library.ExportBackup(ctx, epoch, plain, "json", nil)
+	if err != nil || exportedBackup.Count != 1 || exportedBackup.Encrypted {
+		t.Fatalf("JSON export: %+v %v", exportedBackup, err)
+	}
+	preview, err = library.PreviewBackup(ctx, epoch, plain)
+	if err != nil || len(preview) != 1 || preview[0].Content != "bridge-marker" {
+		t.Fatalf("exported preview: %+v %v", preview, err)
+	}
+	encrypted := filepath.Join(t.TempDir(), "clipboard-export.dzc")
+	password, wrong := "mygo backup test passphrase", "incorrect backup test passphrase"
+	exportedBackup, err = library.ExportBackup(ctx, epoch, encrypted, "encrypted", &password)
+	if err != nil || !exportedBackup.Encrypted || exportedBackup.Count != 1 {
+		t.Fatalf("encrypted export: %+v %v", exportedBackup, err)
+	}
+	if _, err := library.ImportBackup(ctx, epoch, encrypted, "replace", &wrong); err == nil {
+		t.Fatal("wrong backup passphrase accepted")
+	}
+	if page, err := library.Page(ctx, protocol.DesktopPageParams{Limit: 10}, epoch); err != nil || len(page) != 1 {
+		t.Fatalf("failed replacement changed history: %d %v", len(page), err)
+	}
+	imported, err = library.ImportBackup(ctx, epoch, encrypted, "replace", &password)
+	if err != nil || imported.Imported != 1 || imported.Mode != "replace" {
+		t.Fatalf("encrypted restore: %+v %v", imported, err)
 	}
 	query := "bridge-marker"
 	search := protocol.DesktopPageParams{Query: &query, Limit: 40}
 	rows, err := library.Page(ctx, search, epoch)
 	if err != nil || len(rows) != 1 || rows[0].Instance != instance {
 		t.Fatalf("search: %+v %v", rows, err)
+	}
+	if err := library.SetPasteQueue(ctx, epoch, []int64{rows[0].Id}); err != nil {
+		t.Fatal(err)
+	}
+	if queue, err := library.PasteQueue(ctx, epoch); err != nil || len(queue) != 1 || queue[0] != rows[0].Id {
+		t.Fatalf("queue order: %v %v", queue, err)
+	}
+	if err := library.SetPasteQueue(ctx, epoch+1, []int64{}); err == nil {
+		t.Fatal("stale queue clear succeeded")
+	}
+	if err := library.SetPasteQueue(ctx, epoch, []int64{}); err != nil {
+		t.Fatal(err)
+	}
+	if queue, err := library.PasteQueue(ctx, epoch); err != nil || len(queue) != 0 {
+		t.Fatalf("queue clear: %v %v", queue, err)
 	}
 	page, err := library.TagPage(ctx, protocol.DesktopTagPageParams{Tag: "fixture", SortBy: "time", Limit: 40, ExpectedEpoch: epoch})
 	if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Id != rows[0].Id {

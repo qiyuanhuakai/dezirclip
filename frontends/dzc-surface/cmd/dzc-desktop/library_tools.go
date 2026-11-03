@@ -12,6 +12,27 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 
+func (l *Library) PreviewBackup(ctx context.Context, epoch uint64, path string) ([]protocol.BackupPreviewRow, error) {
+	var result protocol.BackupPreview
+	params := protocol.BackupPreviewParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupPreview, params, "BackupPreview", &result)
+	return result.Entries, err
+}
+
+func (l *Library) ImportBackup(ctx context.Context, epoch uint64, path, mode string, passphrase *string) (protocol.BackupImportResult, error) {
+	var result protocol.BackupImportResult
+	params := protocol.BackupImportParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path, Mode: mode, Passphrase: passphrase}
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupImport, params, "BackupImportResult", &result)
+	return result, err
+}
+
+func (l *Library) ExportBackup(ctx context.Context, epoch uint64, path, format string, passphrase *string) (protocol.BackupExportResult, error) {
+	var result protocol.BackupExportResult
+	params := protocol.BackupExportParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path, Format: format, Passphrase: passphrase}
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopBackupExport, params, "BackupExportResult", &result)
+	return result, err
+}
+
 func (l *Library) ToolCatalog(ctx context.Context) (protocol.ToolCatalog, error) {
 	var catalog protocol.ToolCatalog
 	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopToolsCatalog, protocol.ToolCatalogParams{}, "ToolCatalog", &catalog)

@@ -261,6 +261,24 @@ func (l *Library) Preferences(ctx context.Context) (json.RawMessage, error) {
 	return preferences.Values, nil
 }
 
+func (l *Library) PasteQueue(ctx context.Context, epoch uint64) ([]int64, error) {
+	var result protocol.QueueState
+	params := protocol.LibraryStateParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch}
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopQueueGet, params, "QueueState", &result)
+	return result.Ids, err
+}
+
+func (l *Library) SetPasteQueue(ctx context.Context, epoch uint64, ids []int64) error {
+	for _, id := range ids {
+		if id <= 0 {
+			return errors.New("SessionQueueUnavailable")
+		}
+	}
+	return l.edit(ctx, protocol.MethodDesktopQueueSet, protocol.QueueReplaceParams{
+		ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Ids: ids,
+	})
+}
+
 func (l *Library) SetSetting(ctx context.Context, key, value string, epoch uint64) error {
 	instance := l.owner.Hello().State.ServiceInstanceId
 	var result protocol.OperationResult
