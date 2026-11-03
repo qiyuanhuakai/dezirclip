@@ -244,7 +244,7 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
             foreach ($x in @([int]($width/4), [int]($width/2), [int](3*$width/4))) {
                 $y = $height-22
                 if ($visible.GetPixel($x,$y).ToArgb() -ne $behind.GetPixel($x,$y).ToArgb()) {
-                    throw 'Native preview background at zero opacity did not show the desktop'
+                    throw ("Preview pixel at ({0},{1}), visible={2:X8}, behind={3:X8}" -f $x,$y,$visible.GetPixel($x,$y).ToArgb(),$behind.GetPixel($x,$y).ToArgb())
                 }
             }
         } finally { $behind.Dispose() }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"runtime"
 	"strings"
 	"time"
 
@@ -194,7 +195,11 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			})
 		})})
 		p.window.SetTitle("DezirClip 悬浮预览")
-		p.window.SetIgnoreMouseEvents(true)
+		// Windows implements IgnoreMouseEvents with a whole-window alpha layer,
+		// which masks the flyout's DirectComposition per-pixel background.
+		if runtime.GOOS != "windows" {
+			p.window.SetIgnoreMouseEvents(true)
+		}
 		p.window.ShowInactive()
 	})
 }
