@@ -323,6 +323,7 @@ const (
     MethodDesktopOcrStatus Method = "desktop.ocr.status"
     MethodDesktopOcrEngine Method = "desktop.ocr.engine"
     MethodDesktopSettingsPreferences Method = "desktop.settings.preferences"
+    MethodDesktopSettingsViewSet Method = "desktop.settings.view.set"
     MethodDesktopSettingsCaptureGet Method = "desktop.settings.capture.get"
     MethodDesktopSettingsCaptureSet Method = "desktop.settings.capture.set"
     MethodDesktopScreenBegin Method = "desktop.screen.begin"
@@ -790,6 +791,13 @@ type ScreenPreferences struct {
     Enabled bool `json:"enabled"`
     Region string `json:"region"`
     Full string `json:"full"`
+}
+
+type ViewSettingParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
 }
 
 type DesktopPreferences struct {

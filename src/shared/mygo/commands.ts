@@ -73,6 +73,13 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     return { deletedCount };
   },
   get_settings: () => library("Preferences"),
+  get_custom_themes: async () => {
+    const preferences = await library<Record<string, string>>("Preferences");
+    return JSON.parse(preferences["app.custom_themes"] || "[]");
+  },
+  import_custom_theme: args => library("ImportTheme", args.path, currentEpoch()),
+  export_custom_theme: args => library("ExportTheme", args.id, args.path, currentEpoch()),
+  delete_custom_theme: args => library("RemoveTheme", args.id, currentEpoch()),
   save_setting: args => library("SetSetting", args.key, args.value, currentEpoch()),
   copy_to_clipboard: args => window.mygo.call("History.CopyEntry", {
     id: args.id === 0 ? args.derivedFromId : args.id,

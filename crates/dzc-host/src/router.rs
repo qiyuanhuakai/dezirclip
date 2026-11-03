@@ -286,6 +286,7 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                methods.push("desktop.settings.view.set");
                 methods.push("desktop.window.pin");
                 methods.extend(["desktop.history.manual.begin", "desktop.history.manual.finish"]);
                 if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
@@ -479,6 +480,17 @@ impl Host {
                     _ => WireErrorCode::Unavailable,
                 })?;
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("capture_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopSettingsViewSet => {
+                let input: ViewSettingParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.update_view_setting(&input.key, &input.value, input.expected_epoch).map_err(|error| match error.code {
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop |

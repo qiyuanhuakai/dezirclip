@@ -6,12 +6,13 @@ use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-async fn persist_capture_setting(host: &crate::app::ipc_host::DesktopHost, key: &str, value: String) -> AppResult<()> {
-    use dzc_host::wire::{CaptureSettingParams, Method, OperationResult, RuntimeState};
+async fn persist_host_setting(host: &crate::app::ipc_host::DesktopHost, key: &str, value: String) -> AppResult<()> {
+    use dzc_host::wire::{Method, OperationResult, RuntimeState};
     let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await.map_err(AppError::Validation)?;
-    let _: OperationResult = host.call(Method::DesktopSettingsCaptureSet, CaptureSettingParams {
-        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, key: key.into(), value
-    }, "OperationResult").await.map_err(AppError::Validation)?;
+    let method = if dzc_core::api::HistoryService::is_view_setting(key) { Method::DesktopSettingsViewSet } else { Method::DesktopSettingsCaptureSet };
+    let _: OperationResult = host.call(method, serde_json::json!({
+        "service_instance_id": state.service_instance_id, "expected_epoch": state.privacy_epoch, "key": key, "value": value
+    }), "OperationResult").await.map_err(AppError::Validation)?;
     Ok(())
 }
 
@@ -246,7 +247,7 @@ pub fn set_search_hotkey(
 
 #[tauri::command]
 pub async fn set_deduplication(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
-    persist_capture_setting(&host, "app.deduplicate", enabled.to_string()).await?;
+    persist_host_setting(&host, "app.deduplicate", enabled.to_string()).await?;
     state.deduplicate.store(enabled, Ordering::Relaxed);
     Ok(())
 }
@@ -291,8 +292,8 @@ pub async fn save_setting(
     }
     if matches!(key.as_str(), "app.sequential_mode" | "app.delete_after_paste" | "app.paste_method") {
         persist_queue_setting(&app_handle, &key, value.clone()).await?;
-    } else if dzc_core::api::HistoryService::is_capture_setting(&key) {
-        persist_capture_setting(&app_handle.state::<crate::app::ipc_host::DesktopHost>(), &key, value.clone()).await?;
+    } else if dzc_core::api::HistoryService::is_capture_setting(&key) || dzc_core::api::HistoryService::is_view_setting(&key) {
+        persist_host_setting(&app_handle.state::<crate::app::ipc_host::DesktopHost>(), &key, value.clone()).await?;
     } else {
         persist_setting_with_legacy(&db_state, &key, &value)?;
     }
@@ -366,21 +367,21 @@ pub fn set_arrow_key_selection(
 
 #[tauri::command]
 pub async fn set_persistence(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
-    persist_capture_setting(&host, "app.persistent", enabled.to_string()).await?;
+    persist_host_setting(&host, "app.persistent", enabled.to_string()).await?;
     state.persistent.store(enabled, Ordering::Relaxed);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn set_capture_files(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
-    persist_capture_setting(&host, "app.capture_files", enabled.to_string()).await?;
+    persist_host_setting(&host, "app.capture_files", enabled.to_string()).await?;
     state.capture_files.store(enabled, Ordering::Relaxed);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn set_capture_rich_text(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
-    persist_capture_setting(&host, "app.capture_rich_text", enabled.to_string()).await?;
+    persist_host_setting(&host, "app.capture_rich_text", enabled.to_string()).await?;
     state.capture_rich_text.store(enabled, Ordering::Relaxed);
     Ok(())
 }
@@ -408,7 +409,7 @@ pub async fn set_privacy_protection(
     state: State<'_, crate::app_state::SettingsState>,
     enabled: bool,
 ) -> AppResult<()> {
-    persist_capture_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection", enabled.to_string()).await?;
+    persist_host_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection", enabled.to_string()).await?;
     state.privacy_protection.store(enabled, Ordering::Relaxed);
     crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     let _ = app.emit("clipboard-changed", ());
@@ -422,7 +423,7 @@ pub async fn set_privacy_protection_kinds(
     kinds: Vec<String>,
 ) -> AppResult<()> {
     let serialized = kinds.join(",");
-    persist_capture_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection_kinds", serialized).await?;
+    persist_host_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection_kinds", serialized).await?;
     *state.privacy_protection_kinds.lock().unwrap()=kinds;
     crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     Ok(())
@@ -439,7 +440,7 @@ pub async fn set_privacy_protection_custom_rules(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>();
-    persist_capture_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection_custom_rules", rules).await?;
+    persist_host_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection_custom_rules", rules).await?;
     *state.privacy_protection_custom_rules.lock().unwrap()=list;
     crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     Ok(())

@@ -458,6 +458,8 @@ pub enum Method {
     DesktopOcrEngine,
     #[serde(rename = "desktop.settings.preferences")]
     DesktopSettingsPreferences,
+    #[serde(rename = "desktop.settings.view.set")]
+    DesktopSettingsViewSet,
     #[serde(rename = "desktop.settings.capture.get")]
     DesktopSettingsCaptureGet,
     #[serde(rename = "desktop.settings.capture.set")]
@@ -1121,6 +1123,15 @@ pub struct ScreenPreferences {
     pub enabled: bool,
     pub region: String,
     pub full: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ViewSettingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

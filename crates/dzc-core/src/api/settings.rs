@@ -27,6 +27,23 @@ impl HistoryService {
         self.repository.set_setting_at_epoch("app.window_pinned", if pinned { "true" } else { "false" }, epoch)
     }
 
+    pub fn is_view_setting(key: &str) -> bool {
+        matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
+            | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection")
+    }
+
+    pub fn update_view_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
+        use crate::domain::theme::{valid_theme_id, BUILTIN_THEMES};
+        let valid = match key {
+            "app.theme" => BUILTIN_THEMES.contains(&value) || value.strip_prefix("custom:").is_some_and(valid_theme_id),
+            "app.color_mode" => matches!(value, "light" | "dark" | "system"),
+            "app.language" => matches!(value, "zh" | "tw" | "en"),
+            _ => Self::is_view_setting(key) && matches!(value, "true" | "false"),
+        };
+        if !valid { return Err(super::CoreError::validation("ViewSettingInvalid")); }
+        self.repository.set_setting_at_epoch(key, value, epoch)
+    }
+
     pub fn is_capture_setting(key: &str) -> bool {
         matches!(key, "app.persistent" | "app.deduplicate" | "app.capture_files" | "app.capture_rich_text"
             | "app.privacy_protection" | "app.privacy_protection_kinds" | "app.privacy_protection_custom_rules"

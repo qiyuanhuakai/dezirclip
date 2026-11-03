@@ -321,6 +321,38 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         shortcut()
         wait_for(lambda: find_item('图片'), 'Resident shortcut did not reopen the shared WebView')
         print('Verified shared tag-row paste into the second editor and closing/reopening with the configured shortcut')
+        def open_appearance(settings, group, theme):
+            button = wait_for(lambda: find_item(settings), 'Settings button unavailable')
+            box = atspi.Component.get_extents(button, atspi.CoordType.SCREEN)
+            assert atspi.generate_mouse_event(box.x + box.width//2, box.y + box.height//2, 'b1c')
+            heading = wait_for(lambda: find_item(group) or find_item(group, text=True), 'Appearance settings unavailable')
+            if not find_item(theme):
+                if 'Action' in heading.get_interfaces():
+                    assert atspi.Action.do_action(heading, 0)
+                else:
+                    atspi.Component.scroll_to(heading, atspi.ScrollType.ANYWHERE)
+                    box = atspi.Component.get_extents(heading, atspi.CoordType.SCREEN)
+                    assert atspi.generate_mouse_event(box.x + box.width//2, box.y + box.height//2, 'b1c')
+            return wait_for(lambda: find_item(theme), 'Theme choices unavailable')
+
+        wait_for(lambda: find_item(note, text=True), 'Reopened history did not restore the saved note')
+        retro = open_appearance('设置', '界面设置', '复古')
+        assert atspi.Action.do_action(retro, 0)
+        dark = wait_for(lambda: find_item('深色'), 'Dark mode unavailable')
+        assert atspi.Action.do_action(dark, 0)
+        english = wait_for(lambda: find_item('English'), 'English language unavailable')
+        assert atspi.Action.do_action(english, 0)
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: dict(db.execute("SELECT key, value FROM settings WHERE key IN ('app.theme','app.color_mode','app.language')"))
+                     == {'app.theme': 'retro', 'app.color_mode': 'dark', 'app.language': 'en'}, 'Appearance changes did not reach the profile')
+        original = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+        shortcut()
+        wait_for(lambda: subprocess.run(['xwininfo','-id',original], capture_output=True).returncode != 0, 'Settings WebView did not close')
+        shortcut()
+        wait_for(lambda: find_item('Image'), 'New WebView did not restore the selected language')
+        selected = open_appearance('Settings', 'Appearance', 'Retro')
+        assert selected.get_state_set().contains(atspi.StateType.PRESSED)
+        print('Verified saved theme, color mode and language and restored selection in a newly opened WebView')
     finally:
         alternate.destroy()
 

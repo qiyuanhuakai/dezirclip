@@ -357,10 +357,12 @@ const App = () => {
   }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm, editingTagsId, history, revealedIds]);
   // Search changes have their own trigger; this refresh belongs to privacy/resume transitions.
   const initialPage = useRef({ fetchHistory, needed: true });
+  const refreshAfterResume = useRef(false);
   initialPage.current = { fetchHistory, needed: appliedSearch !== debouncedSearch };
   const listGeneration = privacyListGeneration();
   useEffect(() => {
-    if (historyViewActive && privacyState.phase === "ready" && mainResume.phase === "idle" && initialPage.current.needed) {
+    if (historyViewActive && privacyState.phase === "ready" && mainResume.phase === "idle" && (initialPage.current.needed || refreshAfterResume.current)) {
+      refreshAfterResume.current = false;
       void initialPage.current.fetchHistory(true);
     }
   }, [historyViewActive, privacyState.phase, listGeneration, mainResume.phase]);
@@ -517,12 +519,17 @@ const App = () => {
       setHistory(prev => prev.filter(item => item.id !== id));
     },
     onChanged: () => {
+      if (mainResumePending) {
+        refreshAfterResume.current = true;
+        return;
+      }
       fetchHistory(true);
     }
   });
 
   useEffect(() => {
-    fetchHistory();
+    // A fresh MyGo window loads its first page during the guarded visible restore.
+    if (import.meta.env.MODE !== "mygo") fetchHistory();
   }, []);
 
   useToastListener({ pushToast, t });

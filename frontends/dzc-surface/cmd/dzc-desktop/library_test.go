@@ -58,6 +58,16 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("isolated status: %+v %v", status, err)
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
+	watcher := History{actions: owner}
+	defer func() {
+		if watcher.events != nil {
+			watcher.events.Close()
+		}
+	}()
+	baseline, err := watcher.Changes(ctx, nil)
+	if err != nil || baseline.State.ServiceInstanceId != instance || len(baseline.Events) != 0 {
+		t.Fatalf("new WebView event baseline: %+v %v", baseline, err)
+	}
 	if err := library.SetWindowPinned(ctx, true, epoch); err != nil {
 		t.Fatal(err)
 	}
@@ -67,6 +77,19 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err := library.SetSetting(ctx, "app.sequential_mode", "false", epoch); err != nil {
 		t.Fatal(err)
 	}
+	changes, err := watcher.Changes(ctx, &baseline.State.EventSequence)
+	if err != nil || len(changes.Events) == 0 || changes.State.EventSequence <= baseline.State.EventSequence {
+		t.Fatalf("missing settings changes after startup: %+v %v", changes, err)
+	}
+	viewSettings := map[string]string{"app.theme": "retro", "app.color_mode": "dark", "app.language": "en", "app.compact_mode": "true"}
+	for key, value := range viewSettings {
+		if err := library.SetSetting(ctx, key, value, epoch); err != nil {
+			t.Fatalf("set %s: %v", key, err)
+		}
+	}
+	if err := library.SetSetting(ctx, "app.theme", "custom:../outside", epoch); err == nil {
+		t.Fatal("invalid custom theme identifier accepted")
+	}
 	if err := library.SetSetting(ctx, "app.capture_files", "invalid", epoch); err == nil {
 		t.Fatal("accepted invalid capture preference")
 	}
@@ -75,6 +98,43 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.capture_files"] != "false" ||
 		settings["app.window_pinned"] != "true" || settings["app.sequential_mode"] != "false" {
 		t.Fatalf("desktop preferences: %s %v", preferences, err)
+	}
+	for key, value := range viewSettings {
+		if settings[key] != value {
+			t.Fatalf("read back %s = %q, want %q", key, settings[key], value)
+		}
+	}
+	themeDir := t.TempDir()
+	input := filepath.Join(themeDir, "fixture.dezirtheme.json")
+	output := filepath.Join(themeDir, "saved.dezirtheme.json")
+	themeData := `{"format":"dezirclip-theme","version":1,"id":"test-theme","name":"测试主题","base":"retro","css":":root.light-mode{--dc-accent:#156c44}"}`
+	if err := os.WriteFile(input, []byte(themeData), 0600); err != nil {
+		t.Fatal(err)
+	}
+	theme, err := library.ImportTheme(ctx, input, epoch)
+	if err != nil || theme.Id != "test-theme" || theme.Name != "测试主题" {
+		t.Fatalf("theme import: %+v %v", theme, err)
+	}
+	if _, err := library.ImportTheme(ctx, input, epoch); err == nil {
+		t.Fatal("duplicate theme import succeeded")
+	}
+	if err := library.ExportTheme(ctx, theme.Id, output, epoch); err != nil {
+		t.Fatal(err)
+	}
+	exported, err := os.ReadFile(output)
+	var savedTheme protocol.DesktopThemePackage
+	if err != nil || json.Unmarshal(exported, &savedTheme) != nil || savedTheme.Css != theme.Css || savedTheme.Name != theme.Name {
+		t.Fatalf("theme export changed the theme: %v", err)
+	}
+	if err := library.SetSetting(ctx, "app.theme", "custom:"+theme.Id, epoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := library.RemoveTheme(ctx, theme.Id, epoch); err != nil {
+		t.Fatal(err)
+	}
+	preferences, err = library.Preferences(ctx)
+	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.theme"] != "mica" || settings["app.custom_themes"] != "[]" {
+		t.Fatalf("active theme removal did not restore mica: %v", err)
 	}
 	file := filepath.Join(profile, "backup.json")
 	const backup = `{"version":"dezirclip-export-v2","exported_at":1,"entries":[{"id":1,"content_type":"text","content":"bridge-marker","source_app":"fixture","created_at":1,"updated_at":1,"tags":["fixture"]}]}`
@@ -159,6 +219,19 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	history := History{actions: owner, events: fresh}
 	paste := protocol.DesktopCopyParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance, Paste: true}
+	// Reproduce a connection loss after the UI had a valid target. Retire
+	// its real Service socket and reconnect before the user's first click.
+	watcher.targetInvalid.Store(false)
+	watcher.events.Close()
+	if _, err := watcher.Changes(ctx, &changes.State.EventSequence); err == nil || !watcher.targetInvalid.Load() {
+		t.Fatalf("lost subscription retained the paste target: %v", err)
+	}
+	if _, err := watcher.Changes(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := watcher.CopyEntry(ctx, paste); err != nil || outcome != "target_required" {
+		t.Fatalf("first paste after reconnect: %q %v", outcome, err)
+	}
 	_, err = history.CopyEntry(ctx, paste)
 	fresh.Close()
 	var remote *client.RemoteError

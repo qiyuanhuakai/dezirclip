@@ -79,20 +79,30 @@ func (h *History) Copy(ctx context.Context, id int64, state protocol.RuntimeStat
 	return err
 }
 
-func (h *History) Changes(ctx context.Context, cursor uint64) (protocol.EventsResult, error) {
+func (h *History) Changes(ctx context.Context, cursor *uint64) (protocol.EventsResult, error) {
 	wait := uint16(1000)
 	var events protocol.EventsResult
 	h.eventMu.Lock()
 	defer h.eventMu.Unlock()
 	if h.events == nil {
+		h.targetInvalid.Store(true)
 		host, err := h.actions.DesktopConnection(ctx)
 		if err != nil {
 			return events, err
 		}
 		h.events = host
 	}
-	err := h.events.Call(ctx, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: cursor, WaitMs: &wait}, "EventsResult", &events)
+	var err error
+	if cursor == nil {
+		// A new WebView loads current history and settings. Subscribe from that
+		// point without replaying another window's edits into its first render.
+		err = h.events.Call(ctx, protocol.MethodHealth, struct{}{}, "RuntimeState", &events.State)
+		events.Events = []protocol.Event{}
+	} else {
+		err = h.events.Call(ctx, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: *cursor, WaitMs: &wait}, "EventsResult", &events)
+	}
 	if err != nil {
+		h.targetInvalid.Store(true)
 		h.events.Close()
 		h.events = nil
 	}
