@@ -103,9 +103,9 @@ func (v *pinnedImageView) draw(c *ui.Context, bitmap *ui.Bitmap, a previewAppear
 		return true
 	}).Draw(func(p *ui.Painter, r ui.Rect) {
 		v.width, v.height = r.W, r.H
-		v.fit = max(0.01, min(1, r.W/float32(w), r.H/float32(h)))
-		width := float32(math.Round(float64(float32(w) * v.factor())))
-		height := float32(math.Round(float64(float32(h) * v.factor())))
+		v.fit = min(1, r.W/float32(w), r.H/float32(h))
+		width := max(1, float32(math.Round(float64(float32(w)*v.factor()))))
+		height := max(1, float32(math.Round(float64(float32(h)*v.factor()))))
 		v.pan.X = pinPan(v.pan.X, r.W, width)
 		v.pan.Y = pinPan(v.pan.Y, r.H, height)
 		dst := ui.Rect{X: r.X + (r.W-width)/2 + v.pan.X, Y: r.Y + (r.H-height)/2 + v.pan.Y, W: width, H: height}
