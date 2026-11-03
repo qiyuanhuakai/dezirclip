@@ -19,7 +19,9 @@ export async function ask(text: string, options: ConfirmDialogOptions | string =
 export async function message(text: string, options: MessageDialogOptions | string = {}) {
   const opts = typeof options === "string" ? { title: options } : options;
   const configured = opts.buttons;
-  const labels = typeof configured === "object" ? Object.values(configured) :
+  const labels = typeof configured === "object" ?
+    (configured.yes !== undefined ? [configured.yes, configured.no, configured.cancel] :
+      configured.cancel !== undefined ? [configured.ok, configured.cancel] : [configured.ok]) :
     configured === "YesNoCancel" ? ["Yes", "No", "Cancel"] :
     configured === "YesNo" ? ["Yes", "No"] :
     configured === "OkCancel" ? ["Ok", "Cancel"] : [opts.okLabel || "Ok"];

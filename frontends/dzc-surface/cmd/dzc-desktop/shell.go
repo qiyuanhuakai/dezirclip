@@ -24,21 +24,34 @@ func (*DesktopShell) OpenURL(raw string) error {
 }
 
 type fileDialog struct {
-	Title       string            `json:"title"`
-	DefaultPath string            `json:"defaultPath"`
-	Directory   bool              `json:"directory"`
-	Multiple    bool              `json:"multiple"`
-	Filters     []mygo.FileFilter `json:"filters"`
+	Title       string         `json:"title"`
+	DefaultPath string         `json:"defaultPath"`
+	Directory   bool           `json:"directory"`
+	Multiple    bool           `json:"multiple"`
+	Filters     []dialogFilter `json:"filters"`
+}
+
+type dialogFilter struct {
+	Name       string   `json:"name"`
+	Extensions []string `json:"extensions"`
+}
+
+func (d fileDialog) nativeFilters() []mygo.FileFilter {
+	filters := make([]mygo.FileFilter, len(d.Filters))
+	for i, filter := range d.Filters {
+		filters[i] = mygo.FileFilter{Name: filter.Name, Extensions: filter.Extensions}
+	}
+	return filters
 }
 
 func (*DesktopShell) Open(ctx context.Context, options fileDialog) ([]string, error) {
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: mygo.CallerWindow(ctx), Title: options.Title,
-		DefaultPath: options.DefaultPath, Directory: options.Directory, Multiple: options.Multiple, Filters: options.Filters})
+		DefaultPath: options.DefaultPath, Directory: options.Directory, Multiple: options.Multiple, Filters: options.nativeFilters()})
 }
 
 func (*DesktopShell) Save(ctx context.Context, options fileDialog) (string, error) {
 	return mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: mygo.CallerWindow(ctx), Title: options.Title,
-		DefaultPath: options.DefaultPath, Filters: options.Filters})
+		DefaultPath: options.DefaultPath, Filters: options.nativeFilters()})
 }
 
 func (*DesktopShell) Message(ctx context.Context, text, title string, kind mygo.MessageType, labels []string, cancel int) (int, error) {
