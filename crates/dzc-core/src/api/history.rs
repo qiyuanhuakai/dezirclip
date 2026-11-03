@@ -78,7 +78,14 @@ pub struct HistoryService {
 impl HistoryService {
     /// Publish a standalone profile snapshot and reserve this source connection for reads until restart.
     pub fn migrate_profile(&self, source: &Path, destination: &Path, redirect: &Path) -> Result<(), super::MigrationError> {
-        self.repository.migrate_profile(source, destination, redirect)
+        self.repository.migrate_profile(source, destination, redirect, None)
+    }
+
+    pub fn migrate_profile_at_epoch(&self, source: &Path, destination: &Path, redirect: &Path, epoch: u64) -> Result<(), super::MigrationError> {
+        if cfg!(feature = "portable") {
+            return Err(super::MigrationError::Validation("Move the complete portable directory to relocate its data".into()));
+        }
+        self.repository.migrate_profile(source, destination, redirect, Some(epoch))
     }
 
     pub fn open(path: &Path) -> CoreResult<Self> {

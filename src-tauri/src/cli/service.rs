@@ -13,8 +13,10 @@ enum ServiceCommand {
     Stop,
     /// Query the current Host without starting one.
     Status { #[arg(long)] json: bool },
-    /// Move the installed profile to an existing directory while both profile Hosts are closed.
-    MoveData { directory: PathBuf },
+    /// Move an installed profile offline or through the identified standalone Service.
+    MoveData { directory: PathBuf,
+        #[arg(long, requires = "epoch")] from_instance: Option<String>,
+        #[arg(long, requires = "from_instance")] epoch: Option<u64> },
     /// Resolve the authenticated desktop Host. Prints connection metadata only.
     DesktopEndpoint { #[arg(long)] start_if_missing: bool },
     /// Explicitly grant a Surface bounded access. The token is printed once.
@@ -44,11 +46,15 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 status_output(status,json)
             }
             ServiceCommand::Status { json } => status_output(controller::status(&database).await.map_err(|e|e.to_string())?,json),
-            ServiceCommand::MoveData { directory } => {
+            ServiceCommand::MoveData { directory, from_instance, epoch } => {
                 if cfg!(feature = "portable") {
                     return Err("Move the complete portable directory to relocate its data".into());
                 }
-                controller::move_profile_offline(&database, &directory).map_err(|error| error.to_string())
+                if let (Some(instance), Some(epoch)) = (from_instance, epoch) {
+                    controller::move_active_profile(&database, &directory, &instance, epoch).await.map_err(|e| e.to_string())
+                } else {
+                    controller::move_profile_offline(&database, &directory).map_err(|e| e.to_string())
+                }
             }
             ServiceCommand::DesktopEndpoint { start_if_missing } => {
                 let descriptor = controller::desktop_endpoint(&database, start_if_missing).await.map_err(|error| error.to_string())?;

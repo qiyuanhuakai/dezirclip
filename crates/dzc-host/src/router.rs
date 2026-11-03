@@ -158,6 +158,10 @@ impl Host {
         let _delivery = self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?;
         let _ocr = self.manual_ocr_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        self.stop_locked()
+    }
+    // Caller owns the delivery, OCR and backup guards.
+    fn stop_locked(&self) -> Result<(), WireErrorCode> {
         self.stop_requested.store(true, Ordering::Release);
         self.events.interrupt();
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.stop_capture()?; }
@@ -171,6 +175,34 @@ impl Host {
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.release_ownership()?; }
         self.stopped.store(true, Ordering::Release);
         Ok(())
+    }
+    fn move_installed_profile(&self, session: &Session, request: BackupPreviewParams) -> Result<Value, WireErrorCode> {
+        session.require(Permission::ServiceManage)?;
+        self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        if self.mode != HostMode::Service { return Err(WireErrorCode::UnsupportedCapability); }
+        if self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.session.active {
+            return Err(WireErrorCode::PrivacySessionActive);
+        }
+        let destination = std::path::Path::new(&request.path);
+        if !destination.is_absolute() { return Err(WireErrorCode::InvalidRequest); }
+        let database = crate::data::database_path().map_err(unavailable)?;
+        let (source, target) = crate::data::installed_move_directories(&database, destination).map_err(|_| WireErrorCode::InvalidRequest)?;
+        if source != self.directory { return Err(WireErrorCode::Unavailable); }
+        if source == target { return result("ProfileMoveResult", ProfileMoveResult { moved:false, service_stopped:false }); }
+        let _target = crate::data::reserve_profile(&target).map_err(|_| WireErrorCode::Busy)?;
+        let redirect = crate::data::move_redirect(&database).map_err(unavailable)?;
+        let _delivery = self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        let _ocr = self.manual_ocr_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        self.history.migrate_profile_at_epoch(database.parent().ok_or(WireErrorCode::InvalidRequest)?, destination, &redirect, request.expected_epoch)
+            .map_err(|error| match error {
+                dzc_core::api::MigrationError::Validation(ref code) if code == "PrivacySessionActive" || code == "PrivacyEpochChanged" => privacy_error(code),
+                dzc_core::api::MigrationError::Validation(_) => WireErrorCode::InvalidRequest,
+                _ => WireErrorCode::Unavailable,
+            })?;
+        // The redirect is committed. Report this even if draining the old Service must be retried.
+        let service_stopped = self.stop_locked().is_ok();
+        result("ProfileMoveResult", ProfileMoveResult { moved: true, service_stopped })
     }
     pub fn snapshot(&self) -> Result<RuntimeState, WireErrorCode> {
         // No RAM guard is held while acquiring the database lock here. A RAM
@@ -309,6 +341,9 @@ impl Host {
                 }
                 methods.push("desktop.platform.probe");
                 methods.push("desktop.profile.info");
+                if self.mode == HostMode::Service && can(Permission::ServiceManage) {
+                    methods.push("desktop.profile.move");
+                }
                 methods.push("desktop.appearance.background");
                 methods.push("desktop.applications.select");
                 methods.push("desktop.history.open");
@@ -470,6 +505,10 @@ impl Host {
                 self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
                 let _reading = self.background_read.lock().map_err(unavailable)?;
                 self.read_background(session, request)
+            }
+            Method::DesktopProfileMove => {
+                let request: BackupPreviewParams = params(request.params)?;
+                self.move_installed_profile(session, request)
             }
             Method::DesktopProfileInfo => {
                 self.desktop_permission(session, self.instance_id())?;

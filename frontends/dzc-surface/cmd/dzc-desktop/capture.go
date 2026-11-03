@@ -14,6 +14,7 @@ type residentRequest struct {
 	ID        uint64 `json:"request_id"`
 	Epoch     uint64 `json:"epoch"`
 	Operation string `json:"operation"`
+	Directory string `json:"directory,omitempty"`
 	Disabled  bool   `json:"disabled,omitempty"`
 	Full      bool   `json:"full,omitempty"`
 	Visible   bool   `json:"visible,omitempty"`
@@ -21,13 +22,22 @@ type residentRequest struct {
 type residentReply struct {
 	ID      uint64 `json:"request_id"`
 	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
 }
 type residentBridge struct {
 	output     io.Writer
 	grantFocus func() error
 	mu         sync.Mutex
 	id         uint64
-	pending    chan bool
+	pending    chan residentReply
+}
+
+func (s *DesktopShell) MoveProfile(ctx context.Context, directory string, epoch uint64) error {
+	return s.resident.send(ctx, residentRequest{Operation: "move-profile", Directory: directory, Epoch: epoch}, 15*time.Minute)
+}
+
+func (s *DesktopShell) RelaunchProfile(ctx context.Context) error {
+	return s.resident.send(ctx, residentRequest{Operation: "relaunch-profile"}, 10*time.Second)
 }
 
 func (s *DesktopShell) Capture(ctx context.Context, full bool, epoch uint64) error {
@@ -52,7 +62,7 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 		return errors.New("ResidentBusy")
 	}
 	c.id++
-	done := make(chan bool, 1)
+	done := make(chan residentReply, 1)
 	c.pending = done
 	request.ID = c.id
 	c.mu.Unlock()
@@ -72,8 +82,14 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 	timeout, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 	select {
-	case success := <-done:
-		if !success {
+	case reply := <-done:
+		if !reply.Success {
+			if request.Operation == "move-profile" || request.Operation == "relaunch-profile" {
+				if reply.Error != "" {
+					return errors.New(reply.Error)
+				}
+				return errors.New("ProfileMoveUnavailable")
+			}
 			if request.Operation == "capture" {
 				return errors.New("ScreenshotUnavailable")
 			}
@@ -97,7 +113,7 @@ func (c *residentBridge) accept(line string) {
 	defer c.mu.Unlock()
 	if c.pending != nil && c.id == reply.ID {
 		select {
-		case c.pending <- reply.Success:
+		case c.pending <- reply:
 		default:
 		}
 	}

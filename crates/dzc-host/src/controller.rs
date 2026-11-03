@@ -17,31 +17,57 @@ pub fn sibling_executable() -> io::Result<PathBuf> {
 }
 /// Reserve both session endpoints until the new profile and its redirect are published.
 pub fn move_profile_offline(database: &Path, destination: &Path) -> io::Result<()> {
-    let executable = std::env::current_exe()?;
-    if std::env::var_os("DEZIRCLIP_DB_PATH").is_some() || std::env::var_os("TIEZ_DB_PATH").is_some() {
-        return Err(io::Error::other("A database path override is active; change the override to relocate the profile"));
-    }
-    if executable.with_file_name("data").is_dir() {
-        return Err(io::Error::other("Move the complete portable directory to relocate its data"));
-    }
-    let source = database.parent().ok_or_else(|| io::Error::other("Missing profile directory"))?;
-    let current = database.canonicalize()?;
-    let source_dir = source.canonicalize()?;
-    let target_dir = destination.canonicalize()?;
-    if !target_dir.is_dir() { return Err(io::Error::other("Destination is not a directory")); }
-    if source_dir == target_dir { return Ok(()); }
-    let reserve = |directory: &Path| {
-        Endpoint::for_current_session(directory)?.bind()
-            .map_err(|e| io::Error::new(e.kind(), format!("Could not reserve the profile; close its desktop Host or Service: {e}")))
-    };
-    let _source = reserve(&source_dir)?;
-    let _destination = reserve(&target_dir)?;
-    if data::database_path().map_err(io::Error::other)?.canonicalize()? != current {
-        return Err(io::Error::other("The active profile changed before migration"));
-    }
-    let redirect = data::installed_config_directory().map_err(io::Error::other)?.join("datapath.txt");
+    let (source, target) = data::installed_move_directories(database, destination)?;
+    if source == target { return Ok(()); }
+    let _source = data::reserve_profile(&source)?;
+    let _destination = data::reserve_profile(&target)?;
+    let redirect = data::move_redirect(database)?;
     let history = dzc_core::api::HistoryService::open(database).map_err(io::Error::other)?;
-    history.migrate_profile(source, destination, &redirect).map_err(io::Error::other)
+    let original_directory = database.parent().ok_or_else(|| io::Error::other("Missing profile directory"))?;
+    history.migrate_profile(original_directory, destination, &redirect).map_err(io::Error::other)
+}
+/// Move the installed profile through its original authenticated Service. A copy failure leaves
+/// that Service running. Only a confirmed cutover permits starting the Service at the new path.
+pub async fn move_active_profile(database: &Path, destination: &Path, instance: &str, epoch: u64) -> io::Result<()> {
+    let (_, target) = data::installed_move_directories(database, destination)?;
+    let sibling = sibling_executable()?;
+    let old_endpoint = endpoint(database)?;
+    let mut client = Client::control(&old_endpoint, ClientRole::Desktop).await?;
+    if client.hello.state.service_instance_id != instance {
+        return Err(io::Error::other("The desktop Service changed; reopen Settings"));
+    }
+    let before: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
+    if before.mode != HostMode::Service { return Err(io::Error::other("Close the embedded desktop Host before moving its profile")); }
+    if before.state.privacy_epoch != epoch || before.privacy.active {
+        return Err(io::Error::other("The profile privacy state changed; reopen Settings"));
+    }
+    let previous = dzc_platform::ipc::ProcessExit::open(&client.peer)?;
+    let path = destination.to_str().ok_or_else(|| io::Error::other("Invalid destination"))?;
+    let moved: ProfileMoveResult = client.call(Method::DesktopProfileMove, BackupPreviewParams {
+        service_instance_id: instance.to_owned(), expected_epoch: epoch, path: path.to_owned(),
+    }, "ProfileMoveResult").await?;
+    if !moved.moved { return Ok(()); }
+    if !moved.service_stopped {
+        let _: OperationResult = client.call(Method::ServiceStop, serde_json::json!({}), "OperationResult").await
+            .map_err(|_| io::Error::other("Data moved, but the old Service did not confirm shutdown"))?;
+    }
+    drop(client);
+    tokio::task::spawn_blocking(move || previous.wait(Duration::from_secs(10))).await
+        .map_err(io::Error::other).and_then(|result| result)
+        .map_err(|_| io::Error::other("Data moved, but the old Service process did not confirm exit"))?;
+    let selected = data::database_path().map_err(|_| io::Error::other("Data moved, but the new profile could not be located"))?;
+    let actual = selected.canonicalize().map_err(|_| io::Error::other("Data moved, but the selected database is unavailable"))?;
+    let expected = target.join("clipboard.db").canonicalize().map_err(|_| io::Error::other("Data moved, but the destination database is unavailable"))?;
+    if actual != expected {
+        return Err(io::Error::other("Data moved, but the selected profile changed before restart"));
+    }
+    let no_capture = !before.capture_owner;
+    let after = start_preflight(&selected, &sibling, no_capture, false, dzc_platform::ipc::ProcessExit::ensure_supported).await
+        .map_err(|_| io::Error::other("Data moved, but the replacement Service could not start"))?;
+    if after.mode != HostMode::Service || after.state.service_instance_id == instance || after.capture_owner != before.capture_owner {
+        return Err(io::Error::other("Data moved, but the replacement Service has an unexpected owner or capture mode"));
+    }
+    Ok(())
 }
 pub async fn status(database: &Path) -> io::Result<ServiceStatus> {
     let mut client = Client::connect(&endpoint(database)?, ClientRole::Cli, None).await?;

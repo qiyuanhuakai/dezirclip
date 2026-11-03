@@ -29,7 +29,7 @@ impl From<std::io::Error> for MigrationError {
 type MigrationResult<T> = Result<T, MigrationError>;
 
 impl super::clipboard_repo::SqliteClipboardRepository {
-    pub(crate) fn migrate_profile(&self, source: &Path, destination: &Path, redirect: &Path) -> MigrationResult<()> {
+    pub(crate) fn migrate_profile(&self, source: &Path, destination: &Path, redirect: &Path, epoch: Option<u64>) -> MigrationResult<()> {
         let mut conn = self.conn.lock().map_err(|_| MigrationError::Internal("Database lock poisoned".into()))?;
         let database = conn.path().map(Path::new).ok_or_else(|| MigrationError::Validation("Profile has no database file".into()))?;
         if database.file_name() != Some(std::ffi::OsStr::new("clipboard.db")) {
@@ -41,20 +41,32 @@ impl super::clipboard_repo::SqliteClipboardRepository {
         let destination = std::path::absolute(destination)?;
         if !destination.is_dir() { return Err(MigrationError::Validation("Directory does not exist".into())); }
         if source.canonicalize()? == destination.canonicalize()? { return Ok(()); }
-        migrate_with_connection(&mut conn, source, &destination, redirect)
+        migrate_guarded(&mut conn, source, &destination, redirect, epoch)
     }
 }
 
-fn migrate_with_connection(
+#[cfg(test)]
+fn migrate_with_connection(conn: &mut Connection, source: &Path, destination: &Path, redirect: &Path) -> MigrationResult<()> {
+    migrate_guarded(conn, source, destination, redirect, None)
+}
+
+fn migrate_guarded(
     conn: &mut Connection,
     old_base: &std::path::Path,
     new_base: &std::path::Path,
     redirect_file: &std::path::Path,
+    epoch: Option<u64>,
 ) -> MigrationResult<()> {
     if conn.pragma_query_value(None, "query_only", |row| row.get::<_, bool>(0)).map_err(MigrationError::from)? {
         return Err(MigrationError::Validation("Data migration is complete; restart the application".into()));
     }
     let transaction = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(MigrationError::from)?;
+    if let Some(epoch) = epoch {
+        let state = crate::api::privacy_session::snapshot_with_conn(&transaction, chrono::Utc::now().timestamp_millis())
+            .map_err(|e| MigrationError::Validation(e.to_string()))?;
+        if state.privacy_epoch != epoch { return Err(MigrationError::Validation("PrivacyEpochChanged".into())); }
+        if state.session.active { return Err(MigrationError::Validation("PrivacySessionActive".into())); }
+    }
     transaction.pragma_update(None, "query_only", true).map_err(MigrationError::from)?;
     let result = migrate_data_directory(old_base, new_base, redirect_file);
     transaction.rollback().map_err(MigrationError::from)?;

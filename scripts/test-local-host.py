@@ -47,9 +47,37 @@ def verify_installed_profile_move(cli, profile, isolated_env):
             environment={**env, 'DEZIRCLIP_DB_PATH': str(target/'clipboard.db')}))
         assert discovered['state']['service_instance_id'] == started['state']['service_instance_id']
         run('service', 'status', '--json', environment=old_env, success=False)
+        destination = profile/'online move'
+        destination.mkdir()
+        instance = started['state']['service_instance_id']
+        epoch = started['state']['privacy_epoch']
+        def move(instance, epoch, success):
+            return run('service', 'move-data', destination, '--from-instance', instance, '--epoch', str(epoch), success=success)
+        move('a-different-instance', epoch, False)
+        move(instance, epoch + 1, False)
+        run('privacy', 'on')
+        private = json.loads(run('service', 'status', '--json'))
+        move(instance, private['state']['privacy_epoch'], False)
+        run('privacy', 'off')
+        epoch = json.loads(run('service', 'status', '--json'))['state']['privacy_epoch']
+        attachments = target/'attachments'
+        attachments.mkdir(exist_ok=True)
+        obstacle = attachments/'fixture-link'
+        obstacle.symlink_to(profile)
+        move(instance, epoch, False)
+        assert Path(redirect.read_text()) == target and not (destination/'clipboard.db').exists()
+        assert json.loads(run('service', 'status', '--json'))['state']['service_instance_id'] == instance
+        run('add', 'source-still-writable')
+        obstacle.unlink()
+        move(instance, epoch, True)
+        replacement = json.loads(run('service', 'status', '--json'))
+        assert replacement['state']['service_instance_id'] != instance and not replacement['capture_owner']
+        assert Path(redirect.read_text()) == destination and 'source-still-writable' in run('get', 'latest')
+        run('service', 'status', '--json', environment={**env, 'DEZIRCLIP_DB_PATH': str(target/'clipboard.db')}, success=False)
     finally:
         run('service', 'stop')
     print('Verified offline relocation, old profile preservation and discovery of the moved profile by fresh CLI and Service processes')
+    print('Verified authenticated online relocation, refusal on instance or privacy changes, continued source writes after copy failure, and replacement without capture')
 
 
 def main():

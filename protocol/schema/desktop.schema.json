@@ -31,6 +31,12 @@
     "BackgroundResource": {
       "type": "object", "properties": { "src": { "type": "string", "maxLength": 22369688 } }, "additionalProperties": false
     },
+    "ProfileMoveResult": {
+      "type": "object", "properties": {
+        "moved": { "type": "boolean" },
+        "service_stopped": { "type": "boolean" }
+      }, "required": ["moved", "service_stopped"], "additionalProperties": false
+    },
     "DesktopProfileInfo": {
       "type": "object",
       "properties": {

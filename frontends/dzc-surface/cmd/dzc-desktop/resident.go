@@ -61,6 +61,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 	if err != nil {
 		return err
 	}
+	relaunch := false
 	mygo.App.WhenReady(func() {
 		panel := quickpaste.NewDesktopPanel(owner)
 		selector := screenshot.New(owner)
@@ -70,6 +71,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		gpuDisabled := false
 		stopping := false
 		closing := false
+		migrating := false
+		moved := false
 		reopen := ""
 		registered := make(map[string]bool)
 		reachable := func() bool {
@@ -78,6 +81,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		var toggle func()
 		var present func(string)
 		present = func(command string) {
+			if stopping || migrating || moved {
+				return
+			}
 			if commands != nil {
 				if closing {
 					if reopen != "settings" {
@@ -136,11 +142,38 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 								reply := func(err error) {
 									_ = json.NewEncoder(input).Encode(residentReply{ID: request.ID, Success: err == nil})
 								}
-								if stopping || commands != input {
+								if stopping || migrating || commands != input || (moved && request.Operation != "relaunch-profile") {
 									reply(fmt.Errorf("main window closed"))
 									return
 								}
 								switch request.Operation {
+								case "move-profile":
+									migrating = true
+									go func() {
+										err := client.MoveActiveProfile(context.Background(), request.Directory, owner.Hello().State.ServiceInstanceId, request.Epoch)
+										mygo.RunOnMain(func() {
+											migrating = false
+											moved = err == nil
+											if commands == input {
+												result := residentReply{ID: request.ID, Success: moved}
+												if err != nil {
+													result.Error = err.Error()
+												}
+												_ = json.NewEncoder(input).Encode(result)
+											} else if moved {
+												relaunch = true
+												mygo.App.Quit()
+											}
+										})
+									}()
+								case "relaunch-profile":
+									if !moved {
+										reply(fmt.Errorf("no completed profile move"))
+										return
+									}
+									relaunch, closing = true, true
+									reply(nil)
+									_, _ = io.WriteString(input, "rebuild\n")
 								case "capture":
 									selector.Capture(request.Full, request.Epoch, reply)
 								case "webview-gpu":
@@ -184,7 +217,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						mygo.RunOnMain(func() { closing = true })
 					case "focus":
 						mygo.RunOnMain(func() {
-							if !stopping {
+							if !stopping && !migrating && !moved {
 								panel.RefreshShortcut()
 								selector.Refresh()
 								refreshMainShortcuts(owner, registered, toggle)
@@ -199,7 +232,12 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					input.Close()
 					commands = nil
 					closing = false
-					if !stopping && reopen != "" {
+					if moved {
+						relaunch = true
+						mygo.App.Quit()
+					} else if migrating {
+						return
+					} else if !stopping && reopen != "" {
 						command := reopen
 						reopen = ""
 						present(command)
@@ -242,7 +280,11 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				tray.Destroy()
 			}
 		})
-		mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
+			if migrating {
+				event.PreventDefault()
+				return
+			}
 			stopping = true
 			for key := range registered {
 				mygo.GlobalShortcut.Unregister(key)
@@ -258,6 +300,14 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 	})
 	if err := mygo.App.Run(); err != nil {
 		return fmt.Errorf("native desktop: %w", err)
+	}
+	if relaunch {
+		child := exec.Command(executable, "--show")
+		child.Stderr = os.Stderr
+		if err := child.Start(); err != nil {
+			return err
+		}
+		return child.Process.Release()
 	}
 	return nil
 }

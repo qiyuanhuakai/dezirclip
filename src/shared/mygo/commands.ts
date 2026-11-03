@@ -179,6 +179,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "set_data_path") return shellCall<T>("MoveProfile", args.newPath, currentEpoch());
+  if (command === "relaunch") return shellCall<T>("RelaunchProfile");
   if (command === "scan_installed_apps") return shellCall<T>("PackageTool", "installed-apps");
   if (command === "get_system_default_app") {
     const names = await systemDefaultApps();

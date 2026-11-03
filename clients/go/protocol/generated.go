@@ -123,6 +123,11 @@ type BackgroundResource struct {
     Src *string `json:"src,omitempty"`
 }
 
+type ProfileMoveResult struct {
+    Moved bool `json:"moved"`
+    ServiceStopped bool `json:"service_stopped"`
+}
+
 type DesktopProfileInfo struct {
     DataDirectory string `json:"data_directory"`
     DatabaseSchemaVersion uint32 `json:"database_schema_version"`
@@ -360,6 +365,7 @@ const (
     MethodDesktopHistorySummary Method = "desktop.history.summary"
     MethodDesktopPlatformProbe Method = "desktop.platform.probe"
     MethodDesktopProfileInfo Method = "desktop.profile.info"
+    MethodDesktopProfileMove Method = "desktop.profile.move"
     MethodDesktopAppearanceBackground Method = "desktop.appearance.background"
     MethodDesktopHistoryOpen Method = "desktop.history.open"
     MethodDesktopApplicationsSelect Method = "desktop.applications.select"

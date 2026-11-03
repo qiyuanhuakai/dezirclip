@@ -71,6 +71,7 @@
         "desktop.history.summary",
         "desktop.platform.probe",
         "desktop.profile.info",
+        "desktop.profile.move",
         "desktop.appearance.background",
         "desktop.history.open",
         "desktop.applications.select",
@@ -1117,7 +1118,7 @@
           "if": {
             "properties": {
               "method": {
-                "const": "desktop.backup.preview"
+                "enum": ["desktop.backup.preview", "desktop.profile.move"]
               }
             },
             "required": [

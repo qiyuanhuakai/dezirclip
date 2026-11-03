@@ -169,6 +169,13 @@ pub struct BackgroundResource {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ProfileMoveResult {
+    pub moved: bool,
+    pub service_stopped: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DesktopProfileInfo {
     pub data_directory: String,
     pub database_schema_version: u32,
@@ -503,6 +510,8 @@ pub enum Method {
     DesktopPlatformProbe,
     #[serde(rename = "desktop.profile.info")]
     DesktopProfileInfo,
+    #[serde(rename = "desktop.profile.move")]
+    DesktopProfileMove,
     #[serde(rename = "desktop.appearance.background")]
     DesktopAppearanceBackground,
     #[serde(rename = "desktop.history.open")]

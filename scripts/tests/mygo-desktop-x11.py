@@ -1187,9 +1187,110 @@ def check_preview(button, atspi):
     print('Verified arrow-key preview stayed beside the selected history while the pointer remained at the screen corner')
 
 
+def check_profile_move(executable, home):
+    import gi
+    gi.require_version('Atspi', '2.0')
+    from gi.repository import Atspi
+    assert sys.platform.startswith('linux') and home == Path.home() and Path(os.environ['XDG_DATA_HOME']) == home/'data'
+    os.environ.pop('DEZIRCLIP_DB_PATH', None)
+    os.environ.pop('TIEZ_DB_PATH', None)
+    os.environ['PULSE_SERVER'] = f'unix:{home}/no-audio'
+    package = home/'MyGo profile fixture'
+    package.mkdir()
+    for name in ('dzc', 'dzc-service', executable.name):
+        shutil.copy2(executable.with_name(name), package/name)
+    executable = package/executable.name
+    cli = package/'dzc'
+    def run(*args):
+        return subprocess.check_output([cli, *args], text=True, timeout=15)
+    marker = 'Resident relocation ' + secrets.token_hex(8)
+    run('add', marker)
+    config = home/'data/io.github.qiyuanhuakai.dezirclip'
+    with sqlite3.connect(config/'clipboard.db') as db:
+        db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)", [
+            ('app.language', 'en'), ('app.silent_start', 'false'), ('app.window_pinned', 'true'),
+            ('app.window_width','740'), ('app.window_height','720')])
+    parent = home/'profiles'
+    target = parent/'destination'
+    target.mkdir(parents=True)
+    bookmarks = home/'config/gtk-3.0/bookmarks'
+    bookmarks.parent.mkdir(exist_ok=True)
+    bookmarks.write_text(parent.as_uri()+' Test profiles\n')
+    obstruction = target/'clipboard.db-journal'
+    obstruction.write_bytes(b'fixture')
+    original = json.loads(run('service', 'start', '--no-capture', '--json'))['state']['service_instance_id']
+    process = subprocess.Popen([executable, '--show'])
+    def nodes(): return mygo_nodes(Atspi, executable)
+    def wait(probe, message):
+        deadline = time.monotonic() + 9
+        while time.monotonic() < deadline:
+            result = probe()
+            if result: return result
+            time.sleep(.06)
+        raise AssertionError((message, [(n,t[:60]) for _,n,_,t in nodes() if n or t]))
+    def button(name):
+        return next((i for i,n,f,_ in nodes() if n.casefold() == name.casefold() and 'Action' in f), None)
+    def click(name):
+        assert Atspi.Action.do_action(wait(lambda: button(name), name), 0)
+    def labeled(name):
+        return next((i for i,n,_,t in nodes() if n == name or t == name), None)
+    def select_target():
+        click('Change')
+        def native_open():
+            return next((i for i,n,f,_ in nodes() if n == 'Open' and i.get_role() == Atspi.Role.PUSH_BUTTON
+                         and 'Action' in f and i.get_state_set().contains(Atspi.StateType.SENSITIVE)), None)
+        wait(lambda: labeled('Change Data Path'), 'Directory chooser')
+        def click_row(label):
+            node = wait(lambda: labeled(label), label)
+            box = Atspi.Component.get_extents(node, Atspi.CoordType.SCREEN)
+            assert box.width > 0 and box.height > 0
+            assert Atspi.generate_mouse_event(box.x+box.width//2, box.y+box.height//2, 'b1c')
+        click_row('Test profiles')
+        click_row('destination')
+        assert Atspi.Action.do_action(wait(native_open, 'Open directory'), 0)
+        click('Confirm')
+    def residents():
+        for proc in Path('/proc').glob('[0-9]*'):
+            try:
+                if (proc/'exe').resolve(strict=True) == executable and b'--main-window' not in (proc/'cmdline').read_bytes():
+                    yield int(proc.name)
+            except (ProcessLookupError, FileNotFoundError, PermissionError):
+                continue
+    try:
+        wait(lambda: labeled(marker), 'Original history')
+        wait(lambda: tray_item(process.pid, '设置'), 'Settings tray item')
+        heading = wait(lambda: labeled('Data Management'), 'Data settings')
+        if not button('Change'):
+            Atspi.Component.scroll_to(heading, Atspi.ScrollType.ANYWHERE)
+            box = Atspi.Component.get_extents(heading, Atspi.CoordType.SCREEN)
+            assert Atspi.generate_mouse_event(box.x+box.width//2, box.y+box.height//2, 'b1c')
+        select_target()
+        click('Ok')
+        assert json.loads(run('service','status','--json'))['state']['service_instance_id'] == original
+        assert obstruction.read_bytes() == b'fixture' and not (config/'datapath.txt').exists()
+        obstruction.unlink()
+        select_target()
+        wait(lambda: labeled('Data moved successfully.'), 'Migration success dialog')
+        click('Ok')
+        process.wait(timeout=12)
+        replacement = wait(lambda: next((p for p in residents() if visible_main_window(p, executable)), None), 'Replacement main window')
+        assert replacement != process.pid
+        wait(lambda: labeled(marker), 'Migrated history in new WebView')
+        status = json.loads(run('service','status','--json'))
+        assert status['state']['service_instance_id'] != original and not status['capture_owner']
+        assert Path((config/'datapath.txt').read_text()) == target and (config/'clipboard.db').is_file()
+        print('Verified MyGo Settings folder selection, recoverable failure, success dialog, resident/WebView replacement and unchanged capture mode')
+    finally:
+        for pid in residents():
+            try: os.kill(pid, 15)
+            except ProcessLookupError: pass
+        process.wait(timeout=10)
+        run('service', 'stop')
+
+
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] == '--pinned':
+    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile'):
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -1265,8 +1366,11 @@ with open(sys.argv[1], 'r+') as document:
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
             pinned = '--pinned' in sys.argv[3:]
-            with (contextlib.nullcontext() if pinned else private_audio(home)) as audio:
-                check(desktop, pinned, audio)
+            if '--move-profile' in sys.argv[3:]:
+                check_profile_move(desktop, home)
+            else:
+                with (contextlib.nullcontext() if pinned else private_audio(home)) as audio:
+                    check(desktop, pinned, audio)
         finally:
             wm.terminate()
             wm.wait(timeout=5)

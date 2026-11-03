@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -21,6 +24,27 @@ type desktopEndpoint struct {
 	PID         uint32
 	Instance    string
 	Version     string
+}
+
+// MoveActiveProfile lets the bundled controller verify the old Service process
+// has exited before starting its replacement with the same capture mode.
+func MoveActiveProfile(ctx context.Context, directory, instance string, epoch uint64) error {
+	if !filepath.IsAbs(directory) || instance == "" {
+		return ErrProtocol
+	}
+	cmd, err := bundledCLI(ctx, "service", "move-data", directory, "--from-instance", instance, "--epoch", strconv.FormatUint(epoch, 10))
+	if err != nil {
+		return err
+	}
+	_, err = cmd.Output()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		message := strings.TrimSpace(string(exit.Stderr))
+		if message != "" {
+			return errors.New(message[:min(len(message), 1024)])
+		}
+	}
+	return err
 }
 
 func bundledCLI(ctx context.Context, args ...string) (*exec.Cmd, error) {
