@@ -1,3 +1,6 @@
+#[path = "infrastructure/login_start.rs"]
+pub mod login_start;
+
 #[path = "infrastructure/cli_path.rs"]
 mod cli_path;
 

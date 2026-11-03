@@ -591,6 +591,7 @@ export const en = {
         cli_path_status: "PATH Status",
         cli_path_ready: "dzc is available directly from the terminal.",
         cli_path_ready_badge: "dzc (available)",
+        cli_path_registered_badge: "dzc (configured for this user)",
         cli_path_other_copy_badge: "dzc (another PATH copy)",
         cli_path_other_copy_hint: "The terminal runs another dzc on PATH. Both copies are kept; use a full path to choose a version.",
         cli_path_active_path: "Terminal CLI path",

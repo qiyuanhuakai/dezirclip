@@ -10,6 +10,7 @@ pub struct CliInfo {
     pub skill_path: Option<String>,
     pub theme_skill_path: Option<String>,
     pub cli_on_path: bool,
+    pub cli_registered_for_user: bool,
     pub path_cli_path: Option<String>,
     pub path_cli_version: Option<String>,
     pub cli_path_conflict: bool,
@@ -70,6 +71,7 @@ pub fn cli_info(bundled: Option<PathBuf>, skill: impl Fn(AgentSkill) -> Option<P
         .map(|path| path.to_string_lossy().to_string());
 
     CliInfo {
+        cli_registered_for_user: cli_path.as_deref().is_some_and(|cli| cli_path::registered_for_user(Path::new(cli))),
         cli_path,
         cli_version,
         skill_path,

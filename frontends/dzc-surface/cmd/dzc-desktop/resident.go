@@ -54,7 +54,7 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 
 // Only the main window loads the WebView runtime. Parent and child use
 // inherited pipes for window lifecycle, and authenticate separately to Rust.
-func runResident(owner *client.Client) error {
+func runResident(owner *client.Client, minimized bool) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -181,7 +181,9 @@ func runResident(owner *client.Client) error {
 				commands.Close()
 			}
 		})
-		open()
+		if !minimized || (tray == nil && len(registered) == 0) {
+			open()
+		}
 	})
 	if err := mygo.App.Run(); err != nil {
 		return fmt.Errorf("native desktop: %w", err)

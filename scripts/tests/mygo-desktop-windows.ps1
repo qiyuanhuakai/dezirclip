@@ -79,6 +79,29 @@ function Get-ResidentPanel($Resident, [string]$Title) {
     } "Resident did not focus $Title" 12
 }
 
+function Test-RegisteredCli($root, $cli) {
+    # This script only runs in a disposable GitHub-hosted Windows session.
+    $environment = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    try {
+        $before = $environment.GetValue('Path', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if ($null -ne $before) { $kind = $environment.GetValueKind('Path') }
+        $scope = [Windows.Automation.TreeScope]::Descendants
+        $add = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Add to PATH')
+        $configured = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'dzc (configured for this user)')
+        $button = Wait-Until { $root.FindFirst($scope, $add) } 'Missing Add to PATH for the isolated launch environment'
+        $button.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+        $null = Wait-Until { $root.FindFirst($scope, $configured) -and !$root.FindFirst($scope, $add) } 'Installed CLI was still reported missing'
+        $info = & $cli desktop-tools info | ConvertFrom-Json
+        if (!$info.cli_registered_for_user) { throw 'Fresh sibling CLI did not read the persisted user registration' }
+        Write-Output 'Verified WebView2 reports the persisted Windows CLI registration after refreshing in a fresh child'
+    } finally {
+        try {
+            if ($null -ne $before) { $environment.SetValue('Path', $before, $kind) }
+            else { $environment.DeleteValue('Path', $false) }
+        } finally { $environment.Dispose() }
+    }
+}
+
 function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Editor, $Form) {
     $Form.Activate()
     $null = $Editor.Focus()
@@ -131,7 +154,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     $form.Activate()
     $null = $edit.Focus()
     $null = Wait-Until { $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Editor did not acquire foreground'
-    $resident = Start-Process -FilePath $exe -RedirectStandardError (Join-Path $dir.FullName 'desktop.log') -PassThru
+    $launchPath = $env:Path
+    try {
+        if ($Capture) {
+            $env:Path = (($launchPath -split ';') | Where-Object {
+                $_ -and !(Test-Path -LiteralPath (Join-Path $_ 'dzc.exe') -PathType Leaf)
+            }) -join ';'
+        }
+        $resident = Start-Process -FilePath $exe -RedirectStandardError (Join-Path $dir.FullName 'desktop.log') -PassThru
+    } finally { $env:Path = $launchPath }
     $main = Wait-Until {
         if ($resident.HasExited) { throw 'Resident exited during startup' }
         Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
@@ -165,6 +196,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     if ($Capture) {
         Click-Control $main (Get-ControlPoint $root 'Settings')
         Click-Control $main (Get-ControlPoint $root 'Tools')
+        Test-RegisteredCli $root $cli
         $point = Get-ControlPoint $root 'Full Screen Capture'
         $bounds = [Windows.Forms.Screen]::FromPoint($point).Bounds
         Click-Control $main $point

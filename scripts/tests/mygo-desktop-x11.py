@@ -209,7 +209,7 @@ def mygo_nodes(atspi, executable):
         yield item, name, interfaces, text
 
 
-def tray_settings(pid):
+def tray_item(pid, label, activate=True):
     from gi.repository import Gio, GLib
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
     def call(owner, path, interface, method, params=None):
@@ -225,11 +225,12 @@ def tray_settings(pid):
             _, root = call(*menu, 'GetLayout', GLib.Variant('(iias)', (0, 1, ['label'])))
         except GLib.Error:
             continue
-        item = next((item_id for item_id, props, _ in root[2] if props.get('label') == '设置'), None)
+        item = next((item_id for item_id, props, _ in root[2] if props.get('label') == label), None)
         if item is not None:
-            call(*menu, 'Event', GLib.Variant('(isvu)', (item, 'clicked', GLib.Variant('i', 0), 0)))
-            return
-    raise AssertionError('Resident tray did not export its Settings action')
+            if activate:
+                call(*menu, 'Event', GLib.Variant('(isvu)', (item, 'clicked', GLib.Variant('i', 0), 0)))
+            return True
+    return False
 
 
 def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
@@ -424,6 +425,18 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         directory = str(Path(os.environ['DEZIRCLIP_DB_PATH']).parent)
         wait_for(lambda: find_item(directory, text=True), 'Settings did not display the active Rust profile')
         print('Verified About shows the running MyGo binary identity and Data Management shows the isolated Service profile')
+        login = open_settings_group('General Settings', 'Launch at Startup')
+        entry = Path(os.environ['XDG_CONFIG_HOME'])/'autostart/dezirclip.desktop'
+        assert login.get_state_set().contains(atspi.StateType.CHECKED)
+        assert atspi.Action.do_action(login, 0)
+        wait_for(lambda: not entry.exists() and not login.get_state_set().contains(atspi.StateType.CHECKED),
+                 'Turning off login did not remove the owned desktop entry')
+        assert atspi.Action.do_action(login, 0)
+        wait_for(lambda: entry.is_file() and login.get_state_set().contains(atspi.StateType.CHECKED),
+                 'Turning on login did not register the MyGo desktop')
+        assert json.loads(subprocess.check_output([executable.with_name('dzc'), 'desktop-tools', 'login-status']))
+        open_settings_group('Data Management', 'EXPORT CLIPBOARD HISTORY')
+        print('Verified the shared Launch at Startup checkbox reads and toggles the real isolated login registration')
         imported_note = 'import-' + secrets.token_hex(8)
         backup = Path(os.environ['HOME'])/'fixture-backup.json'
         backup.write_text(json.dumps({'version': 'dezirclip-export-v2', 'exported_at': 1, 'entries': [{
@@ -483,7 +496,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_F4))
         wait_for(lambda: subprocess.run(['xwininfo','-id', str(xid)], capture_output=True).returncode != 0,
                  'WebView did not close after switching themes')
-        tray_settings(resident)
+        assert tray_item(resident, '设置')
         choose = open_settings_group('Appearance', 'Choose Background')
         from gi.repository import GdkPixbuf
         wallpaper = Path(os.environ['HOME'])/'mygo-background.png'
@@ -537,7 +550,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         show_history()
         wait_for(lambda: not painted(), 'Clearing the background left its pixels visible')
         print('Verified selecting, visibly painting and clearing a custom background in the shared MyGo WebView')
-        tray_settings(resident)
+        assert tray_item(resident, '设置')
         full = open_settings_group('Tools', 'Full Screen Capture')
         cli_path = executable.with_name('dzc')
         wait_for(lambda: any(str(cli_path) in text for _, _, _, text in mygo_nodes(atspi, executable)),
@@ -548,6 +561,9 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             link = Path(os.environ['HOME'])/'.local/bin/dzc'
             wait_for(lambda: link.is_symlink() and link.resolve() == cli_path,
                      'Tools did not link the bundled CLI in the isolated home')
+            wait_for(lambda: not action('Add to PATH') and any('dzc (configured for this user)' in text
+                     for _, _, _, text in mygo_nodes(atspi, executable)),
+                     'Tools did not distinguish the saved user link from the current PATH')
             print('Verified Add to PATH links the actual sibling CLI in the isolated home')
         opened = Path(os.environ['HOME'])/'opened-guide'
         for guide, label in [('dzc-cli', 'CLI workflows'), ('dezirclip-theme', 'Theme authoring')]:
@@ -634,8 +650,45 @@ def check(desktop, pinned):
         while Gtk.events_pending(): Gtk.main_iteration_do(False)
         assert time.monotonic() < deadline, 'No focused editor before opening MyGo'
         time.sleep(.025)
-    process = subprocess.Popen([desktop], stdout=subprocess.DEVNULL)
+    launch = [desktop]
+    if pinned:
+        from gi.repository import Gio, GLib
+        # A second installation records the arguments handed to it by the real desktop-entry launcher.
+        second = Path(os.environ['HOME'])/'second 配置 "%u$'
+        second.mkdir()
+        second_cli = second/'dzc'
+        os.link(cli, second_cli)
+        second_desktop = second/'dzc-desktop'
+        second_desktop.write_text('#!/bin/sh\nprintf "%s\\n" "$0" "$@" > "$HOME/login-command"\n')
+        second_desktop.chmod(0o700)
+        def login_tool(binary, action):
+            return json.loads(subprocess.check_output([binary, 'desktop-tools', action]))
+        assert json.loads(subprocess.check_output([cli, 'desktop-tools', 'enable-login']))
+        entry = Path(os.environ['XDG_CONFIG_HOME'])/'autostart/dezirclip.desktop'
+        assert login_tool(second_cli, 'enable-login')
+        assert not login_tool(cli, 'disable-login') and login_tool(second_cli, 'login-status')
+        assert Gio.DesktopAppInfo.new_from_filename(str(entry)).launch([], None)
+        receipt = Path(os.environ['HOME'])/'login-command'
+        deadline = time.monotonic() + 5
+        while not receipt.exists() or receipt.read_text().splitlines() != [str(second_desktop), '--minimized']:
+            assert time.monotonic() < deadline, 'Desktop entry did not preserve the selected executable and arguments'
+            time.sleep(.05)
+        assert login_tool(cli, 'enable-login') and not login_tool(second_cli, 'disable-login')
+        info = Gio.DesktopAppInfo.new_from_filename(str(entry))
+        ok, launch = GLib.shell_parse_argv(info.get_commandline())
+        assert ok and launch == [str(desktop), '--minimized'], 'Desktop login entry does not start this resident'
+    process = subprocess.Popen(launch, stdout=subprocess.DEVNULL)
     try:
+        if pinned:
+            deadline = time.monotonic() + 15
+            while not tray_item(process.pid, '打开剪贴板', activate=False):
+                assert process.poll() is None and time.monotonic() < deadline, 'Minimized resident did not provide a tray'
+                time.sleep(.1)
+            members = memory_sample('login before opening main window', [process.pid])
+            assert all(Path(f'/proc/{pid}/exe').resolve() != desktop for pid in members if pid != process.pid)
+            assert not any('WebKit' in Path(f'/proc/{pid}/exe').resolve().name for pid in members)
+            assert tray_item(process.pid, '打开剪贴板')
+            print('Verified minimized login keeps the resident alive without a main WebView until the tray is clicked')
         deadline = time.monotonic() + 35
         last = []
         filter_stage = 0

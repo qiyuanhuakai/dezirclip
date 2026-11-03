@@ -207,7 +207,8 @@ func run() error {
 		return json.NewEncoder(os.Stdout).Encode(hashes)
 	}
 	mainWindow := len(os.Args) == 3 && os.Args[1] == "--main-window"
-	if len(os.Args) != 1 && !mainWindow {
+	minimized := len(os.Args) == 2 && os.Args[1] == "--minimized"
+	if len(os.Args) != 1 && !mainWindow && !minimized {
 		return fmt.Errorf("unexpected desktop arguments")
 	}
 	// The Desktop always loads the packaged local UI even in a developer shell.
@@ -222,7 +223,7 @@ func run() error {
 	actions.Close()
 	mygo.App.SetName("DezirClip MyGo")
 	if !mainWindow {
-		return runResident(actions)
+		return runResident(actions, minimized)
 	}
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol

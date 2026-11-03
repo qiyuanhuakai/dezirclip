@@ -594,6 +594,7 @@ export const zh = {
         cli_path_status: "PATH 状态",
         cli_path_ready: "dzc 已可在终端中直接使用。",
         cli_path_ready_badge: "dzc（可用）",
+        cli_path_registered_badge: "dzc（已为当前用户配置）",
         cli_path_other_copy_badge: "dzc（PATH 指向另一份）",
         cli_path_other_copy_hint: "终端会运行 PATH 中的另一份 dzc。两份均保留，可使用完整路径选择所需版本。",
         cli_path_active_path: "终端命令行路径",

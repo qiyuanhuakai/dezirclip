@@ -29,6 +29,23 @@ pub fn cli_paths_differ(selected: &Path, on_path: &Path) -> bool {
     normalize_path(selected) != normalize_path(on_path)
 }
 
+#[cfg(target_os = "windows")]
+pub fn registered_for_user(cli: &Path) -> bool {
+    use winreg::{enums::HKEY_CURRENT_USER, RegKey};
+    let Some(dir) = cli.parent() else { return false; };
+    let Ok(key) = RegKey::predef(HKEY_CURRENT_USER).open_subkey("Environment") else { return false; };
+    let Ok(path) = key.get_raw_value("Path") else { return false; };
+    windows_registry_path_value(Some(&path), dir).is_ok_and(|(_, present)| present)
+}
+
+#[cfg(target_os = "linux")]
+pub fn registered_for_user(cli: &Path) -> bool {
+    dirs::home_dir().is_some_and(|home| {
+        let link = home.join(".local/bin/dzc");
+        link.is_file() && !cli_paths_differ(cli, &link)
+    })
+}
+
 fn parse_cli_version(output: &[u8]) -> Option<String> {
     let output = std::str::from_utf8(output).ok()?;
     let version = output

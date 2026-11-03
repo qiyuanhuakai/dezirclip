@@ -45,84 +45,12 @@ pub fn open_data_folder(state: State<'_, AppDataDir>) -> AppResult<()> {
 
 #[tauri::command]
 pub fn toggle_autostart(enabled: bool) -> AppResult<()> {
-    #[cfg(target_os = "windows")]
-    {
-        use winreg::enums::*;
-        use winreg::RegKey;
-
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let key = hkcu
-            .open_subkey_with_flags(
-                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                KEY_WRITE | KEY_READ,
-            )
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        let app_path = std::env::current_exe()
-            .map_err(|e| AppError::Internal(e.to_string()))?
-            .to_string_lossy()
-            .to_string();
-        let cmd = format!("\"{}\" --minimized", app_path);
-
-        if enabled {
-            key.set_value("DezirClip", &cmd)
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-        } else {
-            let _ = key.delete_value("DezirClip");
-            let _ = key.delete_value("tie-z");
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let app_path = std::env::current_exe().map_err(|e| AppError::Internal(e.to_string()))?;
-        let autostart_dir = dirs::config_dir()
-            .ok_or_else(|| AppError::Internal("Failed to get config dir".to_string()))?
-            .join("autostart");
-        std::fs::create_dir_all(&autostart_dir).map_err(|e| AppError::Internal(e.to_string()))?;
-
-        let desktop_file = autostart_dir.join("dezirclip.desktop");
-        if enabled {
-            let content = format!(
-                "[Desktop Entry]\nType=Application\nName=DezirClip\nExec=\"{}\" --minimized\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\nStartupNotify=false\nStartupWMClass=DezirClip\n",
-                app_path.to_string_lossy()
-            );
-            std::fs::write(&desktop_file, content)
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-        } else {
-            let _ = std::fs::remove_file(&desktop_file);
-        }
-    }
-
-    let _ = enabled;
-    Ok(())
+    Ok(dezirclip::infrastructure::login_start::set(&std::env::current_exe()?, enabled)?)
 }
 
 #[tauri::command]
 pub fn is_autostart_enabled() -> AppResult<bool> {
-    #[cfg(target_os = "windows")]
-    {
-        use winreg::enums::*;
-        use winreg::RegKey;
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let key = hkcu
-            .open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Run")
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-        Ok(key.get_value::<String, _>("DezirClip").is_ok()
-            || key.get_value::<String, _>("tie-z").is_ok())
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let autostart_dir = dirs::config_dir()
-            .ok_or_else(|| AppError::Internal("Failed to get config dir".to_string()))?
-            .join("autostart");
-        Ok(autostart_dir.join("dezirclip.desktop").exists())
-    }
-
-    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
-    {
-        Ok(false)
-    }
+    Ok(dezirclip::infrastructure::login_start::enabled(&std::env::current_exe()?)?)
 }
 
 #[tauri::command]

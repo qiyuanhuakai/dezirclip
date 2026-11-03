@@ -642,6 +642,9 @@ enum DesktopTool {
     OpenInstallFolder,
     OpenCliGuide,
     OpenThemeGuide,
+    LoginStatus,
+    EnableLogin,
+    DisableLogin,
 }
 
 fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
@@ -655,6 +658,15 @@ fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
     let response = match action {
         DesktopTool::Info => serde_json::to_value(desktop_tools::cli_info(Some(cli.clone()), guide)),
         DesktopTool::AddToPath => serde_json::to_value(desktop_tools::install_cli_path(Some(cli))?),
+        DesktopTool::LoginStatus | DesktopTool::EnableLogin | DesktopTool::DisableLogin => {
+            use dezirclip::infrastructure::login_start;
+            let desktop = directory.join(format!("dzc-desktop{}", std::env::consts::EXE_SUFFIX));
+            if !desktop.is_file() { return Err("sibling MyGo desktop not found".into()); }
+            if !matches!(action, DesktopTool::LoginStatus) {
+                login_start::set(&desktop, matches!(action, DesktopTool::EnableLogin)).map_err(|e| e.to_string())?;
+            }
+            serde_json::to_value(login_start::enabled(&desktop).map_err(|e| e.to_string())?)
+        }
         DesktopTool::OpenInstallFolder | DesktopTool::OpenCliGuide | DesktopTool::OpenThemeGuide => {
             let folder = match action {
                 DesktopTool::OpenCliGuide => guide(AgentSkill::DzcCli),

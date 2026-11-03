@@ -91,6 +91,8 @@ const GeneralSettingsGroup = ({
     setArrowKeySelection,
     saveAppSetting
 }: GeneralSettingsGroupProps) => {
+    const [loginSaving, setLoginSaving] = useState(false);
+    const [loginError, setLoginError] = useState("");
     const [idleDestroyDraft, setIdleDestroyDraft] = useState(idleDestroySeconds.toString());
     useEffect(() => {
         setIdleDestroyDraft(idleDestroySeconds.toString());
@@ -127,15 +129,26 @@ const GeneralSettingsGroup = ({
                         <input
                             className="cb"
                             type="checkbox"
+                            aria-label={t("autostart")}
                             checked={autoStart}
-                            onChange={(e) => {
+                            disabled={loginSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setAutoStart(enabled);
-                                invoke("toggle_autostart", { enabled }).catch(console.error);
+                                setLoginSaving(true);
+                                setLoginError("");
+                                try {
+                                    await invoke("toggle_autostart", { enabled });
+                                    setAutoStart(await invoke<boolean>("is_autostart_enabled"));
+                                } catch (error) {
+                                    setLoginError(String(error));
+                                } finally {
+                                    setLoginSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {loginError && <span role="alert">{t("common_error")} · {loginError}</span>}
                 </div>
 
                 <div className="setting-item">

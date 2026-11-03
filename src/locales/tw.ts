@@ -590,6 +590,7 @@ export const tw = {
         cli_path_status: "PATH 狀態",
         cli_path_ready: "dzc 已可在終端機中直接使用。",
         cli_path_ready_badge: "dzc（可用）",
+        cli_path_registered_badge: "dzc（已為目前使用者設定）",
         cli_path_other_copy_badge: "dzc（PATH 指向另一份）",
         cli_path_other_copy_hint: "終端機會執行 PATH 中的另一份 dzc。兩份均保留，可使用完整路徑選擇所需版本。",
         cli_path_active_path: "終端機命令列路徑",

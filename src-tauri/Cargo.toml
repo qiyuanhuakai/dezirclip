@@ -69,6 +69,7 @@ hex = { workspace = true }
 dotenvy = { workspace = true, optional = true }
 
 dirs = { workspace = true }
+tempfile = "3"
 rand = { workspace = true }
 zeroize = { workspace = true }
 clap = { workspace = true }

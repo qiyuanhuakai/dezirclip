@@ -158,6 +158,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "is_autostart_enabled") return shellCall<T>("PackageTool", "login-status");
+  if (command === "toggle_autostart") return shellCall<T>("PackageTool", args.enabled ? "enable-login" : "disable-login");
   if (command === "get_cli_info") return shellCall<T>("PackageTool", "info");
   if (command === "add_cli_to_path") return shellCall<T>("PackageTool", "add-to-path");
   if (command === "open_install_folder") return shellCall<T>("PackageTool", "open-install-folder");
