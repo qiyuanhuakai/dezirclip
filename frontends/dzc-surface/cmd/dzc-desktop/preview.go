@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"image"
+	"math"
 	"strings"
 	"time"
 
@@ -70,13 +71,26 @@ type previewLayout struct {
 	Height   int
 }
 
+// Convert a physical monitor work area into the coordinate system of the parent.
+// Leave two physical pixels for the native flyout's anchor and DPI rounding.
+func previewParentArea(parent mygo.Rectangle, origin mygo.Point, work mygo.Rectangle, scale float64) mygo.Rectangle {
+	if scale <= 0 {
+		return mygo.Rectangle{}
+	}
+	left := int(math.Ceil(float64(work.X-origin.X+2) / scale))
+	top := int(math.Ceil(float64(work.Y-origin.Y+2) / scale))
+	right := int(math.Floor(float64(work.X+work.Width-origin.X-2) / scale))
+	bottom := int(math.Floor(float64(work.Y+work.Height-origin.Y-2) / scale))
+	return mygo.Rectangle{X: parent.X + left, Y: parent.Y + top, Width: right - left, Height: bottom - top}
+}
+
 func (*Preview) Layout(ctx context.Context) (previewLayout, error) {
 	main := mygo.CallerWindow(ctx)
 	if main == nil {
 		return previewLayout{}, errors.New("WindowUnavailable")
 	}
 	bounds := main.ContentBounds()
-	area := mygo.Screen.DisplayMatching(bounds).WorkArea
+	area, _ := previewDisplay(main, bounds)
 	if bounds.Width < 1 || bounds.Height < 1 || area.Width < 1 || area.Height < 1 {
 		return previewLayout{}, errors.New("PreviewPositionUnavailable")
 	}
@@ -229,8 +243,10 @@ func (p *Preview) PointerInside(ctx context.Context, sequence uint64) bool {
 		if p.main != main || p.generation != sequence || p.window == nil {
 			return
 		}
-		b := p.window.Bounds()
-		pt := mygo.Screen.CursorScreenPoint()
+		b, pt, ok := previewPointer(p.window)
+		if !ok {
+			return
+		}
 		inside = pt.X >= b.X && pt.X < b.X+b.Width && pt.Y >= b.Y && pt.Y < b.Y+b.Height
 	})
 	return inside
@@ -254,12 +270,10 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			return
 		}
 		bounds := main.ContentBounds()
-		area := mygo.Screen.DisplayMatching(bounds).WorkArea
+		area, cursor := previewDisplay(main, bounds)
 		var preferred mygo.Point
 		var source mygo.Rectangle
 		if placement == nil {
-			cursor := mygo.Screen.CursorScreenPoint()
-			area = mygo.Screen.DisplayNearestPoint(cursor).WorkArea
 			source = mygo.Rectangle{X: cursor.X, Y: cursor.Y, Width: 1, Height: 1}
 			preferred = mygo.Point{X: cursor.X + 16, Y: cursor.Y}
 		} else {

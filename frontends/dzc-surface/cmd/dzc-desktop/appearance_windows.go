@@ -39,6 +39,8 @@ var setComposition = windows.NewLazySystemDLL("user32.dll").NewProc("SetWindowCo
 
 var (
 	user32           = windows.NewLazySystemDLL("user32.dll")
+	clientOrigin     = user32.NewProc("ClientToScreen")
+	windowMonitor    = user32.NewProc("MonitorFromWindow")
 	windowDPI        = user32.NewProc("GetDpiForWindow")
 	cursorPosition   = user32.NewProc("GetPhysicalCursorPos")
 	cursorMonitor    = user32.NewProc("MonitorFromRect")
@@ -206,4 +208,47 @@ func applyWindowAppearance(w *mygo.Window, theme, mode string, border bool) erro
 func trayHostAvailable(tray *mygo.Tray) bool {
 	area := tray.Bounds()
 	return area.Width > 0 && area.Height > 0
+}
+
+func previewDisplay(w *mygo.Window, bounds mygo.Rectangle) (mygo.Rectangle, mygo.Point) {
+	// MyGo translates Flyout.Anchor using the parent HWND's client origin and DPI.
+	// Select its monitor in physical coordinates before converting the work area.
+	var origin, cursor struct{ x, y int32 }
+	handle := w.NativeHandle()
+	if ok, _, _ := clientOrigin.Call(handle, uintptr(unsafe.Pointer(&origin))); ok == 0 {
+		return mygo.Rectangle{}, mygo.Point{}
+	}
+	monitor, _, _ := windowMonitor.Call(handle, 2)
+	var info struct {
+		size          uint32
+		display, work struct{ left, top, right, bottom int32 }
+		flags         uint32
+	}
+	info.size = uint32(unsafe.Sizeof(info))
+	if ok, _, _ := monitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
+		return mygo.Rectangle{}, mygo.Point{}
+	}
+	if ok, _, _ := cursorPosition.Call(uintptr(unsafe.Pointer(&cursor))); ok == 0 {
+		return mygo.Rectangle{}, mygo.Point{}
+	}
+	scale := mainWindowScale(w)
+	if scale <= 0 {
+		return mygo.Rectangle{}, mygo.Point{}
+	}
+	area := mygo.Rectangle{X: int(info.work.left), Y: int(info.work.top), Width: int(info.work.right - info.work.left), Height: int(info.work.bottom - info.work.top)}
+	work := previewParentArea(bounds, mygo.Point{X: int(origin.x), Y: int(origin.y)}, area, scale)
+	point := mygo.Point{X: bounds.X + int(float64(cursor.x-origin.x)/scale), Y: bounds.Y + int(float64(cursor.y-origin.y)/scale)}
+	return work, point
+}
+
+func previewPointer(w *mygo.Window) (mygo.Rectangle, mygo.Point, bool) {
+	var rect struct{ left, top, right, bottom int32 }
+	var p struct{ x, y int32 }
+	if ok, _, _ := windowRect.Call(w.NativeHandle(), uintptr(unsafe.Pointer(&rect))); ok == 0 {
+		return mygo.Rectangle{}, mygo.Point{}, false
+	}
+	if ok, _, _ := cursorPosition.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
+		return mygo.Rectangle{}, mygo.Point{}, false
+	}
+	return mygo.Rectangle{X: int(rect.left), Y: int(rect.top), Width: int(rect.right - rect.left), Height: int(rect.bottom - rect.top)}, mygo.Point{X: int(p.x), Y: int(p.y)}, true
 }

@@ -119,3 +119,11 @@ func (*DesktopShell) SystemThemeMode(ctx context.Context) string {
 func applyWindowAppearance(w *mygo.Window, _, _ string, _ bool) error {
 	return w.SetBackgroundColor("#00000000")
 }
+
+func previewDisplay(_ *mygo.Window, bounds mygo.Rectangle) (mygo.Rectangle, mygo.Point) {
+	return mygo.Screen.DisplayMatching(bounds).WorkArea, mygo.Screen.CursorScreenPoint()
+}
+
+func previewPointer(w *mygo.Window) (mygo.Rectangle, mygo.Point, bool) {
+	return w.Bounds(), mygo.Screen.CursorScreenPoint(), true
+}

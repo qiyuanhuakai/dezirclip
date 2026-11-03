@@ -71,3 +71,27 @@ func TestPreviewNeverCoversItsSourceRow(t *testing.T) {
 		}
 	}
 }
+
+func TestMixedDPIPreviewUsesParentPhysicalWorkArea(t *testing.T) {
+	for _, scenario := range []struct {
+		parent, work mygo.Rectangle
+		origin       mygo.Point
+		dpi          int
+	}{
+		{mygo.Rectangle{X: 1500, Y: 800, Width: 352, Height: 380}, mygo.Rectangle{Width: 1920, Height: 1080}, mygo.Point{X: 1500, Y: 800}, 96},
+		{mygo.Rectangle{X: 1470, Y: 320, Width: 352, Height: 380}, mygo.Rectangle{X: 1920, Width: 2560, Height: 1440}, mygo.Point{X: 1838, Y: 400}, 120},
+	} {
+		parent := scenario.parent
+		area := previewParentArea(parent, scenario.origin, scenario.work, float64(scenario.dpi)/96)
+		row := mygo.Rectangle{X: parent.X, Y: parent.Y + 100, Width: 352, Height: 40}
+		r := previewBounds(area, row, mygo.Point{X: 1864, Y: 740})
+		px := func(dip int) int { return (dip*scenario.dpi + 48) / 96 } // MyGo Windows Flyout.Place conversion.
+		x, y := scenario.origin.X+px(r.X-parent.X), scenario.origin.Y+px(r.Y-parent.Y)
+		endX, endY := x+px(r.Width), y+px(r.Height)
+		work := scenario.work
+		if r.Width <= 0 || r.Height <= 0 || x < work.X || y < work.Y || endX > work.X+work.Width || endY > work.Y+work.Height ||
+			(x < scenario.origin.X+px(row.Width) && endX > scenario.origin.X && y < scenario.origin.Y+px(140) && endY > scenario.origin.Y+px(100)) {
+			t.Fatalf("native anchor could flip or obscure its source: (%d,%d)-(%d,%d), work=%+v", x, y, endX, endY, work)
+		}
+	}
+}
