@@ -45,7 +45,7 @@ impl HistoryService {
 
     pub fn is_view_setting(key: &str) -> bool {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
-            | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
+            | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
             | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
@@ -62,6 +62,8 @@ impl HistoryService {
             "app.emoji_panel_tab" => matches!(value, "emoji" | "favorites"),
             "app.language" => matches!(value, "zh" | "tw" | "en"),
             "app.clipboard_item_font_size" => value.parse::<u8>().is_ok_and(|v| (11..=18).contains(&v)),
+            "app.rich_text_snapshot_cache_limit" => value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u16>().is_ok_and(|v| v <= 500),
             "app.clipboard_tag_font_size" => value.parse::<u8>().is_ok_and(|v| (8..=14).contains(&v)),
             "app.custom_background" => value.is_empty() || (value.len() <= 32_768 && !value.contains('\0') && std::path::Path::new(value).is_absolute()),
             "app.sound_volume" | "app.custom_background_opacity" | "app.surface_opacity" => value.parse::<u8>().is_ok_and(|v| v <= 100),
@@ -129,6 +131,21 @@ mod tests {
         }
         assert!(history.update_capture_setting("app.persistent_limit_enabled", "1", epoch).is_err());
         assert!(history.update_capture_setting("app.persistent_limit", "75", epoch + 1).is_err());
+    }
+
+    #[test]
+    fn snapshot_cache_matches_shared_view_bounds_and_rejects_stale_writes() {
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        let key = "app.rich_text_snapshot_cache_limit";
+        for valid in ["0", "120", "500"] {
+            history.update_view_setting(key, valid, epoch).unwrap();
+        }
+        for invalid in ["", "-1", "501", "0.5", "true"] {
+            assert!(history.update_view_setting(key, invalid, epoch).is_err());
+        }
+        assert!(history.update_view_setting(key, "0", epoch + 1).is_err());
+        assert_eq!(history.desktop_preferences().unwrap().get(key).map(String::as_str), Some("500"));
     }
 
     #[test]

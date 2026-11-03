@@ -391,6 +391,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 className="cb"
                                 type="checkbox"
                                 checked={props.richTextSnapshotPreview}
+                                aria-label={props.t('rich_text_snapshot_preview')}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setRichTextSnapshotPreview(val);
@@ -413,6 +414,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 inputMode="numeric"
                                 pattern="[0-9]*"
                                 value={snapshotCacheLimitDraft}
+                                aria-label={props.t('rich_text_snapshot_cache_limit')}
                                 onFocus={(e) => e.target.select()}
                                 onChange={(e) => {
                                     const next = e.target.value;

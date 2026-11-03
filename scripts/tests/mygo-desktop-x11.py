@@ -633,6 +633,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             for label, key, enabled in [('Preview with arrow keys', 'app.preview_keyboard_enabled', True),
                                         ('Preview with arrow keys', 'app.preview_keyboard_enabled', False),
+                                        ('Tag manager', 'app.tag_manager_enabled', False),
+                                        ('Tag manager', 'app.tag_manager_enabled', True),
                                         ('Sound Effects', 'app.sound_enabled', True),
                                         ('Paste Sound', 'app.sound_paste_enabled', False),
                                         ('Paste Sound', 'app.sound_paste_enabled', True),
@@ -768,6 +770,25 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                      'Confirmed import did not persist the previewed entry')
         print('Verified choosing a backup file in the native dialog, previewing its text and importing it through the shared React settings')
         custom_rules = open_settings_group('Clipboard', 'Custom Rules')
+        snapshot = wait_for(lambda: find_item('Rich Text Snapshot Preview'), 'Snapshot setting unavailable')
+        assert atspi.Action.do_action(snapshot, 0)
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.rich_text_snapshot_preview'").fetchone() == ('true',),
+                     'Rich text snapshots were not enabled')
+            field = wait_for(lambda: next((i for i,n,_,_ in mygo_nodes(atspi, executable)
+                             if n == 'Snapshot cache size' and i.get_state_set().contains(atspi.StateType.EDITABLE)), None),
+                             'Snapshot cache size unavailable')
+            atspi.Component.scroll_to(field, atspi.ScrollType.ANYWHERE)
+            assert atspi.Component.grab_focus(field)
+            shortcut((Gdk.KEY_Control_L, Gdk.KEY_a))
+            shortcut((Gdk.KEY_0,))
+            shortcut((Gdk.KEY_Return,))
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.rich_text_snapshot_cache_limit'").fetchone() == ('0',),
+                     'Turning off snapshot caching did not persist')
+            assert atspi.Action.do_action(snapshot, 0)
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.rich_text_snapshot_preview'").fetchone() == ('false',),
+                     'Turning off rich text snapshots did not persist')
+        print('Verified the shared tag-manager switch, rich text snapshot switch and zero-cache setting persist through the Rust Service')
         persistent = wait_for(lambda: find_item('Persistent Storage'), 'Persistent storage switch unavailable')
         if not persistent.get_state_set().contains(atspi.StateType.CHECKED):
             assert atspi.Action.do_action(persistent, 0)

@@ -511,6 +511,7 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={tagManagerEnabled}
+                            aria-label={t('tag_manager_enabled')}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setTagManagerEnabled(enabled);
