@@ -310,7 +310,7 @@ func (l *Library) SetSetting(ctx context.Context, key, value string, epoch uint6
 	case "app.sequential_mode", "app.delete_after_paste", "app.paste_method":
 		params := protocol.QueueSettingParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: key, Value: value}
 		err = l.owner.DesktopCall(ctx, protocol.MethodDesktopQueueConfigure, params, "OperationResult", &result)
-	case "app.persistent", "app.deduplicate", "app.capture_files", "app.capture_rich_text", "app.privacy_protection",
+	case "app.persistent", "app.persistent_limit_enabled", "app.persistent_limit", "app.deduplicate", "app.capture_files", "app.capture_rich_text", "app.privacy_protection",
 		"app.privacy_protection_kinds", "app.privacy_protection_custom_rules", "app.excluded_source_apps", "app.ocr_enabled":
 		params := protocol.CaptureSettingParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: key, Value: value}
 		err = l.owner.DesktopCall(ctx, protocol.MethodDesktopSettingsCaptureSet, params, "OperationResult", &result)

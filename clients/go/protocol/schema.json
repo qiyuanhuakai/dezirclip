@@ -5386,6 +5386,8 @@
           "type": "string",
           "enum": [
             "app.persistent",
+            "app.persistent_limit_enabled",
+            "app.persistent_limit",
             "app.deduplicate",
             "app.capture_files",
             "app.capture_rich_text",

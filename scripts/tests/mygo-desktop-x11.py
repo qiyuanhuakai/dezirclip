@@ -728,6 +728,28 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                      'Confirmed import did not persist the previewed entry')
         print('Verified choosing a backup file in the native dialog, previewing its text and importing it through the shared React settings')
         custom_rules = open_settings_group('Clipboard', 'Custom Rules')
+        persistent = wait_for(lambda: find_item('Persistent Storage'), 'Persistent storage switch unavailable')
+        if not persistent.get_state_set().contains(atspi.StateType.CHECKED):
+            assert atspi.Action.do_action(persistent, 0)
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            def saved(key):
+                return db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+            for value in ('false', 'true'):
+                switch = wait_for(lambda: find_item('Enable Storage Limit'), 'Storage limit switch unavailable')
+                wait_for(lambda: switch.get_state_set().contains(atspi.StateType.SENSITIVE), 'Storage limit switch busy')
+                assert atspi.Action.do_action(switch, 0)
+                wait_for(lambda: saved('app.persistent_limit_enabled') == (value,), 'Storage limit switch did not persist')
+            field = wait_for(lambda: next((item for item, name, _, _ in mygo_nodes(atspi, executable)
+                             if name == 'Storage Limit' and item.get_state_set().contains(atspi.StateType.EDITABLE)),
+                             None), 'Storage limit field unavailable')
+            atspi.Component.scroll_to(field, atspi.ScrollType.ANYWHERE)
+            assert atspi.Component.grab_focus(field)
+            shortcut((Gdk.KEY_Control_L, Gdk.KEY_a))
+            for char in '52':
+                shortcut((ord(char),))
+            shortcut((Gdk.KEY_Return,))
+            wait_for(lambda: saved('app.persistent_limit') == ('52',), 'Storage limit value did not persist')
+        print('Verified shared storage limit switch and numeric field save through the MyGo WebView')
         assert atspi.Action.do_action(custom_rules, 0)
         rules_field = wait_for(lambda: next((item for item, name, interfaces, _ in mygo_nodes(atspi, executable)
                                if name == 'Custom Rules' and item.get_state_set().contains(atspi.StateType.EDITABLE)), None),
@@ -1069,6 +1091,47 @@ def check(desktop, pinned, audio):
             process.terminate()
         process.wait(timeout=10)
         subprocess.run([cli, 'service', 'stop'], check=True)
+    check_storage_limit(cli)
+
+
+def check_storage_limit(cli):
+    rows = [{'id': 10000+i, 'content_type': 'text', 'content': f'Old test row {i}',
+             'created_at': i+1, 'updated_at': i+1, 'is_pinned': i == 0,
+             'tags': ['keep'] if i == 1 else []} for i in range(57)]
+    backup = Path(os.environ['HOME'])/'retention.json'
+    backup.write_text(json.dumps({'version':'dezirclip-export-v2','exported_at':1,'entries':rows}))
+    subprocess.run([cli, 'import', backup, '--mode', 'merge'], check=True, stdout=subprocess.DEVNULL)
+    with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+        db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
+            ('app.persistent', 'true'), ('app.persistent_limit', '50'), ('app.persistent_limit_enabled', 'false')])
+        db.commit()
+        subprocess.run([cli, 'service', 'start', '--json'], check=True, stdout=subprocess.DEVNULL)
+        try:
+            verify_storage_captures(db)
+        finally:
+            subprocess.run([cli, 'service', 'stop'], check=True)
+
+
+def verify_storage_captures(db):
+    def count():
+        return db.execute("SELECT count(*) FROM clipboard_history WHERE is_pinned=0 AND COALESCE(tags,'[]')='[]'").fetchone()[0]
+    def exists(content):
+        return db.execute('SELECT 1 FROM clipboard_history WHERE content=?', (content,)).fetchone()
+    for enabled in (False, True):
+        if enabled:
+            db.execute("UPDATE settings SET value='true' WHERE key='app.persistent_limit_enabled'")
+            db.commit()
+        marker = 'Retention capture ' + secrets.token_hex(8)
+        subprocess.run(['xclip','-selection','clipboard','-i'], input=marker.encode(), check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if exists(marker) and (not enabled or count() == 50): break
+            time.sleep(.05)
+        assert exists(marker), 'Private X11 selection was not saved'
+        assert (count() == 50 if enabled else count() > 50), 'Unexpected evictable history size'
+    assert exists('Old test row 0') and exists('Old test row 1') and not exists('Old test row 2')
+    print('Verified real captures enforce the enabled limit and preserve pinned and tagged rows')
 
 
 def check_preview(button, atspi):

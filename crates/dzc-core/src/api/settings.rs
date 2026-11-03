@@ -80,7 +80,7 @@ impl HistoryService {
     }
 
     pub fn is_capture_setting(key: &str) -> bool {
-        matches!(key, "app.persistent" | "app.deduplicate" | "app.capture_files" | "app.capture_rich_text"
+        matches!(key, "app.persistent" | "app.persistent_limit_enabled" | "app.persistent_limit" | "app.deduplicate" | "app.capture_files" | "app.capture_rich_text"
             | "app.privacy_protection" | "app.privacy_protection_kinds" | "app.privacy_protection_custom_rules"
             | "app.excluded_source_apps" | "app.ocr_enabled")
     }
@@ -90,8 +90,13 @@ impl HistoryService {
         if !Self::is_capture_setting(key) || value.len() > 64 * 1024 {
             return Err(CoreError::validation("CaptureSettingsInvalid"));
         }
-        let list = matches!(key, "app.privacy_protection_kinds" | "app.privacy_protection_custom_rules" | "app.excluded_source_apps");
-        if !list && !matches!(value, "true" | "false") {
+        let valid = match key {
+            "app.persistent_limit" => value.bytes().all(|c| c.is_ascii_digit())
+                && value.parse::<u32>().is_ok_and(|n| (50..=99999).contains(&n)),
+            "app.privacy_protection_kinds" | "app.privacy_protection_custom_rules" | "app.excluded_source_apps" => true,
+            _ => matches!(value, "true" | "false"),
+        };
+        if !valid {
             return Err(CoreError::validation("CaptureSettingsInvalid"));
         }
         self.repository.set_setting_at_epoch(key, value, epoch)
@@ -109,8 +114,23 @@ impl HistoryService {
 }
 
 #[cfg(test)]
-mod feedback_tests {
+mod tests {
     use super::HistoryService;
+    #[test]
+    fn storage_limit_validates_bounds_and_epoch() {
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        let save = |value| history.update_capture_setting("app.persistent_limit", value, epoch);
+        for value in ["50", "99999"] {
+            save(value).unwrap();
+        }
+        for value in ["49", "100000", "-50", "", "5e2"] {
+            assert!(save(value).is_err());
+        }
+        assert!(history.update_capture_setting("app.persistent_limit_enabled", "1", epoch).is_err());
+        assert!(history.update_capture_setting("app.persistent_limit", "75", epoch + 1).is_err());
+    }
+
     #[test]
     fn feedback_respects_master_switch_paste_switch_and_volume() {
         let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();

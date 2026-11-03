@@ -220,19 +220,34 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
         }
     };
 
-    const commitPersistentLimit = (rawValue?: string) => {
-        const source = rawValue ?? persistentLimitDraft;
-        const parsed = parseInt(source, 10);
+    const [limitSaving, setLimitSaving] = useState(false);
+    const [limitError, setLimitError] = useState("");
+    const saveLimit = async (key: "persistent_limit" | "persistent_limit_enabled", value: string) => {
+        setLimitSaving(true);
+        setLimitError("");
+        try {
+            await invoke("save_setting", { key: "app." + key, value });
+            if (key === "persistent_limit_enabled") props.setPersistentLimitEnabled(value === "true");
+            else {
+                props.setPersistentLimit(Number(value));
+                setPersistentLimitDraft(value);
+            }
+        } catch (error) {
+            setLimitError(String(error));
+            setPersistentLimitDraft(String(props.persistentLimit));
+        } finally {
+            setLimitSaving(false);
+        }
+    };
+    const commitPersistentLimit = () => {
+        const parsed = Number.parseInt(persistentLimitDraft, 10);
         if (!Number.isFinite(parsed)) {
-            setPersistentLimitDraft(props.persistentLimit.toString());
+            setPersistentLimitDraft(String(props.persistentLimit));
             return;
         }
-        const clamped = Math.max(50, Math.min(99999, parsed));
-        props.setPersistentLimit(clamped);
-        props.saveAppSetting('persistent_limit', clamped.toString());
-        if (clamped.toString() !== source) {
-            setPersistentLimitDraft(clamped.toString());
-        }
+        const value = Math.max(50, Math.min(99999, parsed));
+        if (value === props.persistentLimit) setPersistentLimitDraft(String(value));
+        else void saveLimit("persistent_limit", String(value));
     };
 
     return (
@@ -253,6 +268,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 className="cb"
                                 type="checkbox"
                                 checked={props.persistent}
+                                aria-label={props.t('persistent_storage')}
                                 onChange={(e) => props.setPersistent(e.target.checked)}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -270,14 +286,14 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         className="cb"
                                         type="checkbox"
                                         checked={props.persistentLimitEnabled}
-                                        onChange={(e) => {
-                                            props.setPersistentLimitEnabled(e.target.checked);
-                                            props.saveAppSetting('persistent_limit_enabled', e.target.checked.toString());
-                                        }}
+                                        aria-label={props.t('persistent_limit_enabled')}
+                                        disabled={limitSaving}
+                                        onChange={(e) => void saveLimit("persistent_limit_enabled", String(e.target.checked))}
                                     />
                                     <div className="toggle"><div className="left" /><div className="right" /></div>
                                 </label>
                             </div>
+                            {limitError && <span role="alert">{props.t("common_error")} · {limitError}</span>}
                             {props.persistentLimitEnabled && (
                                 <div className="setting-item">
                                     <props.LabelWithHint
@@ -289,6 +305,8 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
+                                        aria-label={props.t('persistent_limit')}
+                                        disabled={limitSaving}
                                         value={persistentLimitDraft}
                                         onFocus={(e) => {
                                             e.target.select();
@@ -308,7 +326,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         }}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
-                                                commitPersistentLimit(e.currentTarget.value);
                                                 e.currentTarget.blur();
                                             }
                                         }}
