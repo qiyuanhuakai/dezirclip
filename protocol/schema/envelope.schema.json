@@ -86,6 +86,12 @@
         "desktop.screen.crop",
         "desktop.screen.finish",
         "desktop.screen.cancel",
+        "desktop.tags.counts",
+        "desktop.tags.colors",
+        "desktop.tags.color",
+        "desktop.tags.delete_contents",
+        "desktop.tags.delete_entries",
+        "desktop.history.count",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -1220,6 +1226,120 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/screen.schema.json#/$defs/ScreenSessionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.counts"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.colors"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.color"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryColorParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.delete_contents"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryTagParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.delete_entries"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryTagBatchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.count"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryStateParams"
               }
             }
           }

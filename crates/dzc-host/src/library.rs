@@ -11,6 +11,57 @@ impl Host {
         Ok(())
     }
 
+    pub(crate) fn library_summary(&self, session: &Session, method: Method, params: Value) -> Result<Value, WireErrorCode> {
+        use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
+        let p: LibraryStateParams = serde_json::from_value(params).map_err(|_| WireErrorCode::InvalidRequest)?;
+        self.check_library_state(session, &p.service_instance_id, p.expected_epoch)?;
+        let now = crate::router::now_ms()?;
+        let permit = self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied,
+            Some(p.expected_epoch), now).map_err(crate::router::privacy_error)?;
+        let value = match method {
+            Method::DesktopTagsCounts => json!({ "values": self.history.tag_counts().map_err(|_| WireErrorCode::Unavailable)? }),
+            Method::DesktopTagsColors => json!({ "values": self.history.tag_colors().map_err(|_| WireErrorCode::Unavailable)? }),
+            Method::DesktopHistoryCount => json!({ "count": self.history.get_count().map_err(|_| WireErrorCode::Unavailable)? }),
+            _ => return Err(WireErrorCode::InvalidRequest),
+        };
+        self.history.privacy().check_read(&permit, crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        if method == Method::DesktopHistoryCount { return Ok(value); }
+        self.authorized_snapshot(session, &permit, &value)
+    }
+
+    pub(crate) fn delete_library_entries(&self, session: &Session, method: Method, params: Value) -> Result<Value, WireErrorCode> {
+        use dzc_core::api::TagEntrySelection;
+        let invalid = |_| WireErrorCode::InvalidRequest;
+        let (tag, selection) = match method {
+            Method::DesktopTagsDeleteContents => {
+                let p: LibraryTagParams = serde_json::from_value(params).map_err(invalid)?;
+                self.check_library_state(session, &p.service_instance_id, p.expected_epoch)?;
+                (p.name, None)
+            }
+            Method::DesktopTagsDeleteEntries => {
+                let p: LibraryTagBatchParams = serde_json::from_value(params).map_err(invalid)?;
+                self.check_library_state(session, &p.service_instance_id, p.expected_epoch)?;
+                let selected = match p.scope.as_str() {
+                    "selected" if p.query.is_none() => TagEntrySelection::Selected { ids: p.ids },
+                    "all" => TagEntrySelection::All { query: p.query.unwrap_or_default(), excluded_ids: p.ids },
+                    _ => return Err(WireErrorCode::InvalidRequest),
+                };
+                (p.name, Some(selected))
+            }
+            _ => return Err(WireErrorCode::InvalidRequest),
+        };
+        let whole_tag = selection.is_none();
+        let mut rows = self.session.lock().map_err(|_| WireErrorCode::Unavailable)?;
+        let report = match selection {
+            Some(selection) => self.history.delete_tag_entries(&tag, selection, Some(&self.directory)),
+            None => self.history.delete_tag_with_entries(&tag, Some(&self.directory)),
+        }.map_err(|_| WireErrorCode::Unavailable)?;
+        rows.retain(|row| !report.deleted_ids.contains(&row.id) && !(whole_tag && row.tags.contains(&tag)));
+        drop(rows);
+        self.publish(EventKind::HistoryReset, EventData { entry_id: None, status: None })?;
+        Ok(json!({ "deleted_count": report.deleted_ids.len(), "cleanup_failed": !report.cleanup_errors.is_empty() }))
+    }
+
     pub(crate) fn edit_library(&self, session: &Session, method: Method, params: Value) -> Result<Value, WireErrorCode> {
         let invalid = |_| WireErrorCode::InvalidRequest;
         let storage = |_: dzc_core::api::CoreError| WireErrorCode::Unavailable;
@@ -39,6 +90,11 @@ impl Host {
                         row.tags.retain(|tag| tag != &p.name);
                     }
                 }
+            }
+            Method::DesktopTagsColor => {
+                let p: LibraryColorParams = serde_json::from_value(params).map_err(invalid)?;
+                self.check_library_state(session, &p.service_instance_id, p.expected_epoch)?;
+                self.history.set_tag_color(&p.name, p.color).map_err(storage)?;
             }
             Method::DesktopTagsRename => {
                 let p: LibraryRenameParams = serde_json::from_value(params).map_err(invalid)?;

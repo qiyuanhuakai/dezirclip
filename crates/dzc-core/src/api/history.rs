@@ -171,6 +171,14 @@ impl HistoryService {
     pub fn get_entries_by_tag(&self, tag: &str) -> CoreResult<Vec<ClipboardEntry>> {
         self.tags.get_entries_by_tag(tag).map_err(Into::into)
     }
+    pub fn tag_colors(&self) -> CoreResult<std::collections::HashMap<String, String>> {
+        self.tags.get_colors().map_err(Into::into)
+    }
+
+    pub fn set_tag_color(&self, name: &str, color: Option<String>) -> CoreResult<()> {
+        self.tags.set_color(name, color).map_err(Into::into)
+    }
+
     pub fn tag_counts(&self) -> CoreResult<std::collections::HashMap<String, i32>> {
         self.tags.get_all_with_counts().map_err(Into::into)
     }

@@ -126,6 +126,7 @@ mod desktop_protocol_tests {
         exercise_settings(&mut client, &state.state).await?;
         exercise_backups(&mut client, database, &state.state).await?;
         exercise_manual_ocr(&mut client, database, &state.state).await?;
+        exercise_library(&mut client, database, &state.state).await?;
         #[cfg(target_os = "linux")]
         if std::env::var_os("DZC_TEST_XVFB_SCREEN").is_some() {
             exercise_screen(database, &mut client, &state.state, capture).await?;
@@ -217,6 +218,50 @@ mod desktop_protocol_tests {
             return Err("revoked frame survived privacy transition".into());
         }
         let _: PrivacyState = client.call(Method::PrivacySet, serde_json::json!({"active": false}), "PrivacyState").await?;
+        Ok(())
+    }
+
+    async fn exercise_library(client: &mut Client, database: &Path, state: &RuntimeState) -> Result<(), Box<dyn Error>> {
+        let base = serde_json::json!({ "service_instance_id": state.service_instance_id, "expected_epoch": state.privacy_epoch });
+        let entry = |id: i64, text: &str, tag: &str| serde_json::json!({
+            "id":id, "content_type":"text", "content":text, "tags":[tag], "created_at":1, "updated_at":1
+        });
+        let fixture = database.with_file_name("library.json");
+        std::fs::write(&fixture, serde_json::to_vec(&serde_json::json!({"version":"dezirclip-export-v2","exported_at":1,
+            "entries":[entry(21,"matched keep","catalog"),entry(22,"matched remove","catalog"),entry(23,"unrelated","external")]}))?)?;
+        let mut import = base.clone();
+        import["path"] = serde_json::to_value(&fixture)?;
+        import["mode"] = "replace".into();
+        let _: BackupImportResult = client.call(Method::DesktopBackupImport, import, "BackupImportResult").await?;
+        let mut library = base.clone();
+        library["name"] = "catalog".into();
+        let mut color = library.clone();
+        color["color"] = "#26abcd".into();
+        let _: OperationResult = client.call(Method::DesktopTagsColor, color, "OperationResult").await?;
+        let colors: BodySnapshot = client.call(Method::DesktopTagsColors, &base, "BodySnapshot").await?;
+        let colors: LibraryColors = client.read_snapshot(colors, "LibraryColors").await?;
+        let counts: BodySnapshot = client.call(Method::DesktopTagsCounts, &base, "BodySnapshot").await?;
+        let counts: LibraryCounts = client.read_snapshot(counts, "LibraryCounts").await?;
+        if colors.values["catalog"] != "#26abcd" || counts.values["catalog"] != 2 {
+            return Err("tag metadata mismatch".into());
+        }
+        if client.call::<LibraryDeleted>(Method::DesktopTagsDeleteContents, &library, "LibraryDeleted").await.is_ok() {
+            return Err("system-tag deletion accepted an ordinary tag".into());
+        }
+        let descriptor: BodySnapshot = client.call(Method::DesktopTagsPage, serde_json::json!({
+            "service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch,"tag":"catalog",
+            "query":"","sort_by":"time","limit":10,"offset":0
+        }), "BodySnapshot").await?;
+        let page: DesktopTagItemsPage = client.read_snapshot(descriptor, "DesktopTagItemsPage").await?;
+        let keep = page.items.first().ok_or("missing tagged entry")?.id;
+        library["scope"] = "all".into();
+        library["ids"] = serde_json::json!([keep]);
+        library["query"] = "matched".into();
+        let removed: LibraryDeleted = client.call(Method::DesktopTagsDeleteEntries, library, "LibraryDeleted").await?;
+        let count: LibraryCount = client.call(Method::DesktopHistoryCount, base, "LibraryCount").await?;
+        if removed.deleted_count != 1 || removed.cleanup_failed || count.count != 2 {
+            return Err("filtered deletion did not preserve the exclusion and unrelated row".into());
+        }
         Ok(())
     }
 

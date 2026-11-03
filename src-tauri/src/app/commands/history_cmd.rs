@@ -8,11 +8,11 @@ use crate::app::ipc_host::{DesktopHost,HostedEntry};
 
 use dzc_host::wire::{LibraryOrderParams, LibraryPinOrder, LibraryRenameParams, LibraryStateParams, LibraryTagParams, Method, OperationResult, RuntimeState};
 
-async fn library_state(host: &DesktopHost) -> AppResult<RuntimeState> {
+pub(super) async fn library_state(host: &DesktopHost) -> AppResult<RuntimeState> {
     host.call(Method::Health, serde_json::json!({}), "RuntimeState").await.map_err(AppError::Validation)
 }
 
-async fn edit_library(app: &AppHandle, method: Method, params: impl serde::Serialize) -> AppResult<()> {
+pub(super) async fn edit_library(app: &AppHandle, method: Method, params: impl serde::Serialize) -> AppResult<()> {
     let _: OperationResult = app.state::<DesktopHost>().call(method, params, "OperationResult").await.map_err(AppError::Validation)?;
     use tauri::Emitter;
     let _ = app.emit("clipboard-changed", ());
@@ -317,10 +317,10 @@ pub async fn remove_tag_from_all(app: AppHandle, tag_name: String) -> AppResult<
 }
 
 #[tauri::command]
-pub async fn get_all_tags_info(
-    state: State<'_, DbState>,
-) -> AppResult<std::collections::HashMap<String, i32>> {
-    state.history_service().tag_counts().map_err(AppError::from)
+pub async fn get_all_tags_info(host: State<'_, DesktopHost>) -> AppResult<std::collections::HashMap<String, i32>> {
+    let result: dzc_host::wire::LibraryCounts = host.library_snapshot(Method::DesktopTagsCounts, "LibraryCounts")
+        .await.map_err(AppError::Validation)?;
+    serde_json::from_value(result.values).map_err(|error| AppError::Internal(error.to_string()))
 }
 
 #[tauri::command]
@@ -331,102 +331,47 @@ pub async fn rename_tag_globally(app: AppHandle, old_name: String, new_name: Str
     }).await
 }
 
-fn delete_sensitive_tag_contents(
-    app: &tauri::AppHandle,
-    state: &DbState,
-    session: &SessionHistory,
-    app_data: &AppDataDir,
-    tag_name: &str,
-) -> AppResult<()> {
-    let data_dir = app_data
-        .0
-        .lock()
-        .map_err(|error| AppError::Internal(error.to_string()))?
-        .clone();
-    let report = state
-        .history_service()
-        .delete_tag_with_entries(tag_name, Some(&data_dir))
-        .map_err(AppError::from)?;
-    if let Ok(mut history) = session.0.lock() {
-        history.retain(|item| {
-            !report.deleted_ids.contains(&item.id) && !item.tags.iter().any(|tag| tag == tag_name)
-        });
-    }
+async fn delete_library_entries(app: &AppHandle, method: Method, params: impl serde::Serialize) -> AppResult<TagEntriesDeleted> {
+    let result: dzc_host::wire::LibraryDeleted = app.state::<DesktopHost>().call(method, params, "LibraryDeleted").await.map_err(AppError::Validation)?;
     use tauri::Emitter;
     let _ = app.emit("clipboard-changed", ());
-    if !report.cleanup_errors.is_empty() {
-        return Err(AppError::IO(format!(
-            "history and tag were deleted, but attachment cleanup failed: {}",
-            report.cleanup_errors.join("; ")
-        )));
+    if result.cleanup_failed {
+        return Err(AppError::IO("History was deleted, but attachment cleanup failed".into()));
     }
-    Ok(())
+    Ok(TagEntriesDeleted { deleted_count: result.deleted_count })
 }
 
 #[tauri::command]
-pub fn delete_sensitive_tag_with_contents(
-    app: tauri::AppHandle,
-    state: State<'_, DbState>,
-    session: State<'_, SessionHistory>,
-    app_data: State<'_, AppDataDir>,
-    tag_name: String,
-) -> AppResult<()> {
-    delete_sensitive_tag_contents(&app, &state, &session, &app_data, &tag_name)
+pub async fn delete_sensitive_tag_with_contents(app: AppHandle, tag_name: String) -> AppResult<()> {
+    let state = library_state(&app.state::<DesktopHost>()).await?;
+    delete_library_entries(&app, Method::DesktopTagsDeleteContents, LibraryTagParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, name: tag_name,
+    }).await.map(|_| ())
 }
 
-// Preserve the old command name without retaining an unguarded destructive path.
 #[tauri::command]
-pub fn delete_tag_from_all(
-    app: tauri::AppHandle,
-    state: State<'_, DbState>,
-    session: State<'_, SessionHistory>,
-    app_data: State<'_, AppDataDir>,
-    tag_name: String,
-) -> AppResult<()> {
-    delete_sensitive_tag_contents(&app, &state, &session, &app_data, &tag_name)
+pub async fn delete_tag_from_all(app: AppHandle, tag_name: String) -> AppResult<()> {
+    delete_sensitive_tag_with_contents(app, tag_name).await
 }
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TagEntriesDeleted {
-    deleted_count: usize,
+    deleted_count: u64,
 }
 
 #[tauri::command]
-pub async fn delete_tag_entries(
-    app: tauri::AppHandle,
-    state: State<'_, DbState>,
-    session: State<'_, SessionHistory>,
-    app_data: State<'_, AppDataDir>,
-    tag_name: String,
-    selection: dzc_core::api::TagEntrySelection,
-) -> AppResult<TagEntriesDeleted> {
-    let data_dir = app_data
-        .0
-        .lock()
-        .map_err(|error| AppError::Internal(error.to_string()))?
-        .clone();
-    let repository = state.history_service();
-    let report = tauri::async_runtime::spawn_blocking(move || {
-        repository.delete_tag_entries(&tag_name, selection, Some(&data_dir))
-    })
-    .await
-    .map_err(|error| AppError::Internal(error.to_string()))?
-    .map_err(AppError::from)?;
-    if let Ok(mut history) = session.0.lock() {
-        history.retain(|item| !report.deleted_ids.contains(&item.id));
-    }
-    use tauri::Emitter;
-    let _ = app.emit("clipboard-changed", ());
-    if !report.cleanup_errors.is_empty() {
-        return Err(AppError::IO(format!(
-            "history entries were deleted, but attachment cleanup failed: {}",
-            report.cleanup_errors.join("; ")
-        )));
-    }
-    Ok(TagEntriesDeleted {
-        deleted_count: report.deleted_ids.len(),
-    })
+pub async fn delete_tag_entries(app: AppHandle, tag_name: String, selection: dzc_core::api::TagEntrySelection) -> AppResult<TagEntriesDeleted> {
+    use dzc_core::api::TagEntrySelection;
+    let state = library_state(&app.state::<DesktopHost>()).await?;
+    let (scope, ids, query) = match selection {
+        TagEntrySelection::Selected { ids } => ("selected", ids, None),
+        TagEntrySelection::All { query, excluded_ids } => ("all", excluded_ids, Some(query)),
+    };
+    delete_library_entries(&app, Method::DesktopTagsDeleteEntries, dzc_host::wire::LibraryTagBatchParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, name: tag_name,
+        scope: scope.into(), ids, query,
+    }).await
 }
 
 #[tauri::command]
@@ -471,8 +416,12 @@ pub async fn update_pinned_order(app: AppHandle, orders: Vec<(i64, i64)>) -> App
 }
 
 #[tauri::command]
-pub async fn get_db_count(state: State<'_, DbState>) -> AppResult<i64> {
-    state.history_service().get_count().map_err(AppError::from)
+pub async fn get_db_count(host: State<'_, DesktopHost>) -> AppResult<u64> {
+    let state = library_state(&host).await?;
+    let result: dzc_host::wire::LibraryCount = host.call(Method::DesktopHistoryCount, LibraryStateParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch,
+    }, "LibraryCount").await.map_err(AppError::Validation)?;
+    Ok(result.count)
 }
 
 #[cfg(test)]

@@ -513,13 +513,29 @@ impl DesktopHost {
         Ok(result)
     }
 
-    pub(crate) async fn screen_client(&self) -> Result<Option<Client>, String> {
+    async fn desktop_client(&self) -> Result<Client, String> {
         let instance = self.instance()?;
         let endpoint = dzc_host::controller::endpoint(&self.0.database).map_err(remote_error)?;
-        let mut client = Client::control(&endpoint, ClientRole::Desktop).await.map_err(remote_error)?;
+        let client = Client::control(&endpoint, ClientRole::Desktop).await.map_err(remote_error)?;
         if client.hello.state.service_instance_id != instance {
             return Err("ClipboardHostInstanceChanged".into());
         }
+        Ok(client)
+    }
+
+    pub(crate) async fn library_snapshot<T: DeserializeOwned>(&self, method: Method, schema: &str) -> Result<T, String> {
+        let mut client = self.desktop_client().await?;
+        let state = client.hello.state.clone();
+        let body: BodySnapshot = client.call(method, LibraryStateParams {
+            service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch,
+        }, "BodySnapshot").await.map_err(remote_error)?;
+        let result = client.read_snapshot(body, schema).await.map_err(remote_error)?;
+        if self.instance()? != state.service_instance_id { return Err("ClipboardHostInstanceChanged".into()); }
+        Ok(result)
+    }
+
+    pub(crate) async fn screen_client(&self) -> Result<Option<Client>, String> {
+        let mut client = self.desktop_client().await?;
         let report: CapabilityReport = client.call(Method::Capabilities, serde_json::json!({}), "CapabilityReport").await.map_err(remote_error)?;
         Ok(report.methods.iter().any(|method| method == "desktop.screen.begin").then_some(client))
     }

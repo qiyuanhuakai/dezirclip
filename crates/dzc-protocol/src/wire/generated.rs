@@ -442,6 +442,18 @@ pub enum Method {
     DesktopScreenFinish,
     #[serde(rename = "desktop.screen.cancel")]
     DesktopScreenCancel,
+    #[serde(rename = "desktop.tags.counts")]
+    DesktopTagsCounts,
+    #[serde(rename = "desktop.tags.colors")]
+    DesktopTagsColors,
+    #[serde(rename = "desktop.tags.color")]
+    DesktopTagsColor,
+    #[serde(rename = "desktop.tags.delete_contents")]
+    DesktopTagsDeleteContents,
+    #[serde(rename = "desktop.tags.delete_entries")]
+    DesktopTagsDeleteEntries,
+    #[serde(rename = "desktop.history.count")]
+    DesktopHistoryCount,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]
@@ -736,6 +748,53 @@ pub struct LibraryOrderParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
     pub orders: Vec<LibraryPinOrder>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryColorParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryTagBatchParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+    pub scope: String,
+    pub ids: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryDeleted {
+    pub deleted_count: u64,
+    pub cleanup_failed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryCount {
+    pub count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryCounts {
+    pub values: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryColors {
+    pub values: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -1129,6 +1129,12 @@
         "desktop.screen.crop",
         "desktop.screen.finish",
         "desktop.screen.cancel",
+        "desktop.tags.counts",
+        "desktop.tags.colors",
+        "desktop.tags.color",
+        "desktop.tags.delete_contents",
+        "desktop.tags.delete_entries",
+        "desktop.history.count",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -2271,6 +2277,120 @@
           "if": {
             "properties": {
               "method": {
+                "const": "desktop.tags.counts"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.colors"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.color"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryColorParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.delete_contents"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryTagParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.delete_entries"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryTagBatchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.count"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
                 "const": "desktop.history.clear"
               }
             },
@@ -3117,6 +3237,151 @@
         "service_instance_id",
         "expected_epoch",
         "orders"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryColorParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        },
+        "color": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryTagBatchParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "selected",
+            "all"
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-rust-type": "i64"
+          }
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "name",
+        "scope",
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryDeleted": {
+      "type": "object",
+      "properties": {
+        "deleted_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "cleanup_failed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted_count",
+        "cleanup_failed"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryCount": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryCounts": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryColors": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "values"
       ],
       "additionalProperties": false
     },

@@ -310,6 +310,12 @@ const (
     MethodDesktopScreenCrop Method = "desktop.screen.crop"
     MethodDesktopScreenFinish Method = "desktop.screen.finish"
     MethodDesktopScreenCancel Method = "desktop.screen.cancel"
+    MethodDesktopTagsCounts Method = "desktop.tags.counts"
+    MethodDesktopTagsColors Method = "desktop.tags.colors"
+    MethodDesktopTagsColor Method = "desktop.tags.color"
+    MethodDesktopTagsDeleteContents Method = "desktop.tags.delete_contents"
+    MethodDesktopTagsDeleteEntries Method = "desktop.tags.delete_entries"
+    MethodDesktopHistoryCount Method = "desktop.history.count"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"
@@ -517,6 +523,39 @@ type LibraryOrderParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
     Orders []LibraryPinOrder `json:"orders"`
+}
+
+type LibraryColorParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+    Color *string `json:"color,omitempty"`
+}
+
+type LibraryTagBatchParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+    Scope string `json:"scope"`
+    Ids []int64 `json:"ids"`
+    Query *string `json:"query,omitempty"`
+}
+
+type LibraryDeleted struct {
+    DeletedCount uint64 `json:"deleted_count"`
+    CleanupFailed bool `json:"cleanup_failed"`
+}
+
+type LibraryCount struct {
+    Count uint64 `json:"count"`
+}
+
+type LibraryCounts struct {
+    Values json.RawMessage `json:"values"`
+}
+
+type LibraryColors struct {
+    Values json.RawMessage `json:"values"`
 }
 
 type ManualOcrParams struct {

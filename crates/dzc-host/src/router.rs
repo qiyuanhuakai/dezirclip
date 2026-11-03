@@ -270,6 +270,8 @@ impl Host {
             methods.extend(["desktop.ocr.recognize", "desktop.ocr.status", "desktop.ocr.engine"]);
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
+            methods.extend(["desktop.tags.counts", "desktop.tags.colors", "desktop.tags.color", "desktop.tags.delete_contents",
+                "desktop.tags.delete_entries", "desktop.history.count"]);
             methods.extend(["desktop.history.clear", "desktop.history.reorder", "desktop.tags.create", "desktop.tags.rename", "desktop.tags.remove"]);
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
             if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.surface.copy"]);}
@@ -403,7 +405,11 @@ impl Host {
                 self.desktop_permission(session, self.instance_id())?;
                 crate::tools::run(request.method, request.params)
             }
-            Method::DesktopHistoryClear | Method::DesktopHistoryReorder | Method::DesktopTagsCreate
+            Method::DesktopTagsCounts | Method::DesktopTagsColors | Method::DesktopHistoryCount =>
+                self.library_summary(session, request.method, request.params),
+            Method::DesktopTagsDeleteContents | Method::DesktopTagsDeleteEntries =>
+                self.delete_library_entries(session, request.method, request.params),
+            Method::DesktopTagsColor | Method::DesktopHistoryClear | Method::DesktopHistoryReorder | Method::DesktopTagsCreate
             | Method::DesktopTagsRename | Method::DesktopTagsRemove => self.edit_library(session, request.method, request.params),
             Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview =>
                 self.backup(session, request.method, request.params),
