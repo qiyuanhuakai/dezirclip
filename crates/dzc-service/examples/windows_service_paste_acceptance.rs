@@ -1,4 +1,7 @@
 //! Disposable CI client; never packaged or exposed as a Desktop command.
+#[cfg(windows)]
+#[path = "../../../scripts/tests/fixtures/windows-quick-panel.rs"]
+mod quick_panel;
 use dzc_host::{Client, controller};
 use dzc_protocol::{build_info::{BuildInfo, Component}, wire::*};
 use serde_json::{Value, json};
@@ -210,6 +213,10 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
         let mut held=None;
         let mut original_target=None;
         let mut queued: Option<(i64, QueueTarget)> = None;
+        #[cfg(windows)]
+        let mut quick: Option<QuickTicket> = None;
+        #[cfg(windows)]
+        let mut panel: Option<quick_panel::Panel> = None;
         while let Some(command)=read_line(&mut input)? {
             let operation=command["operation"].as_str().ok_or("OperationRequired")?;
             let result:Value=match operation {
@@ -321,6 +328,48 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
                         require(step.status=="pasted" && step.remaining==0 && step.id==Some(*id),"QueueStepIncomplete")?;
                         queued = None;
                         serde_json::to_value(step)?
+                    }
+                },
+                #[cfg(windows)]
+                "quick-begin" => {
+                    let fixed = checked_state(&mut client, &intent).await?;
+                    let base = json!({"service_instance_id":fixed.service_instance_id,"expected_epoch":fixed.privacy_epoch});
+                    let target: QueueTarget = client.call(Method::DesktopPasteTarget, &base, "QueueTarget").await?;
+                    let observed: WindowsPasteTarget = serde_json::from_value(command["target"].clone())?;
+                    require(observed.pid == target_pid && target.windows.as_ref() == Some(&observed), "OriginalQuickTargetRequired")?;
+                    let ticket: QuickTicket = client.call(Method::DesktopQuickBegin, base, "QuickTicket").await?;
+                    intent.check(&ticket.state)?;
+                    quick = Some(ticket);
+                    json!({"remembered":true})
+                },
+                #[cfg(windows)]
+                "quick-show" => {
+                    require(quick.is_some() && panel.is_none(), "OriginalQuickTicketRequired")?;
+                    panel = Some(quick_panel::Panel::show()?);
+                    json!({"own_panel_focused":true})
+                },
+                #[cfg(windows)]
+                "quick-select" => {
+                    let ticket = quick.take().ok_or("OriginalQuickTicketRequired")?;
+                    let fixed = checked_state(&mut client, &intent).await?;
+                    let refused = command["expect_refused"] == true;
+                    if !refused {
+                        require(client.peer.pid()==Some(expected_pid), "OriginalServicePeerRequired")?;
+                        panel.as_ref().ok_or("ForegroundPanelRequired")?.grant(expected_pid)?;
+                    }
+                    let selection = QuickPasteParams { service_instance_id:fixed.service_instance_id,
+                        expected_epoch:fixed.privacy_epoch, expected_history_revision:ticket.state.history_revision,
+                        token:ticket.token, id:command["entry_id"].as_i64().filter(|id|*id>0).ok_or("SeedIdRequired")? };
+                    let result = client.call::<OperationResult>(Method::DesktopQuickPaste, selection, "OperationResult").await;
+                    drop(panel.take());
+                    if refused {
+                        let error = result.err().ok_or("QuickChangedTargetAccepted")?;
+                        require(serde_json::from_str::<WireErrorCode>(&error.to_string())? == WireErrorCode::Unavailable,
+                            "QuickChangedTargetNotRefused")?;
+                        json!({"refused":true})
+                    } else {
+                        require(result?.performed, "QuickPasteIncomplete")?;
+                        json!({"pasted":true})
                     }
                 },
                 "stop"=>{

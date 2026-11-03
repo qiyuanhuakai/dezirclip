@@ -278,6 +278,23 @@ def main():
                     value = native.observe()
                 elif operation == 'activate-target':
                     value = native.activate()
+                elif operation == 'grant-quick-panel':
+                    pid = request.get('pid')
+                    base.require(type(pid) is int and 0 < pid < 0xffffffff
+                                 and native.user.GetForegroundWindow() == native.target,
+                                 'Foreground fixture must grant to its synthetic client')
+                    handle = native.kernel.OpenProcess(0x1000, False, pid)
+                    base.require(handle, 'Synthetic panel process unavailable')
+                    try:
+                        size = base.W.DWORD(32768)
+                        name = ctypes.create_unicode_buffer(size.value)
+                        base.require(native.kernel.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(size))
+                                     and Path(name.value).resolve() == (root / 'candidate/service-paste-client.exe').resolve(),
+                                     'Synthetic panel image differs')
+                        base.require(native.user.AllowSetForegroundWindow(pid), 'Foreground grant failed')
+                    finally:
+                        native.kernel.CloseHandle(handle)
+                    value = {'granted_pid': pid}
                 elif operation == 'activate-alternate':
                     value = native.activate(alternate=True)
                 elif operation == 'target-preflight':

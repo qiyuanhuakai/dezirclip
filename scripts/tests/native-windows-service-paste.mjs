@@ -317,7 +317,7 @@ export async function runServicePaste(args, env = process.env) {
     for (const name of ['native-windows-service-paste.mjs', 'native-windows-service-paste-target.py', 'native-windows-surface.mjs', 'native-windows-surface-target.py', 'native-windows-lifecycle.mjs']) {
       const source = path.join(repository, 'scripts/tests', name); report.inputs.push({ source, ...regular(source) }); startupBudget(startupDeadline);
     }
-    for (const name of ['crates/dzc-service/examples/windows_service_paste_acceptance.rs', '.github/workflows/ci.yml']) {
+    for (const name of ['crates/dzc-service/examples/windows_service_paste_acceptance.rs', 'scripts/tests/fixtures/windows-quick-panel.rs', '.github/workflows/ci.yml']) {
       const source = path.join(repository, name); report.inputs.push({ source, ...regular(source) }); startupBudget(startupDeadline);
     }
     const childEnv = environment(root), database = path.join(root, 'profile/clipboard.db');
@@ -445,6 +445,29 @@ export async function runServicePaste(args, env = process.env) {
     assert.equal(queueAfter.alternate_text, '');
     assert.equal(delivered.id, seeded.seeded_ids[0]); assert.equal(delivered.remaining, 0);
     report.queue_acceptance = { refused, delivered, original_target_received_full_text: true };
+    await native.request('clear-target'); await native.request('activate-target');
+    const quickTarget = (await native.request('snapshot')).target;
+    await client.request('quick-begin', { target: quickTarget });
+    await native.request('activate-alternate');
+    const quickRefusal = await client.request('quick-select', { entry_id: seeded.seeded_ids[0], expect_refused: true });
+    assert.equal(quickRefusal.refused, true);
+    const decoy = await native.request('snapshot');
+    assert.equal(decoy.target_text, ''); assert.equal(decoy.alternate_text, '');
+    await native.request('activate-target');
+    await client.request('quick-begin', { target: quickTarget });
+    const grant = await native.request('grant-quick-panel', { pid: client.child.pid });
+    assert.equal(grant.granted_pid, client.child.pid);
+    const panel = await client.request('quick-show');
+    assert.equal(panel.own_panel_focused, true);
+    const selection = await client.request('quick-select', { entry_id: seeded.seeded_ids[0] });
+    assert.equal(selection.pasted, true);
+    const quickAfter = await pollRead('Independent panel restored original target and pasted complete text', async remaining => {
+      const snapshot = await native.request('snapshot', {}, Math.max(1, remaining));
+      return snapshot.target_text === seedText ? snapshot : null;
+    });
+    assert.equal(quickAfter.alternate_text, '');
+    assert.equal(quickAfter.focus.foreground_hwnd, Number(quickTarget.hwnd));
+    report.quick_acceptance = { unrelated_focus_refused: true, own_panel_focused: true, original_target_received_full_text: true };
     report.status = 'passed';
   } catch (error) { report.status = 'failed'; report.error = String(error.stack ?? error); }
   finally {
