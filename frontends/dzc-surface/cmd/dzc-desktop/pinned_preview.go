@@ -20,12 +20,13 @@ type pinPreviewRequest struct {
 }
 
 type pinnedPreview struct {
-	owner   *client.Client
-	ticket  pinPreviewRequest
-	window  *mygo.Window
-	cancel  context.CancelFunc
-	body    *previewBody
-	loading bool
+	owner     *client.Client
+	ticket    pinPreviewRequest
+	window    *mygo.Window
+	cancel    context.CancelFunc
+	body      *previewBody
+	loading   bool
+	imageView pinnedImageView
 }
 
 func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed func()) error {
@@ -64,6 +65,7 @@ func (p *pinnedPreview) conceal() {
 		p.cancel = nil
 	}
 	p.body = nil
+	p.imageView = pinnedImageView{}
 	p.loading = false
 }
 
@@ -82,7 +84,11 @@ func (p *pinnedPreview) view(c *ui.Context) {
 			}
 		})
 		if p.body != nil {
-			p.body.draw(c)
+			if p.body.bitmap != nil {
+				p.imageView.draw(c, p.body.bitmap, a)
+			} else {
+				p.body.draw(c)
+			}
 			return
 		}
 		ui.Text(c, a.Concealed).Wrap()

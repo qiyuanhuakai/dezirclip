@@ -109,10 +109,11 @@ func (p *Preview) clear() {
 }
 
 type previewAppearance struct {
-	Pin, Close, Retry, Concealed, Failed string
-	Opacity                              int
-	Dark                                 bool
-	Background                           *struct{ R, G, B uint8 }
+	Pin, Close, Retry, Concealed, Failed              string
+	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom string
+	Opacity                                           int
+	Dark                                              bool
+	Background                                        *struct{ R, G, B uint8 }
 }
 
 func (a previewAppearance) theme() *ui.Theme {

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"image"
+	"image/color"
+	"math"
 	"strings"
 	"testing"
 
@@ -93,5 +96,68 @@ func TestMixedDPIPreviewUsesParentPhysicalWorkArea(t *testing.T) {
 			(x < scenario.origin.X+px(row.Width) && endX > scenario.origin.X && y < scenario.origin.Y+px(140) && endY > scenario.origin.Y+px(100)) {
 			t.Fatalf("native anchor could flip or obscure its source: (%d,%d)-(%d,%d), work=%+v", x, y, endX, endY, work)
 		}
+	}
+}
+
+func TestPinnedImageZoomAndPan(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 640, 320))
+	for y := 0; y < 320; y++ {
+		for x := 0; x < 640; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: uint8(x / 3), G: uint8(y / 2), B: 50, A: 255})
+		}
+	}
+	bitmap := ui.NewBitmap(img)
+	var v pinnedImageView
+	appearance := previewAppearance{ZoomIn: "Zoom in", ZoomOut: "Zoom out", Fit: "Fit image", FitLabel: "Fit", Actual: "Actual size", ImageZoom: "Picture"}
+	view := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() { v.draw(c, bitmap, appearance) })
+	}, 320, 220)
+	pixel := func() color.RGBA { return view.Image().RGBAAt(120, 120) }
+	before := pixel()
+	if v.factor() != 0.5 || before.B != 50 {
+		t.Fatalf("initial fit %g pixel %v", v.factor(), before)
+	}
+	view.Wheel(120, 120, 0, -30)
+	after := pixel()
+	if math.Abs(float64(v.zoom-0.6)) > 0.0001 || math.Abs(float64(before.R)-float64(after.R)) > 1 || math.Abs(float64(before.G)-float64(after.G)) > 1 {
+		t.Fatalf("wheel failed to hold the image at the pointer: %g %v -> %v", v.zoom, before, after)
+	}
+	click := func(label string) {
+		t.Helper()
+		if err := view.Click(label); err != nil {
+			t.Fatal(err)
+		}
+	}
+	click("100%")
+	if v.zoom != 1 {
+		t.Fatal("actual size", v.zoom)
+	}
+	before = pixel()
+	view.Press(120, 120)
+	view.Move(165, 120)
+	view.Release(165, 120)
+	after = pixel()
+	if after.R+10 >= before.R {
+		t.Fatalf("drag did not move the rendered image: %v -> %v", before, after)
+	}
+	click("+")
+	if v.zoom != 1.25 {
+		t.Fatal("zoom in", v.zoom)
+	}
+	click("−")
+	if v.zoom != 1 {
+		t.Fatal("zoom out", v.zoom)
+	}
+	view.Pinch(120, 120, 20)
+	if v.zoom != 8 {
+		t.Fatal("upper zoom limit", v.zoom)
+	}
+	view.Pinch(120, 120, 0.001)
+	if v.zoom != 0.1 {
+		t.Fatal("lower zoom limit", v.zoom)
+	}
+	click("Fit")
+	if v.zoom != 0 || v.factor() != 0.5 || v.pan != (ui.Point{}) || pixel().B != 50 {
+		t.Fatalf("fit did not reset image: %+v", v)
 	}
 }
