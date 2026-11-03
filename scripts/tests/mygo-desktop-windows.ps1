@@ -22,6 +22,30 @@ public static class MyGoInput {
     [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr window, uint attribute, out uint value, uint size);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+    [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32.dll")] static extern bool OpenClipboard(IntPtr owner);
+    [DllImport("user32.dll")] static extern bool CloseClipboard();
+    [DllImport("user32.dll")] static extern IntPtr GetClipboardData(uint format);
+    [DllImport("kernel32.dll")] static extern UIntPtr GlobalSize(IntPtr memory);
+    [DllImport("kernel32.dll")] static extern IntPtr GlobalLock(IntPtr memory);
+    [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
+
+    public static bool CheckClipboardText(string expected, uint sequence) {
+        if (!OpenClipboard(IntPtr.Zero)) return false;
+        try {
+            if (sequence != GetClipboardSequenceNumber()) throw new InvalidOperationException("Clipboard sequence changed before verification");
+            IntPtr handle = GetClipboardData(13); // CF_UNICODETEXT
+            if (handle == IntPtr.Zero || GlobalSize(handle).ToUInt64() < (ulong)(expected.Length + 1) * 2)
+                throw new InvalidOperationException("Clipboard does not contain the complete selected text");
+            IntPtr data = GlobalLock(handle);
+            if (data == IntPtr.Zero) throw new InvalidOperationException("Clipboard text handle is unreadable");
+            try {
+                if (Marshal.PtrToStringUni(data, expected.Length) != expected || Marshal.ReadInt16(data, expected.Length * 2) != 0)
+                    throw new InvalidOperationException("Clipboard text differs from the selected entry");
+            } finally { GlobalUnlock(handle); }
+            return true;
+        } finally { CloseClipboard(); }
+    }
 }
 '@
 $null = [MyGoInput]::SetProcessDPIAware()
@@ -279,7 +303,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     $null = Wait-Until {
         $edit.Text -ceq $marker -and $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle
     } 'Click did not paste the exact history text into the original editor'
-    if ([Windows.Forms.Clipboard]::GetText() -cne $marker) { throw 'Windows clipboard differs from selected history text' }
+    $clipboardSequence = [MyGoInput]::GetClipboardSequenceNumber()
+    $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence) } 'Clipboard remained locked after delivery' 3
     if ($Emoji) {
         Write-Output 'Verified physical WebView2 emoji click pasted into the original editor using an already-running Service'
         return
@@ -290,7 +315,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     # The file must also parse as Windows PowerShell 5.1 without a UTF-8 BOM.
     Test-ResidentPanel $resident '^+v' ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')) $edit $form
     Test-ResidentPanel $resident '^+a' ([regex]::Unescape('DezirClip \u622a\u56fe')) $edit $form
-    if ($edit.Text -cne $marker -or [Windows.Forms.Clipboard]::GetText() -cne $marker) { throw 'Cancelled native panel changed clipboard or editor' }
+    if ($edit.Text -cne $marker) { throw 'Cancelled native panel changed the editor' }
+    $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence) } 'Clipboard remained locked after panel cancellation' 3
     $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
     if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot locate the isolated Rust Service' }
     $service = Get-Process -Id $endpoint.pid
