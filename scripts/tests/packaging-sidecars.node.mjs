@@ -210,7 +210,9 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(upgrades, /needs: \[create-release, publish-tauri\]/);
   assert.match(upgrades, /uses: \.\/\.github\/workflows\/release-windows-upgrade\.yml/);
   assert.match(upgrades, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
-  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade\]/);
+  const promotion = releaseJob(workflow, "verify-publish-and-promote");
+  assert.match(promotion, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo\]/);
+  assert.match(promotion, /github\.event_name == 'workflow_dispatch' \|\| \(needs\.publish-tauri\.result == 'success' && needs\.publish-standalone-cli\.result == 'success' && needs\.publish-flatpak\.result == 'success' && needs\.windows-x64-mygo\.result == 'success'\)/);
 });
 
 test("release source routing rejects loss of the tag fallback, fixed recovery identity or independent tooling", () => {
