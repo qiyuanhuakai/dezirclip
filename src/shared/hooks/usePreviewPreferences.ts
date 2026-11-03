@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useEffect, useRef, useState } from "react";
 import { loadPreviewPreferences, subscribePreviewPreferenceChanges } from "../lib/previewPreferenceClient";
 import { readPreviewPreferences } from "../lib/previewPreferences";
+
+export const PreviewOpacityContext = createContext(readPreviewPreferences({}).opacity);
 
 export function usePreviewPreferences() {
   const [preferences, setPreferences] = useState(() => readPreviewPreferences({}));

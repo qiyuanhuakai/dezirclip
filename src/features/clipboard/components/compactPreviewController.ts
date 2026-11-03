@@ -15,7 +15,7 @@ export type CompactPreviewAnchor = {
     clientX: number; clientY: number; screenX: number; screenY: number;
     itemRect: CompactPreviewRect | null;
 };
-type RequestOptions = Omit<PreviewRequest, "requestId" | "privacyEpoch" | "maxWidth" | "maxHeight">;
+type RequestOptions = Omit<PreviewRequest, "requestId" | "privacyEpoch" | "maxWidth" | "maxHeight"> & { previewOpacity: number };
 type NativeBounds = { X: number; Y: number; Width: number; Height: number };
 async function nativePreviewOffset(anchor: CompactPreviewAnchor) {
     const { Main: main, WorkArea: area, Width, Height } = await window.mygo.call<{
@@ -302,7 +302,10 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
         try {
             const offset = await nativePreviewOffset(anchor);
             if (sequence !== nativeSequence || !access.isCurrent() || !sourceIsCurrent() || !stillHovered()) return;
-            await window.mygo.call("Preview.ShowEntry", sequence, options.id, options.expectedHostInstanceId, access.epoch, options.allowSensitive, offset);
+            const rgb = getComputedStyle(document.documentElement).getPropertyValue("--surface-shell-rgb").trim().split(/\s+/).map(Number);
+            const background = rgb.length === 3 && rgb.every(n => Number.isInteger(n) && n >= 0 && n <= 255) ? { R: rgb[0], G: rgb[1], B: rgb[2] } : null;
+            const appearance = { Opacity: options.previewOpacity, Dark: options.colorMode === "dark", Background: background };
+            await window.mygo.call("Preview.ShowEntry", sequence, options.id, options.expectedHostInstanceId, access.epoch, options.allowSensitive, offset, appearance);
         } catch (error) {
             compactPreviewLog("native preview presentation failed", error);
             if (sequence === nativeSequence) await hideCompactPreviewGlobal(owner);

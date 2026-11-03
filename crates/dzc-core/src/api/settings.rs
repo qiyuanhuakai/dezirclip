@@ -47,7 +47,7 @@ impl HistoryService {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
             | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
-            | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono"
+            | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.preview_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
     }
 
@@ -66,7 +66,7 @@ impl HistoryService {
                 && value.parse::<u16>().is_ok_and(|v| v <= 500),
             "app.clipboard_tag_font_size" => value.parse::<u8>().is_ok_and(|v| (8..=14).contains(&v)),
             "app.custom_background" => value.is_empty() || (value.len() <= 32_768 && !value.contains('\0') && std::path::Path::new(value).is_absolute()),
-            "app.sound_volume" | "app.custom_background_opacity" | "app.surface_opacity" => value.parse::<u8>().is_ok_and(|v| v <= 100),
+            "app.sound_volume" | "app.custom_background_opacity" | "app.surface_opacity" | "app.preview_opacity" => value.parse::<u8>().is_ok_and(|v| v <= 100),
             _ => Self::is_view_setting(key) && matches!(value, "true" | "false"),
         };
         if !valid { return Err(super::CoreError::validation("ViewSettingInvalid")); }

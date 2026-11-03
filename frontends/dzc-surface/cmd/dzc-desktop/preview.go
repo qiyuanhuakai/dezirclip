@@ -54,19 +54,37 @@ func (p *Preview) clear() {
 	}
 }
 
-func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState) {
-	p.selectEntry(ctx, sequence, id, state, false, nil)
+type previewAppearance struct {
+	Opacity    int
+	Dark       bool
+	Background *struct{ R, G, B uint8 }
 }
 
-func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, point mygo.Point) {
-	p.selectEntry(ctx, sequence, id, protocol.RuntimeState{ServiceInstanceId: instance, PrivacyEpoch: epoch}, reveal, &point)
+func (a previewAppearance) theme() *ui.Theme {
+	theme := ui.LightTheme()
+	if a.Dark {
+		theme = ui.DarkTheme()
+	}
+	if rgb := a.Background; rgb != nil {
+		theme.Background = ui.RGB(rgb.R, rgb.G, rgb.B)
+	}
+	theme.Background = theme.Background.Alpha(float32(max(0, min(100, a.Opacity))) / 100)
+	return theme
+}
+
+func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState) {
+	p.selectEntry(ctx, sequence, id, state, false, nil, previewAppearance{Opacity: 65})
+}
+
+func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, point mygo.Point, appearance previewAppearance) {
+	p.selectEntry(ctx, sequence, id, protocol.RuntimeState{ServiceInstanceId: instance, PrivacyEpoch: epoch}, reveal, &point, appearance)
 }
 
 func (p *Preview) Hide(ctx context.Context, sequence uint64) {
-	p.selectEntry(ctx, sequence, 0, protocol.RuntimeState{}, false, nil)
+	p.selectEntry(ctx, sequence, 0, protocol.RuntimeState{}, false, nil, previewAppearance{Opacity: 65})
 }
 
-func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, point *mygo.Point) {
+func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, point *mygo.Point, appearance previewAppearance) {
 	main := mygo.CallerWindow(ctx)
 	if main == nil {
 		return
@@ -82,11 +100,11 @@ func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, st
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		p.cancel = cancel
-		go p.load(ctx, main, sequence, id, state, reveal, point)
+		go p.load(ctx, main, sequence, id, state, reveal, point, appearance)
 	})
 }
 
-func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, point *mygo.Point) {
+func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, point *mygo.Point, appearance previewAppearance) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	host, err := p.owner.DesktopConnection(ctx)
@@ -152,7 +170,16 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			return
 		}
 		width, height := min(360, area.Width), min(200, area.Height)
-		p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 悬浮预览", Width: width, Height: height, Hidden: true, Frameless: true, Panel: true, Content: ui.View(func(c *ui.Context) {
+		x, y := cursor.X+16, cursor.Y
+		if point != nil {
+			x, y = bounds.X+point.X, bounds.Y+point.Y
+		} else if x+width > area.X+area.Width {
+			x = cursor.X - width - 16
+		}
+		anchor := mygo.Rectangle{X: max(area.X, min(x, area.X+area.Width-width)) - bounds.X, Y: max(area.Y, min(y, area.Y+area.Height-height)) - bounds.Y}
+		theme := appearance.theme()
+		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: width, Height: height, Hidden: true, Content: ui.View(func(c *ui.Context) {
+			c.SetTheme(theme)
 			ui.Column(c).Fill().Padding(10).Children(func() {
 				ui.Text(c, source)
 				if bitmap != nil {
@@ -166,14 +193,8 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 				}
 			})
 		})})
+		p.window.SetTitle("DezirClip 悬浮预览")
 		p.window.SetIgnoreMouseEvents(true)
-		x, y := cursor.X+16, cursor.Y
-		if point != nil {
-			x, y = bounds.X+point.X, bounds.Y+point.Y
-		} else if x+width > area.X+area.Width {
-			x = cursor.X - width - 16
-		}
-		p.window.SetPosition(max(area.X, min(x, area.X+area.Width-width)), max(area.Y, min(y, area.Y+area.Height-height)))
 		p.window.ShowInactive()
 	})
 }

@@ -246,7 +246,7 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("missing settings changes after startup: %+v %v", changes, err)
 	}
 	viewSettings := map[string]string{"app.theme": "retro", "app.color_mode": "dark", "app.language": "en", "app.compact_mode": "true",
-		"app.clipboard_item_font_size": "18", "app.clipboard_tag_font_size": "8", "app.surface_opacity": "0"}
+		"app.clipboard_item_font_size": "18", "app.clipboard_tag_font_size": "8", "app.surface_opacity": "0", "app.preview_opacity": "100"}
 	fonts, err := library.SystemFonts(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +274,7 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err := library.SetSetting(ctx, "app.theme", "custom:../outside", epoch); err == nil {
 		t.Fatal("invalid custom theme identifier accepted")
 	}
-	for key, value := range map[string]string{"app.clipboard_item_font_size": "19", "app.clipboard_tag_font_size": "7", "app.surface_opacity": "101"} {
+	for key, value := range map[string]string{"app.clipboard_item_font_size": "19", "app.clipboard_tag_font_size": "7", "app.surface_opacity": "101", "app.preview_opacity": "101"} {
 		if err := library.SetSetting(ctx, key, value, epoch); err == nil {
 			t.Fatalf("accepted out-of-range %s", key)
 		}

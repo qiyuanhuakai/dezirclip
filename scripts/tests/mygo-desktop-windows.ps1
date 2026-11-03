@@ -37,6 +37,8 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string cls, string title);
+    public static IntPtr WindowWithTitle(string title) { return FindWindow(null,title); }
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int capacity);
@@ -205,6 +207,50 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
 }
 
+function Test-TransparentPreview($root, $main, [string]$marker) {
+    $point = Get-ControlPoint $root $marker
+    if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not hover the preview fixture' }
+    $preview = Wait-Until {
+        $handle = [MyGoInput]::WindowWithTitle([regex]::Unescape('DezirClip \u60ac\u6d6e\u9884\u89c8'))
+        if ($handle -and [MyGoInput]::IsWindowVisible($handle)) { return $handle }
+    } 'Native hover preview did not open'
+    if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'Preview took keyboard focus' }
+    $bounds = New-Object MyGoInput+Rect
+    if (![MyGoInput]::GetWindowRect($preview, [ref]$bounds)) { throw 'Cannot locate native preview' }
+    $width = $bounds.right-$bounds.left
+    $height = $bounds.bottom-$bounds.top
+    $captureFrame = {
+        $image = [Drawing.Bitmap]::new($width,$height)
+        $graphics = [Drawing.Graphics]::FromImage($image)
+        try { $graphics.CopyFromScreen($bounds.left,$bounds.top,0,0,$image.Size) } finally { $graphics.Dispose() }
+        return $image
+    }
+    Start-Sleep -Milliseconds 350
+    $visible = & $captureFrame
+    try {
+        $away = Get-ControlPoint $root 'Settings'
+        if (![MyGoInput]::SetCursorPos($away.X,$away.Y)) { throw 'Could not leave the selected row' }
+        $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Preview remained after leaving the row'
+        Start-Sleep -Milliseconds 200
+        $behind = & $captureFrame
+        try {
+            $changed = 0
+            for ($y=8; $y -lt $height/2; $y+=2) {
+                for ($x=8; $x -lt $width-8; $x+=2) {
+                    if ($visible.GetPixel($x,$y).ToArgb() -ne $behind.GetPixel($x,$y).ToArgb()) { $changed++ }
+                }
+            }
+            if ($changed -lt 8) { throw 'Preview text was invisible at zero background opacity' }
+            foreach ($x in @([int]($width/4), [int]($width/2), [int](3*$width/4))) {
+                $y = $height-22
+                if ($visible.GetPixel($x,$y).ToArgb() -ne $behind.GetPixel($x,$y).ToArgb()) {
+                    throw 'Native preview background at zero opacity did not show the desktop'
+                }
+            }
+        } finally { $behind.Dispose() }
+    } finally { $visible.Dispose() }
+}
+
 function Test-ExternalEdit($root, $main, [string]$marker) {
     $point = Get-ControlPoint $root $marker
     if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not hover the saved text' }
@@ -287,6 +333,8 @@ import os, sqlite3, sys
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.text',?)", (sys.argv[1],))
     db.execute("UPDATE settings SET value='true' WHERE key='app.silent_start'")
+    db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                   [('app.compact_mode','true'), ('app.preview_opacity','0')])
 '@ | python - $fixtureEditor
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
     }
@@ -365,6 +413,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         }
     }
     if ($Capture) {
+        Test-TransparentPreview $root $main $marker
         Test-ExternalEdit $root $main $marker
         Click-Control $main (Get-ControlPoint $root 'Settings')
         $softwareFlag = '(?:^|\s)--disable-gpu(?:\s|$)'

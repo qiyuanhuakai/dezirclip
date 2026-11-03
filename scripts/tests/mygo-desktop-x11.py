@@ -580,6 +580,13 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         print('Verified legacy window dimensions and a live resize survive main WebView destruction')
         selected = open_appearance('Settings', 'Appearance', 'Retro')
         assert selected.get_state_set().contains(atspi.StateType.PRESSED)
+        opacity = wait_for(lambda: next((node for node,name,interfaces,_ in mygo_nodes(atspi, executable)
+                                          if name == 'Preview opacity' and 'Value' in interfaces), None), 'Preview opacity slider')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            for value in (0, 100, 34):
+                assert atspi.Value.set_current_value(opacity, value)
+                wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.preview_opacity'").fetchone() == (str(value),),
+                         'Preview opacity did not reach the Service')
         wait_for(lambda: find_item(family, text=True), 'New WebView did not restore the selected font family')
         print('Verified saved theme, color mode, language and installed UI font selection in a newly opened WebView')
         details = open_settings_group('About', 'View build details')
@@ -977,6 +984,8 @@ def check(desktop, pinned, audio):
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.silent_start','false')")
         if audio is not None:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.sound_enabled','true')")
+        if not pinned:
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.preview_opacity','0')")
         if pinned:
             db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
                            [('app.window_width','660'),('app.window_height','620')])
@@ -1227,6 +1236,19 @@ def check_preview(button, atspi):
             time.sleep(.05)
         raise AssertionError('No visible native preview for the selected history row')
     preview_id, hover = preview_bounds()
+    frame = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), preview_id)
+    def clear_background_and_visible_ink():
+        pixels = Gdk.pixbuf_get_from_window(frame, 0, 0, frame.get_width(), frame.get_height())
+        if not pixels or not pixels.get_has_alpha(): return False
+        data = pixels.get_pixels()
+        stride = pixels.get_rowstride()
+        width, height = pixels.get_width(), pixels.get_height()
+        return (data[(height-4)*stride+(width-4)*4+3] == 0
+                and any(data[y*stride+x*4+3] >= 220 for y in range(5,height-5) for x in range(5,width-5)))
+    deadline = time.monotonic()+4
+    while not clear_background_and_visible_ink():
+        assert time.monotonic() < deadline, 'Zero preview opacity must clear only the background and leave opaque content'
+        time.sleep(.05)
     assert active() == focus, 'Hover preview took keyboard focus'
     pointer.warp(screen, 0, 0)
     screen.get_display().sync()
@@ -1234,7 +1256,7 @@ def check_preview(button, atspi):
     while visible():
         assert time.monotonic() < deadline, 'Hover preview did not close after leaving the row'
         time.sleep(.05)
-    print('Verified native hover preview, original focus and dismissal')
+    print('Verified native hover preview has transparent background and opaque content at 0%, keeps focus and dismisses on leave')
     keymap = Gdk.Keymap.get_for_display(screen.get_display())
     mapped, entries = keymap.get_entries_for_keyval(Gdk.KEY_Down)
     assert mapped and atspi.generate_keyboard_event(entries[0].keycode, None, atspi.KeySynthType.PRESSRELEASE)

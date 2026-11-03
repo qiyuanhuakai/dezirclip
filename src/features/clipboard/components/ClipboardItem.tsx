@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
+import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
+import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";
 import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { listen } from "@tauri-apps/api/event";
@@ -431,6 +432,7 @@ const ClipboardItem = ({
         };
     }, [item.source_app_path]);
 
+    const previewOpacity = useContext(PreviewOpacityContext);
     const previewOwner = useRef({});
     const hideCompactPreview = () => hideCompactPreviewGlobal(previewOwner.current);
     const showCompactPreview = (anchor: CompactPreviewAnchor, fromKeyboard = false) => {
@@ -443,7 +445,7 @@ const ClipboardItem = ({
         return requestCompactPreview(previewOwner.current, anchor, {
             id: item.id, expectedHostInstanceId: item.host_instance_id,
             allowSensitive: isSensitiveEntry(item) && isRevealed,
-            language, theme, richTextSnapshotPreview,
+            language, theme, richTextSnapshotPreview, previewOpacity,
             colorMode: document.documentElement.classList.contains("dark-mode") ? "dark" : "light",
             clipboardItemFontSize: fontSize("--clipboard-item-font-size"),
             clipboardTagFontSize: fontSize("--clipboard-tag-font-size")

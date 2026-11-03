@@ -51,7 +51,7 @@ import { useOverlays } from "./shared/hooks/useOverlays";
 import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import { usePrivacySession } from "./shared/hooks/usePrivacySession";
-import { usePreviewPreferences } from "./shared/hooks/usePreviewPreferences";
+import { PreviewOpacityContext, usePreviewPreferences } from "./shared/hooks/usePreviewPreferences";
 import { beginPrivacyAccess, privacyListGeneration, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "./shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
@@ -895,6 +895,7 @@ const App = () => {
   };
 
   return (
+    <PreviewOpacityContext value={previewPreferences.opacity}>
     <div
       className="app-container"
     >
@@ -944,6 +945,7 @@ const App = () => {
       )}
 
     </div >
+    </PreviewOpacityContext>
   );
 }
 
