@@ -64,6 +64,12 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
 	t.Run("managed favorites", func(t *testing.T) {
+		// Windows may return the long path even when TEMP used an 8.3 alias.
+		sameFile := func(actual, expected string) bool {
+			left, leftErr := os.Stat(actual)
+			right, rightErr := os.Stat(expected)
+			return leftErr == nil && rightErr == nil && os.SameFile(left, right)
+		}
 		directory := filepath.Join(profile, "emoji_favorites")
 		if err := os.Mkdir(directory, 0700); err != nil {
 			t.Fatal(err)
@@ -76,7 +82,7 @@ func TestReactLibraryWithService(t *testing.T) {
 			}
 		}
 		list, err := library.EmojiFavorites(ctx, epoch, nil)
-		if err != nil || len(list.Paths) != 1 || filepath.Clean(list.Paths[0]) != sticker {
+		if err != nil || len(list.Paths) != 1 || !sameFile(list.Paths[0], sticker) {
 			t.Fatalf("managed sticker catalogue: %v %v", list.Paths, err)
 		}
 		source := filepath.Join(t.TempDir(), "dropped.png")
@@ -84,7 +90,7 @@ func TestReactLibraryWithService(t *testing.T) {
 			t.Fatal(err)
 		}
 		imported, err := library.MutateFavorite(ctx, epoch, "import", source)
-		if err != nil || filepath.Dir(imported) != directory {
+		if err != nil || !sameFile(filepath.Dir(imported), directory) {
 			t.Fatalf("file drop: %q %v", imported, err)
 		}
 		dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(ocrFixture)
@@ -102,7 +108,7 @@ func TestReactLibraryWithService(t *testing.T) {
 			t.Fatal(err)
 		}
 		refreshed, err := library.EmojiFavorites(ctx, epoch, nil)
-		if err != nil || len(refreshed.Paths) != 1 || filepath.Clean(refreshed.Paths[0]) != sticker {
+		if err != nil || len(refreshed.Paths) != 1 || !sameFile(refreshed.Paths[0], sticker) {
 			t.Fatalf("deleted favorite returned: %v %v", refreshed.Paths, err)
 		}
 		if _, err := os.Stat(imported); !os.IsNotExist(err) {
