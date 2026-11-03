@@ -35,6 +35,9 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   get_platform_info: () => shellCall("PlatformInfo"),
   list_system_fonts: () => library("SystemFonts"),
   send_emoji: args => window.mygo.call("History.SendEmoji", args.contentType, args.content, args.viewEpoch, args.paste),
+  save_emoji_favorite: args => library("MutateFavorite", currentEpoch(), "import", args.sourcePath),
+  save_emoji_favorite_data_url: args => library("ImportFavoriteData", currentEpoch(), args.dataUrl),
+  remove_emoji_favorite: args => library("MutateFavorite", currentEpoch(), "remove", args.path),
   list_emoji_favorites: async () => (await library<{ paths: string[] }>("EmojiFavorites", currentEpoch(), null)).paths,
   get_emoji_favorite_resource: async args => {
     const result = await library<{ preview?: string }>("EmojiFavorites", currentEpoch(), args.path);

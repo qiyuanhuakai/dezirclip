@@ -21,6 +21,9 @@ pub fn managed_emoji_path(data_dir: &Path, requested: &Path) -> Result<PathBuf, 
     let metadata = std::fs::symlink_metadata(&root).map_err(|_| UNAVAILABLE)?;
     if !metadata.is_dir() || metadata.file_type().is_symlink() { return Err(UNAVAILABLE.into()); }
     let canonical_root = root.canonicalize().map_err(|_| UNAVAILABLE)?;
+    if canonical_root != data_dir.canonicalize().map_err(|_| UNAVAILABLE)?.join("emoji_favorites") {
+        return Err(UNAVAILABLE.into());
+    }
     let candidate = requested.canonicalize().map_err(|_| UNAVAILABLE)?;
     let name = candidate.file_name().and_then(|name| name.to_str()).ok_or(UNAVAILABLE)?;
     let (stem, extension) = name.rsplit_once('.').ok_or(UNAVAILABLE)?;
@@ -95,6 +98,10 @@ pub fn read_image(path: &Path) -> Result<String, String> {
 }
 
 pub fn read_display_image(path: &Path, long_edge: u32, short_edge: u32) -> Result<String, String> {
+    image_data_url(&read_image_bytes(path)?, long_edge, short_edge)
+}
+
+pub fn read_image_bytes(path: &Path) -> Result<Vec<u8>, String> {
     let file = crate::local_file::open_regular_nofollow(path).map_err(|_| UNAVAILABLE)?;
     let before = file.metadata().map_err(|_| UNAVAILABLE)?;
     if before.len() == 0 || before.len() > MAX_BYTES { return Err(UNAVAILABLE.into()); }
@@ -105,7 +112,57 @@ pub fn read_display_image(path: &Path, long_edge: u32, short_edge: u32) -> Resul
         || before.modified().map_err(|_| UNAVAILABLE)? != after.modified().map_err(|_| UNAVAILABLE)? {
         return Err(UNAVAILABLE.into());
     }
-    image_data_url(&bytes, long_edge, short_edge)
+    Ok(bytes)
+}
+
+pub struct PreparedEmojiFavorite<'a> {
+    staging: tempfile::NamedTempFile,
+    target: PathBuf,
+    bytes: &'a [u8],
+}
+
+pub fn prepare_emoji_favorite<'a>(directory: &Path, bytes: &'a [u8]) -> Result<PreparedEmojiFavorite<'a>, String> {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    use std::io::Write;
+    if bytes.is_empty() || bytes.len() as u64 > MAX_BYTES { return Err(UNAVAILABLE.into()); }
+    let format = image::guess_format(bytes).map_err(|_| UNAVAILABLE)?;
+    let extension = match format {
+        ImageFormat::Png => "png", ImageFormat::Jpeg => "jpg", ImageFormat::Gif => "gif", ImageFormat::WebP => "webp",
+        _ => return Err(UNAVAILABLE.into()),
+    };
+    let (width, height) = ImageReader::with_format(Cursor::new(bytes), format).into_dimensions().map_err(|_| UNAVAILABLE)?;
+    if width == 0 || height == 0 || width > 16384 || height > 16384 || u64::from(width) * u64::from(height) > 40_000_000 {
+        return Err(UNAVAILABLE.into());
+    }
+    let mut hash = DefaultHasher::new();
+    bytes.hash(&mut hash);
+    let root = directory.join("emoji_favorites");
+    match std::fs::create_dir(&root) {
+        Err(error) if error.kind() != std::io::ErrorKind::AlreadyExists => return Err(UNAVAILABLE.into()),
+        _ => {}
+    }
+    let root = root.canonicalize().map_err(|_| UNAVAILABLE)?;
+    if root != directory.canonicalize().map_err(|_| UNAVAILABLE)?.join("emoji_favorites") { return Err(UNAVAILABLE.into()); }
+    let target = root.join(format!("fav_{:x}.{extension}", hash.finish()));
+    let mut staging = tempfile::NamedTempFile::new_in(&root).map_err(|_| UNAVAILABLE)?;
+    staging.write_all(bytes).map_err(|_| UNAVAILABLE)?;
+    Ok(PreparedEmojiFavorite { staging, target, bytes })
+}
+
+impl PreparedEmojiFavorite<'_> {
+    pub fn publish(self) -> Result<String, String> {
+        if let Err(error) = self.staging.persist_noclobber(&self.target) {
+            if error.error.kind() != std::io::ErrorKind::AlreadyExists || read_image_bytes(&self.target)? != self.bytes {
+                return Err(UNAVAILABLE.into());
+            }
+        }
+        Ok(dunce::simplified(&self.target).to_string_lossy().into_owned())
+    }
+}
+
+pub fn remove_emoji_favorite(directory: &Path, path: &Path) -> Result<(), String> {
+    let managed = managed_emoji_path(directory, path)?;
+    std::fs::remove_file(managed).map_err(|_| UNAVAILABLE.to_owned())
 }
 
 #[cfg(test)]

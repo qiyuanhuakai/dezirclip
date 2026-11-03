@@ -224,9 +224,9 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     });
   };
 
-  const removeFavoritePath = (path: string) => {
+  const removeFavoritePath = async (path: string) => {
+    await invoke("remove_emoji_favorite", { path });
     persistFavorites((prev) => prev.filter((p) => p !== path));
-    invoke("remove_emoji_favorite", { path }).catch(console.error);
   };
 
   useEffect(() => {
@@ -236,7 +236,8 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     invoke<string[]>("list_emoji_favorites")
       .then((diskPaths) => {
         if (cancelled) return;
-        const merged = dedupeFavoritePaths([...favorites, ...(Array.isArray(diskPaths) ? diskPaths : [])]);
+        const present = new Set(diskPaths);
+        const merged = dedupeFavoritePaths([...favorites.filter(path => present.has(path)), ...diskPaths]);
         const current = dedupeFavoritePaths(favorites);
         if (
           merged.length === current.length &&
@@ -624,7 +625,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
                     title={t("delete") || "删除"}
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeFavoritePath(path);
+                      void removeFavoritePath(path).catch(console.error);
                     }}
                   >
                     <X size={12} />

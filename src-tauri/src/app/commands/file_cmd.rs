@@ -4,8 +4,6 @@ use crate::error::{AppError, AppResult};
 use base64::Engine;
 use image::ImageFormat;
 use serde::Serialize;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 use tauri::State;
 
@@ -52,42 +50,6 @@ pub(crate) fn image_ext_from_bytes(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn image_ext_from_mime(mime: &str) -> Option<&'static str> {
-    match mime {
-        "image/gif" => Some("gif"),
-        "image/webp" => Some("webp"),
-        "image/jpeg" => Some("jpg"),
-        "image/png" => Some("png"),
-        _ => None,
-    }
-}
-
-pub(crate) fn save_emoji_favorite_bytes_to_dir(
-    data_dir: &Path,
-    bytes: &[u8],
-    ext: &str,
-) -> AppResult<String> {
-    let ext = normalize_image_ext(ext)
-        .ok_or_else(|| AppError::Validation("unsupported file type".to_string()))?;
-
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    let favorites_dir = data_dir.join("emoji_favorites");
-    if !favorites_dir.exists() {
-        std::fs::create_dir_all(&favorites_dir).map_err(AppError::from)?;
-    }
-
-    let file_name = format!("fav_{:x}.{}", hash, ext);
-    let target_path = favorites_dir.join(file_name);
-    if !target_path.exists() {
-        std::fs::write(&target_path, bytes).map_err(AppError::from)?;
-    }
-
-    Ok(target_path.to_string_lossy().to_string())
-}
-
 pub(crate) fn list_emoji_favorite_paths_in_dir(data_dir: &Path) -> AppResult<Vec<String>> {
     dzc_platform::user_resource::list_emoji_favorites(data_dir).map_err(AppError::Internal)
 }
@@ -105,17 +67,10 @@ pub async fn save_emoji_favorite(
         return Err(AppError::Validation("source_path is empty".to_string()));
     }
 
-    let ext = match image_ext_from_filename(source_path) {
-        Some(ext) => ext,
-        None => {
-            return Err(AppError::Validation("unsupported file type".to_string()));
-        }
-    };
-
-    let bytes = crate::infrastructure::local_file::read_regular_nofollow(Path::new(source_path)).map_err(AppError::from)?;
-
+    if image_ext_from_filename(source_path).is_none() { return Err(AppError::Validation("unsupported file type".into())); }
+    let bytes = dzc_platform::user_resource::read_image_bytes(Path::new(source_path)).map_err(AppError::Internal)?;
     let data_dir = app_data.0.lock().unwrap().clone();
-    save_emoji_favorite_bytes_to_dir(&data_dir, &bytes, ext)
+    dzc_platform::user_resource::prepare_emoji_favorite(&data_dir, &bytes).and_then(|image| image.publish()).map_err(AppError::Internal)
 }
 
 #[tauri::command]
@@ -127,19 +82,7 @@ pub async fn remove_emoji_favorite(app_data: State<'_, AppDataDir>, db: State<'_
     }
 
     let data_dir = app_data.0.lock().unwrap().clone();
-    let favorites_dir = data_dir.join("emoji_favorites");
-    let favorites_dir = favorites_dir.canonicalize().unwrap_or(favorites_dir);
-
-    let target_path = std::path::PathBuf::from(&path);
-    if let Ok(target_canonical) = target_path.canonicalize() {
-        if target_canonical.starts_with(&favorites_dir) && target_canonical.is_file() {
-            let _ = std::fs::remove_file(target_canonical);
-        }
-    } else if target_path.starts_with(&favorites_dir) && target_path.is_file() {
-        let _ = std::fs::remove_file(target_path);
-    }
-
-    Ok(())
+    dzc_platform::user_resource::remove_emoji_favorite(&data_dir, Path::new(&path)).map_err(AppError::Internal)
 }
 
 #[tauri::command]
@@ -157,35 +100,12 @@ pub async fn save_emoji_favorite_data_url(
 ) -> AppResult<String> {
     let conn = db.conn.lock().map_err(|error| AppError::Internal(error.to_string()))?;
     crate::database::ensure_writable(&conn).map_err(AppError::Internal)?;
-    let (mime, payload) = if data_url.starts_with("data:") {
-        let mut parts = data_url.splitn(2, ',');
-        let header = parts.next().unwrap_or("");
-        let payload = parts.next().unwrap_or("");
-        let mime = header
-            .trim_start_matches("data:")
-            .split(';')
-            .next()
-            .unwrap_or("");
-        (mime.to_string(), payload.to_string())
-    } else {
-        ("".to_string(), data_url)
-    };
-
-    if payload.is_empty() {
-        return Err(AppError::Validation("data_url is empty".to_string()));
-    }
-
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(payload)
-        .map_err(|e| AppError::Internal(format!("Base64 decode failed: {}", e)))?;
-
-    let ext = file_name
-        .as_deref()
-        .and_then(image_ext_from_filename)
-        .or_else(|| image_ext_from_mime(mime.as_str()))
-        .or_else(|| image_ext_from_bytes(&bytes))
-        .unwrap_or("png");
-
+    let _ = file_name;
+    let payload = if data_url.starts_with("data:") {
+        data_url.split_once(',').map(|(_, data)| data).unwrap_or("")
+    } else { &data_url };
+    if payload.len() > 22_369_624 { return Err(AppError::Validation("image exceeds 16 MiB".into())); }
+    let bytes = base64::engine::general_purpose::STANDARD.decode(payload).map_err(|error| AppError::Validation(error.to_string()))?;
     let data_dir = app_data.0.lock().unwrap().clone();
-    save_emoji_favorite_bytes_to_dir(&data_dir, &bytes, ext)
+    dzc_platform::user_resource::prepare_emoji_favorite(&data_dir, &bytes).and_then(|image| image.publish()).map_err(AppError::Internal)
 }

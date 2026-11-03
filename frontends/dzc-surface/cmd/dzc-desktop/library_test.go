@@ -79,6 +79,35 @@ func TestReactLibraryWithService(t *testing.T) {
 		if err != nil || len(list.Paths) != 1 || filepath.Clean(list.Paths[0]) != sticker {
 			t.Fatalf("managed sticker catalogue: %v %v", list.Paths, err)
 		}
+		source := filepath.Join(t.TempDir(), "dropped.png")
+		if err := os.WriteFile(source, ocrFixture, 0600); err != nil {
+			t.Fatal(err)
+		}
+		imported, err := library.MutateFavorite(ctx, epoch, "import", source)
+		if err != nil || filepath.Dir(imported) != directory {
+			t.Fatalf("file drop: %q %v", imported, err)
+		}
+		dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(ocrFixture)
+		duplicate, err := library.ImportFavoriteData(ctx, epoch, dataURL)
+		if err != nil || duplicate != imported {
+			t.Fatalf("browser drop: %q %v", duplicate, err)
+		}
+		if _, err := library.MutateFavorite(ctx, epoch+1, "remove", imported); err == nil {
+			t.Fatal("stale deletion succeeded")
+		}
+		if _, err := library.MutateFavorite(ctx, epoch, "remove", outside); err == nil {
+			t.Fatal("unmanaged deletion succeeded")
+		}
+		if _, err := library.MutateFavorite(ctx, epoch, "remove", imported); err != nil {
+			t.Fatal(err)
+		}
+		refreshed, err := library.EmojiFavorites(ctx, epoch, nil)
+		if err != nil || len(refreshed.Paths) != 1 || filepath.Clean(refreshed.Paths[0]) != sticker {
+			t.Fatalf("deleted favorite returned: %v %v", refreshed.Paths, err)
+		}
+		if _, err := os.Stat(imported); !os.IsNotExist(err) {
+			t.Fatalf("favorite persisted: %v", err)
+		}
 		resource, err := library.EmojiFavorites(ctx, epoch, &sticker)
 		if err != nil || resource.Preview == nil || !strings.HasPrefix(*resource.Preview, "data:image/png;base64,") {
 			t.Fatalf("managed thumbnail: %v", err)

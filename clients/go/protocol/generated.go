@@ -208,6 +208,7 @@ type EmojiFavoritesParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
     Path *string `json:"path,omitempty"`
+    Mutation *string `json:"mutation,omitempty"`
 }
 
 type EmojiFavoritesResult struct {

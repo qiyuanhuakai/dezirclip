@@ -117,6 +117,32 @@ impl Host {
 
     pub(crate) fn emoji_favorites(&self, session: &Session, request: EmojiFavoritesParams) -> Result<Value, WireErrorCode> {
         self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        if let Some(action) = request.mutation.as_deref() {
+            use dzc_platform::user_resource;
+            let path = std::path::Path::new(request.path.as_deref().ok_or(WireErrorCode::InvalidRequest)?);
+            if !path.is_absolute() { return Err(WireErrorCode::InvalidRequest); }
+            let image = match action {
+                "import" => {
+                    let source = user_resource::selected_background_path(&self.directory, path).map_err(|_| WireErrorCode::InvalidRequest)?;
+                    Some(user_resource::read_image_bytes(&source).map_err(|_| WireErrorCode::InvalidRequest)?)
+                }
+                "remove" => None,
+                _ => return Err(WireErrorCode::InvalidRequest),
+            };
+            let privacy = self.history.privacy();
+            let prepared = if let Some(bytes) = image.as_ref() {
+                privacy.with_writable_profile(request.expected_epoch, crate::router::now_ms()?, || ()).map_err(denied)?;
+                Some(user_resource::prepare_emoji_favorite(&self.directory, bytes).map_err(|_| WireErrorCode::InvalidRequest)?)
+            } else { None };
+            let paths = privacy.with_writable_profile(request.expected_epoch, crate::router::now_ms()?, || {
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                match prepared {
+                    Some(image) => image.publish().map(|path| vec![path]),
+                    None => user_resource::remove_emoji_favorite(&self.directory, path).map(|()| Vec::new()),
+                }.map_err(|_| WireErrorCode::InvalidRequest)
+            }).map_err(denied)??;
+            return encoded(EmojiFavoritesResult { paths, preview: None });
+        }
         let (paths, preview) = match request.path {
             Some(path) => (Vec::new(), Some(dzc_platform::user_resource::read_managed_emoji(&self.directory, path.as_ref(), true)
                 .map_err(|_| WireErrorCode::InvalidRequest)?)),

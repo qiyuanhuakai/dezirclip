@@ -96,11 +96,22 @@ func (client *Client) PasteWindowSelection(ctx context.Context, params protocol.
 	if !params.Paste || params.ServiceInstanceId != client.hello.State.ServiceInstanceId {
 		return ErrProtocol
 	}
+	return client.callWindowPaste(ctx, protocol.MethodDesktopWindowPaste, params)
+}
+
+func (client *Client) PasteWindowEmoji(ctx context.Context, params protocol.WindowEmojiParams) error {
+	if !params.Paste || params.ServiceInstanceId != client.hello.State.ServiceInstanceId {
+		return ErrProtocol
+	}
+	return client.callWindowPaste(ctx, protocol.MethodDesktopWindowEmoji, params)
+}
+
+func (client *Client) callWindowPaste(ctx context.Context, method protocol.Method, params any) error {
 	if err := grantFocusRestore(client.conn); err != nil {
 		return err
 	}
 	var result protocol.OperationResult
-	err := client.Call(ctx, protocol.MethodDesktopWindowPaste, params, "OperationResult", &result)
+	err := client.Call(ctx, method, params, "OperationResult", &result)
 	if err == nil && !result.Performed {
 		return ErrProtocol
 	}

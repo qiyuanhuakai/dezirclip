@@ -18,6 +18,7 @@ native-fonts = ["dep:font-kit", "dzc-protocol/wire"]
 native-ocr = ["dep:windows-core"]
 
 [dependencies]
+tempfile = "3"
 dunce = "1"
 font-kit = { workspace = true, optional = true }
 xcap = { workspace = true, optional = true }

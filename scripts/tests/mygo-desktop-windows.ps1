@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -35,6 +35,31 @@ function Wait-Until([scriptblock]$Check, [string]$Failure, [int]$Seconds = 30) {
         Start-Sleep -Milliseconds 80
     }
     throw $Failure
+}
+
+function Get-ControlPoint($root, [string]$Name) {
+    $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Name)
+    return Wait-Until {
+        $row = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+        if ($row -and !$row.Current.IsOffscreen -and !$row.Current.BoundingRectangle.IsEmpty) {
+            $bounds = $row.Current.BoundingRectangle
+            if ($bounds.Width -gt 0 -and $bounds.Height -gt 0) {
+                return [System.Drawing.Point]::new([int]($bounds.Left + $bounds.Width / 2), [int]($bounds.Top + $bounds.Height / 2))
+            }
+        }
+    } "Control missing from the shared WebView2 accessibility tree: $Name"
+}
+
+function Click-Control($main, $point) {
+    if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before click' }
+    if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not position pointer on the control' }
+    $hit = New-Object MyGoInput+Point
+    $hit.x, $hit.y = $point.X, $point.Y
+    if ([MyGoInput]::GetAncestor([MyGoInput]::WindowFromPoint($hit), 2) -ne $main.MainWindowHandle) {
+        throw 'Control coordinates do not belong to the original MyGo WebView window'
+    }
+    [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+    [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
 }
 
 function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Editor, $Form) {
@@ -86,9 +111,13 @@ try {
 import os, sqlite3
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
-                   [("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false")])
+                   [("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
+    if ($Emoji) {
+        & $cli service start --json | Out-Null
+        if ($LASTEXITCODE) { throw 'Could not start the independent Service before MyGo' }
+    }
     [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
     $form.Show()
     $form.Activate()
@@ -105,16 +134,6 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     $webProcesses = @(Wait-Until {
         Get-DesktopProcesses @($main.Id) | Where-Object { $_.Name -eq 'msedgewebview2.exe' }
     } 'No WebView2 descendants found for the shared main window')
-    $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $marker)
-    $point = Wait-Until {
-        $row = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
-        if ($row -and !$row.Current.IsOffscreen -and !$row.Current.BoundingRectangle.IsEmpty) {
-            $bounds = $row.Current.BoundingRectangle
-            if ($bounds.Width -gt 0 -and $bounds.Height -gt 0) {
-                return [System.Drawing.Point]::new([int]($bounds.Left + $bounds.Width / 2), [int]($bounds.Top + $bounds.Height / 2))
-            }
-        }
-    } 'Synthetic history row missing from the shared WebView2 accessibility tree'
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -ge 22621) {
         $observed = @{}
@@ -135,19 +154,19 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             Write-Output ("DWM HRESULT/value, backdrop={0}, dark={1}, border={2}" -f $observed[38],$observed[20],$observed[34])
         }
     }
-    if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before row click' }
-    if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not position pointer on the history row' }
-    $hit = New-Object MyGoInput+Point
-    $hit.x, $hit.y = $point.X, $point.Y
-    if ([MyGoInput]::GetAncestor([MyGoInput]::WindowFromPoint($hit), 2) -ne $main.MainWindowHandle) {
-        throw 'Physical row coordinates do not belong to the original MyGo WebView window'
+    if ($Emoji) {
+        Click-Control $main (Get-ControlPoint $root 'Stickers')
+        $marker = [char]::ConvertFromUtf32(0x1f600)
     }
-    [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
-    [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+    Click-Control $main (Get-ControlPoint $root $marker)
     $null = Wait-Until {
         $edit.Text -ceq $marker -and $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle
     } 'Click did not paste the exact history text into the original editor'
     if ([Windows.Forms.Clipboard]::GetText() -cne $marker) { throw 'Windows clipboard differs from selected history text' }
+    if ($Emoji) {
+        Write-Output 'Verified physical WebView2 emoji click pasted into the original editor using an already-running Service'
+        return
+    }
     $null = Wait-Until { $main.HasExited } 'Unpinned WebView2 main window did not exit'
     if ($resident.HasExited) { throw 'Native resident exited with the main window' }
     Write-Output 'Verified shared WebView2 row click, exact clipboard and editor text, restored focus, and independent native resident'
@@ -193,6 +212,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     throw $failure
 } finally {
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
+    if ($main -and !$main.HasExited) { $main.Kill(); $main.WaitForExit() }
     & $cli service stop | Out-Null
     $form.Dispose()
 }

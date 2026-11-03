@@ -875,6 +875,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 32768
+        },
+        "mutation": {
+          "type": "string",
+          "enum": [
+            "import",
+            "remove"
+          ]
         }
       },
       "required": [
