@@ -194,7 +194,7 @@ export const useSettingsPostInit = ({
     if (settings["app.rich_paste_hotkey"]) setRichPasteHotkey(settings["app.rich_paste_hotkey"]);
     if (settings["app.search_hotkey"] !== undefined) setSearchHotkey(settings["app.search_hotkey"]);
     if (settings["app.sequential_mode"] === "true") setSequentialModeState(true);
-    if (settings["app.sound_enabled"] === "true") setSoundEnabled(true);
+    setSoundEnabled(settings["app.sound_enabled"] === "true");
     if (settings["app.sound_volume"]) {
       const next = parseInt(settings["app.sound_volume"], 10);
       if (Number.isFinite(next)) setSoundVolume(Math.min(100, Math.max(0, next)));

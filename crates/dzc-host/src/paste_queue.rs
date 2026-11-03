@@ -439,6 +439,7 @@ impl Host {
                 .send(&method, text.as_deref(), &kind, || validate().is_ok())
                 .map_err(|_| WireErrorCode::Unavailable),
         )?;
+        self.play_feedback(dzc_platform::sound::Cue::Paste);
         let complete = if !delete && id < 0 {
             self.history
                 .privacy()

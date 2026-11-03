@@ -5,6 +5,9 @@ impl HistoryService {
     pub fn default_application(&self, kind: &str) -> CoreResult<Option<String>> {
         self.repository.default_application(kind)
     }
+    pub fn feedback_volume(&self, paste: bool) -> CoreResult<u8> {
+        self.repository.feedback_volume(paste)
+    }
     pub fn desktop_preferences(&self) -> CoreResult<std::collections::HashMap<String, String>> {
         self.repository.desktop_preferences()
     }
@@ -34,6 +37,7 @@ impl HistoryService {
     pub fn is_view_setting(key: &str) -> bool {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection" | "app.silent_start" | "app.hide_tray_icon"
+            | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
     }
@@ -51,7 +55,7 @@ impl HistoryService {
             "app.clipboard_item_font_size" => value.parse::<u8>().is_ok_and(|v| (11..=18).contains(&v)),
             "app.clipboard_tag_font_size" => value.parse::<u8>().is_ok_and(|v| (8..=14).contains(&v)),
             "app.custom_background" => value.is_empty() || (value.len() <= 32_768 && !value.contains('\0') && std::path::Path::new(value).is_absolute()),
-            "app.custom_background_opacity" | "app.surface_opacity" => value.parse::<u8>().is_ok_and(|v| v <= 100),
+            "app.sound_volume" | "app.custom_background_opacity" | "app.surface_opacity" => value.parse::<u8>().is_ok_and(|v| v <= 100),
             _ => Self::is_view_setting(key) && matches!(value, "true" | "false"),
         };
         if !valid { return Err(super::CoreError::validation("ViewSettingInvalid")); }
@@ -92,5 +96,27 @@ impl HistoryService {
     /// A fixed read-only capture policy snapshot, never arbitrary settings IPC.
     pub fn capture_settings_snapshot(&self) -> CoreResult<CaptureSettings> {
         self.repository.capture_settings_snapshot()
+    }
+}
+
+#[cfg(test)]
+mod feedback_tests {
+    use super::HistoryService;
+    #[test]
+    fn feedback_respects_master_switch_paste_switch_and_volume() {
+        let history = HistoryService::open(std::path::Path::new(":memory:")).unwrap();
+        let epoch = history.runtime_snapshot(0).unwrap().privacy_epoch;
+        let save = |key, value| history.update_view_setting(key, value, epoch);
+        assert_eq!(history.feedback_volume(false).unwrap(), 0);
+        save("app.sound_enabled", "true").unwrap();
+        assert_eq!(history.feedback_volume(true).unwrap(), 70);
+        save("app.sound_volume", "26").unwrap();
+        save("app.sound_paste_enabled", "false").unwrap();
+        assert_eq!(history.feedback_volume(false).unwrap(), 26);
+        assert_eq!(history.feedback_volume(true).unwrap(), 0);
+        assert!(save("app.sound_volume", "101").is_err());
+        assert!(save("app.sound_paste_enabled", "1").is_err());
+        save("app.sound_volume", "0").unwrap();
+        assert_eq!(history.feedback_volume(false).unwrap(), 0);
     }
 }

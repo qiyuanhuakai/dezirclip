@@ -39,6 +39,7 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   set_tray_visible: args => shellCall("SetTrayVisible", args.visible, currentEpoch()),
+  set_sound_enabled: args => library("SetSetting", "app.sound_enabled", String(args.enabled), currentEpoch()),
   set_silent_start: args => library("SetSetting", "app.silent_start", String(args.enabled), currentEpoch()),
   open_content: args => {
     const epoch = currentEpoch();

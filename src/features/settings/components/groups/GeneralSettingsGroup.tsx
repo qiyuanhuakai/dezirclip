@@ -95,6 +95,25 @@ const GeneralSettingsGroup = ({
     const [loginError, setLoginError] = useState("");
     const [traySaving, setTraySaving] = useState(false);
     const [trayError, setTrayError] = useState("");
+    const [soundSaving, setSoundSaving] = useState(false);
+    const [soundError, setSoundError] = useState("");
+    const commitSound = async (enabled: boolean, pasteOnly: boolean) => {
+        setSoundSaving(true);
+        setSoundError("");
+        try {
+            if (pasteOnly) {
+                await invoke("save_setting", { key: "app.sound_paste_enabled", value: String(enabled) });
+                setPasteSoundEnabled(enabled);
+            } else {
+                await invoke("set_sound_enabled", { enabled });
+                setSoundEnabled(enabled);
+            }
+        } catch (error) {
+            setSoundError(String(error));
+        } finally {
+            setSoundSaving(false);
+        }
+    };
     const [silentSaving, setSilentSaving] = useState(false);
     const [silentError, setSilentError] = useState("");
     const [idleDestroyDraft, setIdleDestroyDraft] = useState(idleDestroySeconds.toString());
@@ -307,14 +326,13 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={soundEnabled}
-                            onChange={(e) => {
-                                const enabled = e.target.checked;
-                                setSoundEnabled(enabled);
-                                invoke("set_sound_enabled", { enabled }).catch(console.error);
-                            }}
+                            aria-label={t('sound_effects')}
+                            disabled={soundSaving}
+                            onChange={(e) => void commitSound(e.target.checked, false)}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {soundError && <span role="alert">{t("common_error")} · {soundError}</span>}
                 </div>
                 {soundEnabled && (
                     <div className="setting-item setting-item--detail">
@@ -327,6 +345,7 @@ const GeneralSettingsGroup = ({
                             min="0"
                             max="100"
                             step="1"
+                            aria-label={t("sound_volume")}
                             value={soundVolume}
                             onChange={(e) => {
                                 const volume = Number(e.target.value);
@@ -346,11 +365,9 @@ const GeneralSettingsGroup = ({
                                 className="cb"
                                 type="checkbox"
                                 checked={pasteSoundEnabled}
-                                onChange={(e) => {
-                                    const enabled = e.target.checked;
-                                    setPasteSoundEnabled(enabled);
-                                    invoke("save_setting", { key: 'app.sound_paste_enabled', value: String(enabled) }).catch(console.error);
-                                }}
+                                aria-label={t('paste_sound')}
+                                disabled={soundSaving}
+                                onChange={(e) => void commitSound(e.target.checked, true)}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>

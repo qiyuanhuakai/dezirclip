@@ -111,6 +111,7 @@ impl Host {
         if let Some((target, method, plain)) = input {
             let kind = if plain.is_some() { "text" } else { "binary" };
             target.send(&method, plain.as_deref(), kind, authorized).map_err(|_| WireErrorCode::Unavailable)?;
+            self.play_feedback(dzc_platform::sound::Cue::Paste);
         }
         encoded(OperationResult { performed: true })
     }
@@ -213,6 +214,7 @@ impl Host {
                     && crate::router::now_ms().is_ok_and(|now| self.history.privacy().check_read(&permit, now).is_ok()))
                     .map_err(|_| WireErrorCode::Unavailable)?;
             } else if let Some(target)=paste_target { target.send()?; } else { self.actions.paste()?; }
+            self.play_feedback(dzc_platform::sound::Cue::Paste);
         }
         if request.delete_after_use==Some(true) {
             if request.id<0 {self.session.lock().map_err(|_|WireErrorCode::Unavailable)?.retain(|row|row.id!=request.id);}

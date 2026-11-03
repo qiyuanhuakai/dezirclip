@@ -142,6 +142,7 @@ impl Host {
             if request.paste==Some(true) {
                 self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
                 if let Some(target)=upload.paste_target { target.send()?; } else { self.actions.paste()?; }
+                self.play_feedback(dzc_platform::sound::Cue::Paste);
             }
             return serde_json::to_value(OperationResult{performed:true}).map_err(|_|WireErrorCode::Internal);
         }

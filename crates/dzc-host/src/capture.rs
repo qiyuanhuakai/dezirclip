@@ -18,6 +18,10 @@ struct HeadlessHooks(Weak<Host>);
 impl CaptureHooks for HeadlessHooks {
     fn stored(&self,capture:StoredCapture,work:crate::CaptureWork) {
         let Some(host)=self.0.upgrade() else {return;};
+        if capture.privacy_ticket.as_ref().is_some_and(|ticket| crate::router::now_ms()
+            .is_ok_and(|now| host.history.privacy().check_capture(ticket, now).is_ok())) {
+            host.play_feedback(dzc_platform::sound::Cue::Copy);
+        }
         let observer=self.0.clone();
         let changed=Arc::new(move|id:i64,status:&'static str| {if let Some(host)=observer.upgrade() {let _=host.publish(EventKind::EntryUpdated,EventData{entry_id:Some(id),status:Some(status.into())});}});
         if crate::schedule_capture_ocr(host.history.clone(),&capture,work,changed).is_err() {diagnostic(&host,"CaptureFollowUpUnavailable");}

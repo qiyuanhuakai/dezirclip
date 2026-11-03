@@ -1,4 +1,6 @@
 """Inspect the packaged MyGo WebView and copy a synthetic row in a private Xvfb session."""
+import array
+import contextlib
 import json
 import ctypes
 import errno
@@ -13,6 +15,77 @@ import subprocess
 import sys
 import tempfile
 import time
+
+
+@contextlib.contextmanager
+def private_audio(home):
+    socket = home / 'audio.sock'
+    os.environ.update(PULSE_SERVER=f'unix:{socket}', PULSE_RUNTIME_PATH=str(home/'runtime/pulse'))
+    audio = home/'output.pcm'
+    with subprocess.Popen(['pulseaudio', '-n', '--daemonize=no', '--use-pid-file=no', '--exit-idle-time=-1',
+                           '--disable-shm=yes',
+                           '-L', 'module-null-sink sink_name=fixture rate=22050 channels=1',
+                           '-L', f'module-native-protocol-unix socket={socket} auth-anonymous=1'],
+                          stdout=subprocess.DEVNULL) as server:
+        try:
+            deadline = time.monotonic() + 8
+            while not socket.exists():
+                assert server.poll() is None and time.monotonic() < deadline, 'Private audio server did not start'
+                time.sleep(.025)
+            with audio.open('wb') as stream, subprocess.Popen(
+                    ['parec', '-d', 'fixture.monitor', '--raw', '--format=s16le', '--rate=22050',
+                     '--channels=1', '--latency-msec=20'], stdout=stream) as recorder:
+                try:
+                    while audio.stat().st_size < 4096:
+                        assert recorder.poll() is None and time.monotonic() < deadline, 'Private monitor unavailable'
+                        time.sleep(.025)
+                    yield audio
+                finally:
+                    recorder.terminate()
+        finally:
+            server.terminate()
+
+
+def expect_cue(audio, offset, paste):
+    # Match the pitches and spacing of the Service cue. GTK and the window manager
+    # share this private sink and may produce a UI sound before the clipboard cue.
+    def tone(start, low, high):
+        segment = pcm[start:start+440]
+        cycles = sum(a < 0 <= b for a, b in zip(segment, segment[1:]))
+        return max(segment, default=0) > 100 and low <= cycles <= high
+
+    deadline = time.monotonic() + 5
+    scanned = 0
+    while time.monotonic() < deadline:
+        with audio.open('rb') as source:
+            source.seek(offset)
+            pcm = array.array('h')
+            pcm.frombytes(source.read())
+        while scanned + 3800 <= len(pcm):
+            start = scanned
+            scanned += 44
+            first_pitch = (17, 21) if paste else (8, 11)
+            if not tone(start, *first_pitch):
+                continue
+            # The monitor may drop the start of a short sound as its sink wakes up.
+            # Require two distinct pitched bursts separated by quiet, even then.
+            if paste:
+                quiet = False
+                for offset in range(start+550, start+3300, 110):
+                    if max(abs(x) for x in pcm[offset:offset+110]) < 50:
+                        quiet = True
+                    elif quiet and tone(offset, 20, 25):
+                        return
+            elif max(abs(x) for x in pcm[start+1500:start+3050]) < 50:
+                return
+        time.sleep(.04)
+    active = []
+    for i in range(0, len(pcm)-220, 220):
+        frame = pcm[i:i+220]
+        peak = max(abs(x) for x in frame)
+        if peak > 100:
+            active.append((i//220, peak, sum(a < 0 <= b for a, b in zip(frame, frame[1:]))))
+    raise AssertionError(f'Missing {"paste" if paste else "copy"} cue, active 10ms frames (index, peak, cycles): {active[:64]}')
 
 
 def memory_sample(label, roots):
@@ -37,7 +110,7 @@ def memory_sample(label, roots):
     return selected
 
 
-def check_native_panels(marker, desktop, service_pid, target, editor, paste_row):
+def check_native_panels(marker, desktop, service_pid, target, editor, paste_row, audio):
     import gi
     gi.require_version('Gtk', '3.0')
     from gi.repository import Gtk, Gdk, GdkPixbuf
@@ -84,12 +157,14 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row)
         assert any(Path(f'/proc/{pid}/exe').resolve() == Path(f'/proc/{desktop.pid}/exe').resolve() for pid in peers)
         watchers = [os.pidfd_open(pid) for pid in peers]
         main_id = subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+        audio_start = audio.stat().st_size
         paste_row()
         deadline = time.monotonic() + 6
         while editor.get_text() != marker or subprocess.run(['xwininfo', '-id', main_id], capture_output=True).returncode == 0:
             assert time.monotonic() < deadline, f'Main row did not paste into the original editor and close (text={editor.get_text()!r})'
             pump()
             time.sleep(.05)
+        expect_cue(audio, audio_start, paste=True)
         assert target.is_active()
         assert subprocess.check_output(['xclip', '-selection', 'clipboard', '-o']).decode() == marker
         print('Verified shared React row pasted complete text into the original editor and closed the main window', flush=True)
@@ -107,6 +182,7 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row)
         time.sleep(1)
         memory_sample('Main closed, before native panels', roots)
         editor.set_text('')
+        audio_start = audio.stat().st_size
         other = 'Different quick-paste fixture ' + secrets.token_hex(8)
         subprocess.run(['xclip', '-selection', 'clipboard', '-i'], input=other.encode(),
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
@@ -114,6 +190,7 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row)
         editor.grab_focus()
         pump()
         assert target.is_active(), 'Original editor lost focus before the resident shortcut'
+        expect_cue(audio, audio_start, paste=False)
         original = focus()
         assert original not in (0, 1)
         chord(0xffe3, 0xffe1, ord('v'))
@@ -128,12 +205,15 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row)
         for char in marker.split()[-1]:
             chord(ord(char))
         time.sleep(1)
+        audio_start = audio.stat().st_size
         chord(0xff0d)
         deadline = time.monotonic() + 6
         while editor.get_text() != marker:
             assert time.monotonic() < deadline, 'Native selection did not paste full text into the original editor'
             pump()
             time.sleep(.025)
+        expect_cue(audio, audio_start, paste=True)
+        print('Recorded native copy and both main and closed-window quick paste cues on the private monitor')
         assert focus() == original
         print('Verified independent global shortcut, native search, Enter and full text in the original editor')
 
@@ -493,6 +573,15 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         silent = wait_for(lambda: find_item('Silent Start'), 'Silent Start checkbox missing')
         hide_tray = wait_for(lambda: find_item('Hide Tray Icon'), 'Hide Tray Icon checkbox missing')
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            for label, key, enabled in [('Sound Effects', 'app.sound_enabled', True),
+                                        ('Paste Sound', 'app.sound_paste_enabled', False),
+                                        ('Paste Sound', 'app.sound_paste_enabled', True),
+                                        ('Sound Effects', 'app.sound_enabled', False)]:
+                checkbox = wait_for(lambda: find_item(label), f'{label} checkbox missing')
+                assert atspi.Action.do_action(checkbox, 0)
+                wait_for(lambda: db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone() == (str(enabled).lower(),)
+                         and checkbox.get_state_set().contains(atspi.StateType.CHECKED) == enabled,
+                         f'{label} did not reflect the committed setting')
             for hidden in [True, False]:
                 assert atspi.Action.do_action(hide_tray, 0)
                 wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hide_tray_icon'").fetchone() == (str(hidden).lower(),)
@@ -726,7 +815,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         alternate.destroy()
 
 
-def check(desktop, pinned):
+def check(desktop, pinned, audio):
     import gi
     gi.require_version('Atspi', '2.0')
     gi.require_version('Gtk', '3.0')
@@ -738,6 +827,8 @@ def check(desktop, pinned):
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.silent_start','false')")
+        if audio is not None:
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.sound_enabled','true')")
         if pinned:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.custom_background_opacity','100')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.emoji_panel_enabled','true')")
@@ -878,7 +969,7 @@ def check(desktop, pinned):
             rect = Atspi.Component.get_extents(row, Atspi.CoordType.SCREEN)
             assert rect.width > 0 and rect.height > 0
             assert Atspi.generate_mouse_event(rect.x + rect.width//2, rect.y + rect.height//2, 'b1c')
-        check_native_panels(marker, process, endpoint['pid'], target, editor, paste_row)
+        check_native_panels(marker, process, endpoint['pid'], target, editor, paste_row, audio)
         print('Verified independent MyGo WebView, visible synthetic history, native Copy action and clipboard text')
     finally:
         if process.poll() is None:
@@ -999,7 +1090,9 @@ with open(sys.argv[1], 'r+') as document:
                     ['xprop', '-root', '_NET_SUPPORTING_WM_CHECK'], text=True):
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
-            check(desktop, '--pinned' in sys.argv[3:])
+            pinned = '--pinned' in sys.argv[3:]
+            with (contextlib.nullcontext() if pinned else private_audio(home)) as audio:
+                check(desktop, pinned, audio)
         finally:
             wm.terminate()
             wm.wait(timeout=5)

@@ -1,6 +1,5 @@
 mod utils;
 
-use crate::app_state::SettingsState;
 pub use crate::database::DbState;
 use dzc_core::capture::{CaptureContext, CaptureEngine, CaptureEvent, CaptureFrame, CaptureOutcome, CaptureReadMetadata, CaptureSettings, CaptureSource, StoredCapture, OwnClipboardCopy};
 use std::sync::{Arc, Mutex, atomic::Ordering};
@@ -52,7 +51,7 @@ fn distribute(app:&AppHandle,capture:StoredCapture,work:dzc_host::CaptureWork) {
     let history=app.state::<DbState>().history_service();
     let Some(ticket)=capture.privacy_ticket else {return;};
     if history.privacy().check_capture(&ticket,timestamp()).is_err() {return;}
-    let settings=app.state::<SettingsState>();
+    dzc_platform::sound::play(&history, dzc_platform::sound::Cue::Copy);
     let id=capture.entry.id;
     let updated=Arc::new(move|id:i64,status:&'static str| {
         if let Some(app)=self::app() {
@@ -65,7 +64,6 @@ fn distribute(app:&AppHandle,capture:StoredCapture,work:dzc_host::CaptureWork) {
     if dzc_host::schedule_capture_ocr(history,&capture,work,updated).is_err() {crate::warn!("[capture] CaptureFollowUpUnavailable");}
     let deliver=deliver_capture();
     if !deliver {crate::app::idle_destroyer::mark_frontend_catchup_pending();}
-    if settings.sound_enabled.load(Ordering::Relaxed) {let _=app.emit("play-sound","copy");}
     if deliver {
         let instance=app.try_state::<crate::app::ipc_host::DesktopHost>().and_then(|bridge|bridge.instance().ok());
         let _=app.emit("clipboard-captured",serde_json::json!({"id":id,"host_instance_id":instance}));

@@ -27,7 +27,6 @@ import { useSettingsSync } from "./shared/hooks/useSettingsSync";
 import { useTagColors } from "./shared/hooks/useTagColors";
 import { useClipboardEvents } from "./shared/hooks/useClipboardEvents";
 import { useClipboardActions } from "./shared/hooks/useClipboardActions";
-import { useSoundEffects } from "./shared/hooks/useSoundEffects";
 import { useWindowPinnedListener } from "./shared/hooks/useWindowPinnedListener";
 import { useCustomBackground } from "./shared/hooks/useCustomBackground";
 import { useDragDegradation } from "./shared/hooks/useDragDegradation";
@@ -198,11 +197,9 @@ const App = () => {
     setHasMore,
     currentOffset,
     setCurrentOffset,
-    soundEnabled,
     setSoundEnabled,
     soundVolume,
     setSoundVolume,
-    pasteSoundEnabled,
     setPasteSoundEnabled,
     setPasteMethod,
     typeFilter,
@@ -367,7 +364,6 @@ const App = () => {
     }
   }, [historyViewActive, privacyState.phase, listGeneration, mainResume.phase]);
 
-  useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
   useDragDegradation();
 

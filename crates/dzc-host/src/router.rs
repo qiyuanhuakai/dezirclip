@@ -30,6 +30,12 @@ pub trait HostActions: Send + Sync {
     fn privacy_changed(&self, _snapshot: &api::RuntimeSnapshot) {}
 }
 
+impl Host {
+    pub(crate) fn play_feedback(&self, cue: dzc_platform::sound::Cue) {
+        dzc_platform::sound::play(&self.history, cue);
+    }
+}
+
 pub trait HostLifecycle: Send + Sync {
     fn stop_capture(&self) -> Result<(), WireErrorCode>;
     fn release_ownership(&self) -> Result<(), WireErrorCode> { Ok(()) }
@@ -647,7 +653,7 @@ impl Host {
                 } else { self.history.clipboard_payload_authorized(request_body.id, &permit, now).map_err(privacy_error)? };
                 self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
                 self.copy_payload(payload)?;
-                if request.method == Method::SurfacePaste { self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?; self.actions.paste()?; }
+                if request.method == Method::SurfacePaste { self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?; self.actions.paste()?; self.play_feedback(dzc_platform::sound::Cue::Paste); }
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::SurfaceActivate | Method::SurfaceDismiss => {

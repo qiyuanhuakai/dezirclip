@@ -3,6 +3,16 @@ use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
 use std::collections::HashMap;
 
 impl SqliteClipboardRepository {
+    pub(crate) fn feedback_volume(&self, paste: bool) -> CoreResult<u8> {
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        conn.query_row("SELECT CASE WHEN
+            (SELECT value FROM settings WHERE key='app.sound_enabled')='true' AND
+            (NOT ?1 OR COALESCE((SELECT value FROM settings WHERE key='app.sound_paste_enabled'),'true')<>'false')
+            THEN COALESCE((SELECT value FROM settings WHERE key='app.sound_volume'),'70') ELSE '0' END",
+            [paste], |row| row.get::<_, String>(0))
+            .map(|v| v.parse::<u8>().unwrap_or(70).min(100))
+            .map_err(|error| CoreError::from(error.to_string()))
+    }
     pub(crate) fn desktop_preferences(&self) -> CoreResult<HashMap<String, String>> {
         let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
         let mut query = conn.prepare("SELECT key, value FROM settings WHERE key IN (
