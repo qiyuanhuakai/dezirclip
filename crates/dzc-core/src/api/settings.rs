@@ -55,6 +55,14 @@ impl HistoryService {
         self.repository.set_setting_at_epoch(key, value, epoch)
     }
 
+    pub fn set_default_application(&self, key: &str, application: &str, epoch: u64) -> CoreResult<()> {
+        if !matches!(key, "app.text" | "app.rich_text" | "app.image" | "app.video" | "app.code" | "app.url")
+            || application.len() > 32768 || application.contains('\0') {
+            return Err(super::CoreError::validation("InvalidDefaultApplication"));
+        }
+        self.repository.set_setting_at_epoch(key, application, epoch)
+    }
+
     pub fn is_capture_setting(key: &str) -> bool {
         matches!(key, "app.persistent" | "app.deduplicate" | "app.capture_files" | "app.capture_rich_text"
             | "app.privacy_protection" | "app.privacy_protection_kinds" | "app.privacy_protection_custom_rules"

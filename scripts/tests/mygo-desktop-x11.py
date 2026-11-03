@@ -437,6 +437,31 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         assert json.loads(subprocess.check_output([executable.with_name('dzc'), 'desktop-tools', 'login-status']))
         open_settings_group('Data Management', 'EXPORT CLIPBOARD HISTORY')
         print('Verified the shared Launch at Startup checkbox reads and toggles the real isolated login registration')
+        open_settings_group('Default Applications', 'Text')
+        def text_handler():
+            return next((item for item, name, _, _ in mygo_nodes(atspi, executable)
+                         if name == 'Text' and item.get_role() == atspi.Role.COMBO_BOX), None)
+        select_app = wait_for(text_handler, 'Text application selector unavailable')
+        wait_for(lambda: any('dzc-system-fixture.desktop' in text for _, _, _, text in mygo_nodes(atspi, executable)),
+                 'The operating system default text handler did not appear')
+        atspi.Component.scroll_to(select_app, atspi.ScrollType.ANYWHERE)
+        assert atspi.Component.grab_focus(select_app)
+        for char in 'dzcfixture':
+            shortcut((ord(char),))
+        wait_for(lambda: any('DzcFixture Viewer' in (name + text) for _, name, _, text in mygo_nodes(atspi, executable)),
+                 'Installed user application did not appear')
+        shortcut((Gdk.KEY_Return,))
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            def saved_app():
+                return db.execute("SELECT value FROM settings WHERE key='app.text'").fetchone()
+            wait_for(lambda: saved_app() == ('/bin/cat',), 'Rust Service did not save the installed text handler')
+            assert atspi.Component.grab_focus(select_app)
+            shortcut((Gdk.KEY_Down,))
+            shortcut((Gdk.KEY_Home,))
+            shortcut((Gdk.KEY_Return,))
+            wait_for(lambda: saved_app() == ('',), 'Returning to the system handler did not clear the override')
+        open_settings_group('Data Management', 'EXPORT CLIPBOARD HISTORY')
+        print('Verified system association, selection of an installed application and restoration of the default')
         imported_note = 'import-' + secrets.token_hex(8)
         backup = Path(os.environ['HOME'])/'fixture-backup.json'
         backup.write_text(json.dumps({'version': 'dezirclip-export-v2', 'exported_at': 1, 'entries': [{
@@ -791,6 +816,13 @@ if __name__ == '__main__':
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
             if '--pinned' in sys.argv[2:]:
+                applications = home/'data/applications'
+                applications.mkdir()
+                for name, label, program in [('dzc-system-fixture', 'System text fixture', '/bin/true'),
+                                             ('dzc-viewer-fixture', 'DzcFixture Viewer', '/bin/cat')]:
+                    (applications/(name + '.desktop')).write_text(
+                        f'[Desktop Entry]\nType=Application\nName={label}\nExec={program} %f\nMimeType=text/plain;\n')
+                (home/'config/mimeapps.list').write_text('[Default Applications]\ntext/plain=dzc-system-fixture.desktop;\n')
                 package = home/'MyGo test package'
                 package.mkdir()
                 for binary in (desktop, desktop.with_name('dzc'), desktop.with_name('dzc-service')):

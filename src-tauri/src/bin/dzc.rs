@@ -645,6 +645,8 @@ enum DesktopTool {
     LoginStatus,
     EnableLogin,
     DisableLogin,
+    InstalledApps,
+    DefaultApps,
 }
 
 fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
@@ -656,6 +658,16 @@ fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
         path.join("SKILL.md").is_file().then_some(path)
     };
     let response = match action {
+        DesktopTool::InstalledApps => serde_json::to_value(dzc_platform::apps::scan_installed_apps().map_err(|e| e.to_string())?),
+        DesktopTool::DefaultApps => {
+            let mut names = serde_json::Map::new();
+            for kind in ["text", "rich_text", "image", "video", "code", "url"] {
+                if let Ok(name) = dzc_platform::apps::get_system_default_app(kind.into()) {
+                    names.insert(kind.into(), serde_json::Value::String(name));
+                }
+            }
+            Ok(serde_json::Value::Object(names))
+        }
         DesktopTool::Info => serde_json::to_value(desktop_tools::cli_info(Some(cli.clone()), guide)),
         DesktopTool::AddToPath => serde_json::to_value(desktop_tools::install_cli_path(Some(cli))?),
         DesktopTool::LoginStatus | DesktopTool::EnableLogin | DesktopTool::DisableLogin => {

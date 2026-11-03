@@ -65,6 +65,7 @@ pub struct Host {
     pub(crate) manual_ocr_operation: Mutex<()>,
     font_scan: Mutex<()>,
     background_read: Mutex<()>,
+    application_selection: Mutex<()>,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
@@ -110,6 +111,7 @@ impl Host {
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             #[cfg(test)] after_backup_ticket: Mutex::new(None),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), background_read: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            application_selection: Mutex::new(()),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
             snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
@@ -301,6 +303,7 @@ impl Host {
                 methods.push("desktop.platform.probe");
                 methods.push("desktop.profile.info");
                 methods.push("desktop.appearance.background");
+                methods.push("desktop.applications.select");
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
@@ -370,7 +373,7 @@ impl Host {
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
     }
     pub(crate) fn independent_dispatch(method: Method) -> bool {
-        matches!(method, Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+        matches!(method, Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
@@ -510,6 +513,24 @@ impl Host {
                     _ => WireErrorCode::Unavailable,
                 })?;
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("capture_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopApplicationsSelect => {
+                let input: ApplicationSelection = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                let _selection = self.application_selection.try_lock().map_err(|_| WireErrorCode::Busy)?;
+                if !input.value.is_empty() {
+                    let installed = dzc_platform::apps::scan_installed_apps().map_err(unavailable)?;
+                    if !installed.iter().any(|app| app.path == input.value) { return Err(WireErrorCode::InvalidRequest); }
+                }
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.set_default_application(&input.key, &input.value, input.expected_epoch).map_err(|e| match e.code {
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::DesktopSettingsViewSet => {

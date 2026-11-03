@@ -17,6 +17,12 @@ function privacySnapshot(status: { privacy: { expires_at_ms: number | null } }) 
 
 const library = <T>(method: string, ...args: unknown[]) => window.mygo.call<T>(`Library.${method}`, ...args);
 
+let defaultAppsQuery: Promise<Record<string, string>> | undefined;
+function systemDefaultApps() {
+  return defaultAppsQuery ??= shellCall<Record<string, string>>("PackageTool", "default-apps")
+    .finally(() => { defaultAppsQuery = undefined; });
+}
+
 function currentEpoch() {
   const view = getPrivacyViewState();
   if (view.phase !== "ready" || !view.snapshot || view.pending) throw new Error("PrivacyStateUnavailable");
@@ -158,6 +164,11 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "scan_installed_apps") return shellCall<T>("PackageTool", "installed-apps");
+  if (command === "get_system_default_app") {
+    const names = await systemDefaultApps();
+    return (names[String(args.contentType)] ?? "") as T;
+  }
   if (command === "is_autostart_enabled") return shellCall<T>("PackageTool", "login-status");
   if (command === "toggle_autostart") return shellCall<T>("PackageTool", args.enabled ? "enable-login" : "disable-login");
   if (command === "get_cli_info") return shellCall<T>("PackageTool", "info");

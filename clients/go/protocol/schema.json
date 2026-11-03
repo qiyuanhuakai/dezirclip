@@ -388,6 +388,44 @@
         }
       ]
     },
+    "ApplicationSelection": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.text",
+            "app.rich_text",
+            "app.image",
+            "app.video",
+            "app.code",
+            "app.url"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
     "BackgroundParams": {
       "type": "object",
       "properties": {
@@ -1337,6 +1375,7 @@
         "desktop.platform.probe",
         "desktop.profile.info",
         "desktop.appearance.background",
+        "desktop.applications.select",
         "desktop.window.target",
         "desktop.window.pin",
         "desktop.tools.catalog",
@@ -2196,6 +2235,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.applications.select"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ApplicationSelection"
               }
             }
           }

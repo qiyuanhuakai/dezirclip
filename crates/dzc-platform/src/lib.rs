@@ -1,4 +1,5 @@
 //! OS adapters depend on Core's ports; Core never depends on this crate.
+pub mod apps;
 pub mod encryption;
 pub mod capture;
 pub mod local_file;

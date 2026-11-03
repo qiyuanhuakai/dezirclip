@@ -79,6 +79,25 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("isolated status: %+v %v", status, err)
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
+	t.Run("default application", func(t *testing.T) {
+		var remote *client.RemoteError
+		unlisted := filepath.Join(t.TempDir(), "unregistered-handler")
+		err := library.SetSetting(ctx, "app.text", unlisted, epoch)
+		if !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeInvalidRequest {
+			t.Fatalf("unregistered application selection: %v", err)
+		}
+		if err := library.SetSetting(ctx, "app.text", "", epoch); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := library.Preferences(ctx)
+		var preferences map[string]string
+		if err != nil || json.Unmarshal(raw, &preferences) != nil {
+			t.Fatalf("read saved selection: %v", err)
+		}
+		if value, ok := preferences["app.text"]; !ok || value != "" {
+			t.Fatal("system default did not persist")
+		}
+	})
 	t.Run("selected background", func(t *testing.T) {
 		// Incompressible pixels exercise multiple protocol chunks and the renderer file-size check.
 		picture := image.NewNRGBA(image.Rect(0, 0, 768, 768))

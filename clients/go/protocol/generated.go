@@ -99,6 +99,13 @@ type SurfaceActionParams struct {
     ServiceInstanceId *string `json:"service_instance_id,omitempty"`
 }
 
+type ApplicationSelection struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
+}
+
 type BackgroundParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
@@ -347,6 +354,7 @@ const (
     MethodDesktopPlatformProbe Method = "desktop.platform.probe"
     MethodDesktopProfileInfo Method = "desktop.profile.info"
     MethodDesktopAppearanceBackground Method = "desktop.appearance.background"
+    MethodDesktopApplicationsSelect Method = "desktop.applications.select"
     MethodDesktopWindowTarget Method = "desktop.window.target"
     MethodDesktopWindowPin Method = "desktop.window.pin"
     MethodDesktopToolsCatalog Method = "desktop.tools.catalog"

@@ -1596,6 +1596,7 @@ dependencies = [
  "arboard",
  "base64 0.22.1",
  "dbus",
+ "dirs 5.0.1",
  "dunce",
  "dzc-core",
  "dzc-protocol",

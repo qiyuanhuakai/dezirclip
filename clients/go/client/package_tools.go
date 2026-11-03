@@ -13,7 +13,7 @@ import (
 func PackageTool(ctx context.Context, action string) (json.RawMessage, error) {
 	switch action {
 	case "info", "add-to-path", "open-cli-guide", "open-theme-guide", "open-install-folder",
-		"login-status", "enable-login", "disable-login":
+		"login-status", "enable-login", "disable-login", "installed-apps", "default-apps":
 	default:
 		return nil, ErrProtocol
 	}

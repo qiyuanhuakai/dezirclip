@@ -38,6 +38,7 @@ sha2 = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt", "sync", "time", "macros"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+dirs.workspace = true
 keyring.workspace = true
 x11rb = { workspace = true, features = ["xkb"] }
 libc.workspace = true

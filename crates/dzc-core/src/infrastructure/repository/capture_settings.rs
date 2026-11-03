@@ -6,6 +6,7 @@ impl SqliteClipboardRepository {
     pub(crate) fn desktop_preferences(&self) -> CoreResult<HashMap<String, String>> {
         let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
         let mut query = conn.prepare("SELECT key, value FROM settings WHERE key IN (
+            'app.text','app.rich_text','app.image','app.video','app.code','app.url',
             'app.arrow_key_selection','app.capture_files','app.capture_rich_text','app.classification_enabled',
             'app.clipboard_item_font_size','app.clipboard_tag_font_size','app.color_mode','app.compact_mode',
             'app.custom_background','app.custom_background_opacity','app.custom_themes','app.deduplicate',

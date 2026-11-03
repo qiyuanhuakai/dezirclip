@@ -568,6 +568,15 @@ const App = () => {
   const saveAppSetting = useCallback(async (type: string, path: string) => {
     const key = `app.${type}`;
     if (appSettingsRef.current[key] === path) return;
+    if (["text", "rich_text", "image", "video", "code", "url"].includes(type)) {
+      try {
+        await invoke("save_setting", { key, value: path });
+        setAppSettings(prev => ({ ...prev, [key]: path }));
+      } catch (error) {
+        pushToast(t("common_error") + " · " + String(error));
+      }
+      return;
+    }
     const backgroundGeneration = type === "custom_background" ? ++backgroundSaveGeneration.current : 0;
     if (type === "custom_background") {
       appSettingsRef.current = { ...appSettingsRef.current, [key]: path };
