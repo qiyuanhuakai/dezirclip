@@ -321,19 +321,22 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         shortcut()
         wait_for(lambda: find_item('图片'), 'Resident shortcut did not reopen the shared WebView')
         print('Verified shared tag-row paste into the second editor and closing/reopening with the configured shortcut')
-        def open_appearance(settings, group, theme):
-            button = wait_for(lambda: find_item(settings), 'Settings button unavailable')
-            box = atspi.Component.get_extents(button, atspi.CoordType.SCREEN)
-            assert atspi.generate_mouse_event(box.x + box.width//2, box.y + box.height//2, 'b1c')
-            heading = wait_for(lambda: find_item(group) or find_item(group, text=True), 'Appearance settings unavailable')
-            if not find_item(theme):
+        def open_settings_group(name, control):
+            if not find_item(control):
+                heading = wait_for(lambda: find_item(name) or find_item(name, text=True), f'{name} settings unavailable')
                 if 'Action' in heading.get_interfaces():
                     assert atspi.Action.do_action(heading, 0)
                 else:
                     atspi.Component.scroll_to(heading, atspi.ScrollType.ANYWHERE)
                     box = atspi.Component.get_extents(heading, atspi.CoordType.SCREEN)
                     assert atspi.generate_mouse_event(box.x + box.width//2, box.y + box.height//2, 'b1c')
-            return wait_for(lambda: find_item(theme), 'Theme choices unavailable')
+            return wait_for(lambda: find_item(control), f'{control} did not appear')
+
+        def open_appearance(settings, group, theme):
+            button = wait_for(lambda: find_item(settings), 'Settings button unavailable')
+            box = atspi.Component.get_extents(button, atspi.CoordType.SCREEN)
+            assert atspi.generate_mouse_event(box.x + box.width//2, box.y + box.height//2, 'b1c')
+            return open_settings_group(group, theme)
 
         wait_for(lambda: find_item(note, text=True), 'Reopened history did not restore the saved note')
         retro = open_appearance('设置', '界面设置', '复古')
@@ -386,6 +389,63 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         assert selected.get_state_set().contains(atspi.StateType.PRESSED)
         wait_for(lambda: find_item(family, text=True), 'New WebView did not restore the selected font family')
         print('Verified saved theme, color mode, language and installed UI font selection in a newly opened WebView')
+        details = open_settings_group('About', 'View build details')
+        assert atspi.Action.do_action(details, 0)
+        build = json.loads(subprocess.check_output([executable, '--build-info']))
+        for value in [build['mygo_version'], build['target'], build['build_id']]:
+            wait_for(lambda: find_item(value, text=True), f'Main window did not report its own build detail {value}')
+        open_settings_group('Data Management', 'EXPORT CLIPBOARD HISTORY')
+        directory = str(Path(os.environ['DEZIRCLIP_DB_PATH']).parent)
+        wait_for(lambda: find_item(directory, text=True), 'Settings did not display the active Rust profile')
+        print('Verified About shows the running MyGo binary identity and Data Management shows the isolated Service profile')
+        imported_note = 'import-' + secrets.token_hex(8)
+        backup = Path(os.environ['HOME'])/'fixture-backup.json'
+        backup.write_text(json.dumps({'version': 'dezirclip-export-v2', 'exported_at': 1, 'entries': [{
+            'id': 1, 'content_type': 'text', 'content': imported_note, 'created_at': 1, 'updated_at': 1, 'tags': []
+        }]}))
+        def action(name):
+            return next((item for item, label, interfaces, _ in mygo_nodes(atspi, executable)
+                         if label.casefold() == name.casefold() and 'Action' in interfaces), None)
+        assert atspi.Action.do_action(action('Import Clipboard History'), 0)
+        browse = wait_for(lambda: action('Browse File...'), 'Backup file chooser button unavailable')
+        previous_main = subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+        assert atspi.Action.do_action(browse, 0)
+        wait_for(lambda: subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1] != previous_main
+                 and action('Open'), 'Backup file chooser did not open')
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_l))
+        location = wait_for(lambda: next((item for item, _, interfaces, _ in mygo_nodes(atspi, executable)
+                            if 'EditableText' in interfaces and item.get_state_set().contains(atspi.StateType.FOCUSED)), None),
+                            'Native file chooser location field did not take focus')
+        assert atspi.EditableText.set_text_contents(location, str(backup))
+        accept_file = wait_for(lambda: next((item for item, label, interfaces, _ in mygo_nodes(atspi, executable)
+                               if label == 'Open' and item.get_role() == atspi.Role.PUSH_BUTTON and 'Action' in interfaces
+                               and item.get_state_set().contains(atspi.StateType.SENSITIVE)), None),
+                               'Native chooser did not enable Open')
+        assert atspi.Action.do_action(accept_file, 0)
+        wait_for(lambda: find_item(imported_note, text=True), 'Selected backup did not show its preview')
+        assert atspi.Action.do_action(action('Import Clipboard History'), 0)
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: db.execute('SELECT COUNT(*) FROM clipboard_history WHERE content=?', (imported_note,)).fetchone()[0] == 1,
+                     'Confirmed import did not persist the previewed entry')
+        print('Verified choosing a backup file in the native dialog, previewing its text and importing it through the shared React settings')
+        custom_rules = open_settings_group('Clipboard', 'Custom Rules')
+        assert atspi.Action.do_action(custom_rules, 0)
+        rules_field = wait_for(lambda: next((item for item, name, interfaces, _ in mygo_nodes(atspi, executable)
+                               if name == 'Custom Rules' and item.get_state_set().contains(atspi.StateType.EDITABLE)), None),
+                               'Custom privacy rule editor did not open')
+        atspi.Component.scroll_to(rules_field, atspi.ScrollType.ANYWHERE)
+        assert atspi.Component.grab_focus(rules_field)
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_a))
+        rule = 'qvx' + secrets.token_hex(7)
+        for char in rule:
+            shortcut((ord(char),))
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            read_rule = lambda: db.execute("SELECT value FROM settings WHERE key='app.privacy_protection_custom_rules'").fetchone()
+            try:
+                wait_for(lambda: read_rule() == (rule,), 'Continuous typing lost the final privacy rule')
+            except AssertionError as error:
+                raise AssertionError(f'Synthetic rule expected {rule!r}, persisted {read_rule()!r}, editor {atspi.Text.get_text(rules_field, 0, -1)!r}') from error
+        print('Verified the last custom privacy rule edit persisted during continuous keyboard input')
         close_settings = wait_for(lambda: find_item('Close'), 'Settings close action unavailable')
         assert atspi.Action.do_action(close_settings, 0)
         wait_for(lambda: find_item('Stickers'), 'Main window did not return to history')

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { FolderOpen } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { ToolsPathStatus, type CliInfo } from "./ToolsPathStatus";
 import { displayPath } from "../../utils/displayPath";
 

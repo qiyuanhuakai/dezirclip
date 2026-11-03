@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { DefaultAppsMap, InstalledAppOption } from "../../features/app/types";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 
 interface UseAppBootstrapOptions {
   showSettings: boolean;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
+import { usePrivacySession } from "./usePrivacySession";
 import { listen } from "@tauri-apps/api/event";
 import {
   applyQueueEvent,
@@ -39,6 +40,7 @@ export const usePasteQueue = ({ t, pushToast }: UsePasteQueueOptions) => {
     // in-flight read has to be judged against the revision it was issued at,
     // and pulling that out of React state at resolve time would already be one
     // step too late — the event that overtook it will already have moved on.
+    const privacy = usePrivacySession();
     const latestRef = useRef<PasteQueueCountState>(INITIAL_PASTE_QUEUE_COUNT_STATE);
     const [count, setCount] = useState(INITIAL_PASTE_QUEUE_COUNT_STATE.count);
 
@@ -65,8 +67,10 @@ export const usePasteQueue = ({ t, pushToast }: UsePasteQueueOptions) => {
     }, [refresh]);
 
     useEffect(() => {
-        refresh();
+        if (import.meta.env.MODE !== "mygo" || privacy.phase === "ready") refresh();
+    }, [refresh, privacy.phase, privacy.snapshot?.privacy_epoch]);
 
+    useEffect(() => {
         const unlisteners = [
             listen("queue-item-pasted", () => refresh()),
             listen("queue-finished", () => refresh()),

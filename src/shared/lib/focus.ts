@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktopInvoke";
 
 export async function focusClipboardWindow(): Promise<void> {
   await invoke("focus_clipboard_window");

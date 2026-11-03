@@ -99,6 +99,11 @@ type SurfaceActionParams struct {
     ServiceInstanceId *string `json:"service_instance_id,omitempty"`
 }
 
+type DesktopProfileInfo struct {
+    DataDirectory string `json:"data_directory"`
+    DatabaseSchemaVersion uint32 `json:"database_schema_version"`
+}
+
 type DesktopPageParams struct {
     Limit uint16 `json:"limit"`
     Offset uint32 `json:"offset"`
@@ -330,6 +335,7 @@ const (
     MethodDesktopCaptureFinish Method = "desktop.capture.finish"
     MethodDesktopHistorySummary Method = "desktop.history.summary"
     MethodDesktopPlatformProbe Method = "desktop.platform.probe"
+    MethodDesktopProfileInfo Method = "desktop.profile.info"
     MethodDesktopWindowTarget Method = "desktop.window.target"
     MethodDesktopWindowPin Method = "desktop.window.pin"
     MethodDesktopToolsCatalog Method = "desktop.tools.catalog"

@@ -298,6 +298,7 @@ impl Host {
                     methods.extend(["desktop.window.target", "desktop.window.paste"]);
                 }
                 methods.push("desktop.platform.probe");
+                methods.push("desktop.profile.info");
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
@@ -451,6 +452,14 @@ impl Host {
                 result("PrivacyHotkey", PrivacyHotkey { hotkey })
             }
             Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopProfileInfo => {
+                self.desktop_permission(session, self.instance_id())?;
+                let directory = self.directory.to_str().ok_or(WireErrorCode::Unavailable)?;
+                result("DesktopProfileInfo", DesktopProfileInfo {
+                    data_directory: directory.to_owned(),
+                    database_schema_version: dzc_core::api::DATABASE_SCHEMA_VERSION as u32,
+                })
+            }
             Method::DesktopPlatformProbe => {
                 self.desktop_permission(session, self.instance_id())?;
                 result("DesktopPlatformReport", serde_json::json!({ "report": dzc_platform::runtime::session_capabilities() }))

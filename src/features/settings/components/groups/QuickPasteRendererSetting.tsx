@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { emit } from "@tauri-apps/api/event";
 import ThemedSelect from "../ThemedSelect";
 

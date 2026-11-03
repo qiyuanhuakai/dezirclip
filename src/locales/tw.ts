@@ -20,6 +20,7 @@ export const tw = {
         privacy_session_hotkey: "切換隱私工作階段快速鍵",
         privacy_session_hotkey_clear: "清除快捷鍵",
         privacy_session_hotkey_hint: "可嘗試 Ctrl+Alt+P；留空表示不註冊。儲存前會檢查衝突與目前系統能力。",
+        privacy_rules_save_failed: "隱私規則儲存失敗，編輯內容已保留。",
         privacy_retry: "重新讀取",
         main_window_resume_pending: "正在還原剪貼簿…",
         main_window_resume_failed: "剪貼簿尚未還原，暫未顯示歷史紀錄。請重試。",

@@ -388,6 +388,25 @@
         }
       ]
     },
+    "DesktopProfileInfo": {
+      "type": "object",
+      "properties": {
+        "data_directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "database_schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "data_directory",
+        "database_schema_version"
+      ],
+      "additionalProperties": false
+    },
     "DesktopPageParams": {
       "type": "object",
       "properties": {
@@ -1279,6 +1298,7 @@
         "desktop.capture.finish",
         "desktop.history.summary",
         "desktop.platform.probe",
+        "desktop.profile.info",
         "desktop.window.target",
         "desktop.window.pin",
         "desktop.tools.catalog",
@@ -2146,7 +2166,10 @@
           "if": {
             "properties": {
               "method": {
-                "const": "desktop.platform.probe"
+                "enum": [
+                  "desktop.platform.probe",
+                  "desktop.profile.info"
+                ]
               }
             },
             "required": [

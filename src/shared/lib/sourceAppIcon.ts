@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktopInvoke";
 
 const sourceAppIconCache = new Map<string, string | null>();
 const sourceAppIconRequests = new Map<string, Promise<string | null>>();

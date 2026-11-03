@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { ChevronDown, ChevronRight, Download, Upload } from "lucide-react";
 
 import { invokePrivacyBound, subscribePrivacyInvalidation } from "../../../../shared/lib/privacySession";

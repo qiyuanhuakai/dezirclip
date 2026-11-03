@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 )
 
@@ -55,6 +56,22 @@ func (*DesktopShell) Focus(ctx context.Context) error {
 	}
 	w.Focus()
 	return nil
+}
+
+func (*DesktopShell) BuildInfo() any { return buildinfo.DesktopReport() }
+
+func (l *Library) ProfileInfo(ctx context.Context) (protocol.DesktopProfileInfo, error) {
+	var result protocol.DesktopProfileInfo
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopProfileInfo, protocol.ToolCatalogParams{}, "DesktopProfileInfo", &result)
+	return result, err
+}
+
+func (l *Library) OpenDataFolder(ctx context.Context) error {
+	profile, err := l.ProfileInfo(ctx)
+	if err != nil {
+		return err
+	}
+	return mygo.Shell.OpenPath(profile.DataDirectory)
 }
 
 func (*DesktopShell) Version() string { return buildinfo.Version }

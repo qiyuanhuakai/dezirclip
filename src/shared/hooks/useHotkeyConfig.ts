@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import { useHotkeyRecording } from "./useHotkeyRecording";
 
 type HotkeyMode = "main" | "sequential" | "rich" | "search";

@@ -51,6 +51,18 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	info, err := library.ProfileInfo(ctx)
+	if err != nil || info.DatabaseSchemaVersion < 1 {
+		t.Fatalf("profile info: %+v %v", info, err)
+	}
+	expectedDir, err := os.Stat(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actualDir, err := os.Stat(info.DataDirectory)
+	if err != nil || !os.SameFile(expectedDir, actualDir) {
+		t.Fatalf("wrong profile directory: %q %v", info.DataDirectory, err)
+	}
 	report, err := library.Platform(ctx)
 	var platform struct {
 		NativeWayland *bool `json:"native_wayland"`

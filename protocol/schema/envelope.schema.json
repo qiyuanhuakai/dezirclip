@@ -70,6 +70,7 @@
         "desktop.capture.finish",
         "desktop.history.summary",
         "desktop.platform.probe",
+        "desktop.profile.info",
         "desktop.window.target",
         "desktop.window.pin",
         "desktop.tools.catalog",
@@ -937,7 +938,7 @@
           "if": {
             "properties": {
               "method": {
-                "const": "desktop.platform.probe"
+                "enum": ["desktop.platform.probe", "desktop.profile.info"]
               }
             },
             "required": [

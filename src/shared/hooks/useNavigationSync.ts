@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import { getCurrentWindow } from "../lib/desktopWindow";
 import { hideCompactPreviewGlobal } from "../../features/clipboard/components/compactPreviewController";
 

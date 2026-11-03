@@ -147,8 +147,20 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "get_data_path") return (await library<{data_directory: T}>("ProfileInfo")).data_directory;
+  if (command === "open_data_folder") return library<T>("OpenDataFolder");
+  if (command === "get_build_info") {
+    const [desktop, profile] = await Promise.all([
+      shellCall<{ mygo_version: string; build_id: string; source_revision: string }>("BuildInfo"),
+      library<{ database_schema_version: number }>("ProfileInfo"),
+    ]);
+    return { ...desktop, build_id: desktop.build_id === "unknown" ? null : desktop.build_id,
+      source_revision: desktop.source_revision === "unknown" ? null : desktop.source_revision,
+      database_schema_version: profile.database_schema_version,
+      linked_components: [{ component: "MyGo", version: desktop.mygo_version }] } as T;
+  }
   if (command === "restore_window_pinned") return window.mygo.call<T>("DesktopShell.SetAlwaysOnTop", args.pinned);
-  if (command === "activate_window_focus") return window.mygo.call<T>("DesktopShell.Focus");
+  if (command === "activate_window_focus" || command === "focus_clipboard_window") return window.mygo.call<T>("DesktopShell.Focus");
   if (command === "hide_window_cmd") return window.mygo.call<T>("mygo:window.Close");
   if (command === "get_platform_capabilities") return library<T>("Platform");
   if (command === "check_ocr_engine_available") return library<T>("OcrEngine");

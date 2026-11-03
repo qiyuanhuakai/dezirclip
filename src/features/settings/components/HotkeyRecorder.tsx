@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
 import { X } from "lucide-react";
 import { useHotkeyRecording } from "../../../shared/hooks/useHotkeyRecording";
 import { hotkeyChord } from "../utils/hotkeyChord";

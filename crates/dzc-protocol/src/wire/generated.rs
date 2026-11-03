@@ -135,6 +135,13 @@ pub struct SurfaceActionParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopProfileInfo {
+    pub data_directory: String,
+    pub database_schema_version: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesktopPageParams {
     pub limit: u16,
     pub offset: u32,
@@ -461,6 +468,8 @@ pub enum Method {
     DesktopHistorySummary,
     #[serde(rename = "desktop.platform.probe")]
     DesktopPlatformProbe,
+    #[serde(rename = "desktop.profile.info")]
+    DesktopProfileInfo,
     #[serde(rename = "desktop.window.target")]
     DesktopWindowTarget,
     #[serde(rename = "desktop.window.pin")]

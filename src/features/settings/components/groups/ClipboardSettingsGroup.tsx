@@ -1,7 +1,8 @@
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
 import { invoke } from "../../../../shared/lib/desktopInvoke";
+import { refreshPrivacyState } from "../../../../shared/lib/privacySession";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";
@@ -125,6 +126,44 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
         props.setPasteMethod(val);
         invoke("save_setting", { key: 'app.paste_method', value: val }).catch(console.error);
     };
+    const [rulesDraft, setRulesDraft] = useState<string | null>(null);
+    const [rulesSaveFailed, setRulesSaveFailed] = useState(false);
+    const pendingRules = useRef<string | null>(null);
+    const editingRules = useRef(false);
+    const savingRules = useRef(false);
+    const rulesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flushRules = async () => {
+        if (savingRules.current) return;
+        savingRules.current = true;
+        try {
+            while (pendingRules.current !== null && rulesTimer.current === null) {
+                const rules: string = pendingRules.current;
+                if (import.meta.env.MODE === "mygo") await refreshPrivacyState();
+                await invoke("set_privacy_protection_custom_rules", { rules });
+                if (pendingRules.current === rules) {
+                    pendingRules.current = null;
+                    props.setPrivacyProtectionCustomRules(rules);
+                    if (!editingRules.current) setRulesDraft(null);
+                }
+            }
+        } catch {
+            setRulesSaveFailed(true);
+        } finally {
+            savingRules.current = false;
+        }
+    };
+
+    const saveRules = (value: string) => {
+        pendingRules.current = value;
+        setRulesDraft(value);
+        setRulesSaveFailed(false);
+        if (rulesTimer.current !== null) clearTimeout(rulesTimer.current);
+        rulesTimer.current = setTimeout(() => {
+            rulesTimer.current = null;
+            void flushRules();
+        }, 250);
+    };
+
     const [registryWinVChanging, setRegistryWinVChanging] = useState(false);
     const [persistentLimitDraft, setPersistentLimitDraft] = useState(
         props.persistentLimit.toString()
@@ -756,15 +795,31 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <textarea
                                 className="search-input"
                                 style={{ width: 'calc(100% - 30px)', maxWidth: '100%', minHeight: '80px', padding: '8px', borderRadius: '0', marginLeft: '30px', boxSizing: 'border-box' }}
+                                aria-label={props.t("privacy_protection_custom_rules")}
                                 placeholder={props.t('privacy_protection_custom_rules_placeholder')}
-                                value={props.privacyProtectionCustomRules}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    props.setPrivacyProtectionCustomRules(val);
-                                    invoke('set_privacy_protection_custom_rules', { rules: val }).catch(console.error);
+                                value={rulesDraft ?? props.privacyProtectionCustomRules}
+                                onFocus={() => {
+                                    editingRules.current = true;
+                                    if (import.meta.env.MODE !== "mygo") void invoke("focus_clipboard_window").catch(console.error);
                                 }}
+                                onBlur={() => {
+                                    editingRules.current = false;
+                                    if (rulesTimer.current !== null) {
+                                        clearTimeout(rulesTimer.current);
+                                        rulesTimer.current = null;
+                                        void flushRules();
+                                    }
+                                    if (pendingRules.current === null) setRulesDraft(null);
+                                }}
+                                onChange={e => { void saveRules(e.target.value); }}
                             />
+                        )}
+                        {rulesSaveFailed && rulesDraft !== null && (
+                            <p role="alert">{props.t("privacy_rules_save_failed")}{" "}
+                                <button type="button" className="setting-btn" onClick={() => { void saveRules(rulesDraft); }}>
+                                    {props.t("common_retry")}
+                                </button>
+                            </p>
                         )}
                     </div>
 

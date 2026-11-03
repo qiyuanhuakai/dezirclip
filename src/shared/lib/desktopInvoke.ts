@@ -12,5 +12,5 @@ export async function invoke<T>(command: string, args?: Record<string, unknown>)
     const { invokeMyGo } = await import("../mygo/commands");
     return invokeMyGo<T>(command, args);
   }
-  return tauriInvoke<T>(command, args);
+  return args === undefined ? tauriInvoke<T>(command) : tauriInvoke<T>(command, args);
 }

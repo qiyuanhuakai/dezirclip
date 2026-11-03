@@ -20,6 +20,7 @@ export const en = {
         privacy_session_hotkey: "Toggle privacy session shortcut",
         privacy_session_hotkey_clear: "Clear shortcut",
         privacy_session_hotkey_hint: "Try Ctrl+Alt+P, or leave empty to disable. Saving checks conflicts and current platform support.",
+        privacy_rules_save_failed: "Could not save the privacy rules. Your edits are still here.",
         privacy_retry: "Refresh state",
         main_window_resume_pending: "Restoring clipboard…",
         main_window_resume_failed: "Clipboard history could not be restored and is not displayed. Please try again.",
