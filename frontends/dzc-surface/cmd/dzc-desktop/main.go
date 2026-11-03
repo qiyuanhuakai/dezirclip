@@ -4,6 +4,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -100,6 +101,27 @@ func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--build-info" {
 		return json.NewEncoder(os.Stdout).Encode(buildinfo.DesktopReport())
 	}
+	assets, err := fs.Sub(web, "web")
+	if err != nil {
+		return err
+	}
+	if len(os.Args) == 2 && os.Args[1] == "--web-asset-hashes" {
+		hashes := map[string]string{}
+		err := fs.WalkDir(assets, ".", func(path string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
+			}
+			data, err := fs.ReadFile(assets, path)
+			if err == nil {
+				hashes[path] = fmt.Sprintf("%x", sha256.Sum256(data))
+			}
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(hashes)
+	}
 	mainWindow := len(os.Args) == 3 && os.Args[1] == "--main-window"
 	if len(os.Args) != 1 && !mainWindow {
 		return fmt.Errorf("unexpected desktop arguments")
@@ -120,10 +142,6 @@ func run() error {
 	}
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol
-	}
-	assets, err := fs.Sub(web, "web")
-	if err != nil {
-		return err
 	}
 	mygo.SetFrontend(assets)
 	mygo.Bind(&History{actions: actions})
