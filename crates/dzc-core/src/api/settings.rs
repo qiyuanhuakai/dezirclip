@@ -45,7 +45,7 @@ impl HistoryService {
 
     pub fn is_view_setting(key: &str) -> bool {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
-            | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection" | "app.silent_start" | "app.hide_tray_icon" | "app.follow_mouse" | "app.disable_webview_gpu"
+            | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.silent_start" | "app.hide_tray_icon" | "app.follow_mouse" | "app.disable_webview_gpu"
             | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")

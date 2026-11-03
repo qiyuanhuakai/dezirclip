@@ -631,7 +631,9 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         silent = wait_for(lambda: find_item('Silent Start'), 'Silent Start checkbox missing')
         hide_tray = wait_for(lambda: find_item('Hide Tray Icon'), 'Hide Tray Icon checkbox missing')
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
-            for label, key, enabled in [('Sound Effects', 'app.sound_enabled', True),
+            for label, key, enabled in [('Preview with arrow keys', 'app.preview_keyboard_enabled', True),
+                                        ('Preview with arrow keys', 'app.preview_keyboard_enabled', False),
+                                        ('Sound Effects', 'app.sound_enabled', True),
                                         ('Paste Sound', 'app.sound_paste_enabled', False),
                                         ('Paste Sound', 'app.sound_paste_enabled', True),
                                         ('Sound Effects', 'app.sound_enabled', False)]:
@@ -910,6 +912,9 @@ def check(desktop, pinned, audio):
     subprocess.run([cli, 'add', marker], check=True, stdout=subprocess.DEVNULL)
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
+        db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.arrow_key_selection','true')")
+        if not pinned:
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.preview_keyboard_enabled','true')")
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.silent_start','false')")
         if audio is not None:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.sound_enabled','true')")
@@ -1137,7 +1142,7 @@ def verify_storage_captures(db):
 def check_preview(button, atspi):
     import gi
     gi.require_version('Gdk', '3.0')
-    from gi.repository import Gdk
+    from gi.repository import Gdk, GdkX11
     screen = Gdk.Screen.get_default()
     pointer = screen.get_display().get_default_seat().get_pointer()
     rect = atspi.Component.get_extents(button, atspi.CoordType.SCREEN)
@@ -1150,15 +1155,19 @@ def check_preview(button, atspi):
     focus = active()
     pointer.warp(screen, rect.x + rect.width//2, rect.y + rect.height//2)
     screen.get_display().sync()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        tree = subprocess.check_output(['xwininfo','-root','-tree'], text=True)
-        found = next((line for line in tree.splitlines() if '"DezirClip 悬浮预览"' in line), None)
-        if found:
-            preview_id = int(found.strip().split()[0], 16)
-            if visible(): break
-        time.sleep(.05)
-    else: raise AssertionError('Hover did not show a native preview window')
+    def preview_bounds():
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            tree = subprocess.check_output(['xwininfo','-root','-tree'], text=True)
+            for line in tree.splitlines():
+                if '"DezirClip 悬浮预览"' in line:
+                    xid = int(line.strip().split()[0], 16)
+                    frame = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), xid)
+                    info = subprocess.run(['xwininfo', '-id', str(xid)], capture_output=True, text=True)
+                    if frame and 'Map State: IsViewable' in info.stdout: return xid, frame.get_frame_extents()
+            time.sleep(.05)
+        raise AssertionError('No visible native preview for the selected history row')
+    preview_id, hover = preview_bounds()
     assert active() == focus, 'Hover preview took keyboard focus'
     pointer.warp(screen, 0, 0)
     screen.get_display().sync()
@@ -1167,6 +1176,15 @@ def check_preview(button, atspi):
         assert time.monotonic() < deadline, 'Hover preview did not close after leaving the row'
         time.sleep(.05)
     print('Verified native hover preview, original focus and dismissal')
+    keymap = Gdk.Keymap.get_for_display(screen.get_display())
+    mapped, entries = keymap.get_entries_for_keyval(Gdk.KEY_Down)
+    assert mapped and atspi.generate_keyboard_event(entries[0].keycode, None, atspi.KeySynthType.PRESSRELEASE)
+    _, keyboard = preview_bounds()
+    assert active() == focus
+    assert abs(keyboard.x-hover.x) <= 16 and abs(keyboard.y-hover.y) <= rect.height + 16, 'Keyboard preview followed the distant pointer'
+    assert not (keyboard.x <= rect.x+rect.width//2 < keyboard.x+keyboard.width and
+                keyboard.y <= rect.y+rect.height//2 < keyboard.y+keyboard.height), 'Preview covered the selected row'
+    print('Verified arrow-key preview stayed beside the selected history while the pointer remained at the screen corner')
 
 
 if __name__ == '__main__':

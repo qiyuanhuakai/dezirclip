@@ -24,7 +24,7 @@ export default function KeyboardPreviewSetting({ t, arrowKeySelection }: {
         <div className="setting-item setting-item--detail">
             <div className="item-label-group"><label className="item-label" htmlFor="preview-keyboard-enabled">{t("preview_keyboard_enabled")}</label></div>
             <label className="switch">
-                <input id="preview-keyboard-enabled" className="cb" type="checkbox" checked={preferences.keyboardEnabled}
+                <input id="preview-keyboard-enabled" className="cb" type="checkbox" aria-label={t("preview_keyboard_enabled")} checked={preferences.keyboardEnabled}
                     disabled={!arrowKeySelection || !ready || saving} onChange={event => { void change(event.target.checked); }} />
                 <div className="toggle"><div className="left" /><div className="right" /></div>
             </label>

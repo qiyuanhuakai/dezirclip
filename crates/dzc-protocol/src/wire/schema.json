@@ -5211,6 +5211,7 @@
             "app.show_scroll_top_button",
             "app.show_search_box",
             "app.arrow_key_selection",
+            "app.preview_keyboard_enabled",
             "app.silent_start",
             "app.hide_tray_icon",
             "app.follow_mouse",

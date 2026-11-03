@@ -16,6 +16,23 @@ export type CompactPreviewAnchor = {
     itemRect: CompactPreviewRect | null;
 };
 type RequestOptions = Omit<PreviewRequest, "requestId" | "privacyEpoch" | "maxWidth" | "maxHeight">;
+type NativeBounds = { X: number; Y: number; Width: number; Height: number };
+async function nativePreviewOffset(anchor: CompactPreviewAnchor) {
+    const { Main: main, WorkArea: area, Width, Height } = await window.mygo.call<{
+        Main: NativeBounds; WorkArea: NativeBounds; Width: number; Height: number;
+    }>("Preview.Layout");
+    if (window.innerWidth < 1 || window.innerHeight < 1) throw new Error("PreviewPositionUnavailable");
+    const sx = main.Width / window.innerWidth, sy = main.Height / window.innerHeight;
+    const rect = anchor.itemRect;
+    const point = pickPreviewPosition({
+        anchorX: anchor.clientX * sx, anchorY: anchor.clientY * sy,
+        anchorRect: rect && { left: rect.left * sx, right: rect.right * sx, top: rect.top * sy, bottom: rect.bottom * sy },
+        widthPx: Width, heightPx: Height, monitorPos: { x: area.X - main.X, y: area.Y - main.Y },
+        monitorSize: { width: area.Width, height: area.Height }, margin: 10, offset: 12,
+        avoidRect: { left: 0, top: 0, right: main.Width, bottom: main.Height },
+    });
+    return { X: Math.round(point.x), Y: Math.round(point.y) };
+}
 type Session = {
     owner: object;
     request: PreviewRequest | null;
@@ -283,7 +300,12 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
         });
         const sequence = ++nativeSequence;
         try {
-            await window.mygo.call("Preview.ShowEntry", sequence, options.id, options.expectedHostInstanceId, access.epoch, options.allowSensitive);
+            const offset = await nativePreviewOffset(anchor);
+            if (sequence !== nativeSequence || !access.isCurrent() || !sourceIsCurrent() || !stillHovered()) return;
+            await window.mygo.call("Preview.ShowEntry", sequence, options.id, options.expectedHostInstanceId, access.epoch, options.allowSensitive, offset);
+        } catch (error) {
+            compactPreviewLog("native preview presentation failed", error);
+            if (sequence === nativeSequence) await hideCompactPreviewGlobal(owner);
         } finally {
             if (sequence === nativeSequence && (!access.isCurrent() || !sourceIsCurrent() || !stillHovered())) await hideCompactPreviewGlobal(owner);
         }
