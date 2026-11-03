@@ -216,6 +216,9 @@ def check(desktop):
                 pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
             last = names
             if action and close and any(marker in (name or '') for name in names):
+                # The Host closes idle desktop streams after 30 seconds.
+                # Exercise copy and both resident shortcuts after that deadline.
+                time.sleep(32)
                 check_preview(action, Atspi)
                 assert Atspi.Action.do_action(action, 0), 'Copy button did not accept its native action'
                 break
@@ -290,7 +293,7 @@ if __name__ == '__main__':
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
             subprocess.run(['xvfb-run', '-a', 'dbus-run-session', '--', sys.executable, __file__, desktop, path],
-                           env=env, check=True, timeout=65)
+                           env=env, check=True, timeout=105)
     else:
         home = Path(sys.argv[2]).resolve(strict=True)
         assert home == Path(os.environ['HOME']) and home/'data/clipboard.db' == Path(os.environ['DEZIRCLIP_DB_PATH'])

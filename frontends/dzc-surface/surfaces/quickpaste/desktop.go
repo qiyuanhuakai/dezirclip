@@ -45,7 +45,7 @@ func NewDesktopPanel(owner *client.Client) *Panel {
 
 func (p *Panel) preferences() (protocol.QuickPreferences, error) {
 	var pref protocol.QuickPreferences
-	err := p.local.owner.Call(context.Background(), protocol.MethodDesktopQuickPreferences, protocol.EmptyParams{}, "QuickPreferences", &pref)
+	err := p.local.owner.DesktopCall(context.Background(), protocol.MethodDesktopQuickPreferences, protocol.EmptyParams{}, "QuickPreferences", &pref)
 	return pref, err
 }
 

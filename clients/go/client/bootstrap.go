@@ -106,6 +106,17 @@ func (c *Client) DesktopConnection(ctx context.Context) (*Client, error) {
 	return c.desktop.connect(ctx, c.hello.CoreVersion)
 }
 
+// DesktopCall performs one operation on a new authenticated connection.
+// Never replay a mutation after an ambiguous transport failure.
+func (c *Client) DesktopCall(ctx context.Context, method protocol.Method, params any, schema string, result any) error {
+	host, err := c.DesktopConnection(ctx)
+	if err != nil {
+		return err
+	}
+	defer host.Close()
+	return host.Call(ctx, method, params, schema, result)
+}
+
 func desktopGrant(path string) (string, error) {
 	file, err := openControlFile(path)
 	if err != nil {

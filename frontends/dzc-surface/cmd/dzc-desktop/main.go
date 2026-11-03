@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"sync"
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
@@ -25,6 +26,7 @@ var trayIcon []byte
 type History struct {
 	actions *client.Client
 	events  *client.Client
+	eventMu sync.Mutex
 }
 
 type historyRow struct {
@@ -46,11 +48,16 @@ func (h *History) List(ctx context.Context, query string, offset uint32) (histor
 		request.Query = &query
 	}
 	var snapshot protocol.BodySnapshot
-	if err := h.actions.Call(ctx, protocol.MethodDesktopHistoryPage, request, "BodySnapshot", &snapshot); err != nil {
+	host, err := h.actions.DesktopConnection(ctx)
+	if err != nil {
+		return historyPage{}, err
+	}
+	defer host.Close()
+	if err := host.Call(ctx, protocol.MethodDesktopHistoryPage, request, "BodySnapshot", &snapshot); err != nil {
 		return historyPage{}, err
 	}
 	var entries protocol.DesktopEntries
-	if err := h.actions.ReadSnapshot(ctx, snapshot, "DesktopEntries", &entries); err != nil {
+	if err := host.ReadSnapshot(ctx, snapshot, "DesktopEntries", &entries); err != nil {
 		return historyPage{}, err
 	}
 	page := historyPage{Rows: []historyRow{}, More: len(entries.Entries) > pageSize, State: snapshot.State}
@@ -62,7 +69,7 @@ func (h *History) List(ctx context.Context, query string, offset uint32) (histor
 
 func (h *History) Copy(ctx context.Context, id int64, state protocol.RuntimeState) error {
 	var copied protocol.OperationResult
-	err := h.actions.Call(ctx, protocol.MethodDesktopSurfaceCopy, protocol.DesktopSurfaceCopyParams{EntryId: id, State: state}, "OperationResult", &copied)
+	err := h.actions.DesktopCall(ctx, protocol.MethodDesktopSurfaceCopy, protocol.DesktopSurfaceCopyParams{EntryId: id, State: state}, "OperationResult", &copied)
 	if err == nil && !copied.Performed {
 		return client.ErrProtocol
 	}
@@ -72,7 +79,20 @@ func (h *History) Copy(ctx context.Context, id int64, state protocol.RuntimeStat
 func (h *History) Changes(ctx context.Context, cursor uint64) (protocol.EventsResult, error) {
 	wait := uint16(1000)
 	var events protocol.EventsResult
+	h.eventMu.Lock()
+	defer h.eventMu.Unlock()
+	if h.events == nil {
+		host, err := h.actions.DesktopConnection(ctx)
+		if err != nil {
+			return events, err
+		}
+		h.events = host
+	}
 	err := h.events.Call(ctx, protocol.MethodEventsSubscribe, protocol.SubscribeParams{AfterSequence: cursor, WaitMs: &wait}, "EventsResult", &events)
+	if err != nil {
+		h.events.Close()
+		h.events = nil
+	}
 	return events, err
 }
 
@@ -91,7 +111,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("open desktop Host: %w", err)
 	}
-	defer actions.Close()
+	// Retain the authenticated endpoint identity only. Each action or visible
+	// session opens its own stream, so idle panels need no keepalive requests.
+	actions.Close()
 	mygo.App.SetName("DezirClip MyGo")
 	if !mainWindow {
 		return runResident(actions)
@@ -99,20 +121,12 @@ func run() error {
 	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
 		return client.ErrProtocol
 	}
-	events, err := actions.DesktopConnection(ctx)
-	if err != nil {
-		return err
-	}
-	defer events.Close()
-	if actions.Hello().State.ServiceInstanceId != events.Hello().State.ServiceInstanceId {
-		return client.ErrProtocol
-	}
 	assets, err := fs.Sub(web, "web")
 	if err != nil {
 		return err
 	}
 	mygo.SetFrontend(assets)
-	mygo.Bind(&History{actions: actions, events: events})
+	mygo.Bind(&History{actions: actions})
 	mygo.Bind(&DesktopShell{})
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)

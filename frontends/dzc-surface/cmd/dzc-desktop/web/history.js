@@ -9,6 +9,7 @@ const next = document.querySelector("#next");
 let offset = 0;
 let generation = 0;
 let state;
+let subscribed = false;
 let timer;
 let previewTimer;
 let previewSequence = 0;
@@ -30,7 +31,7 @@ function clearPage() {
 
 async function refresh() {
   clearPage();
-  if (document.hidden) return;
+  if (document.hidden || !subscribed) return;
   const pending = generation;
   try {
     const page = await mygo.call("History.List", search.value, offset);
@@ -71,19 +72,25 @@ async function refresh() {
 
 async function watch() {
   let cursor = 0;
+  let backoff = 250;
   for (;;) {
     try {
       const update = await mygo.call("History.Changes", cursor);
+      const recovered = !subscribed;
+      subscribed = true;
+      backoff = 250;
       cursor = update.state.event_sequence;
-      if (update.resync_required || update.events.length || (state &&
+      if (recovered || update.resync_required || update.events.length || (state &&
           (state.service_instance_id !== update.state.service_instance_id ||
            state.privacy_epoch !== update.state.privacy_epoch || state.history_revision !== update.state.history_revision))) {
         await refresh();
       }
     } catch {
+      subscribed = false;
       clearPage();
-      status.textContent = "与本地服务的连接已中断，请重新打开窗口";
-      return;
+      status.textContent = "与本地服务的连接已中断，正在重新连接";
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      backoff = Math.min(backoff * 2, 4000);
     }
   }
 }
@@ -98,5 +105,4 @@ previous.addEventListener("click", () => { offset = Math.max(0, offset - 40); re
 next.addEventListener("click", () => { offset += 40; refresh(); });
 document.addEventListener("visibilitychange", refresh);
 window.addEventListener("scroll", hidePreview, true);
-refresh();
 watch();

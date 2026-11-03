@@ -38,7 +38,7 @@ type selection struct {
 func New(owner *client.Client) *Selector {
 	s := &Selector{owner: owner, hotkeys: make(map[bool]string)}
 	var caps protocol.CapabilityReport
-	if err := owner.Call(context.Background(), protocol.MethodCapabilities, protocol.EmptyParams{}, "CapabilityReport", &caps); err != nil ||
+	if err := owner.DesktopCall(context.Background(), protocol.MethodCapabilities, protocol.EmptyParams{}, "CapabilityReport", &caps); err != nil ||
 		!slices.Contains(caps.Methods, "desktop.screen.finish") {
 		return s
 	}
@@ -72,7 +72,7 @@ func (s *Selector) prepareWindow() {
 
 func (s *Selector) preferences() (protocol.ScreenPreferences, error) {
 	var pref protocol.ScreenPreferences
-	err := s.owner.Call(context.Background(), protocol.MethodDesktopScreenPreferences, protocol.EmptyParams{}, "ScreenPreferences", &pref)
+	err := s.owner.DesktopCall(context.Background(), protocol.MethodDesktopScreenPreferences, protocol.EmptyParams{}, "ScreenPreferences", &pref)
 	return pref, err
 }
 
