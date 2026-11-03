@@ -29,6 +29,20 @@ impl SqliteClipboardRepository {
             .map_err(|error| CoreError::from(error.to_string()))?;
         rows.collect::<rusqlite::Result<_>>().map_err(|error| CoreError::from(error.to_string()))
     }
+    pub(crate) fn default_application(&self, kind: &str) -> CoreResult<Option<String>> {
+        use rusqlite::OptionalExtension;
+        let key = match kind {
+            "text" => "app.text", "image" => "app.image", "code" => "app.code",
+            "video" => "app.video", "rich_text" => "app.rich_text", "link" | "url" => "app.url",
+            _ => return Ok(None),
+        };
+        let fallback = if kind == "code" { "app.text" } else { key };
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        conn.query_row("SELECT value FROM settings WHERE key IN (?1,?2) AND trim(value) <> ''
+            ORDER BY (key = ?1) DESC LIMIT 1", [key, fallback], |row| row.get(0))
+            .optional().map_err(|error| CoreError::from(error.to_string()))
+    }
+
     pub(crate) fn selected_background(&self) -> CoreResult<String> {
         let connection = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
         connection.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.custom_background'),'')",

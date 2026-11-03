@@ -100,6 +100,20 @@ func (l *Library) Entry(ctx context.Context, params protocol.DesktopEntryParams)
 	return l.entry(ctx, protocol.MethodDesktopHistoryGet, params)
 }
 
+func (l *Library) OpenEntry(ctx context.Context, params protocol.ExternalOpenParams) error {
+	if params.ServiceInstanceId != l.owner.Hello().State.ServiceInstanceId || params.Id <= 0 {
+		return client.ErrProtocol
+	}
+	var result protocol.OperationResult
+	if err := l.owner.DesktopCall(ctx, protocol.MethodDesktopHistoryOpen, params, "OperationResult", &result); err != nil {
+		return err
+	}
+	if !result.Performed {
+		return client.ErrProtocol
+	}
+	return nil
+}
+
 func (l *Library) Summary(ctx context.Context, params protocol.DesktopEntryParams) (hostedEntry, error) {
 	params.Reveal = false
 	params.ThumbnailDimension = nil

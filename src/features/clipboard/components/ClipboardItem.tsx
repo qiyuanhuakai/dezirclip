@@ -1005,6 +1005,7 @@ const ClipboardItem = ({
                         <button
                             className="btn-icon"
                             onClick={onOpen}
+                            aria-label={t('open')}
                             title={t('open')}
                         >
                             <ExternalLink size={12} />

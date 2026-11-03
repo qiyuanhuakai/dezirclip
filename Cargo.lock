@@ -1611,6 +1611,7 @@ dependencies = [
  "socket2",
  "tempfile",
  "tokio",
+ "url",
  "urlencoding",
  "uuid",
  "wayland-client",

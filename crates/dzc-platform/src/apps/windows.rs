@@ -16,6 +16,59 @@ pub struct AppInfo {
     pub path: String,
 }
 
+pub struct Handler(Option<String>);
+
+pub fn resolve_handler(handler: Option<&str>) -> Handler { Handler(handler.map(str::to_owned)) }
+
+pub(super) fn launch(handler: &Handler, target: &str, url: bool) -> io::Result<()> {
+    use windows::core::{w, HSTRING};
+    use windows::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+    let target_wide = HSTRING::from(target);
+    let shell_item;
+    let argument;
+    let (item, parameters) = match handler.0.as_deref() {
+        Some(exe) if Path::new(exe).is_absolute() && Path::new(exe).is_file() => {
+            use std::process::Stdio;
+            return Command::new(exe).arg(target).stdin(Stdio::null())
+                .stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ());
+        }
+        Some(app_id) if app_id.contains('!') => return activate_package(app_id, &target_wide, url),
+        Some(app_id) if !Path::new(app_id).is_absolute() => {
+            shell_item = HSTRING::from(format!(r"shell:AppsFolder\{app_id}"));
+            // Windows paths cannot contain quotes and open_url percent-encodes them.
+            argument = HSTRING::from(format!(r#""{target}""#));
+            (PCWSTR(shell_item.as_ptr()), PCWSTR(argument.as_ptr()))
+        }
+        _ => (PCWSTR(target_wide.as_ptr()), PCWSTR::null()),
+    };
+    let result = unsafe { ShellExecuteW(None, w!("open"), item, parameters, None, SW_SHOWNORMAL) };
+    if result.0 as isize > 32 { Ok(()) } else { Err(io::Error::other("ShellLaunchFailed")) }
+}
+
+fn activate_package(app_id: &str, target: &windows::core::HSTRING, url: bool) -> io::Result<()> {
+    use windows::core::{w, HSTRING};
+    use windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_LOCAL_SERVER, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{ApplicationActivationManager, IApplicationActivationManager,
+        IShellItem, IShellItemArray, SHCreateItemFromParsingName, SHCreateShellItemArrayFromShellItem};
+    unsafe {
+        let initialized = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        if initialized.is_err() && initialized != RPC_E_CHANGED_MODE {
+            return Err(io::Error::other("ShellInitializationFailed"));
+        }
+        let result = (|| -> windows::core::Result<u32> {
+            let item: IShellItem = SHCreateItemFromParsingName(PCWSTR(target.as_ptr()), None)?;
+            let items: IShellItemArray = SHCreateShellItemArrayFromShellItem(&item)?;
+            let manager: IApplicationActivationManager = CoCreateInstance(&ApplicationActivationManager, None, CLSCTX_LOCAL_SERVER)?;
+            let app_id = HSTRING::from(app_id);
+            if url { manager.ActivateForProtocol(&app_id, &items) }
+            else { manager.ActivateForFile(&app_id, &items, w!("open")) }
+        })();
+        if initialized.is_ok() { CoUninitialize(); }
+        result.map(|_| ()).map_err(io::Error::other)
+    }
+}
+
 pub fn scan_installed_apps() -> io::Result<Vec<AppInfo>> {
     let mut apps = Vec::new();
 

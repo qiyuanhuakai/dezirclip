@@ -112,6 +112,32 @@ function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Edito
     $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
 }
 
+function Test-ExternalEdit($root, $main, [string]$marker) {
+    $point = Get-ControlPoint $root $marker
+    if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not hover the saved text' }
+    $walker = [Windows.Automation.TreeWalker]::ControlViewWalker
+    $name = [Windows.Automation.AutomationElement]::NameProperty
+    $scope = [Windows.Automation.TreeScope]::Descendants
+    $button = Wait-Until {
+        $row = $root.FindFirst($scope, [Windows.Automation.PropertyCondition]::new($name, $marker))
+        while ($row -and $row.Current.ControlType -ne [Windows.Automation.ControlType]::Document) {
+            $open = $row.FindFirst($scope, [Windows.Automation.PropertyCondition]::new($name, 'Open'))
+            if ($open) { return $open }
+            $row = $walker.GetParent($row)
+        }
+    } 'Selected history row had no Open action'
+    $bounds = $button.Current.BoundingRectangle
+    Click-Control $main ([Drawing.Point]::new([int]($bounds.Left + $bounds.Width/2), [int]($bounds.Top + $bounds.Height/2)))
+    $null = Get-ControlPoint $root ($marker + ' externally edited')
+    @'
+import os, sqlite3, sys
+with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
+    assert db.execute("SELECT use_count FROM clipboard_history WHERE content=?", (sys.argv[1]+" externally edited",)).fetchall() == [(1,)]
+'@ | python - $marker
+    if ($LASTEXITCODE) { throw 'The edited Windows row did not record exactly one external open' }
+    Write-Output 'Verified a WebView2 Open click launched the selected editor and the Service refreshed the same history row'
+}
+
 function Get-DesktopProcesses([int[]]$RootIds) {
     $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,WorkingSetSize,PrivatePageCount)
     $owned = [Collections.Generic.HashSet[int]]::new()
@@ -145,6 +171,30 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                    [("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
+    if ($Capture) {
+        $fixtureEditor = Join-Path $dir.FullName 'Fixture Editor.exe'
+        Add-Type -OutputAssembly $fixtureEditor -OutputType WindowsApplication -TypeDefinition @'
+using System.IO;
+using System.Text;
+public class FixtureEditor {
+    public static void Main(string[] args) {
+        if (args.Length != 1) return;
+        using (var file = new FileStream(args[0], FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete)) {
+            file.Seek(0, SeekOrigin.End);
+            var bytes = Encoding.UTF8.GetBytes(" externally edited");
+            file.Write(bytes, 0, bytes.Length);
+            file.Flush(true);
+        }
+    }
+}
+'@
+        @'
+import os, sqlite3, sys
+with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
+    db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.text',?)", (sys.argv[1],))
+'@ | python - $fixtureEditor
+        if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
+    }
     if ($Emoji) {
         & $cli service start --json | Out-Null
         if ($LASTEXITCODE) { throw 'Could not start the independent Service before MyGo' }
@@ -194,6 +244,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         }
     }
     if ($Capture) {
+        Test-ExternalEdit $root $main $marker
         Click-Control $main (Get-ControlPoint $root 'Settings')
         Click-Control $main (Get-ControlPoint $root 'Tools')
         Test-RegisteredCli $root $cli

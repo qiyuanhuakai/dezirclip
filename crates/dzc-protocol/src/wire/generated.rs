@@ -136,6 +136,15 @@ pub struct SurfaceActionParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ExternalOpenParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: i64,
+    pub reveal: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ApplicationSelection {
     pub service_instance_id: String,
     pub expected_epoch: u64,
@@ -496,6 +505,8 @@ pub enum Method {
     DesktopProfileInfo,
     #[serde(rename = "desktop.appearance.background")]
     DesktopAppearanceBackground,
+    #[serde(rename = "desktop.history.open")]
+    DesktopHistoryOpen,
     #[serde(rename = "desktop.applications.select")]
     DesktopApplicationsSelect,
     #[serde(rename = "desktop.window.target")]

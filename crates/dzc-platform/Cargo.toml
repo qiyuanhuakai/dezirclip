@@ -32,6 +32,7 @@ base64.workspace = true
 arboard.workspace = true
 image.workspace = true
 urlencoding.workspace = true
+url = "2"
 rand.workspace = true
 aes-gcm.workspace = true
 sha2 = { workspace = true, optional = true }

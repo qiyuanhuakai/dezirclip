@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fs::{read_dir, read_to_string};
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppInfo {
@@ -22,6 +22,44 @@ fn application_dirs() -> Vec<PathBuf> {
         .filter(|base| base.is_absolute())
         .map(|base| base.join("applications"))
         .collect()
+}
+
+pub enum Handler { System, Desktop(PathBuf), Executable(PathBuf) }
+
+pub fn resolve_handler(handler: Option<&str>) -> Handler {
+    // GIO expands the field codes in the installed desktop entry and preserves
+    // its argument boundaries, quoting, working directory and activation rules.
+    if let Some(handler) = handler {
+        let desktop = application_dirs().into_iter()
+            .filter_map(|directory| read_dir(directory).ok())
+            .flatten().flatten().map(|entry| entry.path())
+            .find(|path| path.extension().is_some_and(|ext| ext == "desktop")
+                && parse_desktop_file(path).is_some_and(|app| app.path == handler));
+        if let Some(desktop) = desktop {
+            return Handler::Desktop(desktop);
+        } else if Path::new(handler).is_absolute() && Path::new(handler).is_file() {
+            return Handler::Executable(PathBuf::from(handler));
+        }
+    }
+    Handler::System
+}
+
+pub(super) fn launch(handler: &Handler, target: &str, _url: bool) -> io::Result<()> {
+    let mut command = Command::new("gio");
+    match handler {
+        Handler::Desktop(desktop) => { command.arg("launch").arg(desktop); }
+        Handler::Executable(exe) => return Command::new(exe).arg(target).stdin(Stdio::null())
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ()),
+        Handler::System => { command.arg("open"); }
+    }
+    let status = match command.arg(target).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status() {
+        Err(error) if error.kind() == io::ErrorKind::NotFound && matches!(handler, Handler::System) => {
+            return Command::new("xdg-open").arg(target).stdin(Stdio::null()).stdout(Stdio::null())
+                .stderr(Stdio::null()).spawn().map(|_| ());
+        }
+        result => result?,
+    };
+    if status.success() { Ok(()) } else { Err(io::Error::other("DesktopLaunchFailed")) }
 }
 
 pub fn scan_installed_apps() -> io::Result<Vec<AppInfo>> {

@@ -365,7 +365,41 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             assert atspi.generate_mouse_event(box.x + box.width//2, box.y + box.height//2, 'b1c')
             return open_settings_group(group, theme)
 
-        wait_for(lambda: find_item(note, text=True), 'Reopened history did not restore the saved note')
+        note_row = wait_for(lambda: find_item(note, text=True), 'Reopened history did not restore the saved note')
+        def open_in_row(node):
+            if node.get_name() == '打开' and 'Action' in node.get_interfaces():
+                return node
+            for index in range(node.get_child_count()):
+                action = open_in_row(node.get_child_at_index(index))
+                if action: return action
+        bounds = atspi.Component.get_extents(note_row, atspi.CoordType.SCREEN)
+        assert atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'abs')
+        def row_action():
+            parent = find_item(note, text=True)
+            while parent and parent.get_role() != atspi.Role.DOCUMENT_WEB:
+                button = open_in_row(parent)
+                if button: return button
+                parent = parent.get_parent()
+        open_note = wait_for(row_action, 'Selected row did not expose its Open action')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            entry_id, used = db.execute('SELECT id, use_count FROM clipboard_history WHERE content=?', (note,)).fetchone()
+            assert atspi.Action.do_action(open_note, 0)
+            note += ' externally edited'
+            wait_for(lambda: db.execute('SELECT content,use_count FROM clipboard_history WHERE id=?', (entry_id,)).fetchone() == (note, used + 1),
+                     'Opening the row did not persist the external edit and exactly one use')
+        wait_for(lambda: find_item(note, text=True), 'External edit notification did not refresh the open WebView')
+        print('Verified MyGo Open launches the system text handler and the Rust Service writes its edit back to the original row')
+        cli = executable.with_name('dzc')
+        subprocess.run([cli, 'privacy', 'on', '--seconds', '60'], check=True)
+        try:
+            (Path.home()/'finish-edit').touch()
+            wait_for((Path.home()/'late-edit-written').is_file, 'External editor did not finish its late write')
+        finally:
+            subprocess.run([cli, 'privacy', 'off'], check=True)
+        time.sleep(2.2)
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            assert db.execute('SELECT content,use_count FROM clipboard_history WHERE id=?', (entry_id,)).fetchone() == (note, used + 1)
+        print('Verified an editor retaining its original file cannot write through a changed privacy epoch')
         retro = open_appearance('设置', '界面设置', '复古')
         assert atspi.Action.do_action(retro, 0)
         dark = wait_for(lambda: find_item('深色'), 'Dark mode unavailable')
@@ -455,7 +489,10 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             def saved_app():
                 return db.execute("SELECT value FROM settings WHERE key='app.text'").fetchone()
             wait_for(lambda: saved_app() == ('/bin/cat',), 'Rust Service did not save the installed text handler')
-            assert atspi.Component.grab_focus(select_app)
+            def focus_saved_selector():
+                selector = text_handler()
+                return selector and selector.get_state_set().contains(atspi.StateType.SENSITIVE) and atspi.Component.grab_focus(selector)
+            wait_for(focus_saved_selector, 'Text application selector did not reactivate after saving')
             shortcut((Gdk.KEY_Down,))
             shortcut((Gdk.KEY_Home,))
             shortcut((Gdk.KEY_Return,))
@@ -818,7 +855,23 @@ if __name__ == '__main__':
             if '--pinned' in sys.argv[2:]:
                 applications = home/'data/applications'
                 applications.mkdir()
-                for name, label, program in [('dzc-system-fixture', 'System text fixture', '/bin/true'),
+                fixture_editor = home/'fixture-editor'
+                fixture_editor.write_text("""#!/usr/bin/python3
+from pathlib import Path
+import sys, time
+with open(sys.argv[1], 'r+') as document:
+    document.seek(0, 2)
+    document.write(' externally edited')
+    document.flush()
+    deadline = time.monotonic() + 25
+    while not (Path.home() / 'finish-edit').exists() and time.monotonic() < deadline:
+        time.sleep(.04)
+    document.write(' private edit')
+    document.flush()
+    (Path.home() / 'late-edit-written').touch()
+""")
+                fixture_editor.chmod(0o700)
+                for name, label, program in [('dzc-system-fixture', 'System text fixture', str(fixture_editor)),
                                              ('dzc-viewer-fixture', 'DzcFixture Viewer', '/bin/cat')]:
                     (applications/(name + '.desktop')).write_text(
                         f'[Desktop Entry]\nType=Application\nName={label}\nExec={program} %f\nMimeType=text/plain;\n')

@@ -48,3 +48,5 @@ pub mod screenshot;
 pub mod paste_input;
 #[cfg(target_os = "windows")]
 pub mod windows_input;
+
+pub mod image_png;

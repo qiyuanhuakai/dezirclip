@@ -50,7 +50,7 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     deadline, ok := ctx.Deadline()
     limitDuration := 5 * time.Second
     switch method {
-    case protocol.MethodDesktopApplicationsSelect:
+    case protocol.MethodDesktopApplicationsSelect, protocol.MethodDesktopHistoryOpen:
         limitDuration = 15 * time.Second
     case protocol.MethodDesktopQueueNext, protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview:
         limitDuration = 10 * time.Minute

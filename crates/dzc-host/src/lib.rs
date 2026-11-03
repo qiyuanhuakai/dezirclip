@@ -1,6 +1,7 @@
 //! One headless Host implementation for embedded and optional service clients.
 mod authorization;
 mod events;
+pub mod external;
 mod router;
 mod server;
 mod capture;

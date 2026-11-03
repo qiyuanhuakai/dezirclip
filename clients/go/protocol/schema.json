@@ -388,6 +388,38 @@
         }
       ]
     },
+    "ExternalOpenParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "reveal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id",
+        "reveal"
+      ],
+      "additionalProperties": false
+    },
     "ApplicationSelection": {
       "type": "object",
       "properties": {
@@ -1375,6 +1407,7 @@
         "desktop.platform.probe",
         "desktop.profile.info",
         "desktop.appearance.background",
+        "desktop.history.open",
         "desktop.applications.select",
         "desktop.window.target",
         "desktop.window.pin",
@@ -2235,6 +2268,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.open"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ExternalOpenParams"
               }
             }
           }

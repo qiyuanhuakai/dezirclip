@@ -367,60 +367,6 @@ unsafe fn render_icon_to_png_bytes(icon: HICON) -> AppResult<Vec<u8>> {
     result
 }
 
-// Moved from main.rs
-pub async fn launch_uwp_with_file(app_id: &str, file_path: &str) -> AppResult<()> {
-    let path = std::path::Path::new(file_path);
-    if !path.exists() {
-        return Err(AppError::Validation(format!(
-            "File does not exist: {}",
-            file_path
-        )));
-    }
-
-    let family_name = app_id.split('!').next().unwrap_or(app_id);
-
-    let ps_script = format!(
-        r#"
-        Add-Type -AssemblyName System.Runtime.WindowsRuntime
-        $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | ? {{ $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' }})[0]
-        
-        $fileOp = [Windows.Storage.StorageFile,Windows.Storage,ContentType=WindowsRuntime]::GetFileFromPathAsync('{}')
-        $fileTask = $asTask.MakeGenericMethod([Windows.Storage.StorageFile]).Invoke($null, @($fileOp))
-        $file = $fileTask.GetAwaiter().GetResult()
-        
-        $options = New-Object Windows.System.LauncherOptions
-        $options.TargetApplicationPackageFamilyName = '{}'
-        
-        $launchOp = [Windows.System.Launcher,Windows.System,ContentType=WindowsRuntime]::LaunchFileAsync($file, $options)
-        $launchTask = $asTask.MakeGenericMethod([Boolean]).Invoke($null, @($launchOp))
-        $result = $launchTask.GetAwaiter().GetResult()
-        
-        if ($result) {{ exit 0 }} else {{ exit 1 }}
-        "#,
-        file_path.replace("'", "''"),
-        family_name
-    );
-
-    let output = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &ps_script,
-        ])
-        .creation_flags(0x08000000)
-        .output()
-        .map_err(|e| format!("Starting PowerShell failed: {}", e))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("WinRT Launch failed: {}", stderr.trim()).into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{IconCache, EXECUTABLE_ICON_CACHE_MAX};

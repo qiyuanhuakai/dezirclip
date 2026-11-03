@@ -38,6 +38,13 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  open_content: args => {
+    const epoch = currentEpoch();
+    if (args.expectedPrivacyEpoch !== undefined && args.expectedPrivacyEpoch !== epoch) throw new Error("PrivacyEpochChanged");
+    if (typeof args.id === "number" && args.id < 0) throw new Error("SessionExternalOpenUnavailable");
+    return library("OpenEntry", { id: args.id, service_instance_id: args.expectedHostInstanceId,
+      expected_epoch: epoch, reveal: args.expectedPrivacyEpoch !== undefined });
+  },
   get_file_size: async args => ({ size: await shellCall<number>("FileSize", args.path) }),
   get_custom_background_resource: async args => {
     const src = await library<string | null>("Background", currentEpoch(), args.expectedPath);

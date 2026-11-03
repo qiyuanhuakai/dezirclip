@@ -66,6 +66,7 @@ pub struct Host {
     font_scan: Mutex<()>,
     background_read: Mutex<()>,
     application_selection: Mutex<()>,
+    pub(crate) external: crate::external::ExternalEdits,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
@@ -107,7 +108,7 @@ impl Host {
     }
     pub fn with_session(options: HostOptions, session: Arc<api::SessionHistoryStore>) -> Result<Arc<Self>, WireErrorCode> {
         let epoch = options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.privacy_epoch;
-        let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
+        let host = Arc::new_cyclic(|owner| Self { external: crate::external::ExternalEdits::new(owner.clone()), history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
             #[cfg(test)] after_backup_ticket: Mutex::new(None),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), background_read: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
@@ -304,6 +305,7 @@ impl Host {
                 methods.push("desktop.profile.info");
                 methods.push("desktop.appearance.background");
                 methods.push("desktop.applications.select");
+                methods.push("desktop.history.open");
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
@@ -373,7 +375,7 @@ impl Host {
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
     }
     pub(crate) fn independent_dispatch(method: Method) -> bool {
-        matches!(method, Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+        matches!(method, Method::DesktopHistoryOpen | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
             Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
@@ -513,6 +515,10 @@ impl Host {
                     _ => WireErrorCode::Unavailable,
                 })?;
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("capture_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopHistoryOpen => {
+                self.open_history_item(session, params(request.params)?)?;
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::DesktopApplicationsSelect => {
