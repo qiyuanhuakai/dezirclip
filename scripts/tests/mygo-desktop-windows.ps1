@@ -176,6 +176,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                 finally { $image.Dispose() }
             }
         } 'Full Screen Capture did not copy the selected display'
+        $acknowledged = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Copied to clipboard')
+        $null = Wait-Until { $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $acknowledged) } 'Full Screen Capture was not acknowledged'
         Click-Control $main (Get-ControlPoint $root 'Region Capture')
         $panel = Get-ResidentPanel $resident ([regex]::Unescape('DezirClip \u622a\u56fe'))
         [Windows.Forms.SendKeys]::SendWait('{ESC}')

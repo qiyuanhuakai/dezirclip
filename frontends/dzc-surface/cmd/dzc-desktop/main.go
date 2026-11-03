@@ -232,7 +232,7 @@ func run() error {
 	history.rememberTarget(ctx)
 	mygo.Bind(history)
 	mygo.Bind(&Library{owner: actions})
-	shell := &DesktopShell{capture: residentCapture{output: os.Stdout}}
+	shell := &DesktopShell{capture: residentCapture{output: os.Stdout, grantFocus: grantResidentFocus}}
 	mygo.Bind(shell)
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)

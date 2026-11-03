@@ -20,10 +20,11 @@ type captureReply struct {
 	Success bool   `json:"success"`
 }
 type residentCapture struct {
-	output  io.Writer
-	mu      sync.Mutex
-	id      uint64
-	pending chan bool
+	output     io.Writer
+	grantFocus func() error
+	mu         sync.Mutex
+	id         uint64
+	pending    chan bool
 }
 
 func (s *DesktopShell) Capture(ctx context.Context, full bool, epoch uint64) error {
@@ -43,6 +44,11 @@ func (s *DesktopShell) Capture(ctx context.Context, full bool, epoch uint64) err
 		c.pending = nil
 		c.mu.Unlock()
 	}()
+	if !full && c.grantFocus != nil {
+		if err := c.grantFocus(); err != nil {
+			return err
+		}
+	}
 	if err := json.NewEncoder(c.output).Encode(request); err != nil {
 		return err
 	}
