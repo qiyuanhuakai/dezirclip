@@ -95,6 +95,8 @@ const GeneralSettingsGroup = ({
     const [loginError, setLoginError] = useState("");
     const [traySaving, setTraySaving] = useState(false);
     const [trayError, setTrayError] = useState("");
+    const [gpuSaving, setGpuSaving] = useState(false);
+    const [gpuError, setGpuError] = useState("");
     const [soundSaving, setSoundSaving] = useState(false);
     const [soundError, setSoundError] = useState("");
     const commitSound = async (enabled: boolean, pasteOnly: boolean) => {
@@ -268,14 +270,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={disableWebviewGpu}
-                            onChange={(e) => {
+                            aria-label={t('disable_webview_gpu')}
+                            disabled={gpuSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setDisableWebviewGpu(enabled);
-                                saveAppSetting('disable_webview_gpu', String(enabled));
+                                setGpuSaving(true);
+                                setGpuError("");
+                                try {
+                                    await invoke("save_setting", { key: "app.disable_webview_gpu", value: String(enabled) });
+                                    setDisableWebviewGpu(enabled);
+                                } catch (error) {
+                                    setGpuError(String(error));
+                                } finally {
+                                    setGpuSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {gpuError && <span role="alert">{t("common_error")} · {gpuError}</span>}
                 </div>
 
                 <div className="setting-item">

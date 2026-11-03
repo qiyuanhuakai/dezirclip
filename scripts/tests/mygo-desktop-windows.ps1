@@ -81,6 +81,19 @@ function Get-ControlPoint($root, [string]$Name) {
     } "Control missing from the shared WebView2 accessibility tree: $Name"
 }
 
+function Get-GpuCheckbox($root) {
+    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Disable WebView GPU')
+    $type = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::CheckBox)
+    $root.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.AndCondition]::new($type, $name))
+}
+
+function Get-WebViewBrowser($main) {
+    Wait-Until {
+        Get-CimInstance Win32_Process -Filter ("ParentProcessId={0} AND Name='msedgewebview2.exe'" -f $main.Id) |
+            Where-Object { $_.CommandLine -and $_.CommandLine -notmatch '(?:^|\s)--type=' } | Select-Object -First 1
+    } 'No live WebView2 browser for the current MyGo main window'
+}
+
 function Click-Control($main, $point) {
     if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before click' }
     if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not position pointer on the control' }
@@ -296,6 +309,32 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     if ($Capture) {
         Test-ExternalEdit $root $main $marker
         Click-Control $main (Get-ControlPoint $root 'Settings')
+        $softwareFlag = '(?:^|\s)--disable-gpu(?:\s|$)'
+        $inheritedGpu = (Get-WebViewBrowser $main).CommandLine -match $softwareFlag
+        $originalHost = (& $cli service status --json | ConvertFrom-Json).state.service_instance_id
+        if ($LASTEXITCODE -or !$originalHost) { throw 'Cannot identify Service before GPU change' }
+        foreach ($disabled in @($true, $false)) {
+            if (!(Get-GpuCheckbox $root)) { Click-Control $main (Get-ControlPoint $root 'General Settings') }
+            $box = Wait-Until { Get-GpuCheckbox $root } 'GPU setting not available'
+            $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+            if (($toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::On) -eq $disabled) {
+                throw 'Unexpected GPU setting before changing it'
+            }
+            $toggle.Toggle()
+            $null = Wait-Until { $main.HasExited } 'GPU change did not close the previous WebView'
+            $main = Wait-Until {
+                if ($resident.HasExited) { throw 'GPU change terminated the native resident' }
+                Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
+                    $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
+                } | Select-Object -First 1
+            } 'GPU change did not create a replacement main window'
+            $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+            $actual = (Get-WebViewBrowser $main).CommandLine -match $softwareFlag
+            if ($actual -ne ($disabled -or $inheritedGpu)) { throw 'Unexpected live WebView2 GPU arguments' }
+            $currentHost = (& $cli service status --json | ConvertFrom-Json).state.service_instance_id
+            if ($LASTEXITCODE -or $currentHost -cne $originalHost) { throw 'GPU change replaced the Rust Service' }
+        }
+        Write-Output 'Verified both GPU changes on replacement WebView2 browsers with the same native resident and Rust Service'
         Click-Control $main (Get-ControlPoint $root 'Tools')
         Test-RegisteredCli $root $cli
         $point = Get-ControlPoint $root 'Full Screen Capture'

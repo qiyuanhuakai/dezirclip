@@ -67,6 +67,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		var tray *mygo.Tray
 		var setTrayVisible func(bool) error
 		var commands io.WriteCloser
+		gpuDisabled := false
 		stopping := false
 		closing := false
 		reopen := ""
@@ -93,6 +94,17 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				return
 			}
 			child := exec.Command(executable, "--main-window", owner.Hello().State.ServiceInstanceId)
+			if saved := (&Library{owner}).windowPreferences(context.Background()).GpuDisabled; saved != "" {
+				gpuDisabled = saved == "true"
+			}
+			if gpuDisabled {
+				env, err := softwareWebviewEnvironment()
+				if err != nil {
+					log.Print("Invalid WebView environment")
+					return
+				}
+				child.Env = append(os.Environ(), env...)
+			}
 			child.Stderr = os.Stderr
 			input, err := child.StdinPipe()
 			if err != nil {
@@ -136,6 +148,20 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 								switch request.Operation {
 								case "capture":
 									selector.Capture(request.Full, request.Epoch, reply)
+								case "webview-gpu":
+									ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+									err := (&Library{owner}).SetSetting(ctx, "app.disable_webview_gpu", strconv.FormatBool(request.Disabled), request.Epoch)
+									cancel()
+									if err != nil || request.Disabled == gpuDisabled {
+										reply(err)
+										return
+									}
+									gpuDisabled = request.Disabled
+									closing, reopen = true, "settings"
+									reply(nil)
+									if _, err := io.WriteString(input, "rebuild\n"); err != nil {
+										log.Printf("Closing WebView for GPU change: %v", err)
+									}
 								case "tray":
 									wasVisible := tray != nil
 									if err := setTrayVisible(request.Visible); err != nil {

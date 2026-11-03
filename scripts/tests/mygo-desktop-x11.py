@@ -325,7 +325,7 @@ def tray_item(pid, label, activate=True):
     return False
 
 
-def visible_main_window(resident, executable):
+def visible_main_window(resident_pid, executable):
     import re
     windows = subprocess.check_output(['xprop', '-root', '_NET_CLIENT_LIST'], text=True)
     for xid in re.findall(r'0x[0-9a-fA-F]+', windows):
@@ -335,7 +335,7 @@ def visible_main_window(resident, executable):
         if not pid.isdecimal(): continue
         try:
             if Path(f'/proc/{pid}/exe').resolve(strict=True) != executable: continue
-            if int(Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[1]) != resident.pid: continue
+            if int(Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[1]) != resident_pid: continue
         except (FileNotFoundError, ProcessLookupError):
             continue
         info = subprocess.run(['xwininfo', '-id', xid], capture_output=True, text=True)
@@ -591,6 +591,42 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         directory = str(Path(os.environ['DEZIRCLIP_DB_PATH']).parent)
         wait_for(lambda: find_item(directory, text=True), 'Settings did not display the active Rust profile')
         print('Verified About shows the running MyGo binary identity and Data Management shows the isolated Service profile')
+        def main_pid():
+            xid = visible_main_window(resident, executable)
+            if xid:
+                props = subprocess.run(['xprop','-id',str(xid),'_NET_WM_PID'], capture_output=True, text=True)
+                value = props.stdout.split()[-1:] if props.returncode == 0 else []
+                return int(value[0]) if value and value[0].isdecimal() else None
+        def gpu_env(pid):
+            keys = (b'WEBKIT_DISABLE_COMPOSITING_MODE', b'WEBKIT_DISABLE_DMABUF_RENDERER')
+            return {key: value for field in Path(f'/proc/{pid}/environ').read_bytes().split(b'\0')
+                    for key, _, value in [field.partition(b'=')] if key in keys}
+        cli = executable.with_name('dzc')
+        def service_id():
+            return json.loads(subprocess.check_output([cli, 'service', 'status', '--json']))['state']['service_instance_id']
+        original_service = service_id()
+        resident_env = gpu_env(resident)
+        # MyGo sets a default DMA-BUF policy during Linux resident initialization.
+        # The original child includes it in its exec environment.
+        inherited = gpu_env(wait_for(main_pid, 'No main window before GPU test'))
+        for disabled in [True, False]:
+            toggle_gpu = open_settings_group('General Settings', 'Disable WebView GPU')
+            old_pid = wait_for(main_pid, 'Could not identify WebView before changing GPU')
+            fd = os.pidfd_open(old_pid)
+            try:
+                assert atspi.Action.do_action(toggle_gpu, 0)
+                wait_for(lambda: select.select([fd], [], [], 0)[0], 'Old WebView did not exit after GPU change')
+            finally:
+                os.close(fd)
+            new_pid = wait_for(main_pid, 'No replacement main window after GPU change')
+            assert new_pid != old_pid and gpu_env(resident) == resident_env and service_id() == original_service
+            expected = {b'WEBKIT_DISABLE_COMPOSITING_MODE': b'1', b'WEBKIT_DISABLE_DMABUF_RENDERER': b'1'} if disabled else inherited
+            observed = gpu_env(new_pid)
+            assert observed == expected, f'GPU disabled={disabled}, new WebView {new_pid}: {observed}, expected {expected}'
+            updated = open_settings_group('General Settings', 'Disable WebView GPU')
+            wait_for(lambda: updated.get_state_set().contains(atspi.StateType.CHECKED) == disabled,
+                     'Recreated WebView did not restore the committed GPU setting')
+        print('Verified both GPU changes replace only the WebView and pass its WebKit launch policy')
         login = open_settings_group('General Settings', 'Launch at Startup')
         silent = wait_for(lambda: find_item('Silent Start'), 'Silent Start checkbox missing')
         hide_tray = wait_for(lambda: find_item('Hide Tray Icon'), 'Hide Tray Icon checkbox missing')
@@ -920,7 +956,7 @@ def check(desktop, pinned, audio):
         deadline = time.monotonic() + 12
         geometry = None
         while time.monotonic() < deadline:
-            xid = visible_main_window(process, desktop)
+            xid = visible_main_window(process.pid, desktop)
             if xid:
                 frame = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), xid)
                 if frame:
@@ -1004,7 +1040,7 @@ def check(desktop, pinned, audio):
                         move_pointer()
                         process = subprocess.Popen([desktop, *args], stdout=subprocess.DEVNULL)
                         deadline = time.monotonic() + 15
-                        while not visible_main_window(process, desktop):
+                        while not visible_main_window(process.pid, desktop):
                             assert process.poll() is None and time.monotonic() < deadline, f'No visible startup recovery for {args}'
                             time.sleep(.1)
                         check_placement(False)

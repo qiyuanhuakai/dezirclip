@@ -11,6 +11,7 @@ import (
 )
 
 type windowPreferences struct {
+	GpuDisabled string `json:"app.disable_webview_gpu"`
 	FollowMouse string `json:"app.follow_mouse"`
 	Width       string `json:"app.window_width"`
 	Height      string `json:"app.window_height"`

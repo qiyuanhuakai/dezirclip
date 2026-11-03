@@ -14,6 +14,7 @@ type residentRequest struct {
 	ID        uint64 `json:"request_id"`
 	Epoch     uint64 `json:"epoch"`
 	Operation string `json:"operation"`
+	Disabled  bool   `json:"disabled,omitempty"`
 	Full      bool   `json:"full,omitempty"`
 	Visible   bool   `json:"visible,omitempty"`
 }
@@ -31,6 +32,10 @@ type residentBridge struct {
 
 func (s *DesktopShell) Capture(ctx context.Context, full bool, epoch uint64) error {
 	return s.resident.send(ctx, residentRequest{Operation: "capture", Full: full, Epoch: epoch}, 115*time.Second)
+}
+
+func (s *DesktopShell) SetWebviewGpuDisabled(ctx context.Context, disabled bool, epoch uint64) error {
+	return s.resident.send(ctx, residentRequest{Operation: "webview-gpu", Disabled: disabled, Epoch: epoch}, 10*time.Second)
 }
 
 func (s *DesktopShell) SetTrayVisible(ctx context.Context, visible bool, epoch uint64) error {
@@ -71,6 +76,9 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 		if !success {
 			if request.Operation == "capture" {
 				return errors.New("ScreenshotUnavailable")
+			}
+			if request.Operation == "webview-gpu" {
+				return errors.New("WebViewRebuildUnavailable")
 			}
 			return errors.New("TrayUnavailable")
 		}

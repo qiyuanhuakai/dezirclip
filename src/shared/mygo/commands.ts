@@ -134,7 +134,11 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   import_custom_theme: args => library("ImportTheme", args.path, currentEpoch()),
   export_custom_theme: args => library("ExportTheme", args.id, args.path, currentEpoch()),
   delete_custom_theme: args => library("RemoveTheme", args.id, currentEpoch()),
-  save_setting: args => library("SetSetting", args.key, args.value, currentEpoch()),
+  save_setting: args => {
+    if (args.key !== "app.disable_webview_gpu") return library("SetSetting", args.key, args.value, currentEpoch());
+    if (args.value !== "true" && args.value !== "false") throw new Error("ViewSettingInvalid");
+    return shellCall("SetWebviewGpuDisabled", args.value === "true", currentEpoch());
+  },
   copy_to_clipboard: args => window.mygo.call("History.CopyEntry", {
     id: args.id === 0 ? args.derivedFromId : args.id,
     service_instance_id: args.expectedHostInstanceId,

@@ -307,7 +307,7 @@ func run() error {
 					shell.resident.accept(command)
 					continue
 				}
-				if command == "toggle" && win.IsFocused() {
+				if command == "rebuild" || command == "toggle" && win.IsFocused() {
 					mygo.RunOnMain(func() { win.Close() })
 					continue
 				}
