@@ -661,6 +661,7 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                                         ('Paste Sound', 'app.sound_paste_enabled', True),
                                         ('Sound Effects', 'app.sound_enabled', False)]:
                 checkbox = wait_for(lambda: find_item(label), f'{label} checkbox missing')
+                wait_for(lambda: checkbox.get_state_set().contains(atspi.StateType.SENSITIVE), f'{label} did not become editable')
                 assert atspi.Action.do_action(checkbox, 0)
                 wait_for(lambda: db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone() == (str(enabled).lower(),)
                          and checkbox.get_state_set().contains(atspi.StateType.CHECKED) == enabled,

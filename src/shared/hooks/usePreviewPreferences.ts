@@ -3,8 +3,10 @@ import { loadPreviewPreferences, subscribePreviewPreferenceChanges } from "../li
 import { readPreviewPreferences } from "../lib/previewPreferences";
 
 export const PreviewOpacityContext = createContext(readPreviewPreferences({}).opacity);
+import { usePrivacySession } from "./usePrivacySession";
 
 export function usePreviewPreferences() {
+  const privacy = usePrivacySession();
   const [preferences, setPreferences] = useState(() => readPreviewPreferences({}));
   const [ready, setReady] = useState(false);
   const [error, setError] = useState(false);
@@ -33,5 +35,6 @@ export function usePreviewPreferences() {
     }, () => { if (!disposed) setError(true); });
     return () => { disposed = true; mounted.current = false; version.current += 1; stop?.(); };
   }, [reload]);
-  return { preferences, ready, error, reload };
+  const canSave = import.meta.env.MODE !== "mygo" || (privacy.phase === "ready" && !!privacy.snapshot && !privacy.pending);
+  return { preferences, ready: ready && canSave, error, reload };
 }
