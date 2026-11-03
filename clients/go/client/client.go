@@ -26,7 +26,7 @@ func Dial(ctx context.Context, address string, hello protocol.HelloParams) (*Cli
     if hello.ClientRole == protocol.ClientRoleDesktop && !slices.Contains(hello.Capabilities, "desktop.extended_methods") && len(hello.Capabilities) < 64 {
         hello.Capabilities = append(slices.Clone(hello.Capabilities), "desktop.extended_methods")
     }
-    conn, err := dialLocal(ctx, address)
+    conn, err := dialLocal(ctx, address, 0)
     if err != nil { return nil, err }
     return handshake(ctx, conn, hello)
 }

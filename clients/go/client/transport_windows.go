@@ -21,7 +21,7 @@ func tokenIdentity(token windows.Token) (string, uint32, error) {
     return user.User.Sid.String(), session, err
 }
 
-func dialLocal(ctx context.Context, address string) (net.Conn, error) {
+func dialLocal(ctx context.Context, address string, expectedPID uint32) (net.Conn, error) {
     const prefix = `\\.\pipe\dezirclip-`
     if !strings.HasPrefix(address, prefix) || strings.ContainsAny(strings.TrimPrefix(address, prefix), `\/`) { return nil, ErrProtocol }
     // Identification permits the Host to inspect this client's identity without
@@ -32,6 +32,7 @@ func dialLocal(ctx context.Context, address string) (net.Conn, error) {
     if !ok { conn.Close(); return nil, ErrProtocol }
     var pid uint32
     if err = windows.GetNamedPipeServerProcessId(windows.Handle(handle.Fd()), &pid); err != nil { conn.Close(); return nil, err }
+    if expectedPID != 0 && expectedPID != pid { conn.Close(); return nil, ErrProtocol }
     process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
     if err != nil { conn.Close(); return nil, err }
     defer windows.CloseHandle(process)
@@ -43,6 +44,21 @@ func dialLocal(ctx context.Context, address string) (net.Conn, error) {
     expectedUser, expectedSession, err := tokenIdentity(windows.GetCurrentProcessToken())
     if err != nil || actualUser != expectedUser || actualSession != expectedSession { conn.Close(); return nil, ErrProtocol }
     return conn, nil
+}
+
+func openControlFile(path string) (*os.File, error) {
+    wide, err := windows.UTF16PtrFromString(path)
+    if err != nil { return nil, err }
+    handle, err := windows.CreateFile(wide, windows.GENERIC_READ, windows.FILE_SHARE_READ, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+    if err != nil { return nil, err }
+    var info windows.ByHandleFileInformation
+    kind, err := windows.GetFileType(handle)
+    if err != nil || kind != windows.FILE_TYPE_DISK || windows.GetFileInformationByHandle(handle, &info) != nil ||
+        info.FileAttributes&(windows.FILE_ATTRIBUTE_REPARSE_POINT|windows.FILE_ATTRIBUTE_DIRECTORY) != 0 {
+        windows.CloseHandle(handle)
+        return nil, ErrProtocol
+    }
+    return os.NewFile(uintptr(handle), path), nil
 }
 
 // Only the foreground application can transfer its foreground right to the

@@ -13,6 +13,8 @@ enum ServiceCommand {
     Stop,
     /// Query the current Host without starting one.
     Status { #[arg(long)] json: bool },
+    /// Resolve the authenticated desktop Host. Prints connection metadata only.
+    DesktopEndpoint { #[arg(long)] start_if_missing: bool },
     /// Explicitly grant a Surface bounded access. The token is printed once.
     GrantSurface { #[arg(long)] copy: bool, #[arg(long)] paste: bool,
         #[arg(long,default_value_t=3600,value_parser=clap::value_parser!(u64).range(1..=86400))] seconds: u64 },
@@ -40,6 +42,11 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 status_output(status,json)
             }
             ServiceCommand::Status { json } => status_output(controller::status(&database).await.map_err(|e|e.to_string())?,json),
+            ServiceCommand::DesktopEndpoint { start_if_missing } => {
+                let descriptor = controller::desktop_endpoint(&database, start_if_missing).await.map_err(|error| error.to_string())?;
+                println!("{}", descriptor);
+                Ok(())
+            }
             ServiceCommand::Stop => controller::stop(&database).await.map_err(|e|e.to_string()),
             ServiceCommand::GrantSurface { copy,paste,seconds } => {
                 let mut client = Client::control(&controller::endpoint(&database).map_err(|e|e.to_string())?,ClientRole::Cli).await.map_err(|e|e.to_string())?;

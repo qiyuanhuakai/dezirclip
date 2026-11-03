@@ -45,9 +45,39 @@ pub async fn stop(database: &Path) -> io::Result<()> {
     Ok(())
 }
 pub async fn start(database: &Path, executable: &Path, no_capture: bool) -> io::Result<ServiceStatus> {
-    start_preflight(database,executable,no_capture,dzc_platform::ipc::ProcessExit::ensure_supported).await
+    start_preflight(database,executable,no_capture,true,dzc_platform::ipc::ProcessExit::ensure_supported).await
 }
-async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, probe: impl FnOnce()->io::Result<()>) -> io::Result<ServiceStatus> {
+/// Find the current desktop Host. Starting the sibling Service is opt-in and
+/// cannot displace an Embedded Host that wins a concurrent startup.
+pub async fn desktop_endpoint(database: &Path, start_if_missing: bool) -> io::Result<serde_json::Value> {
+    let endpoint = endpoint(database)?;
+    match Client::connect(&endpoint, ClientRole::Desktop, None).await {
+        Ok(_) => (),
+        Err(error) if start_if_missing && matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) => {
+            if let Err(start_error) = start_preflight(database, &sibling_executable()?, false, false,
+                dzc_platform::ipc::ProcessExit::ensure_supported).await {
+                // Concurrent starts may lose the exclusive bind. Accept only a
+                // responsive owner, authenticated again below.
+                if Client::connect(&endpoint, ClientRole::Desktop, None).await.is_err() {
+                    return Err(start_error);
+                }
+            }
+        }
+        Err(error) => return Err(error),
+    }
+    let client = Client::control(&endpoint, ClientRole::Desktop).await?;
+    if !client.hello.permissions.contains(&Permission::DesktopHistory) {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    Ok(serde_json::json!({
+        "address": endpoint.address(), "control_path": endpoint.control_path(),
+        "pid": client.peer.pid().ok_or_else(|| io::Error::other("HostPidUnavailable"))?,
+        "instance": client.hello.state.service_instance_id,
+        "version": client.hello.core_version,
+    }))
+}
+
+async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, allow_handoff: bool, probe: impl FnOnce()->io::Result<()>) -> io::Result<ServiceStatus> {
     // This must precede even endpoint preparation or helper inspection. An
     // unsupported service transition leaves the existing embedded owner alone.
     probe()?;
@@ -65,6 +95,7 @@ async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, p
     if let Ok(mut existing) = Client::control(&endpoint, ClientRole::Cli).await {
         drop(dzc_platform::ipc::ProcessExit::open(&existing.peer)?);
         let status: ServiceStatus = existing.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
+        if !allow_handoff { return Ok(status); }
         if status.mode == HostMode::Service {
             if status.capture_owner != !no_capture { return Err(io::Error::new(io::ErrorKind::AlreadyExists,"ServiceCaptureModeConflict")); }
             return Ok(status);
@@ -132,7 +163,7 @@ mod tests {
             let (_shutdown,receiver)=tokio::sync::watch::channel(false);
             let server=tokio::spawn(crate::serve_listener(host.clone(),listener,receiver));
             let original=status(&database).await.unwrap();
-            let error=start_preflight(&database,&directory.join("nonexistent-service"),false,||Err(io::Error::new(io::ErrorKind::Unsupported,"SyntheticProcessObservationDenied"))).await.unwrap_err();
+            let error=start_preflight(&database,&directory.join("nonexistent-service"),false,true,||Err(io::Error::new(io::ErrorKind::Unsupported,"SyntheticProcessObservationDenied"))).await.unwrap_err();
             assert_eq!(error.kind(),io::ErrorKind::Unsupported);
             assert_eq!(status(&database).await.unwrap().state.service_instance_id,original.state.service_instance_id);
             assert_eq!(stopped.load(Ordering::SeqCst),0);

@@ -13,6 +13,7 @@ import shutil
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', type=Path, required=True)
+    parser.add_argument('--desktop-fixture', type=Path)
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     cli = args.cli.resolve(strict=True)
@@ -52,6 +53,14 @@ def main():
             active = True
             first = run('service', 'start', '--no-capture', '--json', json_result=True)
             assert first['mode'] == 'service' and first['capture_owner'] is False
+            if args.desktop_fixture:
+                version = run('build-info', '--json', json_result=True)['component_version']
+                for mode in ('attach', 'start'):
+                    result = subprocess.run([str(args.desktop_fixture.resolve(strict=True)), '--desktop', version, mode],
+                                            env=env, check=True, capture_output=True, text=True, timeout=35)
+                    status = json.loads(result.stdout)
+                    assert not status['capture_owner'] and status['state']['service_instance_id'] == first['state']['service_instance_id']
+                report['independent_desktop_reused_owner'] = True
             again = run('service', 'start', '--no-capture', '--json', json_result=True)
             assert again['state']['service_instance_id'] == first['state']['service_instance_id']
             on = run('privacy','on','--seconds','60','--json',json_result=True)
