@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fs::{read_dir, read_to_string};
+use std::fs::read_dir;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -10,6 +10,11 @@ pub struct AppInfo {
     pub name: String,
     pub path: String,
     pub icon: Option<String>,
+}
+
+fn read_desktop_metadata(path: &Path) -> Option<String> {
+    let bytes = dzc_core::filesystem::read_bounded_regular(path, 1024 * 1024).ok()?;
+    String::from_utf8(bytes).ok()
 }
 
 fn application_dirs() -> Vec<PathBuf> {
@@ -119,7 +124,7 @@ pub fn get_associated_apps(extension: String) -> io::Result<Vec<AppInfo>> {
         if !mimeapps_path.exists() {
             continue;
         }
-        if let Ok(content) = read_to_string(&mimeapps_path) {
+        if let Some(content) = read_desktop_metadata(&mimeapps_path) {
             let mut in_relevant_section = false;
 
             for line in content.lines() {
@@ -210,7 +215,7 @@ pub fn get_executable_icon(executable_path: String) -> io::Result<Option<String>
 }
 
 fn parse_desktop_file(path: &Path) -> Option<AppInfo> {
-    let content = read_to_string(path).ok()?;
+    let content = read_desktop_metadata(path)?;
     let mut name = None;
     let mut exec = None;
     let mut icon = None;
@@ -269,7 +274,7 @@ fn parse_desktop_file(path: &Path) -> Option<AppInfo> {
 }
 
 fn get_desktop_field(path: &Path, field: &str) -> Option<String> {
-    let content = read_to_string(path).ok()?;
+    let content = read_desktop_metadata(path)?;
     let mut in_desktop_entry = false;
     for line in content.lines() {
         let trimmed = line.trim();

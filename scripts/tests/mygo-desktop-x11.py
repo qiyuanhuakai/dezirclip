@@ -744,6 +744,10 @@ def check(desktop, pinned):
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.window_pinned','true')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.hotkey','Ctrl+Shift+F8')")
     if pinned:
+        installed = json.loads(subprocess.check_output([cli, 'desktop-tools', 'installed-apps'], timeout=12))
+        assert any(app['path'] == '/linked-fixture' for app in installed)
+        assert not any(app['path'] == '/oversized-fixture' for app in installed)
+        (Path(os.environ['XDG_DATA_HOME'])/'applications/blocked.desktop').unlink()
         entry = subprocess.check_output([cli, 'list', '1', '--ids'], text=True).strip()
         subprocess.run([cli, 'tag', 'add', str(int(entry)), 'test-tag'], check=True, stdout=subprocess.DEVNULL)
         subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True, stdout=subprocess.DEVNULL)
@@ -934,6 +938,13 @@ if __name__ == '__main__':
             if '--pinned' in sys.argv[2:]:
                 applications = home/'data/applications'
                 applications.mkdir()
+                os.mkfifo(applications/'blocked.desktop')
+                with (applications/'oversized.desktop').open('wb') as oversized:
+                    oversized.write(b'[Desktop Entry]\nType=Application\nName=Oversized Fixture\nExec=/oversized-fixture\n')
+                    oversized.truncate(2 * 1024 * 1024)
+                descriptor = home/'installed-viewer'
+                descriptor.write_text('[Desktop Entry]\nType=Application\nName=Linked Fixture\nExec=/linked-fixture\n')
+                (applications/'linked.desktop').symlink_to(descriptor)
                 fixture_editor = home/'fixture-editor'
                 fixture_editor.write_text("""#!/usr/bin/python3
 from pathlib import Path
