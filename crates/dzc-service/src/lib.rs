@@ -109,10 +109,42 @@ mod desktop_protocol_tests {
         result
     }
 
+    async fn exercise_themes(client: &mut Client, database: &Path, state: &RuntimeState) -> Result<(), Box<dyn Error>> {
+        use serde_json::json;
+        let profile = database.parent().ok_or("missing profile")?;
+        let source = profile.join("source.theme");
+        let target = profile.join("export.theme");
+        let sample = json!({"id":"sample","name":"Sample","base":"mica","format":"dezirclip-theme","version":1,
+            "css":":root.light-mode{--dc-accent:#123456}.dark-mode .dc-tag-entry{border-radius:12px}"});
+        std::fs::write(&source, serde_json::to_vec(&sample)?)?;
+        let base = json!({"service_instance_id":state.service_instance_id,"expected_epoch":state.privacy_epoch});
+        let mut import = base.clone(); import["path"] = json!(source);
+        let saved: DesktopThemePackage = client.call(Method::DesktopThemesImport, &import, "DesktopThemePackage").await?;
+        assert_eq!(saved.id, "sample");
+        assert!(client.call::<DesktopThemePackage>(Method::DesktopThemesImport, import, "DesktopThemePackage").await.is_err());
+        let list: ThemeIndex = client.call(Method::DesktopThemesList, &base, "ThemeIndex").await?;
+        assert_eq!(list.ids, ["sample"]);
+        let mut selected = base.clone(); selected["id"] = json!("sample");
+        let read: DesktopThemePackage = client.call(Method::DesktopThemesGet, &selected, "DesktopThemePackage").await?;
+        assert_eq!(read.css, saved.css);
+        let mut export = selected.clone(); export["path"] = json!(database);
+        assert!(client.call::<OperationResult>(Method::DesktopThemesExport, &export, "OperationResult").await.is_err());
+        export["path"] = json!(target);
+        let wrote: OperationResult = client.call(Method::DesktopThemesExport, export, "OperationResult").await?;
+        assert!(wrote.performed);
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(&std::fs::read(target)?)?, sample);
+        let removed: ThemeRemoved = client.call(Method::DesktopThemesRemove, selected, "ThemeRemoved").await?;
+        assert!(!removed.active_reset);
+        let list: ThemeIndex = client.call(Method::DesktopThemesList, base, "ThemeIndex").await?;
+        assert!(list.ids.is_empty());
+        Ok(())
+    }
+
     async fn exercise_tools(database: &Path, capture: bool) -> Result<(), Box<dyn Error>> {
         let mut client = Client::control(&controller::endpoint(database)?, ClientRole::Desktop).await?;
         let state: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
         if state.mode != HostMode::Service || state.capture_owner != capture { return Err("expected the requested isolated service mode".into()); }
+        exercise_themes(&mut client, database, &state.state).await?;
         let catalog: ToolCatalog = client.call(Method::DesktopToolsCatalog, serde_json::json!({}), "ToolCatalog").await?;
         let classified: ToolClassification = client.call(Method::DesktopToolsClassify,
             serde_json::json!({"text":"https://example.org"}), "ToolClassification").await?;

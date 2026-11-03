@@ -280,6 +280,7 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                methods.extend(["desktop.themes.list", "desktop.themes.get", "desktop.themes.import", "desktop.themes.export", "desktop.themes.remove"]);
                 methods.extend(["desktop.queue.get", "desktop.queue.set", "desktop.queue.configure"]);
                 if self.actions.can_copy() && self.actions.can_paste() {
                     methods.extend(["desktop.paste.target", "desktop.queue.next"]);
@@ -436,6 +437,8 @@ impl Host {
             | Method::DesktopTagsRename | Method::DesktopTagsRemove => self.edit_library(session, request.method, request.params),
             Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview =>
                 self.backup(session, request.method, request.params),
+            Method::DesktopThemesList | Method::DesktopThemesGet | Method::DesktopThemesImport |
+            Method::DesktopThemesExport | Method::DesktopThemesRemove => self.theme_request(session, request.method, request.params),
             Method::DesktopSettingsCaptureGet => {
                 let input: LibraryStateParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;

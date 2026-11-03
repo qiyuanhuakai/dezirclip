@@ -3,6 +3,21 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 const LIBRARY_KEY: &str = "app.custom_themes";
 
+impl super::clipboard_repo::SqliteClipboardRepository {
+    pub(crate) fn custom_themes(&self) -> Result<Vec<ThemePackage>, String> {
+        let conn = self.conn.lock().map_err(|error| error.to_string())?;
+        load(&conn)
+    }
+    pub(crate) fn import_theme(&self, theme: ThemePackage) -> Result<(), String> {
+        let mut conn = self.conn.lock().map_err(|error| error.to_string())?;
+        upsert(&mut conn, theme, false).map(|_| ())
+    }
+    pub(crate) fn remove_theme(&self, id: &str) -> Result<bool, String> {
+        let mut conn = self.conn.lock().map_err(|error| error.to_string())?;
+        remove(&mut conn, id).map(|(_, active)| active)
+    }
+}
+
 pub fn load(conn: &Connection) -> Result<Vec<ThemePackage>, String> {
     let raw: Option<String> = conn
         .query_row(

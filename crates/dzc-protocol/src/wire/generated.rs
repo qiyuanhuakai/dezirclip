@@ -470,6 +470,16 @@ pub enum Method {
     DesktopQuickDismiss,
     #[serde(rename = "desktop.quick.paste")]
     DesktopQuickPaste,
+    #[serde(rename = "desktop.themes.list")]
+    DesktopThemesList,
+    #[serde(rename = "desktop.themes.get")]
+    DesktopThemesGet,
+    #[serde(rename = "desktop.themes.import")]
+    DesktopThemesImport,
+    #[serde(rename = "desktop.themes.export")]
+    DesktopThemesExport,
+    #[serde(rename = "desktop.themes.remove")]
+    DesktopThemesRemove,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]
@@ -1291,6 +1301,58 @@ pub struct SurfaceControlMessage {
 pub struct DesktopSurfaceCopyParams {
     pub entry_id: i64,
     pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeIdParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeImportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeExportParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub path: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeIndex {
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThemeRemoved {
+    pub active_reset: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopThemePackage {
+    pub id: String,
+    pub version: u32,
+    pub format: String,
+    pub base: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub css: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

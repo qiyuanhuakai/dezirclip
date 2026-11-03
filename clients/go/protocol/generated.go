@@ -324,6 +324,11 @@ const (
     MethodDesktopQuickBegin Method = "desktop.quick.begin"
     MethodDesktopQuickDismiss Method = "desktop.quick.dismiss"
     MethodDesktopQuickPaste Method = "desktop.quick.paste"
+    MethodDesktopThemesList Method = "desktop.themes.list"
+    MethodDesktopThemesGet Method = "desktop.themes.get"
+    MethodDesktopThemesImport Method = "desktop.themes.import"
+    MethodDesktopThemesExport Method = "desktop.themes.export"
+    MethodDesktopThemesRemove Method = "desktop.themes.remove"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"
@@ -921,6 +926,44 @@ type SurfaceControlMessage struct {
 type DesktopSurfaceCopyParams struct {
     EntryId int64 `json:"entry_id"`
     State RuntimeState `json:"state"`
+}
+
+type ThemeIdParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id string `json:"id"`
+}
+
+type ThemeImportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+}
+
+type ThemeExportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+    Id string `json:"id"`
+}
+
+type ThemeIndex struct {
+    Ids []string `json:"ids"`
+}
+
+type ThemeRemoved struct {
+    ActiveReset bool `json:"active_reset"`
+}
+
+type DesktopThemePackage struct {
+    Id string `json:"id"`
+    Version uint32 `json:"version"`
+    Format string `json:"format"`
+    Base string `json:"base"`
+    Name string `json:"name"`
+    Author *string `json:"author,omitempty"`
+    Description *string `json:"description,omitempty"`
+    Css string `json:"css"`
 }
 
 type ToolCatalogParams struct {

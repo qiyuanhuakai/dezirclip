@@ -1143,6 +1143,11 @@
         "desktop.quick.begin",
         "desktop.quick.dismiss",
         "desktop.quick.paste",
+        "desktop.themes.list",
+        "desktop.themes.get",
+        "desktop.themes.import",
+        "desktop.themes.export",
+        "desktop.themes.remove",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -2543,6 +2548,101 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/QuickPasteParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeIdParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.import"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeImportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.export"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeExportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.remove"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeIdParams"
               }
             }
           }
@@ -5385,6 +5485,178 @@
       "required": [
         "entry_id",
         "state"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeIdParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeImportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeExportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeIndex": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 48,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeRemoved": {
+      "type": "object",
+      "properties": {
+        "active_reset": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "active_reset"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopThemePackage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1,
+          "x-rust-type": "u32"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "dezirclip-theme"
+          ]
+        },
+        "base": {
+          "type": "string",
+          "maxLength": 48
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "css": {
+          "type": "string",
+          "maxLength": 262144
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "format",
+        "base",
+        "name",
+        "css"
       ],
       "additionalProperties": false
     },

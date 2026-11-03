@@ -100,6 +100,11 @@
         "desktop.quick.begin",
         "desktop.quick.dismiss",
         "desktop.quick.paste",
+        "desktop.themes.list",
+        "desktop.themes.get",
+        "desktop.themes.import",
+        "desktop.themes.export",
+        "desktop.themes.remove",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -1500,6 +1505,101 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/quick.schema.json#/$defs/QuickPasteParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/theme.schema.json#/$defs/ThemeIdParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.import"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/theme.schema.json#/$defs/ThemeImportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.export"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/theme.schema.json#/$defs/ThemeExportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.remove"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/theme.schema.json#/$defs/ThemeIdParams"
               }
             }
           }

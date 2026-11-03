@@ -12,6 +12,7 @@ mod paste_queue;
 mod quick;
 mod backup;
 mod tools;
+mod themes;
 mod desktop_actions;
 mod desktop_policy;
 mod hotkey;
