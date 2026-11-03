@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-no-startup-cleanup-v1';
+export const MYGO_PATCH_ID = 'mygo-v0.6.4-cleanup-webview-args-v2';
 export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const modulePath = 'github.com/egoist/mygo';
 const version = 'v0.6.4';
@@ -30,6 +30,27 @@ function treeFiles(directory, prefix = '') {
   });
 }
 
+function windowsBrowserOptions(directory) {
+  const entry = 'internal/windows/webview2.go';
+  const options = 'internal/windows/webview2_options.go';
+  function source(path, digest) {
+    const bytes = readFileSync(join(directory, path));
+    if (sha256(bytes) !== digest) throw new Error(`Unreviewed MyGo source: ${path}`);
+    return bytes.toString('utf8');
+  }
+  const start = source(entry, 'f53a2724f24fa48c7bca7c6a0e5f102ef307e592e26a559d67431edbdf8e2919')
+    .replace('var options uintptr\n\tif language != "" {\n\t\toptions = newEnvOptions(language)',
+      'loader := loaderProc()\n\targuments := ""\n\tif loader == nil {\n\t\targuments = os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")\n\t}\n\tvar options uintptr\n\tif language != "" || arguments != "" {\n\t\toptions = newEnvOptions(language, arguments)')
+    .replace('if proc := loaderProc(); proc != nil {', 'if proc := loader; proc != nil {');
+  const getters = source(options, '2c536f8b6ce683e80350091a5fd1568c92aab9e74279e1df45197b40e6927e8b')
+    .replace('language []uint16 //', 'arguments []uint16\n\tlanguage []uint16 //')
+    .replace('func newEnvOptions(language string)', 'func newEnvOptions(language, arguments string)')
+    .replace('str(func(*envOptions) []uint16 { return nil }), // get_AdditionalBrowserArguments',
+      'str(func(o *envOptions) []uint16 { return o.arguments }), // get_AdditionalBrowserArguments')
+    .replace('if language != "" {', 'if arguments != "" {\n\t\to.arguments = utf16z(arguments)\n\t}\n\tif language != "" {');
+  return [[entry, Buffer.from(start)], [options, Buffer.from(getters)]];
+}
+
 export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
   const goRun = argv => run(go, argv, { cwd: moduleRoot, env });
   const downloaded = JSON.parse(goRun(['mod', 'download', '-json', `${modulePath}@${version}`]));
@@ -48,9 +69,10 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
     chmodSync(destination, 0o644);
   }
   if (JSON.stringify(treeFiles(patchedModule)) !== JSON.stringify(originalFiles)) throw new Error('MyGo source changed while creating the isolated copy');
-  writeFileSync(join(patchedModule, 'app.go'), patchedApp);
+  const changes = new Map([['app.go', patchedApp], ...windowsBrowserOptions(patchedModule)]);
+  for (const [path, bytes] of changes) writeFileSync(join(patchedModule, path), bytes);
   const patchedFiles = treeFiles(patchedModule);
-  const expectedFiles = originalFiles.map(file => file.path === 'app.go' ? { ...file, sha256: sha256(patchedApp) } : file);
+  const expectedFiles = originalFiles.map(file => changes.has(file.path) ? { ...file, sha256: sha256(changes.get(file.path)) } : file);
   if (JSON.stringify(patchedFiles) !== JSON.stringify(expectedFiles)) throw new Error('MyGo patch changed unexpected module files');
   const modfile = join(patchRoot, 'surface.mod');
   const sumfile = join(patchRoot, 'surface.sum');
@@ -67,7 +89,7 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
       id: MYGO_PATCH_ID, strategy: 'isolated_module_copy', module: modulePath, version,
       source_revision: '6255ea40139d06e0762a7c4a32626148ba410478',
       module_sum: moduleSum, module_go_mod_sum: goModSum,
-      changed_files: ['app.go'], upstream_app_sha256: MYGO_APP_SHA256, patched_app_sha256: sha256(patchedApp),
+      changed_files: [...changes.keys()], upstream_app_sha256: MYGO_APP_SHA256, patched_app_sha256: sha256(patchedApp),
       upstream_tree_sha256: sha256(JSON.stringify(originalFiles)), patched_tree_sha256: sha256(JSON.stringify(patchedFiles)),
       file_count: patchedFiles.length,
     },

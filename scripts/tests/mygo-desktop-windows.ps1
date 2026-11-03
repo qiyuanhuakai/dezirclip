@@ -330,7 +330,9 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             } 'GPU change did not create a replacement main window'
             $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
             $actual = (Get-WebViewBrowser $main).CommandLine -match $softwareFlag
-            if ($actual -ne ($disabled -or $inheritedGpu)) { throw 'Unexpected live WebView2 GPU arguments' }
+            if ($actual -ne ($disabled -or $inheritedGpu)) {
+                throw "WebView2 GPU argument mismatch: setting=$disabled inherited=$inheritedGpu actual=$actual main=$($main.Id)"
+            }
             $currentHost = (& $cli service status --json | ConvertFrom-Json).state.service_instance_id
             if ($LASTEXITCODE -or $currentHost -cne $originalHost) { throw 'GPU change replaced the Rust Service' }
         }

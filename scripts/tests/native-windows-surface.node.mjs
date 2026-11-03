@@ -7,14 +7,14 @@ import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyP
 
 const source = 'a'.repeat(40);
 const expected = { component_version: '0.2.0-alpha.5', source_revision: source, source_state: 'verified_checkout',
-  build_id: '0.2.0-alpha.5@' + source, target: 'x86_64-pc-windows-msvc', toolkit_patch_id: 'mygo-v0.6.4-no-startup-cleanup-v1' };
+  build_id: '0.2.0-alpha.5@' + source, target: 'x86_64-pc-windows-msvc', toolkit_patch_id: 'mygo-v0.6.4-cleanup-webview-args-v2' };
 const info = { ...expected, component: 'surface', protocol_version: { major: 1, minor: 0 },
   mygo_version: 'v0.6.4', mygo_source_revision: '6255ea40139d06e0762a7c4a32626148ba410478' };
 const proof = { schema_version: 1, kind: 'surface-build', identity_verification: 'executed_native_build_info',
   sha256: 'b'.repeat(64), expected, build_info: info, inputs: [{ path: 'frontends/dzc-surface/go.mod', sha256: 'c'.repeat(64) }],
   toolkit_patch: { id: expected.toolkit_patch_id, strategy: 'isolated_module_copy',
     upstream_app_sha256: 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9',
-    patched_app_sha256: 'e79050f98a9aae53d3413e0680eb91e66d3d18cc677163acca97ed101ac1fa68', changed_files: ['app.go'] } };
+    patched_app_sha256: 'e79050f98a9aae53d3413e0680eb91e66d3d18cc677163acca97ed101ac1fa68', changed_files: ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go'] } };
 const helper = 'C:/fixture/candidate/dzc-surface.exe';
 const status = { renderer: 'mygo', managed_pid: 20, session_id: 'actual-session', visible: true, last_error: null };
 const observation = { processes: [{ pid: 20, running: true, image: helper, creation_time_100ns: 100 }],
