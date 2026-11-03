@@ -420,6 +420,7 @@ jobs:
         if: runner.os == 'Linux' && matrix.can_test
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
+          /usr/bin/python3 scripts/tests/test_mygo_audio_fixture.py
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pinned
 

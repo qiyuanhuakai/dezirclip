@@ -46,7 +46,7 @@ def private_audio(home):
             server.terminate()
 
 
-def expect_cue(audio, offset, paste):
+def expect_cue(audio, byte_offset, paste):
     # Match the pitches and spacing of the Service cue. GTK and the window manager
     # share this private sink and may produce a UI sound before the clipboard cue.
     def tone(start, low, high):
@@ -58,7 +58,7 @@ def expect_cue(audio, offset, paste):
     scanned = 0
     while time.monotonic() < deadline:
         with audio.open('rb') as source:
-            source.seek(offset)
+            source.seek(byte_offset)
             pcm = array.array('h')
             pcm.frombytes(source.read())
         while scanned + 3800 <= len(pcm):
@@ -71,10 +71,10 @@ def expect_cue(audio, offset, paste):
             # Require two distinct pitched bursts separated by quiet, even then.
             if paste:
                 quiet = False
-                for offset in range(start+550, start+3300, 110):
-                    if max(abs(x) for x in pcm[offset:offset+110]) < 50:
+                for sample_offset in range(start+550, start+3300, 110):
+                    if max(abs(x) for x in pcm[sample_offset:sample_offset+110]) < 50:
                         quiet = True
-                    elif quiet and tone(offset, 20, 25):
+                    elif quiet and tone(sample_offset, 20, 25):
                         return
             elif max(abs(x) for x in pcm[start+1500:start+3050]) < 50:
                 return
