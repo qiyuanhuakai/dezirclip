@@ -259,7 +259,7 @@ func run() error {
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
 		win.OnShow(func() { dock.hidden = false; dock.shown = time.Now(); visibilityChanged.Emit(win, true) })
 		win.OnHide(func() { preview.clear(); visibilityChanged.Emit(win, false) })
-		win.OnMove(func() { windowMoved.Emit(win, true) })
+		win.OnMove(func() { preview.clear(); windowMoved.Emit(win, true) })
 		win.OnFileDrop(func(e *mygo.FileDropEvent) { filesDropped.Emit(win, e.Paths) })
 		win.OnClose(func(*mygo.CloseEvent) { fmt.Fprintln(os.Stdout, "closing") })
 		win.OnClosed(func() { dock.hidden = false; dock.configure(false); preview.clear(); mygo.App.Quit() })
@@ -305,7 +305,7 @@ func run() error {
 			}
 			sizes <- size
 		}
-		win.OnResize(observeSize)
+		win.OnResize(func() { preview.clear(); observeSize() })
 		win.OnClose(func(*mygo.CloseEvent) { observeSize() })
 		go func() {
 			commands := bufio.NewScanner(os.Stdin)

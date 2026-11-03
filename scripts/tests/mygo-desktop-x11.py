@@ -1283,7 +1283,21 @@ def check_preview(button, atspi, pin=None):
             return next((int(line.split()[0],16) for line in tree.splitlines() if '"DezirClip 固定预览"' in line),None)
         def click(x,y):
             assert atspi.generate_mouse_event(x,y,'b1c')
-        x,y=hover.x+hover.width-40,hover.y+24
+        def hover_button(names):
+            for item,name,interfaces,_ in mygo_nodes(atspi,desktop):
+                if name in names and 'Action' in interfaces:
+                    box=atspi.Component.get_extents(item,atspi.CoordType.SCREEN)
+                    if box.width>0 and box.height>0:
+                        return box
+        close=wait(lambda:hover_button(('Close preview','关闭预览','關閉預覽')), 'Hover preview has no close button')
+        click(close.x+close.width//2,close.y+close.height//2)
+        wait(lambda:not visible(),'Hover close button did not dismiss the preview')
+        assert active()==focus,'Closing the hover preview took focus'
+        pointer.warp(screen,rect.x+rect.width//2,rect.y+rect.height//2)
+        screen.get_display().sync()
+        preview_id,hover=preview_bounds()
+        pin_box=wait(lambda:hover_button(('Pin this preview','固定此预览','固定此預覽')), 'Hover preview has no pin button')
+        x,y=pin_box.x+pin_box.width//2,pin_box.y+pin_box.height//2
         pointer.warp(screen,x,y)
         screen.get_display().sync()
         time.sleep(.9)

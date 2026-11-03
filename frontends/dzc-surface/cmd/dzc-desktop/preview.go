@@ -294,6 +294,13 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			ui.Column(c).Fill().Padding(10).Children(func() {
 				ui.Row(c).FillWidth().Children(func() {
 					ui.Text(c, body.source).Grow(1)
+					if appearance.Close != "" && ui.Button(c, appearance.Close).Disabled(pinning).Clicked() {
+						main.Update(func() {
+							if p.generation == sequence {
+								p.clear()
+							}
+						})
+					}
 					if appearance.Pin != "" && ui.Button(c, appearance.Pin).Disabled(pinning).Clicked() {
 						pinning = true
 						ticket := pinPreviewRequest{Params: params, Appearance: appearance, Bounds: p.window.Bounds()}
