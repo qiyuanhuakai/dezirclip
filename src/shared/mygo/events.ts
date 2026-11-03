@@ -41,6 +41,9 @@ async function watchHost() {
         if (state.privacy_epoch !== update.state.privacy_epoch || state.service_instance_id !== update.state.service_instance_id) continue;
         if ((event === "EntryAdded" || event === "EntryUpdated") && data.entry_id !== undefined) {
           dispatch("clipboard-captured", { id: data.entry_id, host_instance_id: state.service_instance_id });
+          if (event === "EntryUpdated" && data.status && ["processing", "done", "failed", "unsupported"].includes(data.status)) {
+            dispatch("ocr:complete", { item_id: data.entry_id, text: "", confidence: null, status: data.status });
+          }
         } else if (event === "EntryDeleted") {
           dispatch("clipboard-removed", data.entry_id);
         } else if (event === "HistoryReset") {

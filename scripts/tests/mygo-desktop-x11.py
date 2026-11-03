@@ -297,6 +297,20 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         wait_for(lambda: find_item(note, text=True) if find_item('保存') is None else None,
                  'Manual note did not appear in its original tag after saving')
         print('Verified creating a manual text entry in the shared React tag manager')
+        saved = find_item(note, text=True)
+        bounds = atspi.Component.get_extents(saved, atspi.CoordType.SCREEN)
+        assert atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'b3c')
+        qr = wait_for(lambda: find_item('QR 码'), 'Missing QR action on the saved entry')
+        assert atspi.Action.do_action(qr, 0)
+        wait_for(lambda: any(name == 'QR Code' for _, name, _, _ in mygo_nodes(atspi, executable)),
+                 'The shared QR dialog did not render its PNG')
+        copy_svg = wait_for(lambda: find_item('复制 SVG'), 'Missing SVG copy action')
+        assert atspi.Action.do_action(copy_svg, 0)
+        wait_for(lambda: '<svg' in (clipboard.wait_for_text() or ''), 'SVG did not reach the system clipboard')
+        assert other.get_text() == marker and editor.get_text() == marker
+        close = wait_for(lambda: find_item('关闭'), 'Missing QR dialog close action')
+        assert atspi.Action.do_action(close, 0)
+        print('Verified QR preview and SVG copy from the shared tag row without pasting into either editor')
         alternate.present()
         wait_for(alternate.is_active, 'Second editor did not regain focus')
         shortcut()

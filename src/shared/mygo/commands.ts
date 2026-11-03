@@ -29,6 +29,20 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  classify_text: args => library("Classify", args.text),
+  transform_text: args => library("Transform", { text: args.text, kind: args.kind }),
+  generate_qr_png: args => library("QR", { content: args.content, format: "png", size_px: args.sizePx }),
+  generate_qr_svg: args => library("QR", { content: args.content, format: "svg" }),
+  recognize_clipboard_image: async args => {
+    const result = await library<{ status: string; text?: string }>("OcrText", true, { id: args.itemId,
+      service_instance_id: args.expectedHostInstanceId, expected_epoch: args.expectedPrivacyEpoch, reveal: args.allowSensitive === true });
+    if (result.text === undefined) throw new Error("OcrRecognitionFailed");
+    return { item_id: args.itemId, text: result.text, status: result.status, confidence: null };
+  },
+  get_ocr_status: async args => {
+    const result = await library<{ status: string; text?: string }>("OcrText", false, { id: args.itemId, expected_epoch: currentEpoch() });
+    return { item_id: args.itemId, ocr_status: result.status, ocr_text: result.text ?? null };
+  },
   set_window_pinned: async args => {
     await library("SetWindowPinned", args.pinned, currentEpoch());
     return window.mygo.call("DesktopShell.SetAlwaysOnTop", args.pinned);
@@ -63,7 +77,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     id: args.id === 0 ? args.derivedFromId : args.id,
     service_instance_id: args.expectedHostInstanceId,
     expected_epoch: args.expectedPrivacyEpoch ?? args.viewEpoch,
-    reveal: args.expectedPrivacyEpoch !== undefined,
+    reveal: args.allowSensitive ?? (args.expectedPrivacyEpoch !== undefined),
     paste: args.paste, with_format: args.pasteWithFormat, image_as_base64: args.pasteImageAsBase64,
     derived_text: args.id === 0 && args.derivedFromId !== undefined ? args.content : undefined,
     move_to_top: args.moveToTop, delete_after_use: args.deleteAfterUse,
@@ -92,6 +106,11 @@ export async function invokeMyGo<T>(command: string, args: Arguments = {}): Prom
   if (command === "activate_window_focus") return window.mygo.call<T>("DesktopShell.Focus");
   if (command === "hide_window_cmd") return window.mygo.call<T>("mygo:window.Close");
   if (command === "get_platform_capabilities") return library<T>("Platform");
+  if (command === "check_ocr_engine_available") return library<T>("OcrEngine");
+  if (command === "list_transform_kinds" || command === "get_supported_kinds") {
+    const catalog = await library<{ transforms: T; content_kinds: T }>("ToolCatalog");
+    return command === "list_transform_kinds" ? catalog.transforms : catalog.content_kinds;
+  }
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);
   const generation = hostGeneration();
   const result = await commands[command](args);

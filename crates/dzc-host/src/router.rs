@@ -133,6 +133,9 @@ impl Host {
     fn capture_active(&self) -> bool {
         self.capture_owner.load(Ordering::Acquire) && self.lifecycle.lock().ok().and_then(|slot|slot.as_ref().map(|lifecycle|lifecycle.capture_active())).unwrap_or(false)
     }
+    pub(crate) fn capture_disabled_by_request(&self) -> Result<bool, WireErrorCode> {
+        Ok(self.capture_diagnostic.lock().map_err(unavailable)?.as_deref() == Some("disabled_by_request"))
+    }
     /// Trusted in-process lifecycle entry; the IPC router separately checks its grant.
     pub fn shutdown(&self) -> Result<(), WireErrorCode> {
         let _serial = self.requests.lock().map_err(unavailable)?;

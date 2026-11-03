@@ -81,7 +81,10 @@ impl Host {
         let paste_target=if bound.is_none() { self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())? } else { None };
         let now=crate::router::now_ms()?;
         let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false);
-        let ticket=if generated {match self.history.privacy().capture_ticket(now) {
+        // A Service started without capture still handles explicit copy actions.
+        // An unexpectedly unavailable capture owner still fails closed.
+        let capture_generated = generated && !self.capture_disabled_by_request()?;
+        let ticket=if capture_generated {match self.history.privacy().capture_ticket(now) {
             Ok(ticket)=>Some(ticket),Err(dzc_core::api::PrivacyError::PrivacySessionActive)=>None,Err(error)=>return Err(denied(error))}}
             else {None};
         let permit=self.history.privacy().authorize_selected_copy(request.id,Some(&request.service_instance_id),if request.reveal {SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
@@ -93,12 +96,10 @@ impl Host {
             else {self.history.clipboard_payload_authorized(request.id,&permit,now)}.map_err(denied)?;
         if request.image_as_base64.unwrap_or(false) {payload=image_text(payload)?;}
         if request.with_format==Some(false) {payload=plain(payload);}
-        if generated {
-            if let Some(ticket)=ticket {
-                let text=payload_text(&payload).ok_or(WireErrorCode::InvalidRequest)?;
-                let frame=CaptureFrame {data:CaptureData::Text(text.into()),metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),inherited_protection:matches!(payload,ClipboardPayload::Private{..}),..Default::default()}};
-                self.capture_generated(frame,CaptureSource{app_name:"DezirClip Derived".into(),process_path:None},now)?;
-            }
+        if let Some(ticket)=ticket {
+            let text=payload_text(&payload).ok_or(WireErrorCode::InvalidRequest)?;
+            let frame=CaptureFrame {data:CaptureData::Text(text.into()),metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),inherited_protection:matches!(payload,ClipboardPayload::Private{..}),..Default::default()}};
+            self.capture_generated(frame,CaptureSource{app_name:"DezirClip Derived".into(),process_path:None},now)?;
         }
         self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
         let input = if bound.is_some() {

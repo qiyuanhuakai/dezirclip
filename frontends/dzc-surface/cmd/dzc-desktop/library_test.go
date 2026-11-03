@@ -94,6 +94,36 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("tag page: %+v %v", page, err)
 	}
 	params := protocol.DesktopEntryParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance}
+	catalog, err := library.ToolCatalog(ctx)
+	if err != nil || len(catalog.Transforms) == 0 || len(catalog.ContentKinds) == 0 {
+		t.Fatalf("tool catalog: %+v %v", catalog, err)
+	}
+	kinds, err := library.Classify(ctx, "user@example.com")
+	if err != nil || len(kinds) != 1 || kinds[0] != "email" {
+		t.Fatalf("classify: %v %v", kinds, err)
+	}
+	transformed, err := library.Transform(ctx, protocol.ToolTransformParams{Kind: "to_uppercase", Text: "café ß 你好"})
+	if err != nil || transformed != "CAFÉ SS 你好" {
+		t.Fatalf("transform: %q %v", transformed, err)
+	}
+	for format, marker := range map[string]string{"svg": "<svg", "png": "data:image/png;base64,iVBOR"} {
+		qr, err := library.QR(ctx, protocol.ToolQrParams{Format: format, Content: query})
+		if err != nil || !strings.Contains(qr, marker) {
+			t.Fatalf("QR %s: %v", format, err)
+		}
+	}
+	engine, err := library.OcrEngine(ctx)
+	if err != nil || engine.EngineName == "" {
+		t.Fatalf("OCR engine: %+v %v", engine, err)
+	}
+	ocr := protocol.ManualOcrParams{Id: params.Id, ExpectedEpoch: epoch, ServiceInstanceId: instance}
+	ocrStatus, err := library.OcrText(ctx, false, ocr)
+	if err != nil || ocrStatus.Status != "pending" || ocrStatus.Text != nil {
+		t.Fatalf("OCR status: %+v %v", ocrStatus, err)
+	}
+	if _, err := library.OcrText(ctx, true, ocr); err == nil {
+		t.Fatal("recognized a non-image history entry")
+	}
 	fresh, err := owner.DesktopConnection(ctx)
 	if err != nil {
 		t.Fatal(err)

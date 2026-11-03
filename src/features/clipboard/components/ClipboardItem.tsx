@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";
 import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -604,7 +604,8 @@ const ClipboardItem = ({
         setOcrSource(item);
         setOcrRunning(true);
         setOcrStatus("processing");
-        invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedHostInstanceId: item.host_instance_id, expectedPrivacyEpoch: access.epoch })
+        invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedHostInstanceId: item.host_instance_id, expectedPrivacyEpoch: access.epoch,
+            ...(import.meta.env.MODE === "mygo" ? { allowSensitive: isSensitiveEntry(item) } : {}) })
             .then((result: unknown) => {
                 if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 const res = result as { text: string; status: string };
@@ -636,9 +637,7 @@ const ClipboardItem = ({
                 pasteWithFormat: false,
                 moveToTop: false,
                 pasteImageAsBase64: false,
-                expectedPrivacyEpoch: access.epoch,
-                expectedHostInstanceId: item.host_instance_id,
-                derivedFromId: isSensitiveEntry(item) ? item.id : undefined
+                ...derivedCopySource(item, isSensitiveEntry(item), access.epoch),
             })
                 .then(() => onTransformItemSuccess?.(kind))
                 .catch((err) => {
@@ -687,7 +686,8 @@ const ClipboardItem = ({
                 moveToTop: false,
                 pasteImageAsBase64: true,
                 expectedHostInstanceId: item.host_instance_id,
-                expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined
+                expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined,
+                ...(import.meta.env.MODE === "mygo" ? { viewEpoch: access.epoch } : {})
             });
             onTransformItemSuccess?.("image_base64");
         } catch (err) {
@@ -710,9 +710,7 @@ const ClipboardItem = ({
                 pasteWithFormat: false,
                 moveToTop: false,
                 pasteImageAsBase64: false,
-                expectedPrivacyEpoch: access.epoch,
-                expectedHostInstanceId: item.host_instance_id,
-                derivedFromId: isSensitiveEntry(item) ? item.id : undefined,
+                ...derivedCopySource(item, isSensitiveEntry(item), access.epoch),
             });
             onTransformItemSuccess?.("paste_ocr");
         } catch (err) {
@@ -744,6 +742,7 @@ const ClipboardItem = ({
                 pasteImageAsBase64: false,
                 expectedHostInstanceId: item.host_instance_id,
                 expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined,
+                ...(import.meta.env.MODE === "mygo" ? { viewEpoch: access.epoch } : {}),
             });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
