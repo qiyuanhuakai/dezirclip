@@ -1,13 +1,21 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 
 // https://vite.dev/config/
 export default defineConfig(async ({ mode }) => {
   const env = loadEnv(mode, ".", "");
   const host = env.TAURI_DEV_HOST;
+  const mygo = mode === "mygo";
+  const shellModule = (name: string) => fileURLToPath(new URL(`./src/shared/mygo/${name}.ts`, import.meta.url));
 
   return {
     plugins: [react()],
+    resolve: { alias: mygo ? {
+      "@tauri-apps/api/app": shellModule("app"),
+      "@tauri-apps/plugin-dialog": shellModule("dialog"),
+      "@tauri-apps/plugin-opener": shellModule("opener"),
+    } : {} },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -31,7 +39,7 @@ export default defineConfig(async ({ mode }) => {
     },
   },
     build: {
-      outDir: "dist/web",
+      outDir: mygo ? "dist/mygo-web" : "dist/web",
       emptyOutDir: true,
       rollupOptions: {
         output: {

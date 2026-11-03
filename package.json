@@ -10,6 +10,7 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "build": "tsc && vite build",
+    "build:mygo:web": "tsc && vite build --mode mygo",
     "i18n:check": "node scripts/i18n-check.mjs",
     "preview": "vite preview",
     "tauri:prepare-sidecars": "node scripts/prepare-tauri-sidecars.mjs",
