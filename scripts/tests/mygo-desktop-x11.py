@@ -206,7 +206,30 @@ def mygo_nodes(atspi, executable):
         yield item, name, interfaces, text
 
 
-def check_pinned(row, atspi, gtk, marker, target, editor, executable):
+def tray_settings(pid):
+    from gi.repository import Gio, GLib
+    bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+    def call(owner, path, interface, method, params=None):
+        return bus.call_sync(owner, path, interface, method, params, None, Gio.DBusCallFlags.NONE, 2000, None).unpack()
+    daemon = ('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus')
+    owners, = call(*daemon, 'ListNames')
+    for name in owners:
+        if not name.startswith(':'): continue
+        try:
+            server, = call(*daemon, 'GetConnectionUnixProcessID', GLib.Variant('(s)', (name,)))
+            if server != pid: continue
+            menu = (name, f'/org/ayatana/NotificationItem/mygo_{pid}_1/Menu', 'com.canonical.dbusmenu')
+            _, root = call(*menu, 'GetLayout', GLib.Variant('(iias)', (0, 1, ['label'])))
+        except GLib.Error:
+            continue
+        item = next((item_id for item_id, props, _ in root[2] if props.get('label') == '设置'), None)
+        if item is not None:
+            call(*menu, 'Event', GLib.Variant('(isvu)', (item, 'clicked', GLib.Variant('i', 0), 0)))
+            return
+    raise AssertionError('Resident tray did not export its Settings action')
+
+
+def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
     def wait_for(check, message):
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
@@ -457,8 +480,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_F4))
         wait_for(lambda: subprocess.run(['xwininfo','-id', str(xid)], capture_output=True).returncode != 0,
                  'WebView did not close after switching themes')
-        shortcut()
-        choose = open_appearance('Settings', 'Appearance', 'Choose Background')
+        tray_settings(resident)
+        choose = open_settings_group('Appearance', 'Choose Background')
         from gi.repository import GdkPixbuf
         wallpaper = Path(os.environ['HOME'])/'mygo-background.png'
         pixels = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, False, 8, 128, 128)
@@ -499,13 +522,23 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
             with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                 settings = dict(db.execute("SELECT key,value FROM settings WHERE key IN ('app.custom_background','app.surface_opacity','app.custom_background_opacity','app.theme')"))
             raise AssertionError(f'Isolated wallpaper config {settings}, original {baseline}, observed {observed}') from error
+        saved_window = settings_window().get_xid()
+        shortcut((Gdk.KEY_Alt_L, Gdk.KEY_F4))
+        wait_for(lambda: subprocess.run(['xwininfo', '-id', str(saved_window)], capture_output=True).returncode != 0,
+                 'WebView did not close with its background saved')
+        shortcut()
+        wait_for(lambda: find_item('Stickers') and painted(), 'New WebView did not paint the saved background')
         clear_bg = open_appearance('Settings', 'Appearance', 'Clear Background')
         assert atspi.Action.do_action(clear_bg, 0)
         wait_for(lambda: action('Choose Background'), 'Clear did not remove the selected file')
         show_history()
         wait_for(lambda: not painted(), 'Clearing the background left its pixels visible')
         print('Verified selecting, visibly painting and clearing a custom background in the shared MyGo WebView')
-        full = open_appearance('Settings', 'Tools', 'Full Screen Capture')
+        tray_settings(resident)
+        full = open_settings_group('Tools', 'Full Screen Capture')
+        wait_for(lambda: any('MyGo Native' in text for _, _, _, text in mygo_nodes(atspi, executable)),
+                 'Tools did not identify the resident Quick Paste renderer')
+        print('Verified the real tray Settings action in both a new and an existing MyGo WebView')
         clipboard.set_text('waiting for explicit capture', -1)
         assert atspi.Action.do_action(full, 0)
         screen = Gdk.get_default_root_window()
@@ -609,7 +642,7 @@ def check(desktop, pinned):
                 filter_stage = 3
             if filter_stage == 3 and row and has_marker:
                 if pinned:
-                    check_pinned(row, Atspi, Gtk, marker, target, editor, desktop)
+                    check_pinned(row, Atspi, Gtk, marker, target, editor, desktop, process.pid)
                     return
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.

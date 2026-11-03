@@ -9,6 +9,7 @@ interface UseCustomBackgroundOptions {
   customBackground: string;
   customBackgroundOpacity: number;
   theme: string;
+  privacyGeneration?: number | null;
   onError: () => void;
 }
 
@@ -16,6 +17,7 @@ export const useCustomBackground = ({
   customBackground,
   customBackgroundOpacity,
   theme,
+  privacyGeneration,
   onError
 }: UseCustomBackgroundOptions) => {
   const reportError = useRef(onError);
@@ -49,6 +51,11 @@ export const useCustomBackground = ({
       if (appliedUrl.current) URL.revokeObjectURL(appliedUrl.current);
       appliedUrl.current = null;
     };
+    // MyGo reads the selected image through the authenticated desktop session.
+    if (privacyGeneration === null) {
+      clearAppliedImage();
+      return;
+    }
     const apply = () => {
       const current = ++generation;
       cancelPendingImages();
@@ -94,5 +101,5 @@ export const useCustomBackground = ({
       stop();
       stopBackgroundChanges?.();
     };
-  }, [customBackground, theme]);
+  }, [customBackground, theme, privacyGeneration]);
 };

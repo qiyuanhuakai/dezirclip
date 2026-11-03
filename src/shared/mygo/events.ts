@@ -5,6 +5,16 @@ let nextId = 0;
 let watching = false;
 let connected = false;
 let generation = 0;
+let settingsListeners = 0;
+let pendingSettings = false;
+
+async function receiveSettingsRequest() {
+  if (await window.mygo.call<boolean>("DesktopShell.TakeSettingsRequest")) pendingSettings = true;
+  if (settingsListeners && pendingSettings) {
+    pendingSettings = false;
+    dispatch("open-settings-panel");
+  }
+}
 
 interface HostState {
   service_instance_id: string;
@@ -77,18 +87,26 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
   const id = ++nextId;
   const handler = (message: Event) => receive({ event, id, payload: (message as CustomEvent<T>).detail });
   bus.addEventListener(event, handler);
+  if (event === "open-settings-panel") settingsListeners++;
   if (!watching) {
     watching = true;
+    window.mygo.on("settings-requested", () => { void receiveSettingsRequest().catch(console.error); });
     window.mygo.on<boolean>("window-focus", focused => dispatch("mygo-window-focus", focused));
     window.mygo.on<boolean>("window-visibility", visible => dispatch(visible ? "privacy-view-shown" : "privacy-view-hidden"));
     window.mygo.on("window-moved", () => dispatch("mygo-window-moved"));
     window.mygo.on<string[]>("window-file-drop", paths => dispatch("tauri://drag-drop", { paths }));
     void watchHost();
   }
-  return () => bus.removeEventListener(event, handler);
+  return () => {
+    if (event === "open-settings-panel") settingsListeners--;
+    bus.removeEventListener(event, handler);
+  };
 }
 
-export async function emit<T>(event: string, payload?: T) { dispatch(event, payload); }
+export async function emit<T>(event: string, payload?: T) {
+  if (event === "settings-panel-listener-ready") await receiveSettingsRequest();
+  dispatch(event, payload);
+}
 
 export async function emitTo<T>(target: string, event: string, payload?: T) {
   if (target !== "main") throw new Error(`Unknown MyGo WebView target: ${target}`);

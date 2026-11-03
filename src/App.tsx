@@ -509,6 +509,9 @@ const App = () => {
   useMainWindowPaintSignal(settingsLoaded);
 
   useCustomBackground({ customBackground, customBackgroundOpacity, theme,
+    privacyGeneration: import.meta.env.MODE === "mygo"
+      ? privacyState.phase === "ready" && privacyState.snapshot && !privacyState.pending ? listGeneration : null
+      : undefined,
     onError: () => pushToast(t("custom_background_load_failed")) });
 
   useClipboardEvents({

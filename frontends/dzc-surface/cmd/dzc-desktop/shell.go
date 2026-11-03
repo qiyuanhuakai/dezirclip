@@ -6,13 +6,23 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
 )
 
-type DesktopShell struct{ capture residentCapture }
+type DesktopShell struct {
+	capture         residentCapture
+	settingsPending atomic.Bool
+}
+
+var settingsRequested = mygo.NewEvent[bool]("settings-requested")
+
+func (shell *DesktopShell) TakeSettingsRequest() bool {
+	return shell.settingsPending.Swap(false)
+}
 
 type platformInfo struct {
 	Platform  string `json:"platform"`

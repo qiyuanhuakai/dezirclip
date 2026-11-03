@@ -263,7 +263,7 @@ func run() error {
 					mygo.RunOnMain(func() { win.Close() })
 					continue
 				}
-				if command == "show" || command == "toggle" {
+				if command == "show" || command == "toggle" || command == "settings" {
 					if !win.IsFocused() {
 						history.rememberTarget(ctx)
 					}
@@ -271,6 +271,10 @@ func run() error {
 						if !win.IsDestroyed() {
 							win.Show()
 							win.Focus()
+							if command == "settings" {
+								shell.settingsPending.Store(true)
+								settingsRequested.Emit(win, true)
+							}
 						}
 					})
 				}

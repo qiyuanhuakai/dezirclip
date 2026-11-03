@@ -69,18 +69,22 @@ func runResident(owner *client.Client) error {
 		var commands io.WriteCloser
 		stopping := false
 		closing := false
-		reopen := false
+		reopen := ""
 		registered := make(map[string]bool)
 		var toggle func()
 		var present func(string)
 		present = func(command string) {
 			if commands != nil {
 				if closing {
-					reopen = true
+					if reopen != "settings" {
+						reopen = command
+					}
 					return
 				}
 				if _, err := io.WriteString(commands, command+"\n"); err != nil {
-					reopen = true
+					if reopen != "settings" {
+						reopen = command
+					}
 					log.Printf("Main window unavailable: %v", err)
 				}
 				return
@@ -105,6 +109,12 @@ func runResident(owner *client.Client) error {
 				return
 			}
 			commands = input
+			if command == "settings" {
+				if _, err := io.WriteString(input, "settings\n"); err != nil {
+					log.Printf("Main window unavailable: %v", err)
+					reopen = command
+				}
+			}
 			go func() {
 				scanner := bufio.NewScanner(events)
 				for scanner.Scan() {
@@ -140,9 +150,10 @@ func runResident(owner *client.Client) error {
 					input.Close()
 					commands = nil
 					closing = false
-					if !stopping && reopen {
-						reopen = false
-						present("show")
+					if !stopping && reopen != "" {
+						command := reopen
+						reopen = ""
+						present(command)
 					} else if !stopping && tray == nil && len(registered) == 0 {
 						mygo.App.Quit()
 					}
@@ -156,6 +167,7 @@ func runResident(owner *client.Client) error {
 			tray.OnClick(open)
 			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 				{Label: "打开剪贴板", Click: func(*mygo.MenuItem, *mygo.Window) { open() }},
+				{Label: "设置", Click: func(*mygo.MenuItem, *mygo.Window) { present("settings") }},
 				{Label: "退出", Role: mygo.RoleQuit},
 			}))
 			mygo.App.OnWillQuit(func(*mygo.QuitEvent) { tray.Destroy() })
