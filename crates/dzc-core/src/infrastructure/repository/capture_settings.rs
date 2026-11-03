@@ -3,6 +3,31 @@ use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
 use std::collections::HashMap;
 
 impl SqliteClipboardRepository {
+    pub(crate) fn desktop_preferences(&self) -> CoreResult<HashMap<String, String>> {
+        let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
+        let mut query = conn.prepare("SELECT key, value FROM settings WHERE key IN (
+            'app.arrow_key_selection','app.capture_files','app.capture_rich_text','app.classification_enabled',
+            'app.clipboard_item_font_size','app.clipboard_tag_font_size','app.color_mode','app.compact_mode',
+            'app.custom_background','app.custom_background_opacity','app.custom_themes','app.deduplicate',
+            'app.delete_after_paste','app.disable_webview_gpu','app.edge_docking','app.emoji_favorites',
+            'app.emoji_panel_enabled','app.emoji_panel_tab','app.excluded_source_apps','app.follow_mouse',
+            'app.font_main','app.font_mono','app.hidden_filter_chips','app.hide_tray_icon','app.hotkey',
+            'app.idle_destroy_enabled','app.idle_destroy_seconds','app.language','app.move_to_top_after_paste',
+            'app.ocr_enabled','app.paste_method','app.persistent','app.persistent_limit','app.persistent_limit_enabled',
+            'app.preview_keyboard_enabled','app.preview_opacity','app.privacy_protection',
+            'app.privacy_protection_custom_rules','app.privacy_protection_kinds','app.privacy_session_hotkey',
+            'app.quick_paste_enabled','app.quick_paste_hotkey','app.quick_paste_renderer','app.rich_paste_hotkey',
+            'app.rich_text_snapshot_cache_limit','app.rich_text_snapshot_preview','app.screenshot_enabled',
+            'app.screenshot_full_hotkey','app.screenshot_hotkey','app.search_fuzzy_enabled','app.search_hotkey',
+            'app.search_regex_enabled','app.sequential_hotkey','app.sequential_mode','app.show_app_border',
+            'app.show_scroll_top_button','app.show_search_box','app.silent_start','app.sound_enabled',
+            'app.sound_paste_enabled','app.sound_volume','app.surface_opacity','app.tag_manager_enabled',
+            'app.tag_manager_size','app.theme','app.update_auto_check','app.update_channel','app.use_win_v_shortcut',
+            'app.window_pinned')").map_err(|error| CoreError::from(error.to_string()))?;
+        let rows = query.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        rows.collect::<rusqlite::Result<_>>().map_err(|error| CoreError::from(error.to_string()))
+    }
     pub(crate) fn screen_preferences(&self) -> CoreResult<(bool, String, String)> {
         let conn = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
         conn.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.screenshot_enabled'),'true'),
@@ -79,6 +104,20 @@ impl SqliteClipboardRepository {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+    #[test]
+    fn desktop_preferences_return_ui_values_without_unregistered_settings() {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        connection.execute_batch("INSERT OR REPLACE INTO settings(key,value) VALUES
+            ('app.language','tw'),('app.custom_themes','[]'),('app.unregistered','private'),('internal.host','private')")
+            .unwrap();
+        let repository = SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
+        let values = repository.desktop_preferences().unwrap();
+        assert_eq!(values.get("app.language").map(String::as_str), Some("tw"));
+        assert_eq!(values.get("app.custom_themes").map(String::as_str), Some("[]"));
+        assert!(!values.contains_key("app.unregistered"));
+        assert!(!values.contains_key("internal.host"));
+    }
     #[test]
     fn capture_policy_is_whitelisted_and_malformed_security_booleans_fail_closed() {
         let mut connection = rusqlite::Connection::open_in_memory().unwrap();

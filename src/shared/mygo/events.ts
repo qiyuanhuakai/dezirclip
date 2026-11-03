@@ -31,14 +31,12 @@ async function watchHost() {
       const recovered = !connected;
       connected = true;
       backoff = 250;
-      if (recovered || update.resync_required || previous?.service_instance_id !== update.state.service_instance_id) {
-        generation++;
-        dispatch("clipboard-host-changed", update.state.service_instance_id);
-      }
-      if (previous?.privacy_epoch !== update.state.privacy_epoch) {
-        generation++;
-        dispatch("privacy-state-changed");
-      }
+      const resync = recovered || update.resync_required || previous?.service_instance_id !== update.state.service_instance_id;
+      const privacyChanged = previous?.privacy_epoch !== update.state.privacy_epoch;
+      if (resync || privacyChanged) generation++;
+      if (resync) dispatch("clipboard-host-changed", update.state.service_instance_id);
+      if (privacyChanged) dispatch("privacy-state-changed");
+      if (resync || privacyChanged) dispatch("settings-changed");
       for (const { event, data, state } of update.events) {
         if (state.privacy_epoch !== update.state.privacy_epoch || state.service_instance_id !== update.state.service_instance_id) continue;
         if ((event === "EntryAdded" || event === "EntryUpdated") && data.entry_id !== undefined) {

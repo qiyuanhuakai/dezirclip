@@ -428,6 +428,8 @@ pub enum Method {
     DesktopOcrStatus,
     #[serde(rename = "desktop.ocr.engine")]
     DesktopOcrEngine,
+    #[serde(rename = "desktop.settings.preferences")]
+    DesktopSettingsPreferences,
     #[serde(rename = "desktop.settings.capture.get")]
     DesktopSettingsCaptureGet,
     #[serde(rename = "desktop.settings.capture.set")]
@@ -1085,6 +1087,12 @@ pub struct ScreenPreferences {
     pub enabled: bool,
     pub region: String,
     pub full: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopPreferences {
+    pub values: serde_json::Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

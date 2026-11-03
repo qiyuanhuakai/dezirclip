@@ -79,6 +79,7 @@
         "desktop.ocr.recognize",
         "desktop.ocr.status",
         "desktop.ocr.engine",
+        "desktop.settings.preferences",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
         "desktop.screen.begin",
@@ -1108,6 +1109,25 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryStateParams"
               }
             }
           }

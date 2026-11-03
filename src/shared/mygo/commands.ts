@@ -12,6 +12,7 @@ function privacySnapshot(status: { privacy: { expires_at_ms: number | null } }) 
 
 const library = <T>(method: string, ...args: unknown[]) => window.mygo.call<T>(`Library.${method}`, ...args);
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  get_settings: () => library("Preferences"),
   get_clipboard_host_status: () => library("Status"),
   get_privacy_status: async () => privacySnapshot(await library("Status")),
   set_privacy_session: async args => privacySnapshot(await library("SetPrivacy", {

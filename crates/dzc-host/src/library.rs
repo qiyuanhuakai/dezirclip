@@ -19,6 +19,7 @@ impl Host {
         let permit = self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied,
             Some(p.expected_epoch), now).map_err(crate::router::privacy_error)?;
         let value = match method {
+            Method::DesktopSettingsPreferences => json!({ "values": self.history.desktop_preferences().map_err(|_| WireErrorCode::Unavailable)? }),
             Method::DesktopTagsCounts => json!({ "values": self.history.tag_counts().map_err(|_| WireErrorCode::Unavailable)? }),
             Method::DesktopTagsColors => json!({ "values": self.history.tag_colors().map_err(|_| WireErrorCode::Unavailable)? }),
             Method::DesktopHistoryCount => json!({ "count": self.history.get_count().map_err(|_| WireErrorCode::Unavailable)? }),

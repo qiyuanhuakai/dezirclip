@@ -108,6 +108,19 @@ func (l *Library) TagCounts(ctx context.Context, epoch uint64) (json.RawMessage,
 	return counts.Values, nil
 }
 
+func (l *Library) Preferences(ctx context.Context) (json.RawMessage, error) {
+	status, err := l.Status(ctx)
+	if err != nil {
+		return nil, err
+	}
+	params := protocol.LibraryStateParams{ServiceInstanceId: status.State.ServiceInstanceId, ExpectedEpoch: status.State.PrivacyEpoch}
+	var preferences protocol.DesktopPreferences
+	if err := l.snapshot(ctx, protocol.MethodDesktopSettingsPreferences, params, "DesktopPreferences", &preferences, params.ExpectedEpoch); err != nil {
+		return nil, err
+	}
+	return preferences.Values, nil
+}
+
 func (l *Library) entry(ctx context.Context, method protocol.Method, params protocol.DesktopEntryParams) (hostedEntry, error) {
 	instance := l.owner.Hello().State.ServiceInstanceId
 	if (params.Id < 0 || params.ServiceInstanceId != "") && params.ServiceInstanceId != instance {

@@ -49,6 +49,17 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("isolated status: %+v %v", status, err)
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
+	var updated protocol.OperationResult
+	if err := owner.DesktopCall(ctx, protocol.MethodDesktopSettingsCaptureSet, protocol.CaptureSettingParams{
+		ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: "app.capture_files", Value: "false",
+	}, "OperationResult", &updated); err != nil || !updated.Performed {
+		t.Fatalf("capture settings: %+v %v", updated, err)
+	}
+	preferences, err := library.Preferences(ctx)
+	var settings map[string]string
+	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.capture_files"] != "false" {
+		t.Fatalf("desktop preferences: %s %v", preferences, err)
+	}
 	file := filepath.Join(profile, "backup.json")
 	const backup = `{"version":"dezirclip-export-v2","exported_at":1,"entries":[{"id":1,"content_type":"text","content":"bridge-marker","source_app":"fixture","created_at":1,"updated_at":1,"tags":["fixture"]}]}`
 	if err := os.WriteFile(file, []byte(backup), 0600); err != nil {

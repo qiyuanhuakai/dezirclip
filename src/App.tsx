@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./shared/lib/desktopInvoke";
 import { listen } from "@tauri-apps/api/event";
 import ToastContainer from "./shared/components/ToastContainer";
 import ConfirmDialog from "./shared/components/ConfirmDialog";

@@ -1122,6 +1122,7 @@
         "desktop.ocr.recognize",
         "desktop.ocr.status",
         "desktop.ocr.engine",
+        "desktop.settings.preferences",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
         "desktop.screen.begin",
@@ -2151,6 +2152,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
               }
             }
           }
@@ -4587,6 +4607,21 @@
         "enabled",
         "region",
         "full"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopPreferences": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "values"
       ],
       "additionalProperties": false
     },

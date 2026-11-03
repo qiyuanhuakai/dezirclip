@@ -2,6 +2,9 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 
 impl HistoryService {
+    pub fn desktop_preferences(&self) -> CoreResult<std::collections::HashMap<String, String>> {
+        self.repository.desktop_preferences()
+    }
     pub fn screen_preferences(&self) -> CoreResult<(bool, String, String)> {
         self.repository.screen_preferences()
     }

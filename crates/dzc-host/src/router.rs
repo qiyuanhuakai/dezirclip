@@ -283,6 +283,7 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
                 methods.extend(["desktop.themes.list", "desktop.themes.get", "desktop.themes.import", "desktop.themes.export", "desktop.themes.remove"]);
@@ -438,7 +439,7 @@ impl Host {
                 self.desktop_permission(session, self.instance_id())?;
                 crate::tools::run(request.method, request.params)
             }
-            Method::DesktopTagsCounts | Method::DesktopTagsColors | Method::DesktopHistoryCount =>
+            Method::DesktopSettingsPreferences | Method::DesktopTagsCounts | Method::DesktopTagsColors | Method::DesktopHistoryCount =>
                 self.library_summary(session, request.method, request.params),
             Method::DesktopTagsDeleteContents | Method::DesktopTagsDeleteEntries =>
                 self.delete_library_entries(session, request.method, request.params),

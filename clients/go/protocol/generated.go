@@ -303,6 +303,7 @@ const (
     MethodDesktopOcrRecognize Method = "desktop.ocr.recognize"
     MethodDesktopOcrStatus Method = "desktop.ocr.status"
     MethodDesktopOcrEngine Method = "desktop.ocr.engine"
+    MethodDesktopSettingsPreferences Method = "desktop.settings.preferences"
     MethodDesktopSettingsCaptureGet Method = "desktop.settings.capture.get"
     MethodDesktopSettingsCaptureSet Method = "desktop.settings.capture.set"
     MethodDesktopScreenBegin Method = "desktop.screen.begin"
@@ -767,6 +768,10 @@ type ScreenPreferences struct {
     Enabled bool `json:"enabled"`
     Region string `json:"region"`
     Full string `json:"full"`
+}
+
+type DesktopPreferences struct {
+    Values json.RawMessage `json:"values"`
 }
 
 type CaptureSettingParams struct {
