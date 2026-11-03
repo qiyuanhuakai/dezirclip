@@ -4,6 +4,7 @@ import ctypes
 import os
 from pathlib import Path
 import secrets
+import select
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,7 @@ def memory_sample(label, roots):
         except (OSError, StopIteration):
             missing += 1
     print(f'{label} PSS {pss/1024:.1f} MiB across {len(selected)-missing} processes, {missing} unreadable', flush=True)
+    return selected
 
 
 def check_native_panels(marker, desktop, service_pid, close):
@@ -79,13 +81,29 @@ def check_native_panels(marker, desktop, service_pid, close):
 
     try:
         roots = [desktop.pid, service_pid]
-        memory_sample('Main window open', roots)
+        processes = memory_sample('Main window open', roots)
+        # Keep descriptors across close so a reparented WebKit process still
+        # counts as live. A disappearing parent-child link is insufficient.
+        peers = [pid for pid in processes - set(roots) if
+                 Path(f'/proc/{pid}/comm').read_text().strip().startswith(('WebKit', 'dzc-desktop'))]
+        assert any(Path(f'/proc/{pid}/exe').resolve() == Path(f'/proc/{desktop.pid}/exe').resolve() for pid in peers)
+        watchers = [os.pidfd_open(pid) for pid in peers]
         main_id = subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
         assert close(), 'Close button did not accept its native action'
         deadline = time.monotonic() + 6
         while subprocess.run(['xwininfo', '-id', main_id], capture_output=True).returncode == 0:
             assert time.monotonic() < deadline, 'Main WebView did not close'
             time.sleep(.05)
+        try:
+            ready, _, _ = select.select(watchers, [], [], 6)
+            deadline = time.monotonic() + 6
+            while len(ready) < len(watchers):
+                pending = set(watchers)-set(ready)
+                more, _, _ = select.select(list(pending), [], [], max(0, deadline-time.monotonic()))
+                assert more, 'WebView child remained resident after closing the main window'
+                ready.extend(more)
+        finally:
+            for fd in watchers: os.close(fd)
         assert desktop.poll() is None
         time.sleep(1)
         memory_sample('Main closed, before native panels', roots)

@@ -2,20 +2,18 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
 	"os"
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
-	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
-	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/screenshot"
 )
 
 //go:embed web
@@ -82,18 +80,26 @@ func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--build-info" {
 		return json.NewEncoder(os.Stdout).Encode(buildinfo.DesktopReport())
 	}
-	if len(os.Args) != 1 {
+	mainWindow := len(os.Args) == 3 && os.Args[1] == "--main-window"
+	if len(os.Args) != 1 && !mainWindow {
 		return fmt.Errorf("unexpected desktop arguments")
 	}
 	// The Desktop always loads the packaged local UI even in a developer shell.
 	os.Unsetenv("MYGO_DEV_URL")
 	ctx := context.Background()
-	actions, err := client.OpenDesktop(ctx, buildinfo.Version, true)
+	actions, err := client.OpenDesktop(ctx, buildinfo.Version, !mainWindow)
 	if err != nil {
 		return fmt.Errorf("open desktop Host: %w", err)
 	}
 	defer actions.Close()
-	events, err := client.OpenDesktop(ctx, buildinfo.Version, false)
+	mygo.App.SetName("DezirClip MyGo")
+	if !mainWindow {
+		return runResident(actions)
+	}
+	if actions.Hello().State.ServiceInstanceId != os.Args[2] {
+		return client.ErrProtocol
+	}
+	events, err := actions.DesktopConnection(ctx)
 	if err != nil {
 		return err
 	}
@@ -106,47 +112,32 @@ func run() error {
 		return err
 	}
 	mygo.SetFrontend(assets)
-	mygo.App.SetName("DezirClip MyGo")
 	mygo.Bind(&History{actions: actions, events: events})
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)
 	mygo.App.WhenReady(func() {
-		panel := quickpaste.NewDesktopPanel(actions)
-		selector := screenshot.New(actions)
-		tray, err := mygo.NewTray(mygo.TrayOptions{Icon: trayIcon, ToolTip: "DezirClip"})
-		open := func() {
-			if win := preview.main; win != nil {
-				win.Show()
-				win.Focus()
-				return
-			}
-			win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
-			preview.main, preview.generation = win, 0
-			win.OnBlur(preview.clear)
-			win.OnFocus(panel.RefreshShortcut)
-			win.OnFocus(selector.Refresh)
-			win.OnClosed(func() {
-				preview.clear()
-				preview.main = nil
-				if tray == nil {
-					mygo.App.Quit()
+		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
+		preview.main = win
+		win.OnBlur(preview.clear)
+		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus") })
+		win.OnClosed(func() { preview.clear(); mygo.App.Quit() })
+		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
+		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
+		win.Page().LoadURL("mygo://localhost/")
+		go func() {
+			commands := bufio.NewScanner(os.Stdin)
+			for commands.Scan() {
+				if commands.Text() == "show" {
+					mygo.RunOnMain(func() {
+						if !win.IsDestroyed() {
+							win.Show()
+							win.Focus()
+						}
+					})
 				}
-			})
-			win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
-			win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
-			win.Page().LoadURL("mygo://localhost/")
-		}
-		if err != nil {
-			log.Printf("Tray unavailable: %v", err)
-		} else {
-			tray.OnClick(open)
-			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-				{Label: "打开剪贴板", Click: func(*mygo.MenuItem, *mygo.Window) { open() }},
-				{Label: "退出", Role: mygo.RoleQuit},
-			}))
-			mygo.App.OnWillQuit(func(*mygo.QuitEvent) { tray.Destroy() })
-		}
-		open()
+			}
+			mygo.App.Quit()
+		}()
 	})
 	return mygo.App.Run()
 }
