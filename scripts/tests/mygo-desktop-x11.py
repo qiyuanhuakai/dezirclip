@@ -181,6 +181,7 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row)
 
 
 def check_pinned(row, atspi, gtk, marker, target, editor):
+    from gi.repository import GLib
     def wait_for(check, message):
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
@@ -195,8 +196,12 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
         while pending:
             item = pending.pop()
             if item is None: continue
-            if item.get_name() == name and 'Action' in item.get_interfaces(): return item
-            pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
+            try:
+                if item.get_name() == name and 'Action' in item.get_interfaces(): return item
+                pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
+            except GLib.Error:
+                # The original accessible is removed when the dialog or WebView closes.
+                continue
 
     main = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
     assert '_NET_WM_STATE_ABOVE' in subprocess.check_output(['xprop','-id',main,'_NET_WM_STATE'], text=True)
@@ -222,6 +227,41 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
     wait_for(lambda: clipboard.wait_for_text() == marker, 'Confirmed copy did not write selected content')
     assert editor.get_text() == marker
     print('Verified native pinned window, first delivery, cancellation, and a separately confirmed copy without replay')
+    alternate = gtk.Window(title='Second independent paste target')
+    other = gtk.Entry()
+    alternate.add(other)
+    alternate.show_all()
+    other.grab_focus()
+    alternate.present()
+    try:
+        wait_for(alternate.is_active, 'Second editor did not acquire focus')
+        # A real configured global shortcut must bind the editor before the MyGo window regains focus.
+        keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
+        def shortcut():
+            for pressed in (True, False):
+                keys = [Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8]
+                for sym in (keys if pressed else reversed(keys)):
+                    mapped, entries = keymap.get_entries_for_keyval(sym)
+                    assert mapped and entries
+                    assert atspi.generate_keyboard_event(entries[0].keycode, None,
+                        atspi.KeySynthType.PRESS if pressed else atspi.KeySynthType.RELEASE)
+        def main_active():
+            return subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1] == main
+        shortcut()
+        wait_for(main_active, 'Configured keyboard shortcut did not focus the existing MyGo window')
+        click()
+        wait_for(lambda: alternate.is_active() and other.get_text() == marker, 'Pinned paste did not rebind to second editor')
+        assert editor.get_text() == marker
+        shortcut()
+        wait_for(main_active, 'Shortcut failed to show the pinned window again')
+        shortcut()
+        wait_for(lambda: subprocess.run(['xwininfo','-id',main], capture_output=True).returncode != 0,
+                 'Foreground shortcut did not close the WebView')
+        shortcut()
+        wait_for(lambda: find_button('图片'), 'Resident shortcut did not reopen the shared WebView')
+        print('Verified configured main shortcut rebinds the second editor, closes and reopens the shared window')
+    finally:
+        alternate.destroy()
 
 
 def check(desktop, pinned):
@@ -237,6 +277,7 @@ def check(desktop, pinned):
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
         if pinned:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.window_pinned','true')")
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.hotkey','Ctrl+Shift+F8')")
     if pinned:
         subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True, stdout=subprocess.DEVNULL)
     target = Gtk.Window(title='Independent paste target')

@@ -2,17 +2,55 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
+	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/screenshot"
 )
+
+// The resident keeps the configured keyboard shortcuts after the WebView exits.
+func refreshMainShortcuts(owner *client.Client, registered map[string]bool, toggle func()) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	settings, err := (&Library{owner}).Preferences(ctx)
+	var values map[string]string
+	if err != nil || json.Unmarshal(settings, &values) != nil {
+		log.Print("Main window shortcut settings unavailable")
+		return
+	}
+	wanted := make(map[string]bool)
+	for _, line := range strings.FieldsFunc(values["app.hotkey"], func(r rune) bool { return r == '\r' || r == '\n' }) {
+		key := strings.TrimSpace(line)
+		if key != "" && !strings.EqualFold(key, "MouseMiddle") && !strings.EqualFold(key, "MButton") {
+			wanted[key] = true
+		}
+	}
+	for key := range registered {
+		if !wanted[key] {
+			mygo.GlobalShortcut.Unregister(key)
+			delete(registered, key)
+		}
+	}
+	for key := range wanted {
+		if !registered[key] {
+			if err := mygo.GlobalShortcut.Register(key, toggle); err != nil {
+				log.Printf("Main window shortcut unavailable: %v", err)
+			} else {
+				registered[key] = true
+			}
+		}
+	}
+}
 
 // Only the main window loads the WebView runtime. Parent and child use
 // inherited pipes for window lifecycle, and authenticate separately to Rust.
@@ -30,9 +68,19 @@ func runResident(owner *client.Client) error {
 		}
 		var commands io.WriteCloser
 		stopping := false
-		open := func() {
+		closing := false
+		reopen := false
+		registered := make(map[string]bool)
+		var toggle func()
+		var present func(string)
+		present = func(command string) {
 			if commands != nil {
-				if _, err := io.WriteString(commands, "show\n"); err != nil {
+				if closing {
+					reopen = true
+					return
+				}
+				if _, err := io.WriteString(commands, command+"\n"); err != nil {
+					reopen = true
 					log.Printf("Main window unavailable: %v", err)
 				}
 				return
@@ -60,11 +108,15 @@ func runResident(owner *client.Client) error {
 			go func() {
 				scanner := bufio.NewScanner(events)
 				for scanner.Scan() {
-					if scanner.Text() == "focus" {
+					switch scanner.Text() {
+					case "closing":
+						mygo.RunOnMain(func() { closing = true })
+					case "focus":
 						mygo.RunOnMain(func() {
 							if !stopping {
 								panel.RefreshShortcut()
 								selector.Refresh()
+								refreshMainShortcuts(owner, registered, toggle)
 							}
 						})
 					}
@@ -75,12 +127,19 @@ func runResident(owner *client.Client) error {
 				mygo.RunOnMain(func() {
 					input.Close()
 					commands = nil
-					if !stopping && tray == nil {
+					closing = false
+					if !stopping && reopen {
+						reopen = false
+						present("show")
+					} else if !stopping && tray == nil && len(registered) == 0 {
 						mygo.App.Quit()
 					}
 				})
 			}()
 		}
+		toggle = func() { present("toggle") }
+		open := func() { present("show") }
+		refreshMainShortcuts(owner, registered, toggle)
 		if tray != nil {
 			tray.OnClick(open)
 			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
@@ -91,6 +150,9 @@ func runResident(owner *client.Client) error {
 		}
 		mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
 			stopping = true
+			for key := range registered {
+				mygo.GlobalShortcut.Unregister(key)
+			}
 			if commands != nil {
 				commands.Close()
 			}

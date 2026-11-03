@@ -205,6 +205,7 @@ func run() error {
 		win.OnHide(func() { preview.clear(); visibilityChanged.Emit(win, false) })
 		win.OnMove(func() { windowMoved.Emit(win, true) })
 		win.OnFileDrop(func(e *mygo.FileDropEvent) { filesDropped.Emit(win, e.Paths) })
+		win.OnClose(func(*mygo.CloseEvent) { fmt.Fprintln(os.Stdout, "closing") })
 		win.OnClosed(func() { preview.clear(); mygo.App.Quit() })
 		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
@@ -212,7 +213,12 @@ func run() error {
 		go func() {
 			commands := bufio.NewScanner(os.Stdin)
 			for commands.Scan() {
-				if commands.Text() == "show" {
+				command := commands.Text()
+				if command == "toggle" && win.IsFocused() {
+					mygo.RunOnMain(func() { win.Close() })
+					continue
+				}
+				if command == "show" || command == "toggle" {
 					if !win.IsFocused() {
 						history.rememberTarget(ctx)
 					}
