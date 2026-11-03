@@ -22,3 +22,5 @@ func dialLocal(ctx context.Context, address string) (net.Conn, error) {
     if nativeError != nil || peer == nil || peer.Uid != uint32(os.Geteuid()) { conn.Close(); return nil, ErrProtocol }
     return conn, nil
 }
+
+func grantFocusRestore(_ net.Conn) error { return nil }

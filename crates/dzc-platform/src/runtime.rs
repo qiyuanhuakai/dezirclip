@@ -1156,6 +1156,11 @@ pub fn prepare_private_files(
 }
 
 #[cfg(feature = "ipc")]
+mod quick_focus;
+#[cfg(feature = "ipc")]
+pub use quick_focus::RememberedFocus;
+
+#[cfg(feature = "ipc")]
 pub struct QueueInputTarget {
     #[cfg(target_os = "windows")]
     bound: WindowsBoundPaste,

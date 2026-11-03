@@ -46,9 +46,13 @@ impl Host {
     }
     pub(crate) fn desktop_copy(&self,session:&Session,parameters:Value)->Result<Value,WireErrorCode> {
         let request:DesktopCopyParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
+        self.desktop_copy_bound(session, request, None)
+    }
+
+    pub(crate) fn desktop_copy_bound(&self, session: &Session, request: DesktopCopyParams, bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>) -> Result<Value,WireErrorCode> {
         self.desktop_permission(session,&request.service_instance_id)?;
         if !self.actions.can_copy() || request.paste && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}
-        let paste_target=self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())?;
+        let paste_target=if bound.is_none() { self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())? } else { None };
         let now=crate::router::now_ms()?;
         let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false);
         let ticket=if generated {match self.history.privacy().capture_ticket(now) {
@@ -71,10 +75,35 @@ impl Host {
             }
         }
         self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
+        let input = if bound.is_some() {
+            let (_, _, method) = self.history.queue_preferences().map_err(|_|WireErrorCode::Unavailable)?;
+            let mut data = &payload;
+            while let ClipboardPayload::Private {payload,..} = data { data = payload; }
+            let (kind, text) = match data {
+                ClipboardPayload::Text(text) => ("text", Some(text.clone())),
+                ClipboardPayload::Html {text,..} => ("rich_text", Some(text.clone())),
+                _ => ("binary", None),
+            };
+            Some((method, kind, text))
+        } else { None };
+        let selected_state = bound.as_ref().map(|(_,state)| state.clone());
+        let check_selection = || -> Result<(), WireErrorCode> {
+            if let Some(state) = &selected_state {
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                if !crate::same_surface_state(state, &self.snapshot()?) { return Err(WireErrorCode::HistoryRevisionChanged); }
+            }
+            Ok(())
+        };
+        check_selection()?;
         self.copy_payload(payload)?;
         if request.paste {
+            check_selection()?;
             self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
-            if let Some(target)=paste_target { target.send()?; } else { self.actions.paste()?; }
+            if let Some(((target, _), (method, kind, text))) = bound.zip(input) {
+                target.send(&method, text.as_deref(), kind, || !self.is_stopping() && check_selection().is_ok()
+                    && crate::router::now_ms().is_ok_and(|now| self.history.privacy().check_read(&permit, now).is_ok()))
+                    .map_err(|_| WireErrorCode::Unavailable)?;
+            } else if let Some(target)=paste_target { target.send()?; } else { self.actions.paste()?; }
         }
         if request.delete_after_use==Some(true) {
             if request.id<0 {self.session.lock().map_err(|_|WireErrorCode::Unavailable)?.retain(|row|row.id!=request.id);}

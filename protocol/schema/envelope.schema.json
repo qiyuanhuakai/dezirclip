@@ -97,6 +97,9 @@
         "desktop.queue.set",
         "desktop.queue.next",
         "desktop.queue.configure",
+        "desktop.quick.begin",
+        "desktop.quick.dismiss",
+        "desktop.quick.paste",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -1440,6 +1443,63 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/queue.schema.json#/$defs/QueueSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.dismiss"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/quick.schema.json#/$defs/QuickDismissParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.paste"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/quick.schema.json#/$defs/QuickPasteParams"
               }
             }
           }

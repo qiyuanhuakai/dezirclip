@@ -34,7 +34,6 @@ impl PasteQueueState {
 #[derive(Default)]
 pub(crate) struct Queue {
     state: Arc<Mutex<PasteQueueState>>,
-    pub(crate) operation: Mutex<()>,
 }
 
 fn reset_paste_tracking(queue: &mut PasteQueueState) {
@@ -306,11 +305,6 @@ impl Host {
     }
 
     fn queue_next(&self, p: QueueNextParams) -> Result<QueueStepResult, WireErrorCode> {
-        let _operation = self
-            .queue
-            .operation
-            .try_lock()
-            .map_err(|_| WireErrorCode::Busy)?;
         if self.is_stopping() {
             return Err(WireErrorCode::Busy);
         }

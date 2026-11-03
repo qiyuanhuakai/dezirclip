@@ -5,6 +5,7 @@ package client
 import (
     "context"
     "net"
+    "os"
     "strings"
     "unsafe"
 
@@ -42,4 +43,22 @@ func dialLocal(ctx context.Context, address string) (net.Conn, error) {
     expectedUser, expectedSession, err := tokenIdentity(windows.GetCurrentProcessToken())
     if err != nil || actualUser != expectedUser || actualSession != expectedSession { conn.Close(); return nil, ErrProtocol }
     return conn, nil
+}
+
+// Only the foreground application can transfer its foreground right to the
+// service. Resolve the PID from the authenticated, still-open pipe each time.
+func grantFocusRestore(conn net.Conn) error {
+    user32 := windows.NewLazySystemDLL("user32.dll")
+    foreground, _, _ := user32.NewProc("GetForegroundWindow").Call()
+    if foreground == 0 { return nil }
+    var owner uint32
+    if thread, _, _ := user32.NewProc("GetWindowThreadProcessId").Call(foreground, uintptr(unsafe.Pointer(&owner))); thread == 0 { return ErrProtocol }
+    if owner != uint32(os.Getpid()) { return nil }
+    handle, ok := conn.(interface{ Fd() uintptr })
+    if !ok { return ErrProtocol }
+    var pid uint32
+    if err := windows.GetNamedPipeServerProcessId(windows.Handle(handle.Fd()), &pid); err != nil { return err }
+    if pid == 0 || pid == ^uint32(0) { return ErrProtocol }
+    if granted, _, err := user32.NewProc("AllowSetForegroundWindow").Call(uintptr(pid)); granted == 0 { return err }
+    return nil
 }

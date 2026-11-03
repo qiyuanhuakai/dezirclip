@@ -464,6 +464,12 @@ pub enum Method {
     DesktopQueueNext,
     #[serde(rename = "desktop.queue.configure")]
     DesktopQueueConfigure,
+    #[serde(rename = "desktop.quick.begin")]
+    DesktopQuickBegin,
+    #[serde(rename = "desktop.quick.dismiss")]
+    DesktopQuickDismiss,
+    #[serde(rename = "desktop.quick.paste")]
+    DesktopQuickPaste,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]
@@ -953,6 +959,32 @@ pub struct QueueSettingParams {
     pub expected_epoch: u64,
     pub key: String,
     pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickTicket {
+    pub token: String,
+    pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickDismissParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub restore: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickPasteParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub token: String,
+    pub id: i64,
+    pub expected_history_revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

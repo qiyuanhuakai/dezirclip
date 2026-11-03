@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"image/png"
+	"slices"
 	"time"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -78,4 +79,54 @@ func decodeChunk(buffer []byte, offset, next uint32, finished bool, encoded stri
 	}
 	copy(buffer[offset:next], decoded)
 	return nil
+}
+
+// BeginQuickPaste captures the system target before showing any desktop window.
+func (client *Client) BeginQuickPaste(ctx context.Context, state protocol.RuntimeState) (protocol.QuickTicket, error) {
+	var ticket protocol.QuickTicket
+	err := client.Call(ctx, protocol.MethodDesktopQuickBegin, protocol.LibraryStateParams{
+		ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch,
+	}, "QuickTicket", &ticket)
+	return ticket, err
+}
+
+func (client *Client) checkFocusTicket(ticket protocol.QuickTicket, state protocol.RuntimeState) error {
+	if !slices.Contains(client.hello.Permissions, protocol.PermissionDesktopHistory) ||
+		ticket.State.ServiceInstanceId != client.hello.State.ServiceInstanceId ||
+		state.ServiceInstanceId != ticket.State.ServiceInstanceId || state.PrivacyEpoch != ticket.State.PrivacyEpoch {
+		return ErrProtocol
+	}
+	return nil
+}
+
+// PasteQuickSelection consumes the ticket and uses the revision that supplied
+// the selected row. The caller hides the panel after a successful result.
+func (client *Client) PasteQuickSelection(ctx context.Context, ticket protocol.QuickTicket, state protocol.RuntimeState, id int64) error {
+	if err := client.checkFocusTicket(ticket, state); err != nil {
+		return err
+	}
+	if err := grantFocusRestore(client.conn); err != nil {
+		return err
+	}
+	var result protocol.OperationResult
+	err := client.Call(ctx, protocol.MethodDesktopQuickPaste, protocol.QuickPasteParams{ServiceInstanceId: state.ServiceInstanceId,
+		ExpectedEpoch: state.PrivacyEpoch, ExpectedHistoryRevision: state.HistoryRevision, Token: ticket.Token, Id: id}, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return ErrProtocol
+	}
+	return err
+}
+
+func (client *Client) DismissQuickPaste(ctx context.Context, ticket protocol.QuickTicket, restore bool) error {
+	if err := client.checkFocusTicket(ticket, ticket.State); err != nil {
+		return err
+	}
+	if restore {
+		if err := grantFocusRestore(client.conn); err != nil {
+			return err
+		}
+	}
+	var result protocol.OperationResult
+	return client.Call(ctx, protocol.MethodDesktopQuickDismiss, protocol.QuickDismissParams{ServiceInstanceId: ticket.State.ServiceInstanceId,
+		ExpectedEpoch: ticket.State.PrivacyEpoch, Token: ticket.Token, Restore: restore}, "OperationResult", &result)
 }

@@ -7,7 +7,7 @@ use x11rb::{
         xtest::ConnectionExt as _,
     },
 };
-fn connection() -> Result<(x11rb::rust_connection::RustConnection, usize), UnsupportedReason> {
+pub(super) fn connection() -> Result<(x11rb::rust_connection::RustConnection, usize), UnsupportedReason> {
     crate::runtime_display::validate_x11_display().map_err(|error| match error {
         crate::runtime_display::DisplayUnavailable::NotSet
             if std::env::var_os("WAYLAND_DISPLAY").is_some() =>
@@ -337,7 +337,7 @@ pub fn focused_window() -> PlatformResult<u32> {
     checked_focus(&conn)
 }
 
-fn checked_focus(conn: &x11rb::rust_connection::RustConnection) -> PlatformResult<u32> {
+pub(super) fn checked_focus(conn: &x11rb::rust_connection::RustConnection) -> PlatformResult<u32> {
     let failed = |_| PlatformError::failed(Capability::AutoPaste);
     let focus = conn.get_input_focus().map_err(failed)?.reply().map_err(|_| PlatformError::failed(Capability::AutoPaste))?.focus;
     if focus <= 1 || conn.setup().roots.iter().any(|screen| screen.root == focus) {

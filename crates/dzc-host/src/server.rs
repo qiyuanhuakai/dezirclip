@@ -89,7 +89,7 @@ async fn read_request(stream: &mut Stream, stopped: &mut watch::Receiver<bool>, 
 async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>) -> io::Result<()> {
     let mut stopped = state.draining.subscribe();
     let bytes = read_request(&mut stream, &mut stopped, Duration::from_secs(5)).await?;
-    let _peer = stream.authenticate_after_read()?;
+    let peer = stream.authenticate_after_read()?;
     let request: Request = wire::decode("Request", &bytes).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
     if request.method != Method::Hello {
         send(&mut stream, Response::failure(request.request_id, WireErrorCode::HandshakeRequired)).await?;
@@ -97,7 +97,7 @@ async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>
     }
     let id = request.request_id;
     let hello = serde_json::from_value(request.params).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
-    let (session, hello) = match host.hello(hello) {
+    let (session, hello) = match host.hello_with_peer(hello, Some(peer)) {
         Ok(accepted) => accepted,
         Err(code) => { send(&mut stream, Response::failure(id, code)).await?; return Ok(()); },
     };
@@ -113,7 +113,7 @@ async fn connection(host: Arc<Host>, mut stream: Stream, state: Arc<Connections>
 async fn requests(host: Arc<Host>, session: Session, mut stream: Stream, state: Arc<Connections>, mut stopped: watch::Receiver<bool>) -> io::Result<()> {
     let session = Arc::new(session);
     loop {
-        let timeout = Duration::from_secs(30);
+        let timeout = if session.quick.active() { crate::quick::TIMEOUT } else { Duration::from_secs(30) };
         #[cfg(feature = "native-screen")]
         let timeout = if host.screen.owns(session.id()) { crate::screen::SELECTION_TIMEOUT } else { timeout };
         let bytes = read_request(&mut stream, &mut stopped, timeout).await?;

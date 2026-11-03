@@ -321,6 +321,9 @@ const (
     MethodDesktopQueueSet Method = "desktop.queue.set"
     MethodDesktopQueueNext Method = "desktop.queue.next"
     MethodDesktopQueueConfigure Method = "desktop.queue.configure"
+    MethodDesktopQuickBegin Method = "desktop.quick.begin"
+    MethodDesktopQuickDismiss Method = "desktop.quick.dismiss"
+    MethodDesktopQuickPaste Method = "desktop.quick.paste"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"
@@ -672,6 +675,26 @@ type QueueSettingParams struct {
     ExpectedEpoch uint64 `json:"expected_epoch"`
     Key string `json:"key"`
     Value string `json:"value"`
+}
+
+type QuickTicket struct {
+    Token string `json:"token"`
+    State RuntimeState `json:"state"`
+}
+
+type QuickDismissParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    Restore bool `json:"restore"`
+}
+
+type QuickPasteParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    Id int64 `json:"id"`
+    ExpectedHistoryRevision uint64 `json:"expected_history_revision"`
 }
 
 type ScreenPoint struct {

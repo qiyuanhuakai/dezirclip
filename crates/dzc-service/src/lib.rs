@@ -131,6 +131,12 @@ mod desktop_protocol_tests {
         if std::env::var_os("DZC_TEST_XVFB_SCREEN").is_some() {
             if let Some(target) = std::env::var_os("DZC_TEST_X11_QUEUE_TARGET") {
                 exercise_queue(&mut client, &state.state, Path::new(&target), capture).await?;
+                let endpoint = controller::endpoint(database)?;
+                let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/tests/native-quick-focus-x11.py");
+                let status = std::process::Command::new("python3").arg(script).arg(endpoint.address())
+                    .arg(endpoint.control_path()).arg(client.peer.pid().ok_or("missing service PID")?.to_string())
+                    .arg(database.parent().ok_or("missing fixture profile")?).arg(target).status()?;
+                if !status.success() {return Err("independent desktop focus restoration failed".into());}
             }
             exercise_screen(database, &mut client, &state.state, capture).await?;
         }

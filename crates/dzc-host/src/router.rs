@@ -65,6 +65,7 @@ pub struct Host {
     observed_epoch: Mutex<u64>,
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
     pub(crate) queue: crate::paste_queue::Queue,
+    delivery: Mutex<()>,
     pub(crate) uploads: crate::upload::Uploads,
     #[cfg(feature = "native-screen")]
     pub(crate) screen: crate::screen::Screens,
@@ -105,7 +106,7 @@ impl Host {
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
-            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
     }
@@ -136,7 +137,7 @@ impl Host {
     }
     fn stop(&self) -> Result<(), WireErrorCode> {
         if self.stopped.load(Ordering::Acquire) {return Ok(());}
-        let _queue = self.queue.operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        let _delivery = self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?;
         let _ocr = self.manual_ocr_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         self.stop_requested.store(true, Ordering::Release);
@@ -242,9 +243,13 @@ impl Host {
         Ok(PrivacyState { active: snapshot.session.active, expires_at_ms: snapshot.session.expires_at_ms, privacy_epoch: snapshot.privacy_epoch })
     }
     pub fn hello(&self, hello: HelloParams) -> Result<(Session, HelloResult), WireErrorCode> {
+        self.hello_with_peer(hello, None)
+    }
+    pub(crate) fn hello_with_peer(&self, hello: HelloParams, peer: Option<dzc_platform::ipc::PeerIdentity>) -> Result<(Session, HelloResult), WireErrorCode> {
         self.synchronize_privacy()?;
         if hello.protocol_version.major != wire::VERSION.major { return Err(WireErrorCode::ProtocolMismatch); }
-        let session = self.grants.accept(&hello)?;
+        let mut session = self.grants.accept(&hello)?;
+        session.peer = peer;
         let available = self.capabilities(&session);
         if hello.required_capabilities.iter().any(|capability| !available.methods.contains(capability)
             && !available.permissions.iter().any(|permission| serde_json::to_value(permission).ok().and_then(|value| value.as_str().map(str::to_owned)).as_ref() == Some(capability))) {
@@ -278,6 +283,7 @@ impl Host {
                 methods.extend(["desktop.queue.get", "desktop.queue.set", "desktop.queue.configure"]);
                 if self.actions.can_copy() && self.actions.can_paste() {
                     methods.extend(["desktop.paste.target", "desktop.queue.next"]);
+                    if session.peer.is_some() { methods.extend(["desktop.quick.begin","desktop.quick.dismiss","desktop.quick.paste"]); }
                 }
                 methods.extend(["desktop.tags.counts", "desktop.tags.colors", "desktop.tags.color", "desktop.tags.delete_contents",
                     "desktop.tags.delete_entries", "desktop.history.count"]);
@@ -329,7 +335,7 @@ impl Host {
             return match self.subscribe(session, request.params) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) };
         }
         // File IO and key derivation can take seconds. Keep privacy controls responsive.
-        if matches!(request.method, Method::DesktopQueueNext | Method::DesktopOcrRecognize | Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview) {
+        if matches!(request.method, Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize | Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview) {
             return match self.route(session, request) {
                 Ok(value) => Response::success(id, value),
                 Err(code) => Response::failure(id, code),
@@ -356,6 +362,13 @@ impl Host {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
         self.synchronize_privacy()?;
         if self.is_stopping() && !matches!(request.method, Method::ServiceStatus | Method::Health | Method::ServiceStop | Method::ServiceHandoff) { return Err(WireErrorCode::Busy); }
+        // Keep another IPC writer from replacing the clipboard between copy and input.
+        let _delivery = if matches!(request.method, Method::DesktopQuickPaste | Method::DesktopQueueNext |
+            Method::DesktopClipboardCopy | Method::DesktopSurfaceCopy | Method::SurfaceCopy | Method::ClipboardCopy |
+            Method::SurfacePaste | Method::DesktopScreenFinish | Method::DesktopCaptureFinish) {
+            Some(self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?)
+        } else { None };
+        if _delivery.is_some() && self.is_stopping() { return Err(WireErrorCode::Busy); }
         let now = now_ms()?;
         match request.method {
             Method::Hello => Err(WireErrorCode::InvalidRequest),
@@ -449,6 +462,7 @@ impl Host {
                 #[cfg(not(feature = "native-screen"))]
                 { Err(WireErrorCode::UnsupportedCapability) }
             }
+            Method::DesktopQuickBegin | Method::DesktopQuickDismiss | Method::DesktopQuickPaste => self.quick_request(session, request.method, request.params),
             Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueSet |
             Method::DesktopQueueConfigure | Method::DesktopQueueNext => self.queue_request(session, request.method, request.params),
             Method::DesktopOcrEngine => {
