@@ -27,6 +27,14 @@ func Valid() bool {
 }
 
 func Report() any {
+	return componentReport("surface")
+}
+
+func DesktopReport() any {
+	return componentReport("mygo-desktop")
+}
+
+func componentReport(component string) any {
 	return struct {
 		Component        string                   `json:"component"`
 		ComponentVersion string                   `json:"component_version"`
@@ -38,5 +46,5 @@ func Report() any {
 		MyGoSource       string                   `json:"mygo_source_revision"`
 		Target           string                   `json:"target"`
 		ToolkitPatchID   string                   `json:"toolkit_patch_id"`
-	}{"surface", Version, SourceRevision, SourceState, BuildID, protocol.Version, MyGoVersion, MyGoSource, Target, ToolkitPatch}
+	}{component, Version, SourceRevision, SourceState, BuildID, protocol.Version, MyGoVersion, MyGoSource, Target, ToolkitPatch}
 }

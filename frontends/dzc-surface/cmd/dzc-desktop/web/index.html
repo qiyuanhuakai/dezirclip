@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DezirClip</title>
+  <script src="history.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>剪贴板历史</h1>
+    <label>搜索记录 <input id="search" type="search" maxlength="256" autocomplete="off" autofocus></label>
+    <p id="status" role="status">正在连接本地历史记录…</p>
+    <ol id="rows"></ol>
+    <nav aria-label="历史分页">
+      <button id="previous" disabled>上一页</button>
+      <button id="next" disabled>下一页</button>
+    </nav>
+  </main>
+</body>
+</html>
