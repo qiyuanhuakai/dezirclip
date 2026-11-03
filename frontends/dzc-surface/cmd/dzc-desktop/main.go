@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -206,7 +207,8 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(hashes)
 	}
-	mainWindow := len(os.Args) == 3 && os.Args[1] == "--main-window"
+	softwareWindow := runtime.GOOS == "windows" && len(os.Args) == 4 && os.Args[3] == "--software-webview"
+	mainWindow := (len(os.Args) == 3 || softwareWindow) && os.Args[1] == "--main-window"
 	minimized := len(os.Args) == 2 && os.Args[1] == "--minimized"
 	forceShow := len(os.Args) == 2 && os.Args[1] == "--show"
 	if len(os.Args) != 1 && !mainWindow && !minimized && !forceShow {

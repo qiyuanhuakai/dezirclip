@@ -18,7 +18,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const normalized = value => path.resolve(value.replace(/^\\\\\?\\/, '')).toLowerCase();
 const nativeSource = fileURLToPath(new URL('./native-windows-surface-target.py', import.meta.url));
 const maximumLog = 16 * 1024 * 1024;
-const toolkitPatchId = 'mygo-v0.6.4-cleanup-webview-args-v2';
+const toolkitPatchId = 'mygo-v0.6.4-cleanup-webview-gpu-v3';
 const upstreamAppHash = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const patchedAppHash = 'e79050f98a9aae53d3413e0680eb91e66d3d18cc677163acca97ed101ac1fa68';
 const fixedSurfaceInputs = new Set(['package.json', 'Cargo.toml', 'Cargo.lock', 'src-tauri/tauri.conf.json',

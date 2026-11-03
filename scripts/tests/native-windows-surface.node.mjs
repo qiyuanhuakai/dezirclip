@@ -7,7 +7,7 @@ import { validateCiContext, validateBuildProof, validateDesktopIdentity, verifyP
 
 const source = 'a'.repeat(40);
 const expected = { component_version: '0.2.0-alpha.5', source_revision: source, source_state: 'verified_checkout',
-  build_id: '0.2.0-alpha.5@' + source, target: 'x86_64-pc-windows-msvc', toolkit_patch_id: 'mygo-v0.6.4-cleanup-webview-args-v2' };
+  build_id: '0.2.0-alpha.5@' + source, target: 'x86_64-pc-windows-msvc', toolkit_patch_id: 'mygo-v0.6.4-cleanup-webview-gpu-v3' };
 const info = { ...expected, component: 'surface', protocol_version: { major: 1, minor: 0 },
   mygo_version: 'v0.6.4', mygo_source_revision: '6255ea40139d06e0762a7c4a32626148ba410478' };
 const proof = { schema_version: 1, kind: 'surface-build', identity_verification: 'executed_native_build_info',

@@ -14,8 +14,8 @@ func mainWindowScale(w *mygo.Window) float64 {
 	return mygo.Screen.DisplayMatching(w.Bounds()).ScaleFactor
 }
 
-func softwareWebviewEnvironment() ([]string, error) {
-	return []string{"WEBKIT_DISABLE_COMPOSITING_MODE=1", "WEBKIT_DISABLE_DMABUF_RENDERER=1"}, nil
+func configureSoftwareWebview(child *exec.Cmd) {
+	child.Env = append(os.Environ(), "WEBKIT_DISABLE_COMPOSITING_MODE=1", "WEBKIT_DISABLE_DMABUF_RENDERER=1")
 }
 
 func placeMainAtCursor(w *mygo.Window) {

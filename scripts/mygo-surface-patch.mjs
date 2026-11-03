@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-cleanup-webview-args-v2';
+export const MYGO_PATCH_ID = 'mygo-v0.6.4-cleanup-webview-gpu-v3';
 export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const modulePath = 'github.com/egoist/mygo';
 const version = 'v0.6.4';
@@ -40,8 +40,13 @@ function windowsBrowserOptions(directory) {
   }
   const start = source(entry, 'f53a2724f24fa48c7bca7c6a0e5f102ef307e592e26a559d67431edbdf8e2919')
     .replace('var options uintptr\n\tif language != "" {\n\t\toptions = newEnvOptions(language)',
-      'loader := loaderProc()\n\targuments := ""\n\tif loader == nil {\n\t\targuments = os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")\n\t}\n\tvar options uintptr\n\tif language != "" || arguments != "" {\n\t\toptions = newEnvOptions(language, arguments)')
-    .replace('if proc := loaderProc(); proc != nil {', 'if proc := loader; proc != nil {');
+      `arguments := ""
+	if len(os.Args) == 4 && os.Args[1] == "--main-window" && os.Args[3] == "--software-webview" {
+		arguments = "--disable-gpu --disable-gpu-compositing --disable-software-rasterizer --disable-features=VizDisplayCompositor"
+	}
+	var options uintptr
+	if language != "" || arguments != "" {
+		options = newEnvOptions(language, arguments)`);
   const getters = source(options, '2c536f8b6ce683e80350091a5fd1568c92aab9e74279e1df45197b40e6927e8b')
     .replace('language []uint16 //', 'arguments []uint16\n\tlanguage []uint16 //')
     .replace('func newEnvOptions(language string)', 'func newEnvOptions(language, arguments string)')

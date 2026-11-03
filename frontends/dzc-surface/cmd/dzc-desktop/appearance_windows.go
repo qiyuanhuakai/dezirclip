@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"os"
-	"slices"
-	"strings"
+	"os/exec"
 	"unsafe"
 
 	"github.com/egoist/mygo"
@@ -12,41 +10,8 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-func softwareWebviewEnvironment() ([]string, error) {
-	const key = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"
-	args, err := windows.DecomposeCommandLine("webview2.exe " + os.Getenv(key))
-	if err != nil {
-		return nil, err
-	}
-	args = args[1:]
-	end := slices.Index(args, "--")
-	if end < 0 {
-		end = len(args)
-	}
-	options := slices.Clone(args[:end])
-	for _, flag := range []string{"--disable-gpu", "--disable-gpu-compositing", "--disable-software-rasterizer"} {
-		if !slices.Contains(options, flag) {
-			options = append(options, flag)
-		}
-	}
-	const prefix = "--disable-features="
-	const feature = "VizDisplayCompositor"
-	last := -1
-	for i, arg := range options {
-		if strings.HasPrefix(arg, prefix) {
-			last = i
-		}
-	}
-	if last < 0 {
-		options = append(options, prefix+feature)
-	} else if features := strings.TrimPrefix(options[last], prefix); !slices.Contains(strings.Split(features, ","), feature) {
-		options[last] = prefix + strings.Trim(features+","+feature, ",")
-	}
-	options = append(options, args[end:]...)
-	for i := range options {
-		options[i] = windows.EscapeArg(options[i])
-	}
-	return []string{key + "=" + strings.Join(options, " ")}, nil
+func configureSoftwareWebview(child *exec.Cmd) {
+	child.Args = append(child.Args, "--software-webview")
 }
 
 func (*DesktopShell) PlatformInfo() platformInfo {

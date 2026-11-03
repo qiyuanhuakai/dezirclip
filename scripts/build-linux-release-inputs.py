@@ -13,7 +13,7 @@ import tomllib
 TARGET = 'x86_64-unknown-linux-gnu'
 REPOSITORY = 'qiyuanhuakai/dezirclip'
 ROOT = Path(__file__).resolve().parents[1]
-PATCH = 'mygo-v0.6.4-cleanup-webview-args-v2'
+PATCH = 'mygo-v0.6.4-cleanup-webview-gpu-v3'
 MYGO_SOURCE = '6255ea40139d06e0762a7c4a32626148ba410478'
 MAX_BINARY = 256 * 1024 * 1024
 MAX_METADATA = 32 * 1024 * 1024

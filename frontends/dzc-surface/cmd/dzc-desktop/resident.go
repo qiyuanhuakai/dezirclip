@@ -98,12 +98,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				gpuDisabled = saved == "true"
 			}
 			if gpuDisabled {
-				env, err := softwareWebviewEnvironment()
-				if err != nil {
-					log.Print("Invalid WebView environment")
-					return
-				}
-				child.Env = append(os.Environ(), env...)
+				configureSoftwareWebview(child)
 			}
 			child.Stderr = os.Stderr
 			input, err := child.StdinPipe()

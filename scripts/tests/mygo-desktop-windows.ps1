@@ -10,6 +10,25 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class MyGoInput {
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError=true)] static extern bool GetTokenInformation(IntPtr token, int kind, IntPtr buffer, int size, out int needed);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+    public static int IntegrityLevel(IntPtr process) {
+        IntPtr token;
+        if (!OpenProcessToken(process, 8, out token)) throw new System.ComponentModel.Win32Exception();
+        try {
+            int size;
+            GetTokenInformation(token, 25, IntPtr.Zero, 0, out size);
+            if (size == 0) throw new System.ComponentModel.Win32Exception();
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+            try {
+                if (!GetTokenInformation(token, 25, buffer, size, out size)) throw new System.ComponentModel.Win32Exception();
+                var sid = new System.Security.Principal.SecurityIdentifier(Marshal.ReadIntPtr(buffer));
+                if (!sid.Value.StartsWith("S-1-16-", StringComparison.Ordinal)) throw new InvalidOperationException("Invalid integrity SID");
+                return Int32.Parse(sid.Value.Substring(7));
+            } finally { Marshal.FreeHGlobal(buffer); }
+        } finally { CloseHandle(token); }
+    }
     [StructLayout(LayoutKind.Sequential)]
     public struct Point { public int x, y; }
     public struct Rect { public int left, top, right, bottom; }
@@ -252,8 +271,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     $cursorY = $workArea.Top + 16
     if (![MyGoInput]::SetCursorPos($workArea.Right - 14, $cursorY)) { throw 'Could not set the fixture pointer' }
     $launchPath = $env:Path
+    $launchBrowserArguments = $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
     try {
         if ($Capture) {
+            $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "$launchBrowserArguments --dzc-ci-inherited-marker".Trim()
             $env:Path = (($launchPath -split ';') | Where-Object {
                 $_ -and !(Test-Path -LiteralPath (Join-Path $_ 'dzc.exe') -PathType Leaf)
             }) -join ';'
@@ -261,7 +282,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         $launchOptions = @{}
         if ($Capture) { $launchOptions.ArgumentList = '--show' }
         $resident = Start-Process -FilePath $exe @launchOptions -RedirectStandardError (Join-Path $dir.FullName 'desktop.log') -PassThru
-    } finally { $env:Path = $launchPath }
+    } finally {
+        $env:Path = $launchPath
+        $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $launchBrowserArguments
+    }
     $main = Wait-Until {
         if ($resident.HasExited) { throw 'Resident exited during startup' }
         Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
@@ -329,7 +353,12 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                 } | Select-Object -First 1
             } 'GPU change did not create a replacement main window'
             $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
-            $actual = (Get-WebViewBrowser $main).CommandLine -match $softwareFlag
+            $browser = Get-WebViewBrowser $main
+            $actual = $browser.CommandLine -match $softwareFlag
+            $integrity = [MyGoInput]::IntegrityLevel($main.Handle)
+            $markerSeen = $browser.CommandLine -match '(?:^|\s)--dzc-ci-inherited-marker(?:\s|$)'
+            Write-Output "GPU setting=$disabled actual=$actual integrity=$integrity externalMarker=$markerSeen main=$($main.Id) browser=$($browser.ProcessId)"
+            if ($integrity -ge 12288 -and $markerSeen) { throw 'Elevated WebView2 accepted the inherited override' }
             if ($actual -ne ($disabled -or $inheritedGpu)) {
                 throw "WebView2 GPU argument mismatch: setting=$disabled inherited=$inheritedGpu actual=$actual main=$($main.Id)"
             }
