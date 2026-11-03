@@ -90,6 +90,23 @@ func (client *Client) BeginQuickPaste(ctx context.Context, state protocol.Runtim
 	return ticket, err
 }
 
+// PasteWindowSelection lets the authenticated Host restore the original editor
+// while this window still holds Windows foreground activation rights.
+func (client *Client) PasteWindowSelection(ctx context.Context, params protocol.DesktopCopyParams) error {
+	if !params.Paste || params.ServiceInstanceId != client.hello.State.ServiceInstanceId {
+		return ErrProtocol
+	}
+	if err := grantFocusRestore(client.conn); err != nil {
+		return err
+	}
+	var result protocol.OperationResult
+	err := client.Call(ctx, protocol.MethodDesktopWindowPaste, params, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return ErrProtocol
+	}
+	return err
+}
+
 func (client *Client) checkFocusTicket(ticket protocol.QuickTicket, state protocol.RuntimeState) error {
 	if !slices.Contains(client.hello.Permissions, protocol.PermissionDesktopHistory) ||
 		ticket.State.ServiceInstanceId != client.hello.State.ServiceInstanceId ||

@@ -125,18 +125,16 @@ func (h *History) CopyEntry(ctx context.Context, params protocol.DesktopCopyPara
 	if params.ServiceInstanceId != h.actions.Hello().State.ServiceInstanceId || params.Id == 0 {
 		return client.ErrProtocol
 	}
-	var result protocol.OperationResult
-	var err error
 	if params.Paste {
 		h.eventMu.Lock()
 		defer h.eventMu.Unlock()
 		if h.events == nil || h.targetInvalid.Swap(true) {
 			return client.ErrProtocol
 		}
-		err = h.events.Call(ctx, protocol.MethodDesktopWindowPaste, params, "OperationResult", &result)
-	} else {
-		err = h.actions.DesktopCall(ctx, protocol.MethodDesktopClipboardCopy, params, "OperationResult", &result)
+		return h.events.PasteWindowSelection(ctx, params)
 	}
+	var result protocol.OperationResult
+	err := h.actions.DesktopCall(ctx, protocol.MethodDesktopClipboardCopy, params, "OperationResult", &result)
 	if err == nil && !result.Performed {
 		return client.ErrProtocol
 	}
