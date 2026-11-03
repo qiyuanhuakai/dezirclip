@@ -250,6 +250,10 @@ const (
     MethodDesktopCaptureWrite Method = "desktop.capture.write"
     MethodDesktopCaptureFinish Method = "desktop.capture.finish"
     MethodDesktopHistorySummary Method = "desktop.history.summary"
+    MethodDesktopToolsCatalog Method = "desktop.tools.catalog"
+    MethodDesktopToolsClassify Method = "desktop.tools.classify"
+    MethodDesktopToolsTransform Method = "desktop.tools.transform"
+    MethodDesktopToolsQr Method = "desktop.tools.qr"
     MethodDesktopHistoryMutate Method = "desktop.history.mutate"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
@@ -627,4 +631,41 @@ type SurfaceControlMessage struct {
 type DesktopSurfaceCopyParams struct {
     EntryId int64 `json:"entry_id"`
     State RuntimeState `json:"state"`
+}
+
+type ToolCatalogParams struct {
+}
+
+type ToolClassifyParams struct {
+    Text string `json:"text"`
+}
+
+type ToolTransformParams struct {
+    Text string `json:"text"`
+    Kind string `json:"kind"`
+}
+
+type ToolQrParams struct {
+    Content string `json:"content"`
+    Format string `json:"format"`
+    SizePx *uint32 `json:"size_px,omitempty"`
+}
+
+type ToolTransformKind struct {
+    Id string `json:"id"`
+    LabelZh string `json:"label_zh"`
+    LabelEn string `json:"label_en"`
+}
+
+type ToolCatalog struct {
+    ContentKinds []string `json:"content_kinds"`
+    Transforms []ToolTransformKind `json:"transforms"`
+}
+
+type ToolClassification struct {
+    Kinds []string `json:"kinds"`
+}
+
+type ToolText struct {
+    Text string `json:"text"`
 }

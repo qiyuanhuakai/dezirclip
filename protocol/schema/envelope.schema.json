@@ -69,6 +69,10 @@
         "desktop.capture.write",
         "desktop.capture.finish",
         "desktop.history.summary",
+        "desktop.tools.catalog",
+        "desktop.tools.classify",
+        "desktop.tools.transform",
+        "desktop.tools.qr",
         "desktop.history.mutate",
         "desktop.clipboard.copy",
         "desktop.privacy.rules",
@@ -875,6 +879,82 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.catalog"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.classify"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolClassifyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.transform"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolTransformParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.qr"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolQrParams"
               }
             }
           }

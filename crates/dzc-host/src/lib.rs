@@ -7,6 +7,7 @@ mod capture;
 mod client;
 mod work;
 mod desktop;
+mod tools;
 mod desktop_actions;
 mod desktop_policy;
 mod hotkey;

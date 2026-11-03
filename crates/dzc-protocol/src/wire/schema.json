@@ -922,6 +922,10 @@
         "desktop.capture.write",
         "desktop.capture.finish",
         "desktop.history.summary",
+        "desktop.tools.catalog",
+        "desktop.tools.classify",
+        "desktop.tools.transform",
+        "desktop.tools.qr",
         "desktop.history.mutate",
         "desktop.clipboard.copy",
         "desktop.privacy.rules",
@@ -1728,6 +1732,82 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.catalog"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.classify"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolClassifyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.transform"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolTransformParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.qr"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolQrParams"
               }
             }
           }
@@ -3473,6 +3553,148 @@
       "required": [
         "entry_id",
         "state"
+      ],
+      "additionalProperties": false
+    },
+    "ToolCatalogParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "ToolClassifyParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 250000
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ToolTransformParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 250000
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "text",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "ToolQrParams": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "png",
+            "svg"
+          ]
+        },
+        "size_px": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "content",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "ToolTransformKind": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "label_zh": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "label_en": {
+          "type": "string",
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "id",
+        "label_zh",
+        "label_en"
+      ],
+      "additionalProperties": false
+    },
+    "ToolCatalog": {
+      "type": "object",
+      "properties": {
+        "content_kinds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "transforms": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/ToolTransformKind"
+          }
+        }
+      },
+      "required": [
+        "content_kinds",
+        "transforms"
+      ],
+      "additionalProperties": false
+    },
+    "ToolClassification": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      },
+      "required": [
+        "kinds"
+      ],
+      "additionalProperties": false
+    },
+    "ToolText": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      },
+      "required": [
+        "text"
       ],
       "additionalProperties": false
     }

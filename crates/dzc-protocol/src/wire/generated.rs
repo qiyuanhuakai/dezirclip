@@ -349,6 +349,14 @@ pub enum Method {
     DesktopCaptureFinish,
     #[serde(rename = "desktop.history.summary")]
     DesktopHistorySummary,
+    #[serde(rename = "desktop.tools.catalog")]
+    DesktopToolsCatalog,
+    #[serde(rename = "desktop.tools.classify")]
+    DesktopToolsClassify,
+    #[serde(rename = "desktop.tools.transform")]
+    DesktopToolsTransform,
+    #[serde(rename = "desktop.tools.qr")]
+    DesktopToolsQr,
     #[serde(rename = "desktop.history.mutate")]
     DesktopHistoryMutate,
     #[serde(rename = "desktop.clipboard.copy")]
@@ -870,4 +878,58 @@ pub struct SurfaceControlMessage {
 pub struct DesktopSurfaceCopyParams {
     pub entry_id: i64,
     pub state: RuntimeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolCatalogParams {
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolClassifyParams {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolTransformParams {
+    pub text: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolQrParams {
+    pub content: String,
+    pub format: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_px: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolTransformKind {
+    pub id: String,
+    pub label_zh: String,
+    pub label_en: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolCatalog {
+    pub content_kinds: Vec<String>,
+    pub transforms: Vec<ToolTransformKind>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolClassification {
+    pub kinds: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolText {
+    pub text: String,
 }

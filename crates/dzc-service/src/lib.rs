@@ -77,3 +77,50 @@ pub fn main_entry() -> Result<(), String> {
         dzc_host::serve_listener(host, listener, receiver).await.map_err(|_| "HostTransportFailed".to_string())
     })
 }
+
+
+#[cfg(test)]
+mod desktop_protocol_tests {
+    use dzc_host::{controller, wire::*, Client};
+    use std::{error::Error, path::{Path, PathBuf}};
+
+    #[test]
+    #[ignore = "requires DZC_TEST_SERVICE pointing to the matching prebuilt dzc-service"]
+    fn installed_service_serves_desktop_tools_without_a_webview() -> Result<(), Box<dyn Error>> {
+        let executable = PathBuf::from(std::env::var_os("DZC_TEST_SERVICE").ok_or("missing service fixture")?);
+        let scratch = std::env::temp_dir().join(format!("dzc-desktop-test-{}-{}", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos()));
+        std::fs::create_dir(&scratch)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&scratch, std::fs::Permissions::from_mode(0o700))?;
+        }
+        let database = scratch.join("history.db");
+        let result = tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(async {
+            controller::start(&database, &executable, true).await?;
+            let checks = exercise_tools(&database).await;
+            controller::stop(&database).await?;
+            checks
+        });
+        std::fs::remove_dir_all(scratch)?;
+        result
+    }
+
+    async fn exercise_tools(database: &Path) -> Result<(), Box<dyn Error>> {
+        let mut client = Client::control(&controller::endpoint(database)?, ClientRole::Desktop).await?;
+        let state: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
+        if state.mode != HostMode::Service || state.capture_owner { return Err("expected an isolated service".into()); }
+        let catalog: ToolCatalog = client.call(Method::DesktopToolsCatalog, serde_json::json!({}), "ToolCatalog").await?;
+        let classified: ToolClassification = client.call(Method::DesktopToolsClassify,
+            serde_json::json!({"text":"https://example.org"}), "ToolClassification").await?;
+        let transformed: ToolText = client.call(Method::DesktopToolsTransform,
+            serde_json::json!({"text":"aB", "kind":"to_uppercase"}), "ToolText").await?;
+        let qr: ToolText = client.call(Method::DesktopToolsQr,
+            serde_json::json!({"content":"本地测试","format":"svg"}), "ToolText").await?;
+        if catalog.transforms.len() != 17 || classified.kinds != ["url"] || transformed.text != "AB" || !qr.text.contains("<svg") {
+            return Err("standalone tool result mismatch".into());
+        }
+        Ok(())
+    }
+}

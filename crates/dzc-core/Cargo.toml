@@ -21,6 +21,7 @@ rusqlite.workspace = true
 cssparser.workspace = true
 dom_query.workspace = true
 image.workspace = true
+qrcode2.workspace = true
 regex.workspace = true
 uuid.workspace = true
 urlencoding.workspace = true

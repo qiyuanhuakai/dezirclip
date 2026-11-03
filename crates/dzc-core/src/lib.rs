@@ -4,7 +4,7 @@ pub mod domain;
 pub mod ports;
 pub mod privacy;
 pub use dzc_protocol as protocol;
-pub use services::capture;
+pub use services::{capture, classification, qr, transforms};
 mod database;
 mod infrastructure;
 mod services;

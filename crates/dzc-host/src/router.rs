@@ -248,6 +248,7 @@ impl Host {
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
+            methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
             if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.surface.copy"]);}
             if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
@@ -369,6 +370,10 @@ impl Host {
                 result("PrivacyHotkey", PrivacyHotkey { hotkey })
             }
             Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopToolsCatalog | Method::DesktopToolsClassify | Method::DesktopToolsTransform | Method::DesktopToolsQr => {
+                self.desktop_permission(session, self.instance_id())?;
+                crate::tools::run(request.method, request.params)
+            }
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
@@ -531,6 +536,33 @@ pub(crate) mod tests {
     }
     fn dispatch(host: &Host, session: &Session, method: Method, params: Value) -> Response {
         host.dispatch(session, Request { request_id: "synthetic-request".into(), method, params })
+    }
+    #[test]
+    fn standalone_desktop_tools_use_shared_implementations_and_require_a_grant() {
+        let host = synthetic_host();
+        let (untrusted, _) = host.hello(hello(ClientRole::Desktop)).unwrap();
+        let grant = host.grants().issue_control(ClientRole::Desktop).unwrap();
+        let (desktop, _) = host.hello(HelloParams {
+            grant: Some(grant.token().into()), ..hello(ClientRole::Desktop)
+        }).unwrap();
+        for (method, input, schema) in [
+            (Method::DesktopToolsCatalog, serde_json::json!({}), "ToolCatalog"),
+            (Method::DesktopToolsClassify, serde_json::json!({"text": "https://example.com"}), "ToolClassification"),
+            (Method::DesktopToolsTransform, serde_json::json!({"text": "Hello", "kind": "to_uppercase"}), "ToolText"),
+            (Method::DesktopToolsQr, serde_json::json!({"content": "Hello", "format": "png"}), "ToolText"),
+        ] {
+            let denied = dispatch(&host, &untrusted, method, input.clone());
+            assert_eq!(denied.error.unwrap().code, WireErrorCode::PermissionDenied);
+            let result = dispatch(&host, &desktop, method, input).result.unwrap();
+            wire::validate(schema, &result).unwrap();
+            match method {
+                Method::DesktopToolsCatalog => assert_eq!(result["transforms"].as_array().unwrap().len(), 17),
+                Method::DesktopToolsClassify => assert_eq!(result["kinds"], serde_json::json!(["url"])),
+                Method::DesktopToolsTransform => assert_eq!(result["text"], "HELLO"),
+                Method::DesktopToolsQr => assert!(result["text"].as_str().unwrap().starts_with("data:image/png;base64,iVBOR")),
+                _ => unreachable!(),
+            }
+        }
     }
     fn insert(host: &Host, text: &str, tags: &[&str]) -> i64 {
         let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":text,

@@ -15,7 +15,7 @@ desktop = [
     "dep:tauri-plugin-dialog", "dep:tauri-plugin-global-shortcut",
     "dep:tauri-plugin-single-instance", "dep:tauri-plugin-window-state",
     "dep:window-vibrancy", "dep:machine-uid",
-    "dep:dotenvy", "dep:qrcode2", "dep:xcap", "dep:font-kit",
+    "dep:dotenvy", "dep:xcap", "dep:font-kit",
     "dep:windows-core", "dep:windows-future", "dep:windows-version",
     "dep:winreg", "dep:webview2-com", "dep:x11-clipboard", "dep:ksni", "dep:gtk",
     "dep:tauri-plugin-updater", "dep:reqwest", "dep:rustls",
@@ -68,7 +68,6 @@ hex = { workspace = true }
 dotenvy = { workspace = true, optional = true }
 
 dirs = { workspace = true }
-qrcode2 = { workspace = true, optional = true }
 rand = { workspace = true }
 xcap = { workspace = true, optional = true }
 zeroize = { workspace = true }
