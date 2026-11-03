@@ -428,6 +428,8 @@ export async function runServicePaste(args, env = process.env) {
         unique_synthetic_payload: generatedText, actual_unique_generated_clipboard_copy: true,
         input: assertNoFixtureInput(before, after), history_before: historyBefore, history_after: historyAfter };
     });
+    const queueEpoch = await native.request('begin-observation-epoch', { label: 'queue_delivery' });
+    assert.equal(queueEpoch.observation_epoch, 4); assert.equal(queueEpoch.observation_label, 'queue_delivery');
     await native.request('clear-target'); await native.request('activate-target');
     const queueTarget = await native.request('snapshot');
     await client.request('queue-prepare', { target: queueTarget.target, entry_id: seeded.seeded_ids[0] });
@@ -444,7 +446,9 @@ export async function runServicePaste(args, env = process.env) {
     });
     assert.equal(queueAfter.alternate_text, '');
     assert.equal(delivered.id, seeded.seeded_ids[0]); assert.equal(delivered.remaining, 0);
-    report.queue_acceptance = { refused, delivered, original_target_received_full_text: true };
+    report.queue_acceptance = { refused, delivered, observation_epoch: queueEpoch, after: queueAfter, original_target_received_full_text: true };
+    const quickEpoch = await native.request('begin-observation-epoch', { label: 'quick_panel_delivery' });
+    assert.equal(quickEpoch.observation_epoch, 5); assert.equal(quickEpoch.observation_label, 'quick_panel_delivery');
     await native.request('clear-target'); await native.request('activate-target');
     const quickTarget = (await native.request('snapshot')).target;
     await client.request('quick-begin', { target: quickTarget });
@@ -467,7 +471,7 @@ export async function runServicePaste(args, env = process.env) {
     });
     assert.equal(quickAfter.alternate_text, '');
     assert.equal(quickAfter.focus.foreground_hwnd, Number(quickTarget.hwnd));
-    report.quick_acceptance = { unrelated_focus_refused: true, own_panel_focused: true, original_target_received_full_text: true };
+    report.quick_acceptance = { observation_epoch: quickEpoch, after: quickAfter, unrelated_focus_refused: true, own_panel_focused: true, original_target_received_full_text: true };
     report.status = 'passed';
   } catch (error) { report.status = 'failed'; report.error = String(error.stack ?? error); }
   finally {

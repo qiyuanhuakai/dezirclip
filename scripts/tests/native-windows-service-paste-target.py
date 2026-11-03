@@ -121,7 +121,8 @@ class ServiceTarget(base.Native):
                 'observation_epoch': self.observation_epoch, 'observation_label': self.observation_label}
 
     def begin_observation_epoch(self, label):
-        labels = ('correct_original_target', 'stale_original_target_refused', 'generated_held_target_refused')
+        labels = ('correct_original_target', 'stale_original_target_refused', 'generated_held_target_refused',
+                  'queue_delivery', 'quick_panel_delivery')
         base.require(0 <= self.observation_epoch < len(labels)
                      and label == labels[self.observation_epoch], 'Predeclared observation epoch order required')
         self.pump_messages()
