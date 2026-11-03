@@ -3,6 +3,13 @@ use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
 use std::collections::HashMap;
 
 impl SqliteClipboardRepository {
+    pub(crate) fn quick_preferences(&self) -> CoreResult<(bool, String)> {
+        let conn = self.conn.lock().map_err(|_| CoreError::from("SettingsUnavailable".to_owned()))?;
+        conn.query_row("SELECT COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_enabled'),'true'),
+            COALESCE((SELECT value FROM settings WHERE key='app.quick_paste_hotkey'),'Ctrl+Shift+V')", [],
+            |row| Ok((row.get::<_, String>(0)? == "true", row.get(1)?)))
+            .map_err(|error| CoreError::from(error.to_string()))
+    }
     pub(crate) fn set_capture_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
         let database = |error: rusqlite::Error| CoreError::from(error.to_string());
         let mut connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;

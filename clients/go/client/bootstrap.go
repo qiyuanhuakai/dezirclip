@@ -93,7 +93,17 @@ func (endpoint desktopEndpoint) connect(ctx context.Context, version string) (*C
 		client.Close()
 		return nil, ErrProtocol
 	}
+	client.desktop = &endpoint
 	return client, nil
+}
+
+// DesktopConnection opens an independent stream to the original authenticated
+// Host. Cancelling a search on this stream cannot interrupt an in-flight paste.
+func (c *Client) DesktopConnection(ctx context.Context) (*Client, error) {
+	if c.desktop == nil {
+		return nil, ErrProtocol
+	}
+	return c.desktop.connect(ctx, c.hello.CoreVersion)
 }
 
 func desktopGrant(path string) (string, error) {

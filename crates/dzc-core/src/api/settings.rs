@@ -2,6 +2,9 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 
 impl HistoryService {
+    pub fn quick_preferences(&self) -> CoreResult<(bool, String)> {
+        self.repository.quick_preferences()
+    }
     pub fn queue_preferences(&self) -> CoreResult<(bool, bool, String)> { self.repository.queue_preferences() }
 
     pub fn update_queue_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {

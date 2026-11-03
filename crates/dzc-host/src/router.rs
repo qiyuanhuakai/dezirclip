@@ -280,6 +280,7 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                methods.push("desktop.quick.preferences");
                 methods.extend(["desktop.themes.list", "desktop.themes.get", "desktop.themes.import", "desktop.themes.export", "desktop.themes.remove"]);
                 methods.extend(["desktop.queue.get", "desktop.queue.set", "desktop.queue.configure"]);
                 if self.actions.can_copy() && self.actions.can_paste() {
@@ -464,6 +465,11 @@ impl Host {
                 { self.screen_request(session, request.method, request.params) }
                 #[cfg(not(feature = "native-screen"))]
                 { Err(WireErrorCode::UnsupportedCapability) }
+            }
+            Method::DesktopQuickPreferences => {
+                self.desktop_permission(session, self.instance_id())?;
+                let (enabled, hotkey) = self.history.quick_preferences().map_err(unavailable)?;
+                result("QuickPreferences", QuickPreferences { enabled, hotkey })
             }
             Method::DesktopQuickBegin | Method::DesktopQuickDismiss | Method::DesktopQuickPaste => self.quick_request(session, request.method, request.params),
             Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueSet |

@@ -74,7 +74,9 @@ impl Session {
     pub fn role(&self) -> ClientRole { self.role }
     pub fn permissions(&self) -> &[Permission] { &self.permissions }
     pub(crate) fn surface_reader(&self) -> bool {
-        self.role == ClientRole::Surface && self.grant.is_some() && self.permissions.contains(&Permission::HistoryRead)
+        self.grant.is_some() && self.permissions.contains(&Permission::HistoryRead) &&
+            (self.role == ClientRole::Surface ||
+                (self.extended_methods && self.role == ClientRole::Desktop && self.permissions.contains(&Permission::DesktopHistory)))
     }
     pub(crate) fn require(&self, permission: Permission) -> Result<(), WireErrorCode> {
         if self.permissions.contains(&permission) { Ok(()) } else { Err(WireErrorCode::PermissionDenied) }

@@ -1,5 +1,6 @@
 """Inspect the packaged MyGo WebView and copy a synthetic row in a private Xvfb session."""
 import json
+import ctypes
 import os
 from pathlib import Path
 import secrets
@@ -7,6 +8,85 @@ import subprocess
 import sys
 import tempfile
 import time
+
+
+def check_quick_paste(marker):
+    import gi
+    gi.require_version('Gtk', '3.0')
+    gi.require_version('GdkX11', '3.0')
+    from gi.repository import Gtk, GdkX11
+
+    target = Gtk.Window(title='Independent paste target')
+    editor = Gtk.Entry()
+    target.add(editor)
+    target.show_all()
+    editor.grab_focus()
+    # The previous WebView test copied the same row. Change the clipboard so
+    # a plain keyboard paste cannot satisfy the native-search assertion.
+    other = 'Different quick-paste fixture ' + secrets.token_hex(8)
+    subprocess.run(['xclip', '-selection', 'clipboard', '-i'], input=other.encode(),
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    assert subprocess.check_output(['xclip', '-selection', 'clipboard', '-o']).decode() == other
+    x11 = ctypes.CDLL('libX11.so.6')
+    xtest = ctypes.CDLL('libXtst.so.6')
+    ptr, xid = ctypes.c_void_p, ctypes.c_ulong
+    x11.XOpenDisplay.argtypes, x11.XOpenDisplay.restype = [ctypes.c_char_p], ptr
+    x11.XSetInputFocus.argtypes = [ptr, xid, ctypes.c_int, xid]
+    x11.XGetInputFocus.argtypes = [ptr, ctypes.POINTER(xid), ctypes.POINTER(ctypes.c_int)]
+    x11.XKeysymToKeycode.argtypes = [ptr, xid]
+    x11.XSync.argtypes = [ptr, ctypes.c_int]
+    x11.XCloseDisplay.argtypes = [ptr]
+    xtest.XTestFakeKeyEvent.argtypes = [ptr, ctypes.c_uint, ctypes.c_int, xid]
+    display = x11.XOpenDisplay(None)
+    assert display
+
+    def pump():
+        while Gtk.events_pending():
+            Gtk.main_iteration_do(False)
+
+    def chord(*syms):
+        codes = [x11.XKeysymToKeycode(display, sym) for sym in syms]
+        assert all(codes)
+        for code in codes:
+            assert xtest.XTestFakeKeyEvent(display, code, 1, 0)
+        for code in reversed(codes):
+            assert xtest.XTestFakeKeyEvent(display, code, 0, 0)
+        x11.XSync(display, False)
+
+    def focus():
+        window, revert = xid(), ctypes.c_int()
+        x11.XGetInputFocus(display, ctypes.byref(window), ctypes.byref(revert))
+        return window.value
+
+    try:
+        pump()
+        original = GdkX11.X11Window.get_xid(target.get_window())
+        x11.XSetInputFocus(display, original, 2, 0)
+        x11.XSync(display, False)
+        assert focus() == original
+        chord(0xffe3, 0xffe1, ord('v'))
+        deadline = time.monotonic() + 6
+        while focus() in (0, 1, original):
+            assert time.monotonic() < deadline, 'Native quick panel did not acquire input focus'
+            pump()
+            time.sleep(.025)
+        time.sleep(.25)
+        # Type the unique query into the actual native search box. Wait through
+        # the IME debounce before submitting the selected row exactly once.
+        for char in marker.split()[-1]:
+            chord(ord(char))
+        time.sleep(1)
+        chord(0xff0d)
+        deadline = time.monotonic() + 6
+        while editor.get_text() != marker:
+            assert time.monotonic() < deadline, 'Native selection did not paste full text into the original editor'
+            pump()
+            time.sleep(.025)
+        assert focus() == original
+        print('Verified independent global shortcut, native search, Enter and full text in the original editor')
+    finally:
+        target.destroy()
+        x11.XCloseDisplay(display)
 
 
 def check(desktop):
@@ -52,6 +132,7 @@ def check(desktop):
             raise RuntimeError('MyGo row did not copy complete text to the isolated clipboard')
         state = json.loads(subprocess.check_output([cli, 'service', 'status', '--json']))
         assert state['mode'] == 'service' and state['capture_owner']
+        check_quick_paste(marker)
         print('Verified independent MyGo WebView, visible synthetic history, native Copy action and clipboard text')
     finally:
         if process.poll() is None:

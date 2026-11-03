@@ -94,6 +94,23 @@
         "expected_history_revision"
       ],
       "additionalProperties": false
+    },
+    "QuickPreferences": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "hotkey": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "enabled",
+        "hotkey"
+      ],
+      "additionalProperties": false
     }
   }
 }

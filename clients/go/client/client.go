@@ -20,7 +20,7 @@ var ErrProtocol = errors.New("invalid local protocol response")
 type RemoteError struct { Code protocol.WireErrorCode }
 func (err *RemoteError) Error() string { return string(err.Code) }
 
-type Client struct { conn net.Conn; mu sync.Mutex; sequence uint64; hello protocol.HelloResult }
+type Client struct { conn net.Conn; mu sync.Mutex; sequence uint64; hello protocol.HelloResult; desktop *desktopEndpoint }
 
 func Dial(ctx context.Context, address string, hello protocol.HelloParams) (*Client, error) {
     if hello.ClientRole == protocol.ClientRoleDesktop && !slices.Contains(hello.Capabilities, "desktop.extended_methods") && len(hello.Capabilities) < 64 {

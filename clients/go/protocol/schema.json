@@ -1140,6 +1140,7 @@
         "desktop.queue.set",
         "desktop.queue.next",
         "desktop.queue.configure",
+        "desktop.quick.preferences",
         "desktop.quick.begin",
         "desktop.quick.dismiss",
         "desktop.quick.paste",
@@ -2491,6 +2492,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/QueueSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EmptyParams"
               }
             }
           }
@@ -4257,6 +4277,23 @@
         "token",
         "id",
         "expected_history_revision"
+      ],
+      "additionalProperties": false
+    },
+    "QuickPreferences": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "hotkey": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "enabled",
+        "hotkey"
       ],
       "additionalProperties": false
     },

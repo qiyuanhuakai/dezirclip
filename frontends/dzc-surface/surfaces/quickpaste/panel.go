@@ -28,6 +28,7 @@ type outgoing struct {
 // Panel state is touched only by MyGo's main thread. Network and private-pipe
 // goroutines deliver results through Window.Update with the original tickets.
 type Panel struct {
+	local          *desktopPresenter
 	window         *mygo.Window
 	model          model.Model
 	init           *protocol.SurfaceInitialize
@@ -197,6 +198,10 @@ func (p *Panel) resetList() {
 }
 
 func (p *Panel) fail(id, code string) {
+	if p.local != nil {
+		p.releaseDesktopDisplay()
+		return
+	}
 	p.hideLocal()
 	session := ""
 	if p.init != nil {
@@ -377,6 +382,10 @@ func (p *Panel) connectDisplay(ctx context.Context, show protocol.SurfaceShow, b
 	case <-ctx.Done():
 		return
 	}
+	p.watchDisplay(ctx, host, state, show.DisplayRequestId)
+}
+
+func (p *Panel) watchDisplay(ctx context.Context, host *client.Client, state protocol.RuntimeState, display string) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -392,7 +401,7 @@ func (p *Panel) connectDisplay(ctx context.Context, show protocol.SurfaceShow, b
 			}
 			if err != nil {
 				p.window.Update(func() {
-					if p.model.Display == show.DisplayRequestId {
+					if p.model.Display == display {
 						p.fail(p.nextID(), "host_unavailable")
 					}
 				})
@@ -402,7 +411,7 @@ func (p *Panel) connectDisplay(ctx context.Context, show protocol.SurfaceShow, b
 			nextState := events.State
 			state = nextState
 			p.window.Update(func() {
-				if ctx.Err() != nil || p.model.Display != show.DisplayRequestId {
+				if ctx.Err() != nil || p.model.Display != display {
 					return
 				}
 				if events.ResyncRequired || nextState.ServiceInstanceId != previous.ServiceInstanceId || nextState.PrivacyEpoch != previous.PrivacyEpoch || nextState.HistoryRevision < previous.HistoryRevision || nextState.EventSequence < previous.EventSequence {
@@ -435,7 +444,7 @@ func (p *Panel) cancelQuery() {
 }
 
 func (p *Panel) query(offset uint32) {
-	if !p.model.Visible || p.model.Composing || p.init == nil {
+	if !p.model.Visible || p.model.Composing || (p.init == nil && p.local == nil) {
 		return
 	}
 	p.cancelQuery()
@@ -446,10 +455,16 @@ func (p *Panel) query(offset uint32) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	p.queryCancel = cancel
-	endpoint, grant := p.init.Endpoint, p.init.Grant
+	var connect func(context.Context) (*client.Client, error)
+	if p.local != nil {
+		connect = p.local.owner.DesktopConnection
+	} else {
+		endpoint, grant := p.init.Endpoint, p.init.Grant
+		connect = func(ctx context.Context) (*client.Client, error) { return client.DialSurface(ctx, endpoint, grant, buildinfo.Identity()) }
+	}
 	go func() {
 		defer cancel()
-		host, err := client.DialSurface(ctx, endpoint, grant, buildinfo.Identity())
+		host, err := connect(ctx)
 		var page protocol.SurfacePage
 		if err == nil {
 			defer host.Close()
@@ -532,6 +547,10 @@ func (p *Panel) paste(view *model.View) {
 	action := p.nextID()
 	p.revokeView()
 	p.model.PendingAction = action
+	if p.local != nil {
+		p.finishDesktopDisplay(entryID, true)
+		return
+	}
 	p.diagnosticStage("dispatch_requested")
 	p.send(action, protocol.SurfaceControlTypePaste, protocol.SurfacePaste{SurfaceSessionId: p.model.Session, DisplayRequestId: p.model.Display, ActionId: action, EntryId: entryID, State: p.model.State}, nil)
 	display := p.model.Display
@@ -546,6 +565,13 @@ func (p *Panel) paste(view *model.View) {
 
 func (p *Panel) dismiss(reason string) {
 	if !p.model.Visible {
+		return
+	}
+	if p.local != nil {
+		if p.model.PendingAction == "" {
+			p.model.PendingAction = p.nextID()
+			p.finishDesktopDisplay(0, reason == "cancel")
+		}
 		return
 	}
 	message := protocol.SurfaceDismiss{SurfaceSessionId: p.model.Session, DisplayRequestId: p.model.Display, Reason: reason}

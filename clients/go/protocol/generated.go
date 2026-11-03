@@ -321,6 +321,7 @@ const (
     MethodDesktopQueueSet Method = "desktop.queue.set"
     MethodDesktopQueueNext Method = "desktop.queue.next"
     MethodDesktopQueueConfigure Method = "desktop.queue.configure"
+    MethodDesktopQuickPreferences Method = "desktop.quick.preferences"
     MethodDesktopQuickBegin Method = "desktop.quick.begin"
     MethodDesktopQuickDismiss Method = "desktop.quick.dismiss"
     MethodDesktopQuickPaste Method = "desktop.quick.paste"
@@ -700,6 +701,11 @@ type QuickPasteParams struct {
     Token string `json:"token"`
     Id int64 `json:"id"`
     ExpectedHistoryRevision uint64 `json:"expected_history_revision"`
+}
+
+type QuickPreferences struct {
+    Enabled bool `json:"enabled"`
+    Hotkey string `json:"hotkey"`
 }
 
 type ScreenPoint struct {

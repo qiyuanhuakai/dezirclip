@@ -464,6 +464,8 @@ pub enum Method {
     DesktopQueueNext,
     #[serde(rename = "desktop.queue.configure")]
     DesktopQueueConfigure,
+    #[serde(rename = "desktop.quick.preferences")]
+    DesktopQuickPreferences,
     #[serde(rename = "desktop.quick.begin")]
     DesktopQuickBegin,
     #[serde(rename = "desktop.quick.dismiss")]
@@ -995,6 +997,13 @@ pub struct QuickPasteParams {
     pub token: String,
     pub id: i64,
     pub expected_history_revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QuickPreferences {
+    pub enabled: bool,
+    pub hotkey: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

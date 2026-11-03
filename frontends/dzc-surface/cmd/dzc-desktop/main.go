@@ -13,6 +13,7 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/internal/buildinfo"
+	"github.com/qiyuanhuakai/dezirclip/frontends/dzc-surface/surfaces/quickpaste"
 )
 
 //go:embed web
@@ -103,7 +104,10 @@ func run() error {
 	mygo.App.SetName("DezirClip MyGo")
 	mygo.Bind(&History{actions: actions, events: events})
 	mygo.App.WhenReady(func() {
+		panel := quickpaste.NewDesktopPanel(actions)
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
+		win.OnFocus(panel.RefreshShortcut)
+		win.OnClosed(mygo.App.Quit)
 		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 		win.Page().LoadURL("mygo://localhost/")
