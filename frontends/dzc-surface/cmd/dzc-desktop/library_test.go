@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	_ "embed"
+	"encoding/base64"
 	"encoding/json/v2"
 	"errors"
 	"os"
@@ -14,6 +16,9 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+//go:embed testdata/ocr-clipboard.png
+var ocrFixture []byte
 
 // Run the compiled test alongside a matching CLI and Service, with no OS clipboard capture.
 func TestReactLibraryWithService(t *testing.T) {
@@ -213,6 +218,34 @@ func TestReactLibraryWithService(t *testing.T) {
 	if _, err := library.OcrText(ctx, true, ocr); err == nil {
 		t.Fatal("recognized a non-image history entry")
 	}
+	t.Run("recognize PNG and read stored text", func(t *testing.T) {
+		body := "data:image/png;base64," + base64.StdEncoding.EncodeToString(ocrFixture)
+		id, err := library.AddManual(ctx, body, protocol.ManualEntryParams{ExpectedEpoch: epoch, ContentType: "image", Tags: []string{}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		image := protocol.ManualOcrParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Id: id}
+		result, err := library.OcrText(ctx, true, image)
+		if !engine.Available {
+			var remote *client.RemoteError
+			if os.Getenv("DZC_TEST_REQUIRE_OCR") == "1" || !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeUnsupportedCapability {
+				t.Fatalf("OCR engine unavailable: %s, recognition error: %v", engine.EngineName, err)
+			}
+			t.Logf("%s is unavailable; verified explicit refusal", engine.EngineName)
+			return
+		}
+		if err != nil || result.Status != "done" || result.Text == nil {
+			t.Fatalf("real %s recognition: %+v %v", engine.EngineName, result, err)
+		}
+		if strings.Join(strings.Fields(*result.Text), " ") != "DESKTOP TEST" {
+			t.Fatalf("%s recognized the fixture as %q", engine.EngineName, *result.Text)
+		}
+		stored, err := library.OcrText(ctx, false, image)
+		if err != nil || stored.Status != "done" || stored.Text == nil || *stored.Text != *result.Text {
+			t.Fatalf("stored OCR differs: %+v %v", stored, err)
+		}
+		t.Logf("verified %s recognized the fixture pixels and persisted the full text", engine.EngineName)
+	})
 	fresh, err := owner.DesktopConnection(ctx)
 	if err != nil {
 		t.Fatal(err)
