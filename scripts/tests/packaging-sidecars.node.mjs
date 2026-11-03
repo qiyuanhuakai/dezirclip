@@ -211,6 +211,12 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(upgrades, /uses: \.\/\.github\/workflows\/release-windows-upgrade\.yml/);
   assert.match(upgrades, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
   const promotion = releaseJob(workflow, "verify-publish-and-promote");
+  const mygo = releaseJob(workflow, "windows-x64-mygo");
+  assert.match(mygo, /python scripts\/stage-mygo-windows\.py --revision "\$env:GITHUB_SHA" --tag "\$env:GITHUB_REF_NAME"/);
+  assert.match(mygo, /DezirClip-\$env:GITHUB_REF_NAME-windows-x64-MyGo\.zip/);
+  assert.match(mygo, /\$files = 'dzc-desktop\.exe', 'dzc-service\.exe', 'dzc\.exe'/);
+  assert.match(mygo, /!\$release\.isDraft.*\$release\.databaseId -ne \$env:DZC_RELEASE_ID/);
+  assert.match(mygo, /gh release upload "\$env:GITHUB_REF_NAME" \$archive/);
   assert.match(promotion, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo\]/);
   assert.match(promotion, /github\.event_name == 'workflow_dispatch' \|\| \(needs\.publish-tauri\.result == 'success' && needs\.publish-standalone-cli\.result == 'success' && needs\.publish-flatpak\.result == 'success' && needs\.windows-x64-mygo\.result == 'success'\)/);
 });

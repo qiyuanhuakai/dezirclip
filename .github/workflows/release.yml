@@ -218,6 +218,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 11.0.9
@@ -262,11 +264,16 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          DZC_RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         run: |
           $stage = Join-Path $env:RUNNER_TEMP 'mygo-test-package'
           $archive = Join-Path $env:RUNNER_TEMP "DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo.zip"
           $files = 'dzc-desktop.exe', 'dzc-service.exe', 'dzc.exe' | ForEach-Object { Join-Path $stage $_ }
           Compress-Archive -LiteralPath $files -DestinationPath $archive -CompressionLevel Optimal
+          $release = gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --json databaseId,isDraft,tagName | ConvertFrom-Json
+          if ($LASTEXITCODE -or !$release.isDraft -or [string]$release.databaseId -ne $env:DZC_RELEASE_ID -or $release.tagName -cne $env:GITHUB_REF_NAME) {
+            throw 'Expected the original draft release for this tag'
+          }
           gh release upload "$env:GITHUB_REF_NAME" $archive --repo "$env:GITHUB_REPOSITORY" --clobber
 
   publish-tauri:
