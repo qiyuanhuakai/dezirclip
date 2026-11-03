@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/richtext"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
@@ -71,6 +72,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 		return
 	}
 	var bitmap *ui.Bitmap
+	var formatted *richtext.Document
 	text := row.Content
 	if row.ContentType == "image" {
 		header, encoded, ok := strings.Cut(text, ",")
@@ -87,6 +89,8 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			return
 		}
 		text = ""
+	} else if row.ContentType == "rich_text" && row.HtmlContent != nil && len(*row.HtmlContent) <= 64*1024 {
+		formatted = richtext.NewDocument(richtext.ParseHTML(*row.HtmlContent))
 	} else {
 		if text == "" {
 			text = row.Preview
@@ -112,6 +116,10 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 				ui.Text(c, source)
 				if bitmap != nil {
 					ui.Image(c, bitmap).Fill()
+				} else if formatted != nil {
+					richtext.Editor(c, formatted, richtext.EditorOptions{
+						ReadOnly: true, Label: "富文本预览", OnLink: func(string) {},
+					}).Fill()
 				} else {
 					ui.Text(c, text).Wrap()
 				}
