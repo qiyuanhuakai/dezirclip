@@ -233,14 +233,16 @@ func run() error {
 	history := &History{actions: actions}
 	history.rememberTarget(ctx)
 	mygo.Bind(history)
-	mygo.Bind(&Library{owner: actions})
+	library := &Library{owner: actions}
+	mygo.Bind(library)
 	shell := &DesktopShell{resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
 	mygo.Bind(shell)
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)
+	follow := library.followMouse(ctx)
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620, MinWidth: 250, MinHeight: 300,
-			Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
+			Hidden: follow, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
 		preview.main = win
 		win.OnBlur(func() { history.targetInvalid.Store(true); preview.clear(); focusChanged.Emit(win, false) })
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
@@ -253,6 +255,11 @@ func run() error {
 		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 		win.Page().LoadURL("mygo://localhost/")
+		if follow {
+			placeMainAtCursor(win)
+			win.Show()
+			win.Focus()
+		}
 		go func() {
 			commands := bufio.NewScanner(os.Stdin)
 			for commands.Scan() {
@@ -266,11 +273,16 @@ func run() error {
 					continue
 				}
 				if command == "show" || command == "toggle" || command == "settings" {
+					position := false
 					if !win.IsFocused() {
 						history.rememberTarget(ctx)
+						position = library.followMouse(ctx)
 					}
 					mygo.RunOnMain(func() {
 						if !win.IsDestroyed() {
+							if position {
+								placeMainAtCursor(win)
+							}
 							win.Show()
 							win.Focus()
 							if command == "settings" {

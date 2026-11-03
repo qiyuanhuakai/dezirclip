@@ -114,6 +114,8 @@ const GeneralSettingsGroup = ({
             setSoundSaving(false);
         }
     };
+    const [followSaving, setFollowSaving] = useState(false);
+    const [followError, setFollowError] = useState("");
     const [silentSaving, setSilentSaving] = useState(false);
     const [silentError, setSilentError] = useState("");
     const [idleDestroyDraft, setIdleDestroyDraft] = useState(idleDestroySeconds.toString());
@@ -234,14 +236,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={followMouse}
-                            onChange={(e) => {
-                                const val = e.target.checked;
-                                setFollowMouse(val);
-                                invoke("set_follow_mouse", { enabled: val }).catch(console.error);
+                            aria-label={t('follow_mouse')}
+                            disabled={followSaving}
+                            onChange={async (e) => {
+                                const enabled = e.target.checked;
+                                setFollowSaving(true);
+                                setFollowError("");
+                                try {
+                                    await invoke("set_follow_mouse", { enabled });
+                                    setFollowMouse(enabled);
+                                } catch (error) {
+                                    setFollowError(String(error));
+                                } finally {
+                                    setFollowSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {followError && <span role="alert">{t("common_error")} · {followError}</span>}
                 </div>
 
                 </NativeFeatureBoundary>

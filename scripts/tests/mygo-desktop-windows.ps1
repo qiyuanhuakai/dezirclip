@@ -12,6 +12,8 @@ using System.Runtime.InteropServices;
 public static class MyGoInput {
     [StructLayout(LayoutKind.Sequential)]
     public struct Point { public int x, y; }
+    public struct Rect { public int left, top, right, bottom; }
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
@@ -185,6 +187,7 @@ $form.Text = 'Independent MyGo paste target'
 $edit = New-Object Windows.Forms.TextBox
 $form.Controls.Add($edit)
 $resident = $null
+$startedService = $null
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
@@ -221,14 +224,19 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if ($LASTEXITCODE) { throw 'Could not select the isolated external editor' }
     }
     if ($Emoji) {
-        & $cli service start --json | Out-Null
-        if ($LASTEXITCODE) { throw 'Could not start the independent Service before MyGo' }
+        $startedService = & $cli service start --json | ConvertFrom-Json
+        if ($LASTEXITCODE -or $startedService.mode -ne 'service' -or !$startedService.capture_owner -or !$startedService.state.service_instance_id) {
+            throw 'Could not start the independent capture Service before MyGo'
+        }
     }
     [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
     $form.Show()
     $form.Activate()
     $null = $edit.Focus()
     $null = Wait-Until { $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Editor did not acquire foreground'
+    $workArea = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $cursorY = $workArea.Top + 16
+    if (![MyGoInput]::SetCursorPos($workArea.Right - 14, $cursorY)) { throw 'Could not set the fixture pointer' }
     $launchPath = $env:Path
     try {
         if ($Capture) {
@@ -246,6 +254,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             $_.Id -ne $resident.Id -and $_.Path -eq $exe -and $_.MainWindowTitle -eq 'DezirClip'
         } | Select-Object -First 1
     } 'Packaged MyGo main window did not appear'
+    $null = Wait-Until {
+        $frame = [MyGoInput+Rect]::new()
+        if (![MyGoInput]::GetWindowRect($main.MainWindowHandle, [ref]$frame)) { return $false }
+        $width = $frame.right - $frame.left
+        $height = $frame.bottom - $frame.top
+        $x = [Math]::Max($workArea.Left, $workArea.Right - $width - 5)
+        $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - 5))
+        [Math]::Abs($frame.left - $x) -le 5 -and [Math]::Abs($frame.top - $y) -le 5
+    } 'MyGo main window did not follow the pointer inside the Windows work area'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
     $webProcesses = @(Wait-Until {
         Get-DesktopProcesses @($main.Id) | Where-Object { $_.Name -eq 'msedgewebview2.exe' }
@@ -306,6 +323,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     $clipboardSequence = [MyGoInput]::GetClipboardSequenceNumber()
     $null = Wait-Until { [MyGoInput]::CheckClipboardText($marker, $clipboardSequence) } 'Clipboard remained locked after delivery' 3
     if ($Emoji) {
+        $afterPaste = & $cli service status --json | ConvertFrom-Json
+        if ($LASTEXITCODE -or $afterPaste.state.service_instance_id -cne $startedService.state.service_instance_id -or !$afterPaste.capture_owner) {
+            throw 'Emoji paste did not preserve the original capture Service'
+        }
         Write-Output 'Verified physical WebView2 emoji click pasted into the original editor using an already-running Service'
         return
     }
@@ -352,6 +373,13 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     } catch { Write-Host ("Diagnostic query failed: " + $_.Exception.Message) }
     $log = Join-Path $dir.FullName 'desktop.log'
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
+    if ($Emoji -and $startedService) {
+        try {
+            $observedService = & $cli service status --json | ConvertFrom-Json
+            Write-Host ("Before cleanup: status exit={0}, original Service={1}, capture owner={2}" -f
+                $LASTEXITCODE, ($startedService.state.service_instance_id -ceq $observedService.state.service_instance_id), $observedService.capture_owner)
+        } catch { Write-Host 'Could not inspect the original Service before cleanup' }
+    }
     throw $failure
 } finally {
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }

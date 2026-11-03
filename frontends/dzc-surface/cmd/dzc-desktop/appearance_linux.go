@@ -2,12 +2,29 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
 )
+
+func placeMainAtCursor(w *mygo.Window) {
+	_, display := os.LookupEnv("WAYLAND_DISPLAY")
+	_, socket := os.LookupEnv("WAYLAND_SOCKET")
+	if display || socket || strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland") {
+		return
+	}
+	cursor := mygo.Screen.CursorScreenPoint()
+	area := mygo.Screen.DisplayNearestPoint(cursor).WorkArea
+	width, height := w.Size()
+	if area.Width <= 0 || area.Height <= 0 || width <= 0 || height <= 0 {
+		return
+	}
+	point := nearCursor(cursor, area, width, height)
+	w.SetPosition(point.X, point.Y)
+}
 
 func (*DesktopShell) PlatformInfo() platformInfo {
 	return platformInfo{Platform: "linux", Linux: true}

@@ -5193,6 +5193,7 @@
             "app.arrow_key_selection",
             "app.silent_start",
             "app.hide_tray_icon",
+            "app.follow_mouse",
             "app.sound_enabled",
             "app.sound_paste_enabled",
             "app.sound_volume",

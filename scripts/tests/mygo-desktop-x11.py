@@ -339,7 +339,7 @@ def visible_main_window(resident, executable):
         except (FileNotFoundError, ProcessLookupError):
             continue
         info = subprocess.run(['xwininfo', '-id', xid], capture_output=True, text=True)
-        if 'Map State: IsViewable' in info.stdout: return True
+        if 'Map State: IsViewable' in info.stdout: return int(xid, 16)
     return False
 
 
@@ -582,6 +582,10 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                 wait_for(lambda: db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone() == (str(enabled).lower(),)
                          and checkbox.get_state_set().contains(atspi.StateType.CHECKED) == enabled,
                          f'{label} did not reflect the committed setting')
+            follow = wait_for(lambda: find_item('Follow Mouse Position'), 'Follow Mouse Position checkbox missing')
+            assert follow.get_state_set().contains(atspi.StateType.CHECKED) and atspi.Action.do_action(follow, 0)
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.follow_mouse'").fetchone() == ('false',)
+                     and not follow.get_state_set().contains(atspi.StateType.CHECKED), 'Follow Mouse setting did not persist')
             for hidden in [True, False]:
                 assert atspi.Action.do_action(hide_tray, 0)
                 wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hide_tray_icon'").fetchone() == (str(hidden).lower(),)
@@ -880,8 +884,34 @@ def check(desktop, pinned, audio):
         info = Gio.DesktopAppInfo.new_from_filename(str(entry))
         ok, launch = GLib.shell_parse_argv(info.get_commandline())
         assert ok and launch == [str(desktop), '--minimized'], 'Desktop login entry does not start this resident'
+    from gi.repository import Gdk, GdkX11
+    screen = Gdk.Screen.get_default()
+    pointer = screen.get_display().get_default_seat().get_pointer()
+    work = screen.get_display().get_primary_monitor().get_workarea()
+    def move_pointer():
+        pointer.warp(screen, work.x+work.width-14, work.y+64)
+        screen.get_display().sync()
+
+    def check_placement(follows):
+        deadline = time.monotonic() + 12
+        geometry = None
+        while time.monotonic() < deadline:
+            xid = visible_main_window(process, desktop)
+            if xid:
+                frame = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), xid)
+                if frame:
+                    geometry = frame.get_frame_extents()
+                    right = geometry.x+geometry.width
+                    aligned = abs(right-(work.x+work.width-5)) <= 5 and abs(geometry.y-(work.y+76)) <= 5
+                    if follows and aligned or not follows and abs(right-(work.x+work.width)) > 30:
+                        return
+            time.sleep(.05)
+        raise AssertionError(f'Expected follow={follows}, work area={work}, window={geometry}')
+    move_pointer()
     process = subprocess.Popen(launch, stdout=subprocess.DEVNULL)
     try:
+        if not pinned:
+            check_placement(True)
         if pinned:
             deadline = time.monotonic() + 15
             while not tray_item(process.pid, '打开剪贴板', activate=False):
@@ -947,11 +977,14 @@ def check(desktop, pinned, audio):
                         assert process.wait(timeout=15) == 0
                         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                             db.execute("UPDATE settings SET value=? WHERE key='app.hotkey'", (key,))
+                        move_pointer()
                         process = subprocess.Popen([desktop, *args], stdout=subprocess.DEVNULL)
                         deadline = time.monotonic() + 15
                         while not visible_main_window(process, desktop):
                             assert process.poll() is None and time.monotonic() < deadline, f'No visible startup recovery for {args}'
                             time.sleep(.1)
+                        check_placement(False)
+                    print('Verified saved Follow Mouse off leaves reopened windows away from the pointer')
                     print('Verified ordinary startup without a tray host or shortcut and explicit --show with a registered shortcut')
                     return
                 # The Host closes idle desktop streams after 30 seconds.

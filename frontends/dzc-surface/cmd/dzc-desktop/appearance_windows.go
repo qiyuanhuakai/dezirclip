@@ -32,6 +32,54 @@ func (*DesktopShell) SystemThemeMode(context.Context) string {
 
 var setComposition = windows.NewLazySystemDLL("user32.dll").NewProc("SetWindowCompositionAttribute")
 
+var (
+	user32         = windows.NewLazySystemDLL("user32.dll")
+	cursorPosition = user32.NewProc("GetPhysicalCursorPos")
+	cursorMonitor  = user32.NewProc("MonitorFromRect")
+	monitorInfo    = user32.NewProc("GetMonitorInfoW")
+	windowRect     = user32.NewProc("GetWindowRect")
+	moveWindow     = user32.NewProc("SetWindowPos")
+)
+
+func placeMainAtCursor(w *mygo.Window) {
+	type rect struct{ left, top, right, bottom int32 }
+	var cursor struct{ x, y int32 }
+	if ok, _, _ := cursorPosition.Call(uintptr(unsafe.Pointer(&cursor))); ok == 0 {
+		return
+	}
+	probe := rect{cursor.x, cursor.y, cursor.x + 1, cursor.y + 1}
+	monitor, _, _ := cursorMonitor.Call(uintptr(unsafe.Pointer(&probe)), 2)
+	var info struct {
+		size         uint32
+		bounds, work rect
+		flags        uint32
+	}
+	info.size = uint32(unsafe.Sizeof(info))
+	if ok, _, _ := monitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
+		return
+	}
+	area := mygo.Rectangle{X: int(info.work.left), Y: int(info.work.top),
+		Width: int(info.work.right - info.work.left), Height: int(info.work.bottom - info.work.top)}
+	hwnd := w.NativeHandle()
+	// A move across monitors can synchronously resize the window for its new DPI.
+	// Read the actual physical outer rectangle again before the final placement.
+	for range 2 {
+		var bounds rect
+		if ok, _, _ := windowRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok == 0 {
+			return
+		}
+		point := nearCursor(mygo.Point{X: int(cursor.x), Y: int(cursor.y)}, area,
+			int(bounds.right-bounds.left), int(bounds.bottom-bounds.top))
+		if point.X == int(bounds.left) && point.Y == int(bounds.top) {
+			return
+		}
+		const noSizeZOrderOrActivate = 0x0001 | 0x0004 | 0x0010
+		if ok, _, _ := moveWindow.Call(hwnd, 0, uintptr(point.X), uintptr(point.Y), 0, 0, noSizeZOrderOrActivate); ok == 0 {
+			return
+		}
+	}
+}
+
 // Before Windows 11 22H2 the compositor exposes acrylic through the accent policy.
 func legacyAcrylic(hwnd windows.HWND, enabled, dark bool) error {
 	policy := [4]uint32{0, 2, 0, 0}
