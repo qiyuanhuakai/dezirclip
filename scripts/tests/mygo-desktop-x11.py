@@ -1250,6 +1250,8 @@ def check_preview(button, atspi):
             time.sleep(.05)
         raise AssertionError('No visible native preview for the selected history row')
     preview_id, hover = preview_bounds()
+    assert (hover.x+hover.width <= rect.x or hover.x >= rect.x+rect.width or
+            hover.y+hover.height <= rect.y or hover.y >= rect.y+rect.height), 'Native preview covered its trigger'
     frame = GdkX11.X11Window.foreign_new_for_display(screen.get_display(), preview_id)
     def clear_background_and_visible_ink():
         pixels = Gdk.pixbuf_get_from_window(frame, 0, 0, frame.get_width(), frame.get_height())

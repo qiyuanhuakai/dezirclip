@@ -31,7 +31,13 @@ async function nativePreviewOffset(anchor: CompactPreviewAnchor) {
         monitorSize: { width: area.Width, height: area.Height }, margin: 10, offset: 12,
         avoidRect: { left: 0, top: 0, right: main.Width, bottom: main.Height },
     });
-    return { X: Math.round(point.x), Y: Math.round(point.y) };
+    const left = Math.floor((rect?.left ?? anchor.clientX) * sx);
+    const top = Math.floor((rect?.top ?? anchor.clientY) * sy);
+    return {
+        Point: { X: Math.round(point.x), Y: Math.round(point.y) },
+        Source: { X: left, Y: top, Width: Math.max(1, Math.ceil((rect?.right ?? anchor.clientX) * sx) - left),
+            Height: Math.max(1, Math.ceil((rect?.bottom ?? anchor.clientY) * sy) - top) },
+    };
 }
 type Session = {
     owner: object;

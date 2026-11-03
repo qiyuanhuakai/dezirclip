@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -43,6 +44,30 @@ func TestRichPreviewPaintsOnlyOneBackground(t *testing.T) {
 			if !visible {
 				t.Fatalf("dark=%v opacity=%d: formatted text missing", dark, opacity)
 			}
+		}
+	}
+}
+
+func TestPreviewNeverCoversItsSourceRow(t *testing.T) {
+	for _, c := range []struct {
+		area, row mygo.Rectangle
+		point     mygo.Point
+		w, h      int
+	}{
+		{mygo.Rectangle{Width: 800, Height: 600}, mygo.Rectangle{X: 224, Y: 290, Width: 352, Height: 40}, mygo.Point{X: 430, Y: 130}, 360, 200},
+		{mygo.Rectangle{X: -300, Width: 300, Height: 320}, mygo.Rectangle{X: -300, Y: 100, Width: 300, Height: 40}, mygo.Point{X: -290, Y: 90}, 300, 176},
+		{mygo.Rectangle{Width: 200, Height: 150}, mygo.Rectangle{Width: 200, Height: 150}, mygo.Point{}, 0, 0},
+	} {
+		r := previewBounds(c.area, c.row, c.point)
+		if r.Width != c.w || r.Height != c.h {
+			t.Fatalf("unexpected fitted size: %+v", r)
+		}
+		if r.Width == 0 {
+			continue
+		}
+		if r.X < c.area.X || r.Y < c.area.Y || r.X+r.Width > c.area.X+c.area.Width || r.Y+r.Height > c.area.Y+c.area.Height ||
+			(r.X < c.row.X+c.row.Width && r.X+r.Width > c.row.X && r.Y < c.row.Y+c.row.Height && r.Y+r.Height > c.row.Y) {
+			t.Fatalf("invalid preview area %+v for row %+v on %+v", r, c.row, c.area)
 		}
 	}
 }

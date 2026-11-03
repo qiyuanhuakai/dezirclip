@@ -24,6 +24,43 @@ type Preview struct {
 	cancel       context.CancelFunc
 }
 
+type previewPlacement struct {
+	Point  mygo.Point
+	Source mygo.Rectangle
+}
+
+// Keep the flyout outside the triggering row, including when its full size cannot fit beside the main window.
+func previewBounds(area, source mygo.Rectangle, preferred mygo.Point) mygo.Rectangle {
+	width, height := min(360, area.Width), min(200, area.Height)
+	if width <= 0 || height <= 0 {
+		return mygo.Rectangle{}
+	}
+	x1, y1 := area.X, area.Y
+	x2, y2 := x1+area.Width, y1+area.Height
+	const gap = 4
+	// Each available strip excludes the entire source row on one axis.
+	strips := [][4]int{
+		{x1, y1, min(x2, source.X-gap), y2}, {max(x1, source.X+source.Width+gap), y1, x2, y2},
+		{x1, y1, x2, min(y2, source.Y-gap)}, {x1, max(y1, source.Y+source.Height+gap), x2, y2},
+	}
+	var best mygo.Rectangle
+	var distance int64
+	for _, s := range strips {
+		w, h := min(width, s[2]-s[0]), min(height, s[3]-s[1])
+		if w <= 0 || h <= 0 {
+			continue
+		}
+		x, y := max(s[0], min(preferred.X, s[2]-w)), max(s[1], min(preferred.Y, s[3]-h))
+		dx, dy := int64(x-preferred.X), int64(y-preferred.Y)
+		d := dx*dx + dy*dy
+		if w*h > best.Width*best.Height || (w*h == best.Width*best.Height && d < distance) {
+			best = mygo.Rectangle{X: x, Y: y, Width: w, Height: h}
+			distance = d
+		}
+	}
+	return best
+}
+
 type previewLayout struct {
 	Main     mygo.Rectangle
 	WorkArea mygo.Rectangle
@@ -77,15 +114,15 @@ func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state p
 	p.selectEntry(ctx, sequence, id, state, false, nil, previewAppearance{Opacity: 65})
 }
 
-func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, point mygo.Point, appearance previewAppearance) {
-	p.selectEntry(ctx, sequence, id, protocol.RuntimeState{ServiceInstanceId: instance, PrivacyEpoch: epoch}, reveal, &point, appearance)
+func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, placement previewPlacement, appearance previewAppearance) {
+	p.selectEntry(ctx, sequence, id, protocol.RuntimeState{ServiceInstanceId: instance, PrivacyEpoch: epoch}, reveal, &placement, appearance)
 }
 
 func (p *Preview) Hide(ctx context.Context, sequence uint64) {
 	p.selectEntry(ctx, sequence, 0, protocol.RuntimeState{}, false, nil, previewAppearance{Opacity: 65})
 }
 
-func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, point *mygo.Point, appearance previewAppearance) {
+func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, placement *previewPlacement, appearance previewAppearance) {
 	main := mygo.CallerWindow(ctx)
 	if main == nil {
 		return
@@ -101,11 +138,11 @@ func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, st
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		p.cancel = cancel
-		go p.load(ctx, main, sequence, id, state, reveal, point, appearance)
+		go p.load(ctx, main, sequence, id, state, reveal, placement, appearance)
 	})
 }
 
-func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, point *mygo.Point, appearance previewAppearance) {
+func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool, placement *previewPlacement, appearance previewAppearance) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	host, err := p.owner.DesktopConnection(ctx)
@@ -155,34 +192,36 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			}
 		}
 	}
-	source := row.SourceApp
+	sourceApp := row.SourceApp
 	main.Update(func() {
 		if main != p.main || p.generation != sequence || p.cancel == nil || !main.IsFocused() {
 			return
 		}
 		bounds := main.ContentBounds()
 		area := mygo.Screen.DisplayMatching(bounds).WorkArea
-		var cursor mygo.Point
-		if point == nil {
-			cursor = mygo.Screen.CursorScreenPoint()
+		var preferred mygo.Point
+		var source mygo.Rectangle
+		if placement == nil {
+			cursor := mygo.Screen.CursorScreenPoint()
 			area = mygo.Screen.DisplayNearestPoint(cursor).WorkArea
+			source = mygo.Rectangle{X: cursor.X, Y: cursor.Y, Width: 1, Height: 1}
+			preferred = mygo.Point{X: cursor.X + 16, Y: cursor.Y}
+		} else {
+			preferred = mygo.Point{X: bounds.X + placement.Point.X, Y: bounds.Y + placement.Point.Y}
+			source = placement.Source
+			source.X += bounds.X
+			source.Y += bounds.Y
 		}
-		if area.Width < 1 || area.Height < 1 {
+		frame := previewBounds(area, source, preferred)
+		if frame.Width == 0 {
 			return
 		}
-		width, height := min(360, area.Width), min(200, area.Height)
-		x, y := cursor.X+16, cursor.Y
-		if point != nil {
-			x, y = bounds.X+point.X, bounds.Y+point.Y
-		} else if x+width > area.X+area.Width {
-			x = cursor.X - width - 16
-		}
-		anchor := mygo.Rectangle{X: max(area.X, min(x, area.X+area.Width-width)) - bounds.X, Y: max(area.Y, min(y, area.Y+area.Height-height)) - bounds.Y}
+		anchor := mygo.Rectangle{X: frame.X - bounds.X, Y: frame.Y - bounds.Y}
 		theme := appearance.theme()
-		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: width, Height: height, Hidden: true, Content: ui.View(func(c *ui.Context) {
+		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: frame.Width, Height: frame.Height, Hidden: true, Content: ui.View(func(c *ui.Context) {
 			c.SetTheme(theme)
 			ui.Column(c).Fill().Padding(10).Children(func() {
-				ui.Text(c, source)
+				ui.Text(c, sourceApp)
 				if bitmap != nil {
 					ui.Image(c, bitmap).Fill()
 				} else if formatted != nil {
