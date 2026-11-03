@@ -41,7 +41,11 @@ func initialize() {
 }
 
 func Validate(name string, raw []byte) error {
-    if len(raw) == 0 || len(raw) > MaxFrameBytes || !utf8.Valid(raw) || !validUnicodeEscapes(raw) { return ErrInvalidMessage }
+    return validateBounded(name, raw, MaxFrameBytes)
+}
+
+func validateBounded(name string, raw []byte, maximum int) error {
+    if len(raw) == 0 || len(raw) > maximum || !utf8.Valid(raw) || !validUnicodeEscapes(raw) { return ErrInvalidMessage }
     once.Do(initialize)
     if initializationError != nil { return ErrInvalidMessage }
     validator, found := validators[name]
@@ -63,7 +67,19 @@ func withinDepth(value any, remaining int) bool {
 }
 
 func Decode(name string, raw []byte, result any) error {
-    if err := Validate(name, raw); err != nil { return err }
+    return decodeBounded(name, raw, result, MaxFrameBytes)
+}
+
+const MaxSnapshotBytes = 32 * 1024 * 1024
+
+// DecodeSnapshot validates one fully reassembled desktop result. Individual wire
+// frames still go through Decode and its smaller limit.
+func DecodeSnapshot(name string, raw []byte, result any) error {
+    return decodeBounded(name, raw, result, MaxSnapshotBytes)
+}
+
+func decodeBounded(name string, raw []byte, result any, maximum int) error {
+    if err := validateBounded(name, raw, maximum); err != nil { return err }
     destination := reflect.TypeOf(result)
     if destination == nil || destination.Kind() != reflect.Pointer || reflect.ValueOf(result).IsNil() { return ErrInvalidMessage }
     exact, err := exactFields(raw, destination.Elem())
