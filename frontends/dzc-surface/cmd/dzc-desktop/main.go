@@ -234,7 +234,6 @@ func run() error {
 	}
 	mygo.SetFrontend(assets)
 	history := &History{actions: actions}
-	history.rememberTarget(ctx)
 	mygo.Bind(history)
 	library := &Library{owner: actions}
 	mygo.Bind(library)
@@ -281,6 +280,9 @@ func run() error {
 				}
 			}
 		}
+		// Creating a cold WebView can outlast the Host's idle session timeout.
+		// Sample the external foreground after initialization, immediately before we take focus.
+		history.rememberTarget(ctx)
 		win.Show()
 		win.Focus()
 		physicalSize := func() mygo.Size {
