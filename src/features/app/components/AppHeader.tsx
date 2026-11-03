@@ -108,7 +108,7 @@ const AppHeader = ({
     <div className="header-top" data-tauri-drag-region>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         {(showSettings || showTagManager || showEmojiPanel) && (
-          <button className="btn-icon" onClick={() => {
+          <button className="btn-icon" aria-label={t("common_close")} onClick={() => {
             if (showEmojiPanel) setShowEmojiPanel(false);
             else if (showTagManager) setShowTagManager(false);
             else setShowSettings(false);

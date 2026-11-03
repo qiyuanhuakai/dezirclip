@@ -204,6 +204,25 @@ type CaptureFinishParams struct {
     Paste *bool `json:"paste,omitempty"`
 }
 
+type EmojiFavoritesParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path *string `json:"path,omitempty"`
+}
+
+type EmojiFavoritesResult struct {
+    Paths []string `json:"paths"`
+    Preview *string `json:"preview,omitempty"`
+}
+
+type WindowEmojiParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Kind string `json:"kind"`
+    Content string `json:"content"`
+    Paste bool `json:"paste"`
+}
+
 type GeneratedBody struct {
     Kind string `json:"kind"`
     Text string `json:"text"`
@@ -362,6 +381,8 @@ const (
     MethodDesktopHistoryManualBegin Method = "desktop.history.manual.begin"
     MethodDesktopHistoryManualFinish Method = "desktop.history.manual.finish"
     MethodDesktopWindowPaste Method = "desktop.window.paste"
+    MethodDesktopWindowEmoji Method = "desktop.window.emoji"
+    MethodDesktopEmojiFavorites Method = "desktop.emoji.favorites"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
     MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"

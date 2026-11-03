@@ -386,6 +386,24 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         assert selected.get_state_set().contains(atspi.StateType.PRESSED)
         wait_for(lambda: find_item(family, text=True), 'New WebView did not restore the selected font family')
         print('Verified saved theme, color mode, language and installed UI font selection in a newly opened WebView')
+        close_settings = wait_for(lambda: find_item('Close'), 'Settings close action unavailable')
+        assert atspi.Action.do_action(close_settings, 0)
+        wait_for(lambda: find_item('Stickers'), 'Main window did not return to history')
+        alternate.present()
+        wait_for(alternate.is_active, 'Emoji editor did not acquire focus')
+        other.set_text('')
+        shortcut()
+        wait_for(lambda: not alternate.is_active(), 'Shortcut did not focus MyGo before selecting an emoji')
+        stickers = wait_for(lambda: find_item('Stickers'), 'Emoji panel was not available in the restored main window')
+        assert atspi.Action.do_action(stickers, 0)
+        button, emoji = wait_for(lambda: next(((item, name) for item, name, interfaces, _ in mygo_nodes(atspi, executable)
+                                               if 'Action' in interfaces and any(ord(char) >= 0x1f000 for char in name)), None),
+                                 'No emoji button in the shared panel')
+        assert atspi.Action.do_action(button, 0)
+        wait_for(lambda: alternate.is_active() and other.get_text() == emoji,
+                 'Selected emoji did not reach its original editor')
+        assert clipboard.wait_for_text() == emoji and editor.get_text() == marker
+        print('Verified generated emoji pasted into the original editor through the shared Host')
     finally:
         alternate.destroy()
 
@@ -402,6 +420,7 @@ def check(desktop, pinned):
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
         if pinned:
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.emoji_panel_enabled','true')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.window_pinned','true')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.hotkey','Ctrl+Shift+F8')")
     if pinned:

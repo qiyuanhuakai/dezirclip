@@ -63,6 +63,30 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("isolated status: %+v %v", status, err)
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
+	t.Run("managed favorites", func(t *testing.T) {
+		directory := filepath.Join(profile, "emoji_favorites")
+		if err := os.Mkdir(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+		sticker := filepath.Join(directory, "fav_1.png")
+		outside := filepath.Join(profile, "private.png")
+		for _, path := range []string{sticker, outside} {
+			if err := os.WriteFile(path, ocrFixture, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		list, err := library.EmojiFavorites(ctx, epoch, nil)
+		if err != nil || len(list.Paths) != 1 || filepath.Clean(list.Paths[0]) != sticker {
+			t.Fatalf("managed sticker catalogue: %v %v", list.Paths, err)
+		}
+		resource, err := library.EmojiFavorites(ctx, epoch, &sticker)
+		if err != nil || resource.Preview == nil || !strings.HasPrefix(*resource.Preview, "data:image/png;base64,") {
+			t.Fatalf("managed thumbnail: %v", err)
+		}
+		if _, err := library.EmojiFavorites(ctx, epoch, &outside); err == nil {
+			t.Fatal("unmanaged image was exposed")
+		}
+	})
 	watcher := History{actions: owner}
 	defer func() {
 		if watcher.events != nil {

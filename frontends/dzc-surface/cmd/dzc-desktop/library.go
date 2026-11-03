@@ -268,7 +268,8 @@ func (l *Library) SetSetting(ctx context.Context, key, value string, epoch uint6
 	switch key {
 	case "app.theme", "app.color_mode", "app.language", "app.compact_mode", "app.show_app_border",
 		"app.show_scroll_top_button", "app.show_search_box", "app.arrow_key_selection",
-		"app.clipboard_item_font_size", "app.clipboard_tag_font_size", "app.surface_opacity", "app.font_main", "app.font_mono":
+		"app.clipboard_item_font_size", "app.clipboard_tag_font_size", "app.surface_opacity", "app.font_main", "app.font_mono",
+		"app.emoji_panel_enabled", "app.emoji_panel_tab", "app.emoji_favorites":
 		params := protocol.ViewSettingParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: key, Value: value}
 		err = l.owner.DesktopCall(ctx, protocol.MethodDesktopSettingsViewSet, params, "OperationResult", &result)
 	case "app.sequential_mode", "app.delete_after_paste", "app.paste_method":

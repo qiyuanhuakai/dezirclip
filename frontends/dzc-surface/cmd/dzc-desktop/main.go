@@ -156,6 +156,30 @@ func (h *History) CopyEntry(ctx context.Context, params protocol.DesktopCopyPara
 	return "completed", err
 }
 
+func (h *History) SendEmoji(ctx context.Context, kind, content string, epoch uint64, paste bool) (string, error) {
+	params := protocol.WindowEmojiParams{ServiceInstanceId: h.actions.Hello().State.ServiceInstanceId,
+		ExpectedEpoch: epoch, Kind: kind, Content: content, Paste: paste}
+	var done protocol.OperationResult
+	var err error
+	if paste {
+		h.eventMu.Lock()
+		defer h.eventMu.Unlock()
+		if h.events == nil || h.targetInvalid.Swap(true) {
+			return "target_required", nil
+		}
+		err = h.events.Call(ctx, protocol.MethodDesktopWindowEmoji, params, "OperationResult", &done)
+	} else {
+		err = h.actions.DesktopCall(ctx, protocol.MethodDesktopWindowEmoji, params, "OperationResult", &done)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !done.Performed {
+		return "", client.ErrProtocol
+	}
+	return "completed", nil
+}
+
 func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--build-info" {
 		return json.NewEncoder(os.Stdout).Encode(buildinfo.DesktopReport())

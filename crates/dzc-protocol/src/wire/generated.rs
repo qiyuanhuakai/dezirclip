@@ -267,6 +267,33 @@ pub struct CaptureFinishParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmojiFavoritesParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EmojiFavoritesResult {
+    pub paths: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowEmojiParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub kind: String,
+    pub content: String,
+    pub paste: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedBody {
     pub kind: String,
     pub text: String,
@@ -536,6 +563,10 @@ pub enum Method {
     DesktopHistoryManualFinish,
     #[serde(rename = "desktop.window.paste")]
     DesktopWindowPaste,
+    #[serde(rename = "desktop.window.emoji")]
+    DesktopWindowEmoji,
+    #[serde(rename = "desktop.emoji.favorites")]
+    DesktopEmojiFavorites,
     #[serde(rename = "desktop.clipboard.copy")]
     DesktopClipboardCopy,
     #[serde(rename = "desktop.privacy.rules")]

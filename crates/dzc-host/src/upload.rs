@@ -312,6 +312,35 @@ mod tests {
         assert!(actions.copied.lock().unwrap().is_empty());
     }
     #[test]
+    fn emoji_copy_checks_grant_epoch_managed_path_and_original_target_before_writing() {
+        let original = crate::router::tests::synthetic_host();
+        let actions = Arc::new(Actions::default());
+        let host = Host::new(HostOptions { mode: HostMode::Service, history: original.history.clone(),
+            directory: original.directory.clone(), actions: actions.clone() }).unwrap();
+        let desktop = session(&host, ClientRole::Desktop, true);
+        let state = host.snapshot().unwrap();
+        let send = |user, kind, content, paste, epoch| call(&host, user, Method::DesktopWindowEmoji, serde_json::json!({
+            "service_instance_id": state.service_instance_id, "expected_epoch": epoch, "kind": kind, "content": content, "paste": paste
+        }));
+        let outsider = session(&host, ClientRole::Desktop, false);
+        assert_eq!(send(&outsider,"text","🎸",false,state.privacy_epoch).error.unwrap().code, WireErrorCode::PermissionDenied);
+        assert_eq!(send(&desktop,"text","🎸",true,state.privacy_epoch).error.unwrap().code, WireErrorCode::NotFound);
+        assert_eq!(send(&desktop,"text","🎸",false,state.privacy_epoch + 1).error.unwrap().code, WireErrorCode::PrivacyEpochChanged);
+        assert_eq!(send(&desktop,"image","/unmanaged/image.png",false,state.privacy_epoch).error.unwrap().code, WireErrorCode::InvalidRequest);
+        assert!(actions.copied.lock().unwrap().is_empty());
+        assert!(send(&desktop,"text","🎸",false,state.privacy_epoch).error.is_none());
+        let root = host.directory.join("emoji_favorites");
+        std::fs::create_dir_all(&root).unwrap();
+        let image = root.join("fav_ab.png");
+        std::fs::write(&image, base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVQI12P4z8AAAAMBAQAY3Y2wAAAAAElFTkSuQmCC").unwrap()).unwrap();
+        assert!(send(&desktop,"image",image.to_str().unwrap(),false,state.privacy_epoch).error.is_none());
+        assert_eq!(actions.copied.lock().unwrap().as_slice(), ["text:4", "image"]);
+        assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst), 0);
+        std::fs::remove_file(image).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
     fn generated_copy_uses_desktop_owner_for_emoji_image_and_large_unpersisted_content() {
         let original=crate::router::tests::synthetic_host();
         let actions=Arc::new(Actions::default());

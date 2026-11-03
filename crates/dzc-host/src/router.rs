@@ -289,6 +289,8 @@ impl Host {
                 methods.push("desktop.settings.view.set");
                 methods.push("desktop.settings.fonts");
                 methods.push("desktop.window.pin");
+                methods.push("desktop.emoji.favorites");
+                if self.actions.can_copy() { methods.push("desktop.window.emoji"); }
                 methods.extend(["desktop.history.manual.begin", "desktop.history.manual.finish"]);
                 if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
                     methods.extend(["desktop.window.target", "desktop.window.paste"]);
@@ -528,6 +530,8 @@ impl Host {
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
+            Method::DesktopEmojiFavorites => self.emoji_favorites(session, params(request.params)?),
+            Method::DesktopWindowEmoji => self.send_window_emoji(session, params(request.params)?),
             Method::DesktopWindowTarget => self.remember_window_target(session),
             Method::DesktopWindowPin => {
                 let input: WindowPinParams = params(request.params)?;

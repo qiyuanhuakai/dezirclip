@@ -34,6 +34,13 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   get_platform_info: () => shellCall("PlatformInfo"),
   list_system_fonts: () => library("SystemFonts"),
+  send_emoji: args => window.mygo.call("History.SendEmoji", args.contentType, args.content, args.viewEpoch, args.paste),
+  list_emoji_favorites: async () => (await library<{ paths: string[] }>("EmojiFavorites", currentEpoch(), null)).paths,
+  get_emoji_favorite_resource: async args => {
+    const result = await library<{ preview?: string }>("EmojiFavorites", currentEpoch(), args.path);
+    if (!result.preview) throw new Error("UserResourceUnavailable");
+    return result.preview;
+  },
   get_system_theme_mode: () => shellCall("SystemThemeMode"),
   set_theme: args => shellCall("ApplyAppearance", resolveThemeSelection(String(args.theme), getCustomThemes()).base,
     args.color_mode ?? args.colorMode ?? "system", args.show_app_border ?? args.showAppBorder ?? true,
@@ -136,6 +143,6 @@ export async function invokeMyGo<T>(command: string, args: Arguments = {}): Prom
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);
   const generation = hostGeneration();
   const result = await commands[command](args);
-  if (!["set_privacy_session", "privacy_feedback", "remove_privacy_rule", "copy_to_clipboard"].includes(command) && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
+  if (!["set_privacy_session", "privacy_feedback", "remove_privacy_rule", "copy_to_clipboard", "send_emoji"].includes(command) && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
   return result as T;
 }

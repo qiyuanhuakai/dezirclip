@@ -2,6 +2,7 @@
 pub mod encryption;
 pub mod capture;
 pub mod local_file;
+pub mod user_resource;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;

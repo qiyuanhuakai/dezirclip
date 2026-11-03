@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
+import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
 import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "lucide-react";
@@ -332,14 +333,15 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   };
 
   const handleSend = async (content: string, contentType: string) => {
-    await invoke("copy_to_clipboard", {
+    await copyHistorySelection({
       content,
       contentType,
       paste: true,
       id: 0,
       deleteAfterUse: false,
-      pasteWithFormat: false
-    });
+      pasteWithFormat: false,
+      pasteImageAsBase64: false
+    }, t, "send_emoji");
   };
 
   const handleTabChange = (tab: "emoji" | "favorites") => {

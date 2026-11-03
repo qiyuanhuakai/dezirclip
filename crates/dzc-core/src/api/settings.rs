@@ -30,7 +30,8 @@ impl HistoryService {
     pub fn is_view_setting(key: &str) -> bool {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection"
-            | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono")
+            | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono"
+            | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
     }
 
     pub fn update_view_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
@@ -39,6 +40,9 @@ impl HistoryService {
             "app.theme" => BUILTIN_THEMES.contains(&value) || value.strip_prefix("custom:").is_some_and(valid_theme_id),
             "app.font_main" | "app.font_mono" => value.chars().count() <= 256 && !value.chars().any(char::is_control),
             "app.color_mode" => matches!(value, "light" | "dark" | "system"),
+            "app.emoji_favorites" => value.len() <= 128 * 1024 && serde_json::from_str::<Vec<String>>(value)
+                .is_ok_and(|paths| paths.len() <= 4096 && paths.iter().all(|path| !path.is_empty() && !path.contains('\0'))),
+            "app.emoji_panel_tab" => matches!(value, "emoji" | "favorites"),
             "app.language" => matches!(value, "zh" | "tw" | "en"),
             "app.clipboard_item_font_size" => value.parse::<u8>().is_ok_and(|v| (11..=18).contains(&v)),
             "app.clipboard_tag_font_size" => value.parse::<u8>().is_ok_and(|v| (8..=14).contains(&v)),

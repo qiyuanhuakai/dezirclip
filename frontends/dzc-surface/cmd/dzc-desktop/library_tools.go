@@ -19,6 +19,13 @@ func (l *Library) SystemFonts(ctx context.Context) ([]protocol.DesktopFont, erro
 	return list.Fonts, err
 }
 
+func (l *Library) EmojiFavorites(ctx context.Context, epoch uint64, path *string) (protocol.EmojiFavoritesResult, error) {
+	var result protocol.EmojiFavoritesResult
+	params := protocol.EmojiFavoritesParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Path: path}
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopEmojiFavorites, params, "EmojiFavoritesResult", &result)
+	return result, err
+}
+
 func (l *Library) Classify(ctx context.Context, text string) ([]string, error) {
 	var result protocol.ToolClassification
 	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopToolsClassify, protocol.ToolClassifyParams{Text: text}, "ToolClassification", &result)

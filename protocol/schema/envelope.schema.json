@@ -122,6 +122,8 @@
         "desktop.history.manual.begin",
         "desktop.history.manual.finish",
         "desktop.window.paste",
+        "desktop.window.emoji",
+        "desktop.emoji.favorites",
         "desktop.clipboard.copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
@@ -1905,6 +1907,44 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.emoji"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/WindowEmojiParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.emoji.favorites"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/EmojiFavoritesParams"
               }
             }
           }

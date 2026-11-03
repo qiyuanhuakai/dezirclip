@@ -413,6 +413,31 @@
       ],
       "additionalProperties": true
     },
+    "EmojiFavoritesParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "path": { "type": "string", "minLength": 1, "maxLength": 32768 }
+      },
+      "required": ["service_instance_id", "expected_epoch"], "additionalProperties": false
+    },
+    "EmojiFavoritesResult": {
+      "type": "object",
+      "properties": { "paths": { "type": "array", "items": { "type": "string" } }, "preview": { "type": "string" } },
+      "required": ["paths"], "additionalProperties": false
+    },
+    "WindowEmojiParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "kind": { "type": "string", "enum": ["text", "image"] },
+        "content": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "paste": { "type": "boolean" }
+      },
+      "required": ["service_instance_id", "expected_epoch", "kind", "content", "paste"], "additionalProperties": false
+    },
     "GeneratedBody": {
       "type": "object",
       "properties": {

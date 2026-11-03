@@ -857,6 +857,89 @@
       ],
       "additionalProperties": true
     },
+    "EmojiFavoritesParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": false
+    },
+    "EmojiFavoritesResult": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preview": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "WindowEmojiParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "image"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "paste": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "kind",
+        "content",
+        "paste"
+      ],
+      "additionalProperties": false
+    },
     "GeneratedBody": {
       "type": "object",
       "properties": {
@@ -1241,6 +1324,8 @@
         "desktop.history.manual.begin",
         "desktop.history.manual.finish",
         "desktop.window.paste",
+        "desktop.window.emoji",
+        "desktop.emoji.favorites",
         "desktop.clipboard.copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
@@ -3053,6 +3138,44 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.emoji"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/WindowEmojiParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.emoji.favorites"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EmojiFavoritesParams"
               }
             }
           }
@@ -4875,12 +4998,15 @@
             "app.clipboard_tag_font_size",
             "app.surface_opacity",
             "app.font_main",
-            "app.font_mono"
+            "app.font_mono",
+            "app.emoji_panel_enabled",
+            "app.emoji_panel_tab",
+            "app.emoji_favorites"
           ]
         },
         "value": {
           "type": "string",
-          "maxLength": 256
+          "maxLength": 131072
         }
       },
       "if": {
@@ -4893,11 +5019,27 @@
           }
         }
       },
-      "else": {
+      "then": {
         "properties": {
           "value": {
-            "minLength": 1,
-            "maxLength": 64
+            "maxLength": 256
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "key": {
+              "const": "app.emoji_favorites"
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "value": {
+              "minLength": 1,
+              "maxLength": 64
+            }
           }
         }
       },
