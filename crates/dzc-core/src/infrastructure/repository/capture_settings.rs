@@ -3,6 +3,17 @@ use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
 use std::collections::HashMap;
 
 impl SqliteClipboardRepository {
+    pub(crate) fn set_capture_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
+        let database = |error: rusqlite::Error| CoreError::from(error.to_string());
+        let mut connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
+        let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(database)?;
+        let state = crate::api::privacy_session::snapshot_with_conn(&transaction, chrono::Utc::now().timestamp_millis())
+            .map_err(|error| CoreError::from(error.to_string()))?;
+        if state.privacy_epoch != epoch { return Err(CoreError::from("PrivacyEpochChanged".to_owned())); }
+        super::settings_repo::SqliteSettingsRepository::write_value(&transaction, key, value).map_err(database)?;
+        transaction.commit().map_err(database)
+    }
+
     pub(crate) fn reserved_shortcuts(&self) -> CoreResult<Vec<String>> {
         let connection = self.conn.lock().map_err(|_| CoreError::from("ShortcutSettingsUnavailable".to_owned()))?;
         let mut query = connection.prepare("SELECT value FROM settings WHERE key IN ('app.hotkey','app.quick_paste_hotkey','app.sequential_hotkey','app.rich_paste_hotkey','app.search_hotkey','app.screenshot_hotkey','app.screenshot_full_hotkey')")

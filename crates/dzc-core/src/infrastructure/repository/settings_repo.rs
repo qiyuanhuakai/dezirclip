@@ -97,7 +97,7 @@ impl SqliteSettingsRepository {
         }
     }
 
-    fn maybe_encrypt(&self, key: &str, value: &str) -> String {
+    fn maybe_encrypt(key: &str, value: &str) -> String {
         #[cfg(feature = "portable")]
         let _ = key;
         #[cfg(not(feature = "portable"))]
@@ -120,24 +120,31 @@ impl SqliteSettingsRepository {
     }
 }
 
-impl SettingsRepository for SqliteSettingsRepository {
-    fn set(&self, key: &str, value: &str) -> Result<()> {
-        let mut conn = self.conn.lock().unwrap();
-        let final_value = self.maybe_encrypt(key, value);
+impl SqliteSettingsRepository {
+    pub(super) fn write_value(transaction: &rusqlite::Transaction<'_>, key: &str, value: &str) -> Result<()> {
+        let final_value = Self::maybe_encrypt(key, value);
         if key == super::sensitive_tags::PRIVACY_SETTING && !matches!(value, "true" | "false") {
             return Err(rusqlite::Error::InvalidParameterName(
                 "privacy protection must be true or false".into(),
             ));
         }
-        let transaction =
-            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         transaction.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             params![key, final_value],
         )?;
         if key == super::sensitive_tags::PRIVACY_SETTING && value == "true" {
-            super::sensitive_tags::ensure_system_tags(&transaction)?;
+            super::sensitive_tags::ensure_system_tags(transaction)?;
         }
+        Ok(())
+    }
+}
+
+impl SettingsRepository for SqliteSettingsRepository {
+    fn set(&self, key: &str, value: &str) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let transaction =
+            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        Self::write_value(&transaction, key, value)?;
         transaction.commit()
     }
 
@@ -156,7 +163,7 @@ impl SettingsRepository for SqliteSettingsRepository {
                 if is_sensitive_key(key) && !value.starts_with(ENCRYPT_PREFIX) {
                     let _ = conn.execute(
                         "UPDATE settings SET value = ? WHERE key = ?",
-                        params![self.maybe_encrypt(key, &decrypted), key],
+                        params![Self::maybe_encrypt(key, &decrypted), key],
                     );
                 }
             }
@@ -185,7 +192,7 @@ impl SettingsRepository for SqliteSettingsRepository {
                 if is_sensitive_key(&key) && !value.starts_with(ENCRYPT_PREFIX) {
                     let _ = conn.execute(
                         "UPDATE settings SET value = ? WHERE key = ?",
-                        params![self.maybe_encrypt(&key, &decrypted), &key],
+                        params![Self::maybe_encrypt(&key, &decrypted), &key],
                     );
                 }
             }

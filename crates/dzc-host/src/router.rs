@@ -252,6 +252,8 @@ impl Host {
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
+            methods.push("desktop.settings.capture.get");
+            if can(Permission::PrivacyWrite) { methods.push("desktop.settings.capture.set"); }
             methods.extend(["desktop.ocr.recognize", "desktop.ocr.status", "desktop.ocr.engine"]);
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
@@ -392,6 +394,25 @@ impl Host {
             | Method::DesktopTagsRename | Method::DesktopTagsRemove => self.edit_library(session, request.method, request.params),
             Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview =>
                 self.backup(session, request.method, request.params),
+            Method::DesktopSettingsCaptureGet => {
+                let input: LibraryStateParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                let settings = self.history.capture_settings_snapshot().map_err(unavailable)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                result("CaptureSettingValues", settings)
+            }
+            Method::DesktopSettingsCaptureSet => {
+                let input: CaptureSettingParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                session.require(Permission::PrivacyWrite)?;
+                self.history.update_capture_setting(&input.key, &input.value, input.expected_epoch).map_err(|error| match error.code {
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("capture_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
             Method::DesktopOcrEngine => {
                 self.desktop_permission(session, self.instance_id())?;
                 result("OcrEngineInfo", crate::ocr::engine_info())

@@ -79,6 +79,8 @@
         "desktop.ocr.recognize",
         "desktop.ocr.status",
         "desktop.ocr.engine",
+        "desktop.settings.capture.get",
+        "desktop.settings.capture.set",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -1080,6 +1082,44 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.capture.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/library.schema.json#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.capture.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/settings.schema.json#/$defs/CaptureSettingParams"
               }
             }
           }

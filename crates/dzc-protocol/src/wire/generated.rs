@@ -428,6 +428,10 @@ pub enum Method {
     DesktopOcrStatus,
     #[serde(rename = "desktop.ocr.engine")]
     DesktopOcrEngine,
+    #[serde(rename = "desktop.settings.capture.get")]
+    DesktopSettingsCaptureGet,
+    #[serde(rename = "desktop.settings.capture.set")]
+    DesktopSettingsCaptureSet,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]
@@ -810,6 +814,29 @@ pub struct PrivacySetParams {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureSettingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureSettingValues {
+    pub persistent: bool,
+    pub deduplicate: bool,
+    pub capture_files: bool,
+    pub capture_rich_text: bool,
+    pub ocr_enabled: bool,
+    pub privacy_protection: bool,
+    pub privacy_kinds: Vec<String>,
+    pub privacy_custom_rules: Vec<String>,
+    pub excluded_source_apps: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

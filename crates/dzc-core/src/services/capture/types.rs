@@ -31,7 +31,7 @@ pub struct CaptureSource {
 }
 
 /// A consistent per-capture snapshot, independent of a desktop settings store.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct CaptureSettings {
     pub persistent: bool,
     pub deduplicate: bool,

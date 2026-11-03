@@ -303,6 +303,8 @@ const (
     MethodDesktopOcrRecognize Method = "desktop.ocr.recognize"
     MethodDesktopOcrStatus Method = "desktop.ocr.status"
     MethodDesktopOcrEngine Method = "desktop.ocr.engine"
+    MethodDesktopSettingsCaptureGet Method = "desktop.settings.capture.get"
+    MethodDesktopSettingsCaptureSet Method = "desktop.settings.capture.set"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"
@@ -578,6 +580,25 @@ type PrivacyState struct {
 type PrivacySetParams struct {
     Active bool `json:"active"`
     DurationMs *uint64 `json:"duration_ms,omitempty"`
+}
+
+type CaptureSettingParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
+}
+
+type CaptureSettingValues struct {
+    Persistent bool `json:"persistent"`
+    Deduplicate bool `json:"deduplicate"`
+    CaptureFiles bool `json:"capture_files"`
+    CaptureRichText bool `json:"capture_rich_text"`
+    OcrEnabled bool `json:"ocr_enabled"`
+    PrivacyProtection bool `json:"privacy_protection"`
+    PrivacyKinds []string `json:"privacy_kinds"`
+    PrivacyCustomRules []string `json:"privacy_custom_rules"`
+    ExcludedSourceApps []string `json:"excluded_source_apps"`
 }
 
 type SurfaceBuildIdentity struct {

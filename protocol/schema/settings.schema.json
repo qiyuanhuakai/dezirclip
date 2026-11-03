@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dezirclip.local/protocol/v1/settings.schema.json",
+  "$defs": {
+    "CaptureSettingParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.persistent",
+            "app.deduplicate",
+            "app.capture_files",
+            "app.capture_rich_text",
+            "app.ocr_enabled",
+            "app.privacy_protection",
+            "app.privacy_protection_kinds",
+            "app.privacy_protection_custom_rules",
+            "app.excluded_source_apps"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureSettingValues": {
+      "type": "object",
+      "properties": {
+        "persistent": {
+          "type": "boolean"
+        },
+        "deduplicate": {
+          "type": "boolean"
+        },
+        "capture_files": {
+          "type": "boolean"
+        },
+        "capture_rich_text": {
+          "type": "boolean"
+        },
+        "ocr_enabled": {
+          "type": "boolean"
+        },
+        "privacy_protection": {
+          "type": "boolean"
+        },
+        "privacy_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        },
+        "privacy_custom_rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        },
+        "excluded_source_apps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        }
+      },
+      "required": [
+        "persistent",
+        "deduplicate",
+        "capture_files",
+        "capture_rich_text",
+        "ocr_enabled",
+        "privacy_protection",
+        "privacy_kinds",
+        "privacy_custom_rules",
+        "excluded_source_apps"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

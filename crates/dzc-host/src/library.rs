@@ -3,7 +3,7 @@ use dzc_protocol::wire::*;
 use serde_json::{json, Value};
 
 impl Host {
-    fn check_library_state(&self, session: &Session, instance: &str, epoch: u64) -> Result<(), WireErrorCode> {
+    pub(crate) fn check_library_state(&self, session: &Session, instance: &str, epoch: u64) -> Result<(), WireErrorCode> {
         self.desktop_permission(session, instance)?;
         if self.snapshot()?.privacy_epoch != epoch {
             return Err(WireErrorCode::PrivacyEpochChanged);

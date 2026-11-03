@@ -121,8 +121,27 @@ mod desktop_protocol_tests {
         if catalog.transforms.len() != 17 || classified.kinds != ["url"] || transformed.text != "AB" || !qr.text.contains("<svg") {
             return Err("standalone tool result mismatch".into());
         }
+        exercise_settings(&mut client, &state.state).await?;
         exercise_backups(&mut client, database, &state.state).await?;
         exercise_manual_ocr(&mut client, database, &state.state).await
+    }
+
+    async fn exercise_settings(client: &mut Client, state: &RuntimeState) -> Result<(), Box<dyn Error>> {
+        let params = serde_json::json!({"service_instance_id": state.service_instance_id, "expected_epoch": state.privacy_epoch});
+        let before: CaptureSettingValues = client.call(Method::DesktopSettingsCaptureGet, &params, "CaptureSettingValues").await?;
+        let mut update = params.clone();
+        update["key"] = "app.capture_files".into();
+        update["value"] = (!before.capture_files).to_string().into();
+        let _: OperationResult = client.call(Method::DesktopSettingsCaptureSet, &update, "OperationResult").await?;
+        let after: CaptureSettingValues = client.call(Method::DesktopSettingsCaptureGet, &params, "CaptureSettingValues").await?;
+        if after.capture_files == before.capture_files { return Err("capture policy was not applied".into()); }
+        update["expected_epoch"] = (state.privacy_epoch + 1).into();
+        update["value"] = before.capture_files.to_string().into();
+        let rejected = client.call::<OperationResult>(Method::DesktopSettingsCaptureSet, &update, "OperationResult").await;
+        if rejected.err().and_then(|err| serde_json::from_str::<WireErrorCode>(&err.to_string()).ok()) != Some(WireErrorCode::PrivacyEpochChanged) {
+            return Err("stale capture settings write was not rejected".into());
+        }
+        Ok(())
     }
 
     async fn exercise_manual_ocr(client: &mut Client, database: &Path, state: &RuntimeState) -> Result<(), Box<dyn Error>> {

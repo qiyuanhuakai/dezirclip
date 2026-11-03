@@ -6,6 +6,15 @@ use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+async fn persist_capture_setting(host: &crate::app::ipc_host::DesktopHost, key: &str, value: String) -> AppResult<()> {
+    use dzc_host::wire::{CaptureSettingParams, Method, OperationResult, RuntimeState};
+    let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await.map_err(AppError::Validation)?;
+    let _: OperationResult = host.call(Method::DesktopSettingsCaptureSet, CaptureSettingParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, key: key.into(), value
+    }, "OperationResult").await.map_err(AppError::Validation)?;
+    Ok(())
+}
+
 fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<()> {
     db_state
         .settings_repo
@@ -232,16 +241,10 @@ pub fn set_search_hotkey(
 }
 
 #[tauri::command]
-pub fn set_deduplication(
-    app_handle: AppHandle,
-    state: State<'_, crate::app_state::SettingsState>,
-    enabled: bool,
-) {
+pub async fn set_deduplication(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
+    persist_capture_setting(&host, "app.deduplicate", enabled.to_string()).await?;
     state.deduplicate.store(enabled, Ordering::Relaxed);
-    let db_state = app_handle.state::<DbState>();
-    let _ = db_state
-        .settings_repo
-        .set("app.deduplicate", &enabled.to_string());
+    Ok(())
 }
 
 /// Settings that any webview re-renders itself from. Every window is a separate
@@ -270,7 +273,7 @@ fn is_appearance_override_key(key: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn save_setting(
+pub async fn save_setting(
     app_handle: AppHandle,
     db_state: State<'_, DbState>,
     settings_state: State<'_, crate::app_state::SettingsState>,
@@ -282,7 +285,11 @@ pub fn save_setting(
         crate::app::surface_supervisor::stop_blocking(&app_handle,"disabled",true).map_err(AppError::Validation)?;
         if let Some(window)=app_handle.get_webview_window("quick-paste") {window.hide()?;}
     }
-    persist_setting_with_legacy(&db_state, &key, &value)?;
+    if dzc_core::api::HistoryService::is_capture_setting(&key) {
+        persist_capture_setting(&app_handle.state::<crate::app::ipc_host::DesktopHost>(), &key, value.clone()).await?;
+    } else {
+        persist_setting_with_legacy(&db_state, &key, &value)?;
+    }
     apply_setting_state_update(&app_handle, &settings_state, &key, &value);
     if key == "app.quick_paste_renderer" && value == "mygo" {
         crate::app::auxiliary_windows::release_unused_quick_paste(app_handle.clone());
@@ -352,33 +359,24 @@ pub fn set_arrow_key_selection(
 }
 
 #[tauri::command]
-pub fn set_persistence(
-    state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
-    enabled: bool,
-) -> AppResult<()> {
+pub async fn set_persistence(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
+    persist_capture_setting(&host, "app.persistent", enabled.to_string()).await?;
     state.persistent.store(enabled, Ordering::Relaxed);
-    save_bool_setting(&db_state, "app.persistent", enabled)
+    Ok(())
 }
 
 #[tauri::command]
-pub fn set_capture_files(
-    state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
-    enabled: bool,
-) -> AppResult<()> {
+pub async fn set_capture_files(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
+    persist_capture_setting(&host, "app.capture_files", enabled.to_string()).await?;
     state.capture_files.store(enabled, Ordering::Relaxed);
-    save_bool_setting(&db_state, "app.capture_files", enabled)
+    Ok(())
 }
 
 #[tauri::command]
-pub fn set_capture_rich_text(
-    state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
-    enabled: bool,
-) -> AppResult<()> {
+pub async fn set_capture_rich_text(host: State<'_, crate::app::ipc_host::DesktopHost>, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
+    persist_capture_setting(&host, "app.capture_rich_text", enabled.to_string()).await?;
     state.capture_rich_text.store(enabled, Ordering::Relaxed);
-    save_bool_setting(&db_state, "app.capture_rich_text", enabled)
+    Ok(())
 }
 
 #[tauri::command]
@@ -405,10 +403,9 @@ pub fn set_delete_after_paste(
 pub async fn set_privacy_protection(
     app: AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
     enabled: bool,
 ) -> AppResult<()> {
-    save_bool_setting(&db_state, "app.privacy_protection", enabled)?;
+    persist_capture_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection", enabled.to_string()).await?;
     state.privacy_protection.store(enabled, Ordering::Relaxed);
     crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     let _ = app.emit("clipboard-changed", ());
@@ -419,14 +416,10 @@ pub async fn set_privacy_protection(
 pub async fn set_privacy_protection_kinds(
     app:AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
     kinds: Vec<String>,
 ) -> AppResult<()> {
     let serialized = kinds.join(",");
-    db_state
-        .settings_repo
-        .set("app.privacy_protection_kinds", &serialized)
-        .map_err(AppError::from)?;
+    persist_capture_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection_kinds", serialized).await?;
     *state.privacy_protection_kinds.lock().unwrap()=kinds;
     crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     Ok(())
@@ -436,7 +429,6 @@ pub async fn set_privacy_protection_kinds(
 pub async fn set_privacy_protection_custom_rules(
     app:AppHandle,
     state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
     rules: String,
 ) -> AppResult<()> {
     let list = rules
@@ -444,10 +436,7 @@ pub async fn set_privacy_protection_custom_rules(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>();
-    db_state
-        .settings_repo
-        .set("app.privacy_protection_custom_rules", &rules)
-        .map_err(AppError::from)?;
+    persist_capture_setting(&app.state::<crate::app::ipc_host::DesktopHost>(), "app.privacy_protection_custom_rules", rules).await?;
     *state.privacy_protection_custom_rules.lock().unwrap()=list;
     crate::app::ipc_host::notify_privacy_change(&app).await.map_err(AppError::Validation)?;
     Ok(())
