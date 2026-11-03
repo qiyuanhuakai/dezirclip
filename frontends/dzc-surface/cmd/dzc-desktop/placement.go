@@ -3,19 +3,41 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math"
+	"strconv"
 	"time"
 
 	"github.com/egoist/mygo"
 )
 
-func (l *Library) followMouse(ctx context.Context) bool {
+type windowPreferences struct {
+	FollowMouse string `json:"app.follow_mouse"`
+	Width       string `json:"app.window_width"`
+	Height      string `json:"app.window_height"`
+}
+
+func (l *Library) windowPreferences(ctx context.Context) windowPreferences {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	values, err := l.Preferences(ctx)
-	var setting struct {
-		FollowMouse string `json:"app.follow_mouse"`
+	var settings windowPreferences
+	if err != nil || json.Unmarshal(values, &settings) != nil {
+		return windowPreferences{FollowMouse: "false"}
 	}
-	return err == nil && json.Unmarshal(values, &setting) == nil && setting.FollowMouse != "false"
+	return settings
+}
+
+func (p windowPreferences) savedSize() mygo.Size {
+	width, _ := strconv.Atoi(p.Width)
+	height, _ := strconv.Atoi(p.Height)
+	if width < 200 || height < 200 || width > 32768 || height > 32768 {
+		return mygo.Size{}
+	}
+	return mygo.Size{Width: width, Height: height}
+}
+
+func scaledSize(width, height int, scale float64) mygo.Size {
+	return mygo.Size{Width: int(math.Round(float64(width) * scale)), Height: int(math.Round(float64(height) * scale))}
 }
 
 func nearCursor(cursor mygo.Point, work mygo.Rectangle, width, height int) mygo.Point {

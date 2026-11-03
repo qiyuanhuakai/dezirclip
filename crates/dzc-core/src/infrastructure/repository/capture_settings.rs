@@ -34,7 +34,7 @@ impl SqliteClipboardRepository {
             'app.show_scroll_top_button','app.show_search_box','app.silent_start','app.sound_enabled',
             'app.sound_paste_enabled','app.sound_volume','app.surface_opacity','app.tag_manager_enabled',
             'app.tag_manager_size','app.theme','app.update_auto_check','app.update_channel','app.use_win_v_shortcut',
-            'app.window_pinned')").map_err(|error| CoreError::from(error.to_string()))?;
+            'app.window_width','app.window_height','app.window_pinned')").map_err(|error| CoreError::from(error.to_string()))?;
         let rows = query.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .map_err(|error| CoreError::from(error.to_string()))?;
         rows.collect::<rusqlite::Result<_>>().map_err(|error| CoreError::from(error.to_string()))
@@ -75,13 +75,18 @@ impl SqliteClipboardRepository {
             .map_err(|error| CoreError::from(error.to_string()))
     }
     pub(crate) fn set_setting_at_epoch(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
+        self.set_settings_at_epoch(&[(key, value)], epoch)
+    }
+    pub(crate) fn set_settings_at_epoch(&self, settings: &[(&str, &str)], epoch: u64) -> CoreResult<()> {
         let database = |error: rusqlite::Error| CoreError::from(error.to_string());
         let mut connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
         let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(database)?;
         let state = crate::api::privacy_session::snapshot_with_conn(&transaction, chrono::Utc::now().timestamp_millis())
             .map_err(|error| CoreError::from(error.to_string()))?;
         if state.privacy_epoch != epoch { return Err(CoreError::from("PrivacyEpochChanged".to_owned())); }
-        super::settings_repo::SqliteSettingsRepository::write_value(&transaction, key, value).map_err(database)?;
+        for &(key, value) in settings {
+            super::settings_repo::SqliteSettingsRepository::write_value(&transaction, key, value).map_err(database)?;
+        }
         transaction.commit().map_err(database)
     }
 
@@ -135,6 +140,21 @@ impl SqliteClipboardRepository {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+    #[test]
+    fn rejected_height_rolls_back_width_in_the_same_transaction() {
+        let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+        crate::infrastructure::repository::migrations::run_migrations(&mut connection).unwrap();
+        connection.execute_batch("INSERT OR REPLACE INTO settings(key,value) VALUES
+            ('app.window_width','660'), ('app.window_height','620');
+            CREATE TRIGGER reject_new_height BEFORE INSERT ON settings
+            WHEN NEW.key='app.window_height' BEGIN SELECT RAISE(ABORT,'rejected height'); END;").unwrap();
+        let epoch = crate::api::privacy_session::snapshot_with_conn(&connection, 0).unwrap().privacy_epoch;
+        let repository = SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
+        assert!(repository.set_settings_at_epoch(&[("app.window_width","690"), ("app.window_height","590")], epoch).is_err());
+        let values = repository.desktop_preferences().unwrap();
+        assert_eq!(values["app.window_width"], "660");
+        assert_eq!(values["app.window_height"], "620");
+    }
     #[test]
     fn desktop_preferences_return_ui_values_without_unregistered_settings() {
         let mut connection = rusqlite::Connection::open_in_memory().unwrap();

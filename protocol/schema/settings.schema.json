@@ -25,6 +25,17 @@
       "required": ["values"],
       "additionalProperties": false
     },
+    "WindowSizeParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "width": { "type": "integer", "minimum": 200, "maximum": 32768, "x-rust-type": "u32" },
+        "height": { "type": "integer", "minimum": 200, "maximum": 32768, "x-rust-type": "u32" }
+      },
+      "required": ["service_instance_id", "expected_epoch", "width", "height"],
+      "additionalProperties": false
+    },
     "WindowPinParams": {
       "type": "object",
       "properties": {

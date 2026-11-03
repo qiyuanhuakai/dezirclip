@@ -22,6 +22,18 @@ impl SqliteSettingsRepository {
         Self { conn }
     }
 
+    pub fn window_size(&self) -> Result<Option<(u32, u32)>> {
+        let connection = self.conn.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+        connection.query_row("SELECT (SELECT value FROM settings WHERE key='app.window_width'),
+            (SELECT value FROM settings WHERE key='app.window_height')", [], |row| {
+            let dimension = |index| -> Result<Option<u32>> {
+                let value: Option<String> = row.get(index)?;
+                Ok(value.and_then(|s| s.parse().ok()).filter(|size| (200..=32768).contains(size)))
+            };
+            Ok(dimension(0)?.zip(dimension(1)?))
+        })
+    }
+
     fn strip_plain_prefixes<'a>(mut value: &'a str) -> &'a str {
         while let Some(stripped) = value.strip_prefix(LEGACY_PLAIN_PREFIX) {
             value = stripped;

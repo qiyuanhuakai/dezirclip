@@ -548,14 +548,36 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
                     return window
         settings_main = wait_for(settings_window, 'Cannot identify MyGo settings window')
         original = settings_main.get_xid()
+        def client_size(xid):
+            import re
+            info = subprocess.check_output(['xwininfo','-id',str(xid)], text=True)
+            return tuple(int(re.search(rf'^\s*{key}: (\d+)$', info, re.M).group(1)) for key in ('Width','Height'))
+        assert client_size(original) == (660, 620), 'Existing profile size was not restored'
+        settings_main.resize(689, 597)
+        settings_main.get_display().sync()
+        def saved_size(connection):
+            return dict(connection.execute("SELECT key,value FROM settings WHERE key IN ('app.window_width','app.window_height')"))
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: saved_size(db) == {'app.window_width':'689', 'app.window_height':'597'},
+                     'Resizing the real window did not persist the physical client size')
         settings_main.focus(Gdk.CURRENT_TIME)
         wait_for(lambda: subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
                  == hex(original), 'Settings window did not receive focus')
+        settings_main.resize(703, 585)
+        settings_main.get_display().sync()
+        wait_for(lambda: client_size(original) == (703, 585), 'Final native resize did not complete')
         shortcut((Gdk.KEY_Alt_L, Gdk.KEY_F4))
         wait_for(lambda: subprocess.run(['xwininfo','-id',str(original)], capture_output=True).returncode != 0,
                  'Settings WebView did not close')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: saved_size(db) == {'app.window_width':'703', 'app.window_height':'585'},
+                     'Closing the WebView lost its final resize')
         shortcut()
         wait_for(lambda: find_item('Image'), 'New WebView did not restore the selected language')
+        reopened = wait_for(settings_window, 'Cannot inspect recreated main window')
+        measured = client_size(reopened.get_xid())
+        assert measured == (703, 585), f'Recreated X11 client size {measured}, expected (703, 585)'
+        print('Verified legacy window dimensions and a live resize survive main WebView destruction')
         selected = open_appearance('Settings', 'Appearance', 'Retro')
         assert selected.get_state_set().contains(atspi.StateType.PRESSED)
         wait_for(lambda: find_item(family, text=True), 'New WebView did not restore the selected font family')
@@ -834,6 +856,8 @@ def check(desktop, pinned, audio):
         if audio is not None:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.sound_enabled','true')")
         if pinned:
+            db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                           [('app.window_width','660'),('app.window_height','620')])
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.custom_background_opacity','100')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.emoji_panel_enabled','true')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.window_pinned','true')")

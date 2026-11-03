@@ -365,6 +365,7 @@ const (
     MethodDesktopApplicationsSelect Method = "desktop.applications.select"
     MethodDesktopWindowTarget Method = "desktop.window.target"
     MethodDesktopWindowPin Method = "desktop.window.pin"
+    MethodDesktopWindowResize Method = "desktop.window.resize"
     MethodDesktopToolsCatalog Method = "desktop.tools.catalog"
     MethodDesktopSettingsFonts Method = "desktop.settings.fonts"
     MethodDesktopToolsClassify Method = "desktop.tools.classify"
@@ -858,6 +859,13 @@ type ViewSettingParams struct {
 
 type DesktopPreferences struct {
     Values json.RawMessage `json:"values"`
+}
+
+type WindowSizeParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Width uint32 `json:"width"`
+    Height uint32 `json:"height"`
 }
 
 type WindowPinParams struct {

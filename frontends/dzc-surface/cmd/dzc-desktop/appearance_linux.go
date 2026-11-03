@@ -10,6 +10,10 @@ import (
 	"github.com/egoist/mygo"
 )
 
+func mainWindowScale(w *mygo.Window) float64 {
+	return mygo.Screen.DisplayMatching(w.Bounds()).ScaleFactor
+}
+
 func placeMainAtCursor(w *mygo.Window) {
 	_, display := os.LookupEnv("WAYLAND_DISPLAY")
 	_, socket := os.LookupEnv("WAYLAND_SOCKET")

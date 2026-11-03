@@ -76,6 +76,7 @@
         "desktop.applications.select",
         "desktop.window.target",
         "desktop.window.pin",
+        "desktop.window.resize",
         "desktop.tools.catalog",
         "desktop.settings.fonts",
         "desktop.tools.classify",
@@ -980,6 +981,21 @@
           "then": {
             "properties": {
               "params": { "$ref": "https://dezirclip.local/protocol/v1/settings.schema.json#/$defs/WindowPinParams" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.resize"
+              }
+            },
+            "required": ["method"]
+          },
+          "then": {
+            "properties": {
+              "params": { "$ref": "https://dezirclip.local/protocol/v1/settings.schema.json#/$defs/WindowSizeParams" }
             }
           }
         },

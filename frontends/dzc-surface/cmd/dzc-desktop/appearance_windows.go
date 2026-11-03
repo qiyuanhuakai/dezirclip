@@ -34,12 +34,18 @@ var setComposition = windows.NewLazySystemDLL("user32.dll").NewProc("SetWindowCo
 
 var (
 	user32         = windows.NewLazySystemDLL("user32.dll")
+	windowDPI      = user32.NewProc("GetDpiForWindow")
 	cursorPosition = user32.NewProc("GetPhysicalCursorPos")
 	cursorMonitor  = user32.NewProc("MonitorFromRect")
 	monitorInfo    = user32.NewProc("GetMonitorInfoW")
 	windowRect     = user32.NewProc("GetWindowRect")
 	moveWindow     = user32.NewProc("SetWindowPos")
 )
+
+func mainWindowScale(w *mygo.Window) float64 {
+	dpi, _, _ := windowDPI.Call(w.NativeHandle())
+	return float64(dpi) / 96
+}
 
 func placeMainAtCursor(w *mygo.Window) {
 	type rect struct{ left, top, right, bottom int32 }

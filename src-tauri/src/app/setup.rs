@@ -275,15 +275,14 @@ pub struct StartupSettings {
     pub edge_docking: bool,
     pub follow_mouse: bool,
     pub window_pinned: bool,
-    pub window_width: Option<u32>,
-    pub window_height: Option<u32>,
+    pub window_size: Option<(u32, u32)>,
     pub main_hotkey: String,
     pub arrow_key_selection: bool,
     pub idle_destroy_enabled: bool,
     pub idle_destroy_seconds: u64,
 }
 
-fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
+fn load_settings(repo: &SqliteSettingsRepository) -> StartupSettings {
     StartupSettings {
         theme: repo
             .get("app.theme")
@@ -405,16 +404,7 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(Some("false".to_string()))
             .map(|v| v == "true")
             .unwrap_or(false),
-        window_width: repo
-            .get("app.window_width")
-            .ok()
-            .flatten()
-            .and_then(|v| v.parse::<u32>().ok()),
-        window_height: repo
-            .get("app.window_height")
-            .ok()
-            .flatten()
-            .and_then(|v| v.parse::<u32>().ok()),
+        window_size: repo.window_size().ok().flatten(),
         main_hotkey: repo
             .get("app.hotkey")
             .unwrap_or(Some("Win+V".to_string()))
@@ -507,18 +497,15 @@ fn setup_state(
     app.manage(SearchHistory::default());
 }
 
-fn apply_saved_size(window: &tauri::WebviewWindow, width: Option<u32>, height: Option<u32>) {
-    if let (Some(w), Some(h)) = (width, height) {
-        if w >= 360 && h >= 240 {
-            let _ = window.set_size(tauri::PhysicalSize::new(w, h));
-        }
+fn apply_saved_size(window: &tauri::WebviewWindow, size: Option<(u32, u32)>) {
+    if let Some((width, height)) = size {
+        let _ = window.set_size(tauri::PhysicalSize::new(width, height));
     }
 }
 
 pub(super) fn restore_recreated_appearance(app: &AppHandle, window: &tauri::WebviewWindow) {
     let db = app.state::<DbState>();
-    let dimension = |key| db.settings_repo.get(key).ok().flatten().and_then(|s| s.parse().ok());
-    apply_saved_size(window, dimension("app.window_width"), dimension("app.window_height"));
+    apply_saved_size(window, db.settings_repo.window_size().ok().flatten());
     apply_initial_theme(app);
 }
 
@@ -527,7 +514,7 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
     WINDOW_PINNED.store(effective_pinned, Ordering::Relaxed);
 
     if let Some(window) = app.get_webview_window("main") {
-        apply_saved_size(&window, s.window_width, s.window_height);
+        apply_saved_size(&window, s.window_size);
         let _ = window.set_always_on_top(effective_pinned);
         let _ = window.set_focusable(!effective_pinned);
 
@@ -1804,14 +1791,17 @@ fn persist_window_size(window: &tauri::Window, width: u32, height: u32) {
         };
 
         if let Some(db_state) = app_handle.try_state::<DbState>() {
-            let _ = db_state
-                .settings_repo
-                .set("app.window_width", &w.to_string());
-            let _ = db_state
-                .settings_repo
-                .set("app.window_height", &h.to_string());
+            let history = db_state.history_service();
+            if let Ok(state) = history.runtime_snapshot(chrono::Utc::now().timestamp_millis()) {
+                let _ = history.set_window_size(w, h, state.privacy_epoch);
+            }
         }
 
+        // A resize may arrive while the previous pair is being written.
+        let latest = LAST_WINDOW_SIZE.get().unwrap().lock().unwrap();
+        if *latest != (w, h) {
+            continue;
+        }
         WINDOW_SIZE_SAVE_PENDING.store(false, Ordering::SeqCst);
         break;
     });

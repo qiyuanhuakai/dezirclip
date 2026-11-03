@@ -30,6 +30,15 @@ impl HistoryService {
         self.repository.set_setting_at_epoch(key, value, epoch)
     }
 
+    pub fn set_window_size(&self, width: u32, height: u32, epoch: u64) -> CoreResult<()> {
+        if !(200..=32768).contains(&width) || !(200..=32768).contains(&height) {
+            return Err(super::CoreError::validation("WindowSizeInvalid"));
+        }
+        self.repository.set_settings_at_epoch(&[
+            ("app.window_width", &width.to_string()), ("app.window_height", &height.to_string()),
+        ], epoch)
+    }
+
     pub fn set_window_pinned(&self, pinned: bool, epoch: u64) -> CoreResult<()> {
         self.repository.set_setting_at_epoch("app.window_pinned", if pinned { "true" } else { "false" }, epoch)
     }

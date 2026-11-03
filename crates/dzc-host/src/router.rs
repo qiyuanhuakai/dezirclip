@@ -300,7 +300,7 @@ impl Host {
             if session.extended_methods {
                 methods.push("desktop.settings.view.set");
                 methods.push("desktop.settings.fonts");
-                methods.push("desktop.window.pin");
+                methods.extend(["desktop.window.pin", "desktop.window.resize"]);
                 methods.push("desktop.emoji.favorites");
                 if self.actions.can_copy() { methods.push("desktop.window.emoji"); }
                 methods.extend(["desktop.history.manual.begin", "desktop.history.manual.finish"]);
@@ -593,6 +593,12 @@ impl Host {
             Method::DesktopEmojiFavorites => self.emoji_favorites(session, params(request.params)?),
             Method::DesktopWindowEmoji => self.send_window_emoji(session, params(request.params)?),
             Method::DesktopWindowTarget => self.remember_window_target(session),
+            Method::DesktopWindowResize => {
+                let input: WindowSizeParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.set_window_size(input.width, input.height, input.expected_epoch).map_err(privacy_error)?;
+                result("OperationResult", OperationResult { performed: true })
+            }
             Method::DesktopWindowPin => {
                 let input: WindowPinParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;

@@ -14,6 +14,7 @@ public static class MyGoInput {
     public struct Point { public int x, y; }
     public struct Rect { public int left, top, right, bottom; }
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
+    [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hwnd, out Rect rect);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
@@ -195,7 +196,7 @@ try {
 import os, sqlite3
 with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
-                   [("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false")])
+                   [("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
     if ($Capture) {
@@ -263,6 +264,11 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         $y = [Math]::Max($workArea.Top, [Math]::Min($cursorY + 12, $workArea.Bottom - $height - 5))
         [Math]::Abs($frame.left - $x) -le 5 -and [Math]::Abs($frame.top - $y) -le 5
     } 'MyGo main window did not follow the pointer inside the Windows work area'
+    $null = Wait-Until {
+        $clientRect = [MyGoInput+Rect]::new()
+        [MyGoInput]::GetClientRect($main.MainWindowHandle, [ref]$clientRect) -and
+            [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
+    } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
     $webProcesses = @(Wait-Until {
         Get-DesktopProcesses @($main.Id) | Where-Object { $_.Name -eq 'msedgewebview2.exe' }

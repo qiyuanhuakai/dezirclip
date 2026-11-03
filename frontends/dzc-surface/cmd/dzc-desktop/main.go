@@ -239,10 +239,16 @@ func run() error {
 	mygo.Bind(shell)
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)
-	follow := library.followMouse(ctx)
+	settings := library.windowPreferences(ctx)
+	follow := settings.FollowMouse != "false"
+	savedSize := settings.savedSize()
+	sizes := make(chan mygo.Size, 1)
+	sizeDone := make(chan struct{})
+	go library.saveWindowSizes(sizes, sizeDone)
+	defer func() { close(sizes); <-sizeDone }()
 	mygo.App.WhenReady(func() {
-		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620, MinWidth: 250, MinHeight: 300,
-			Hidden: follow, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
+		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 352, Height: 380, MinWidth: 250, MinHeight: 300,
+			Hidden: true, Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
 		preview.main = win
 		win.OnBlur(func() { history.targetInvalid.Store(true); preview.clear(); focusChanged.Emit(win, false) })
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
@@ -257,9 +263,42 @@ func run() error {
 		win.Page().LoadURL("mygo://localhost/")
 		if follow {
 			placeMainAtCursor(win)
-			win.Show()
-			win.Focus()
 		}
+		if savedSize.Width != 0 {
+			if scale := mainWindowScale(win); scale > 0 {
+				size := scaledSize(savedSize.Width, savedSize.Height, 1/scale)
+				win.SetContentSize(size.Width, size.Height)
+				if follow {
+					placeMainAtCursor(win)
+				} else {
+					win.Center()
+				}
+			}
+		}
+		win.Show()
+		win.Focus()
+		physicalSize := func() mygo.Size {
+			width, height := win.ContentSize()
+			return scaledSize(width, height, mainWindowScale(win))
+		}
+		lastSize := physicalSize()
+		observeSize := func() {
+			if !win.IsVisible() || win.IsMinimized() || win.IsMaximized() || win.IsFullScreen() {
+				return
+			}
+			size := physicalSize()
+			if size == lastSize || size.Width < 200 || size.Height < 200 || size.Width > 32768 || size.Height > 32768 {
+				return
+			}
+			lastSize = size
+			select {
+			case <-sizes:
+			default:
+			}
+			sizes <- size
+		}
+		win.OnResize(observeSize)
+		win.OnClose(func(*mygo.CloseEvent) { observeSize() })
 		go func() {
 			commands := bufio.NewScanner(os.Stdin)
 			for commands.Scan() {
@@ -276,7 +315,7 @@ func run() error {
 					position := false
 					if !win.IsFocused() {
 						history.rememberTarget(ctx)
-						position = library.followMouse(ctx)
+						position = library.windowPreferences(ctx).FollowMouse != "false"
 					}
 					mygo.RunOnMain(func() {
 						if !win.IsDestroyed() {

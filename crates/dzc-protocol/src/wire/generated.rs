@@ -513,6 +513,8 @@ pub enum Method {
     DesktopWindowTarget,
     #[serde(rename = "desktop.window.pin")]
     DesktopWindowPin,
+    #[serde(rename = "desktop.window.resize")]
+    DesktopWindowResize,
     #[serde(rename = "desktop.tools.catalog")]
     DesktopToolsCatalog,
     #[serde(rename = "desktop.settings.fonts")]
@@ -1221,6 +1223,15 @@ pub struct ViewSettingParams {
 #[serde(deny_unknown_fields)]
 pub struct DesktopPreferences {
     pub values: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowSizeParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
