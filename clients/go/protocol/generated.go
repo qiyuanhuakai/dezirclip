@@ -67,6 +67,10 @@ const (
     HostModeService HostMode = "service"
 )
 
+type DesktopPlatformReport struct {
+    Report json.RawMessage `json:"report"`
+}
+
 type CapabilityReport struct {
     Methods []string `json:"methods"`
     Permissions []Permission `json:"permissions"`
@@ -293,6 +297,7 @@ const (
     MethodDesktopCaptureWrite Method = "desktop.capture.write"
     MethodDesktopCaptureFinish Method = "desktop.capture.finish"
     MethodDesktopHistorySummary Method = "desktop.history.summary"
+    MethodDesktopPlatformProbe Method = "desktop.platform.probe"
     MethodDesktopToolsCatalog Method = "desktop.tools.catalog"
     MethodDesktopToolsClassify Method = "desktop.tools.classify"
     MethodDesktopToolsTransform Method = "desktop.tools.transform"

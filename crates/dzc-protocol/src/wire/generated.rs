@@ -92,6 +92,12 @@ pub enum HostMode {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopPlatformReport {
+    pub report: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CapabilityReport {
     pub methods: Vec<String>,
     pub permissions: Vec<Permission>,
@@ -408,6 +414,8 @@ pub enum Method {
     DesktopCaptureFinish,
     #[serde(rename = "desktop.history.summary")]
     DesktopHistorySummary,
+    #[serde(rename = "desktop.platform.probe")]
+    DesktopPlatformProbe,
     #[serde(rename = "desktop.tools.catalog")]
     DesktopToolsCatalog,
     #[serde(rename = "desktop.tools.classify")]

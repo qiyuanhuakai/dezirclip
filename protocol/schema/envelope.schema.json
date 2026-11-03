@@ -69,6 +69,7 @@
         "desktop.capture.write",
         "desktop.capture.finish",
         "desktop.history.summary",
+        "desktop.platform.probe",
         "desktop.tools.catalog",
         "desktop.tools.classify",
         "desktop.tools.transform",
@@ -919,6 +920,25 @@
             "properties": {
               "params": {
                 "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.platform.probe"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/ToolCatalogParams"
               }
             }
           }

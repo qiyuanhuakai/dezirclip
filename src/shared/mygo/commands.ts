@@ -33,6 +33,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "get_platform_capabilities") return library<T>("Platform");
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);
   const generation = hostGeneration();
   const result = await commands[command](args);

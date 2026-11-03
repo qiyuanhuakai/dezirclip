@@ -25,6 +25,12 @@ func (l *Library) Status(ctx context.Context) (protocol.ServiceStatus, error) {
 	return status, err
 }
 
+func (l *Library) Platform(ctx context.Context) (json.RawMessage, error) {
+	var result protocol.DesktopPlatformReport
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopPlatformProbe, struct{}{}, "DesktopPlatformReport", &result)
+	return result.Report, err
+}
+
 func (l *Library) SetPrivacy(ctx context.Context, params protocol.PrivacySetParams) (protocol.ServiceStatus, error) {
 	if !params.Active && params.DurationMs != nil {
 		return protocol.ServiceStatus{}, errors.New("PrivacyDurationInvalid")

@@ -44,6 +44,13 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	report, err := library.Platform(ctx)
+	var platform struct {
+		NativeWayland *bool `json:"native_wayland"`
+	}
+	if err != nil || json.Unmarshal(report, &platform) != nil || platform.NativeWayland == nil {
+		t.Fatalf("platform probe: %s %v", report, err)
+	}
 	status, err := library.Status(ctx)
 	if err != nil || status.CaptureOwner || status.Mode != protocol.HostModeService {
 		t.Fatalf("isolated status: %+v %v", status, err)

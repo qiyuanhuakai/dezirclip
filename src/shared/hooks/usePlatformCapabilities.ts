@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 
 export interface RuntimeCapability {
   availability: { status: "available" | "unsupported"; reason?: string };

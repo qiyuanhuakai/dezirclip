@@ -283,6 +283,7 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                methods.push("desktop.platform.probe");
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
                 methods.push("desktop.screen.preferences");
@@ -352,7 +353,7 @@ impl Host {
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
     }
     pub(crate) fn independent_dispatch(method: Method) -> bool {
-        matches!(method, Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
+        matches!(method, Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
@@ -435,6 +436,10 @@ impl Host {
                 result("PrivacyHotkey", PrivacyHotkey { hotkey })
             }
             Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopPlatformProbe => {
+                self.desktop_permission(session, self.instance_id())?;
+                result("DesktopPlatformReport", serde_json::json!({ "report": dzc_platform::runtime::session_capabilities() }))
+            }
             Method::DesktopToolsCatalog | Method::DesktopToolsClassify | Method::DesktopToolsTransform | Method::DesktopToolsQr => {
                 self.desktop_permission(session, self.instance_id())?;
                 crate::tools::run(request.method, request.params)

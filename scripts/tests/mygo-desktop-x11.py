@@ -197,11 +197,13 @@ def check(desktop):
     try:
         deadline = time.monotonic() + 35
         last = []
+        filter_stage = 0
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f'Desktop exited before presenting history ({process.returncode})')
             pending = [Atspi.get_desktop(0)]
             names, action, close = [], None, None
+            filter_button = None
             while pending and len(names) < 300:
                 item = pending.pop()
                 if item is None:
@@ -209,13 +211,25 @@ def check(desktop):
                 name = item.get_name()
                 text = Atspi.Text.get_text(item, 0, -1) if 'Text' in item.get_interfaces() else ''
                 names.append((name or '') + ' ' + (text or ''))
+                if name == ('图片' if filter_stage == 0 else '文本') and 'Action' in item.get_interfaces():
+                    filter_button = item
                 if name == '复制' and item.get_role() == Atspi.Role.PUSH_BUTTON:
                     action = item
                 if name == '关闭主窗口' and item.get_role() == Atspi.Role.PUSH_BUTTON:
                     close = item
                 pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
             last = names
-            if action and close and any(marker in (name or '') for name in names):
+            has_marker = any(marker in name for name in names)
+            if filter_stage == 0 and has_marker and filter_button and not any('无法确认桌面能力' in name for name in names):
+                assert Atspi.Action.do_action(filter_button, 0), 'Image filter did not accept input'
+                filter_stage = 1
+            elif filter_stage == 1 and not has_marker and filter_button:
+                assert Atspi.Action.do_action(filter_button, 0), 'Text filter did not accept input'
+                filter_stage = 2
+            elif filter_stage == 2 and has_marker:
+                print('Verified shared React main window: image filter excluded the live text fixture and text filter restored it', flush=True)
+                filter_stage = 3
+            if filter_stage == 3 and action and close and has_marker:
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.
                 time.sleep(32)
@@ -224,7 +238,7 @@ def check(desktop):
                 break
             time.sleep(.15)
         else:
-            raise RuntimeError(f'History row and Copy button not presented: {last}')
+            raise RuntimeError(f'History actions not available (filter stage {filter_stage}): {last}')
         for _ in range(80):
             result = subprocess.run(['xclip', '-selection', 'clipboard', '-o'], capture_output=True, timeout=3)
             if result.returncode == 0 and result.stdout.decode() == marker:

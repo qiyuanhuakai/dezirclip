@@ -211,6 +211,28 @@
         "service"
       ]
     },
+    "DesktopPlatformReport": {
+      "type": "object",
+      "properties": {
+        "report": {
+          "type": "object",
+          "required": [
+            "native_wayland",
+            "read",
+            "write",
+            "monitor",
+            "auto_paste",
+            "global_shortcut",
+            "resolve_source",
+            "read_privacy_hints"
+          ]
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false
+    },
     "CapabilityReport": {
       "type": "object",
       "properties": {
@@ -1112,6 +1134,7 @@
         "desktop.capture.write",
         "desktop.capture.finish",
         "desktop.history.summary",
+        "desktop.platform.probe",
         "desktop.tools.catalog",
         "desktop.tools.classify",
         "desktop.tools.transform",
@@ -1962,6 +1985,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.platform.probe"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
               }
             }
           }
