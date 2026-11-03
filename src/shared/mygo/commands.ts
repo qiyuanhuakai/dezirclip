@@ -38,6 +38,7 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  set_silent_start: args => library("SetSetting", "app.silent_start", String(args.enabled), currentEpoch()),
   open_content: args => {
     const epoch = currentEpoch();
     if (args.expectedPrivacyEpoch !== undefined && args.expectedPrivacyEpoch !== epoch) throw new Error("PrivacyEpochChanged");

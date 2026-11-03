@@ -19,14 +19,14 @@ import (
 )
 
 // The resident keeps the configured keyboard shortcuts after the WebView exits.
-func refreshMainShortcuts(owner *client.Client, registered map[string]bool, toggle func()) {
+func refreshMainShortcuts(owner *client.Client, registered map[string]bool, toggle func()) map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	settings, err := (&Library{owner}).Preferences(ctx)
 	var values map[string]string
 	if err != nil || json.Unmarshal(settings, &values) != nil {
 		log.Print("Main window shortcut settings unavailable")
-		return
+		return nil
 	}
 	wanted := make(map[string]bool)
 	for _, line := range strings.FieldsFunc(values["app.hotkey"], func(r rune) bool { return r == '\r' || r == '\n' }) {
@@ -50,6 +50,7 @@ func refreshMainShortcuts(owner *client.Client, registered map[string]bool, togg
 			}
 		}
 	}
+	return values
 }
 
 // Only the main window loads the WebView runtime. Parent and child use
@@ -162,7 +163,7 @@ func runResident(owner *client.Client, minimized bool) error {
 		}
 		toggle = func() { present("toggle") }
 		open := func() { present("show") }
-		refreshMainShortcuts(owner, registered, toggle)
+		startupSettings := refreshMainShortcuts(owner, registered, toggle)
 		if tray != nil {
 			tray.OnClick(open)
 			tray.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
@@ -181,7 +182,8 @@ func runResident(owner *client.Client, minimized bool) error {
 				commands.Close()
 			}
 		})
-		if !minimized || (tray == nil && len(registered) == 0) {
+		silent := startupSettings != nil && startupSettings["app.silent_start"] != "false"
+		if (!minimized && !silent) || (tray == nil && len(registered) == 0) {
 			open()
 		}
 	})

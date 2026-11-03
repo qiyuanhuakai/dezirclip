@@ -460,6 +460,12 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: find_item(directory, text=True), 'Settings did not display the active Rust profile')
         print('Verified About shows the running MyGo binary identity and Data Management shows the isolated Service profile')
         login = open_settings_group('General Settings', 'Launch at Startup')
+        silent = wait_for(lambda: find_item('Silent Start'), 'Silent Start checkbox missing')
+        assert not silent.get_state_set().contains(atspi.StateType.CHECKED)
+        assert atspi.Action.do_action(silent, 0)
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.silent_start'").fetchone() == ('true',)
+                     and silent.get_state_set().contains(atspi.StateType.CHECKED), 'Silent Start did not persist')
         entry = Path(os.environ['XDG_CONFIG_HOME'])/'autostart/dezirclip.desktop'
         assert login.get_state_set().contains(atspi.StateType.CHECKED)
         assert atspi.Action.do_action(login, 0)
@@ -692,6 +698,7 @@ def check(desktop, pinned):
     subprocess.run([cli, 'add', marker], check=True, stdout=subprocess.DEVNULL)
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
+        db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.silent_start','false')")
         if pinned:
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.custom_background_opacity','100')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.emoji_panel_enabled','true')")
@@ -779,6 +786,23 @@ def check(desktop, pinned):
             if filter_stage == 3 and row and has_marker:
                 if pinned:
                     check_pinned(row, Atspi, Gtk, marker, target, editor, desktop, process.pid)
+                    assert tray_item(process.pid, '退出')
+                    assert process.wait(timeout=15) == 0
+                    # Launch normally from the same profile after changing the setting in the real UI.
+                    process = subprocess.Popen([desktop], stdout=subprocess.DEVNULL)
+                    deadline = time.monotonic() + 15
+                    while not tray_item(process.pid, '打开剪贴板', activate=False):
+                        assert process.poll() is None and time.monotonic() < deadline, 'Silent Start lost its tray'
+                        time.sleep(.1)
+                    members = memory_sample('ordinary startup with Silent Start enabled', [process.pid])
+                    assert all(Path(f'/proc/{pid}/exe').resolve() != desktop for pid in members if pid != process.pid)
+                    assert not any('WebKit' in Path(f'/proc/{pid}/exe').resolve().name for pid in members)
+                    assert tray_item(process.pid, '打开剪贴板')
+                    deadline = time.monotonic() + 15
+                    while not any(name == 'Settings' for _, name, _, _ in mygo_nodes(Atspi, desktop)):
+                        assert process.poll() is None and time.monotonic() < deadline, 'Tray did not reopen the silent desktop'
+                        time.sleep(.1)
+                    print('Verified ordinary Silent Start retains only the native resident, and its tray opens the main window')
                     return
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.

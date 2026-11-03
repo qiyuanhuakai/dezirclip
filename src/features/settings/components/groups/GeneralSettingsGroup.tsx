@@ -93,6 +93,8 @@ const GeneralSettingsGroup = ({
 }: GeneralSettingsGroupProps) => {
     const [loginSaving, setLoginSaving] = useState(false);
     const [loginError, setLoginError] = useState("");
+    const [silentSaving, setSilentSaving] = useState(false);
+    const [silentError, setSilentError] = useState("");
     const [idleDestroyDraft, setIdleDestroyDraft] = useState(idleDestroySeconds.toString());
     useEffect(() => {
         setIdleDestroyDraft(idleDestroySeconds.toString());
@@ -353,14 +355,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={silentStart}
-                            onChange={(e) => {
+                            aria-label={t('silent_start')}
+                            disabled={silentSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setSilentStart(enabled);
-                                invoke("set_silent_start", { enabled }).catch(console.error);
+                                setSilentSaving(true);
+                                setSilentError("");
+                                try {
+                                    await invoke("set_silent_start", { enabled });
+                                    setSilentStart(enabled);
+                                } catch (error) {
+                                    setSilentError(String(error));
+                                } finally {
+                                    setSilentSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {silentError && <span role="alert">{silentError}</span>}
                 </div>
                 <div className="setting-item">
                     <LabelWithHint
