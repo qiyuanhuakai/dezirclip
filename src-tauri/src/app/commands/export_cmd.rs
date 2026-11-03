@@ -11,7 +11,7 @@ use tauri::State;
 #[tauri::command]
 pub async fn export_to_file(host: State<'_, DesktopHost>, path: String, format: String, passphrase: Option<String>) -> Result<ExportSummary, String> {
     let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
-    host.backup(Method::DesktopBackupExport, BackupExportParams { service_instance_id: state.service_instance_id,
+    host.blocking_call(Method::DesktopBackupExport, BackupExportParams { service_instance_id: state.service_instance_id,
         expected_epoch: state.privacy_epoch, path, format, passphrase }, "BackupExportResult").await
 }
 

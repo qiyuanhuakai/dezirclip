@@ -8,6 +8,7 @@ mod client;
 mod work;
 mod desktop;
 mod library;
+pub mod paste_queue;
 mod backup;
 mod tools;
 mod desktop_actions;

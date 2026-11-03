@@ -220,7 +220,7 @@
             "type": "string",
             "maxLength": 128
           },
-          "maxItems": 64
+          "maxItems": 256
         },
         "permissions": {
           "type": "array",
@@ -1135,6 +1135,11 @@
         "desktop.tags.delete_contents",
         "desktop.tags.delete_entries",
         "desktop.history.count",
+        "desktop.paste.target",
+        "desktop.queue.get",
+        "desktop.queue.set",
+        "desktop.queue.next",
+        "desktop.queue.configure",
         "desktop.history.clear",
         "desktop.history.reorder",
         "desktop.tags.create",
@@ -2383,6 +2388,101 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.paste.target"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QueueReplaceParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.next"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QueueNextParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.configure"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QueueSettingParams"
               }
             }
           }
@@ -3690,6 +3790,222 @@
         "active"
       ],
       "additionalProperties": true
+    },
+    "QueueTarget": {
+      "type": "object",
+      "properties": {
+        "windows": {
+          "$ref": "#/$defs/WindowsPasteTarget"
+        },
+        "x11": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "windows"
+          ]
+        },
+        {
+          "required": [
+            "x11"
+          ]
+        }
+      ]
+    },
+    "QueuePreferences": {
+      "type": "object",
+      "properties": {
+        "sequential": {
+          "type": "boolean"
+        },
+        "delete_after_paste": {
+          "type": "boolean"
+        },
+        "paste_method": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "sequential",
+        "delete_after_paste",
+        "paste_method"
+      ],
+      "additionalProperties": false
+    },
+    "QueueState": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "x-rust-type": "i64",
+            "not": {
+              "const": 0
+            }
+          },
+          "maxItems": 32768
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "preferences": {
+          "$ref": "#/$defs/QueuePreferences"
+        }
+      },
+      "required": [
+        "ids",
+        "revision",
+        "preferences"
+      ],
+      "additionalProperties": false
+    },
+    "QueueReplaceParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "x-rust-type": "i64",
+            "not": {
+              "const": 0
+            }
+          },
+          "maxItems": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "QueueNextParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "expected_revision": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "target": {
+          "$ref": "#/$defs/QueueTarget"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "expected_revision",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "QueueStepResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "missing",
+            "pasted",
+            "metadata_failed"
+          ]
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32768,
+          "x-rust-type": "u32"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64",
+          "not": {
+            "const": 0
+          }
+        }
+      },
+      "required": [
+        "status",
+        "remaining"
+      ],
+      "additionalProperties": false
+    },
+    "QueueSettingParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.sequential_mode",
+            "app.delete_after_paste",
+            "app.paste_method"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
     },
     "ScreenPoint": {
       "type": "object",

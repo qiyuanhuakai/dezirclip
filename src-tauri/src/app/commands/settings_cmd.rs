@@ -15,6 +15,16 @@ async fn persist_capture_setting(host: &crate::app::ipc_host::DesktopHost, key: 
     Ok(())
 }
 
+async fn persist_queue_setting(app: &AppHandle, key: &str, value: String) -> AppResult<()> {
+    use dzc_host::wire::{Method, OperationResult, QueueSettingParams, RuntimeState};
+    let host = app.state::<crate::app::ipc_host::DesktopHost>();
+    let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await.map_err(AppError::Validation)?;
+    let _: OperationResult = host.call(Method::DesktopQueueConfigure, QueueSettingParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, key:key.into(), value,
+    }, "OperationResult").await.map_err(AppError::Validation)?;
+    Ok(())
+}
+
 fn save_bool_setting(db_state: &DbState, key: &str, enabled: bool) -> AppResult<()> {
     db_state
         .settings_repo
@@ -174,16 +184,10 @@ fn persist_setting_with_legacy(db_state: &DbState, key: &str, value: &str) -> Ap
 }
 
 #[tauri::command]
-pub fn set_sequential_mode(
-    app_handle: AppHandle,
-    state: State<'_, crate::app_state::SettingsState>,
-    enabled: bool,
-) {
+pub async fn set_sequential_mode(app: AppHandle, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
+    persist_queue_setting(&app, "app.sequential_mode", enabled.to_string()).await?;
     state.sequential_mode.store(enabled, Ordering::Relaxed);
-    let db_state = app_handle.state::<DbState>();
-    let _ = db_state
-        .settings_repo
-        .set("app.sequential_mode", &enabled.to_string());
+    Ok(())
 }
 
 #[tauri::command]
@@ -285,7 +289,9 @@ pub async fn save_setting(
         crate::app::surface_supervisor::stop_blocking(&app_handle,"disabled",true).map_err(AppError::Validation)?;
         if let Some(window)=app_handle.get_webview_window("quick-paste") {window.hide()?;}
     }
-    if dzc_core::api::HistoryService::is_capture_setting(&key) {
+    if matches!(key.as_str(), "app.sequential_mode" | "app.delete_after_paste" | "app.paste_method") {
+        persist_queue_setting(&app_handle, &key, value.clone()).await?;
+    } else if dzc_core::api::HistoryService::is_capture_setting(&key) {
         persist_capture_setting(&app_handle.state::<crate::app::ipc_host::DesktopHost>(), &key, value.clone()).await?;
     } else {
         persist_setting_with_legacy(&db_state, &key, &value)?;
@@ -390,13 +396,10 @@ pub fn set_silent_start(
 }
 
 #[tauri::command]
-pub fn set_delete_after_paste(
-    state: State<'_, crate::app_state::SettingsState>,
-    db_state: State<'_, DbState>,
-    enabled: bool,
-) -> AppResult<()> {
+pub async fn set_delete_after_paste(app: AppHandle, state: State<'_, SettingsState>, enabled: bool) -> AppResult<()> {
+    persist_queue_setting(&app, "app.delete_after_paste", enabled.to_string()).await?;
     state.delete_after_paste.store(enabled, Ordering::Relaxed);
-    save_bool_setting(&db_state, "app.delete_after_paste", enabled)
+    Ok(())
 }
 
 #[tauri::command]

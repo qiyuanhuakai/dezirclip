@@ -2,6 +2,18 @@ use super::{CoreResult, HistoryService};
 use crate::capture::CaptureSettings;
 
 impl HistoryService {
+    pub fn queue_preferences(&self) -> CoreResult<(bool, bool, String)> { self.repository.queue_preferences() }
+
+    pub fn update_queue_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
+        let valid = match key {
+            "app.sequential_mode" | "app.delete_after_paste" => matches!(value, "true" | "false"),
+            "app.paste_method" => matches!(value, "shift_insert" | "ctrl_v" | "game_mode"),
+            _ => false,
+        };
+        if !valid { return Err(super::CoreError::validation("QueueSettingsInvalid")); }
+        self.repository.set_capture_setting(key, value, epoch)
+    }
+
     pub fn is_capture_setting(key: &str) -> bool {
         matches!(key, "app.persistent" | "app.deduplicate" | "app.capture_files" | "app.capture_rich_text"
             | "app.privacy_protection" | "app.privacy_protection_kinds" | "app.privacy_protection_custom_rules"

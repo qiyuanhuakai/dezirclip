@@ -31,7 +31,7 @@
             "type": "string",
             "maxLength": 128
           },
-          "maxItems": 64
+          "maxItems": 256
         },
         "permissions": {
           "type": "array",

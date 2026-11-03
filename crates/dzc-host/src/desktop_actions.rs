@@ -98,7 +98,7 @@ impl Host {
         let _request=self.requests.lock().map_err(|_|WireErrorCode::Unavailable)?;
         self.mutate_inner(request)
     }
-    fn mutate_inner(&self,request:DesktopMutationParams)->Result<DesktopMutationResult,WireErrorCode> {
+    pub(super) fn mutate_inner(&self,request:DesktopMutationParams)->Result<DesktopMutationResult,WireErrorCode> {
         if self.is_stopping() {return Err(WireErrorCode::Busy);}
         if request.service_instance_id!=self.snapshot()?.service_instance_id {return Err(WireErrorCode::PrivacyBlocked);}
         let now=crate::router::now_ms()?;
@@ -171,7 +171,7 @@ impl Host {
         Ok(DesktopMutationResult{id:request.id,performed:true})
     }
 }
-fn plain(payload:ClipboardPayload)->ClipboardPayload {match payload {
+pub(crate) fn plain(payload:ClipboardPayload)->ClipboardPayload {match payload {
     ClipboardPayload::Html{text,..}=>ClipboardPayload::Text(text),
     ClipboardPayload::Private{payload,authorization}=>ClipboardPayload::Private{payload:Box::new(plain(*payload)),authorization},payload=>payload}}
 fn image_text(payload:ClipboardPayload)->Result<ClipboardPayload,WireErrorCode> {Ok(match payload {

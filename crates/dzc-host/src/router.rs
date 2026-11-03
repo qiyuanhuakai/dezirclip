@@ -25,6 +25,7 @@ pub trait HostActions: Send + Sync {
     fn revoke_private_exports(&self) -> Result<(), WireErrorCode> {
         dzc_platform::runtime::revoke_private_exports().map_err(|_| WireErrorCode::Busy)
     }
+    fn queue_changed(&self, _count: usize) {}
     fn privacy_changed(&self, _snapshot: &api::RuntimeSnapshot) {}
 }
 
@@ -63,6 +64,7 @@ pub struct Host {
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
+    pub(crate) queue: crate::paste_queue::Queue,
     pub(crate) uploads: crate::upload::Uploads,
     #[cfg(feature = "native-screen")]
     pub(crate) screen: crate::screen::Screens,
@@ -103,7 +105,7 @@ impl Host {
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
-            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
     }
@@ -134,6 +136,7 @@ impl Host {
     }
     fn stop(&self) -> Result<(), WireErrorCode> {
         if self.stopped.load(Ordering::Acquire) {return Ok(());}
+        let _queue = self.queue.operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         let _ocr = self.manual_ocr_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
         self.stop_requested.store(true, Ordering::Release);
@@ -182,6 +185,7 @@ impl Host {
         self.uploads.clear()?;
         #[cfg(feature = "native-screen")]
         self.screen.clear()?;
+        self.queue.invalidate()?;
         let state = self.snapshot()?;
         self.events.push(EventKind::PrivacyStateChanged, state, EventData { entry_id: None, status: None }).map_err(unavailable)?;
         *observed = snapshot.privacy_epoch;
@@ -270,9 +274,15 @@ impl Host {
             methods.extend(["desktop.ocr.recognize", "desktop.ocr.status", "desktop.ocr.engine"]);
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
-            methods.extend(["desktop.tags.counts", "desktop.tags.colors", "desktop.tags.color", "desktop.tags.delete_contents",
-                "desktop.tags.delete_entries", "desktop.history.count"]);
-            methods.extend(["desktop.history.clear", "desktop.history.reorder", "desktop.tags.create", "desktop.tags.rename", "desktop.tags.remove"]);
+            if session.extended_methods {
+                methods.extend(["desktop.queue.get", "desktop.queue.set", "desktop.queue.configure"]);
+                if self.actions.can_copy() && self.actions.can_paste() {
+                    methods.extend(["desktop.paste.target", "desktop.queue.next"]);
+                }
+                methods.extend(["desktop.tags.counts", "desktop.tags.colors", "desktop.tags.color", "desktop.tags.delete_contents",
+                    "desktop.tags.delete_entries", "desktop.history.count"]);
+                methods.extend(["desktop.history.clear", "desktop.history.reorder", "desktop.tags.create", "desktop.tags.rename", "desktop.tags.remove"]);
+            }
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
             if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.surface.copy"]);}
             if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
@@ -319,7 +329,7 @@ impl Host {
             return match self.subscribe(session, request.params) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) };
         }
         // File IO and key derivation can take seconds. Keep privacy controls responsive.
-        if matches!(request.method, Method::DesktopOcrRecognize | Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview) {
+        if matches!(request.method, Method::DesktopQueueNext | Method::DesktopOcrRecognize | Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview) {
             return match self.route(session, request) {
                 Ok(value) => Response::success(id, value),
                 Err(code) => Response::failure(id, code),
@@ -439,6 +449,8 @@ impl Host {
                 #[cfg(not(feature = "native-screen"))]
                 { Err(WireErrorCode::UnsupportedCapability) }
             }
+            Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueSet |
+            Method::DesktopQueueConfigure | Method::DesktopQueueNext => self.queue_request(session, request.method, request.params),
             Method::DesktopOcrEngine => {
                 self.desktop_permission(session, self.instance_id())?;
                 result("OcrEngineInfo", crate::ocr::engine_info())
@@ -613,6 +625,23 @@ pub(crate) mod tests {
     fn dispatch(host: &Host, session: &Session, method: Method, params: Value) -> Response {
         host.dispatch(session, Request { request_id: "synthetic-request".into(), method, params })
     }
+    #[test]
+    fn extended_catalog_is_negotiated_within_each_clients_schema_limit() {
+        let host = synthetic_host();
+        let grant = host.grants().issue_control(ClientRole::Desktop).unwrap();
+        for extended in [false, true] {
+            let mut hello = hello(ClientRole::Desktop);
+            hello.grant = Some(grant.token().into());
+            if extended { hello.capabilities.push("desktop.extended_methods".into()); }
+            let (session, _) = host.hello(hello).unwrap();
+            let result = dispatch(&host, &session, Method::Capabilities, serde_json::json!({})).result.unwrap();
+            let report: CapabilityReport = serde_json::from_value(result).unwrap();
+            assert_eq!(report.methods.iter().any(|name|name == "desktop.queue.get"), extended);
+            assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
+            assert!(report.methods.len() <= if extended {256} else {64});
+        }
+    }
+
     #[test]
     fn standalone_desktop_tools_use_shared_implementations_and_require_a_grant() {
         let host = synthetic_host();

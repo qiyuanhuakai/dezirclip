@@ -149,7 +149,7 @@ fn idle_keyboard(conn: &x11rb::rust_connection::RustConnection) -> Result<(), ()
 // This subset has an exact XKB translation: group one, no existing modifiers,
 // and a key type that cannot consume Control or select another level at zero.
 // Other groups, latches, held keys and stateful actions are unsupported.
-fn group_one_level_zero(map: &xkb::GetMapReply, key: &xkb::KeySymMap) -> Option<u32> {
+fn group_one_level_zero(map: &xkb::GetMapReply, key: &xkb::KeySymMap, modifier_mask: u16) -> Option<u32> {
     if key.group_info & 0x0f == 0 || key.width == 0 {
         return None;
     }
@@ -158,7 +158,7 @@ fn group_one_level_zero(map: &xkb::GetMapReply, key: &xkb::KeySymMap) -> Option<
     if kind.num_levels == 0
         || kind.num_levels > key.width
         || u16::from(kind.mods_vmods) != 0
-        || u16::from(kind.mods_mask) & u16::from(x11rb::protocol::xproto::ModMask::CONTROL) != 0
+        || u16::from(kind.mods_mask) & modifier_mask != 0
         || kind
             .map
             .iter()
@@ -199,9 +199,11 @@ fn default_behavior(map: &xkb::GetMapReply, keycode: u8) -> bool {
     })
 }
 
-fn select_paste_keys(map: &xkb::GetMapReply) -> Option<(u8, u8)> {
+fn select_paste_keys(map: &xkb::GetMapReply, shift_insert: bool) -> Option<(u8, u8)> {
     use x11rb::protocol::xproto::ModMask;
-    let control_mask = u16::from(ModMask::CONTROL);
+    let modifier_mask = u16::from(if shift_insert { ModMask::SHIFT } else { ModMask::CONTROL });
+    let key_symbol = if shift_insert { 0xff63 } else { 0x76 };
+    let modifier_symbols = if shift_insert { [0xffe1, 0xffe2] } else { [0xffe3, 0xffe4] };
     let mut control = None;
     let mut v = None;
     for (index, key) in map.map.syms_rtrn.as_ref()?.iter().enumerate() {
@@ -209,13 +211,13 @@ fn select_paste_keys(map: &xkb::GetMapReply) -> Option<(u8, u8)> {
         if !default_behavior(map, keycode) {
             continue;
         }
-        let Some(symbol) = group_one_level_zero(map, key) else {
+        let Some(symbol) = group_one_level_zero(map, key, modifier_mask) else {
             continue;
         };
         let Some(actions) = key_actions(map, keycode) else {
             continue;
         };
-        if symbol == 0x76
+        if symbol == key_symbol
             && mapped_modifiers(map, keycode) == Some(0)
             && actions
                 .iter()
@@ -223,8 +225,8 @@ fn select_paste_keys(map: &xkb::GetMapReply) -> Option<(u8, u8)> {
         {
             v.get_or_insert(keycode);
         }
-        if matches!(symbol, 0xffe3 | 0xffe4)
-            && mapped_modifiers(map, keycode) == Some(control_mask)
+        if modifier_symbols.contains(&symbol)
+            && mapped_modifiers(map, keycode) == Some(modifier_mask)
             && !actions.is_empty()
             && actions.iter().all(|action| {
                 if action.as_noaction().type_ != xkb::SAType::SET_MODS {
@@ -232,11 +234,11 @@ fn select_paste_keys(map: &xkb::GetMapReply) -> Option<(u8, u8)> {
                 }
                 let action = action.as_setmods();
                 let flags = u8::from(action.flags);
-                u16::from(action.mask) == control_mask
+                u16::from(action.mask) == modifier_mask
                     && u8::from(action.vmods_high) == 0
                     && u8::from(action.vmods_low) == 0
                     && flags & !u8::from(xkb::SA::CLEAR_LOCKS | xkb::SA::USE_MOD_MAP_MODS) == 0
-                    && (u16::from(action.real_mods) == control_mask
+                    && (u16::from(action.real_mods) == modifier_mask
                         || flags & u8::from(xkb::SA::USE_MOD_MAP_MODS) != 0)
             })
         {
@@ -247,7 +249,7 @@ fn select_paste_keys(map: &xkb::GetMapReply) -> Option<(u8, u8)> {
 }
 
 fn paste_keys(
-    conn: &x11rb::rust_connection::RustConnection,
+    conn: &x11rb::rust_connection::RustConnection, shift_insert: bool,
 ) -> Result<(u8, u8), UnsupportedReason> {
     let missing = UnsupportedReason::ExtensionUnavailable;
     let unsafe_state = UnsupportedReason::BackendUnavailable;
@@ -317,27 +319,57 @@ fn paste_keys(
         .map_err(|_| missing)?
         .reply()
         .map_err(|_| missing)?;
-    let keys = select_paste_keys(&map).ok_or(unsafe_state)?;
+    let keys = select_paste_keys(&map, shift_insert).ok_or(unsafe_state)?;
     idle_keyboard(conn).map_err(|_| unsafe_state)?;
     Ok(keys)
 }
 pub fn paste_probe() -> CapabilityState {
-    let result = connection().and_then(|(conn, _)| paste_keys(&conn));
+    let result = connection().and_then(|(conn, _)| paste_keys(&conn, false));
     match result {
         Ok(_) => CapabilityState::available("x11-xtest", false),
         Err(reason) => CapabilityState::unsupported("x11-xtest", reason),
     }
     .with_probe("xtest_xkb_idle_group_one_and_key_types")
 }
+pub fn focused_window() -> PlatformResult<u32> {
+    if super::is_native_wayland() { return Err(PlatformError::failed(Capability::AutoPaste)); }
+    let (conn, _) = connection().map_err(|reason| PlatformError::unsupported(Capability::AutoPaste, reason))?;
+    checked_focus(&conn)
+}
+
+fn checked_focus(conn: &x11rb::rust_connection::RustConnection) -> PlatformResult<u32> {
+    let failed = |_| PlatformError::failed(Capability::AutoPaste);
+    let focus = conn.get_input_focus().map_err(failed)?.reply().map_err(|_| PlatformError::failed(Capability::AutoPaste))?.focus;
+    if focus <= 1 || conn.setup().roots.iter().any(|screen| screen.root == focus) {
+        return Err(PlatformError::failed(Capability::AutoPaste));
+    }
+    Ok(focus)
+}
+
 pub fn paste() -> PlatformResult<()> {
+    paste_chord(None, false, || true)
+}
+
+pub fn paste_queue_bound(focus: u32, method: &str, kind: &str, current: impl Fn() -> bool) -> PlatformResult<()> {
+    if super::is_native_wayland() { return Err(PlatformError::failed(Capability::AutoPaste)); }
+    let shift_insert = method != "ctrl_v" && matches!(kind, "text" | "code" | "url" | "rich_text");
+    paste_chord(Some(focus), shift_insert, current)
+}
+
+fn paste_chord(focus: Option<u32>, shift_insert: bool, current: impl Fn() -> bool) -> PlatformResult<()> {
     let (conn, _) =
         connection().map_err(|reason| PlatformError::unsupported(Capability::AutoPaste, reason))?;
+    // Validation may read SQLite. Complete it before locking the shared X server.
+    if !current() { return Err(PlatformError::failed(Capability::AutoPaste)); }
     conn.grab_server()
         .map_err(|_| PlatformError::failed(Capability::AutoPaste))?
         .check()
         .map_err(|_| PlatformError::failed(Capability::AutoPaste))?;
     let result = (|| {
-        let (control, v) = paste_keys(&conn)
+        if let Some(expected) = focus {
+            if checked_focus(&conn)? != expected { return Err(PlatformError::failed(Capability::AutoPaste)); }
+        }
+        let (control, v) = paste_keys(&conn, shift_insert)
             .map_err(|reason| PlatformError::unsupported(Capability::AutoPaste, reason))?;
         let mut requests = Vec::new();
         let mut failed = false;

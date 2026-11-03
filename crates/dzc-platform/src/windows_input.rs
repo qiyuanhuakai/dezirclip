@@ -1,5 +1,4 @@
-use crate::infrastructure::paste_input::{self, Encoding, InputDriver};
-use crate::infrastructure::surface_focus::Target;
+use crate::paste_input::{self, Encoding, InputDriver};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Threading::AttachThreadInput;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -9,18 +8,60 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 
-pub fn send_paste(target: &Target, method: &str, content: Option<&str>, content_type: Option<&str>) -> Result<(), String> {
+pub fn is_system_focus_window(hwnd: HWND) -> bool {
+    if hwnd.0.is_null() {
+        return true;
+    }
+
+    let mut class_name = [0u16; 256];
+    let len = unsafe { windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut class_name) };
+    let class_str = if len > 0 {
+        String::from_utf16_lossy(&class_name[..len as usize])
+    } else {
+        String::new()
+    };
+
+    matches!(
+        class_str.as_str(),
+        // Taskbar / tray / shell surfaces (these should NOT receive paste)
+        "Shell_TrayWnd"
+            | "Shell_SecondaryTrayWnd"
+            | "TrayNotifyWnd"
+            | "NotifyIconOverflowWindow"
+            | "ReBarWindow32"
+            | "MSTaskSwWClass"
+            // Note: Progman and WorkerW (desktop windows) are intentionally NOT filtered
+            // because users may need to paste when renaming files on the desktop
+            | "Button"
+            // System UI overlays that should NOT receive paste
+            | "ImmersiveLauncher"
+            | "ShellExperienceHost"
+            | "TaskSwitcherWnd"
+            | "MultitaskingViewFrame" // Note: Windows.UI.Core.CoreWindow, SearchUI, Cortana, XamlExplorerHostIslandWindow,
+                                      // and ApplicationFrameWindow are intentionally NOT filtered because users may need
+                                      // to paste in Windows search box and other UWP app input fields
+    )
+}
+
+/// The same original window and process identity must remain valid throughout input.
+pub trait InputTarget {
+    fn is_current(&self) -> bool;
+    fn windows_handle(&self) -> HWND;
+    fn windows_identity_current(&self) -> bool;
+}
+
+pub fn send_paste(target: &dyn InputTarget, method: &str, content: Option<&str>, content_type: Option<&str>) -> Result<(), String> {
     let mut driver = NativeInput { target, text_context: None, scan_codes: Vec::new() };
     paste_input::send_paste(&mut driver, method, content, content_type).map_err(|error| error.to_string())
 }
-pub fn release_window_keys(target: &Target) -> Result<(), String> {
+pub fn release_window_keys(target: &dyn InputTarget) -> Result<(), String> {
     let mut driver = NativeInput { target, text_context: None, scan_codes: Vec::new() };
     paste_input::release_window_keys(&mut driver).map_err(|error| error.to_string())
 }
 
 pub fn alt_is_down() -> bool { unsafe { GetAsyncKeyState(0x12) < 0 } }
 
-pub fn restore_held_alt(target: &Target, held: bool) -> Result<(), String> {
+pub fn restore_held_alt(target: &dyn InputTarget, held: bool) -> Result<(), String> {
     if !held { return Ok(()); }
     if !target.is_current() { return Err(paste_input::PasteError::ForegroundChanged.to_string()); }
     let input = INPUT { r#type: INPUT_KEYBOARD, Anonymous: INPUT_0 { ki: KEYBDINPUT {
@@ -34,7 +75,7 @@ pub fn restore_held_alt(target: &Target, held: bool) -> Result<(), String> {
 }
 
 struct NativeInput<'a> {
-    target: &'a Target,
+    target: &'a dyn InputTarget,
     text_context: Option<(HWND, GameModeThreadContext, GameModeImeContext)>,
     scan_codes: Vec<(u16, u16)>,
 }
@@ -150,7 +191,7 @@ unsafe fn setup_game_mode_ime(target_hwnd: HWND) -> GameModeImeContext {
     }
 }
 
-unsafe fn restore_game_mode_ime(target: &Target, target_hwnd: HWND, ctx: &GameModeImeContext) {
+unsafe fn restore_game_mode_ime(target: &dyn InputTarget, target_hwnd: HWND, ctx: &GameModeImeContext) {
     use windows::Win32::UI::Input::Ime::{
         ImmGetContext, ImmReleaseContext, ImmSetConversionStatus, ImmSetOpenStatus,
     };

@@ -4,7 +4,7 @@ use crate::app::hooks::{keyboard_proc, mouse_proc};
 use crate::app::system::tray_subclass_proc;
 use crate::app::window_manager::{release_win_keys, restore_last_focus, toggle_window};
 use crate::app_state::{
-    AppDataDir, PasteQueue, SearchHistory, SessionHistory, SettingsState,
+    AppDataDir, SearchHistory, SessionHistory, SettingsState,
 };
 use crate::database::{self, DbState};
 use crate::global_state::*;
@@ -504,7 +504,6 @@ fn setup_state(
         std::collections::VecDeque::new(),
     ).into()));
     app.manage(AppDataDir(std::sync::Mutex::new(app_dir)));
-    app.manage(PasteQueue::default());
     app.manage(SearchHistory::default());
 }
 
@@ -1603,14 +1602,7 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
         val.replace("Win", "Super").parse::<Shortcut>()
     } {
         if shortcut == &seq_s {
-            let is_seq = settings.sequential_mode.load(Ordering::Relaxed);
-            let has_items = {
-                let q_notification = app.state::<PasteQueue>().inner().0.lock().unwrap();
-                !q_notification.items.is_empty()
-            };
-            if is_seq || has_items {
-                crate::services::paste_queue::paste_next_step(app.clone());
-            }
+            crate::services::paste_queue::start_step(app.clone(), false);
         }
     }
 

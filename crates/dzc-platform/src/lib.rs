@@ -40,3 +40,7 @@ mod private_files;
 
 #[cfg(feature = "native-screen")]
 pub mod screenshot;
+
+pub mod paste_input;
+#[cfg(target_os = "windows")]
+pub mod windows_input;

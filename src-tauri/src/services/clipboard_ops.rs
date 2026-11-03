@@ -390,7 +390,7 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle, target: Op
             #[cfg(target_os = "windows")]
             {
                 let target = target.ok_or_else(|| AppError::Internal("Paste target unavailable".into()))?;
-                crate::infrastructure::windows_api::paste::release_window_keys(target).map_err(AppError::Internal)?;
+                crate::infrastructure::windows_api::paste::release_window_keys(target.as_ref()).map_err(AppError::Internal)?;
             }
             #[cfg(target_os = "linux")]
             crate::app::window_manager::release_win_keys();

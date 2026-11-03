@@ -209,6 +209,7 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
         let mut intent=StartupIntent::default();
         let mut held=None;
         let mut original_target=None;
+        let mut queued: Option<(i64, QueueTarget)> = None;
         while let Some(command)=read_line(&mut input)? {
             let operation=command["operation"].as_str().ok_or("OperationRequired")?;
             let result:Value=match operation {
@@ -282,6 +283,45 @@ fn main()->Result<(),Box<dyn std::error::Error>> {
                     let error=response.err().ok_or("ChangedGeneratedTargetUnexpectedlyAccepted")?;
                     require(error.kind()==io::ErrorKind::PermissionDenied && error.to_string()==serde_json::to_string(&WireErrorCode::Unavailable)?,"ExpectedHeldTargetRefusalRequired")?;
                     json!({"rejected":true,"error":error.to_string(),"inside_conservative_ttl":true,"same_connection_capability_rechecked":true,"clipboard_may_have_been_copied":true})
+                },
+                "queue-prepare" => {
+                    let fixed = checked_state(&mut client, &intent).await?;
+                    let base = json!({"service_instance_id":fixed.service_instance_id,"expected_epoch":fixed.privacy_epoch});
+                    let target: QueueTarget = client.call(Method::DesktopPasteTarget, &base, "QueueTarget").await?;
+                    let observed: WindowsPasteTarget = serde_json::from_value(command["target"].clone())?;
+                    require(observed.pid == target_pid && target.windows.as_ref() == Some(&observed), "OriginalQueueFixtureTargetRequired")?;
+                    let id = command["entry_id"].as_i64().filter(|id|*id>0).ok_or("SeedIdRequired")?;
+                    let mut set = base.clone();
+                    set["ids"] = json!([id]);
+                    let _: OperationResult = client.call(Method::DesktopQueueSet, set, "OperationResult").await?;
+                    let q: QueueState = client.call(Method::DesktopQueueGet, &base, "QueueState").await?;
+                    require(q.ids == [id] && !q.preferences.delete_after_paste && q.preferences.paste_method == "shift_insert", "QueueSetupMismatch")?;
+                    queued = Some((id, target));
+                    json!({"remaining":q.ids.len()})
+                },
+                "queue-step" => {
+                    let fixed = checked_state(&mut client, &intent).await?;
+                    let (id, target) = queued.as_ref().ok_or("OriginalQueueFixtureTargetRequired")?;
+                    let base = json!({"service_instance_id":fixed.service_instance_id,"expected_epoch":fixed.privacy_epoch});
+                    let q: QueueState = client.call(Method::DesktopQueueGet, &base, "QueueState").await?;
+                    require(q.ids == [*id], "QueueHeadChanged")?;
+                    let result = client.call::<QueueStepResult>(Method::DesktopQueueNext, QueueNextParams {
+                        service_instance_id:fixed.service_instance_id, expected_epoch:fixed.privacy_epoch,
+                        expected_revision:q.revision, target:target.clone(),
+                    }, "QueueStepResult").await;
+                    if command["expect_refused"].as_bool() == Some(true) {
+                        let error = result.err().ok_or("QueueChangedTargetAccepted")?;
+                        let code: WireErrorCode = serde_json::from_str(&error.to_string())?;
+                        require(code == WireErrorCode::Unavailable, "QueueChangedTargetNotRefused")?;
+                        let q: QueueState = client.call(Method::DesktopQueueGet, base, "QueueState").await?;
+                        require(q.ids == [*id], "RejectedQueueStepConsumedHead")?;
+                        json!({"refused":true,"remaining":q.ids.len()})
+                    } else {
+                        let step = result?;
+                        require(step.status=="pasted" && step.remaining==0 && step.id==Some(*id),"QueueStepIncomplete")?;
+                        queued = None;
+                        serde_json::to_value(step)?
+                    }
                 },
                 "stop"=>{
                     checked_state(&mut client,&intent).await?;

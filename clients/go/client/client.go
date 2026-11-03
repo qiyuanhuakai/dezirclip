@@ -9,6 +9,7 @@ import (
     "io"
     "net"
     "strconv"
+    "slices"
     "sync"
     "time"
 
@@ -22,6 +23,9 @@ func (err *RemoteError) Error() string { return string(err.Code) }
 type Client struct { conn net.Conn; mu sync.Mutex; sequence uint64; hello protocol.HelloResult }
 
 func Dial(ctx context.Context, address string, hello protocol.HelloParams) (*Client, error) {
+    if hello.ClientRole == protocol.ClientRoleDesktop && !slices.Contains(hello.Capabilities, "desktop.extended_methods") && len(hello.Capabilities) < 64 {
+        hello.Capabilities = append(slices.Clone(hello.Capabilities), "desktop.extended_methods")
+    }
     conn, err := dialLocal(ctx, address)
     if err != nil { return nil, err }
     return handshake(ctx, conn, hello)
@@ -46,7 +50,7 @@ func (client *Client) Call(ctx context.Context, method protocol.Method, params a
     deadline, ok := ctx.Deadline()
     limitDuration := 5 * time.Second
     switch method {
-    case protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview:
+    case protocol.MethodDesktopQueueNext, protocol.MethodDesktopOcrRecognize, protocol.MethodDesktopBackupImport, protocol.MethodDesktopBackupExport, protocol.MethodDesktopBackupPreview:
         limitDuration = 10 * time.Minute
     }
     if maximum := time.Now().Add(limitDuration); !ok || deadline.After(maximum) { deadline = maximum }

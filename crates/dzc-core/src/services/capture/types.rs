@@ -36,6 +36,8 @@ pub struct CaptureSettings {
     pub persistent: bool,
     pub deduplicate: bool,
     pub capture_files: bool,
+    #[serde(skip)]
+    pub sequential_mode: bool,
     pub capture_rich_text: bool,
     pub privacy_protection: bool,
     pub privacy_kinds: Vec<String>,

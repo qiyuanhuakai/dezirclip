@@ -129,6 +129,9 @@ mod desktop_protocol_tests {
         exercise_library(&mut client, database, &state.state).await?;
         #[cfg(target_os = "linux")]
         if std::env::var_os("DZC_TEST_XVFB_SCREEN").is_some() {
+            if let Some(target) = std::env::var_os("DZC_TEST_X11_QUEUE_TARGET") {
+                exercise_queue(&mut client, &state.state, Path::new(&target), capture).await?;
+            }
             exercise_screen(database, &mut client, &state.state, capture).await?;
         }
         Ok(())
@@ -311,6 +314,92 @@ mod desktop_protocol_tests {
             if output.status != "done" || !output.text.unwrap_or_default().to_uppercase().contains("DESKTOP") {
                 return Err("native OCR text did not match the fixture".into());
             }
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn exercise_queue(client: &mut Client, state: &RuntimeState, executable: &Path, capture: bool) -> Result<(), Box<dyn Error>> {
+        use std::{io::{BufRead, BufReader}, process::{Child, Command, Stdio}};
+        struct Window(Child, u32);
+        impl Window {
+            fn start(exe: &Path, method: &str, text: &str) -> Result<Self, Box<dyn Error>> {
+                let mut child = Command::new(exe).args([method, text]).stdout(Stdio::piped()).spawn()?;
+                let mut line = String::new();
+                BufReader::new(child.stdout.as_mut().ok_or("fixture stdout")?).read_line(&mut line)?;
+                Ok(Self(child, line.trim().strip_prefix("READY ").ok_or("fixture not ready")?.parse()?))
+            }
+        }
+        impl Drop for Window {
+            fn drop(&mut self) { let _ = self.0.kill(); let _ = self.0.wait(); }
+        }
+        let base = serde_json::json!({"service_instance_id":state.service_instance_id, "expected_epoch":state.privacy_epoch});
+        let desc: BodySnapshot = client.call(Method::DesktopHistoryPage, serde_json::json!({"query":"unrelated","limit":1,"offset":0}), "BodySnapshot").await?;
+        let page: DesktopEntries = client.read_snapshot(desc, "DesktopEntries").await?;
+        let id = page.entries.first().ok_or("queue source missing")?.id;
+        let mut set = base.clone();
+        set["ids"] = serde_json::json!([id, id]);
+        let _: OperationResult = client.call(Method::DesktopQueueSet, set, "OperationResult").await?;
+        for (index, method) in ["ctrl_v", "shift_insert"].into_iter().enumerate() {
+            for (key, value) in [("app.paste_method",method),("app.delete_after_paste",if index == 1 {"true"} else {"false"})] {
+                let mut config = base.clone();
+                config["key"] = key.into();
+                config["value"] = value.into();
+                let _: OperationResult = client.call(Method::DesktopQueueConfigure, config, "OperationResult").await?;
+            }
+            let mut window = Window::start(executable, method, "unrelated")?;
+            let dest: QueueTarget = client.call(Method::DesktopPasteTarget, &base, "QueueTarget").await?;
+            if dest.x11 != Some(window.1) {return Err("target identity mismatch".into());}
+            let mut q: QueueState = client.call(Method::DesktopQueueGet, &base, "QueueState").await?;
+            let mut next = base.clone();
+            next["target"] = serde_json::to_value(dest)?;
+            next["expected_revision"] = q.revision.into();
+            if index == 0 {
+                let decoy = Window::start(executable, method, "unrelated")?;
+                if client.call::<QueueStepResult>(Method::DesktopQueueNext, &next, "QueueStepResult").await.is_ok() {return Err("changed focus accepted".into());}
+                drop(decoy);
+                if !Command::new(executable).args(["--focus",&window.1.to_string()]).status()?.success() {return Err("fixture focus failed".into());}
+                q = client.call(Method::DesktopQueueGet, &base, "QueueState").await?;
+                if q.ids != [id,id] {return Err("failed paste consumed queue".into());}
+                next["expected_revision"] = q.revision.into();
+            }
+            let step: QueueStepResult = client.call(Method::DesktopQueueNext, &next, "QueueStepResult").await?;
+            if step.status != "pasted" || step.id != Some(id) || step.remaining as usize != 1-index || !window.0.wait()?.success() {
+                return Err("keystroke or queue delivery mismatch".into());
+            }
+            if client.call::<QueueStepResult>(Method::DesktopQueueNext, &next, "QueueStepResult").await.is_ok() {return Err("replayed queue step".into());}
+        }
+        let count: LibraryCount = client.call(Method::DesktopHistoryCount, &base, "LibraryCount").await?;
+        if count.count != 1 {return Err("delete-after-paste missed or deleted the wrong row".into());}
+        if capture {
+            use std::io::Write;
+            let mut config = base.clone();
+            config["key"] = "app.sequential_mode".into();
+            config["value"] = "true".into();
+            let _: OperationResult = client.call(Method::DesktopQueueConfigure, &config, "OperationResult").await?;
+            let mut owner = Command::new("xclip").args(["-selection","clipboard","-i"]).stdin(Stdio::piped())
+                .stdout(Stdio::null()).stderr(Stdio::null()).spawn()?;
+            owner.stdin.take().ok_or("fixture clipboard stdin")?.write_all(b"Queue RAM fixture")?;
+            if !owner.wait()?.success() {return Err("clipboard source failed".into());}
+            let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+            let q = loop {
+                let q: QueueState = client.call(Method::DesktopQueueGet, &base, "QueueState").await?;
+                if !q.ids.is_empty() {break q;}
+                if tokio::time::Instant::now() >= deadline {return Err("captured text did not enter the service queue".into());}
+                tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+            };
+            if q.ids.len() != 1 || q.ids[0] >= 0 {return Err("expected one RAM-only queue entry".into());}
+            let mut target = Window::start(executable, "shift_insert", "Queue RAM fixture")?;
+            let dest: QueueTarget = client.call(Method::DesktopPasteTarget, &base, "QueueTarget").await?;
+            let mut next = base.clone();
+            next["expected_revision"] = q.revision.into();
+            next["target"] = serde_json::to_value(dest)?;
+            let result: QueueStepResult = client.call(Method::DesktopQueueNext, next, "QueueStepResult").await?;
+            if result.status != "pasted" || result.id != Some(q.ids[0]) || !target.0.wait()?.success() {
+                return Err("RAM-only queue delivery failed".into());
+            }
+            config["value"] = "false".into();
+            let _: OperationResult = client.call(Method::DesktopQueueConfigure, config, "OperationResult").await?;
         }
         Ok(())
     }

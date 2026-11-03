@@ -10,7 +10,7 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetClassNameW, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
+    GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible,
     EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT,
 };
 
@@ -163,40 +163,7 @@ pub fn is_window_visible(hwnd: HWND) -> bool {
     unsafe { IsWindowVisible(hwnd).as_bool() }
 }
 
-pub(crate) fn is_system_focus_window(hwnd: HWND) -> bool {
-    if hwnd.0.is_null() {
-        return true;
-    }
-
-    let mut class_name = [0u16; 256];
-    let len = unsafe { GetClassNameW(hwnd, &mut class_name) };
-    let class_str = if len > 0 {
-        String::from_utf16_lossy(&class_name[..len as usize])
-    } else {
-        String::new()
-    };
-
-    matches!(
-        class_str.as_str(),
-        // Taskbar / tray / shell surfaces (these should NOT receive paste)
-        "Shell_TrayWnd"
-            | "Shell_SecondaryTrayWnd"
-            | "TrayNotifyWnd"
-            | "NotifyIconOverflowWindow"
-            | "ReBarWindow32"
-            | "MSTaskSwWClass"
-            // Note: Progman and WorkerW (desktop windows) are intentionally NOT filtered
-            // because users may need to paste when renaming files on the desktop
-            | "Button"
-            // System UI overlays that should NOT receive paste
-            | "ImmersiveLauncher"
-            | "ShellExperienceHost"
-            | "TaskSwitcherWnd"
-            | "MultitaskingViewFrame" // Note: Windows.UI.Core.CoreWindow, SearchUI, Cortana, XamlExplorerHostIslandWindow,
-                                      // and ApplicationFrameWindow are intentionally NOT filtered because users may need
-                                      // to paste in Windows search box and other UWP app input fields
-    )
-}
+pub(crate) use dzc_platform::windows_input::is_system_focus_window;
 
 unsafe extern "system" fn event_hook_callback(
     _h_win_event_hook: HWINEVENTHOOK,

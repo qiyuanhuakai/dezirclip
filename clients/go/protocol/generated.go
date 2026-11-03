@@ -316,6 +316,11 @@ const (
     MethodDesktopTagsDeleteContents Method = "desktop.tags.delete_contents"
     MethodDesktopTagsDeleteEntries Method = "desktop.tags.delete_entries"
     MethodDesktopHistoryCount Method = "desktop.history.count"
+    MethodDesktopPasteTarget Method = "desktop.paste.target"
+    MethodDesktopQueueGet Method = "desktop.queue.get"
+    MethodDesktopQueueSet Method = "desktop.queue.set"
+    MethodDesktopQueueNext Method = "desktop.queue.next"
+    MethodDesktopQueueConfigure Method = "desktop.queue.configure"
     MethodDesktopHistoryClear Method = "desktop.history.clear"
     MethodDesktopHistoryReorder Method = "desktop.history.reorder"
     MethodDesktopTagsCreate Method = "desktop.tags.create"
@@ -624,6 +629,49 @@ type PrivacyState struct {
 type PrivacySetParams struct {
     Active bool `json:"active"`
     DurationMs *uint64 `json:"duration_ms,omitempty"`
+}
+
+type QueueTarget struct {
+    Windows *WindowsPasteTarget `json:"windows,omitempty"`
+    X11 *uint32 `json:"x11,omitempty"`
+}
+
+type QueuePreferences struct {
+    Sequential bool `json:"sequential"`
+    DeleteAfterPaste bool `json:"delete_after_paste"`
+    PasteMethod string `json:"paste_method"`
+}
+
+type QueueState struct {
+    Ids []int64 `json:"ids"`
+    Revision string `json:"revision"`
+    Preferences QueuePreferences `json:"preferences"`
+}
+
+type QueueReplaceParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Ids []int64 `json:"ids"`
+}
+
+type QueueNextParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    ExpectedRevision string `json:"expected_revision"`
+    Target QueueTarget `json:"target"`
+}
+
+type QueueStepResult struct {
+    Status string `json:"status"`
+    Remaining uint32 `json:"remaining"`
+    Id *int64 `json:"id,omitempty"`
+}
+
+type QueueSettingParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
 }
 
 type ScreenPoint struct {

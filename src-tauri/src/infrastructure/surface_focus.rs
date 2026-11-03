@@ -249,6 +249,13 @@ pub(crate) fn present_tauri_with_time(window: &tauri::WebviewWindow, timestamp: 
         Ok(())
     })
 }
+#[cfg(target_os = "windows")]
+impl dzc_platform::windows_input::InputTarget for Target {
+    fn is_current(&self) -> bool { self.is_current() }
+    fn windows_handle(&self) -> windows::Win32::Foundation::HWND { self.windows_handle() }
+    fn windows_identity_current(&self) -> bool { self.windows_identity_current() }
+}
+
 impl Target {
     pub fn capture() -> Result<Self, String> {
         native::capture()

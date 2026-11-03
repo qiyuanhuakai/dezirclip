@@ -6,14 +6,14 @@ use tauri::State;
 #[tauri::command]
 pub async fn import_from_file(host: State<'_, DesktopHost>, path: String, mode: String, passphrase: Option<String>) -> Result<ImportSummaryResponse, String> {
     let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
-    host.backup(Method::DesktopBackupImport, BackupImportParams { service_instance_id: state.service_instance_id,
+    host.blocking_call(Method::DesktopBackupImport, BackupImportParams { service_instance_id: state.service_instance_id,
         expected_epoch: state.privacy_epoch, path, mode, passphrase }, "BackupImportResult").await
 }
 
 #[tauri::command]
 pub async fn preview_backup_file(host: State<'_, DesktopHost>, path: String) -> Result<Vec<BackupPreviewRow>, String> {
     let state: RuntimeState = host.call(Method::Health, serde_json::json!({}), "RuntimeState").await?;
-    let result: BackupPreview = host.backup(Method::DesktopBackupPreview, BackupPreviewParams {
+    let result: BackupPreview = host.blocking_call(Method::DesktopBackupPreview, BackupPreviewParams {
         service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, path
     }, "BackupPreview").await?;
     Ok(result.entries)

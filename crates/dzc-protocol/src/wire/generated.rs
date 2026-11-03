@@ -454,6 +454,16 @@ pub enum Method {
     DesktopTagsDeleteEntries,
     #[serde(rename = "desktop.history.count")]
     DesktopHistoryCount,
+    #[serde(rename = "desktop.paste.target")]
+    DesktopPasteTarget,
+    #[serde(rename = "desktop.queue.get")]
+    DesktopQueueGet,
+    #[serde(rename = "desktop.queue.set")]
+    DesktopQueueSet,
+    #[serde(rename = "desktop.queue.next")]
+    DesktopQueueNext,
+    #[serde(rename = "desktop.queue.configure")]
+    DesktopQueueConfigure,
     #[serde(rename = "desktop.history.clear")]
     DesktopHistoryClear,
     #[serde(rename = "desktop.history.reorder")]
@@ -883,6 +893,66 @@ pub struct PrivacySetParams {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueTarget {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub windows: Option<WindowsPasteTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x11: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueuePreferences {
+    pub sequential: bool,
+    pub delete_after_paste: bool,
+    pub paste_method: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueState {
+    pub ids: Vec<i64>,
+    pub revision: String,
+    pub preferences: QueuePreferences,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueReplaceParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueNextParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub expected_revision: String,
+    pub target: QueueTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueStepResult {
+    pub status: String,
+    pub remaining: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueueSettingParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub key: String,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

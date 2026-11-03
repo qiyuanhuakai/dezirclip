@@ -428,6 +428,23 @@ export async function runServicePaste(args, env = process.env) {
         unique_synthetic_payload: generatedText, actual_unique_generated_clipboard_copy: true,
         input: assertNoFixtureInput(before, after), history_before: historyBefore, history_after: historyAfter };
     });
+    await native.request('clear-target'); await native.request('activate-target');
+    const queueTarget = await native.request('snapshot');
+    await client.request('queue-prepare', { target: queueTarget.target, entry_id: seeded.seeded_ids[0] });
+    await native.request('activate-alternate');
+    const refused = await client.request('queue-step', { expect_refused: true });
+    const untouched = await native.request('snapshot');
+    assert.deepEqual(refused, { refused: true, remaining: 1 });
+    assert.equal(untouched.target_text, ''); assert.equal(untouched.alternate_text, '');
+    await native.request('activate-target');
+    const delivered = await client.request('queue-step');
+    const queueAfter = await pollRead('Service queue delivered complete target text', async remaining => {
+      const snapshot = await native.request('snapshot', {}, Math.max(1, remaining));
+      return snapshot.target_text === seedText ? snapshot : null;
+    });
+    assert.equal(queueAfter.alternate_text, '');
+    assert.equal(delivered.id, seeded.seeded_ids[0]); assert.equal(delivered.remaining, 0);
+    report.queue_acceptance = { refused, delivered, original_target_received_full_text: true };
     report.status = 'passed';
   } catch (error) { report.status = 'failed'; report.error = String(error.stack ?? error); }
   finally {

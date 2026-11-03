@@ -14,6 +14,17 @@ impl SqliteClipboardRepository {
         transaction.commit().map_err(database)
     }
 
+    pub(crate) fn queue_preferences(&self) -> CoreResult<(bool, bool, String)> {
+        let database = |error: rusqlite::Error| CoreError::from(error.to_string());
+        let conn = self.conn.lock().map_err(|_| CoreError::from("QueueSettingsUnavailable".to_owned()))?;
+        let mut query = conn.prepare("SELECT key,value FROM settings WHERE key IN ('app.sequential_mode','app.delete_after_paste','app.paste_method')").map_err(database)?;
+        let values: HashMap<String,String> = query.query_map([], |row| Ok((row.get(0)?,row.get(1)?))).map_err(database)?
+            .collect::<Result<_,_>>().map_err(database)?;
+        Ok((values.get("app.sequential_mode").is_some_and(|s| s == "true"),
+            values.get("app.delete_after_paste").is_some_and(|s| s == "true"),
+            values.get("app.paste_method").cloned().unwrap_or_else(|| "shift_insert".into())))
+    }
+
     pub(crate) fn reserved_shortcuts(&self) -> CoreResult<Vec<String>> {
         let connection = self.conn.lock().map_err(|_| CoreError::from("ShortcutSettingsUnavailable".to_owned()))?;
         let mut query = connection.prepare("SELECT value FROM settings WHERE key IN ('app.hotkey','app.quick_paste_hotkey','app.sequential_hotkey','app.rich_paste_hotkey','app.search_hotkey','app.screenshot_hotkey','app.screenshot_full_hotkey')")
@@ -26,7 +37,7 @@ impl SqliteClipboardRepository {
     }
     pub(crate) fn capture_settings_snapshot(&self) -> CoreResult<CaptureSettings> {
         let connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
-        let mut query = connection.prepare("SELECT key,value FROM settings WHERE key IN ('app.persistent','app.deduplicate','app.capture_files','app.capture_rich_text','app.privacy_protection','app.privacy_protection_kinds','app.privacy_protection_custom_rules','app.excluded_source_apps','app.ocr_enabled')").map_err(|error| CoreError::from(error.to_string()))?;
+        let mut query = connection.prepare("SELECT key,value FROM settings WHERE key IN ('app.persistent','app.deduplicate','app.capture_files','app.capture_rich_text','app.sequential_mode','app.privacy_protection','app.privacy_protection_kinds','app.privacy_protection_custom_rules','app.excluded_source_apps','app.ocr_enabled')").map_err(|error| CoreError::from(error.to_string()))?;
         let rows = query.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))).map_err(|error| CoreError::from(error.to_string()))?;
         let values: HashMap<String, String> = rows.collect::<Result<_, _>>().map_err(|error| CoreError::from(error.to_string()))?;
         if values.values().any(|value| value.len() > 64 * 1024) { return Err(CoreError::validation("CaptureSettingsTooLarge")); }
@@ -40,6 +51,7 @@ impl SqliteClipboardRepository {
         Ok(CaptureSettings {
             persistent: boolean("app.persistent", false)?, deduplicate: boolean("app.deduplicate", true)?,
             capture_files: boolean("app.capture_files", false)?, capture_rich_text: boolean("app.capture_rich_text", false)?,
+            sequential_mode: boolean("app.sequential_mode", false)?,
             privacy_protection: boolean("app.privacy_protection", true)?, ocr_enabled: boolean("app.ocr_enabled", true)?,
             privacy_kinds: value("app.privacy_protection_kinds", "phone,idcard,email,secret,password").split(',').map(str::trim).filter(|item| !item.is_empty()).map(str::to_owned).collect(),
             privacy_custom_rules: value("app.privacy_protection_custom_rules", "").lines().map(str::trim).filter(|item| !item.is_empty()).map(str::to_owned).collect(),
