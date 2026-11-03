@@ -1289,6 +1289,31 @@ def check_preview(button, atspi, pin=None):
                     box=atspi.Component.get_extents(item,atspi.CoordType.SCREEN)
                     if box.width>0 and box.height>0:
                         return box
+        def opacity_slider():
+            for item,name,interfaces,_ in mygo_nodes(atspi,desktop):
+                if name in ('Background opacity','背景不透明度') and 'Value' in interfaces:
+                    return atspi.Component.get_extents(item,atspi.CoordType.SCREEN)
+        def set_opacity(fraction):
+            slider=wait(opacity_slider,'No native opacity slider')
+            x,y=slider.x+int(slider.width*fraction),slider.y+slider.height//2
+            pointer.warp(screen,x,y)
+            screen.get_display().sync()
+            assert atspi.generate_mouse_event(x,y,'b1p')
+            try:
+                time.sleep(.15)
+            finally:
+                assert atspi.generate_mouse_event(x,y,'b1r')
+            def saved():
+                with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+                    value=int(db.execute("SELECT value FROM settings WHERE key='app.preview_opacity'").fetchone()[0])
+                return value if abs(value-100*fraction)<12 else None
+            return wait(saved,'Native opacity control did not persist through the Rust Host')
+        def matches_opacity(xid,percent):
+            win=GdkX11.X11Window.foreign_new_for_display(screen.get_display(),xid)
+            pixels=Gdk.pixbuf_get_from_window(win,win.get_width()-4,win.get_height()-4,1,1)
+            return pixels and pixels.get_has_alpha() and abs(pixels.get_pixels()[3]-round(percent*2.55))<=2
+        saved=set_opacity(.4)
+        wait(lambda:matches_opacity(preview_id,saved),'Hover background did not follow the native slider')
         close=wait(lambda:hover_button(('Close preview','关闭预览','關閉預覽')), 'Hover preview has no close button')
         click(close.x+close.width//2,close.y+close.height//2)
         wait(lambda:not visible(),'Hover close button did not dismiss the preview')
@@ -1296,6 +1321,7 @@ def check_preview(button, atspi, pin=None):
         pointer.warp(screen,rect.x+rect.width//2,rect.y+rect.height//2)
         screen.get_display().sync()
         preview_id,hover=preview_bounds()
+        wait(lambda:matches_opacity(preview_id,saved),'Reopened hover preview did not use committed opacity')
         pin_box=wait(lambda:hover_button(('Pin this preview','固定此预览','固定此預覽')), 'Hover preview has no pin button')
         x,y=pin_box.x+pin_box.width//2,pin_box.y+pin_box.height//2
         pointer.warp(screen,x,y)
@@ -1305,7 +1331,7 @@ def check_preview(button, atspi, pin=None):
         click(x,y)
         xid=wait(pinned_window,'Pin button did not create a resident preview')
         assert str(resident) in subprocess.check_output(['xprop','-id',str(xid),'_NET_WM_PID'],text=True)
-        assert '_NET_WM_STATE_ABOVE' in subprocess.check_output(['xprop','-id',str(xid),'_NET_WM_STATE'],text=True)
+        wait(lambda: '_NET_WM_STATE_ABOVE' in subprocess.check_output(['xprop','-id',str(xid),'_NET_WM_STATE'],text=True), 'Window manager did not pin the preview above other windows')
         main_xid=int(focus.split()[-1],16)
         main_pid=int(subprocess.check_output(['xprop','-id',str(main_xid),'_NET_WM_PID'],text=True).split()[-1])
         def close_window(window_id):
@@ -1322,6 +1348,9 @@ def check_preview(button, atspi, pin=None):
         close_window(main_xid)
         wait(lambda: not Path(f'/proc/{main_pid}').exists(), 'Main WebView process did not exit')
         assert pinned_window()==xid
+        wait(lambda:matches_opacity(xid,saved),'Pin did not inherit the hover opacity')
+        saved=set_opacity(.75)
+        wait(lambda:matches_opacity(xid,saved),'Pinned opacity failed after main WebView exit')
         def native_text(value):
             return next((i for i,n,_,t in mygo_nodes(atspi,desktop) if value in (n,t) or value in t),None)
         wait(lambda:native_text(marker),'Pinned native window did not retain the selected history')

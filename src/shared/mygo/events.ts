@@ -65,7 +65,11 @@ async function watchHost() {
           if (Number.isSafeInteger(count) && count >= 0) dispatch("paste-queue-changed", count);
         }
       }
-      if (settingsChanged) dispatch("settings-changed");
+      if (settingsChanged) {
+        dispatch("settings-changed");
+        dispatch("preview-preferences-changed");
+        void window.mygo.call("Preview.ReloadOpacity").catch(console.error);
+      }
       if (recovered || update.resync_required || previous?.history_revision !== update.state.history_revision) dispatch("clipboard-changed");
       previous = update.state;
     } catch {

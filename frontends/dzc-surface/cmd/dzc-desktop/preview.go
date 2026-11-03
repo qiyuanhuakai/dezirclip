@@ -25,6 +25,7 @@ type Preview struct {
 	main, window *mygo.Window
 	generation   uint64
 	cancel       context.CancelFunc
+	opacity      *previewOpacityControl
 }
 
 type previewPlacement struct {
@@ -98,6 +99,7 @@ func (*Preview) Layout(ctx context.Context) (previewLayout, error) {
 }
 
 func (p *Preview) clear() {
+	p.opacity = nil
 	if p.cancel != nil {
 		p.cancel()
 		p.cancel = nil
@@ -109,11 +111,11 @@ func (p *Preview) clear() {
 }
 
 type previewAppearance struct {
-	Pin, Close, Retry, Concealed, Failed              string
-	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom string
-	Opacity                                           int
-	Dark                                              bool
-	Background                                        *struct{ R, G, B uint8 }
+	Pin, Close, Retry, Concealed, Failed, OpacityLabel string
+	ZoomIn, ZoomOut, Fit, FitLabel, Actual, ImageZoom  string
+	Opacity                                            int
+	Dark                                               bool
+	Background                                         *struct{ R, G, B uint8 }
 }
 
 func (a previewAppearance) theme() *ui.Theme {
@@ -130,6 +132,14 @@ func (a previewAppearance) theme() *ui.Theme {
 
 func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState) {
 	p.selectEntry(ctx, sequence, id, state, false, nil, previewAppearance{Opacity: 65})
+}
+
+func (a previewAppearance) panel(c *ui.Context) ui.Element {
+	theme := a.theme()
+	background := theme.Background
+	theme.Background = background.Alpha(0)
+	c.SetTheme(theme)
+	return ui.Column(c).Fill().Background(background).Padding(10)
 }
 
 func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool, placement previewPlacement, appearance previewAppearance) {
@@ -237,6 +247,15 @@ func (body *previewBody) draw(c *ui.Context) {
 	}
 }
 
+func (p *Preview) ReloadOpacity(ctx context.Context) {
+	main := mygo.CallerWindow(ctx)
+	mygo.RunOnMain(func() {
+		if main != nil && main == p.main && p.opacity != nil {
+			p.opacity.reload()
+		}
+	})
+}
+
 func (p *Preview) PointerInside(ctx context.Context, sequence uint64) bool {
 	main := mygo.CallerWindow(ctx)
 	inside := false
@@ -288,11 +307,11 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 			return
 		}
 		anchor := mygo.Rectangle{X: frame.X - bounds.X, Y: frame.Y - bounds.Y}
-		theme := appearance.theme()
+		opacity := &previewOpacityControl{value: appearance.Opacity, slider: float64(appearance.Opacity), committed: appearance.Opacity, epoch: params.ExpectedEpoch, library: Library{p.owner}}
 		pinning, failed := false, false
 		p.window = mygo.NewFlyout(mygo.FlyoutOptions{Parent: main, Anchor: anchor, Width: frame.Width, Height: frame.Height, Hidden: true, Content: ui.View(func(c *ui.Context) {
-			c.SetTheme(theme)
-			ui.Column(c).Fill().Padding(10).Children(func() {
+			appearance.Opacity = opacity.value
+			appearance.panel(c).Children(func() {
 				ui.Row(c).FillWidth().Children(func() {
 					ui.Text(c, body.source).Grow(1)
 					if appearance.Close != "" && ui.Button(c, appearance.Close).Disabled(pinning).Clicked() {
@@ -321,12 +340,16 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 						}()
 					}
 				})
+				opacity.draw(c, appearance)
 				if failed {
 					ui.Text(c, appearance.Failed)
 				}
 				body.draw(c)
 			})
 		})})
+		opacity.window = p.window
+		p.opacity = opacity
+		opacity.reload()
 		p.window.SetTitle("DezirClip 悬浮预览")
 		p.window.ShowInactive()
 	})

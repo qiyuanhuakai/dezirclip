@@ -27,6 +27,7 @@ type pinnedPreview struct {
 	body      *previewBody
 	loading   bool
 	imageView pinnedImageView
+	opacity   previewOpacityControl
 }
 
 func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed func()) error {
@@ -43,6 +44,8 @@ func openPinnedPreview(owner *client.Client, ticket *pinPreviewRequest, closed f
 	width, height := min(360, area.Width), min(240, area.Height)
 	p.window = mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip 固定预览", Width: width, Height: height, Hidden: true,
 		Frameless: true, SkipTaskbar: true, Transparent: true, Content: ui.View(p.view)})
+	p.opacity = previewOpacityControl{value: ticket.Appearance.Opacity, slider: float64(ticket.Appearance.Opacity), committed: ticket.Appearance.Opacity, epoch: ticket.Params.ExpectedEpoch, library: Library{owner}, window: p.window}
+	p.opacity.reload()
 	p.window.OnClosed(func() { p.conceal(); closed() })
 	p.window.OnBlur(func() {
 		if p.ticket.Params.Reveal {
@@ -71,8 +74,8 @@ func (p *pinnedPreview) conceal() {
 
 func (p *pinnedPreview) view(c *ui.Context) {
 	a := p.ticket.Appearance
-	c.SetTheme(a.theme())
-	ui.Column(c).Fill().Padding(10).Children(func() {
+	a.Opacity = p.opacity.value
+	a.panel(c).Children(func() {
 		ui.Row(c).FillWidth().Children(func() {
 			label := "DezirClip"
 			if p.body != nil && p.body.source != "" {
@@ -83,6 +86,7 @@ func (p *pinnedPreview) view(c *ui.Context) {
 				p.window.Update(p.window.Close)
 			}
 		})
+		p.opacity.draw(c, a)
 		if p.body != nil {
 			if p.body.bitmap != nil {
 				p.imageView.draw(c, p.body.bitmap, a)
@@ -145,6 +149,7 @@ func (p *pinnedPreview) refresh(retry bool) {
 				p.conceal()
 				return
 			}
+			p.opacity.epoch = params.ExpectedEpoch
 			p.body = body
 			p.loading = false
 		})
@@ -157,12 +162,23 @@ func (p *pinnedPreview) refresh(retry bool) {
 			if err != nil || result.ResyncRequired || result.State.ServiceInstanceId != params.ServiceInstanceId || result.State.PrivacyEpoch != params.ExpectedEpoch {
 				return
 			}
+			changed := false
 			for _, event := range result.Events {
+				if event.Event == protocol.EventKindServiceStateChanged && event.Data.Status != nil && *event.Data.Status == "view_settings_changed" {
+					changed = true
+				}
 				if event.Event == protocol.EventKindPrivacyStateChanged || event.Event == protocol.EventKindHistoryReset ||
 					((event.Event == protocol.EventKindEntryDeleted || event.Event == protocol.EventKindEntryUpdated) &&
 						(event.Data.EntryId == nil || *event.Data.EntryId == params.Id)) {
 					return
 				}
+			}
+			if changed {
+				p.window.Update(func() {
+					if ctx.Err() == nil {
+						p.opacity.reload()
+					}
+				})
 			}
 			state = result.State
 		}

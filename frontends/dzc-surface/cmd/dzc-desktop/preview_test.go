@@ -169,3 +169,15 @@ func TestPinnedImageZoomAndPan(t *testing.T) {
 		t.Fatalf("fit did not reset image: %+v", v)
 	}
 }
+
+func TestPinnedWindowRepaintsBackground(t *testing.T) {
+	p := &pinnedPreview{ticket: pinPreviewRequest{Appearance: previewAppearance{Opacity: 40, Close: "Close", OpacityLabel: "Opacity"}}, opacity: previewOpacityControl{value: 40, slider: 40}, body: &previewBody{text: "content"}}
+	view := ui.NewTester(p.view, 360, 240)
+	before := view.Image().RGBAAt(350, 230)
+	p.opacity.value, p.opacity.slider = 77, 77
+	view.Frame()
+	after := view.Image().RGBAAt(350, 230)
+	if before.A != 102 || after.A != 196 {
+		t.Fatalf("expected alpha to change from 102 to 196, got %v -> %v", before, after)
+	}
+}
