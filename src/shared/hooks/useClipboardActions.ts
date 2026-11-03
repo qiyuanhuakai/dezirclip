@@ -1,6 +1,7 @@
 import { usePlatformCapabilities } from "./usePlatformCapabilities";
 import { useCallback } from "react";
 import { invoke } from "../lib/desktopInvoke";
+import { copyHistorySelection } from "../lib/copyHistorySelection";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ClipboardEntry } from "../types";
@@ -60,8 +61,6 @@ export const useClipboardActions = ({
       try {
         if (pending || failed) { pushToast(t("platform_capabilities_unavailable"), 3000); return; }
         if (report?.write.availability.status !== "available") { pushToast(t("wayland_unavailable"), 3000); return; }
-        const view = getPrivacyViewState();
-        if (import.meta.env.MODE === "mygo" && (view.phase !== "ready" || !view.snapshot)) throw new Error("PrivacyStateUnavailable");
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
@@ -75,19 +74,13 @@ export const useClipboardActions = ({
           pasteWithFormat,
           pasteImageAsBase64,
           expectedPrivacyEpoch,
-          ...(import.meta.env.MODE === "mygo" ? { viewEpoch: view.snapshot?.privacy_epoch } : {}),
           derivedFromId,
           ...entryInstanceArgs(hostInstanceId),
           moveToTop: !manualCopy && moveToTopAfterPaste
         };
-        const outcome = await invoke<unknown>("copy_to_clipboard", request);
-        if (import.meta.env.MODE === "mygo" && outcome === "target_required") {
-          const confirmed = await ask(t("paste_target_copy_prompt"), {
-            title: t("paste_target_missing"), okLabel: t("copy_only"), cancelLabel: t("cancel")
-          });
-          if (!confirmed) return;
-          await refreshPrivacyAfterConfirmation(request.expectedPrivacyEpoch ?? request.viewEpoch);
-          await invoke("copy_to_clipboard", { ...request, paste: false, deleteAfterUse: false, moveToTop: false });
+        const outcome = await copyHistorySelection(request, t);
+        if (outcome === "cancelled") return;
+        if (outcome === "copied") {
           pushToast(t("wayland_manual_copy_done"));
           return;
         }
