@@ -17,7 +17,7 @@ desktop = [
     "dep:window-vibrancy", "dep:machine-uid",
     "dep:dotenvy", "native-screen",
     "dep:windows-core", "dep:windows-future", "dep:windows-version",
-    "dep:winreg", "dep:webview2-com", "dep:x11-clipboard", "dep:ksni", "dep:gtk",
+    "dep:webview2-com", "dep:x11-clipboard", "dep:ksni", "dep:gtk",
     "dep:tauri-plugin-updater", "dep:reqwest", "dep:rustls",
 ]
 native-screen = ["dzc-host/native-screen"]
@@ -92,7 +92,7 @@ windows = { workspace = true }
 windows-core = { workspace = true, optional = true }
 windows-future = { workspace = true, optional = true }
 windows-version = { workspace = true, optional = true }
-winreg = { workspace = true, optional = true }
+winreg.workspace = true
 webview2-com = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

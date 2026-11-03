@@ -268,8 +268,10 @@ jobs:
         run: |
           $stage = Join-Path $env:RUNNER_TEMP 'mygo-test-package'
           $archive = Join-Path $env:RUNNER_TEMP "DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo.zip"
-          $files = 'dzc-desktop.exe', 'dzc-service.exe', 'dzc.exe' | ForEach-Object { Join-Path $stage $_ }
+          $files = 'dzc-desktop.exe', 'dzc-service.exe', 'dzc.exe', 'skills' | ForEach-Object { Join-Path $stage $_ }
           Compress-Archive -LiteralPath $files -DestinationPath $archive -CompressionLevel Optimal
+          python scripts/stage-mygo-windows.py --verify-archive $archive --output $stage
+          if ($LASTEXITCODE) { throw 'MyGo ZIP differs from the tested package' }
           $release = gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --json databaseId,isDraft,tagName | ConvertFrom-Json
           if ($LASTEXITCODE -or !$release.isDraft -or [string]$release.databaseId -ne $env:DZC_RELEASE_ID -or $release.tagName -cne $env:GITHUB_REF_NAME) {
             throw 'Expected the original draft release for this tag'

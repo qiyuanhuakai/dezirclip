@@ -1,10 +1,13 @@
 """Inspect the packaged MyGo WebView and copy a synthetic row in a private Xvfb session."""
 import json
 import ctypes
+import errno
 import os
 from pathlib import Path
 import secrets
+import runpy
 import select
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -536,6 +539,24 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         print('Verified selecting, visibly painting and clearing a custom background in the shared MyGo WebView')
         tray_settings(resident)
         full = open_settings_group('Tools', 'Full Screen Capture')
+        cli_path = executable.with_name('dzc')
+        wait_for(lambda: any(str(cli_path) in text for _, _, _, text in mygo_nodes(atspi, executable)),
+                 'Tools did not report the bundled Rust CLI')
+        if not shutil.which('dzc'):
+            add_path = wait_for(lambda: action('Add to PATH'), 'Tools did not offer to link the bundled CLI')
+            assert atspi.Action.do_action(add_path, 0)
+            link = Path(os.environ['HOME'])/'.local/bin/dzc'
+            wait_for(lambda: link.is_symlink() and link.resolve() == cli_path,
+                     'Tools did not link the bundled CLI in the isolated home')
+            print('Verified Add to PATH links the actual sibling CLI in the isolated home')
+        opened = Path(os.environ['HOME'])/'opened-guide'
+        for guide, label in [('dzc-cli', 'CLI workflows'), ('dezirclip-theme', 'Theme authoring')]:
+            button = wait_for(lambda: action(f'Open Skill folder: {label}'), f'{label} folder button unavailable')
+            assert atspi.Action.do_action(button, 0)
+            expected = executable.parent/'skills'/guide
+            wait_for(lambda: opened.is_file() and opened.read_text().strip() == str(expected),
+                     f'{label} button did not open the matching packaged guide')
+        print('Verified both guide buttons passed the packaged folders to the desktop opener')
         wait_for(lambda: any('MyGo Native' in text for _, _, _, text in mygo_nodes(atspi, executable)),
                  'Tools did not identify the resident Quick Paste renderer')
         print('Verified the real tray Settings action in both a new and an existing MyGo WebView')
@@ -716,6 +737,26 @@ if __name__ == '__main__':
                    'GTK_A11Y':'atspi', 'NO_AT_BRIDGE':'0'}
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
+            if '--pinned' in sys.argv[2:]:
+                package = home/'MyGo test package'
+                package.mkdir()
+                for binary in (desktop, desktop.with_name('dzc'), desktop.with_name('dzc-service')):
+                    try:
+                        os.link(binary, package/binary.name)
+                    except OSError as error:
+                        if error.errno != errno.EXDEV: raise
+                        shutil.copy2(binary, package/binary.name)
+                desktop = package/desktop.name
+                root = Path(__file__).resolve().parents[2]
+                for relative, source in runpy.run_path(str(root/'scripts/package-dzc.py'))['skill_files'](root).items():
+                    destination = package/relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, destination)
+                recorder = home/'bin/xdg-open'
+                recorder.parent.mkdir()
+                recorder.write_text('#!/bin/sh\nprintf "%s\\n" "$1" > "$HOME/opened-guide"\n')
+                recorder.chmod(0o700)
+                env['PATH'] = str(recorder.parent) + os.pathsep + env['PATH']
             subprocess.run(['xvfb-run', '-a', 'dbus-run-session', '--', sys.executable, __file__, desktop, path, *sys.argv[2:]],
                            env=env, check=True, timeout=105)
     else:

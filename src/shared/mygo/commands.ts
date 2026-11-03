@@ -158,6 +158,13 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "get_cli_info") return shellCall<T>("PackageTool", "info");
+  if (command === "add_cli_to_path") return shellCall<T>("PackageTool", "add-to-path");
+  if (command === "open_install_folder") return shellCall<T>("PackageTool", "open-install-folder");
+  if (command === "open_agent_skill_folder") {
+    if (args.skill !== "dzc-cli" && args.skill !== "dezirclip-theme") throw new Error("Unknown bundled guide");
+    return shellCall<T>("PackageTool", args.skill === "dzc-cli" ? "open-cli-guide" : "open-theme-guide");
+  }
   if (command === "get_data_path") return (await library<{data_directory: T}>("ProfileInfo")).data_directory;
   if (command === "open_data_folder") return library<T>("OpenDataFolder");
   if (command === "get_build_info") {

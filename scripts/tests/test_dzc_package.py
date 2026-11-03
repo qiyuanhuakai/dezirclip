@@ -25,6 +25,30 @@ def load(name, filename):
 
 package = load("dzc_package", "package-dzc.py")
 verify = load("dzc_package_verify", "verify-dzc-package.py")
+mygo = load("mygo_package", "stage-mygo-windows.py")
+
+
+class MyGoArchiveTests(unittest.TestCase):
+    def test_archive_requires_the_tested_executables_and_guide_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp) / "stage"
+            files = ["dzc.exe", "dzc-desktop.exe", "dzc-service.exe",
+                     "skills/dzc-cli/SKILL.md", "skills/dezirclip-theme/SKILL.md"]
+            archive = Path(tmp) / "package.zip"
+            with zipfile.ZipFile(archive, "w") as packed:
+                for name in files:
+                    source = stage / name
+                    source.parent.mkdir(parents=True, exist_ok=True)
+                    source.write_text(name)
+                    packed.write(source, name)
+            mygo.verify_archive(archive, stage)
+            (stage / files[-1]).write_text("different guide")
+            with self.assertRaisesRegex(ValueError, "different bytes"):
+                mygo.verify_archive(archive, stage)
+            with zipfile.ZipFile(archive, "a") as packed:
+                packed.writestr("extra.exe", b"")
+            with self.assertRaisesRegex(ValueError, "file list"):
+                mygo.verify_archive(archive, stage)
 
 
 def executable_header(platform):

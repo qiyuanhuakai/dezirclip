@@ -23,10 +23,7 @@ type desktopEndpoint struct {
 	Version     string
 }
 
-// OpenDesktop discovers the profile using the bundled sibling CLI so portable
-// profiles, redirected storage and current-session naming follow Rust exactly.
-// On first launch the desktop can opt in to starting its sibling Service.
-func OpenDesktop(ctx context.Context, version string, startIfMissing bool) (*Client, error) {
+func bundledCLI(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -39,14 +36,25 @@ func OpenDesktop(ctx context.Context, version string, startIfMissing bool) (*Cli
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
+	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(executable), name), args...)
+	cmd.SysProcAttr = desktopCLIProcessAttrs()
+	return cmd, nil
+}
+
+// OpenDesktop discovers the profile using the bundled sibling CLI so portable
+// profiles, redirected storage and current-session naming follow Rust exactly.
+// On first launch the desktop can opt in to starting its sibling Service.
+func OpenDesktop(ctx context.Context, version string, startIfMissing bool) (*Client, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	args := []string{"service", "desktop-endpoint"}
 	if startIfMissing {
 		args = append(args, "--start-if-missing")
 	}
-	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(executable), name), args...)
-	cmd.SysProcAttr = desktopCLIProcessAttrs()
+	cmd, err := bundledCLI(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

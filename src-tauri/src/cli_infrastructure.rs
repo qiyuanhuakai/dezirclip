@@ -1,3 +1,9 @@
+#[path = "infrastructure/cli_path.rs"]
+mod cli_path;
+
+#[path = "infrastructure/desktop_tools.rs"]
+pub mod desktop_tools;
+
 #[path = "infrastructure/encryption.rs"]
 pub mod encryption;
 

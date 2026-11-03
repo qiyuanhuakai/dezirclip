@@ -38,6 +38,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Local package operations used by the sibling MyGo desktop.
+    #[command(hide = true)]
+    DesktopTools { #[arg(value_enum)] action: DesktopTool },
     /// Explicitly manage the optional per-user Host service.
     Service(cli::service::ServiceArgs),
     /// Start, stop or query the shared privacy session without a GUI.
@@ -632,8 +635,43 @@ fn main() {
     }
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum DesktopTool {
+    Info,
+    AddToPath,
+    OpenInstallFolder,
+    OpenCliGuide,
+    OpenThemeGuide,
+}
+
+fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
+    use dezirclip::infrastructure::desktop_tools::{self, AgentSkill};
+    let cli = std::env::current_exe().map_err(|e| e.to_string())?;
+    let directory = cli.parent().ok_or("install folder not found")?;
+    let guide = |skill: AgentSkill| {
+        let path = directory.join("skills").join(skill.name());
+        path.join("SKILL.md").is_file().then_some(path)
+    };
+    let response = match action {
+        DesktopTool::Info => serde_json::to_value(desktop_tools::cli_info(Some(cli.clone()), guide)),
+        DesktopTool::AddToPath => serde_json::to_value(desktop_tools::install_cli_path(Some(cli))?),
+        DesktopTool::OpenInstallFolder | DesktopTool::OpenCliGuide | DesktopTool::OpenThemeGuide => {
+            let folder = match action {
+                DesktopTool::OpenCliGuide => guide(AgentSkill::DzcCli),
+                DesktopTool::OpenThemeGuide => guide(AgentSkill::DezirclipTheme),
+                _ => Some(directory.to_owned()),
+            }.ok_or("bundled guide not found")?;
+            desktop_tools::open_folder(&folder).map_err(|e| e.to_string())?;
+            Ok(serde_json::Value::Null)
+        }
+    }.map_err(|e| e.to_string())?;
+    println!("{response}");
+    Ok(())
+}
+
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
+        Commands::DesktopTools { action } => return run_desktop_tool(action),
         Commands::BuildInfo { json } => {
             let info = dezirclip::protocol::build_info::BuildInfo::current_with_host(
                 dezirclip::protocol::build_info::Component::Cli, dezirclip::api::DATABASE_SCHEMA_VERSION);
@@ -685,7 +723,8 @@ fn run(args: Cli) -> Result<(), String> {
             let selected = cli::tui::run(&options, clip_repo.as_ref(), tag_repo.as_ref())?;
             finish_selection(selected, &options, clip_repo.as_ref())
         }
-        Commands::BuildInfo { .. }
+        Commands::DesktopTools { .. }
+        | Commands::BuildInfo { .. }
         | Commands::Capabilities { .. }
         | Commands::Mcp {..}
         | Commands::Theme(_)

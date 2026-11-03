@@ -75,6 +75,20 @@ def visible_file(path, base):
     )
 
 
+def skill_files(repository):
+    files = {}
+    for name in ("dzc-cli", "dezirclip-theme"):
+        skill = repository / "skills" / name
+        for path in sorted(skill.rglob("*")):
+            if visible_file(path, skill):
+                files[f"skills/{name}/{path.relative_to(skill).as_posix()}"] = path
+    for required in ("skills/dzc-cli/SKILL.md", "skills/dezirclip-theme/SKILL.md",
+                     "skills/dezirclip-theme/assets/forest.theme.json"):
+        if required not in files:
+            raise ValueError(f"missing matching distribution resource: {required}")
+    return files
+
+
 def archive_files(binary, platform, repository):
     files = {
         "dzc.exe" if platform.startswith("windows-") else "dzc": binary,
@@ -94,14 +108,9 @@ def archive_files(binary, platform, repository):
                 or (len(relative.parts) == 1 and (path.suffix == ".py"
                     or path.name == "README.md" or path.name.startswith("requirements")))):
             files[f"integrations/{relative.as_posix()}"] = path
-    for name in ("dzc-cli", "dezirclip-theme"):
-        skill = repository / "skills" / name
-        for path in sorted(skill.rglob("*")):
-            if visible_file(path, skill):
-                files[f"skills/{name}/{path.relative_to(skill).as_posix()}"] = path
+    files.update(skill_files(repository))
     for required in ("integrations/dzc-integrations.py", "integrations/README.md",
-                     "integrations/dzc_integrations/__main__.py", "skills/dzc-cli/SKILL.md",
-                     "skills/dezirclip-theme/SKILL.md", "skills/dezirclip-theme/assets/forest.theme.json"):
+                     "integrations/dzc_integrations/__main__.py"):
         if required not in files:
             raise ValueError(f"missing matching distribution resource: {required}")
     for name, path in files.items():

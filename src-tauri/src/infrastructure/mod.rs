@@ -1,5 +1,4 @@
 pub mod encryption;
-pub mod cli_path;
 pub mod data_paths;
 pub mod image_preview_file;
 pub mod process_memory;

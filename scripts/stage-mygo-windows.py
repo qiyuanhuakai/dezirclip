@@ -3,14 +3,33 @@ import argparse
 import hashlib
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import zipfile
 
 
 def report(command, env=None):
     return json.loads(subprocess.check_output(command, env=env, timeout=30, text=True, encoding="utf-8"))
+
+
+def verify_archive(archive, stage):
+    expected = {path.relative_to(stage).as_posix(): path for path in stage.rglob("*") if path.is_file()}
+    required = {"dzc.exe", "dzc-desktop.exe", "dzc-service.exe",
+                "skills/dzc-cli/SKILL.md", "skills/dezirclip-theme/SKILL.md"}
+    if not required.issubset(expected):
+        raise ValueError("Staged MyGo distribution is missing executables or guides")
+    with zipfile.ZipFile(archive) as package:
+        entries = [entry for entry in package.infolist() if not entry.is_dir()]
+        names = [entry.filename.replace("\\", "/") for entry in entries]
+        if len(names) != len(expected) or set(names) != set(expected):
+            raise ValueError("MyGo ZIP file list differs from the staged distribution")
+        for name, entry in zip(names, entries):
+            with package.open(entry) as packed, expected[name].open("rb") as source:
+                if hashlib.file_digest(packed, "sha256").digest() != hashlib.file_digest(source, "sha256").digest():
+                    raise ValueError(f"MyGo ZIP has different bytes for {name}")
 
 
 def stage(root, output, revision, version):
@@ -24,6 +43,16 @@ def stage(root, output, revision, version):
     shutil.copy2(root / "artifacts/dzc-desktop" / target / desktop.name, desktop)
     for binary in (cli, service):
         shutil.copy2(root / "target/release" / binary.name, binary)
+    resources = runpy.run_path(str(root / "scripts/package-dzc.py"))["skill_files"](root)
+    for relative, source in resources.items():
+        destination = output / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    tools = report([cli, "desktop-tools", "info"])
+    if (Path(tools["cli_path"]) != cli or tools["cli_version"] != version
+            or Path(tools["skill_path"]) != output / "skills/dzc-cli"
+            or Path(tools["theme_skill_path"]) != output / "skills/dezirclip-theme"):
+        raise RuntimeError("Packaged desktop tools did not identify its CLI and both bundled guides")
     for role, command in (
         ("mygo-desktop", [desktop, "--build-info"]),
         ("cli", [cli, "build-info", "--json"]),
@@ -57,9 +86,14 @@ def stage(root, output, revision, version):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--revision", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--revision")
+    mode.add_argument("--verify-archive", type=Path)
     parser.add_argument("--tag", help="For a tagged release, require the manifest to match this tag")
     args = parser.parse_args()
+    if args.verify_archive:
+        verify_archive(args.verify_archive, args.output)
+        raise SystemExit(0)
     root = Path(__file__).resolve().parents[1]
     version = json.loads((root / "package.json").read_text(encoding="utf-8"))["version"]
     if args.tag is not None and args.tag != "v" + version:

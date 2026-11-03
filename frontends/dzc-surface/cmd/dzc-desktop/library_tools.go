@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -11,6 +12,10 @@ import (
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
+
+func (*DesktopShell) PackageTool(ctx context.Context, action string) (json.RawMessage, error) {
+	return client.PackageTool(ctx, action)
+}
 
 func (l *Library) Background(ctx context.Context, epoch uint64, expected string) (*string, error) {
 	var result protocol.BackgroundResource
