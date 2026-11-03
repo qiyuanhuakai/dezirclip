@@ -10,7 +10,15 @@ export default defineConfig(async ({ mode }) => {
   const shellModule = (name: string) => fileURLToPath(new URL(`./src/shared/mygo/${name}.ts`, import.meta.url));
 
   return {
-    plugins: [react()],
+    plugins: [react(), ...(mygo ? [{
+      name: "mygo-local-content",
+      transformIndexHtml() {
+        return [{ tag: "meta", injectTo: "head-prepend" as const, attrs: {
+          "http-equiv": "Content-Security-Policy",
+          content: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+        } }];
+      },
+    }] : [])],
     resolve: { alias: mygo ? {
       "@tauri-apps/api/app": shellModule("app"),
       "@tauri-apps/plugin-dialog": shellModule("dialog"),

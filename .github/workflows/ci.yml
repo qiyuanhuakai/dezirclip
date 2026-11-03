@@ -320,7 +320,6 @@ jobs:
           cache: pnpm
 
       - name: Prepare actual frontend for native Surface acceptance
-        if: matrix.can_test
         run: |
           pnpm install --frozen-lockfile
           pnpm run build
@@ -520,6 +519,8 @@ jobs:
         shell: pwsh
         run: |
           pnpm run build:mygo:web
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm run desktop:mygo:build --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

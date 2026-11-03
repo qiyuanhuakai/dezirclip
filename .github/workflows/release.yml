@@ -209,6 +209,55 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: gh release upload "${GITHUB_REF_NAME}" artifacts/dzc/* --clobber
 
+  windows-x64-mygo:
+    name: Windows x64 MyGo test download
+    if: github.event_name == 'push'
+    needs: create-release
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set up Go for the Windows x64 MyGo test package
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: |
+            clients/go/go.sum
+            frontends/dzc-surface/go.sum
+
+      - name: Build and verify standalone Windows x64 MyGo desktop
+        shell: pwsh
+        run: |
+          pnpm run build:mygo:web
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm run desktop:mygo:build --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --tag "$env:GITHUB_REF_NAME" --output "$env:RUNNER_TEMP/mygo-test-package"
+
+      - name: Upload independent Windows x64 MyGo test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DezirClip-${{ github.ref_name }}-windows-x64-MyGo
+          path: ${{ runner.temp }}/mygo-test-package/
+          if-no-files-found: error
+          retention-days: 30
+
   publish-tauri:
     name: Tauri release (${{ matrix.name }})
     if: github.event_name == 'push'
@@ -310,36 +359,6 @@ jobs:
 
       - name: Set release version
         run: pnpm run release:set-version ${{ github.ref_name }}
-
-      - name: Set up Go for the Windows x64 MyGo test package
-        if: matrix.name == 'windows-x86_64'
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.27.3'
-          cache-dependency-path: |
-            clients/go/go.sum
-            frontends/dzc-surface/go.sum
-
-      - name: Build and verify standalone Windows x64 MyGo desktop
-        if: matrix.name == 'windows-x86_64'
-        shell: pwsh
-        run: |
-          pnpm run build:mygo:web
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          pnpm run desktop:mygo:build --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --tag "$env:GITHUB_REF_NAME" --output "$env:RUNNER_TEMP/mygo-test-package"
-
-      - name: Upload independent Windows x64 MyGo test package
-        if: matrix.name == 'windows-x86_64'
-        uses: actions/upload-artifact@v4
-        with:
-          name: DezirClip-${{ github.ref_name }}-windows-x64-MyGo
-          path: ${{ runner.temp }}/mygo-test-package/
-          if-no-files-found: error
-          retention-days: 30
 
       - name: Publish Tauri bundles
         uses: tauri-apps/tauri-action@v0
