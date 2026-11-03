@@ -38,14 +38,52 @@ func (*DesktopShell) SystemThemeMode(context.Context) string {
 var setComposition = windows.NewLazySystemDLL("user32.dll").NewProc("SetWindowCompositionAttribute")
 
 var (
-	user32         = windows.NewLazySystemDLL("user32.dll")
-	windowDPI      = user32.NewProc("GetDpiForWindow")
-	cursorPosition = user32.NewProc("GetPhysicalCursorPos")
-	cursorMonitor  = user32.NewProc("MonitorFromRect")
-	monitorInfo    = user32.NewProc("GetMonitorInfoW")
-	windowRect     = user32.NewProc("GetWindowRect")
-	moveWindow     = user32.NewProc("SetWindowPos")
+	user32           = windows.NewLazySystemDLL("user32.dll")
+	windowDPI        = user32.NewProc("GetDpiForWindow")
+	cursorPosition   = user32.NewProc("GetPhysicalCursorPos")
+	cursorMonitor    = user32.NewProc("MonitorFromRect")
+	monitorInfo      = user32.NewProc("GetMonitorInfoW")
+	windowRect       = user32.NewProc("GetWindowRect")
+	moveWindow       = user32.NewProc("SetWindowPos")
+	mouseButtonState = user32.NewProc("GetAsyncKeyState")
 )
+
+func dockingAvailable() bool { return true }
+
+func readDockSample(w *mygo.Window) (dockSample, bool) {
+	// Keep all three rectangles/points in physical pixels even across mixed-DPI displays.
+	type rect struct{ left, top, right, bottom int32 }
+	var bounds rect
+	var point struct{ x, y int32 }
+	if ok, _, _ := windowRect.Call(w.NativeHandle(), uintptr(unsafe.Pointer(&bounds))); ok == 0 {
+		return dockSample{}, false
+	}
+	if ok, _, _ := cursorPosition.Call(uintptr(unsafe.Pointer(&point))); ok == 0 {
+		return dockSample{}, false
+	}
+	monitor, _, _ := cursorMonitor.Call(uintptr(unsafe.Pointer(&bounds)), 2)
+	var info struct {
+		size         uint32
+		bounds, work rect
+		flags        uint32
+	}
+	info.size = uint32(unsafe.Sizeof(info))
+	if ok, _, _ := monitorInfo.Call(monitor, uintptr(unsafe.Pointer(&info))); ok == 0 {
+		return dockSample{}, false
+	}
+	rectOf := func(r rect) mygo.Rectangle {
+		return mygo.Rectangle{X: int(r.left), Y: int(r.top), Width: int(r.right - r.left), Height: int(r.bottom - r.top)}
+	}
+	sample := dockSample{window: rectOf(bounds), monitor: rectOf(info.bounds), cursor: mygo.Point{X: int(point.x), Y: int(point.y)}}
+	for _, button := range []uintptr{1, 2, 4} {
+		state, _, _ := mouseButtonState.Call(button)
+		if state&0x8000 != 0 {
+			sample.pressed = true
+			break
+		}
+	}
+	return sample, true
+}
 
 func mainWindowScale(w *mygo.Window) float64 {
 	dpi, _, _ := windowDPI.Call(w.NativeHandle())

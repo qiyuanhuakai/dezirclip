@@ -41,6 +41,7 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int capacity);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr window, uint attribute, out uint value, uint size);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
@@ -100,10 +101,43 @@ function Get-ControlPoint($root, [string]$Name) {
     } "Control missing from the shared WebView2 accessibility tree: $Name"
 }
 
-function Get-GpuCheckbox($root) {
-    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Disable WebView GPU')
+function Get-SettingsCheckbox($root, [string]$Label = 'Disable WebView GPU') {
+    $name = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $Label)
     $type = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::ControlTypeProperty, [Windows.Automation.ControlType]::CheckBox)
     $root.FindFirst([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.AndCondition]::new($type, $name))
+}
+
+function Test-EdgeDocking($Main, $Root) {
+    if (!(Get-SettingsCheckbox $Root 'Edge Docking')) { Click-Control $Main (Get-ControlPoint $Root 'General Settings') }
+    $box = Wait-Until { Get-SettingsCheckbox $Root 'Edge Docking' } 'Edge docking setting unavailable'
+    $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+    $window = $Main.MainWindowHandle
+    $screen = [Windows.Forms.Screen]::FromHandle($window).Bounds
+    $before = [MyGoInput+Rect]::new()
+    if (![MyGoInput]::GetWindowRect($window, [ref]$before)) { throw 'Cannot read initial window bounds' }
+    $left = $screen.Right - ($before.right - $before.left)
+    $top = $screen.Top + 60
+    $insideY = $top + 80
+    $null = [MyGoInput]::SetCursorPos($screen.Right - 25, $insideY)
+    if (![MyGoInput]::SetWindowPos($window, [IntPtr]::Zero, $left, $top, 0, 0, 0x15)) { throw 'Cannot position the test window at the right edge' }
+    $toggle.Toggle()
+    $null = Wait-Until { $toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::On } 'Edge docking setting did not turn on'
+    $null = [MyGoInput]::SetCursorPos($screen.Left + 20, $insideY)
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($window) } 'Windows edge docking did not retract the WebView'
+    $null = [MyGoInput]::SetCursorPos($screen.Right - 1, $screen.Top + 10)
+    Start-Sleep -Milliseconds 550
+    if ([MyGoInput]::IsWindowVisible($window)) { throw 'Unrelated edge position revealed the WebView' }
+    $null = [MyGoInput]::SetCursorPos($screen.Right - 1, $insideY)
+    $null = Wait-Until { [MyGoInput]::IsWindowVisible($window) } 'Moving onto the original edge did not reveal the WebView'
+    $box = Wait-Until { Get-SettingsCheckbox $Root 'Edge Docking' } 'Settings did not resume after the window returned'
+    $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+    $toggle.Toggle()
+    $null = Wait-Until { $toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::Off } 'Edge docking setting did not turn off'
+    $null = [MyGoInput]::SetCursorPos($screen.Left + 20, $insideY)
+    Start-Sleep -Milliseconds 1100
+    if (![MyGoInput]::IsWindowVisible($window)) { throw 'Disabled edge docking still retracted the WebView' }
+    $null = [MyGoInput]::SetWindowPos($window, [IntPtr]::Zero, $before.left, $before.top, 0, 0, 0x15)
+    Write-Output 'Verified WebView2 edge docking from Settings, right-edge retraction, bounded reveal and disabling'
 }
 
 function Get-WebViewBrowser($main) {
@@ -338,8 +372,8 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         $originalHost = (& $cli service status --json | ConvertFrom-Json).state.service_instance_id
         if ($LASTEXITCODE -or !$originalHost) { throw 'Cannot identify Service before GPU change' }
         foreach ($disabled in @($true, $false)) {
-            if (!(Get-GpuCheckbox $root)) { Click-Control $main (Get-ControlPoint $root 'General Settings') }
-            $box = Wait-Until { Get-GpuCheckbox $root } 'GPU setting not available'
+            if (!(Get-SettingsCheckbox $root)) { Click-Control $main (Get-ControlPoint $root 'General Settings') }
+            $box = Wait-Until { Get-SettingsCheckbox $root } 'GPU setting not available'
             $toggle = $box.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
             if (($toggle.Current.ToggleState -eq [Windows.Automation.ToggleState]::On) -eq $disabled) {
                 throw 'Unexpected GPU setting before changing it'
@@ -366,6 +400,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             if ($LASTEXITCODE -or $currentHost -cne $originalHost) { throw 'GPU change replaced the Rust Service' }
         }
         Write-Output 'Verified both GPU changes on replacement WebView2 browsers with the same native resident and Rust Service'
+        Test-EdgeDocking $main $root
         Click-Control $main (Get-ControlPoint $root 'Tools')
         Test-RegisteredCli $root $cli
         $point = Get-ControlPoint $root 'Full Screen Capture'

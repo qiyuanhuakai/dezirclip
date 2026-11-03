@@ -5,13 +5,62 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/ebitengine/purego"
 	"github.com/egoist/mygo"
 )
 
 func mainWindowScale(w *mygo.Window) float64 {
 	return mygo.Screen.DisplayMatching(w.Bounds()).ScaleFactor
+}
+
+func dockingAvailable() bool {
+	services, ok := os.LookupEnv("DEZIRCLIP_DISABLE_LINUX_SERVICES")
+	if !ok {
+		services = os.Getenv("TIEZ_DISABLE_LINUX_SERVICES")
+	}
+	for _, service := range strings.FieldsFunc(services, func(r rune) bool { return r == ',' || r == ';' || r == ' ' }) {
+		if strings.EqualFold(service, "edge_docking") || strings.EqualFold(service, "all") {
+			return false
+		}
+	}
+	_, wayland := os.LookupEnv("WAYLAND_DISPLAY")
+	_, socket := os.LookupEnv("WAYLAND_SOCKET")
+	return !wayland && !socket && !strings.EqualFold(os.Getenv("XDG_SESSION_TYPE"), "wayland")
+}
+
+// GDK reports modifier and mouse-button state against the same root coordinates as GTK.
+var dockPointer = sync.OnceValue(func() func() (mygo.Point, bool, bool) {
+	lib, err := purego.Dlopen("libgdk-3.so.0", purego.RTLD_NOW|purego.RTLD_LOCAL)
+	if err != nil {
+		return nil
+	}
+	var rootWindow func() uintptr
+	var pointer func(uintptr, *int32, *int32, *uint32) uintptr
+	purego.RegisterLibFunc(&rootWindow, lib, "gdk_get_default_root_window")
+	purego.RegisterLibFunc(&pointer, lib, "gdk_window_get_pointer")
+	return func() (mygo.Point, bool, bool) {
+		root := rootWindow()
+		if root == 0 {
+			return mygo.Point{}, false, false
+		}
+		var x, y int32
+		var mask uint32
+		pointer(root, &x, &y, &mask)
+		return mygo.Point{X: int(x), Y: int(y)}, mask&(7<<8) != 0, true
+	}
+})
+
+func readDockSample(w *mygo.Window) (dockSample, bool) {
+	read := dockPointer()
+	if read == nil {
+		return dockSample{}, false
+	}
+	p, pressed, ok := read()
+	bounds := w.Bounds()
+	return dockSample{window: bounds, monitor: mygo.Screen.DisplayMatching(bounds).Bounds, cursor: p, pressed: pressed}, ok
 }
 
 func configureSoftwareWebview(child *exec.Cmd) {

@@ -5234,6 +5234,7 @@
             "app.preview_keyboard_enabled",
             "app.silent_start",
             "app.hide_tray_icon",
+            "app.edge_docking",
             "app.follow_mouse",
             "app.disable_webview_gpu",
             "app.sound_enabled",

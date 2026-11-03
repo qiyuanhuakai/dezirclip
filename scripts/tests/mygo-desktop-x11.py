@@ -646,6 +646,44 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
             assert follow.get_state_set().contains(atspi.StateType.CHECKED) and atspi.Action.do_action(follow, 0)
             wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.follow_mouse'").fetchone() == ('false',)
                      and not follow.get_state_set().contains(atspi.StateType.CHECKED), 'Follow Mouse setting did not persist')
+            dock = wait_for(lambda: find_item('Edge Docking'), 'Edge Docking checkbox missing')
+            window = wait_for(settings_window, 'Cannot identify window for docking')
+            screen = Gdk.Screen.get_default()
+            pointer = screen.get_display().get_default_seat().get_pointer()
+            original = window.get_frame_extents()
+            pointer.warp(screen, 50, 170)
+            window.move(0,140)
+            screen.get_display().sync()
+            wait_for(lambda: window.get_frame_extents().x <= 5, 'Test window did not reach left edge')
+            assert atspi.Action.do_action(dock, 0)
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.edge_docking'").fetchone() == ('true',),
+                     'Edge docking preference not committed')
+            assert atspi.generate_mouse_event(50, 170, 'b1p')
+            try:
+                pointer.warp(screen, screen.get_width()-15, 170)
+                screen.get_display().sync()
+                time.sleep(1.1)
+                assert visible_main_window(resident, executable), 'Docked during a mouse drag'
+            finally:
+                assert atspi.generate_mouse_event(screen.get_width()-15, 170, 'b1r')
+            wait_for(lambda: not visible_main_window(resident, executable), 'Left-edge window did not retract')
+            pointer.warp(screen, 1, 20)
+            screen.get_display().sync()
+            time.sleep(.4)
+            assert not visible_main_window(resident, executable), 'Unrelated part of screen edge revealed the window'
+            pointer.warp(screen, 1, 180)
+            screen.get_display().sync()
+            wait_for(lambda: visible_main_window(resident, executable), 'Hover did not restore the docked window')
+            assert atspi.Action.do_action(wait_for(lambda: find_item('Edge Docking'), 'Restored settings missing'), 0)
+            wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.edge_docking'").fetchone() == ('false',),
+                     'Turning off docking did not persist')
+            pointer.warp(screen, screen.get_width()-15,180)
+            screen.get_display().sync()
+            time.sleep(1)
+            assert visible_main_window(resident, executable), 'Disabled docking still concealed the window'
+            window.move(original.x,original.y)
+            screen.get_display().sync()
+            print('Verified native edge docking from Settings, mouse drag suppression, bounded edge reveal and disabling')
             for hidden in [True, False]:
                 assert atspi.Action.do_action(hide_tray, 0)
                 wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hide_tray_icon'").fetchone() == (str(hidden).lower(),)

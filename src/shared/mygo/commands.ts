@@ -38,6 +38,7 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  set_edge_docking: args => shellCall("SetEdgeDocking", args.enabled, currentEpoch()),
   set_tray_visible: args => shellCall("SetTrayVisible", args.visible, currentEpoch()),
   set_sound_enabled: args => library("SetSetting", "app.sound_enabled", String(args.enabled), currentEpoch()),
   set_follow_mouse: args => library("SetSetting", "app.follow_mouse", String(args.enabled), currentEpoch()),

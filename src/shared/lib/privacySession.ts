@@ -128,6 +128,9 @@ const onFocus = () => {
   if (document.hidden) { onDomHidden(); return; }
   const preparing = hiddenPreparation.current();
   if (preparing) {
+    // A native show/focus pair can arrive while the resumed main window is
+    // still reading its Host identity. Its owner finishes that check first.
+    if (!preparing.releaseOnFocus) return;
     const started = lifecycle;
     void getCurrentWindow().isVisible().then(visible => {
       if (started !== lifecycle || revision !== visibilityRevision || !visible || document.hidden
@@ -370,6 +373,7 @@ export async function prepareMainWindowResume(requestIsCurrent: () => boolean) {
   const { snapshot, stamp } = await readMainStatus();
   if (!lease.isCurrent() || !requestIsCurrent()) throw new Error("PrivacyEpochChanged");
   acceptMainStatus(snapshot, stamp);
+  lease.allowFocusRelease();
   await releaseVisiblePreparation(lease);
   if (!requestIsCurrent() || started !== lifecycle || !listFence.isCurrent(token) || viewSuspended || model.phase !== "ready") throw new Error("PrivacyStateUnavailable");
   const access = beginPrivacyAccess("list");

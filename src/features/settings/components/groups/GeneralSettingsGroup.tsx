@@ -95,6 +95,8 @@ const GeneralSettingsGroup = ({
     const [loginError, setLoginError] = useState("");
     const [traySaving, setTraySaving] = useState(false);
     const [trayError, setTrayError] = useState("");
+    const [dockSaving, setDockSaving] = useState(false);
+    const [dockError, setDockError] = useState("");
     const [gpuSaving, setGpuSaving] = useState(false);
     const [gpuError, setGpuError] = useState("");
     const [soundSaving, setSoundSaving] = useState(false);
@@ -219,14 +221,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={edgeDocking}
-                            onChange={(e) => {
-                                const val = e.target.checked;
-                                setEdgeDocking(val);
-                                invoke("set_edge_docking", { enabled: val }).catch(console.error);
+                            aria-label={t('edge_docking')}
+                            disabled={dockSaving}
+                            onChange={async (e) => {
+                                const enabled = e.target.checked;
+                                setDockSaving(true);
+                                setDockError("");
+                                try {
+                                    await invoke("set_edge_docking", { enabled });
+                                    setEdgeDocking(enabled);
+                                } catch (error) {
+                                    setDockError(String(error));
+                                } finally {
+                                    setDockSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {dockError && <span role="alert">{dockError}</span>}
                 </div>
 
                 <div className="setting-item">

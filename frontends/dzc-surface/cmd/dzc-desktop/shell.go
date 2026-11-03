@@ -14,6 +14,7 @@ import (
 )
 
 type DesktopShell struct {
+	dock            edgeDock
 	resident        residentBridge
 	settingsPending atomic.Bool
 }
@@ -137,17 +138,23 @@ func (d fileDialog) nativeFilters() []mygo.FileFilter {
 	return filters
 }
 
-func (*DesktopShell) Open(ctx context.Context, options fileDialog) ([]string, error) {
+func (s *DesktopShell) Open(ctx context.Context, options fileDialog) ([]string, error) {
+	s.dock.dialogs.Add(1)
+	defer s.dock.dialogs.Add(-1)
 	return mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: mygo.CallerWindow(ctx), Title: options.Title,
 		DefaultPath: options.DefaultPath, Directory: options.Directory, Multiple: options.Multiple, Filters: options.nativeFilters()})
 }
 
-func (*DesktopShell) Save(ctx context.Context, options fileDialog) (string, error) {
+func (s *DesktopShell) Save(ctx context.Context, options fileDialog) (string, error) {
+	s.dock.dialogs.Add(1)
+	defer s.dock.dialogs.Add(-1)
 	return mygo.Dialog.Save(mygo.SaveDialogOptions{Parent: mygo.CallerWindow(ctx), Title: options.Title,
 		DefaultPath: options.DefaultPath, Filters: options.nativeFilters()})
 }
 
-func (*DesktopShell) Message(ctx context.Context, text, title string, kind mygo.MessageType, labels []string, cancel int) (int, error) {
+func (s *DesktopShell) Message(ctx context.Context, text, title string, kind mygo.MessageType, labels []string, cancel int) (int, error) {
+	s.dock.dialogs.Add(1)
+	defer s.dock.dialogs.Add(-1)
 	result, err := mygo.Dialog.Message(mygo.MessageOptions{Parent: mygo.CallerWindow(ctx), Title: title, Message: text,
 		Type: kind, Buttons: labels, CancelButton: cancel})
 	return result.Button, err
