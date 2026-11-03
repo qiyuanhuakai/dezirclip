@@ -66,7 +66,7 @@ export const useClipboardActions = ({
           document.activeElement.blur();
         }
 
-        await invoke("copy_to_clipboard", {
+        const request = {
           content,
           contentType,
           paste: !manualCopy,
@@ -79,7 +79,18 @@ export const useClipboardActions = ({
           derivedFromId,
           ...entryInstanceArgs(hostInstanceId),
           moveToTop: !manualCopy && moveToTopAfterPaste
-        });
+        };
+        const outcome = await invoke<unknown>("copy_to_clipboard", request);
+        if (import.meta.env.MODE === "mygo" && outcome === "target_required") {
+          const confirmed = await ask(t("paste_target_copy_prompt"), {
+            title: t("paste_target_missing"), okLabel: t("copy_only"), cancelLabel: t("cancel")
+          });
+          if (!confirmed) return;
+          await refreshPrivacyAfterConfirmation(request.expectedPrivacyEpoch ?? request.viewEpoch);
+          await invoke("copy_to_clipboard", { ...request, paste: false, deleteAfterUse: false, moveToTop: false });
+          pushToast(t("wayland_manual_copy_done"));
+          return;
+        }
 
         if (!manualCopy && moveToTopAfterPaste && !deleteAfterPaste) {
           const now = Date.now();
@@ -92,7 +103,7 @@ export const useClipboardActions = ({
 
         if (manualCopy) pushToast(t("wayland_manual_copy_done"));
         else setSearch("");
-        if (import.meta.env.MODE === "mygo" && !manualCopy && !isWindowPinned) await invoke("hide_window_cmd");
+        if (import.meta.env.MODE === "mygo" && !manualCopy && !isWindowPinned) await invoke("hide_window_cmd").catch(console.error);
       } catch (err) {
         const errorMsg = t("copy_failed") + (err?.toString() || "");
         pushToast(errorMsg, 3000);

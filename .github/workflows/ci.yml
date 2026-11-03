@@ -409,6 +409,7 @@ jobs:
         run: |
           cp "artifacts/dzc-desktop/$(rustc --print host-tuple)/dzc-desktop" target/debug/dzc-desktop
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pinned
 
       - name: Verify shared MyGo WebView2 paste into an independent Windows editor
         if: runner.os == 'Windows' && matrix.can_test

@@ -283,6 +283,7 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                methods.push("desktop.window.pin");
                 if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
                     methods.extend(["desktop.window.target", "desktop.window.paste"]);
                 }
@@ -511,6 +512,12 @@ impl Host {
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
             Method::DesktopWindowTarget => self.remember_window_target(session),
+            Method::DesktopWindowPin => {
+                let input: WindowPinParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.set_window_pinned(input.pinned, input.expected_epoch).map_err(privacy_error)?;
+                result("OperationResult", OperationResult { performed: true })
+            }
             Method::DesktopWindowPaste => self.paste_from_window(session, params(request.params)?),
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),

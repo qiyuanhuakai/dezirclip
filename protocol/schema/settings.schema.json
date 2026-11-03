@@ -8,6 +8,16 @@
       "required": ["values"],
       "additionalProperties": false
     },
+    "WindowPinParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
+        "pinned": { "type": "boolean" }
+      },
+      "required": ["service_instance_id", "expected_epoch", "pinned"],
+      "additionalProperties": false
+    },
     "CaptureSettingParams": {
       "type": "object",
       "properties": {

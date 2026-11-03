@@ -418,6 +418,8 @@ pub enum Method {
     DesktopPlatformProbe,
     #[serde(rename = "desktop.window.target")]
     DesktopWindowTarget,
+    #[serde(rename = "desktop.window.pin")]
+    DesktopWindowPin,
     #[serde(rename = "desktop.tools.catalog")]
     DesktopToolsCatalog,
     #[serde(rename = "desktop.tools.classify")]
@@ -1105,6 +1107,14 @@ pub struct ScreenPreferences {
 #[serde(deny_unknown_fields)]
 pub struct DesktopPreferences {
     pub values: serde_json::Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowPinParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

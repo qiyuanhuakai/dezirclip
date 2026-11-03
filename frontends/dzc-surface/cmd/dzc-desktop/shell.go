@@ -27,7 +27,25 @@ func (*DesktopShell) IsFocused(ctx context.Context) bool {
 	return w != nil && w.IsFocused()
 }
 
+func (*DesktopShell) Focus(ctx context.Context) error {
+	w := mygo.CallerWindow(ctx)
+	if w == nil || !w.IsVisible() {
+		return errors.New("WindowUnavailable")
+	}
+	w.Focus()
+	return nil
+}
+
 func (*DesktopShell) Version() string { return buildinfo.Version }
+
+func (*DesktopShell) SetAlwaysOnTop(ctx context.Context, pinned bool) error {
+	w := mygo.CallerWindow(ctx)
+	if w == nil {
+		return errors.New("WindowUnavailable")
+	}
+	w.SetAlwaysOnTop(pinned)
+	return nil
+}
 
 func (*DesktopShell) OpenURL(raw string) error {
 	link, err := url.Parse(raw)

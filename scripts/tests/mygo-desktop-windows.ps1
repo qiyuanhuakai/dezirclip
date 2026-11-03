@@ -47,7 +47,7 @@ try {
     $form.Activate()
     $null = $edit.Focus()
     $null = Wait-Until { $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'Editor did not acquire foreground'
-    $resident = Start-Process -FilePath $exe -PassThru
+    $resident = Start-Process -FilePath $exe -RedirectStandardError (Join-Path $dir.FullName 'desktop.log') -PassThru
     $main = Wait-Until {
         if ($resident.HasExited) { throw 'Resident exited during startup' }
         Get-Process -Name dzc-desktop -ErrorAction SilentlyContinue | Where-Object {
@@ -76,6 +76,21 @@ try {
     $null = Wait-Until { $main.HasExited } 'Unpinned WebView2 main window did not exit'
     if ($resident.HasExited) { throw 'Native resident exited with the main window' }
     Write-Output 'Verified shared WebView2 row click, exact clipboard and editor text, restored focus, and independent native resident'
+} catch {
+    $failure = $_
+    Write-Host ("Editor length={0}, exact={1}, focused={2}, foreground={3}, editor window={4}" -f
+        $edit.Text.Length, ($edit.Text -ceq $marker), $edit.Focused, [MyGoInput]::GetForegroundWindow(), $form.Handle)
+    try {
+      if ($main -and !$main.HasExited -and $root) {
+        $names = $root.FindAll([Windows.Automation.TreeScope]::Descendants, [Windows.Automation.Condition]::TrueCondition) |
+            ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -Last 40
+        Write-Host ("Synthetic main-window accessibility tree: " + ($names -join ' | '))
+      }
+      Write-Host ("Clipboard matches selected entry: " + ([Windows.Forms.Clipboard]::GetText() -ceq $marker))
+    } catch { Write-Host ("Diagnostic query failed: " + $_.Exception.Message) }
+    $log = Join-Path $dir.FullName 'desktop.log'
+    if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
+    throw $failure
 } finally {
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
     & $cli service stop | Out-Null

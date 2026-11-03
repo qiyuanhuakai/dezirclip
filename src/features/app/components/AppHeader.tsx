@@ -134,8 +134,7 @@ const AppHeader = ({
           title={t(desktopInteractions ? 'pin' : pending ? 'platform_capabilities_checking' : failed ? 'platform_capabilities_unavailable' : 'wayland_interaction_unavailable')}
           onClick={() => {
             const newVal = !isWindowPinned;
-            setIsWindowPinned(newVal);
-            invoke("set_window_pinned", { pinned: newVal }).catch(console.error);
+            invoke("set_window_pinned", { pinned: newVal }).then(() => setIsWindowPinned(newVal)).catch(console.error);
           }}
         >
           {isWindowPinned ? <PinOff size={16} /> : <Pin size={16} />}

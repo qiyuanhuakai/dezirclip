@@ -172,6 +172,12 @@ func (l *Library) ClearHistory(ctx context.Context, epoch uint64) error {
 	})
 }
 
+func (l *Library) SetWindowPinned(ctx context.Context, pinned bool, epoch uint64) error {
+	return l.edit(ctx, protocol.MethodDesktopWindowPin, protocol.WindowPinParams{
+		ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Pinned: pinned,
+	})
+}
+
 func (l *Library) ReorderPins(ctx context.Context, pairs [][2]int64, epoch uint64) error {
 	orders := make([]protocol.LibraryPinOrder, len(pairs))
 	for i, pair := range pairs {

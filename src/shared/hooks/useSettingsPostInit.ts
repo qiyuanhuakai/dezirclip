@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import type { MutableRefObject } from "react";
 import { resolveRichTextSnapshotCacheLimit } from "../lib/richTextSnapshotCache";
 import { setRichTextSnapshotCacheLimit as setRichTextSnapshotCacheLimitInModule } from "../lib/richTextSnapshot";
@@ -204,7 +204,7 @@ export const useSettingsPostInit = ({
 
     if (settings["app.window_pinned"] === "true") {
       setIsWindowPinned(true);
-      invoke("set_window_pinned", { pinned: true }).catch(console.error);
+      invoke(import.meta.env.MODE === "mygo" ? "restore_window_pinned" : "set_window_pinned", { pinned: true }).catch(console.error);
     }
 
     setSettingsLoaded(true);

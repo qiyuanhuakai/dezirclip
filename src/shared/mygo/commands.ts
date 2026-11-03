@@ -29,6 +29,10 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  set_window_pinned: async args => {
+    await library("SetWindowPinned", args.pinned, currentEpoch());
+    return window.mygo.call("DesktopShell.SetAlwaysOnTop", args.pinned);
+  },
   delete_clipboard_entry: args => mutateEntry(args, "delete"),
   toggle_clipboard_pin: args => mutateEntry(args, "pin", { pinned: args.isPinned }),
   update_tags: args => mutateEntry(args, "tags", { tags: args.tags }),
@@ -78,6 +82,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "restore_window_pinned") return window.mygo.call<T>("DesktopShell.SetAlwaysOnTop", args.pinned);
+  if (command === "activate_window_focus") return window.mygo.call<T>("DesktopShell.Focus");
   if (command === "hide_window_cmd") return window.mygo.call<T>("mygo:window.Close");
   if (command === "get_platform_capabilities") return library<T>("Platform");
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);

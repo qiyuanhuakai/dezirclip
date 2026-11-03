@@ -20,7 +20,11 @@ impl HistoryService {
             _ => false,
         };
         if !valid { return Err(super::CoreError::validation("QueueSettingsInvalid")); }
-        self.repository.set_capture_setting(key, value, epoch)
+        self.repository.set_setting_at_epoch(key, value, epoch)
+    }
+
+    pub fn set_window_pinned(&self, pinned: bool, epoch: u64) -> CoreResult<()> {
+        self.repository.set_setting_at_epoch("app.window_pinned", if pinned { "true" } else { "false" }, epoch)
     }
 
     pub fn is_capture_setting(key: &str) -> bool {
@@ -38,7 +42,7 @@ impl HistoryService {
         if !list && !matches!(value, "true" | "false") {
             return Err(CoreError::validation("CaptureSettingsInvalid"));
         }
-        self.repository.set_capture_setting(key, value, epoch)
+        self.repository.set_setting_at_epoch(key, value, epoch)
     }
 
     /// Existing desktop accelerators reserved by this profile. This fixed list

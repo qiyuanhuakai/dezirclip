@@ -180,7 +180,51 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row)
         x11.XCloseDisplay(display)
 
 
-def check(desktop):
+def check_pinned(row, atspi, gtk, marker, target, editor):
+    def wait_for(check, message):
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            while gtk.events_pending(): gtk.main_iteration_do(False)
+            result = check()
+            if result: return result
+            time.sleep(.04)
+        raise AssertionError(message)
+
+    def find_button(name):
+        pending = [atspi.get_desktop(0)]
+        while pending:
+            item = pending.pop()
+            if item is None: continue
+            if item.get_name() == name and 'Action' in item.get_interfaces(): return item
+            pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
+
+    main = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
+    assert '_NET_WM_STATE_ABOVE' in subprocess.check_output(['xprop','-id',main,'_NET_WM_STATE'], text=True)
+    bounds = atspi.Component.get_extents(row, atspi.CoordType.SCREEN)
+    def click():
+        assert atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'b1c')
+    click()
+    wait_for(lambda: target.is_active() and editor.get_text() == marker, 'First pinned paste failed')
+    assert subprocess.run(['xwininfo','-id',main], capture_output=True).returncode == 0
+    # Change the clipboard without adding another history row to the no-capture fixture.
+    from gi.repository import Gdk
+    clipboard = gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+    sentinel = 'pending manual copy'
+    clipboard.set_text(sentinel, -1)
+    click()
+    cancel = wait_for(lambda: find_button('取消'), 'Missing explicit copy confirmation')
+    assert atspi.Action.do_action(cancel, 0)
+    wait_for(lambda: find_button('取消') is None, 'Cancel did not dismiss confirmation')
+    assert clipboard.wait_for_text() == sentinel and editor.get_text() == marker
+    click()
+    accept = wait_for(lambda: find_button('仅复制'), 'Missing copy-only action')
+    assert atspi.Action.do_action(accept, 0)
+    wait_for(lambda: clipboard.wait_for_text() == marker, 'Confirmed copy did not write selected content')
+    assert editor.get_text() == marker
+    print('Verified native pinned window, first delivery, cancellation, and a separately confirmed copy without replay')
+
+
+def check(desktop, pinned):
     import gi
     gi.require_version('Atspi', '2.0')
     gi.require_version('Gtk', '3.0')
@@ -191,6 +235,10 @@ def check(desktop):
     subprocess.run([cli, 'add', marker], check=True, stdout=subprocess.DEVNULL)
     with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
         db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
+        if pinned:
+            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.window_pinned','true')")
+    if pinned:
+        subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True, stdout=subprocess.DEVNULL)
     target = Gtk.Window(title='Independent paste target')
     editor = Gtk.Entry()
     target.add(editor)
@@ -237,6 +285,9 @@ def check(desktop):
                 print('Verified shared React main window: image filter excluded the live text fixture and text filter restored it', flush=True)
                 filter_stage = 3
             if filter_stage == 3 and row and has_marker:
+                if pinned:
+                    check_pinned(row, Atspi, Gtk, marker, target, editor)
+                    return
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.
                 time.sleep(32)
@@ -298,7 +349,7 @@ def check_preview(button, atspi):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2:
+    if len(sys.argv) == 2 or sys.argv[2] == '--pinned':
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -309,7 +360,7 @@ if __name__ == '__main__':
                    'GTK_A11Y':'atspi', 'NO_AT_BRIDGE':'0'}
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
-            subprocess.run(['xvfb-run', '-a', 'dbus-run-session', '--', sys.executable, __file__, desktop, path],
+            subprocess.run(['xvfb-run', '-a', 'dbus-run-session', '--', sys.executable, __file__, desktop, path, *sys.argv[2:]],
                            env=env, check=True, timeout=105)
     else:
         home = Path(sys.argv[2]).resolve(strict=True)
@@ -323,7 +374,7 @@ if __name__ == '__main__':
                     ['xprop', '-root', '_NET_SUPPORTING_WM_CHECK'], text=True):
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
-            check(desktop)
+            check(desktop, '--pinned' in sys.argv[3:])
         finally:
             wm.terminate()
             wm.wait(timeout=5)

@@ -43,7 +43,7 @@ impl SqliteClipboardRepository {
             |row| Ok((row.get::<_, String>(0)? == "true", row.get(1)?)))
             .map_err(|error| CoreError::from(error.to_string()))
     }
-    pub(crate) fn set_capture_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
+    pub(crate) fn set_setting_at_epoch(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
         let database = |error: rusqlite::Error| CoreError::from(error.to_string());
         let mut connection = self.conn.lock().map_err(|_| CoreError::from("CaptureSettingsUnavailable".to_owned()))?;
         let transaction = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(database)?;

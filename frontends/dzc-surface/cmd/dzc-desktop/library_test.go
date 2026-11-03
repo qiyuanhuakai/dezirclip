@@ -57,6 +57,9 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("isolated status: %+v %v", status, err)
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
+	if err := library.SetWindowPinned(ctx, true, epoch); err != nil {
+		t.Fatal(err)
+	}
 	var updated protocol.OperationResult
 	if err := owner.DesktopCall(ctx, protocol.MethodDesktopSettingsCaptureSet, protocol.CaptureSettingParams{
 		ServiceInstanceId: instance, ExpectedEpoch: epoch, Key: "app.capture_files", Value: "false",
@@ -65,7 +68,7 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	preferences, err := library.Preferences(ctx)
 	var settings map[string]string
-	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.capture_files"] != "false" {
+	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.capture_files"] != "false" || settings["app.window_pinned"] != "true" {
 		t.Fatalf("desktop preferences: %s %v", preferences, err)
 	}
 	file := filepath.Join(profile, "backup.json")
@@ -96,11 +99,14 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	history := History{actions: owner, events: fresh}
 	paste := protocol.DesktopCopyParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance, Paste: true}
-	err = history.CopyEntry(ctx, paste)
+	_, err = history.CopyEntry(ctx, paste)
 	fresh.Close()
 	var remote *client.RemoteError
 	if !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeNotFound {
 		t.Fatalf("paste without this connection's foreground target: %v", err)
+	}
+	if outcome, err := history.CopyEntry(ctx, paste); err != nil || outcome != "target_required" {
+		t.Fatalf("consumed target must require a new user action: %q %v", outcome, err)
 	}
 	counts, err := library.TagCounts(ctx, epoch)
 	var tags map[string]int

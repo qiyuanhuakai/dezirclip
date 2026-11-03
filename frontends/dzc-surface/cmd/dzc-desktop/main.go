@@ -121,24 +121,25 @@ func (h *History) rememberTarget(ctx context.Context) {
 	}
 }
 
-func (h *History) CopyEntry(ctx context.Context, params protocol.DesktopCopyParams) error {
+func (h *History) CopyEntry(ctx context.Context, params protocol.DesktopCopyParams) (string, error) {
 	if params.ServiceInstanceId != h.actions.Hello().State.ServiceInstanceId || params.Id == 0 {
-		return client.ErrProtocol
+		return "", client.ErrProtocol
 	}
 	if params.Paste {
 		h.eventMu.Lock()
 		defer h.eventMu.Unlock()
 		if h.events == nil || h.targetInvalid.Swap(true) {
-			return client.ErrProtocol
+			// No paste was dispatched. Only this outcome may offer a new copy-only action.
+			return "target_required", nil
 		}
-		return h.events.PasteWindowSelection(ctx, params)
+		return "completed", h.events.PasteWindowSelection(ctx, params)
 	}
 	var result protocol.OperationResult
 	err := h.actions.DesktopCall(ctx, protocol.MethodDesktopClipboardCopy, params, "OperationResult", &result)
 	if err == nil && !result.Performed {
-		return client.ErrProtocol
+		return "", client.ErrProtocol
 	}
-	return err
+	return "completed", err
 }
 
 func run() error {

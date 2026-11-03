@@ -299,6 +299,7 @@ const (
     MethodDesktopHistorySummary Method = "desktop.history.summary"
     MethodDesktopPlatformProbe Method = "desktop.platform.probe"
     MethodDesktopWindowTarget Method = "desktop.window.target"
+    MethodDesktopWindowPin Method = "desktop.window.pin"
     MethodDesktopToolsCatalog Method = "desktop.tools.catalog"
     MethodDesktopToolsClassify Method = "desktop.tools.classify"
     MethodDesktopToolsTransform Method = "desktop.tools.transform"
@@ -779,6 +780,12 @@ type ScreenPreferences struct {
 
 type DesktopPreferences struct {
     Values json.RawMessage `json:"values"`
+}
+
+type WindowPinParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Pinned bool `json:"pinned"`
 }
 
 type CaptureSettingParams struct {
