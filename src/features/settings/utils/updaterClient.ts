@@ -1,5 +1,6 @@
 import { getVersion } from "@tauri-apps/api/app";
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
+import { Channel } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AUTO_UPDATE_DELAY_MS, automaticCheckDue, readUpdatePreferences, updateAttemptKey, updateErrorKey } from "./updatePolicy";
 import type { UpdateChannel } from "./updatePolicy";

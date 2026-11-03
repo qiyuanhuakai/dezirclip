@@ -5235,6 +5235,8 @@
             "app.rich_text_snapshot_cache_limit",
             "app.arrow_key_selection",
             "app.preview_keyboard_enabled",
+            "app.update_auto_check",
+            "app.update_channel",
             "app.silent_start",
             "app.hide_tray_icon",
             "app.edge_docking",

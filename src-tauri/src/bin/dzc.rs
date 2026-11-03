@@ -637,6 +637,8 @@ fn main() {
 
 #[derive(Clone, Copy, clap::ValueEnum)]
 enum DesktopTool {
+    UpdateSupport,
+    EvaluateUpdate,
     Info,
     AddToPath,
     OpenInstallFolder,
@@ -658,6 +660,21 @@ fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
         path.join("SKILL.md").is_file().then_some(path)
     };
     let response = match action {
+        DesktopTool::UpdateSupport => {
+            use dezirclip::domain::update::{UpdateSupport, UpdateInstallation};
+            serde_json::to_value(UpdateSupport::new(UpdateInstallation::Portable))
+        }
+        DesktopTool::EvaluateUpdate => {
+            use std::io::Read;
+            use dezirclip::domain::update::check_manual_indexes;
+            let mut bytes = Vec::new();
+            const LIMIT: u64 = 2 * 256 * 1024 + 1024;
+            std::io::stdin().take(LIMIT + 1).read_to_end(&mut bytes).map_err(|_| "update_invalid_manifest")?;
+            if bytes.len() as u64 > LIMIT { return Err("update_invalid_manifest".into()); }
+            let input = serde_json::from_slice(&bytes).map_err(|_| "update_invalid_manifest")?;
+            let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| "update_invalid_version")?;
+            serde_json::to_value(check_manual_indexes(input, &version, std::env::consts::OS, std::env::consts::ARCH)?)
+        }
         DesktopTool::InstalledApps => serde_json::to_value(dzc_platform::apps::scan_installed_apps().map_err(|e| e.to_string())?),
         DesktopTool::DefaultApps => {
             let mut names = serde_json::Map::new();

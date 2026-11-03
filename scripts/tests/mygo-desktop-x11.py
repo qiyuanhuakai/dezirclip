@@ -344,8 +344,8 @@ def visible_main_window(resident_pid, executable):
 
 
 def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
-    def wait_for(check, message):
-        deadline = time.monotonic() + 8
+    def wait_for(check, message, timeout=8):
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             while gtk.events_pending(): gtk.main_iteration_do(False)
             result = check()
@@ -590,6 +590,20 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         wait_for(lambda: find_item(family, text=True), 'New WebView did not restore the selected font family')
         print('Verified saved theme, color mode, language and installed UI font selection in a newly opened WebView')
         details = open_settings_group('About', 'View build details')
+        wait_for(lambda: find_item('Portable copies need manual updates. Get the full package for your platform from the release page, keep the data directory, then replace program files.', text=True),
+                 'MyGo ZIP manual update guidance missing')
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            for label, key, value in [('STABLE','app.update_channel','stable'), ('PREVIEW','app.update_channel','preview'),
+                                      ('Check for updates automatically','app.update_auto_check','true'),
+                                      ('Check for updates automatically','app.update_auto_check','false')]:
+                control = wait_for(lambda: find_item(label), label)
+                assert atspi.Action.do_action(control, 0)
+                wait_for(lambda: db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone() == (value,),
+                         'Updater setting did not reach the Service')
+        assert atspi.Action.do_action(wait_for(lambda: find_item('Check now'), 'Manual update check button'), 0)
+        wait_for(lambda: find_item('Cannot reach the update service. Check your connection and retry. The app still works offline.', text=True),
+                 'Manual update check did not report the isolated proxy failure', timeout=32)
+        print('Verified shared updater settings, manual ZIP guidance and offline channel check')
         assert atspi.Action.do_action(details, 0)
         build = json.loads(subprocess.check_output([executable, '--build-info']))
         for value in [build['mygo_version'], build['target'], build['build_id']]:
@@ -1403,6 +1417,7 @@ if __name__ == '__main__':
             for name in ('DBUS_SESSION_BUS_ADDRESS', 'WAYLAND_DISPLAY', 'AT_SPI_BUS_ADDRESS'):
                 env.pop(name, None)
             if '--pinned' in sys.argv[2:]:
+                env.update(HTTPS_PROXY='http://127.0.0.1:0', NO_PROXY='', no_proxy='')
                 applications = home/'data/applications'
                 applications.mkdir()
                 os.mkfifo(applications/'blocked.desktop')

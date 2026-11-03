@@ -401,7 +401,7 @@ jobs:
           fixture = Path("target/debug", "mygo-library.test" + (".exe" if os.name == "nt" else "")).resolve()
           version = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
           subprocess.run(["go", "test", "-c", "-o", str(fixture), "./cmd/dzc-desktop"], cwd="frontends/dzc-surface", check=True)
-          command = [fixture, "-test.run=^TestReactLibraryWithService$", "-test.v", "-test.timeout=60s"]
+          command = [fixture, "-test.run=^(TestReactLibraryWithService|TestBundledUpdateChannels)$", "-test.v", "-test.timeout=60s"]
           environment = {**os.environ, "DZC_TEST_LIBRARY_VERSION": version}
           if os.name == "nt":
               subprocess.run(command, env=environment, check=True)

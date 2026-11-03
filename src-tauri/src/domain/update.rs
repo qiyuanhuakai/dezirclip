@@ -1,3 +1,4 @@
+use base64::Engine;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
@@ -90,9 +91,129 @@ impl UpdateSupport {
     }
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableUpdate {
+    pub id: String,
+    pub version: String,
+    pub notes: Option<String>,
+    pub release_url: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheck {
+    pub current_version: String,
+    pub channel: UpdateChannel,
+    pub channel_version: Option<String>,
+    pub status: UpdateCheckStatus,
+    pub support: UpdateSupport,
+    pub available: Option<AvailableUpdate>,
+    pub unpublished_channels: Vec<UpdateChannel>,
+}
+
+pub fn validate_signature_metadata(version: &Version, expected: &str, encoded: &str) -> Result<(), String> {
+    let signature = base64::engine::general_purpose::STANDARD.decode(encoded.trim())
+        .map_err(|_| "update_invalid_signature")?;
+    let signature = std::str::from_utf8(&signature).map_err(|_| "update_invalid_signature")?;
+    let signed_version = signature.lines().find_map(|line| line.strip_prefix("trusted comment: "))
+        .and_then(|comment| comment.split('\t').find_map(|field| field.strip_prefix("version:")))
+        .and_then(|value| Version::parse(value.trim_start_matches('v')).ok());
+    if signed_version.as_ref() != Some(version) {
+        return Err("update_signature_version_mismatch".into());
+    }
+    let signed_file = signature.lines().find_map(|line| line.strip_prefix("trusted comment: "))
+        .and_then(|comment| comment.split('\t').find_map(|field| field.strip_prefix("file:")));
+    if signed_file != Some(expected) { return Err("update_invalid_signature".into()); }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct ManualIndexes {
+    channel: UpdateChannel,
+    indexes: Vec<Option<ManualManifest>>,
+}
+
+#[derive(Deserialize)]
+struct ManualManifest {
+    version: String,
+    notes: Option<String>,
+    platforms: std::collections::HashMap<String, ManualAsset>,
+}
+
+#[derive(Deserialize)]
+struct ManualAsset { url: String, signature: String }
+
+/// Evaluate the two fixed channel indexes for a manual desktop distribution.
+/// The desktop downloads metadata. This policy never opens URLs or installs an artifact.
+pub fn check_manual_indexes(input: ManualIndexes, current: &Version, os: &str, arch: &str) -> Result<UpdateCheck, String> {
+    let channels: &[UpdateChannel] = match input.channel {
+        UpdateChannel::Stable => &[UpdateChannel::Stable],
+        UpdateChannel::Preview => &[UpdateChannel::Stable, UpdateChannel::Preview],
+    };
+    if input.indexes.len() != channels.len() { return Err("update_invalid_manifest".into()); }
+    let platform = format!("{os}-{arch}");
+    let mut versions = Vec::new();
+    let mut unpublished_channels = Vec::new();
+    let mut candidate = None;
+    for (&channel, manifest) in channels.iter().zip(input.indexes) {
+        let Some(manifest) = manifest else { unpublished_channels.push(channel); continue };
+        let version = Version::parse(manifest.version.strip_prefix('v').unwrap_or(&manifest.version))
+            .map_err(|_| "update_invalid_manifest")?;
+        if channel == UpdateChannel::Stable && !version.pre.is_empty() { return Err("update_invalid_stable_manifest".into()); }
+        if channel.accepts(current, &version) {
+            let asset = manifest.platforms.get(&platform).ok_or("update_invalid_manifest")?;
+            let expected = expected_asset_name(os, arch, &version).ok_or("update_unsupported_platform")?;
+            let prefix = format!("{RELEASES_URL}/download/v{version}/");
+            let file = asset.url.strip_prefix(&prefix).ok_or("update_untrusted_download")?;
+            if urlencoding::decode(file).map_err(|_| "update_untrusted_download")? != expected {
+                return Err("update_untrusted_download".into());
+            }
+            validate_signature_metadata(&version, &expected, &asset.signature)?;
+            if candidate.as_ref().is_none_or(|(previous, _)| version.cmp_precedence(previous).is_gt()) {
+                candidate = Some((version.clone(), AvailableUpdate { id: version.to_string(), version: version.to_string(),
+                    notes: manifest.notes, release_url: format!("{RELEASES_URL}/tag/v{version}") }));
+            }
+        }
+        versions.push(version);
+    }
+    let (status, channel_version) = summarize_channel_versions(current, &versions);
+    Ok(UpdateCheck { current_version: current.to_string(), channel: input.channel, channel_version, status,
+        support: UpdateSupport::new(UpdateInstallation::Portable), available: candidate.map(|(_, result)| result), unpublished_channels })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn manual_zip_checks_both_channels_and_preserves_signed_asset_identity() {
+        let current = Version::parse("1.0.0").unwrap();
+        let evaluate = |indexes| {
+            let input = serde_json::from_value(serde_json::json!({"channel":"preview","indexes":indexes})).unwrap();
+            check_manual_indexes(input, &current, "windows", "x86_64")
+        };
+        let manifest = |version: &str| {
+            let file = format!("DezirClip_{version}_x64-setup.exe");
+            let signature = base64::engine::general_purpose::STANDARD.encode(format!("trusted comment: file:{file}\tversion:{version}"));
+            serde_json::json!({"version":version,"notes":"Changes","platforms":{"windows-x86_64":{
+                "url":format!("{RELEASES_URL}/download/v{version}/{file}"),"signature":signature}}})
+        };
+        let stable = manifest("2.0.0");
+        let preview = manifest("1.9.0-alpha.10");
+        let result = evaluate(serde_json::json!([stable,preview])).unwrap();
+        assert_eq!(result.available.unwrap().release_url, format!("{RELEASES_URL}/tag/v2.0.0"));
+        assert!(!result.support.can_install);
+        let result = evaluate(serde_json::json!([null,null])).unwrap();
+        assert_eq!(result.status, UpdateCheckStatus::Unpublished);
+        assert_eq!(result.unpublished_channels.len(), 2);
+        assert_eq!(evaluate(serde_json::json!([preview,null])).err().unwrap(),"update_invalid_stable_manifest");
+        let mut wrong = stable.clone();
+        wrong["platforms"]["windows-x86_64"]["signature"] = preview["platforms"]["windows-x86_64"]["signature"].clone();
+        assert_eq!(evaluate(serde_json::json!([wrong,null])).err().unwrap(),"update_signature_version_mismatch");
+        wrong["platforms"]["windows-x86_64"]["url"] = "https://example.invalid/file".into();
+        assert_eq!(evaluate(serde_json::json!([wrong,null])).err().unwrap(),"update_untrusted_download");
+    }
 
     #[test]
     fn channels_follow_semver_precedence_without_downgrades() {

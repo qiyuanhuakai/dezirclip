@@ -10,6 +10,8 @@
 
 桌面更新使用官方 Tauri 2 Updater。v0.2 的首批原位更新制品仅包含 Windows NSIS 和 Linux AppImage，支持 x86_64 与 aarch64。`dzc-core`、独立 CLI、MCP 和捕获服务不因此联网，也不增加后台进程。P1-A 提供后端与发布门槛，P1-C 在“设置 → 关于 → 软件更新”接入自动检查偏好、通道、手动检查及确认安装界面。
 
+MyGo 的 Windows x64 ZIP 使用同一设置页和两个固定的 GitHub 通道索引。仅 MyGo 桌面进程请求索引，随包 Rust CLI 离线比较版本并校验候选安装包的签名元数据。发现新版后，从对应版本的发布页下载 Windows x64 MyGo ZIP 并手动替换程序文件。
+
 ## 组件构建身份与 Host 生命周期
 
 `dzc build-info --json` 与桌面 `get_build_info` 返回版本化的构建元数据：当前组件角色、组件版本、`build_id`、源码修订、来源状态、目标架构、协议版本和权威数据库 schema 版本。`dzc --version` 仍保持原来的 `dzc <version>` 输出；原有 JSON 命令不增加字段。构建信息命令不打开历史数据库或启动监听器。`linked_components` 只描述实际链接的 Core/Platform/Protocol Rust 组件，不宣称独立 CLI 归档安装了 Desktop、service 或 Surface。
