@@ -222,6 +222,18 @@ type DesktopMutationParams struct {
     ConfirmPersistence *bool `json:"confirm_persistence,omitempty"`
 }
 
+type ManualEntryParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    ContentType string `json:"content_type"`
+    Tags []string `json:"tags"`
+    ConfirmPersistence bool `json:"confirm_persistence"`
+}
+
+type ManualEntryFinish struct {
+    CaptureId string `json:"capture_id"`
+}
+
 type DesktopMutationResult struct {
     Id int64 `json:"id"`
     Performed bool `json:"performed"`
@@ -345,6 +357,8 @@ const (
     MethodDesktopTagsRename Method = "desktop.tags.rename"
     MethodDesktopTagsRemove Method = "desktop.tags.remove"
     MethodDesktopHistoryMutate Method = "desktop.history.mutate"
+    MethodDesktopHistoryManualBegin Method = "desktop.history.manual.begin"
+    MethodDesktopHistoryManualFinish Method = "desktop.history.manual.finish"
     MethodDesktopWindowPaste Method = "desktop.window.paste"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"

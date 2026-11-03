@@ -173,13 +173,8 @@ impl GeneratedUpload {
         if cfg!(target_os="windows") && paste==Some(true) && !self.windows_paste_bound {
             return Err("WindowsPasteTargetUnavailable".into());
         }
-        use base64::Engine;
         let bytes=serde_json::to_vec(&body).map_err(|_|failed())?;
-        if bytes.len()>32*1024*1024 {return Err("GeneratedBodyTooLarge".into());}
-        for (index,bytes) in bytes.chunks(192*1024).enumerate() {
-            let _:OperationResult=self.client.call(Method::DesktopCaptureWrite,CaptureWriteParams {capture_id:self.id.clone(),offset:(index*192*1024) as u32,
-                data_base64:base64::engine::general_purpose::STANDARD.encode(bytes)},"OperationResult").await.map_err(remote_error)?;
-        }
+        write_desktop_body(&mut self.client, &self.id, &bytes).await?;
         let result:OperationResult=self.client.call(Method::DesktopCaptureFinish,CaptureFinishParams{capture_id:self.id,source_app:source.chars().take(256).collect(),inherited_protection:protected,paste},"OperationResult").await.map_err(remote_error)?;
         Ok(result.performed)
     }
@@ -233,6 +228,18 @@ fn method_error(method: Method, code: WireErrorCode) -> String {
     }
     public_code(code)
 }
+async fn write_desktop_body(client: &mut Client, id: &str, bytes: &[u8]) -> Result<(), String> {
+    use base64::Engine;
+    if bytes.len() > 32*1024*1024 { return Err("GeneratedBodyTooLarge".into()); }
+    for (index, chunk) in bytes.chunks(192*1024).enumerate() {
+        let result: OperationResult = client.call(Method::DesktopCaptureWrite, CaptureWriteParams {
+            capture_id: id.into(), offset: (index*192*1024) as u32, data_base64: base64::engine::general_purpose::STANDARD.encode(chunk),
+        }, "OperationResult").await.map_err(remote_error)?;
+        if !result.performed { return Err(failed()); }
+    }
+    Ok(())
+}
+
 fn public_code(code:WireErrorCode)->String {match code {
     WireErrorCode::PrivacyStateUnavailable=>"PrivacyStateUnavailable",WireErrorCode::PrivacyEpochChanged=>"PrivacyEpochChanged",
     WireErrorCode::PrivacySessionActive=>"PrivacySessionActive",WireErrorCode::SensitiveAccessDenied=>"SensitiveAccessDenied",
@@ -549,6 +556,23 @@ impl DesktopHost {
         request.service_instance_id=self.instance()?;
         let result:DesktopMutationResult=self.call(Method::DesktopHistoryMutate,request,"DesktopMutationResult").await?;
         Ok(Some(result.id))
+    }
+
+    pub async fn add_manual(&self, content: String, content_type: String, tags: Vec<String>, epoch: Option<u64>, confirmed: bool) -> Result<i64, String> {
+        if confirmed && epoch.is_none() { return Err("PrivacyEpochRequired".into()); }
+        let request = ManualEntryParams {
+            service_instance_id: self.instance()?, expected_epoch: match epoch {
+                Some(epoch) => epoch, None => self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch,
+            }, content_type, tags, confirm_persistence: confirmed,
+        };
+        if let Some(host) = self.embedded()? { return host.add_manual_owned(request, content).map_err(public_code); }
+        let mut client = self.desktop_client().await?;
+        let begin: CaptureBeginResult = client.call(Method::DesktopHistoryManualBegin, request, "CaptureBeginResult").await.map_err(remote_error)?;
+        let id = begin.capture_id.ok_or_else(failed)?;
+        write_desktop_body(&mut client, &id, content.as_bytes()).await?;
+        let saved: DesktopMutationResult = client.call(Method::DesktopHistoryManualFinish, ManualEntryFinish { capture_id: id }, "DesktopMutationResult").await.map_err(remote_error)?;
+        if !saved.performed || saved.id <= 0 { return Err(failed()); }
+        Ok(saved.id)
     }
     pub fn mutation_request(&self,id:i64,action:&str,epoch:Option<u64>)->Result<DesktopMutationParams,String> {
         Ok(DesktopMutationParams{id,action:action.into(),service_instance_id:self.instance()?,expected_epoch:epoch.unwrap_or(self.0.history.runtime_snapshot(now()).map_err(remote_error)?.privacy_epoch),

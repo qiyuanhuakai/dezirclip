@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
@@ -169,6 +170,25 @@ func TestReactLibraryWithService(t *testing.T) {
 	if rows, err := library.Page(ctx, search, epoch); err != nil || len(rows) != 0 {
 		t.Fatalf("deleted row remained searchable: %+v %v", rows, err)
 	}
+	manual := protocol.ManualEntryParams{ContentType: "text", Tags: []string{"manual"}, ExpectedEpoch: epoch, ServiceInstanceId: instance}
+	body := strings.Repeat("文字🎋 ", 24000)
+	id, err := library.AddManual(ctx, body, manual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manualRow, err := library.Entry(ctx, protocol.DesktopEntryParams{Id: id, ServiceInstanceId: instance, ExpectedEpoch: epoch})
+	if err != nil || manualRow.Content != body || manualRow.SourceApp != "Manual" || len(manualRow.Tags) != 1 || manualRow.Tags[0] != "manual" {
+		t.Fatalf("chunked manual entry not stored intact: id=%d error=%v", id, err)
+	}
+	inFlight, err := owner.DesktopConnection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inFlight.Close()
+	var begun protocol.CaptureBeginResult
+	if err := inFlight.Call(ctx, protocol.MethodDesktopHistoryManualBegin, manual, "CaptureBeginResult", &begun); err != nil || begun.CaptureId == nil {
+		t.Fatalf("begin manual entry: %v", err)
+	}
 	after, err := library.SetPrivacy(ctx, protocol.PrivacySetParams{Active: true})
 	if err != nil || !after.Privacy.Active || after.State.PrivacyEpoch == epoch {
 		t.Fatalf("set privacy: %+v %v", after, err)
@@ -181,5 +201,17 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	if err := library.EditTag(ctx, "create", "stale", "", epoch); !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodePrivacyEpochChanged {
 		t.Fatalf("stale metadata edit: %v", err)
+	}
+	var saved protocol.DesktopMutationResult
+	if err := inFlight.Call(ctx, protocol.MethodDesktopHistoryManualFinish, protocol.ManualEntryFinish{CaptureId: *begun.CaptureId}, "DesktopMutationResult", &saved); err == nil {
+		t.Fatal("manual upload survived a privacy transition")
+	}
+	manual.ExpectedEpoch = after.State.PrivacyEpoch
+	if _, err := library.AddManual(ctx, "private manual note", manual); !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeManualPersistenceConfirmationRequired {
+		t.Fatalf("private save without confirmation: %v", err)
+	}
+	manual.ConfirmPersistence = true
+	if id, err := library.AddManual(ctx, "confirmed manual note", manual); err != nil || id <= 0 {
+		t.Fatalf("confirmed manual note: %d %v", id, err)
 	}
 }

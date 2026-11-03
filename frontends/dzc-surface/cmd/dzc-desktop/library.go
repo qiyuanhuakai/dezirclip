@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 
@@ -130,6 +131,45 @@ func (l *Library) MutateEntry(ctx context.Context, params protocol.DesktopMutati
 		return 0, client.ErrProtocol
 	}
 	return result.Id, err
+}
+
+func (l *Library) AddManual(ctx context.Context, content string, params protocol.ManualEntryParams) (int64, error) {
+	if len(content) > 32*1024*1024 {
+		return 0, errors.New("ManualEntryTooLarge")
+	}
+	params.ServiceInstanceId = l.owner.Hello().State.ServiceInstanceId
+	host, err := l.owner.DesktopConnection(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer host.Close()
+	var begin protocol.CaptureBeginResult
+	if err := host.Call(ctx, protocol.MethodDesktopHistoryManualBegin, params, "CaptureBeginResult", &begin); err != nil {
+		return 0, err
+	}
+	if begin.CaptureId == nil || begin.State.ServiceInstanceId != params.ServiceInstanceId || begin.State.PrivacyEpoch != params.ExpectedEpoch {
+		return 0, client.ErrProtocol
+	}
+	const chunkSize = 192 * 1024
+	for offset := 0; offset < len(content); offset += chunkSize {
+		chunk := content[offset:min(offset+chunkSize, len(content))]
+		write := protocol.CaptureWriteParams{CaptureId: *begin.CaptureId, Offset: uint32(offset), DataBase64: base64.StdEncoding.EncodeToString([]byte(chunk))}
+		var result protocol.OperationResult
+		if err := host.Call(ctx, protocol.MethodDesktopCaptureWrite, write, "OperationResult", &result); err != nil {
+			return 0, err
+		}
+		if !result.Performed {
+			return 0, client.ErrProtocol
+		}
+	}
+	var saved protocol.DesktopMutationResult
+	if err := host.Call(ctx, protocol.MethodDesktopHistoryManualFinish, protocol.ManualEntryFinish{CaptureId: *begin.CaptureId}, "DesktopMutationResult", &saved); err != nil {
+		return 0, err
+	}
+	if !saved.Performed || saved.Id <= 0 {
+		return 0, client.ErrProtocol
+	}
+	return saved.Id, nil
 }
 
 func (l *Library) TagColors(ctx context.Context, epoch uint64) (json.RawMessage, error) {

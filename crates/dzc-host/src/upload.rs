@@ -6,13 +6,57 @@ use base64::Engine;
 use serde_json::Value;
 use std::{sync::{Arc,Mutex},time::{Duration,Instant}};
 
-struct Upload { id:String, owner:String, ticket:Option<CaptureTicket>, copy_permit:Option<PrivacyReadPermit>, epoch:u64, timestamp:i64, expires:Instant, bytes:Vec<u8>, paste_target:Option<Box<dyn crate::PreparedPaste>> }
+struct Upload { id:String, owner:String, ticket:Option<CaptureTicket>, copy_permit:Option<PrivacyReadPermit>, epoch:u64, timestamp:i64, expires:Instant, bytes:Vec<u8>, paste_target:Option<Box<dyn crate::PreparedPaste>>, manual:Option<(ManualEntryParams, PrivacyReadPermit)> }
 #[derive(Default)]
 pub(crate) struct Uploads(Arc<Mutex<Vec<Upload>>>);
 impl Uploads {
     pub(crate) fn clear(&self) -> Result<(),WireErrorCode> { self.0.lock().map_err(|_|WireErrorCode::Unavailable)?.clear(); Ok(()) }
 }
 impl Host {
+    fn register_upload(&self, uploads: &mut Vec<Upload>, upload: Upload, state: RuntimeState) -> Result<Value, WireErrorCode> {
+        let id = upload.id.clone();
+        let storage = self.uploads.0.clone();
+        let expired_id = id.clone();
+        uploads.push(upload);
+        if std::thread::Builder::new().name("dzc-upload-expiry".into()).spawn(move || {
+            std::thread::sleep(Duration::from_secs(5));
+            if let Ok(mut uploads) = storage.lock() { uploads.retain(|upload| upload.id != expired_id); }
+        }).is_err() { uploads.retain(|upload| upload.id != id); return Err(WireErrorCode::Unavailable); }
+        serde_json::to_value(CaptureBeginResult { capture_id: Some(id), state }).map_err(|_| WireErrorCode::Internal)
+    }
+
+    fn manual_permit(&self, request: &ManualEntryParams, now: i64) -> Result<PrivacyReadPermit, WireErrorCode> {
+        if request.service_instance_id != self.instance_id() { return Err(WireErrorCode::PrivacyBlocked); }
+        self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied,
+            Some(request.expected_epoch), now).map_err(crate::router::privacy_error)
+    }
+
+    /// In-process Tauri and the authenticated Service share the same manual write and event.
+    pub fn add_manual_owned(&self, request: ManualEntryParams, content: String) -> Result<i64, WireErrorCode> {
+        let _guard = self.requests.lock().map_err(|_| WireErrorCode::Unavailable)?;
+        let permit = self.manual_permit(&request, crate::router::now_ms()?)?;
+        self.save_manual(request, content, &permit)
+    }
+
+    fn save_manual(&self, request: ManualEntryParams, content: String, permit: &PrivacyReadPermit) -> Result<i64, WireErrorCode> {
+        if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        let now = crate::router::now_ms()?;
+        let preview = match content.char_indices().nth(200) {
+            Some((end, _)) => format!("{}...", &content[..end]),
+            None => content.clone(),
+        };
+        let entry = dzc_core::api::ClipboardEntry {
+            id: 0, content_type: request.content_type, content, html_content: None, source_app: "Manual".into(),
+            source_app_path: None, timestamp: now, preview, is_pinned: false, tags: request.tags, use_count: 0,
+            is_external: false, pinned_order: 0, file_preview_exists: true, content_kinds: Vec::new(), ocr_text: None, ocr_status: None,
+        };
+        let intent = if request.confirm_persistence { dzc_core::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession }
+            else { dzc_core::api::ManualPersistenceIntent::Ordinary };
+        let id = self.history.save_manual_authorized(&entry, Some(&self.directory), intent, permit, now).map_err(crate::router::privacy_error)?;
+        self.publish(EventKind::EntryAdded, EventData { entry_id: Some(id), status: None })?;
+        Ok(id)
+    }
+
     pub(crate) fn upload(&self, session:&Session, method:Method, parameters:Value) -> Result<Value,WireErrorCode> {
         session.require(Permission::DesktopHistory)?;
         if session.role()!=ClientRole::Desktop {return Err(WireErrorCode::PermissionDenied);}
@@ -20,6 +64,20 @@ impl Host {
         let mut uploads=self.uploads.0.lock().map_err(|_|WireErrorCode::Unavailable)?;
         let epoch=self.snapshot()?.privacy_epoch;
         uploads.retain(|upload|upload.expires>Instant::now() && upload.epoch==epoch);
+        if method == Method::DesktopHistoryManualBegin {
+            if uploads.len() >= 4 { return Err(WireErrorCode::Busy); }
+            let request: ManualEntryParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+            let permit = self.manual_permit(&request, now)?;
+            if !request.confirm_persistence && self.history.privacy().status(now).map_err(crate::router::privacy_error)?.session.active {
+                return Err(WireErrorCode::ManualPersistenceConfirmationRequired);
+            }
+            let state = self.snapshot()?;
+            if state.privacy_epoch != request.expected_epoch { return Err(WireErrorCode::PrivacyEpochChanged); }
+            let upload = Upload { id: uuid::Uuid::new_v4().simple().to_string(), owner: session.id().into(), ticket: None,
+                copy_permit: None, epoch: request.expected_epoch, timestamp: now, expires: Instant::now() + Duration::from_secs(5),
+                bytes: Vec::new(), paste_target: None, manual: Some((request, permit)) };
+            return self.register_upload(&mut uploads, upload, state);
+        }
         if method==Method::DesktopCaptureBegin {
             let request:CaptureBeginParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
             let state=self.snapshot()?;
@@ -40,13 +98,8 @@ impl Host {
             };
             let id=uuid::Uuid::new_v4().simple().to_string();
             if ticket.as_ref().is_some_and(|ticket|ticket.epoch()!=request.expected_epoch) {return Err(WireErrorCode::PrivacyBlocked);}
-            uploads.push(Upload{id:id.clone(),owner:session.id().into(),ticket,copy_permit,epoch:request.expected_epoch,timestamp:now,expires:Instant::now()+Duration::from_secs(5),bytes:Vec::new(),paste_target});
-            let storage=self.uploads.0.clone();let expired_id=id.clone();
-            if std::thread::Builder::new().name("dzc-upload-expiry".into()).spawn(move|| {
-                std::thread::sleep(Duration::from_secs(5));
-                if let Ok(mut uploads)=storage.lock() {uploads.retain(|upload|upload.id!=expired_id);}
-            }).is_err() {uploads.retain(|upload|upload.id!=id);return Err(WireErrorCode::Unavailable);}
-            return serde_json::to_value(CaptureBeginResult{capture_id:Some(id),state}).map_err(|_|WireErrorCode::Internal);
+            let upload = Upload{id,owner:session.id().into(),ticket,copy_permit,epoch:request.expected_epoch,timestamp:now,expires:Instant::now()+Duration::from_secs(5),bytes:Vec::new(),paste_target,manual:None};
+            return self.register_upload(&mut uploads, upload, state);
         }
         if method==Method::DesktopCaptureWrite {
             let request:CaptureWriteParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
@@ -59,9 +112,20 @@ impl Host {
             upload.bytes.extend(bytes);
             return serde_json::to_value(OperationResult{performed:true}).map_err(|_|WireErrorCode::Internal);
         }
+        if method == Method::DesktopHistoryManualFinish {
+            let finish: ManualEntryFinish = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+            let index = uploads.iter().position(|u| u.id == finish.capture_id && u.owner == session.id() && u.manual.is_some())
+                .ok_or(WireErrorCode::NotFound)?;
+            let upload = uploads.remove(index);
+            drop(uploads);
+            let (request, permit) = upload.manual.ok_or(WireErrorCode::InvalidRequest)?;
+            let content = String::from_utf8(upload.bytes).map_err(|_| WireErrorCode::InvalidRequest)?;
+            let id = self.save_manual(request, content, &permit)?;
+            return serde_json::to_value(DesktopMutationResult { id, performed: true }).map_err(|_| WireErrorCode::Internal);
+        }
         if parameters.get("expected_paste_target").is_some() {return Err(WireErrorCode::InvalidRequest);}
         let request:CaptureFinishParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
-        let index=uploads.iter().position(|upload|upload.id==request.capture_id && upload.owner==session.id()).ok_or(WireErrorCode::NotFound)?;
+        let index=uploads.iter().position(|upload|upload.id==request.capture_id && upload.owner==session.id() && upload.manual.is_none()).ok_or(WireErrorCode::NotFound)?;
         let upload=uploads.remove(index);
         drop(uploads);
         self.check_upload(&upload,now)?;
@@ -110,6 +174,9 @@ impl Host {
         Ok(recorded)
     }
     fn check_upload(&self,upload:&Upload,now:i64)->Result<(),WireErrorCode> {
+        if let Some((_, permit)) = &upload.manual {
+            self.history.privacy().check_read(permit, now).map_err(crate::router::privacy_error)?;
+        }
         if let Some(ticket)=&upload.ticket {self.history.privacy().check_capture(ticket,now).map_err(|_|WireErrorCode::PrivacyBlocked)?;}
         if let Some(permit)=&upload.copy_permit {self.history.privacy().check_read(permit,now).map_err(crate::router::privacy_error)?;}
         Ok(())

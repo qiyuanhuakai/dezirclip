@@ -292,6 +292,22 @@ pub struct DesktopMutationParams {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualEntryParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub content_type: String,
+    pub tags: Vec<String>,
+    pub confirm_persistence: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManualEntryFinish {
+    pub capture_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DesktopMutationResult {
     pub id: i64,
     pub performed: bool,
@@ -510,6 +526,10 @@ pub enum Method {
     DesktopTagsRemove,
     #[serde(rename = "desktop.history.mutate")]
     DesktopHistoryMutate,
+    #[serde(rename = "desktop.history.manual.begin")]
+    DesktopHistoryManualBegin,
+    #[serde(rename = "desktop.history.manual.finish")]
+    DesktopHistoryManualFinish,
     #[serde(rename = "desktop.window.paste")]
     DesktopWindowPaste,
     #[serde(rename = "desktop.clipboard.copy")]

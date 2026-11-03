@@ -37,6 +37,12 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   toggle_clipboard_pin: args => mutateEntry(args, "pin", { pinned: args.isPinned }),
   update_tags: args => mutateEntry(args, "tags", { tags: args.tags }),
   update_item_content: args => mutateEntry(args, "edit", { content: args.newContent }),
+  add_manual_item: args => {
+    const epoch = currentEpoch();
+    if (args.expectedPrivacyEpoch !== epoch) throw new Error("PrivacyEpochChanged");
+    return library("AddManual", args.content, { expected_epoch: epoch, content_type: args.contentType,
+      tags: args.tags, confirm_persistence: args.confirmPersistence ?? false });
+  },
   get_tag_colors: () => library("TagColors", currentEpoch()),
   create_new_tag: args => library("EditTag", "create", args.tagName, "", currentEpoch()),
   remove_tag_from_all: args => library("EditTag", "remove", args.tagName, "", currentEpoch()),

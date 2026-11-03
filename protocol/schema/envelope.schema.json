@@ -117,6 +117,8 @@
         "desktop.tags.rename",
         "desktop.tags.remove",
         "desktop.history.mutate",
+        "desktop.history.manual.begin",
+        "desktop.history.manual.finish",
         "desktop.window.paste",
         "desktop.clipboard.copy",
         "desktop.privacy.rules",
@@ -1815,6 +1817,23 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.manual.begin"
+              }
+            },
+            "required": ["method"]
+          },
+          "then": {
+            "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/ManualEntryParams" } }
+          }
+        },
+        {
+          "if": { "properties": { "method": { "const": "desktop.history.manual.finish" } }, "required": ["method"] },
+          "then": { "properties": { "params": { "$ref": "https://dezirclip.local/protocol/v1/desktop.schema.json#/$defs/ManualEntryFinish" } } }
         },
         {
           "if": {

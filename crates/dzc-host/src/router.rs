@@ -284,6 +284,7 @@ impl Host {
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
                 methods.push("desktop.window.pin");
+                methods.extend(["desktop.history.manual.begin", "desktop.history.manual.finish"]);
                 if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
                     methods.extend(["desktop.window.target", "desktop.window.paste"]);
                 }
@@ -521,7 +522,8 @@ impl Host {
             Method::DesktopWindowPaste => self.paste_from_window(session, params(request.params)?),
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
-            Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),
+            Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish
+            | Method::DesktopHistoryManualBegin | Method::DesktopHistoryManualFinish => self.upload(session, request.method, request.params),
             Method::SurfaceHistoryPage => self.surface_page(session, params(request.params)?),
             Method::DesktopSurfaceCopy => self.desktop_surface_copy(session, params(request.params)?),
             Method::HistoryList | Method::SurfaceHistoryList => {
