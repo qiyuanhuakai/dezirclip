@@ -7,9 +7,11 @@
       "properties": {
         "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },
         "expected_epoch": { "type": "integer", "minimum": 0, "maximum": 9007199254740991, "x-rust-type": "u64" },
-        "key": { "type": "string", "enum": ["app.theme", "app.color_mode", "app.language", "app.compact_mode", "app.show_app_border", "app.show_scroll_top_button", "app.show_search_box", "app.arrow_key_selection", "app.clipboard_item_font_size", "app.clipboard_tag_font_size", "app.surface_opacity"] },
-        "value": { "type": "string", "minLength": 1, "maxLength": 64 }
+        "key": { "type": "string", "enum": ["app.theme", "app.color_mode", "app.language", "app.compact_mode", "app.show_app_border", "app.show_scroll_top_button", "app.show_search_box", "app.arrow_key_selection", "app.clipboard_item_font_size", "app.clipboard_tag_font_size", "app.surface_opacity", "app.font_main", "app.font_mono"] },
+        "value": { "type": "string", "maxLength": 256 }
       },
+      "if": { "properties": { "key": { "enum": ["app.font_main", "app.font_mono"] } } },
+      "else": { "properties": { "value": { "minLength": 1, "maxLength": 64 } } },
       "required": ["service_instance_id", "expected_epoch", "key", "value"],
       "additionalProperties": false
     },

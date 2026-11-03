@@ -1192,6 +1192,7 @@
         "desktop.window.target",
         "desktop.window.pin",
         "desktop.tools.catalog",
+        "desktop.settings.fonts",
         "desktop.tools.classify",
         "desktop.tools.transform",
         "desktop.tools.qr",
@@ -2111,6 +2112,25 @@
             "properties": {
               "method": {
                 "const": "desktop.tools.catalog"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.fonts"
               }
             },
             "required": [
@@ -4853,13 +4873,32 @@
             "app.arrow_key_selection",
             "app.clipboard_item_font_size",
             "app.clipboard_tag_font_size",
-            "app.surface_opacity"
+            "app.surface_opacity",
+            "app.font_main",
+            "app.font_mono"
           ]
         },
         "value": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 64
+          "maxLength": 256
+        }
+      },
+      "if": {
+        "properties": {
+          "key": {
+            "enum": [
+              "app.font_main",
+              "app.font_mono"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "value": {
+            "minLength": 1,
+            "maxLength": 64
+          }
         }
       },
       "required": [
@@ -6056,6 +6095,41 @@
         "base",
         "name",
         "css"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopFont": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "type": "string"
+        },
+        "is_mono": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "family",
+        "is_mono",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopFontList": {
+      "type": "object",
+      "properties": {
+        "fonts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DesktopFont"
+          }
+        }
+      },
+      "required": [
+        "fonts"
       ],
       "additionalProperties": false
     },

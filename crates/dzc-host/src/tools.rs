@@ -10,6 +10,7 @@ fn parameters<T: DeserializeOwned>(value: Value) -> Result<T, WireErrorCode> {
 
 pub(super) fn run(method: Method, params: Value) -> Result<Value, WireErrorCode> {
     let result = match method {
+        Method::DesktopSettingsFonts => json!({ "fonts": dzc_platform::fonts::list_system_fonts() }),
         Method::DesktopToolsCatalog => json!({
             "content_kinds": classification::CONTENT_KINDS,
             "transforms": transforms::list_transform_kinds(),

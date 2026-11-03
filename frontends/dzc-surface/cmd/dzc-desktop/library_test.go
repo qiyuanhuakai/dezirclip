@@ -88,6 +88,25 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	viewSettings := map[string]string{"app.theme": "retro", "app.color_mode": "dark", "app.language": "en", "app.compact_mode": "true",
 		"app.clipboard_item_font_size": "18", "app.clipboard_tag_font_size": "8", "app.surface_opacity": "0"}
+	fonts, err := library.SystemFonts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, font := range fonts {
+		key := "app.font_main"
+		if font.IsMono {
+			key = "app.font_mono"
+		}
+		if viewSettings[key] == "" && font.Family != "" {
+			if _, err := os.Stat(font.Path); err != nil {
+				t.Fatal(err)
+			}
+			viewSettings[key] = font.Family
+		}
+	}
+	if viewSettings["app.font_main"] == "" || viewSettings["app.font_mono"] == "" {
+		t.Fatal("system font picker is missing proportional or monospace families")
+	}
 	for key, value := range viewSettings {
 		if err := library.SetSetting(ctx, key, value, epoch); err != nil {
 			t.Fatalf("set %s: %v", key, err)
@@ -114,6 +133,13 @@ func TestReactLibraryWithService(t *testing.T) {
 		if settings[key] != value {
 			t.Fatalf("read back %s = %q, want %q", key, settings[key], value)
 		}
+	}
+	if err := library.SetSetting(ctx, "app.font_main", "", epoch); err != nil {
+		t.Fatalf("restore theme default font: %v", err)
+	}
+	preferences, err = library.Preferences(ctx)
+	if err != nil || json.Unmarshal(preferences, &settings) != nil || settings["app.font_main"] != "" {
+		t.Fatal("cleared font override was not restored")
 	}
 	themeDir := t.TempDir()
 	input := filepath.Join(themeDir, "fixture.dezirtheme.json")

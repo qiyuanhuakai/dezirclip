@@ -345,6 +345,21 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             wait_for(lambda: dict(db.execute("SELECT key, value FROM settings WHERE key IN ('app.theme','app.color_mode','app.language')"))
                      == {'app.theme': 'retro', 'app.color_mode': 'dark', 'app.language': 'en'}, 'Appearance changes did not reach the profile')
+            font_input = wait_for(lambda: next((item for item, name, _, _ in mygo_nodes(atspi, executable)
+                                                if name == 'UI Font' and item.get_role() == atspi.Role.COMBO_BOX), None),
+                                  'UI font selector unavailable')
+            atspi.Component.scroll_to(font_input, atspi.ScrollType.ANYWHERE)
+            assert atspi.Component.grab_focus(font_input)
+            shortcut((Gdk.KEY_Down,))
+            wait_for(lambda: any(item.get_role() == atspi.Role.LIST_BOX and item.get_child_count() >= 2
+                                 for item, _, _, _ in mygo_nodes(atspi, executable)),
+                     'Installed font options did not load')
+            # Start on the theme default, then select the first installed proportional family.
+            shortcut((Gdk.KEY_Home,))
+            shortcut((Gdk.KEY_Down,))
+            shortcut((Gdk.KEY_Return,))
+            family = wait_for(lambda: next((value for value, in db.execute(
+                "SELECT value FROM settings WHERE key='app.font_main'") if value), None), 'UI font selection was not saved')
         # AT-SPI can operate on background controls. Address the actual WebView
         # before asking the window manager to close it.
         def settings_window():
@@ -369,7 +384,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable):
         wait_for(lambda: find_item('Image'), 'New WebView did not restore the selected language')
         selected = open_appearance('Settings', 'Appearance', 'Retro')
         assert selected.get_state_set().contains(atspi.StateType.PRESSED)
-        print('Verified saved theme, color mode and language and restored selection in a newly opened WebView')
+        wait_for(lambda: find_item(family, text=True), 'New WebView did not restore the selected font family')
+        print('Verified saved theme, color mode, language and installed UI font selection in a newly opened WebView')
     finally:
         alternate.destroy()
 

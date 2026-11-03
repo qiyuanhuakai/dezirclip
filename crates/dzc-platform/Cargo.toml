@@ -14,9 +14,11 @@ required-features = ["ipc"]
 portable = ["dzc-core/portable"]
 ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
 native-screen = ["dep:xcap", "dep:zeroize"]
+native-fonts = ["dep:font-kit", "dzc-protocol/wire"]
 native-ocr = ["dep:windows-core"]
 
 [dependencies]
+font-kit = { workspace = true, optional = true }
 xcap = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }
 dzc-protocol.workspace = true

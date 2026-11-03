@@ -7,7 +7,7 @@ description = "Authenticated local Host shared by DezirClip embedded and service
 publish = false
 
 [features]
-native-screen = ["dzc-platform/native-screen", "dep:zeroize"]
+native-screen = ["dzc-platform/native-screen", "dzc-platform/native-fonts", "dep:zeroize"]
 
 [dependencies]
 zeroize = { workspace = true, optional = true }
@@ -21,3 +21,6 @@ rand.workspace = true
 uuid.workspace = true
 dirs.workspace = true
 base64.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+dzc-platform = { workspace = true, features = ["native-fonts"] }

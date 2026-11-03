@@ -5,6 +5,8 @@ pub mod local_file;
 pub mod runtime_display;
 pub mod native_clipboard;
 pub mod runtime;
+#[cfg(any(feature = "native-fonts", all(feature = "ipc", target_os = "linux")))]
+pub mod fonts;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod shortcut;

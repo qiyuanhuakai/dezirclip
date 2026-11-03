@@ -438,6 +438,8 @@ pub enum Method {
     DesktopWindowPin,
     #[serde(rename = "desktop.tools.catalog")]
     DesktopToolsCatalog,
+    #[serde(rename = "desktop.settings.fonts")]
+    DesktopSettingsFonts,
     #[serde(rename = "desktop.tools.classify")]
     DesktopToolsClassify,
     #[serde(rename = "desktop.tools.transform")]
@@ -1433,6 +1435,20 @@ pub struct DesktopThemePackage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub css: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopFont {
+    pub family: String,
+    pub is_mono: bool,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopFontList {
+    pub fonts: Vec<DesktopFont>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

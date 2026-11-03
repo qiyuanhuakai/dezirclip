@@ -1,6 +1,6 @@
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import type { ComponentType, ReactNode, CSSProperties } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { open, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import type { Locale } from "../../../../shared/types";
@@ -315,6 +315,7 @@ const AppearanceSettingsGroup = ({
                     />
                     <ThemedSelect
                         options={fontMainOptions}
+                        ariaLabel={t('font_main')}
                         value={fontMain}
                         width="100%"
                         searchable
@@ -333,6 +334,7 @@ const AppearanceSettingsGroup = ({
                     />
                     <ThemedSelect
                         options={fontMonoOptions}
+                        ariaLabel={t('font_mono')}
                         value={fontMono}
                         width="100%"
                         searchable

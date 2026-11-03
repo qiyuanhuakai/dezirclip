@@ -2,6 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dezirclip.local/protocol/v1/tools.schema.json",
   "$defs": {
+    "DesktopFont": {
+      "type": "object",
+      "properties": { "family": { "type": "string" }, "is_mono": { "type": "boolean" }, "path": { "type": "string" } },
+      "required": ["family", "is_mono", "path"], "additionalProperties": false
+    },
+    "DesktopFontList": {
+      "type": "object",
+      "properties": { "fonts": { "type": "array", "items": { "$ref": "https://dezirclip.local/protocol/v1/tools.schema.json#/$defs/DesktopFont" } } },
+      "required": ["fonts"], "additionalProperties": false
+    },
     "ToolCatalogParams": {
       "type": "object",
       "properties": {},

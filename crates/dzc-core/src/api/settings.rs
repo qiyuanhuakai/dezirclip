@@ -30,13 +30,14 @@ impl HistoryService {
     pub fn is_view_setting(key: &str) -> bool {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.arrow_key_selection"
-            | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity")
+            | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.font_main" | "app.font_mono")
     }
 
     pub fn update_view_setting(&self, key: &str, value: &str, epoch: u64) -> CoreResult<()> {
         use crate::domain::theme::{valid_theme_id, BUILTIN_THEMES};
         let valid = match key {
             "app.theme" => BUILTIN_THEMES.contains(&value) || value.strip_prefix("custom:").is_some_and(valid_theme_id),
+            "app.font_main" | "app.font_mono" => value.chars().count() <= 256 && !value.chars().any(char::is_control),
             "app.color_mode" => matches!(value, "light" | "dark" | "system"),
             "app.language" => matches!(value, "zh" | "tw" | "en"),
             "app.clipboard_item_font_size" => value.parse::<u8>().is_ok_and(|v| (11..=18).contains(&v)),

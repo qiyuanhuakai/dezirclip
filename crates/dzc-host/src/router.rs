@@ -287,6 +287,7 @@ impl Host {
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
                 methods.push("desktop.settings.view.set");
+                methods.push("desktop.settings.fonts");
                 methods.push("desktop.window.pin");
                 methods.extend(["desktop.history.manual.begin", "desktop.history.manual.finish"]);
                 if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
@@ -449,7 +450,7 @@ impl Host {
                 self.desktop_permission(session, self.instance_id())?;
                 result("DesktopPlatformReport", serde_json::json!({ "report": dzc_platform::runtime::session_capabilities() }))
             }
-            Method::DesktopToolsCatalog | Method::DesktopToolsClassify | Method::DesktopToolsTransform | Method::DesktopToolsQr => {
+            Method::DesktopSettingsFonts | Method::DesktopToolsCatalog | Method::DesktopToolsClassify | Method::DesktopToolsTransform | Method::DesktopToolsQr => {
                 self.desktop_permission(session, self.instance_id())?;
                 crate::tools::run(request.method, request.params)
             }
@@ -722,6 +723,7 @@ pub(crate) mod tests {
             grant: Some(grant.token().into()), ..hello(ClientRole::Desktop)
         }).unwrap();
         for (method, input, schema) in [
+            (Method::DesktopSettingsFonts, serde_json::json!({}), "DesktopFontList"),
             (Method::DesktopToolsCatalog, serde_json::json!({}), "ToolCatalog"),
             (Method::DesktopToolsClassify, serde_json::json!({"text": "https://example.com"}), "ToolClassification"),
             (Method::DesktopToolsTransform, serde_json::json!({"text": "Hello", "kind": "to_uppercase"}), "ToolText"),
@@ -732,6 +734,7 @@ pub(crate) mod tests {
             let result = dispatch(&host, &desktop, method, input).result.unwrap();
             wire::validate(schema, &result).unwrap();
             match method {
+                Method::DesktopSettingsFonts => assert!(result["fonts"].is_array()),
                 Method::DesktopToolsCatalog => assert_eq!(result["transforms"].as_array().unwrap().len(), 17),
                 Method::DesktopToolsClassify => assert_eq!(result["kinds"], serde_json::json!(["url"])),
                 Method::DesktopToolsTransform => assert_eq!(result["text"], "HELLO"),

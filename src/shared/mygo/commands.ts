@@ -33,6 +33,7 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   get_platform_info: () => shellCall("PlatformInfo"),
+  list_system_fonts: () => library("SystemFonts"),
   get_system_theme_mode: () => shellCall("SystemThemeMode"),
   set_theme: args => shellCall("ApplyAppearance", resolveThemeSelection(String(args.theme), getCustomThemes()).base,
     args.color_mode ?? args.colorMode ?? "system", args.show_app_border ?? args.showAppBorder ?? true,

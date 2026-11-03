@@ -313,6 +313,7 @@ const (
     MethodDesktopWindowTarget Method = "desktop.window.target"
     MethodDesktopWindowPin Method = "desktop.window.pin"
     MethodDesktopToolsCatalog Method = "desktop.tools.catalog"
+    MethodDesktopSettingsFonts Method = "desktop.settings.fonts"
     MethodDesktopToolsClassify Method = "desktop.tools.classify"
     MethodDesktopToolsTransform Method = "desktop.tools.transform"
     MethodDesktopToolsQr Method = "desktop.tools.qr"
@@ -1018,6 +1019,16 @@ type DesktopThemePackage struct {
     Author *string `json:"author,omitempty"`
     Description *string `json:"description,omitempty"`
     Css string `json:"css"`
+}
+
+type DesktopFont struct {
+    Family string `json:"family"`
+    IsMono bool `json:"is_mono"`
+    Path string `json:"path"`
+}
+
+type DesktopFontList struct {
+    Fonts []DesktopFont `json:"fonts"`
 }
 
 type ToolCatalogParams struct {

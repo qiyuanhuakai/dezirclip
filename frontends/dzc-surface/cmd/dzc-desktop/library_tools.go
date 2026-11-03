@@ -13,6 +13,12 @@ func (l *Library) ToolCatalog(ctx context.Context) (protocol.ToolCatalog, error)
 	return catalog, err
 }
 
+func (l *Library) SystemFonts(ctx context.Context) ([]protocol.DesktopFont, error) {
+	var list protocol.DesktopFontList
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopSettingsFonts, protocol.ToolCatalogParams{}, "DesktopFontList", &list)
+	return list.Fonts, err
+}
+
 func (l *Library) Classify(ctx context.Context, text string) ([]string, error) {
 	var result protocol.ToolClassification
 	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopToolsClassify, protocol.ToolClassifyParams{Text: text}, "ToolClassification", &result)
