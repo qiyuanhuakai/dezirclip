@@ -37,6 +37,8 @@ type selection struct {
 	dragging   bool
 }
 
+func (s *Selector) HasShortcut() bool { return len(s.hotkeys) != 0 }
+
 func New(owner *client.Client) *Selector {
 	s := &Selector{owner: owner, hotkeys: make(map[bool]string)}
 	var caps protocol.CapabilityReport

@@ -182,7 +182,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						command := reopen
 						reopen = ""
 						present(command)
-					} else if !stopping && !reachable() {
+					} else if !stopping && !panel.HasShortcut() && !selector.HasShortcut() && !reachable() {
 						mygo.App.Quit()
 					}
 				})

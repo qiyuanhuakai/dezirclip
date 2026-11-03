@@ -59,6 +59,8 @@ func (p *Panel) preferences() (protocol.QuickPreferences, error) {
 	return pref, err
 }
 
+func (p *Panel) HasShortcut() bool { return p.local != nil && p.local.shortcut != "" }
+
 func (p *Panel) RefreshShortcut() {
 	if p.stopping {
 		return
