@@ -46,6 +46,7 @@ func OpenDesktop(ctx context.Context, version string, startIfMissing bool) (*Cli
 		args = append(args, "--start-if-missing")
 	}
 	cmd := exec.CommandContext(ctx, filepath.Join(filepath.Dir(executable), name), args...)
+	cmd.SysProcAttr = desktopCLIProcessAttrs()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err

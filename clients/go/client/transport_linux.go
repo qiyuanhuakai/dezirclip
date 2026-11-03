@@ -6,9 +6,12 @@ import (
     "context"
     "net"
     "os"
+    "syscall"
 
     "golang.org/x/sys/unix"
 )
+
+func desktopCLIProcessAttrs() *syscall.SysProcAttr { return nil }
 
 func dialLocal(ctx context.Context, address string, expectedPID uint32) (net.Conn, error) {
     dialer := net.Dialer{}

@@ -427,8 +427,8 @@ jobs:
 
   verify-publish-and-promote:
     name: Verify signed artifacts, publish and synchronize update channel
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.collect-release-identities.result == 'success' && needs.verify-final-windows-upgrade.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success')) }}
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo]
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.collect-release-identities.result == 'success' && needs.verify-final-windows-upgrade.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success' && needs.windows-x64-mygo.result == 'success')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write

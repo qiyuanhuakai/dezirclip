@@ -7,11 +7,17 @@ import (
     "net"
     "os"
     "strings"
+    "syscall"
     "unsafe"
 
     "github.com/Microsoft/go-winio"
     "golang.org/x/sys/windows"
 )
+
+// Endpoint discovery runs before we record the user's foreground editor.
+func desktopCLIProcessAttrs() *syscall.SysProcAttr {
+    return &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+}
 
 func tokenIdentity(token windows.Token) (string, uint32, error) {
     user, err := token.GetTokenUser()
