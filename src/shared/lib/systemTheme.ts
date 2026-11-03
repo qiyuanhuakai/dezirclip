@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktopInvoke";
 import { getCurrentWindow } from "./desktopWindow";
 import type { ThemeColorMode } from "./themeRuntime";
 import { mediaSystemIsDark, normalizeColorMode } from "./themeRuntime";

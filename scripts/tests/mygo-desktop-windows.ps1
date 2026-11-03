@@ -19,6 +19,7 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int capacity);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr window, uint attribute, out uint value, uint size);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
 }
@@ -81,6 +82,13 @@ $resident = $null
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
+    @'
+import os, sqlite3
+with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
+    db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                   [("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false")])
+'@ | python -
+    if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
     [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
     $form.Show()
     $form.Activate()
@@ -107,6 +115,17 @@ try {
             }
         }
     } 'Synthetic history row missing from the shared WebView2 accessibility tree'
+    $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
+    if ($build -ge 22621) {
+        $null = Wait-Until {
+            [uint32]$value = 0
+            foreach ($expected in @(@(38,3), @(20,1), @(34,([uint32]::MaxValue-1)))) {
+                if ([MyGoInput]::DwmGetWindowAttribute($main.MainWindowHandle, $expected[0], [ref]$value, 4) -ne 0 -or
+                    $value -ne $expected[1]) { return $false }
+            }
+            return $true
+        } 'MyGo window did not apply acrylic, dark mode and the hidden native border'
+    }
     if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before row click' }
     if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not position pointer on the history row' }
     $hit = New-Object MyGoInput+Point

@@ -12,6 +12,27 @@ import (
 
 type DesktopShell struct{}
 
+type platformInfo struct {
+	Platform  string `json:"platform"`
+	Windows10 bool   `json:"is_windows_10"`
+	Windows11 bool   `json:"is_windows_11"`
+	Linux     bool   `json:"is_linux"`
+}
+
+func (shell *DesktopShell) ApplyAppearance(ctx context.Context, theme, mode string, border, mediaDark bool) error {
+	w := mygo.CallerWindow(ctx)
+	if w == nil {
+		return errors.New("WindowUnavailable")
+	}
+	if mode == "system" {
+		mode = shell.SystemThemeMode(ctx)
+		if mode == "system" && mediaDark {
+			mode = "dark"
+		}
+	}
+	return applyWindowAppearance(w, theme, mode, border)
+}
+
 var focusChanged = mygo.NewEvent[bool]("window-focus")
 var visibilityChanged = mygo.NewEvent[bool]("window-visibility")
 var windowMoved = mygo.NewEvent[bool]("window-moved")

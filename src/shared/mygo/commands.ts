@@ -1,6 +1,9 @@
 import { parsePrivacySnapshot } from "../lib/privacyRuntime";
 import { readResumeAuthority } from "../lib/mainWindowResume";
 import { hostGeneration } from "./events";
+import { shellCall } from "./bridge";
+import { getCustomThemes } from "../lib/themeCatalog";
+import { resolveThemeSelection } from "../lib/themePackage";
 import { getPrivacyViewState } from "../lib/privacySession";
 import type { TagBatchSelection } from "../../features/tag/utils/tagBatchSelection";
 
@@ -29,6 +32,11 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  get_platform_info: () => shellCall("PlatformInfo"),
+  get_system_theme_mode: () => shellCall("SystemThemeMode"),
+  set_theme: args => shellCall("ApplyAppearance", resolveThemeSelection(String(args.theme), getCustomThemes()).base,
+    args.color_mode ?? args.colorMode ?? "system", args.show_app_border ?? args.showAppBorder ?? true,
+    window.matchMedia("(prefers-color-scheme: dark)").matches),
   classify_text: args => library("Classify", args.text),
   transform_text: args => library("Transform", { text: args.text, kind: args.kind }),
   generate_qr_png: args => library("QR", { content: args.content, format: "png", size_px: args.sizePx }),

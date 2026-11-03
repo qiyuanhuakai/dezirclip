@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import { getCurrentWindow } from "../lib/desktopWindow";
 import { applyModeClass, applyThemeClass, ensureThemeCssLoaded, resolveThemeMode } from "../lib/themeRuntime";
 import { applyFontOverrides, applySurfaceOpacity } from "../lib/appearanceRuntime";

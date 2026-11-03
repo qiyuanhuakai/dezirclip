@@ -211,7 +211,8 @@ func run() error {
 	preview := &Preview{owner: actions}
 	mygo.Bind(preview)
 	mygo.App.WhenReady(func() {
-		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
+		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620, MinWidth: 250, MinHeight: 300,
+			Transparent: true, Vibrancy: mygo.VibrancyMica, TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true})
 		preview.main = win
 		win.OnBlur(func() { history.targetInvalid.Store(true); preview.clear(); focusChanged.Emit(win, false) })
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
