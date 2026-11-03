@@ -28,8 +28,17 @@ pub fn move_profile_offline(database: &Path, destination: &Path) -> io::Result<(
 }
 /// Move the installed profile through its original authenticated Service. A copy failure leaves
 /// that Service running. Only a confirmed cutover permits starting the Service at the new path.
-pub async fn move_active_profile(database: &Path, destination: &Path, instance: &str, epoch: u64) -> io::Result<()> {
-    let (_, target) = data::installed_move_directories(database, destination)?;
+#[derive(serde::Serialize)]
+pub struct MoveRecovery {
+    previous_directory: PathBuf,
+    target: PathBuf,
+    instance: String,
+    no_capture: bool,
+    pub detail: String,
+}
+
+pub async fn move_active_profile(database: &Path, destination: &Path, instance: &str, epoch: u64) -> io::Result<Option<MoveRecovery>> {
+    let (source, target) = data::installed_move_directories(database, destination)?;
     let sibling = sibling_executable()?;
     let old_endpoint = endpoint(database)?;
     let mut client = Client::control(&old_endpoint, ClientRole::Desktop).await?;
@@ -46,25 +55,62 @@ pub async fn move_active_profile(database: &Path, destination: &Path, instance: 
     let moved: ProfileMoveResult = client.call(Method::DesktopProfileMove, BackupPreviewParams {
         service_instance_id: instance.to_owned(), expected_epoch: epoch, path: path.to_owned(),
     }, "ProfileMoveResult").await?;
-    if !moved.moved { return Ok(()); }
-    if !moved.service_stopped {
-        let _: OperationResult = client.call(Method::ServiceStop, serde_json::json!({}), "OperationResult").await
-            .map_err(|_| io::Error::other("Data moved, but the old Service did not confirm shutdown"))?;
+    if !moved.moved { return Ok(None); }
+    let no_capture = !before.capture_owner;
+    let resume = async {
+        if !moved.service_stopped {
+            let _: OperationResult = client.call(Method::ServiceStop, serde_json::json!({}), "OperationResult").await
+                .map_err(|_| io::Error::other("Data moved, but the old Service did not confirm shutdown"))?;
+        }
+        drop(client);
+        tokio::task::spawn_blocking(move || previous.wait(Duration::from_secs(10))).await
+            .map_err(io::Error::other).and_then(|result| result)
+            .map_err(|_| io::Error::other("Data moved, but the old Service process did not confirm exit"))?;
+        restart_moved_profile(&target, &sibling, instance, no_capture).await
+    }.await;
+    Ok(resume.err().map(|error| MoveRecovery {
+        previous_directory: source, target, instance: instance.to_owned(), no_capture, detail: error.to_string(),
+    }))
+}
+
+/// Resume only the cutover. Validate the installed redirect before touching either endpoint.
+pub async fn recover_profile(target: &Path, previous: &Path, instance: &str, no_capture: bool) -> io::Result<()> {
+    let selected = data::database_path().map_err(io::Error::other)?;
+    let (current, old) = data::installed_move_directories(&selected, previous)?;
+    if current != target.canonicalize()? || current == old || instance.is_empty() {
+        return Err(io::Error::other("The moved profile is no longer selected"));
     }
-    drop(client);
-    tokio::task::spawn_blocking(move || previous.wait(Duration::from_secs(10))).await
-        .map_err(io::Error::other).and_then(|result| result)
-        .map_err(|_| io::Error::other("Data moved, but the old Service process did not confirm exit"))?;
+    let endpoint = endpoint(&old.join("clipboard.db"))?;
+    match Client::connect(&endpoint, ClientRole::Desktop, None).await {
+        Ok(probe) => {
+            drop(probe);
+            let mut client = Client::control(&endpoint, ClientRole::Desktop).await?;
+            let status: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
+            if status.mode != HostMode::Service || status.state.service_instance_id != instance {
+                return Err(io::Error::other("A different Host now owns the previous profile"));
+            }
+            let previous = dzc_platform::ipc::ProcessExit::open(&client.peer)?;
+            let _: OperationResult = client.call(Method::ServiceStop, serde_json::json!({}), "OperationResult").await?;
+            drop(client);
+            tokio::task::spawn_blocking(move || previous.wait(Duration::from_secs(10))).await.map_err(io::Error::other)??;
+        }
+        Err(error) if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) => (),
+        Err(error) => return Err(error),
+    }
+    let _old = data::reserve_profile(&old)?;
+    restart_moved_profile(&current, &sibling_executable()?, instance, no_capture).await
+}
+
+async fn restart_moved_profile(target: &Path, sibling: &Path, instance: &str, no_capture: bool) -> io::Result<()> {
     let selected = data::database_path().map_err(|_| io::Error::other("Data moved, but the new profile could not be located"))?;
     let actual = selected.canonicalize().map_err(|_| io::Error::other("Data moved, but the selected database is unavailable"))?;
     let expected = target.join("clipboard.db").canonicalize().map_err(|_| io::Error::other("Data moved, but the destination database is unavailable"))?;
     if actual != expected {
         return Err(io::Error::other("Data moved, but the selected profile changed before restart"));
     }
-    let no_capture = !before.capture_owner;
-    let after = start_preflight(&selected, &sibling, no_capture, false, dzc_platform::ipc::ProcessExit::ensure_supported).await
+    let after = start_preflight(&selected, sibling, no_capture, false, dzc_platform::ipc::ProcessExit::ensure_supported).await
         .map_err(|_| io::Error::other("Data moved, but the replacement Service could not start"))?;
-    if after.mode != HostMode::Service || after.state.service_instance_id == instance || after.capture_owner != before.capture_owner {
+    if after.mode != HostMode::Service || after.state.service_instance_id == instance || after.capture_owner == no_capture {
         return Err(io::Error::other("Data moved, but the replacement Service has an unexpected owner or capture mode"));
     }
     Ok(())

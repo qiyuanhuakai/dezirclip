@@ -375,6 +375,8 @@ export const zh = {
         open_folder: "打开",
         change_data_path: "更改数据存储位置",
         data_move_confirm: "确定要将数据迁移到 {path} 吗？应用将会重启。",
+        data_move_reconnect: "数据已迁移。请重新连接新服务以继续。",
+        data_move_retry: "请从托盘或主窗口快捷键打开 DezirClip，重试连接。",
         data_move_success: "数据迁移成功。",
         data_move_failed: "数据迁移失败: {e}",
 

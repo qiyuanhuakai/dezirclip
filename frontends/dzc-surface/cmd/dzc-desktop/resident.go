@@ -73,6 +73,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		closing := false
 		migrating := false
 		moved := false
+		var pending *client.MoveRecovery
 		reopen := ""
 		registered := make(map[string]bool)
 		reachable := func() bool {
@@ -80,8 +81,44 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		}
 		var toggle func()
 		var present func(string)
+		reconnect := func(report func(error)) {
+			migrating = true
+			receipt := pending
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+				defer cancel()
+				err := receipt.Reconnect(ctx)
+				mygo.RunOnMain(func() {
+					migrating = false
+					if err == nil {
+						pending = nil
+						moved = true
+					}
+					if report != nil {
+						report(err)
+					}
+					if err != nil {
+						if report == nil || commands == nil {
+							_, _ = mygo.Dialog.Message(mygo.MessageOptions{Title: "DezirClip", Message: "Data moved. Open DezirClip again to retry the Service connection.\n" + err.Error(), Buttons: []string{"OK"}})
+						}
+						return
+					}
+					relaunch = true
+					if commands == nil {
+						mygo.App.Quit()
+						return
+					}
+					closing = true
+					_, _ = io.WriteString(commands, "rebuild\n")
+				})
+			}()
+		}
 		present = func(command string) {
 			if stopping || migrating || moved {
+				return
+			}
+			if pending != nil {
+				reconnect(nil)
 				return
 			}
 			if commands != nil {
@@ -142,7 +179,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 								reply := func(err error) {
 									_ = json.NewEncoder(input).Encode(residentReply{ID: request.ID, Success: err == nil})
 								}
-								if stopping || migrating || commands != input || (moved && request.Operation != "relaunch-profile") {
+								if stopping || migrating || commands != input || ((moved || pending != nil) && request.Operation != "relaunch-profile") {
 									reply(fmt.Errorf("main window closed"))
 									return
 								}
@@ -150,12 +187,13 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 								case "move-profile":
 									migrating = true
 									go func() {
-										err := client.MoveActiveProfile(context.Background(), request.Directory, owner.Hello().State.ServiceInstanceId, request.Epoch)
+										receipt, err := client.MoveActiveProfile(context.Background(), request.Directory, owner.Hello().State.ServiceInstanceId, request.Epoch)
 										mygo.RunOnMain(func() {
 											migrating = false
-											moved = err == nil
+											pending = receipt
+											moved = err == nil && pending == nil
 											if commands == input {
-												result := residentReply{ID: request.ID, Success: moved}
+												result := residentReply{ID: request.ID, Success: err == nil, Reconnect: pending != nil}
 												if err != nil {
 													result.Error = err.Error()
 												}
@@ -167,6 +205,10 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 										})
 									}()
 								case "relaunch-profile":
+									if pending != nil {
+										reconnect(reply)
+										return
+									}
 									if !moved {
 										reply(fmt.Errorf("no completed profile move"))
 										return
@@ -217,7 +259,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 						mygo.RunOnMain(func() { closing = true })
 					case "focus":
 						mygo.RunOnMain(func() {
-							if !stopping && !migrating && !moved {
+							if !stopping && !migrating && !moved && pending == nil {
 								panel.RefreshShortcut()
 								selector.Refresh()
 								refreshMainShortcuts(owner, registered, toggle)
@@ -235,7 +277,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					if moved {
 						relaunch = true
 						mygo.App.Quit()
-					} else if migrating {
+					} else if migrating || pending != nil {
 						return
 					} else if !stopping && reopen != "" {
 						command := reopen

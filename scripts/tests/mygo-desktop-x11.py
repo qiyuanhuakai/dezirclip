@@ -1328,17 +1328,37 @@ def check_profile_move(executable, home):
         assert json.loads(run('service','status','--json'))['state']['service_instance_id'] == original
         assert obstruction.read_bytes() == b'fixture' and not (config/'datapath.txt').exists()
         obstruction.unlink()
+        service = package/'dzc-service'
+        unavailable = package/'dzc-service.unavailable'
+        service.rename(unavailable)
         select_target()
-        wait(lambda: labeled('Data moved successfully.'), 'Migration success dialog')
+        wait(lambda: labeled('Data moved. Reconnect to the new Service to continue.'), 'Committed relocation dialog')
+        assert Path((config/'datapath.txt').read_text()) == target
+        sentinel = 'Destination only ' + secrets.token_hex(8)
+        run('add', sentinel)
         click('Ok')
+        wait(lambda: any('retry the connection' in (n+t) for _,n,_,t in nodes()), 'Reconnection failure dialog')
+        click('Ok')
+        # Close only this fixture's WebView. The surviving tray must recover without the old child.
+        windows = {int(pid) for thread in Path(f'/proc/{process.pid}/task').glob('*/children')
+                   for pid in thread.read_text().split()
+                   if Path(f'/proc/{pid}/exe').resolve() == executable
+                   and b'--main-window' in Path(f'/proc/{pid}/cmdline').read_bytes()}
+        assert len(windows) == 1
+        child = windows.pop()
+        os.kill(child, 15)
+        wait(lambda: not Path(f'/proc/{child}').exists(), 'Old WebView exited')
+        unavailable.rename(service)
+        wait(lambda: tray_item(process.pid, '设置'), 'Retry from resident tray')
         process.wait(timeout=12)
         replacement = wait(lambda: next((p for p in residents() if visible_main_window(p, executable)), None), 'Replacement main window')
         assert replacement != process.pid
         wait(lambda: labeled(marker), 'Migrated history in new WebView')
+        wait(lambda: labeled(sentinel), 'Destination-only history survived reconnection')
         status = json.loads(run('service','status','--json'))
         assert status['state']['service_instance_id'] != original and not status['capture_owner']
         assert Path((config/'datapath.txt').read_text()) == target and (config/'clipboard.db').is_file()
-        print('Verified MyGo Settings folder selection, recoverable failure, success dialog, resident/WebView replacement and unchanged capture mode')
+        print('Verified MyGo Settings folder selection, pre-commit rollback, post-commit restart failure, tray recovery after WebView exit, destination-only history and preserved capture mode')
     finally:
         for pid in residents():
             try: os.kill(pid, 15)

@@ -26,25 +26,54 @@ type desktopEndpoint struct {
 	Version     string
 }
 
-// MoveActiveProfile lets the bundled controller verify the old Service process
-// has exited before starting its replacement with the same capture mode.
-func MoveActiveProfile(ctx context.Context, directory, instance string, epoch uint64) error {
+type MoveRecovery struct {
+	PreviousDirectory string `json:"previous_directory"`
+	Target            string `json:"target"`
+	Instance          string `json:"instance"`
+	NoCapture         bool   `json:"no_capture"`
+}
+
+// A successful copy can still need a separate Service cutover.
+func MoveActiveProfile(ctx context.Context, directory, instance string, epoch uint64) (*MoveRecovery, error) {
 	if !filepath.IsAbs(directory) || instance == "" {
-		return ErrProtocol
+		return nil, ErrProtocol
 	}
-	cmd, err := bundledCLI(ctx, "service", "move-data", directory, "--from-instance", instance, "--epoch", strconv.FormatUint(epoch, 10))
+	output, err := relocationCommand(ctx, "move-data", directory, "--from-instance", instance, "--epoch", strconv.FormatUint(epoch, 10), "--json")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = cmd.Output()
+	var result struct {
+		Recovery *MoveRecovery `json:"recovery"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, err
+	}
+	return result.Recovery, nil
+}
+
+func (r *MoveRecovery) Reconnect(ctx context.Context) error {
+	args := []string{"recover-move", r.Target, "--previous-directory", r.PreviousDirectory, "--from-instance", r.Instance}
+	if r.NoCapture {
+		args = append(args, "--no-capture")
+	}
+	_, err := relocationCommand(ctx, args...)
+	return err
+}
+
+func relocationCommand(ctx context.Context, args ...string) ([]byte, error) {
+	cmd, err := bundledCLI(ctx, append([]string{"service"}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	output, err := cmd.Output()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		message := strings.TrimSpace(string(exit.Stderr))
 		if message != "" {
-			return errors.New(message[:min(len(message), 1024)])
+			return nil, errors.New(message[:min(len(message), 1024)])
 		}
 	}
-	return err
+	return output, err
 }
 
 func bundledCLI(ctx context.Context, args ...string) (*exec.Cmd, error) {

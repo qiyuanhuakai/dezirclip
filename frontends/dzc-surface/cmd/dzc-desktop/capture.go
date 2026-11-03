@@ -20,9 +20,10 @@ type residentRequest struct {
 	Visible   bool   `json:"visible,omitempty"`
 }
 type residentReply struct {
-	ID      uint64 `json:"request_id"`
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
+	ID        uint64 `json:"request_id"`
+	Reconnect bool   `json:"reconnect,omitempty"`
+	Success   bool   `json:"success"`
+	Error     string `json:"error,omitempty"`
 }
 type residentBridge struct {
 	output     io.Writer
@@ -32,12 +33,18 @@ type residentBridge struct {
 	pending    chan residentReply
 }
 
-func (s *DesktopShell) MoveProfile(ctx context.Context, directory string, epoch uint64) error {
-	return s.resident.send(ctx, residentRequest{Operation: "move-profile", Directory: directory, Epoch: epoch}, 15*time.Minute)
+var errReconnect = errors.New("ProfileReconnectRequired")
+
+func (s *DesktopShell) MoveProfile(ctx context.Context, directory string, epoch uint64) (bool, error) {
+	err := s.resident.send(ctx, residentRequest{Operation: "move-profile", Directory: directory, Epoch: epoch}, 15*time.Minute)
+	if errors.Is(err, errReconnect) {
+		return true, nil
+	}
+	return false, err
 }
 
 func (s *DesktopShell) RelaunchProfile(ctx context.Context) error {
-	return s.resident.send(ctx, residentRequest{Operation: "relaunch-profile"}, 10*time.Second)
+	return s.resident.send(ctx, residentRequest{Operation: "relaunch-profile"}, 60*time.Second)
 }
 
 func (s *DesktopShell) Capture(ctx context.Context, full bool, epoch uint64) error {
@@ -83,6 +90,9 @@ func (c *residentBridge) send(ctx context.Context, request residentRequest, dead
 	defer cancel()
 	select {
 	case reply := <-done:
+		if request.Operation == "move-profile" && reply.Success && reply.Reconnect {
+			return errReconnect
+		}
 		if !reply.Success {
 			if request.Operation == "move-profile" || request.Operation == "relaunch-profile" {
 				if reply.Error != "" {

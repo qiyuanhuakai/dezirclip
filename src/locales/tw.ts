@@ -371,6 +371,8 @@ export const tw = {
         open_folder: "開啟",
         change_data_path: "更改資料儲存位置",
         data_move_confirm: "確定要將資料遷移到 {path} 嗎？應用程式將會重啟。",
+        data_move_reconnect: "資料已遷移。請重新連線至新服務以繼續。",
+        data_move_retry: "請從系統匣或主視窗快捷鍵開啟 DezirClip，重試連線。",
         data_move_success: "資料遷移成功。",
         data_move_failed: "資料遷移失敗: {e}",
 

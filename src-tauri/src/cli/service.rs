@@ -16,7 +16,11 @@ enum ServiceCommand {
     /// Move an installed profile offline or through the identified standalone Service.
     MoveData { directory: PathBuf,
         #[arg(long, requires = "epoch")] from_instance: Option<String>,
-        #[arg(long, requires = "from_instance")] epoch: Option<u64> },
+        #[arg(long, requires = "from_instance")] epoch: Option<u64>,
+        #[arg(long, requires = "from_instance")] json: bool },
+    /// Reconnect a committed installed-profile move without copying any files.
+    RecoverMove { directory: PathBuf, #[arg(long)] previous_directory: PathBuf,
+        #[arg(long)] from_instance: String, #[arg(long)] no_capture: bool },
     /// Resolve the authenticated desktop Host. Prints connection metadata only.
     DesktopEndpoint { #[arg(long)] start_if_missing: bool },
     /// Explicitly grant a Surface bounded access. The token is printed once.
@@ -46,15 +50,25 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 status_output(status,json)
             }
             ServiceCommand::Status { json } => status_output(controller::status(&database).await.map_err(|e|e.to_string())?,json),
-            ServiceCommand::MoveData { directory, from_instance, epoch } => {
+            ServiceCommand::MoveData { directory, from_instance, epoch, json } => {
                 if cfg!(feature = "portable") {
                     return Err("Move the complete portable directory to relocate its data".into());
                 }
                 if let (Some(instance), Some(epoch)) = (from_instance, epoch) {
-                    controller::move_active_profile(&database, &directory, &instance, epoch).await.map_err(|e| e.to_string())
+                    let recovery = controller::move_active_profile(&database, &directory, &instance, epoch).await.map_err(|e| e.to_string())?;
+                    if json {
+                        println!("{}", serde_json::json!({"recovery":recovery}));
+                    } else if let Some(pending) = recovery {
+                        return Err(pending.detail);
+                    }
+                    Ok(())
                 } else {
                     controller::move_profile_offline(&database, &directory).map_err(|e| e.to_string())
                 }
+            }
+            ServiceCommand::RecoverMove { directory, previous_directory, from_instance, no_capture } => {
+                if cfg!(feature = "portable") { return Err("Portable profile recovery is unsupported".into()); }
+                controller::recover_profile(&directory, &previous_directory, &from_instance, no_capture).await.map_err(|e| e.to_string())
             }
             ServiceCommand::DesktopEndpoint { start_if_missing } => {
                 let descriptor = controller::desktop_endpoint(&database, start_if_missing).await.map_err(|error| error.to_string())?;

@@ -359,14 +359,18 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
 
                                                 if (confirm) {
                                                     try {
-                                                        await invoke("set_data_path", { newPath });
+                                                        const reconnect = await invoke<boolean | null>("set_data_path", { newPath });
 
                                                         await message(
-                                                            t("data_move_success"),
+                                                            t(reconnect ? "data_move_reconnect" : "data_move_success"),
                                                             { title: t("notice"), kind: "info" }
                                                         );
 
-                                                        await invoke("relaunch");
+                                                        try {
+                                                            await invoke("relaunch");
+                                                        } catch (error) {
+                                                            await message(t("data_move_retry") + "\n" + String(error), { title: t("notice"), kind: "warning" });
+                                                        }
                                                     } catch (e: unknown) {
                                                         console.error(e);
                                                         const errorMsg = e instanceof Error ? e.message : String(e);
