@@ -67,4 +67,4 @@ if __name__ == "__main__":
     stage(root, args.output.resolve(), args.revision, version)
     subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-STA", "-File",
                     str(root / "scripts/tests/mygo-desktop-windows.ps1"),
-                    "-Desktop", str(args.output.resolve() / "dzc-desktop.exe")], check=True, timeout=150)
+                    "-Desktop", str(args.output.resolve() / "dzc-desktop.exe")], check=True, timeout=240)

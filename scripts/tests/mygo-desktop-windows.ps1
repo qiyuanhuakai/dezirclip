@@ -16,6 +16,9 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int capacity);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
 }
@@ -31,6 +34,38 @@ function Wait-Until([scriptblock]$Check, [string]$Failure, [int]$Seconds = 30) {
         Start-Sleep -Milliseconds 80
     }
     throw $Failure
+}
+
+function Test-ResidentPanel($Resident, [string]$Shortcut, [string]$Title, $Editor, $Form) {
+    $Form.Activate()
+    $null = $Editor.Focus()
+    $null = Wait-Until { $Editor.Focused -and [MyGoInput]::GetForegroundWindow() -eq $Form.Handle } 'Independent editor did not regain foreground'
+    [Windows.Forms.SendKeys]::SendWait($Shortcut)
+    $panel = Wait-Until {
+        $window = [MyGoInput]::GetForegroundWindow()
+        [uint32]$ownerId = 0
+        $null = [MyGoInput]::GetWindowThreadProcessId($window, [ref]$ownerId)
+        if ($ownerId -eq $Resident.Id) {
+            $caption = [Text.StringBuilder]::new(128)
+            $null = [MyGoInput]::GetWindowText($window, $caption, $caption.Capacity)
+            if ($caption.ToString() -ceq $Title) { return $window }
+        }
+    } "Resident did not focus $Title" 12
+    [Windows.Forms.SendKeys]::SendWait('{ESC}')
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($panel) } "Resident did not dismiss $Title" 8
+}
+
+function Get-DesktopProcesses([int[]]$RootIds) {
+    $processes = @(Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId,Name,WorkingSetSize,PrivatePageCount)
+    $owned = [Collections.Generic.HashSet[int]]::new()
+    foreach ($rootId in $RootIds) { $null = $owned.Add($rootId) }
+    do {
+        $count = $owned.Count
+        foreach ($p in $processes) {
+            if ($owned.Contains([int]$p.ParentProcessId)) { $null = $owned.Add([int]$p.ProcessId) }
+        }
+    } while ($owned.Count -gt $count)
+    $processes | Where-Object { $owned.Contains([int]$_.ProcessId) }
 }
 
 $exe = (Resolve-Path -LiteralPath $Desktop).Path
@@ -59,6 +94,9 @@ try {
         } | Select-Object -First 1
     } 'Packaged MyGo main window did not appear'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    $webProcesses = @(Wait-Until {
+        Get-DesktopProcesses @($main.Id) | Where-Object { $_.Name -eq 'msedgewebview2.exe' }
+    } 'No WebView2 descendants found for the shared main window')
     $condition = [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, $marker)
     $point = Wait-Until {
         $row = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
@@ -85,6 +123,31 @@ try {
     $null = Wait-Until { $main.HasExited } 'Unpinned WebView2 main window did not exit'
     if ($resident.HasExited) { throw 'Native resident exited with the main window' }
     Write-Output 'Verified shared WebView2 row click, exact clipboard and editor text, restored focus, and independent native resident'
+    # The file must also parse as Windows PowerShell 5.1 without a UTF-8 BOM.
+    Test-ResidentPanel $resident '^+v' ([regex]::Unescape('DezirClip \u5feb\u901f\u7c98\u8d34')) $edit $form
+    Test-ResidentPanel $resident '^+a' ([regex]::Unescape('DezirClip \u622a\u56fe')) $edit $form
+    if ($edit.Text -cne $marker -or [Windows.Forms.Clipboard]::GetText() -cne $marker) { throw 'Cancelled native panel changed clipboard or editor' }
+    $endpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+    if ($LASTEXITCODE -or !$endpoint.pid) { throw 'Cannot locate the isolated Rust Service' }
+    $service = Get-Process -Id $endpoint.pid
+    if ($service.Path -ne (Join-Path (Split-Path $exe) 'dzc-service.exe')) { throw 'Unexpected Service process' }
+    $roots = @($resident.Id, $main.Id, $service.Id) + @($webProcesses | ForEach-Object { [int]$_.ProcessId })
+    $null = Wait-Until {
+        !(Get-DesktopProcesses $roots | Where-Object { $_.Name -eq 'msedgewebview2.exe' })
+    } 'WebView2 children remained after closing the main window and both native panels'
+    $samples = @(foreach ($index in 1..3) {
+        Start-Sleep -Seconds 1
+        if ($resident.HasExited -or $service.HasExited) { throw 'Resident or Service exited during idle measurement' }
+        $members = @(Get-DesktopProcesses $roots)
+        if ($members.Name -contains 'msedgewebview2.exe') { throw 'WebView2 restarted during native idle' }
+        [pscustomobject]@{ processes = $members.Count; private_MiB = [Math]::Round(($members | Measure-Object PrivatePageCount -Sum).Sum / 1MB, 2);
+            working_set_MiB = [Math]::Round(($members | Measure-Object WorkingSetSize -Sum).Sum / 1MB, 2) }
+    })
+    $table = $samples | Format-Table -AutoSize | Out-String
+    Write-Output "Windows x64 MyGo idle after quick paste and screenshot dismissal (resident, Service and descendants):`n$table"
+    if ($env:GITHUB_STEP_SUMMARY) {
+        Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding UTF8 -Value "### Windows x64 MyGo idle memory`n`nQuick paste and screenshot were opened and dismissed in the resident process. No WebView2 process was present in the observed process tree. Three samples, MiB.`n`n~~~`n$table~~~`n"
+    }
 } catch {
     $failure = $_
     Write-Host ("Editor length={0}, exact={1}, focused={2}, foreground={3}, editor window={4}" -f
