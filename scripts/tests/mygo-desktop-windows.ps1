@@ -43,6 +43,22 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr window, System.Text.StringBuilder title, int capacity);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateWindowEx(
+        uint ex, string cls, string title, uint style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr data);
+    [DllImport("user32.dll")] public static extern bool DestroyWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool UpdateWindow(IntPtr hwnd);
+    public static IntPtr PreviewBackdrop(IntPtr preview, Rect r, bool white) {
+        int width=r.right-r.left, height=r.bottom-r.top;
+        // A non-activating stock STATIC control paints SS_BLACKRECT or SS_WHITERECT below the flyout.
+        IntPtr hwnd=CreateWindowEx(0x08000080,"STATIC","",0x80000000u | (white?6u:4u),
+            r.left,r.top,width,height,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+        if (hwnd==IntPtr.Zero) throw new System.ComponentModel.Win32Exception();
+        if (!SetWindowPos(hwnd,preview,r.left,r.top,width,height,0x50)) {
+            DestroyWindow(hwnd); throw new InvalidOperationException("Cannot place preview backdrop");
+        }
+        UpdateWindow(hwnd);
+        return hwnd;
+    }
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr window, uint attribute, out uint value, uint size);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
@@ -225,30 +241,38 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
         try { $graphics.CopyFromScreen($bounds.left,$bounds.top,0,0,$image.Size) } finally { $graphics.Dispose() }
         return $image
     }
-    Start-Sleep -Milliseconds 350
-    $visible = & $captureFrame
-    try {
-        $away = Get-ControlPoint $root 'Settings'
-        if (![MyGoInput]::SetCursorPos($away.X,$away.Y)) { throw 'Could not leave the selected row' }
-        $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Preview remained after leaving the row'
-        Start-Sleep -Milliseconds 200
-        $behind = & $captureFrame
+    foreach ($white in @($false,$true)) {
+        $backdrop = [MyGoInput]::PreviewBackdrop($preview,$bounds,$white)
         try {
-            $changed = 0
-            for ($y=8; $y -lt $height/2; $y+=2) {
-                for ($x=8; $x -lt $width-8; $x+=2) {
-                    if ($visible.GetPixel($x,$y).ToArgb() -ne $behind.GetPixel($x,$y).ToArgb()) { $changed++ }
-                }
+            $expected = if ($white) { [Drawing.Color]::White.ToArgb() } else { [Drawing.Color]::Black.ToArgb() }
+            $sampleX = [int]($width/2)
+            $sampleY = $height-22
+            $last = @{}
+            try {
+                $null = Wait-Until {
+                    [Windows.Forms.Application]::DoEvents()
+                    $image = & $captureFrame
+                    try {
+                        $last.pixel = $image.GetPixel($sampleX,$sampleY).ToArgb()
+                        if ($last.pixel -ne $expected) { return $false }
+                        $ink = 0
+                        for ($y=8; $y -lt $height/2; $y+=2) {
+                            for ($x=8; $x -lt $width-8; $x+=2) {
+                                if ($image.GetPixel($x,$y).ToArgb() -ne $expected) { $ink++ }
+                            }
+                        }
+                        return ($white -or $ink -ge 8) -and [MyGoInput]::IsWindowVisible($preview)
+                    } finally { $image.Dispose() }
+                } 'Native preview must show both the controlled backdrop and visible content' 4
+            } finally {
+                Write-Output ("Preview bottom pixel={0:X8}, backdrop={1:X8}" -f $last.pixel,$expected)
             }
-            if ($changed -lt 8) { throw 'Preview text was invisible at zero background opacity' }
-            foreach ($x in @([int]($width/4), [int]($width/2), [int](3*$width/4))) {
-                $y = $height-22
-                if ($visible.GetPixel($x,$y).ToArgb() -ne $behind.GetPixel($x,$y).ToArgb()) {
-                    throw ("Preview pixel at ({0},{1}), visible={2:X8}, behind={3:X8}" -f $x,$y,$visible.GetPixel($x,$y).ToArgb(),$behind.GetPixel($x,$y).ToArgb())
-                }
-            }
-        } finally { $behind.Dispose() }
-    } finally { $visible.Dispose() }
+        } finally { $null = [MyGoInput]::DestroyWindow($backdrop) }
+    }
+    $away = Get-ControlPoint $root 'Settings'
+    if (![MyGoInput]::SetCursorPos($away.X,$away.Y)) { throw 'Could not leave the selected row' }
+    $null = Wait-Until { ![MyGoInput]::IsWindowVisible($preview) } 'Preview remained after leaving the row'
+
 }
 
 function Test-ExternalEdit($root, $main, [string]$marker) {
