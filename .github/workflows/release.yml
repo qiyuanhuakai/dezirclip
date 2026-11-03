@@ -215,7 +215,7 @@ jobs:
     needs: create-release
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -257,6 +257,17 @@ jobs:
           path: ${{ runner.temp }}/mygo-test-package/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Attach the verified Windows x64 MyGo ZIP to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'mygo-test-package'
+          $archive = Join-Path $env:RUNNER_TEMP "DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo.zip"
+          $files = 'dzc-desktop.exe', 'dzc-service.exe', 'dzc.exe' | ForEach-Object { Join-Path $stage $_ }
+          Compress-Archive -LiteralPath $files -DestinationPath $archive -CompressionLevel Optimal
+          gh release upload "$env:GITHUB_REF_NAME" $archive --repo "$env:GITHUB_REPOSITORY" --clobber
 
   publish-tauri:
     name: Tauri release (${{ matrix.name }})
