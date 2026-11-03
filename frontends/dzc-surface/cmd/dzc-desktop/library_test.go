@@ -132,6 +132,32 @@ func TestReactLibraryWithService(t *testing.T) {
 	if err != nil || baseline.State.ServiceInstanceId != instance || len(baseline.Events) != 0 {
 		t.Fatalf("new WebView event baseline: %+v %v", baseline, err)
 	}
+	t.Run("privacy protection preferences", func(t *testing.T) {
+		for _, change := range []struct{ key, value string }{
+			{"app.privacy_protection", "false"},
+			{"app.privacy_protection_kinds", "phone,email"},
+			{"app.privacy_protection_custom_rules", "backup example\napp credential"},
+			{"app.privacy_protection", "true"},
+		} {
+			before := epoch
+			if err := library.SetSetting(ctx, change.key, change.value, before); err != nil {
+				t.Fatal(err)
+			}
+			updated, err := library.Status(ctx)
+			if err != nil || updated.State.PrivacyEpoch <= before {
+				t.Fatalf("policy change did not invalidate old reads: %+v %v", updated.State, err)
+			}
+			epoch = updated.State.PrivacyEpoch
+			prefs, err := library.Preferences(ctx)
+			var stored map[string]string
+			if err != nil || json.Unmarshal(prefs, &stored) != nil || stored[change.key] != change.value {
+				t.Fatalf("privacy setting %s did not persist: %v", change.key, err)
+			}
+			if _, err := library.PasteQueue(ctx, before); err == nil {
+				t.Fatal("stale privacy state still authorized reads")
+			}
+		}
+	})
 	if err := library.SetWindowPinned(ctx, true, epoch); err != nil {
 		t.Fatal(err)
 	}

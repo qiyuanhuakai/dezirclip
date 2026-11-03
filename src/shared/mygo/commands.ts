@@ -118,6 +118,12 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   }),
   get_clipboard_host_status: () => library("Status"),
   get_privacy_status: async () => privacySnapshot(await library("Status")),
+  set_privacy_protection: args => library("SetSetting", "app.privacy_protection", String(args.enabled), currentEpoch()),
+  set_privacy_protection_kinds: args => {
+    if (!Array.isArray(args.kinds) || args.kinds.some(kind => typeof kind !== "string" || kind.includes(","))) throw new Error("InvalidPrivacyKinds");
+    return library("SetSetting", "app.privacy_protection_kinds", args.kinds.join(","), currentEpoch());
+  },
+  set_privacy_protection_custom_rules: args => library("SetSetting", "app.privacy_protection_custom_rules", args.rules, currentEpoch()),
   get_privacy_rules: () => library("PolicyRules", currentEpoch()),
   get_privacy_decision: args => library("PolicyDecision", { id: args.id, service_instance_id: args.expectedHostInstanceId, expected_epoch: args.expectedEpoch }),
   privacy_feedback: async args => privacySnapshot(await library("PolicyFeedback", { id: args.id, action: args.action,
@@ -153,6 +159,6 @@ export async function invokeMyGo<T>(command: string, args: Arguments = {}): Prom
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);
   const generation = hostGeneration();
   const result = await commands[command](args);
-  if (!["set_privacy_session", "privacy_feedback", "remove_privacy_rule", "copy_to_clipboard", "send_emoji"].includes(command) && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
+  if (!["set_privacy_session", "privacy_feedback", "remove_privacy_rule", "set_privacy_protection", "set_privacy_protection_kinds", "set_privacy_protection_custom_rules", "copy_to_clipboard", "send_emoji"].includes(command) && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
   return result as T;
 }
