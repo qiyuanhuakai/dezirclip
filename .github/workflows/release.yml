@@ -418,8 +418,8 @@ jobs:
 
   collect-release-identities:
     name: Collect actual final package identities
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success')) }}
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, windows-x64-mygo]
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success' && needs.windows-x64-mygo.result == 'success')) }}
     permissions:
       contents: write
       actions: read

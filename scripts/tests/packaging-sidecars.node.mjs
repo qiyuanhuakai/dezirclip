@@ -203,7 +203,8 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
   const { identities, upgrades } = assertReleaseSourceRouting(workflow);
   assert(identities, "publication requires the actual final-package identity workflow");
-  assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
+  assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, windows-x64-mygo\]/);
+  assert.match(identities, /github\.event_name == 'workflow_dispatch' \|\| \(needs\.publish-tauri\.result == 'success' && needs\.publish-standalone-cli\.result == 'success' && needs\.publish-flatpak\.result == 'success' && needs\.windows-x64-mygo\.result == 'success'\)/);
   assert.match(identities, /uses: \.\/\.github\/workflows\/release-identities\.yml/);
   assert.match(identities, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
   assert(upgrades, "publication requires actual final signed NSIS installation and upgrade acceptance");

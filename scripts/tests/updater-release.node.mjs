@@ -125,6 +125,8 @@ function publisherFixture(options = {}) {
     state.product.assets.push(asset(`DezirClip-${version}-linux-${arch}.flatpak`, Buffer.from('flatpak')));
   }
   if (options.sync) {
+    const hasMyGo = compareVersions(version, '0.2.0-alpha.9') >= 0;
+    if (hasMyGo) state.product.assets.push(asset(`DezirClip-v${version}-windows-x64-MyGo.zip`, Buffer.from('standalone MyGo ZIP')));
     for (const arch of ['amd64', 'arm64']) {
       const name = `DezirClip_${version}_${arch}.deb`;
       state.product.assets.push(asset(name, Buffer.from('deb')), asset(`${name}.sig`, Buffer.from('signature')));
@@ -140,6 +142,7 @@ function publisherFixture(options = {}) {
       status: options.running ? 'in_progress' : 'completed', conclusion: options.running ? null : 'success' };
     const names = [
       'Create GitHub release', 'Publish verified standalone archives',
+      ...(hasMyGo ? ['Windows x64 MyGo test download'] : []),
       ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64'].map(platform => `Tauri release (${platform})`),
       ...['windows-x86_64', 'windows-aarch64', 'linux-x86_64', 'linux-aarch64']
         .map(platform => `Build compatible standalone CLI / Standalone (${platform})`),
@@ -345,6 +348,32 @@ for (const [label, change] of [
       change(fixture); assert.throws(() => invoke());
       assert.deepEqual(fixture.state.mutations, []);
       assert(fixture.state.calls.every(args => !args.includes('Accept: application/octet-stream')));
+    });
+  });
+}
+
+test('alpha.9 publishes the separate MyGo ZIP and retains the eight signed updater assets', () => {
+  withSynchronization({ version: '0.2.0-alpha.9', running: true }, (fixture, gate, invoke) => {
+    assert.equal(fixture.state.product.assets.length, 25);
+    assert.equal(invoke().signed_assets.length, 8);
+    assert.equal(fixture.state.product.draft, false);
+    assert.equal(fixture.active('preview.json').version, '0.2.0-alpha.9');
+  });
+});
+
+for (const issue of ['missing ZIP', 'duplicate ZIP', 'unknown ZIP', 'late ZIP', 'missing job']) {
+  test(`alpha.9 blocks publication with a ${issue}`, () => {
+    withSynchronization({ version: '0.2.0-alpha.9', running: true }, (fixture, gate, invoke) => {
+      const { product, jobs } = fixture.state;
+      const zip = product.assets.find(asset => asset.name === 'DezirClip-v0.2.0-alpha.9-windows-x64-MyGo.zip');
+      assert.ok(zip);
+      if (issue === 'missing ZIP') product.assets.splice(product.assets.indexOf(zip), 1);
+      if (issue === 'duplicate ZIP') product.assets.push({ ...zip, id: 9999 });
+      if (issue === 'unknown ZIP') zip.name = 'other.zip';
+      if (issue === 'late ZIP') zip.updated_at = '2026-10-22T00:00:00Z';
+      if (issue === 'missing job') jobs.splice(jobs.findIndex(job => job.name === 'Windows x64 MyGo test download'), 1);
+      assert.throws(() => invoke());
+      assert.deepEqual(fixture.state.mutations, []);
     });
   });
 }
