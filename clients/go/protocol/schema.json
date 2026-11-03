@@ -4850,7 +4850,10 @@
             "app.show_app_border",
             "app.show_scroll_top_button",
             "app.show_search_box",
-            "app.arrow_key_selection"
+            "app.arrow_key_selection",
+            "app.clipboard_item_font_size",
+            "app.clipboard_tag_font_size",
+            "app.surface_opacity"
           ]
         },
         "value": {
