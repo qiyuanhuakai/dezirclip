@@ -94,6 +94,31 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("tag page: %+v %v", page, err)
 	}
 	params := protocol.DesktopEntryParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance}
+	action := "ignore_source"
+	policy := protocol.DesktopPolicyParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Id: &params.Id, Action: &action}
+	if decision, err := library.PolicyDecision(ctx, policy); err != nil || decision.Reason == "" {
+		t.Fatalf("policy decision: %+v %v", decision, err)
+	}
+	changed, err := library.PolicyFeedback(ctx, policy)
+	if err != nil || changed.State.PrivacyEpoch <= epoch {
+		t.Fatalf("policy feedback: %+v %v", changed, err)
+	}
+	if _, err := library.PolicyRules(ctx, epoch); err == nil {
+		t.Fatal("stale policy rules read succeeded")
+	}
+	rules, err := library.PolicyRules(ctx, changed.State.PrivacyEpoch)
+	if err != nil || len(rules) != 1 || rules[0].Kind != action {
+		t.Fatalf("policy rules: %+v %v", rules, err)
+	}
+	removed, err := library.RemovePolicyRule(ctx, rules[0].Id, changed.State.PrivacyEpoch)
+	if err != nil || removed.State.PrivacyEpoch <= changed.State.PrivacyEpoch {
+		t.Fatalf("remove policy rule: %+v %v", removed, err)
+	}
+	epoch = removed.State.PrivacyEpoch
+	params.ExpectedEpoch = epoch
+	if rules, err := library.PolicyRules(ctx, epoch); err != nil || len(rules) != 0 {
+		t.Fatalf("removed policy still listed: %+v %v", rules, err)
+	}
 	catalog, err := library.ToolCatalog(ctx)
 	if err != nil || len(catalog.Transforms) == 0 || len(catalog.ContentKinds) == 0 {
 		t.Fatalf("tool catalog: %+v %v", catalog, err)

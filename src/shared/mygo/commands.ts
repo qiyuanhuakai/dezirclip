@@ -84,6 +84,11 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   }),
   get_clipboard_host_status: () => library("Status"),
   get_privacy_status: async () => privacySnapshot(await library("Status")),
+  get_privacy_rules: () => library("PolicyRules", currentEpoch()),
+  get_privacy_decision: args => library("PolicyDecision", { id: args.id, service_instance_id: args.expectedHostInstanceId, expected_epoch: args.expectedEpoch }),
+  privacy_feedback: async args => privacySnapshot(await library("PolicyFeedback", { id: args.id, action: args.action,
+    service_instance_id: args.expectedHostInstanceId, expected_epoch: args.expectedEpoch })),
+  remove_privacy_rule: async args => privacySnapshot(await library("RemovePolicyRule", args.ruleId, args.expectedEpoch)),
   set_privacy_session: async args => privacySnapshot(await library("SetPrivacy", {
     active: args.enabled, duration_ms: args.durationMs ?? undefined,
   })),
@@ -114,6 +119,6 @@ export async function invokeMyGo<T>(command: string, args: Arguments = {}): Prom
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);
   const generation = hostGeneration();
   const result = await commands[command](args);
-  if (command !== "set_privacy_session" && command !== "copy_to_clipboard" && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
+  if (!["set_privacy_session", "privacy_feedback", "remove_privacy_rule", "copy_to_clipboard"].includes(command) && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
   return result as T;
 }
