@@ -191,13 +191,15 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
             time.sleep(.04)
         raise AssertionError(message)
 
-    def find_button(name):
+    def find_item(name, text=False):
         pending = [atspi.get_desktop(0)]
         while pending:
             item = pending.pop()
             if item is None: continue
             try:
-                if item.get_name() == name and 'Action' in item.get_interfaces(): return item
+                if text:
+                    if 'Text' in item.get_interfaces() and atspi.Text.get_text(item, 0, -1) == name: return item
+                elif item.get_name() == name and 'Action' in item.get_interfaces(): return item
                 pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
             except GLib.Error:
                 # The original accessible is removed when the dialog or WebView closes.
@@ -217,12 +219,12 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
     sentinel = 'pending manual copy'
     clipboard.set_text(sentinel, -1)
     click()
-    cancel = wait_for(lambda: find_button('取消'), 'Missing explicit copy confirmation')
+    cancel = wait_for(lambda: find_item('取消'), 'Missing explicit copy confirmation')
     assert atspi.Action.do_action(cancel, 0)
-    wait_for(lambda: find_button('取消') is None, 'Cancel did not dismiss confirmation')
+    wait_for(lambda: find_item('取消') is None, 'Cancel did not dismiss confirmation')
     assert clipboard.wait_for_text() == sentinel and editor.get_text() == marker
     click()
-    accept = wait_for(lambda: find_button('仅复制'), 'Missing copy-only action')
+    accept = wait_for(lambda: find_item('仅复制'), 'Missing copy-only action')
     assert atspi.Action.do_action(accept, 0)
     wait_for(lambda: clipboard.wait_for_text() == marker, 'Confirmed copy did not write selected content')
     assert editor.get_text() == marker
@@ -249,17 +251,32 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
             return subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1] == main
         shortcut()
         wait_for(main_active, 'Configured keyboard shortcut did not focus the existing MyGo window')
+        tags = wait_for(lambda: find_item('标签管理'), 'Missing tag manager in shared WebView')
+        assert atspi.Action.do_action(tags, 0)
+        wait_for(lambda: find_item('标签管理') is None, 'Tag manager did not open')
+        tagged = wait_for(lambda: find_item(marker, text=True), 'Tagged history row missing')
+        bounds = atspi.Component.get_extents(tagged, atspi.CoordType.SCREEN)
         click()
-        wait_for(lambda: alternate.is_active() and other.get_text() == marker, 'Pinned paste did not rebind to second editor')
+        wait_for(lambda: alternate.is_active() and other.get_text() == marker, 'Tag row did not paste into the second editor')
         assert editor.get_text() == marker
+        clipboard.set_text(sentinel, -1)
+        tagged = wait_for(lambda: find_item(marker, text=True), 'Tag row disappeared after delivery')
+        bounds = atspi.Component.get_extents(tagged, atspi.CoordType.SCREEN)
+        click()
+        accept = wait_for(lambda: find_item('仅复制'), 'Tag row omitted the copy-only confirmation')
+        assert atspi.Action.do_action(accept, 0)
+        wait_for(lambda: clipboard.wait_for_text() == marker, 'Tag-row manual copy did not write its source')
+        assert other.get_text() == marker and editor.get_text() == marker
+        alternate.present()
+        wait_for(alternate.is_active, 'Second editor did not regain focus')
         shortcut()
         wait_for(main_active, 'Shortcut failed to show the pinned window again')
         shortcut()
         wait_for(lambda: subprocess.run(['xwininfo','-id',main], capture_output=True).returncode != 0,
                  'Foreground shortcut did not close the WebView')
         shortcut()
-        wait_for(lambda: find_button('图片'), 'Resident shortcut did not reopen the shared WebView')
-        print('Verified configured main shortcut rebinds the second editor, closes and reopens the shared window')
+        wait_for(lambda: find_item('图片'), 'Resident shortcut did not reopen the shared WebView')
+        print('Verified shared tag-row paste into the second editor and closing/reopening with the configured shortcut')
     finally:
         alternate.destroy()
 
@@ -279,6 +296,8 @@ def check(desktop, pinned):
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.window_pinned','true')")
             db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.hotkey','Ctrl+Shift+F8')")
     if pinned:
+        entry = subprocess.check_output([cli, 'list', '1', '--ids'], text=True).strip()
+        subprocess.run([cli, 'tag', 'add', str(int(entry)), 'test-tag'], check=True, stdout=subprocess.DEVNULL)
         subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True, stdout=subprocess.DEVNULL)
     target = Gtk.Window(title='Independent paste target')
     editor = Gtk.Entry()
