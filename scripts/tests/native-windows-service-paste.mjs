@@ -62,7 +62,8 @@ class Managed {
     this.ready = new Promise((resolve, reject) => { this.onReady = resolve; this.rejectReady = reject; });
     this.ready.catch(() => {});
     this.closed = trackManagedChild(this.child, this.record, () => {
-      this.cancelPending(new Error('Original child closed'));
+      const operations = [...this.pending.values()].map(request => request.operation);
+      this.cancelPending(new Error(`${this.label} closed while waiting for ${operations.join(', ') || 'startup'}`));
       if (this.finishRequested) { try { this.finish(); } catch (error) { this.error = String(error); this.record.log_finalization_error = String(error); } }
     }, undefined,
       error => { this.error = String(error); this.cancelPending(error); });
@@ -90,7 +91,7 @@ class Managed {
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Service gate request deadline: ' + operation)); }, milliseconds);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { operation, resolve, reject, timer });
       this.child.stdin.write(JSON.stringify({ id, operation, ...args }) + '\n');
     });
   }
@@ -463,7 +464,15 @@ export async function runServicePaste(args, env = process.env) {
     assert.equal(grant.granted_pid, client.child.pid);
     const panel = await client.request('quick-show');
     assert.equal(panel.own_panel_focused, true);
-    const selection = await client.request('quick-select', { entry_id: seeded.seeded_ids[0] });
+    let selection;
+    try {
+      selection = await client.request('quick-select', { entry_id: seeded.seeded_ids[0] });
+    } catch (error) {
+      // Preserve the synthetic target's Win32 input messages before fixture cleanup.
+      try { report.quick_failure_observation = await native.request('snapshot', {}, 2000); }
+      catch (snapshotError) { report.quick_failure_observation = { error: String(snapshotError) }; }
+      throw error;
+    }
     assert.equal(selection.pasted, true);
     const quickAfter = await pollRead('Independent panel restored original target and pasted complete text', async remaining => {
       const snapshot = await native.request('snapshot', {}, Math.max(1, remaining));
