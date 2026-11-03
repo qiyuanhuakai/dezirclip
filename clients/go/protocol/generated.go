@@ -254,6 +254,11 @@ const (
     MethodDesktopToolsClassify Method = "desktop.tools.classify"
     MethodDesktopToolsTransform Method = "desktop.tools.transform"
     MethodDesktopToolsQr Method = "desktop.tools.qr"
+    MethodDesktopHistoryClear Method = "desktop.history.clear"
+    MethodDesktopHistoryReorder Method = "desktop.history.reorder"
+    MethodDesktopTagsCreate Method = "desktop.tags.create"
+    MethodDesktopTagsRename Method = "desktop.tags.rename"
+    MethodDesktopTagsRemove Method = "desktop.tags.remove"
     MethodDesktopHistoryMutate Method = "desktop.history.mutate"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
@@ -427,6 +432,35 @@ type EntryResult struct {
     Entry EntrySummary `json:"entry"`
     Text *string `json:"text,omitempty"`
     Truncated bool `json:"truncated"`
+}
+
+type LibraryStateParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+}
+
+type LibraryTagParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+}
+
+type LibraryRenameParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+    NewName string `json:"new_name"`
+}
+
+type LibraryPinOrder struct {
+    Id int64 `json:"id"`
+    Order int64 `json:"order"`
+}
+
+type LibraryOrderParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Orders []LibraryPinOrder `json:"orders"`
 }
 
 type DesktopPolicyParams struct {

@@ -357,6 +357,16 @@ pub enum Method {
     DesktopToolsTransform,
     #[serde(rename = "desktop.tools.qr")]
     DesktopToolsQr,
+    #[serde(rename = "desktop.history.clear")]
+    DesktopHistoryClear,
+    #[serde(rename = "desktop.history.reorder")]
+    DesktopHistoryReorder,
+    #[serde(rename = "desktop.tags.create")]
+    DesktopTagsCreate,
+    #[serde(rename = "desktop.tags.rename")]
+    DesktopTagsRename,
+    #[serde(rename = "desktop.tags.remove")]
+    DesktopTagsRemove,
     #[serde(rename = "desktop.history.mutate")]
     DesktopHistoryMutate,
     #[serde(rename = "desktop.clipboard.copy")]
@@ -602,6 +612,45 @@ pub struct EntryResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryStateParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryTagParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryRenameParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub name: String,
+    pub new_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryPinOrder {
+    pub id: i64,
+    pub order: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryOrderParams {
+    pub service_instance_id: String,
+    pub expected_epoch: u64,
+    pub orders: Vec<LibraryPinOrder>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

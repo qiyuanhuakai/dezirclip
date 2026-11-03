@@ -249,6 +249,7 @@ impl Host {
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
+            methods.extend(["desktop.history.clear", "desktop.history.reorder", "desktop.tags.create", "desktop.tags.rename", "desktop.tags.remove"]);
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
             if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.surface.copy"]);}
             if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
@@ -374,6 +375,8 @@ impl Host {
                 self.desktop_permission(session, self.instance_id())?;
                 crate::tools::run(request.method, request.params)
             }
+            Method::DesktopHistoryClear | Method::DesktopHistoryReorder | Method::DesktopTagsCreate
+            | Method::DesktopTagsRename | Method::DesktopTagsRemove => self.edit_library(session, request.method, request.params),
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
@@ -569,6 +572,48 @@ pub(crate) mod tests {
             "preview":text,"source_app":"fixture","timestamp":1,"is_pinned":false,"tags":tags})).unwrap();
         host.history.save(&entry, None).unwrap()
     }
+    #[test]
+    fn desktop_library_operations_bind_the_host_and_keep_session_and_database_consistent() {
+        let host = synthetic_host();
+        let grant = host.grants().issue_control(ClientRole::Desktop).unwrap();
+        let (desktop, _) = host.hello(HelloParams { grant: Some(grant.token().into()), ..hello(ClientRole::Desktop) }).unwrap();
+        let (untrusted, _) = host.hello(hello(ClientRole::Desktop)).unwrap();
+        let state = host.snapshot().unwrap();
+        let params = serde_json::json!({"service_instance_id":state.service_instance_id, "expected_epoch":state.privacy_epoch});
+        let mut create = params.clone();
+        create["name"] = "keep".into();
+        assert_eq!(dispatch(&host, &untrusted, Method::DesktopTagsCreate, create.clone()).error.unwrap().code, WireErrorCode::PermissionDenied);
+        assert!(dispatch(&host, &desktop, Method::DesktopTagsCreate, create.clone()).error.is_none());
+        let persistent = insert(&host, "preserved tagged text", &["keep"]);
+        insert(&host, "transient text", &[]);
+        let row = |id, tags: &[&str]| serde_json::from_value::<ClipboardEntry>(serde_json::json!({
+            "id":id,"content_type":"text","content":"RAM", "preview":"RAM", "source_app":"fixture", "timestamp":1,"is_pinned":false,"tags":tags
+        })).unwrap();
+        host.session.lock().unwrap().extend([row(-1,&["keep"]),row(-2,&[])]);
+        let mut rename = create.clone();
+        rename["new_name"] = "retained".into();
+        assert!(dispatch(&host, &desktop, Method::DesktopTagsRename, rename).error.is_none());
+        let mut stale = params.clone();
+        stale["expected_epoch"] = (state.privacy_epoch + 1).into();
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHistoryClear, stale).error.unwrap().code, WireErrorCode::PrivacyEpochChanged);
+        assert_eq!(host.history.get_count().unwrap(), 2);
+        assert!(dispatch(&host, &desktop, Method::DesktopHistoryClear, params.clone()).error.is_none());
+        assert_eq!(host.history.get_count().unwrap(), 1);
+        assert_eq!(host.history.get_entries_by_tag("retained").unwrap()[0].id, persistent);
+        {
+            let rows = host.session.lock().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].tags, ["retained"]);
+        }
+        create["name"] = "retained".into();
+        assert!(dispatch(&host, &desktop, Method::DesktopTagsRemove, create).error.is_none());
+        assert_eq!(host.history.get_count().unwrap(), 1);
+        assert!(host.session.lock().unwrap()[0].tags.is_empty());
+        let mut order = params;
+        order["orders"] = serde_json::json!([{"id":-1,"order":0}]);
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHistoryReorder, order).error.unwrap().code, WireErrorCode::InvalidRequest);
+    }
+
     #[test]
     fn core_visibility_applies_to_summaries_and_service_local_copy() {
         let host = synthetic_host();

@@ -6,6 +6,19 @@ use crate::services::clipboard::truncate_html_for_preview;
 use tauri::{AppHandle,Manager,State};
 use crate::app::ipc_host::{DesktopHost,HostedEntry};
 
+use dzc_host::wire::{LibraryOrderParams, LibraryPinOrder, LibraryRenameParams, LibraryStateParams, LibraryTagParams, Method, OperationResult, RuntimeState};
+
+async fn library_state(host: &DesktopHost) -> AppResult<RuntimeState> {
+    host.call(Method::Health, serde_json::json!({}), "RuntimeState").await.map_err(AppError::Validation)
+}
+
+async fn edit_library(app: &AppHandle, method: Method, params: impl serde::Serialize) -> AppResult<()> {
+    let _: OperationResult = app.state::<DesktopHost>().call(method, params, "OperationResult").await.map_err(AppError::Validation)?;
+    use tauri::Emitter;
+    let _ = app.emit("clipboard-changed", ());
+    Ok(())
+}
+
 const UI_CONTENT_LIMIT: usize = 2000;
 const UI_PREVIEW_LIMIT: usize = 500;
 const TAG_CONTENT_LIMIT: usize = 50000;
@@ -231,17 +244,11 @@ pub async fn delete_clipboard_entry(
 }
 
 #[tauri::command]
-pub fn clear_clipboard_history(
-    state: State<'_, DbState>,
-    session: State<'_, SessionHistory>,
-    app_data: State<'_, AppDataDir>,
-) -> AppResult<()> {
-    {
-        let mut session_items = session.inner().0.lock().unwrap();
-        session_items.retain(|item| item.is_pinned || !item.tags.is_empty());
-    }
-    let data_dir = app_data.0.lock().unwrap();
-    state.history_service().clear(Some(&data_dir)).map_err(AppError::from)
+pub async fn clear_clipboard_history(app: AppHandle) -> AppResult<()> {
+    let state = library_state(&app.state::<DesktopHost>()).await?;
+    edit_library(&app, Method::DesktopHistoryClear, LibraryStateParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch,
+    }).await
 }
 
 #[tauri::command]
@@ -302,24 +309,11 @@ pub async fn get_tag_item_detail(app:AppHandle,state: State<'_, DbState>, id: i6
 }
 
 #[tauri::command]
-pub fn remove_tag_from_all(
-    app: tauri::AppHandle,
-    state: State<'_, DbState>,
-    session: State<'_, SessionHistory>,
-    tag_name: String,
-) -> AppResult<()> {
-    state
-        .history_service()
-        .remove_tag_preserving_entries(&tag_name)
-        .map_err(AppError::from)?;
-    if let Ok(mut history) = session.0.lock() {
-        for item in history.iter_mut() {
-            item.tags.retain(|tag| tag != &tag_name);
-        }
-    }
-    use tauri::Emitter;
-    let _ = app.emit("clipboard-changed", ());
-    Ok(())
+pub async fn remove_tag_from_all(app: AppHandle, tag_name: String) -> AppResult<()> {
+    let state = library_state(&app.state::<DesktopHost>()).await?;
+    edit_library(&app, Method::DesktopTagsRemove, LibraryTagParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, name: tag_name,
+    }).await
 }
 
 #[tauri::command]
@@ -330,34 +324,11 @@ pub async fn get_all_tags_info(
 }
 
 #[tauri::command]
-pub fn rename_tag_globally(
-    app: tauri::AppHandle,
-    state: State<'_, DbState>,
-    session: State<'_, SessionHistory>,
-    old_name: String,
-    new_name: String,
-) -> AppResult<()> {
-    let new_name = new_name.trim().to_string();
-    state
-        .history_service()
-        .rename_tag(&old_name, &new_name)
-        .map_err(AppError::from)?;
-    {
-        let mut session_items = session.inner().0.lock().unwrap();
-        for item in session_items.iter_mut() {
-            for tag in item.tags.iter_mut() {
-                if *tag == old_name {
-                    *tag = new_name.clone();
-                }
-            }
-            item.tags.sort();
-            item.tags.dedup();
-        }
-    }
-
-    use tauri::Emitter;
-    let _ = app.emit("clipboard-changed", ());
-    Ok(())
+pub async fn rename_tag_globally(app: AppHandle, old_name: String, new_name: String) -> AppResult<()> {
+    let state = library_state(&app.state::<DesktopHost>()).await?;
+    edit_library(&app, Method::DesktopTagsRename, LibraryRenameParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, name: old_name, new_name,
+    }).await
 }
 
 fn delete_sensitive_tag_contents(
@@ -459,17 +430,11 @@ pub async fn delete_tag_entries(
 }
 
 #[tauri::command]
-pub fn create_new_tag(state: State<'_, DbState>, tag_name: String) -> AppResult<()> {
-    let tag_name = tag_name.trim();
-    if tag_name.is_empty()
-        || tag_name.chars().count() > 80
-        || tag_name.chars().any(char::is_control)
-    {
-        return Err(AppError::Validation(
-            "tag names must contain 1..80 printable characters".into(),
-        ));
-    }
-    state.history_service().create_tag(tag_name).map_err(AppError::from)
+pub async fn create_new_tag(app: AppHandle, tag_name: String) -> AppResult<()> {
+    let state = library_state(&app.state::<DesktopHost>()).await?;
+    edit_library(&app, Method::DesktopTagsCreate, LibraryTagParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, name: tag_name,
+    }).await
 }
 
 #[tauri::command]
@@ -494,12 +459,15 @@ pub async fn get_clipboard_content(
 }
 
 #[tauri::command]
-pub fn update_pinned_order(state: State<'_, DbState>, orders: Vec<(i64, i64)>) -> AppResult<()> {
-    if orders.iter().any(|(id,_)|*id<=0) {return Err(AppError::Validation("SessionOrderUnavailable".into()));}
-    state
-        .history_service()
-        .update_pinned_order(orders)
-        .map_err(AppError::from)
+pub async fn update_pinned_order(app: AppHandle, orders: Vec<(i64, i64)>) -> AppResult<()> {
+    if orders.iter().any(|(id, _)| *id <= 0) {
+        return Err(AppError::Validation("SessionOrderUnavailable".into()));
+    }
+    let state = library_state(&app.state::<DesktopHost>()).await?;
+    let orders = orders.into_iter().map(|(id, order)| LibraryPinOrder { id, order }).collect();
+    edit_library(&app, Method::DesktopHistoryReorder, LibraryOrderParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, orders,
+    }).await
 }
 
 #[tauri::command]
