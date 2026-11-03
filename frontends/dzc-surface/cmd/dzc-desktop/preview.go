@@ -186,9 +186,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 				if bitmap != nil {
 					ui.Image(c, bitmap).Fill()
 				} else if formatted != nil {
-					richtext.Editor(c, formatted, richtext.EditorOptions{
-						ReadOnly: true, Label: "富文本预览", OnLink: func(string) {},
-					}).Fill()
+					drawRichPreview(c, formatted)
 				} else {
 					ui.Text(c, text).Wrap()
 				}
@@ -208,4 +206,10 @@ func richPreviewDocument(html string) *richtext.Document {
 	doc := richtext.NewDocument(richtext.ParseHTML(html))
 	doc.SetSelection(0, 0)
 	return doc
+}
+
+func drawRichPreview(c *ui.Context, document *richtext.Document) {
+	richtext.EditorBase(c, document, richtext.EditorOptions{
+		ReadOnly: true, Label: "富文本预览", OnLink: func(string) {},
+	}).Fill()
 }
