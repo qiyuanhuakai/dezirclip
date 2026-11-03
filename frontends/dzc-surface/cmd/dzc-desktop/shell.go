@@ -12,6 +12,21 @@ import (
 
 type DesktopShell struct{}
 
+var focusChanged = mygo.NewEvent[bool]("window-focus")
+var visibilityChanged = mygo.NewEvent[bool]("window-visibility")
+var windowMoved = mygo.NewEvent[bool]("window-moved")
+var filesDropped = mygo.NewEvent[[]string]("window-file-drop")
+
+func (*DesktopShell) IsVisible(ctx context.Context) bool {
+	w := mygo.CallerWindow(ctx)
+	return w != nil && w.IsVisible()
+}
+
+func (*DesktopShell) IsFocused(ctx context.Context) bool {
+	w := mygo.CallerWindow(ctx)
+	return w != nil && w.IsFocused()
+}
+
 func (*DesktopShell) Version() string { return buildinfo.Version }
 
 func (*DesktopShell) OpenURL(raw string) error {

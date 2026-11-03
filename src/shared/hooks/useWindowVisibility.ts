@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "../lib/desktopWindow";
 
 export const useWindowVisibility = () => {
   const isWindowVisibleRef = useRef(true);

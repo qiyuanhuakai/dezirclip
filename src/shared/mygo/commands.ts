@@ -1,5 +1,6 @@
 import { parsePrivacySnapshot } from "../lib/privacyRuntime";
 import { readResumeAuthority } from "../lib/mainWindowResume";
+import { hostGeneration } from "./events";
 
 type Arguments = Record<string, unknown>;
 
@@ -32,5 +33,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);
-  return await commands[command](args) as T;
+  const generation = hostGeneration();
+  const result = await commands[command](args);
+  if (command !== "set_privacy_session" && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
+  return result as T;
 }

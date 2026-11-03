@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "lucide-react";
 import { schedulePreview } from "../../../shared/lib/previewQueue";

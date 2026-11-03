@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { listen } from "@tauri-apps/api/event";
 import {
     Pin,

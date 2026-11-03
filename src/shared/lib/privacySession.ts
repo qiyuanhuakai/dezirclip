@@ -1,6 +1,6 @@
 import { invoke } from "./desktopInvoke";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getAllWindows, getCurrentWindow } from "@tauri-apps/api/window";
+import { getAllWindows, getCurrentWindow } from "./desktopWindow";
 import { createPrivacyFence, parsePrivacySnapshot } from "./privacyRuntime";
 import type { PrivacyRuntimeSnapshot } from "./privacyRuntime";
 import type { ClipboardEntry } from "../types";

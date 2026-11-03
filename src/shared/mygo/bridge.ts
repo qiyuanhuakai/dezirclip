@@ -1,6 +1,9 @@
 declare global {
   interface Window {
-    mygo: { call<T>(method: string, ...args: unknown[]): Promise<T> };
+    mygo: {
+      call<T>(method: string, ...args: unknown[]): Promise<T>;
+      on<T>(name: string, callback: (payload: T) => void): () => void;
+    };
   }
 }
 

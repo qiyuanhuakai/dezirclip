@@ -152,8 +152,12 @@ func run() error {
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
 		preview.main = win
-		win.OnBlur(preview.clear)
-		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus") })
+		win.OnBlur(func() { preview.clear(); focusChanged.Emit(win, false) })
+		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
+		win.OnShow(func() { visibilityChanged.Emit(win, true) })
+		win.OnHide(func() { preview.clear(); visibilityChanged.Emit(win, false) })
+		win.OnMove(func() { windowMoved.Emit(win, true) })
+		win.OnFileDrop(func(e *mygo.FileDropEvent) { filesDropped.Emit(win, e.Paths) })
 		win.OnClosed(func() { preview.clear(); mygo.App.Quit() })
 		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })

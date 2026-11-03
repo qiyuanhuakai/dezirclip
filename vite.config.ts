@@ -21,6 +21,7 @@ export default defineConfig(async ({ mode }) => {
     }] : [])],
     resolve: { alias: mygo ? {
       "@tauri-apps/api/app": shellModule("app"),
+      "@tauri-apps/api/event": shellModule("events"),
       "@tauri-apps/plugin-dialog": shellModule("dialog"),
       "@tauri-apps/plugin-opener": shellModule("opener"),
     } : {} },
