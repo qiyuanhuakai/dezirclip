@@ -10,7 +10,11 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public static class MyGoInput {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Point { public int x, y; }
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
@@ -67,6 +71,11 @@ try {
     } 'Synthetic history row missing from the shared WebView2 accessibility tree'
     if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before row click' }
     if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not position pointer on the history row' }
+    $hit = New-Object MyGoInput+Point
+    $hit.x, $hit.y = $point.X, $point.Y
+    if ([MyGoInput]::GetAncestor([MyGoInput]::WindowFromPoint($hit), 2) -ne $main.MainWindowHandle) {
+        throw 'Physical row coordinates do not belong to the original MyGo WebView window'
+    }
     [MyGoInput]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
     [MyGoInput]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
     $null = Wait-Until {

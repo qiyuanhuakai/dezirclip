@@ -132,7 +132,11 @@ func (h *History) CopyEntry(ctx context.Context, params protocol.DesktopCopyPara
 			// No paste was dispatched. Only this outcome may offer a new copy-only action.
 			return "target_required", nil
 		}
-		return "completed", h.events.PasteWindowSelection(ctx, params)
+		if err := h.events.PasteWindowSelection(ctx, params); err != nil {
+			fmt.Fprintf(os.Stderr, "Host window paste failed: %v\n", err)
+			return "", err
+		}
+		return "completed", nil
 	}
 	var result protocol.OperationResult
 	err := h.actions.DesktopCall(ctx, protocol.MethodDesktopClipboardCopy, params, "OperationResult", &result)

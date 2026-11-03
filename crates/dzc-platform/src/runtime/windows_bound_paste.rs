@@ -55,20 +55,24 @@ impl WindowsBoundPaste {
         use ::windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
         self.check_identity()?;
         if self.check().is_ok() { return Ok(()); }
-        let current_pid = || unsafe {
-            let window = GetForegroundWindow();
+        let owner = |window: HWND| unsafe {
             let mut pid = 0;
             if !window.0.is_null() { GetWindowThreadProcessId(window, Some(&mut pid)); }
             pid
         };
-        if current_pid() != peer_pid { return Err(failed()); }
+        if owner(unsafe { GetForegroundWindow() }) != peer_pid { return Err(failed()); }
         // The GUI grants foreground permission to the verified service process.
         if !unsafe { SetForegroundWindow(self.window) }.as_bool() { return Err(failed()); }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(180);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
         loop {
             if self.check().is_ok() { return Ok(()); }
-            let foreground = current_pid();
-            if (foreground != self.pid && foreground != peer_pid) || std::time::Instant::now() >= deadline { return Err(failed()); }
+            // Across input queues, foreground activation can briefly have no HWND.
+            // Only a fully revalidated original window can complete the handoff.
+            let foreground = unsafe { GetForegroundWindow() };
+            if !foreground.0.is_null() && foreground != self.window && owner(foreground) != peer_pid {
+                return Err(failed());
+            }
+            if std::time::Instant::now() >= deadline { return Err(failed()); }
             std::thread::sleep(std::time::Duration::from_millis(4));
         }
     }
