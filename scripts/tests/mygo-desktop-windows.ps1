@@ -47,6 +47,7 @@ public static class MyGoInput {
         uint ex, string cls, string title, uint style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr data);
     [DllImport("user32.dll")] public static extern bool DestroyWindow(IntPtr hwnd);
     [DllImport("user32.dll")] static extern bool UpdateWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
     public static IntPtr PreviewBackdrop(IntPtr preview, Rect r, bool white) {
         int width=r.right-r.left, height=r.bottom-r.top;
         // A non-activating stock STATIC control paints SS_BLACKRECT or SS_WHITERECT below the flyout.
@@ -241,10 +242,25 @@ function Test-TransparentPreview($root, $main, [string]$marker) {
         try { $graphics.CopyFromScreen($bounds.left,$bounds.top,0,0,$image.Size) } finally { $graphics.Dispose() }
         return $image
     }
+    $firstColor = $null
     foreach ($white in @($false,$true)) {
         $backdrop = [MyGoInput]::PreviewBackdrop($preview,$bounds,$white)
         try {
-            $expected = if ($white) { [Drawing.Color]::White.ToArgb() } else { [Drawing.Color]::Black.ToArgb() }
+            # The stock rectangles use system theme colors. Render the backdrop alone to measure its actual fill.
+            $reference = [Drawing.Bitmap]::new($width,$height)
+            try {
+                $graphics = [Drawing.Graphics]::FromImage($reference)
+                try {
+                    $dc = $graphics.GetHdc()
+                    try {
+                        if (![MyGoInput]::PrintWindow($backdrop,$dc,1)) { throw 'Cannot render the preview reference backdrop' }
+                    } finally { $graphics.ReleaseHdc($dc) }
+                } finally { $graphics.Dispose() }
+                $color = $reference.GetPixel([int]($width/2),$height-22)
+                $expected = [Drawing.Color]::FromArgb(255,$color.R,$color.G,$color.B).ToArgb()
+            } finally { $reference.Dispose() }
+            if ($white -and [Math]::Abs([int]$color.R - [int]$firstColor.R) -lt 64) { throw 'Preview reference backdrops lack contrast' }
+            $firstColor = $color
             $sampleX = [int]($width/2)
             $sampleY = $height-22
             $last = @{}
