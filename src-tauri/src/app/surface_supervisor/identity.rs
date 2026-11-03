@@ -1,6 +1,6 @@
 use dzc_host::wire::{SurfaceBuildIdentity, VERSION};
 use serde::Deserialize;
-pub(super) const TOOLKIT_PATCH: &str = "mygo-v0.6.4-cleanup-webview-gpu-v3";
+pub(super) const TOOLKIT_PATCH: &str = "mygo-v0.6.4-native-alpha-v4";
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Identity {

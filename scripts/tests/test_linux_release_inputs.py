@@ -60,7 +60,7 @@ class Inputs(unittest.TestCase):
             'build_info': {**expected, 'component': 'surface', 'mygo_version': 'v0.6.4',
                            'mygo_source_revision': MODULE.MYGO_SOURCE, 'protocol_version': {'major': 1, 'minor': 0}},
             'toolkit_patch': {'id': MODULE.PATCH, 'strategy': 'isolated_module_copy', 'module': 'github.com/egoist/mygo',
-                'version': 'v0.6.4', 'source_revision': MODULE.MYGO_SOURCE, 'changed_files': ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go'],
+                'version': 'v0.6.4', 'source_revision': MODULE.MYGO_SOURCE, 'changed_files': ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go', 'internal/windows/window.go'],
                 'module_sum': 'h1:VzCqZKgvXcym5cSYKoC6IkTgcVeGZquPiui/a3oE36o=',
                 'module_go_mod_sum': 'h1:dVav53PwF2xEotjf4oA5lTY2Jp2exgzyjLhbSXhbMwE=',
                 'upstream_app_sha256': 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9'},

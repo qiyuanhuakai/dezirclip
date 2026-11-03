@@ -13,7 +13,7 @@ import tomllib
 TARGET = 'x86_64-unknown-linux-gnu'
 REPOSITORY = 'qiyuanhuakai/dezirclip'
 ROOT = Path(__file__).resolve().parents[1]
-PATCH = 'mygo-v0.6.4-cleanup-webview-gpu-v3'
+PATCH = 'mygo-v0.6.4-native-alpha-v4'
 MYGO_SOURCE = '6255ea40139d06e0762a7c4a32626148ba410478'
 MAX_BINARY = 256 * 1024 * 1024
 MAX_METADATA = 32 * 1024 * 1024
@@ -172,7 +172,7 @@ def surface(root, identity, version):
     patch = proof.get('toolkit_patch', {})
     require(all(patch.get(name) == value for name, value in {
         'id': PATCH, 'strategy': 'isolated_module_copy', 'module': 'github.com/egoist/mygo',
-        'version': 'v0.6.4', 'source_revision': MYGO_SOURCE, 'changed_files': ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go'],
+        'version': 'v0.6.4', 'source_revision': MYGO_SOURCE, 'changed_files': ['app.go', 'internal/windows/webview2.go', 'internal/windows/webview2_options.go', 'internal/windows/window.go'],
         'module_sum': 'h1:VzCqZKgvXcym5cSYKoC6IkTgcVeGZquPiui/a3oE36o=',
         'module_go_mod_sum': 'h1:dVav53PwF2xEotjf4oA5lTY2Jp2exgzyjLhbSXhbMwE=',
         'upstream_app_sha256': 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9'}.items()),

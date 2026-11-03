@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-cleanup-webview-gpu-v3';
+export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v4';
 export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const modulePath = 'github.com/egoist/mygo';
 const version = 'v0.6.4';
@@ -30,7 +30,7 @@ function treeFiles(directory, prefix = '') {
   });
 }
 
-function windowsBrowserOptions(directory) {
+function windowsPatches(directory) {
   const entry = 'internal/windows/webview2.go';
   const options = 'internal/windows/webview2_options.go';
   function source(path, digest) {
@@ -53,7 +53,13 @@ function windowsBrowserOptions(directory) {
     .replace('str(func(*envOptions) []uint16 { return nil }), // get_AdditionalBrowserArguments',
       'str(func(o *envOptions) []uint16 { return o.arguments }), // get_AdditionalBrowserArguments')
     .replace('if language != "" {', 'if arguments != "" {\n\t\to.arguments = utf16z(arguments)\n\t}\n\tif language != "" {');
-  return [[entry, Buffer.from(start)], [options, Buffer.from(getters)]];
+  // Backport egoist/mygo#660 for transparent native windows as well as flyouts.
+  const windowFile = 'internal/windows/window.go';
+  const upstream = source(windowFile, '446aa0b7e52a40557f7f6e5f0899cc1c2f4dbe84f354dab911ab642c39d328d1');
+  const marker = 'if o.Flyout != nil {\n\t\t// What the content leaves transparent shows what is behind.';
+  if (upstream.split(marker).length !== 2) throw new Error('Expected the reviewed MyGo native composition condition');
+  const window = upstream.replace(marker, marker.replace('o.Flyout != nil', 'o.Flyout != nil || o.Transparent && o.Surface'));
+  return [[entry, Buffer.from(start)], [options, Buffer.from(getters)], [windowFile, Buffer.from(window)]];
 }
 
 export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
@@ -74,7 +80,7 @@ export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
     chmodSync(destination, 0o644);
   }
   if (JSON.stringify(treeFiles(patchedModule)) !== JSON.stringify(originalFiles)) throw new Error('MyGo source changed while creating the isolated copy');
-  const changes = new Map([['app.go', patchedApp], ...windowsBrowserOptions(patchedModule)]);
+  const changes = new Map([['app.go', patchedApp], ...windowsPatches(patchedModule)]);
   for (const [path, bytes] of changes) writeFileSync(join(patchedModule, path), bytes);
   const patchedFiles = treeFiles(patchedModule);
   const expectedFiles = originalFiles.map(file => changes.has(file.path) ? { ...file, sha256: sha256(changes.get(file.path)) } : file);

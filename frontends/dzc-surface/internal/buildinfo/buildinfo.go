@@ -16,7 +16,7 @@ var ToolkitPatch = "unknown"
 
 const MyGoVersion = "v0.6.4"
 const MyGoSource = "6255ea40139d06e0762a7c4a32626148ba410478"
-const RequiredToolkitPatch = "mygo-v0.6.4-cleanup-webview-gpu-v3"
+const RequiredToolkitPatch = "mygo-v0.6.4-native-alpha-v4"
 
 func Identity() protocol.SurfaceBuildIdentity {
 	return protocol.SurfaceBuildIdentity{ComponentVersion: Version, SourceRevision: SourceRevision, BuildId: BuildID, Target: Target}
