@@ -116,13 +116,10 @@ func (s *Selector) begin(full bool) {
 	if err != nil || !pref.Enabled {
 		return
 	}
-	cursor := mygo.Screen.CursorScreenPoint()
-	display := mygo.Screen.DisplayNearestPoint(cursor)
-	scale := display.ScaleFactor
-	if scale <= 0 {
+	target, ok := cursorTarget()
+	if !ok {
 		return
 	}
-	point := protocol.ScreenPoint{X: int64(math.Round(float64(cursor.X) * scale)), Y: int64(math.Round(float64(cursor.Y) * scale))}
 	ctx, cancel := context.WithTimeout(context.Background(), 115*time.Second)
 	shot := &selection{cancel: cancel, full: full}
 	s.session = shot
@@ -134,10 +131,15 @@ func (s *Selector) begin(full bool) {
 		}
 		state := host.Hello().State
 		var frame protocol.ScreenImage
-		request := protocol.ScreenBeginParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Cursor: &point}
+		request := protocol.ScreenBeginParams{ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, Cursor: &target.point}
 		if err := host.Call(ctx, protocol.MethodDesktopScreenBegin, request, "ScreenImage", &frame); err != nil {
 			host.Close()
 			s.end(shot, err)
+			return
+		}
+		if !target.matches(frame) {
+			host.Close()
+			s.end(shot, client.ErrProtocol)
 			return
 		}
 		if full {
@@ -173,7 +175,12 @@ func (s *Selector) begin(full bool) {
 				return
 			}
 			shot.host, shot.state, shot.frame, shot.bitmap = host, state, frame, bitmap
-			s.show(display.Bounds)
+			if !target.place(s.window, frame) {
+				s.clear()
+				return
+			}
+			s.window.Show()
+			s.window.Focus()
 			s.window.Invalidate()
 			go s.watch(ctx, shot, state)
 		})
@@ -196,14 +203,6 @@ func (s *Selector) watch(ctx context.Context, shot *selection, state protocol.Ru
 		}
 	}
 	s.end(shot, err)
-}
-
-func (s *Selector) show(bounds mygo.Rectangle) {
-	s.window.SetBounds(bounds)
-	// Set the size with the destination monitor's DPI after the initial move.
-	s.window.SetBounds(bounds)
-	s.window.Show()
-	s.window.Focus()
 }
 
 func (s *Selector) draw(c *ui.Context, shot *selection) {
