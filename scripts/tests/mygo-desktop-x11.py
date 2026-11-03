@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import secrets
 import select
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -33,20 +34,11 @@ def memory_sample(label, roots):
     return selected
 
 
-def check_native_panels(marker, desktop, service_pid, close):
+def check_native_panels(marker, desktop, service_pid, target, editor, paste_row):
     import gi
     gi.require_version('Gtk', '3.0')
     from gi.repository import Gtk, Gdk, GdkPixbuf
 
-    target = Gtk.Window(title='Independent paste target')
-    editor = Gtk.Entry()
-    target.add(editor)
-    # The previous WebView test copied the same row. Change the clipboard so
-    # a plain keyboard paste cannot satisfy the native-search assertion.
-    other = 'Different quick-paste fixture ' + secrets.token_hex(8)
-    subprocess.run(['xclip', '-selection', 'clipboard', '-i'], input=other.encode(),
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-    assert subprocess.check_output(['xclip', '-selection', 'clipboard', '-o']).decode() == other
     x11 = ctypes.CDLL('libX11.so.6')
     xtest = ctypes.CDLL('libXtst.so.6')
     ptr, xid = ctypes.c_void_p, ctypes.c_ulong
@@ -89,11 +81,15 @@ def check_native_panels(marker, desktop, service_pid, close):
         assert any(Path(f'/proc/{pid}/exe').resolve() == Path(f'/proc/{desktop.pid}/exe').resolve() for pid in peers)
         watchers = [os.pidfd_open(pid) for pid in peers]
         main_id = subprocess.check_output(['xprop','-root','_NET_ACTIVE_WINDOW'], text=True).split()[-1]
-        assert close(), 'Close button did not accept its native action'
+        paste_row()
         deadline = time.monotonic() + 6
-        while subprocess.run(['xwininfo', '-id', main_id], capture_output=True).returncode == 0:
-            assert time.monotonic() < deadline, 'Main WebView did not close'
+        while editor.get_text() != marker or subprocess.run(['xwininfo', '-id', main_id], capture_output=True).returncode == 0:
+            assert time.monotonic() < deadline, f'Main row did not paste into the original editor and close (text={editor.get_text()!r})'
+            pump()
             time.sleep(.05)
+        assert target.is_active()
+        assert subprocess.check_output(['xclip', '-selection', 'clipboard', '-o']).decode() == marker
+        print('Verified shared React row pasted complete text into the original editor and closed the main window', flush=True)
         try:
             ready, _, _ = select.select(watchers, [], [], 6)
             deadline = time.monotonic() + 6
@@ -107,15 +103,14 @@ def check_native_panels(marker, desktop, service_pid, close):
         assert desktop.poll() is None
         time.sleep(1)
         memory_sample('Main closed, before native panels', roots)
-        target.show_all()
+        editor.set_text('')
+        other = 'Different quick-paste fixture ' + secrets.token_hex(8)
+        subprocess.run(['xclip', '-selection', 'clipboard', '-i'], input=other.encode(),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        assert subprocess.check_output(['xclip', '-selection', 'clipboard', '-o']).decode() == other
         editor.grab_focus()
         pump()
-        target.present()
-        deadline = time.monotonic() + 5
-        while not target.is_active():
-            assert time.monotonic() < deadline, 'External editor did not become active'
-            pump()
-            time.sleep(.025)
+        assert target.is_active(), 'Original editor lost focus before the resident shortcut'
         original = focus()
         assert original not in (0, 1)
         chord(0xffe3, 0xffe1, ord('v'))
@@ -188,11 +183,25 @@ def check_native_panels(marker, desktop, service_pid, close):
 def check(desktop):
     import gi
     gi.require_version('Atspi', '2.0')
-    from gi.repository import Atspi
+    gi.require_version('Gtk', '3.0')
+    from gi.repository import Atspi, Gtk
 
     cli = desktop.with_name('dzc')
     marker = 'MyGo desktop fixture ' + secrets.token_hex(12)
     subprocess.run([cli, 'add', marker], check=True, stdout=subprocess.DEVNULL)
+    with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+        db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.compact_mode','true')")
+    target = Gtk.Window(title='Independent paste target')
+    editor = Gtk.Entry()
+    target.add(editor)
+    target.show_all()
+    editor.grab_focus()
+    target.present()
+    deadline = time.monotonic() + 5
+    while not target.is_active():
+        while Gtk.events_pending(): Gtk.main_iteration_do(False)
+        assert time.monotonic() < deadline, 'No focused editor before opening MyGo'
+        time.sleep(.025)
     process = subprocess.Popen([desktop], stdout=subprocess.DEVNULL)
     try:
         deadline = time.monotonic() + 35
@@ -202,7 +211,7 @@ def check(desktop):
             if process.poll() is not None:
                 raise RuntimeError(f'Desktop exited before presenting history ({process.returncode})')
             pending = [Atspi.get_desktop(0)]
-            names, action, close = [], None, None
+            names, row = [], None
             filter_button = None
             while pending and len(names) < 300:
                 item = pending.pop()
@@ -213,10 +222,8 @@ def check(desktop):
                 names.append((name or '') + ' ' + (text or ''))
                 if name == ('图片' if filter_stage == 0 else '文本') and 'Action' in item.get_interfaces():
                     filter_button = item
-                if name == '复制' and item.get_role() == Atspi.Role.PUSH_BUTTON:
-                    action = item
-                if name == '关闭主窗口' and item.get_role() == Atspi.Role.PUSH_BUTTON:
-                    close = item
+                if text == marker:
+                    row = item
                 pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
             last = names
             has_marker = any(marker in name for name in names)
@@ -229,27 +236,23 @@ def check(desktop):
             elif filter_stage == 2 and has_marker:
                 print('Verified shared React main window: image filter excluded the live text fixture and text filter restored it', flush=True)
                 filter_stage = 3
-            if filter_stage == 3 and action and close and has_marker:
+            if filter_stage == 3 and row and has_marker:
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.
                 time.sleep(32)
-                check_preview(action, Atspi)
-                assert Atspi.Action.do_action(action, 0), 'Copy button did not accept its native action'
+                check_preview(row, Atspi)
                 break
             time.sleep(.15)
         else:
             raise RuntimeError(f'History actions not available (filter stage {filter_stage}): {last}')
-        for _ in range(80):
-            result = subprocess.run(['xclip', '-selection', 'clipboard', '-o'], capture_output=True, timeout=3)
-            if result.returncode == 0 and result.stdout.decode() == marker:
-                break
-            time.sleep(.05)
-        else:
-            raise RuntimeError('MyGo row did not copy complete text to the isolated clipboard')
         state = json.loads(subprocess.check_output([cli, 'service', 'status', '--json']))
         assert state['mode'] == 'service' and state['capture_owner']
         endpoint = json.loads(subprocess.check_output([cli, 'service', 'desktop-endpoint']))
-        check_native_panels(marker, process, endpoint['pid'], lambda: Atspi.Action.do_action(close, 0))
+        def paste_row():
+            rect = Atspi.Component.get_extents(row, Atspi.CoordType.SCREEN)
+            assert rect.width > 0 and rect.height > 0
+            assert Atspi.generate_mouse_event(rect.x + rect.width//2, rect.y + rect.height//2, 'b1c')
+        check_native_panels(marker, process, endpoint['pid'], target, editor, paste_row)
         print('Verified independent MyGo WebView, visible synthetic history, native Copy action and clipboard text')
     finally:
         if process.poll() is None:

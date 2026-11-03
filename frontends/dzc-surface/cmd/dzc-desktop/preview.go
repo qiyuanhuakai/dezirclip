@@ -34,6 +34,18 @@ func (p *Preview) clear() {
 }
 
 func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState) {
+	p.selectEntry(ctx, sequence, id, state, false)
+}
+
+func (p *Preview) ShowEntry(ctx context.Context, sequence uint64, id int64, instance string, epoch uint64, reveal bool) {
+	p.selectEntry(ctx, sequence, id, protocol.RuntimeState{ServiceInstanceId: instance, PrivacyEpoch: epoch}, reveal)
+}
+
+func (p *Preview) Hide(ctx context.Context, sequence uint64) {
+	p.selectEntry(ctx, sequence, 0, protocol.RuntimeState{}, false)
+}
+
+func (p *Preview) selectEntry(ctx context.Context, sequence uint64, id int64, state protocol.RuntimeState, reveal bool) {
 	main := mygo.CallerWindow(ctx)
 	if main == nil {
 		return
@@ -49,11 +61,11 @@ func (p *Preview) Select(ctx context.Context, sequence uint64, id int64, state p
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		p.cancel = cancel
-		go p.load(ctx, main, sequence, id, state)
+		go p.load(ctx, main, sequence, id, state, reveal)
 	})
 }
 
-func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState) {
+func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, id int64, state protocol.RuntimeState, reveal bool) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	host, err := p.owner.DesktopConnection(ctx)
@@ -62,7 +74,7 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 	}
 	defer host.Close()
 	size := uint32(560)
-	params := protocol.DesktopEntryParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, ThumbnailDimension: &size}
+	params := protocol.DesktopEntryParams{Id: id, ServiceInstanceId: state.ServiceInstanceId, ExpectedEpoch: state.PrivacyEpoch, ThumbnailDimension: &size, Reveal: reveal}
 	var snapshot protocol.BodySnapshot
 	if host.Call(ctx, protocol.MethodDesktopHistoryGet, params, "BodySnapshot", &snapshot) != nil {
 		return

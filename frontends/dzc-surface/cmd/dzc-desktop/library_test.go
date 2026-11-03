@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -89,6 +90,18 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("tag page: %+v %v", page, err)
 	}
 	params := protocol.DesktopEntryParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance}
+	fresh, err := owner.DesktopConnection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := History{actions: owner, events: fresh}
+	paste := protocol.DesktopCopyParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance, Paste: true}
+	err = history.CopyEntry(ctx, paste)
+	fresh.Close()
+	var remote *client.RemoteError
+	if !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodeNotFound {
+		t.Fatalf("paste without this connection's foreground target: %v", err)
+	}
 	counts, err := library.TagCounts(ctx, epoch)
 	var tags map[string]int
 	if err != nil || json.Unmarshal(counts, &tags) != nil || tags["fixture"] != 1 {

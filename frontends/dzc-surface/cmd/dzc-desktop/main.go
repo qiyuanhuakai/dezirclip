@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/egoist/mygo"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
@@ -25,9 +26,10 @@ var web embed.FS
 var trayIcon []byte
 
 type History struct {
-	actions *client.Client
-	events  *client.Client
-	eventMu sync.Mutex
+	actions       *client.Client
+	events        *client.Client
+	eventMu       sync.Mutex
+	targetInvalid atomic.Bool
 }
 
 type historyRow struct {
@@ -97,6 +99,50 @@ func (h *History) Changes(ctx context.Context, cursor uint64) (protocol.EventsRe
 	return events, err
 }
 
+// Capture before showing the WebView. Its subscription keeps this exact
+// authenticated session alive while the user searches or edits their selection.
+func (h *History) rememberTarget(ctx context.Context) {
+	h.eventMu.Lock()
+	defer h.eventMu.Unlock()
+	h.targetInvalid.Store(true)
+	if h.events != nil {
+		h.events.Close()
+		h.events = nil
+	}
+	host, err := h.actions.DesktopConnection(ctx)
+	if err != nil {
+		return
+	}
+	h.events = host
+	var result protocol.OperationResult
+	// A desktop with no foreground editor can still display history and copy.
+	if host.Call(ctx, protocol.MethodDesktopWindowTarget, struct{}{}, "OperationResult", &result) == nil && result.Performed {
+		h.targetInvalid.Store(false)
+	}
+}
+
+func (h *History) CopyEntry(ctx context.Context, params protocol.DesktopCopyParams) error {
+	if params.ServiceInstanceId != h.actions.Hello().State.ServiceInstanceId || params.Id == 0 {
+		return client.ErrProtocol
+	}
+	var result protocol.OperationResult
+	var err error
+	if params.Paste {
+		h.eventMu.Lock()
+		defer h.eventMu.Unlock()
+		if h.events == nil || h.targetInvalid.Swap(true) {
+			return client.ErrProtocol
+		}
+		err = h.events.Call(ctx, protocol.MethodDesktopWindowPaste, params, "OperationResult", &result)
+	} else {
+		err = h.actions.DesktopCall(ctx, protocol.MethodDesktopClipboardCopy, params, "OperationResult", &result)
+	}
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
+
 func run() error {
 	if len(os.Args) == 2 && os.Args[1] == "--build-info" {
 		return json.NewEncoder(os.Stdout).Encode(buildinfo.DesktopReport())
@@ -144,7 +190,9 @@ func run() error {
 		return client.ErrProtocol
 	}
 	mygo.SetFrontend(assets)
-	mygo.Bind(&History{actions: actions})
+	history := &History{actions: actions}
+	history.rememberTarget(ctx)
+	mygo.Bind(history)
 	mygo.Bind(&Library{owner: actions})
 	mygo.Bind(&DesktopShell{})
 	preview := &Preview{owner: actions}
@@ -152,7 +200,7 @@ func run() error {
 	mygo.App.WhenReady(func() {
 		win := mygo.NewWindow(mygo.WindowOptions{Title: "DezirClip", Width: 660, Height: 620})
 		preview.main = win
-		win.OnBlur(func() { preview.clear(); focusChanged.Emit(win, false) })
+		win.OnBlur(func() { history.targetInvalid.Store(true); preview.clear(); focusChanged.Emit(win, false) })
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
 		win.OnShow(func() { visibilityChanged.Emit(win, true) })
 		win.OnHide(func() { preview.clear(); visibilityChanged.Emit(win, false) })
@@ -166,6 +214,9 @@ func run() error {
 			commands := bufio.NewScanner(os.Stdin)
 			for commands.Scan() {
 				if commands.Text() == "show" {
+					if !win.IsFocused() {
+						history.rememberTarget(ctx)
+					}
 					mygo.RunOnMain(func() {
 						if !win.IsDestroyed() {
 							win.Show()

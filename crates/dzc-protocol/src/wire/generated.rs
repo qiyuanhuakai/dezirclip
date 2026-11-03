@@ -416,6 +416,8 @@ pub enum Method {
     DesktopHistorySummary,
     #[serde(rename = "desktop.platform.probe")]
     DesktopPlatformProbe,
+    #[serde(rename = "desktop.window.target")]
+    DesktopWindowTarget,
     #[serde(rename = "desktop.tools.catalog")]
     DesktopToolsCatalog,
     #[serde(rename = "desktop.tools.classify")]
@@ -506,6 +508,8 @@ pub enum Method {
     DesktopTagsRemove,
     #[serde(rename = "desktop.history.mutate")]
     DesktopHistoryMutate,
+    #[serde(rename = "desktop.window.paste")]
+    DesktopWindowPaste,
     #[serde(rename = "desktop.clipboard.copy")]
     DesktopClipboardCopy,
     #[serde(rename = "desktop.privacy.rules")]

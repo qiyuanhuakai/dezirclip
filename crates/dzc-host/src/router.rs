@@ -283,6 +283,9 @@ impl Host {
             methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
             methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
             if session.extended_methods {
+                if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
+                    methods.extend(["desktop.window.target", "desktop.window.paste"]);
+                }
                 methods.push("desktop.platform.probe");
                 methods.push("desktop.settings.preferences");
                 methods.push("desktop.quick.preferences");
@@ -353,7 +356,7 @@ impl Host {
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
     }
     pub(crate) fn independent_dispatch(method: Method) -> bool {
-        matches!(method, Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
+        matches!(method, Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
             Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
@@ -375,7 +378,7 @@ impl Host {
         self.synchronize_privacy()?;
         if self.is_stopping() && !matches!(request.method, Method::ServiceStatus | Method::Health | Method::ServiceStop | Method::ServiceHandoff) { return Err(WireErrorCode::Busy); }
         // Keep another IPC writer from replacing the clipboard between copy and input.
-        let _delivery = if matches!(request.method, Method::DesktopQuickPaste | Method::DesktopQueueNext |
+        let _delivery = if matches!(request.method, Method::DesktopWindowPaste | Method::DesktopQuickPaste | Method::DesktopQueueNext |
             Method::DesktopClipboardCopy | Method::DesktopSurfaceCopy | Method::SurfaceCopy | Method::ClipboardCopy |
             Method::SurfacePaste | Method::DesktopScreenFinish | Method::DesktopCaptureFinish) {
             Some(self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?)
@@ -507,6 +510,8 @@ impl Host {
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
+            Method::DesktopWindowTarget => self.remember_window_target(session),
+            Method::DesktopWindowPaste => self.paste_from_window(session, params(request.params)?),
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
             Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),

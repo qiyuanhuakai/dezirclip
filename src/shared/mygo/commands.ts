@@ -13,6 +13,15 @@ function privacySnapshot(status: { privacy: { expires_at_ms: number | null } }) 
 const library = <T>(method: string, ...args: unknown[]) => window.mygo.call<T>(`Library.${method}`, ...args);
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   get_settings: () => library("Preferences"),
+  copy_to_clipboard: args => window.mygo.call("History.CopyEntry", {
+    id: args.id === 0 ? args.derivedFromId : args.id,
+    service_instance_id: args.expectedHostInstanceId,
+    expected_epoch: args.expectedPrivacyEpoch ?? args.viewEpoch,
+    reveal: args.expectedPrivacyEpoch !== undefined,
+    paste: args.paste, with_format: args.pasteWithFormat, image_as_base64: args.pasteImageAsBase64,
+    derived_text: args.id === 0 && args.derivedFromId !== undefined ? args.content : undefined,
+    move_to_top: args.moveToTop, delete_after_use: args.deleteAfterUse,
+  }),
   get_clipboard_host_status: () => library("Status"),
   get_privacy_status: async () => privacySnapshot(await library("Status")),
   set_privacy_session: async args => privacySnapshot(await library("SetPrivacy", {
@@ -33,10 +42,11 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "hide_window_cmd") return window.mygo.call<T>("mygo:window.Close");
   if (command === "get_platform_capabilities") return library<T>("Platform");
   if (!Object.prototype.hasOwnProperty.call(commands, command)) throw new Error(`Unsupported MyGo desktop command: ${command}`);
   const generation = hostGeneration();
   const result = await commands[command](args);
-  if (command !== "set_privacy_session" && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
+  if (command !== "set_privacy_session" && command !== "copy_to_clipboard" && hostGeneration() !== generation) throw new Error("PrivacyEpochChanged");
   return result as T;
 }

@@ -656,6 +656,7 @@ const App = () => {
   const { copyToClipboard, openContent, deleteEntry, togglePin, handleUpdateTags } =
     useClipboardActions({
       t,
+      isWindowPinned,
       pushToast,
       deleteAfterPaste,
       moveToTopAfterPaste,

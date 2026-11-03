@@ -37,6 +37,9 @@ const sessions = createPreviewSessionQueue<Session>();
 const pageId = crypto.randomUUID();
 let preview: WebviewWindow | null = null;
 let creating: Promise<WebviewWindow> | null = null;
+let nativeOwner: object | null = null;
+let nativeSequence = 0;
+let stopNativeInvalidation: (() => void) | null = null;
 let listeners: Promise<void> | null = null;
 let requestTimer: { id: number; handle: ReturnType<typeof setTimeout> } | null = null;
 const mountedWaiters = new Set<() => void>();
@@ -80,6 +83,13 @@ async function clearWindow() {
     }
 }
 export function hideCompactPreviewGlobal(owner?: object): Promise<void> {
+    if (import.meta.env.MODE === "mygo") {
+        if (!nativeOwner || (owner && nativeOwner !== owner)) return Promise.resolve();
+        nativeOwner = null;
+        stopNativeInvalidation?.();
+        stopNativeInvalidation = null;
+        return window.mygo.call<void>("Preview.Hide", ++nativeSequence).catch(error => compactPreviewLog("native hide failed", error));
+    }
     const owned = owner === undefined || sessions.owns(owner);
     const result = sessions.cancel(clearWindow, owner);
     if (owned) {
@@ -90,6 +100,7 @@ export function hideCompactPreviewGlobal(owner?: object): Promise<void> {
     return result.catch(error => { compactPreviewLog("preview hide failed", error); });
 }
 export function leaveCompactPreview(owner: object): void {
+    if (import.meta.env.MODE === "mygo") { void hideCompactPreviewGlobal(owner); return; }
     if (!sessions.owns(owner)) return;
     const id = sessions.current();
     const value = id === null ? null : sessions.get(id);
@@ -263,6 +274,21 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
     stillHovered: () => boolean, sourceIsCurrent: () => boolean = stillHovered) {
     const access = beginPrivacyAccess(options.allowSensitive ? "reveal" : "list");
     if (!access || !stillHovered()) return;
+    if (import.meta.env.MODE === "mygo") {
+        if (!options.expectedHostInstanceId || !sourceIsCurrent()) return;
+        nativeOwner = owner;
+        stopNativeInvalidation?.();
+        stopNativeInvalidation = subscribePrivacyInvalidation(scope => {
+            if (scope === "all" || options.allowSensitive) void hideCompactPreviewGlobal(owner);
+        });
+        const sequence = ++nativeSequence;
+        try {
+            await window.mygo.call("Preview.ShowEntry", sequence, options.id, options.expectedHostInstanceId, access.epoch, options.allowSensitive);
+        } finally {
+            if (sequence === nativeSequence && (!access.isCurrent() || !sourceIsCurrent() || !stillHovered())) await hideCompactPreviewGlobal(owner);
+        }
+        return;
+    }
     stopRequestTimer();
     const value: Session = { owner, allowSensitive: options.allowSensitive, request: null, isHovered: stillHovered, pointerInside: false, pinning: false,
         requestId: "", window: null, anchor, scale: 1, origin: { x: 0, y: 0 },

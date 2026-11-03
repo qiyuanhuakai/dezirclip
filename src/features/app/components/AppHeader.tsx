@@ -13,7 +13,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
 import type { TagFilterPickerHandle } from "../../tag/components/TagFilterPicker";
 import { getClipboardTypeName } from "../../../shared/lib/clipboardTypeName";
 

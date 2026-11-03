@@ -1,6 +1,6 @@
 import { usePlatformCapabilities } from "./usePlatformCapabilities";
 import { useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ClipboardEntry } from "../types";
@@ -27,6 +27,7 @@ interface UseClipboardActionsOptions {
   t: (key: string) => string;
   pushToast: (msg: string, duration?: number) => number;
   deleteAfterPaste: boolean;
+  isWindowPinned: boolean;
   moveToTopAfterPaste: boolean;
   setSearch: (val: string) => void;
   setHistory: Dispatch<SetStateAction<ClipboardEntry[]>>;
@@ -37,6 +38,7 @@ export const useClipboardActions = ({
   t,
   pushToast,
   deleteAfterPaste,
+  isWindowPinned,
   moveToTopAfterPaste,
   setSearch,
   setHistory,
@@ -58,6 +60,8 @@ export const useClipboardActions = ({
       try {
         if (pending || failed) { pushToast(t("platform_capabilities_unavailable"), 3000); return; }
         if (report?.write.availability.status !== "available") { pushToast(t("wayland_unavailable"), 3000); return; }
+        const view = getPrivacyViewState();
+        if (import.meta.env.MODE === "mygo" && (view.phase !== "ready" || !view.snapshot)) throw new Error("PrivacyStateUnavailable");
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
@@ -71,6 +75,7 @@ export const useClipboardActions = ({
           pasteWithFormat,
           pasteImageAsBase64,
           expectedPrivacyEpoch,
+          ...(import.meta.env.MODE === "mygo" ? { viewEpoch: view.snapshot?.privacy_epoch } : {}),
           derivedFromId,
           ...entryInstanceArgs(hostInstanceId),
           moveToTop: !manualCopy && moveToTopAfterPaste
@@ -87,12 +92,13 @@ export const useClipboardActions = ({
 
         if (manualCopy) pushToast(t("wayland_manual_copy_done"));
         else setSearch("");
+        if (import.meta.env.MODE === "mygo" && !manualCopy && !isWindowPinned) await invoke("hide_window_cmd");
       } catch (err) {
         const errorMsg = t("copy_failed") + (err?.toString() || "");
         pushToast(errorMsg, 3000);
       }
     },
-    [deleteAfterPaste, moveToTopAfterPaste, pushToast, setHistory, setSearch, t, manualCopy, pending, failed, report]
+    [deleteAfterPaste, isWindowPinned, moveToTopAfterPaste, pushToast, setHistory, setSearch, t, manualCopy, pending, failed, report]
   );
 
   const openContent = useCallback(

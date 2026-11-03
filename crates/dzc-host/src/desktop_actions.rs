@@ -49,6 +49,32 @@ impl Host {
         self.desktop_copy_bound(session, request, None)
     }
 
+    pub(crate) fn remember_window_target(&self, session: &Session) -> Result<Value, WireErrorCode> {
+        self.desktop_permission(session, self.instance_id())?;
+        session.require(Permission::ClipboardPaste)?;
+        let mut slot = session.window_target.lock().map_err(|_| WireErrorCode::Unavailable)?;
+        *slot = None;
+        let peer = session.peer.as_ref().ok_or(WireErrorCode::PermissionDenied)?;
+        *slot = Some(dzc_platform::runtime::RememberedFocus::capture(peer).map_err(|_| WireErrorCode::Unavailable)?);
+        encoded(OperationResult { performed: true })
+    }
+
+    pub(crate) fn paste_from_window(&self, session: &Session, request: DesktopCopyParams) -> Result<Value, WireErrorCode> {
+        self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        session.require(Permission::ClipboardPaste)?;
+        if !request.paste || request.expected_paste_target.is_some() || request.id == 0 {
+            return Err(WireErrorCode::InvalidRequest);
+        }
+        let destination = session.window_target.lock().map_err(|_| WireErrorCode::Unavailable)?
+            .take().ok_or(WireErrorCode::NotFound)?;
+        let state = self.snapshot()?;
+        if state.privacy_epoch != request.expected_epoch { return Err(WireErrorCode::PrivacyEpochChanged); }
+        let target = destination.restore().map_err(|_| WireErrorCode::Unavailable)?;
+        let input = dzc_platform::runtime::QueueInputTarget::prepare(target).map_err(|_| WireErrorCode::Unavailable)?;
+        if !crate::same_surface_state(&state, &self.snapshot()?) { return Err(WireErrorCode::HistoryRevisionChanged); }
+        self.desktop_copy_bound(session, request, Some((input, state)))
+    }
+
     pub(crate) fn desktop_copy_bound(&self, session: &Session, request: DesktopCopyParams, bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>) -> Result<Value,WireErrorCode> {
         self.desktop_permission(session,&request.service_instance_id)?;
         if !self.actions.can_copy() || request.paste && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}

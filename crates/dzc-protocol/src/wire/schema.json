@@ -1135,6 +1135,7 @@
         "desktop.capture.finish",
         "desktop.history.summary",
         "desktop.platform.probe",
+        "desktop.window.target",
         "desktop.tools.catalog",
         "desktop.tools.classify",
         "desktop.tools.transform",
@@ -1180,6 +1181,7 @@
         "desktop.tags.rename",
         "desktop.tags.remove",
         "desktop.history.mutate",
+        "desktop.window.paste",
         "desktop.clipboard.copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
@@ -1994,6 +1996,25 @@
             "properties": {
               "method": {
                 "const": "desktop.platform.probe"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.target"
               }
             },
             "required": [
@@ -2859,6 +2880,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopMutationParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.paste"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopCopyParams"
               }
             }
           }

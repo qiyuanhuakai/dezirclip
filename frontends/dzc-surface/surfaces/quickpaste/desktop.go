@@ -2,6 +2,7 @@ package quickpaste
 
 import (
 	"context"
+	"errors"
 	"log"
 	"time"
 
@@ -45,7 +46,16 @@ func NewDesktopPanel(owner *client.Client) *Panel {
 
 func (p *Panel) preferences() (protocol.QuickPreferences, error) {
 	var pref protocol.QuickPreferences
-	err := p.local.owner.DesktopCall(context.Background(), protocol.MethodDesktopQuickPreferences, protocol.EmptyParams{}, "QuickPreferences", &pref)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	read := func() error {
+		return p.local.owner.DesktopCall(ctx, protocol.MethodDesktopQuickPreferences, protocol.EmptyParams{}, "QuickPreferences", &pref)
+	}
+	err := read()
+	var remote *client.RemoteError
+	if errors.As(err, &remote) && remote.Code == protocol.WireErrorCodeBusy {
+		err = read()
+	}
 	return pref, err
 }
 
