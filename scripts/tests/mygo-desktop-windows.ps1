@@ -117,14 +117,23 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     } 'Synthetic history row missing from the shared WebView2 accessibility tree'
     $build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').CurrentBuildNumber
     if ($build -ge 22621) {
-        $null = Wait-Until {
-            [uint32]$value = 0
-            foreach ($expected in @(@(38,3), @(20,1), @(34,([uint32]::MaxValue-1)))) {
-                if ([MyGoInput]::DwmGetWindowAttribute($main.MainWindowHandle, $expected[0], [ref]$value, 4) -ne 0 -or
-                    $value -ne $expected[1]) { return $false }
-            }
-            return $true
-        } 'MyGo window did not apply acrylic, dark mode and the hidden native border'
+        $observed = @{}
+        try {
+            $null = Wait-Until {
+                $matched = $true
+                foreach ($expected in @(@(38,3), @(20,1), @(34,([uint32]::MaxValue-1)))) {
+                    [uint32]$value = 0
+                    $hr = [MyGoInput]::DwmGetWindowAttribute($main.MainWindowHandle, $expected[0], [ref]$value, 4)
+                    $observed[$expected[0]] = '0x{0:X8}/{1}' -f $hr,$value
+                    # Some DWM versions accept BORDER_COLOR on set and return E_INVALIDARG on get.
+                    if ($expected[0] -eq 34 -and $hr -eq -2147024809) { continue }
+                    if ($hr -ne 0 -or $value -ne $expected[1]) { $matched = $false }
+                }
+                return $matched
+            } 'MyGo window did not apply the expected DWM appearance'
+        } finally {
+            Write-Output ("DWM HRESULT/value, backdrop={0}, dark={1}, border={2}" -f $observed[38],$observed[20],$observed[34])
+        }
     }
     if ([MyGoInput]::GetForegroundWindow() -ne $main.MainWindowHandle) { throw 'MyGo main window lost focus before row click' }
     if (![MyGoInput]::SetCursorPos($point.X, $point.Y)) { throw 'Could not position pointer on the history row' }
