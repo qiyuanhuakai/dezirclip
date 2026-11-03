@@ -180,8 +180,33 @@ def check_native_panels(marker, desktop, service_pid, target, editor, paste_row)
         x11.XCloseDisplay(display)
 
 
-def check_pinned(row, atspi, gtk, marker, target, editor):
+def mygo_nodes(atspi, executable):
     from gi.repository import GLib
+    desktop = atspi.get_desktop(0)
+    pending = []
+    for index in range(desktop.get_child_count()):
+        try:
+            app = desktop.get_child_at_index(index)
+            if app and Path(f'/proc/{app.get_process_id()}/exe').resolve(strict=True) == executable:
+                pending.append(app)
+        except (GLib.Error, FileNotFoundError, ProcessLookupError):
+            continue
+    for _ in range(400):
+        if not pending: return
+        item = pending.pop()
+        if item is None: continue
+        try:
+            name = item.get_name() or ''
+            interfaces = item.get_interfaces()
+            text = atspi.Text.get_text(item, 0, -1) if 'Text' in interfaces else ''
+            pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
+        except GLib.Error:
+            # The next scan starts with live application roots and the same deadline.
+            continue
+        yield item, name, interfaces, text
+
+
+def check_pinned(row, atspi, gtk, marker, target, editor, executable):
     def wait_for(check, message):
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
@@ -189,21 +214,14 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
             result = check()
             if result: return result
             time.sleep(.04)
-        raise AssertionError(message)
+        tree = [(name, text[:80]) for _, name, _, text in mygo_nodes(atspi, executable) if name or text]
+        raise AssertionError(f'{message}: {tree}')
 
     def find_item(name, text=False):
-        pending = [atspi.get_desktop(0)]
-        while pending:
-            item = pending.pop()
-            if item is None: continue
-            try:
-                if text:
-                    if 'Text' in item.get_interfaces() and atspi.Text.get_text(item, 0, -1) == name: return item
-                elif item.get_name() == name and 'Action' in item.get_interfaces(): return item
-                pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
-            except GLib.Error:
-                # The original accessible is removed when the dialog or WebView closes.
-                continue
+        for item, label, interfaces, content in mygo_nodes(atspi, executable):
+            if text:
+                if content == name: return item
+            elif label == name and 'Action' in interfaces: return item
 
     main = subprocess.check_output(['xprop', '-root', '_NET_ACTIVE_WINDOW'], text=True).split()[-1]
     assert '_NET_WM_STATE_ABOVE' in subprocess.check_output(['xprop','-id',main,'_NET_WM_STATE'], text=True)
@@ -239,9 +257,8 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
         wait_for(alternate.is_active, 'Second editor did not acquire focus')
         # A real configured global shortcut must bind the editor before the MyGo window regains focus.
         keymap = Gdk.Keymap.get_for_display(Gdk.Display.get_default())
-        def shortcut():
+        def shortcut(keys=(Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8)):
             for pressed in (True, False):
-                keys = [Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8]
                 for sym in (keys if pressed else reversed(keys)):
                     mapped, entries = keymap.get_entries_for_keyval(sym)
                     assert mapped and entries
@@ -267,6 +284,19 @@ def check_pinned(row, atspi, gtk, marker, target, editor):
         assert atspi.Action.do_action(accept, 0)
         wait_for(lambda: clipboard.wait_for_text() == marker, 'Tag-row manual copy did not write its source')
         assert other.get_text() == marker and editor.get_text() == marker
+        add = wait_for(lambda: find_item('添加条目'), 'Missing manual entry command')
+        assert atspi.Action.do_action(add, 0)
+        field = wait_for(lambda: find_item('在此处输入条目内容...'), 'Manual text editor did not open')
+        note = 'manual' + secrets.token_hex(8)
+        assert atspi.Component.grab_focus(field)
+        for char in note:
+            shortcut((ord(char),))
+        wait_for(lambda: find_item(note, text=True), 'Manual editor did not receive the note')
+        save = wait_for(lambda: find_item('保存'), 'Missing save action')
+        assert atspi.Action.do_action(save, 0)
+        wait_for(lambda: find_item(note, text=True) if find_item('保存') is None else None,
+                 'Manual note did not appear in its original tag after saving')
+        print('Verified creating a manual text entry in the shared React tag manager')
         alternate.present()
         wait_for(alternate.is_active, 'Second editor did not regain focus')
         shortcut()
@@ -318,21 +348,14 @@ def check(desktop, pinned):
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f'Desktop exited before presenting history ({process.returncode})')
-            pending = [Atspi.get_desktop(0)]
             names, row = [], None
             filter_button = None
-            while pending and len(names) < 300:
-                item = pending.pop()
-                if item is None:
-                    continue
-                name = item.get_name()
-                text = Atspi.Text.get_text(item, 0, -1) if 'Text' in item.get_interfaces() else ''
+            for item, name, interfaces, text in mygo_nodes(Atspi, desktop):
                 names.append((name or '') + ' ' + (text or ''))
-                if name == ('图片' if filter_stage == 0 else '文本') and 'Action' in item.get_interfaces():
+                if name == ('图片' if filter_stage == 0 else '文本') and 'Action' in interfaces:
                     filter_button = item
                 if text == marker:
                     row = item
-                pending.extend(item.get_child_at_index(i) for i in range(item.get_child_count()))
             last = names
             has_marker = any(marker in name for name in names)
             if filter_stage == 0 and has_marker and filter_button and not any('无法确认桌面能力' in name for name in names):
@@ -346,7 +369,7 @@ def check(desktop, pinned):
                 filter_stage = 3
             if filter_stage == 3 and row and has_marker:
                 if pinned:
-                    check_pinned(row, Atspi, Gtk, marker, target, editor)
+                    check_pinned(row, Atspi, Gtk, marker, target, editor, desktop)
                     return
                 # The Host closes idle desktop streams after 30 seconds.
                 # Exercise copy and both resident shortcuts after that deadline.
