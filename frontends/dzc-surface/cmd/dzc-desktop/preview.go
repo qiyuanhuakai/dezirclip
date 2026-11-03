@@ -206,7 +206,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 		}
 		text = ""
 	} else if row.ContentType == "rich_text" && row.HtmlContent != nil && len(*row.HtmlContent) <= 64*1024 {
-		formatted = richPreviewDocument(*row.HtmlContent)
+		formatted = previewDocument(richtext.ParseHTML(*row.HtmlContent))
 	} else {
 		if text == "" {
 			text = row.Preview
@@ -222,7 +222,7 @@ func readPreview(ctx context.Context, host *client.Client, params protocol.Deskt
 		}
 	}
 	if full && bitmap == nil && formatted == nil {
-		formatted = richtext.NewDocument(richtext.NewText(text))
+		formatted = previewDocument(richtext.NewText(text))
 	}
 	return &previewBody{row.SourceApp, text, bitmap, formatted}, snapshot.State, nil
 }
@@ -332,8 +332,8 @@ func (p *Preview) load(ctx context.Context, main *mygo.Window, sequence uint64, 
 	})
 }
 
-func richPreviewDocument(html string) *richtext.Document {
-	doc := richtext.NewDocument(richtext.ParseHTML(html))
+func previewDocument(contents richtext.Text) *richtext.Document {
+	doc := richtext.NewDocument(contents)
 	doc.SetSelection(0, 0)
 	return doc
 }

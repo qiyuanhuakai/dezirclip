@@ -9,16 +9,24 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/richtext"
 )
 
-func TestLongRichPreviewOpensAtFirstParagraph(t *testing.T) {
+func TestLongPreviewOpensAtFirstParagraph(t *testing.T) {
 	const opening = "First paragraph"
-	doc := richPreviewDocument("<p>" + opening + "</p>" + strings.Repeat("<p>Later paragraph</p>", 40))
-	view := ui.NewTester(func(c *ui.Context) { drawRichPreview(c, doc) }, 360, 160)
-	view.ClickAt(30, 12)
-	anchor, caret := doc.Selection()
-	if anchor != caret || caret <= 0 || caret > len(opening) {
-		t.Fatalf("hit near the top of the first frame selected position %d:%d, outside the first paragraph", anchor, caret)
+	for name, contents := range map[string]richtext.Text{
+		"html":  richtext.ParseHTML("<p>" + opening + "</p>" + strings.Repeat("<p>Later paragraph</p>", 40)),
+		"plain": richtext.NewText(opening + strings.Repeat("\nLater paragraph", 40)),
+	} {
+		t.Run(name, func(t *testing.T) {
+			doc := previewDocument(contents)
+			view := ui.NewTester(func(c *ui.Context) { drawRichPreview(c, doc) }, 360, 160)
+			view.ClickAt(30, 12)
+			anchor, caret := doc.Selection()
+			if anchor != caret || caret <= 0 || caret > len(opening) {
+				t.Fatalf("hit near the top selected position %d:%d, outside the first paragraph", anchor, caret)
+			}
+		})
 	}
 }
 
@@ -29,7 +37,7 @@ func TestRichPreviewPaintsOnlyOneBackground(t *testing.T) {
 			a.Background = &struct{ R, G, B uint8 }{55, 89, 124}
 			theme := a.theme()
 			blank := ui.NewTester(func(c *ui.Context) { c.SetTheme(theme) }, 360, 160).Image().RGBAAt(230, 90)
-			doc := richPreviewDocument("<p><b>Visible formatted text</b></p>")
+			doc := previewDocument(richtext.ParseHTML("<p><b>Visible formatted text</b></p>"))
 			frame := ui.NewTester(func(c *ui.Context) { c.SetTheme(theme); drawRichPreview(c, doc) }, 360, 160).Image()
 			if got := frame.RGBAAt(230, 90); got != blank {
 				t.Fatalf("dark=%v opacity=%d: editor background %v, root %v", dark, opacity, got, blank)
