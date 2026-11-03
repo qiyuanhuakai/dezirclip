@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../../../shared/lib/desktopInvoke';
 import ClipboardItem, { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { beginPrivacyAccess, forgetPrivacyReveal, getPrivacyEntry, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, registerPrivacyReveal, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';

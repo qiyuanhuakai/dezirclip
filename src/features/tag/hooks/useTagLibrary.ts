@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../../../shared/lib/desktopInvoke';
 import { listen } from '@tauri-apps/api/event';
 import type { ClipboardEntry } from '../../../shared/types';
 import type { TagInfo, TagItemsPage, TagSort } from '../types';

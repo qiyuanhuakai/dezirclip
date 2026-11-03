@@ -1,6 +1,8 @@
 import { parsePrivacySnapshot } from "../lib/privacyRuntime";
 import { readResumeAuthority } from "../lib/mainWindowResume";
 import { hostGeneration } from "./events";
+import { getPrivacyViewState } from "../lib/privacySession";
+import type { TagBatchSelection } from "../../features/tag/utils/tagBatchSelection";
 
 type Arguments = Record<string, unknown>;
 
@@ -11,7 +13,41 @@ function privacySnapshot(status: { privacy: { expires_at_ms: number | null } }) 
 }
 
 const library = <T>(method: string, ...args: unknown[]) => window.mygo.call<T>(`Library.${method}`, ...args);
+
+function currentEpoch() {
+  const view = getPrivacyViewState();
+  if (view.phase !== "ready" || !view.snapshot || view.pending) throw new Error("PrivacyStateUnavailable");
+  return view.snapshot.privacy_epoch;
+}
+
+function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
+  const epoch = currentEpoch();
+  if (args.expectedPrivacyEpoch !== undefined && args.expectedPrivacyEpoch !== epoch) throw new Error("PrivacyEpochChanged");
+  if ((args.allowSensitive || args.confirmPersistence) && args.expectedPrivacyEpoch === undefined) throw new Error("PrivacyEpochRequired");
+  return library<number>("MutateEntry", { action, id: args.id, service_instance_id: args.expectedHostInstanceId,
+    expected_epoch: epoch, reveal: args.allowSensitive ?? false, confirm_persistence: args.confirmPersistence, ...fields });
+}
+
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  delete_clipboard_entry: args => mutateEntry(args, "delete"),
+  toggle_clipboard_pin: args => mutateEntry(args, "pin", { pinned: args.isPinned }),
+  update_tags: args => mutateEntry(args, "tags", { tags: args.tags }),
+  update_item_content: args => mutateEntry(args, "edit", { content: args.newContent }),
+  get_tag_colors: () => library("TagColors", currentEpoch()),
+  create_new_tag: args => library("EditTag", "create", args.tagName, "", currentEpoch()),
+  remove_tag_from_all: args => library("EditTag", "remove", args.tagName, "", currentEpoch()),
+  rename_tag_globally: args => library("EditTag", "rename", args.oldName, args.newName, currentEpoch()),
+  clear_clipboard_history: () => library("ClearHistory", currentEpoch()),
+  update_pinned_order: args => library("ReorderPins", args.orders, currentEpoch()),
+  delete_sensitive_tag_with_contents: args => library("DeleteTagWithContents", args.tagName, currentEpoch()),
+  delete_tag_entries: async args => {
+    const selection = args.selection as TagBatchSelection;
+    if (selection.mode !== "selected" && selection.mode !== "all") throw new Error("InvalidSelection");
+    const deletedCount = await library<number>("DeleteTagEntries", { name: args.tagName, expected_epoch: currentEpoch(),
+      scope: selection.mode, ids: selection.mode === "selected" ? selection.ids : selection.excludedIds,
+      query: selection.mode === "all" ? selection.query : undefined });
+    return { deletedCount };
+  },
   get_settings: () => library("Preferences"),
   copy_to_clipboard: args => window.mygo.call("History.CopyEntry", {
     id: args.id === 0 ? args.derivedFromId : args.id,

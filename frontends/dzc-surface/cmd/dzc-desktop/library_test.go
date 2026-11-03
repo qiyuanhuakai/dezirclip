@@ -128,6 +128,41 @@ func TestReactLibraryWithService(t *testing.T) {
 	if _, err := library.Entry(ctx, stale); err == nil {
 		t.Fatal("accepted another Host instance")
 	}
+	if err := library.EditTag(ctx, "create", "extra", "", epoch); err != nil {
+		t.Fatal(err)
+	}
+	pinned := true
+	mutation := protocol.DesktopMutationParams{Id: params.Id, ServiceInstanceId: instance, ExpectedEpoch: epoch, Action: "pin", Pinned: &pinned}
+	if id, err := library.MutateEntry(ctx, mutation); err != nil || id != params.Id {
+		t.Fatalf("pin: %d %v", id, err)
+	}
+	if err := library.ReorderPins(ctx, [][2]int64{{params.Id, 6}}, epoch); err != nil {
+		t.Fatal(err)
+	}
+	newTags := []string{"extra"}
+	mutation.Action, mutation.Pinned, mutation.Tags = "tags", nil, &newTags
+	if _, err := library.MutateEntry(ctx, mutation); err != nil {
+		t.Fatal(err)
+	}
+	if err := library.EditTag(ctx, "rename", "extra", "renamed", epoch); err != nil {
+		t.Fatal(err)
+	}
+	entry, err = library.Entry(ctx, params)
+	if err != nil || !entry.IsPinned || entry.PinnedOrder != 6 || len(entry.Tags) != 1 || entry.Tags[0] != "renamed" {
+		t.Fatalf("stored row metadata: %+v %v", entry, err)
+	}
+	// Clearing history must preserve pinned or tagged rows.
+	if err := library.ClearHistory(ctx, epoch); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := library.DeleteTagEntries(ctx, protocol.LibraryTagBatchParams{Name: "renamed", ExpectedEpoch: epoch,
+		Scope: "selected", Ids: []int64{params.Id}})
+	if err != nil || deleted != 1 {
+		t.Fatalf("delete selected tag entry: %d %v", deleted, err)
+	}
+	if rows, err := library.Page(ctx, search, epoch); err != nil || len(rows) != 0 {
+		t.Fatalf("deleted row remained searchable: %+v %v", rows, err)
+	}
 	after, err := library.SetPrivacy(ctx, protocol.PrivacySetParams{Active: true})
 	if err != nil || !after.Privacy.Active || after.State.PrivacyEpoch == epoch {
 		t.Fatalf("set privacy: %+v %v", after, err)
@@ -137,5 +172,8 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	if _, err := library.Page(ctx, search, epoch); err == nil {
 		t.Fatal("accepted stale search")
+	}
+	if err := library.EditTag(ctx, "create", "stale", "", epoch); !errors.As(err, &remote) || remote.Code != protocol.WireErrorCodePrivacyEpochChanged {
+		t.Fatalf("stale metadata edit: %v", err)
 	}
 }

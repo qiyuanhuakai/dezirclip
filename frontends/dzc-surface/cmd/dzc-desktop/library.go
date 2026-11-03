@@ -114,6 +114,94 @@ func (l *Library) TagCounts(ctx context.Context, epoch uint64) (json.RawMessage,
 	return counts.Values, nil
 }
 
+// MutateEntry uses the identity and privacy epoch of the row the user acted on.
+func (l *Library) MutateEntry(ctx context.Context, params protocol.DesktopMutationParams) (int64, error) {
+	if params.ServiceInstanceId != l.owner.Hello().State.ServiceInstanceId || params.Id == 0 {
+		return 0, client.ErrProtocol
+	}
+	switch params.Action {
+	case "pin", "tags", "edit", "delete":
+	default:
+		return 0, client.ErrProtocol
+	}
+	var result protocol.DesktopMutationResult
+	err := l.owner.DesktopCall(ctx, protocol.MethodDesktopHistoryMutate, params, "DesktopMutationResult", &result)
+	if err == nil && (!result.Performed || result.Id == 0) {
+		return 0, client.ErrProtocol
+	}
+	return result.Id, err
+}
+
+func (l *Library) TagColors(ctx context.Context, epoch uint64) (json.RawMessage, error) {
+	params := protocol.LibraryStateParams{ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch}
+	var colors protocol.LibraryColors
+	err := l.snapshot(ctx, protocol.MethodDesktopTagsColors, params, "LibraryColors", &colors, epoch)
+	return colors.Values, err
+}
+
+func (l *Library) EditTag(ctx context.Context, action string, name string, newName string, epoch uint64) error {
+	instance := l.owner.Hello().State.ServiceInstanceId
+	var method protocol.Method
+	var params any = protocol.LibraryTagParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Name: name}
+	switch action {
+	case "create":
+		method = protocol.MethodDesktopTagsCreate
+	case "remove":
+		method = protocol.MethodDesktopTagsRemove
+	case "rename":
+		method = protocol.MethodDesktopTagsRename
+		params = protocol.LibraryRenameParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Name: name, NewName: newName}
+	default:
+		return client.ErrProtocol
+	}
+	return l.edit(ctx, method, params)
+}
+
+func (l *Library) edit(ctx context.Context, method protocol.Method, params any) error {
+	var result protocol.OperationResult
+	err := l.owner.DesktopCall(ctx, method, params, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
+
+func (l *Library) ClearHistory(ctx context.Context, epoch uint64) error {
+	return l.edit(ctx, protocol.MethodDesktopHistoryClear, protocol.LibraryStateParams{
+		ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch,
+	})
+}
+
+func (l *Library) ReorderPins(ctx context.Context, pairs [][2]int64, epoch uint64) error {
+	orders := make([]protocol.LibraryPinOrder, len(pairs))
+	for i, pair := range pairs {
+		orders[i] = protocol.LibraryPinOrder{Id: pair[0], Order: pair[1]}
+	}
+	return l.edit(ctx, protocol.MethodDesktopHistoryReorder, protocol.LibraryOrderParams{
+		ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Orders: orders,
+	})
+}
+
+func (l *Library) DeleteTagEntries(ctx context.Context, params protocol.LibraryTagBatchParams) (uint64, error) {
+	params.ServiceInstanceId = l.owner.Hello().State.ServiceInstanceId
+	return l.deleteEntries(ctx, protocol.MethodDesktopTagsDeleteEntries, params)
+}
+
+func (l *Library) DeleteTagWithContents(ctx context.Context, name string, epoch uint64) (uint64, error) {
+	return l.deleteEntries(ctx, protocol.MethodDesktopTagsDeleteContents, protocol.LibraryTagParams{
+		ServiceInstanceId: l.owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch, Name: name,
+	})
+}
+
+func (l *Library) deleteEntries(ctx context.Context, method protocol.Method, params any) (uint64, error) {
+	var result protocol.LibraryDeleted
+	err := l.owner.DesktopCall(ctx, method, params, "LibraryDeleted", &result)
+	if err == nil && result.CleanupFailed {
+		err = errors.New("History was deleted, but attachment cleanup failed")
+	}
+	return result.DeletedCount, err
+}
+
 func (l *Library) Preferences(ctx context.Context) (json.RawMessage, error) {
 	status, err := l.Status(ctx)
 	if err != nil {

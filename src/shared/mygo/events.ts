@@ -43,6 +43,8 @@ async function watchHost() {
           dispatch("clipboard-captured", { id: data.entry_id, host_instance_id: state.service_instance_id });
         } else if (event === "EntryDeleted") {
           dispatch("clipboard-removed", data.entry_id);
+        } else if (event === "HistoryReset") {
+          dispatch("tag-colors-updated");
         } else if (event === "ServiceStateChanged" && data.status?.startsWith("paste_queue_changed:")) {
           const count = Number(data.status.slice("paste_queue_changed:".length));
           if (Number.isSafeInteger(count) && count >= 0) dispatch("paste-queue-changed", count);
