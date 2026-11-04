@@ -9,7 +9,6 @@ use std::{sync::{Arc, Weak, Mutex, mpsc, atomic::{AtomicBool, AtomicUsize, Order
 pub trait CaptureHooks: Send + Sync {
     fn source(&self) -> Option<CaptureSource> { None }
     fn paused(&self) -> bool { false }
-    fn sequential_echo(&self) -> Option<String> { None }
     fn own_copy(&self, _timestamp: i64) -> OwnClipboardCopy { OwnClipboardCopy::default() }
     fn clear_own_copy(&self) {}
     fn event(&self, _event: CaptureEvent) {}
@@ -19,6 +18,10 @@ struct HeadlessHooks(Weak<Host>);
 impl CaptureHooks for HeadlessHooks {
     fn stored(&self,capture:StoredCapture,work:crate::CaptureWork) {
         let Some(host)=self.0.upgrade() else {return;};
+        if capture.privacy_ticket.as_ref().is_some_and(|ticket| crate::router::now_ms()
+            .is_ok_and(|now| host.history.privacy().check_capture(ticket, now).is_ok())) {
+            host.play_feedback(dzc_platform::sound::Cue::Copy);
+        }
         let observer=self.0.clone();
         let changed=Arc::new(move|id:i64,status:&'static str| {if let Some(host)=observer.upgrade() {let _=host.publish(EventKind::EntryUpdated,EventData{entry_id:Some(id),status:Some(status.into())});}});
         if crate::schedule_capture_ocr(host.history.clone(),&capture,work,changed).is_err() {diagnostic(&host,"CaptureFollowUpUnavailable");}
@@ -106,7 +109,8 @@ impl CaptureManager {
                 let source = NativeSourceResolver.resolve_source().unwrap_or_default();
                 CaptureSource { app_name: source.app_name.unwrap_or_default(), process_path: source.process_path }
             });
-            let context = CaptureContext { source: source.clone(), timestamp, settings, session: &host.session, paused: hooks.paused(), sequential_echo: hooks.sequential_echo() };
+            let sequential = settings.sequential_mode;
+            let context = CaptureContext { source: source.clone(), timestamp, settings, session: &host.session, paused: hooks.paused(), sequential_echo: if sequential { host.queue.echo() } else { None } };
             notifications.set_persistence_mode(context.settings.persistent);
             let store = host.history.capture_store(&host.directory);
             let mut events = HostEvents(&host, hooks.as_ref());
@@ -202,10 +206,23 @@ fn weight(frame: &CaptureFrame) -> usize {
 }
 fn process(host: &Host, task: Task, hooks: &dyn CaptureHooks, work: crate::CaptureWork) -> Result<bool,WireErrorCode> {
     let Ok(settings) = host.history.capture_settings_snapshot() else { diagnostic(host, "CaptureSettingsUnavailable"); return Err(WireErrorCode::Unavailable); };
-    let context = CaptureContext { source: task.source, timestamp: task.timestamp, settings, session: &host.session, paused: hooks.paused(), sequential_echo: hooks.sequential_echo() };
+    let sequential = settings.sequential_mode;
+    let context = CaptureContext { source: task.source, timestamp: task.timestamp, settings, session: &host.session, paused: hooks.paused(), sequential_echo: if sequential { host.queue.echo() } else { None } };
     let store = host.history.capture_store(&host.directory);
     match CaptureEngine::capture_frame(&context, task.frame, &store, &mut HostEvents(host, hooks)) {
-        CaptureOutcome::Stored(capture) => {hooks.stored(capture,work);Ok(true)},
+        CaptureOutcome::Stored(capture) => {
+            if sequential {
+                if let Some(ticket) = &capture.privacy_ticket {
+                    match host.queue.capture(&host.history, capture.entry.id, ticket) {
+                        Ok(true) => { let _ = host.queue_changed(); }
+                        Err(WireErrorCode::Busy) => diagnostic(host, "PasteQueueFull"),
+                        _ => {}
+                    }
+                }
+            }
+            hooks.stored(capture,work);
+            Ok(true)
+        },
         CaptureOutcome::Skipped(CaptureSkip::PrivacyEpochChanged)=>Err(WireErrorCode::PrivacyBlocked),
         CaptureOutcome::Skipped(_)=>Ok(false),
         CaptureOutcome::Rejected(_)=>Err(WireErrorCode::PrivacyBlocked),

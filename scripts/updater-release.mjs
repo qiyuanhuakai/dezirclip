@@ -245,6 +245,8 @@ const releaseGateJobs = [
   'Collect actual final package identities / Bind final source and all fourteen assets',
   'Verify actual signed Windows upgrades / Bind all actual final installer upgrades',
 ];
+const mygoJob = 'Windows x64 MyGo test download';
+const requiresMyGo = version => compareVersions(version, '0.2.0-alpha.9') >= 0;
 const nativeReleaseJobs = [
   'Create GitHub release', 'Publish verified standalone archives',
   ...Object.keys(expectedPlatforms).map(platform => `Tauri release (${platform})`),
@@ -292,7 +294,8 @@ function verifiedReleaseRun(transport, tag, commit, runId, runAttempt, repair = 
     throw new Error('Release attempt jobs have missing or conflicting identities');
   }
   const publishers = jobs.filter(job => publisherJobs.includes(job.name));
-  if (publishers.length !== 1 || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
+  if (publishers.length !== 1 || (requiresMyGo(tag) && jobs.filter(job => job.name === mygoJob).length !== 1)
+      || jobs.some(job => !(job.status === 'completed' && job.conclusion === 'success')
       && !(job.name === 'Synchronize an already published update channel'
         && job.status === 'completed' && job.conclusion === 'skipped')
       && !(repair && job === publishers[0] && job.status === 'completed' && job.conclusion === 'failure')
@@ -329,6 +332,7 @@ function verifiedReleaseAssets(release, version, cutoff) {
     ...['x86_64', 'aarch64'].map(arch => `DezirClip-${rpmVersion}-${rpmRelease}.${arch}.rpm`),
     ...['x86_64', 'aarch64'].map(arch => `DezirClip-${value}-linux-${arch}.flatpak`)];
   const assets = release.assets;
+  if (requiresMyGo(value)) names.push(`DezirClip-v${value}-windows-x64-MyGo.zip`);
   if (!Array.isArray(assets) || assets.length !== names.length || new Set(assets.map(asset => asset.id)).size !== names.length
       || names.some(name => assets.filter(asset => asset.name === name).length !== 1)
       || assets.some(asset => !Number.isSafeInteger(asset.id) || asset.id <= 0
@@ -336,7 +340,7 @@ function verifiedReleaseAssets(release, version, cutoff) {
         || !/^sha256:[a-f0-9]{64}$/.test(asset.digest ?? '') || typeof asset.updated_at !== 'string'
         || !Number.isFinite(Date.parse(asset.updated_at))
         || Date.parse(asset.updated_at) > cutoff)) {
-    throw new Error('All 24 release assets must retain their pre-gate identities');
+    throw new Error(`All ${names.length} release assets must retain their pre-gate identities`);
   }
   return JSON.stringify(assets.map(({ id, name, size, state, digest, updated_at }) =>
     ({ id, name, size, state, digest, updated_at })).sort((a, b) => a.name.localeCompare(b.name)));

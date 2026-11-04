@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";
 import type { ClipboardEntry } from "../../../shared/types";
 import { useQrCode } from "../hooks/useQrCode";
 import { beginPrivacyAccess } from "../../../shared/lib/privacySession";
@@ -57,9 +57,7 @@ const QrCodeDialog = forwardRef<HTMLDivElement, QrCodeDialogProps>(
           pasteWithFormat: false,
           moveToTop: false,
           pasteImageAsBase64: false,
-          expectedPrivacyEpoch: access.epoch,
-          derivedFromId: protectedContent ? entry.id : undefined,
-          expectedHostInstanceId: entry.host_instance_id,
+          ...derivedCopySource(entry, protectedContent, access.epoch),
         });
       } catch {
         // clipboard write failure is non-critical

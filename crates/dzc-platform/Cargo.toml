@@ -13,9 +13,16 @@ required-features = ["ipc"]
 [features]
 portable = ["dzc-core/portable"]
 ipc = ["dep:tokio", "dzc-protocol/wire", "dep:sha2"]
+native-screen = ["dep:xcap", "dep:zeroize"]
+native-fonts = ["dep:font-kit", "dzc-protocol/wire"]
 native-ocr = ["dep:windows-core"]
 
 [dependencies]
+tempfile = "3"
+dunce = "1"
+font-kit = { workspace = true, optional = true }
+xcap = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
 dzc-protocol.workspace = true
 dzc-core.workspace = true
 uuid.workspace = true
@@ -25,12 +32,15 @@ base64.workspace = true
 arboard.workspace = true
 image.workspace = true
 urlencoding.workspace = true
+url = "2"
 rand.workspace = true
 aes-gcm.workspace = true
 sha2 = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["net", "io-util", "rt", "sync", "time", "macros"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+libloading = "0.8"
+dirs.workspace = true
 keyring.workspace = true
 x11rb = { workspace = true, features = ["xkb"] }
 libc.workspace = true

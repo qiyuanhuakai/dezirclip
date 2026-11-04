@@ -214,13 +214,14 @@ pub unsafe extern "system" fn keyboard_proc(
             let win_down = (GetAsyncKeyState(VK_LWIN.0 as i32) as u16 & 0x8000 != 0)
                 || (GetAsyncKeyState(VK_RWIN.0 as i32) as u16 & 0x8000 != 0);
 
-            if vk == 0x56 && ctrl_down && !alt_down && !shift_down && !win_down {
+            if vk == 0x56 && ctrl_down && !alt_down && !shift_down && !win_down
+                && !kbd_struct.flags.contains(windows::Win32::UI::WindowsAndMessaging::LLKHF_INJECTED) {
                 if is_down {
                     if let Some(handle) = GLOBAL_APP_HANDLE.get() {
                         let settings = handle.state::<SettingsState>();
                         if settings.sound_enabled.load(Ordering::Relaxed) {
                             std::thread::spawn(move || {
-                                let _ = handle.emit("play-sound", "paste");
+                                crate::services::clipboard_ops::play_paste_sound_if_enabled(handle);
                             });
                         }
                     }

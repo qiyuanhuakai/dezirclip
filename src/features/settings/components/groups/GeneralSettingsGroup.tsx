@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import WaylandCapabilitiesSection from "./WaylandCapabilitiesSection";
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
@@ -91,11 +91,44 @@ const GeneralSettingsGroup = ({
     setArrowKeySelection,
     saveAppSetting
 }: GeneralSettingsGroupProps) => {
+    const [loginSaving, setLoginSaving] = useState(false);
+    const [loginError, setLoginError] = useState("");
+    const [traySaving, setTraySaving] = useState(false);
+    const [trayError, setTrayError] = useState("");
+    const [dockSaving, setDockSaving] = useState(false);
+    const [idleSaving, setIdleSaving] = useState(false);
+    const [idleError, setIdleError] = useState("");
+    const [dockError, setDockError] = useState("");
+    const [gpuSaving, setGpuSaving] = useState(false);
+    const [gpuError, setGpuError] = useState("");
+    const [soundSaving, setSoundSaving] = useState(false);
+    const [soundError, setSoundError] = useState("");
+    const commitSound = async (enabled: boolean, pasteOnly: boolean) => {
+        setSoundSaving(true);
+        setSoundError("");
+        try {
+            if (pasteOnly) {
+                await invoke("save_setting", { key: "app.sound_paste_enabled", value: String(enabled) });
+                setPasteSoundEnabled(enabled);
+            } else {
+                await invoke("set_sound_enabled", { enabled });
+                setSoundEnabled(enabled);
+            }
+        } catch (error) {
+            setSoundError(String(error));
+        } finally {
+            setSoundSaving(false);
+        }
+    };
+    const [followSaving, setFollowSaving] = useState(false);
+    const [followError, setFollowError] = useState("");
+    const [silentSaving, setSilentSaving] = useState(false);
+    const [silentError, setSilentError] = useState("");
     const [idleDestroyDraft, setIdleDestroyDraft] = useState(idleDestroySeconds.toString());
     useEffect(() => {
         setIdleDestroyDraft(idleDestroySeconds.toString());
     }, [idleDestroySeconds]);
-    const commitIdleDestroy = (rawValue?: string) => {
+    const commitIdleDestroy = async (rawValue?: string) => {
         const source = rawValue ?? idleDestroyDraft;
         if (!/^\d+$/.test(source)) {
             setIdleDestroyDraft(idleDestroySeconds.toString());
@@ -105,8 +138,17 @@ const GeneralSettingsGroup = ({
         const clamped = Math.max(5, Math.min(3600, parsed));
         setIdleDestroyDraft(clamped.toString());
         if (clamped !== idleDestroySeconds) {
-            setIdleDestroySeconds(clamped);
-            invoke("set_idle_destroy_seconds", { seconds: clamped }).catch(console.error);
+            setIdleSaving(true);
+            setIdleError("");
+            try {
+                await invoke("set_idle_destroy_seconds", { seconds: clamped });
+                setIdleDestroySeconds(clamped);
+            } catch (error) {
+                setIdleDestroyDraft(String(idleDestroySeconds));
+                setIdleError(String(error));
+            } finally {
+                setIdleSaving(false);
+            }
         }
     };
 
@@ -127,15 +169,26 @@ const GeneralSettingsGroup = ({
                         <input
                             className="cb"
                             type="checkbox"
+                            aria-label={t("autostart")}
                             checked={autoStart}
-                            onChange={(e) => {
+                            disabled={loginSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setAutoStart(enabled);
-                                invoke("toggle_autostart", { enabled }).catch(console.error);
+                                setLoginSaving(true);
+                                setLoginError("");
+                                try {
+                                    await invoke("toggle_autostart", { enabled });
+                                    setAutoStart(await invoke<boolean>("is_autostart_enabled"));
+                                } catch (error) {
+                                    setLoginError(String(error));
+                                } finally {
+                                    setLoginSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {loginError && <span role="alert">{t("common_error")} · {loginError}</span>}
                 </div>
 
                 <div className="setting-item">
@@ -147,14 +200,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={hideTrayIcon}
-                            onChange={(e) => {
+                            aria-label={t('hide_tray_icon')}
+                            disabled={traySaving}
+                            onChange={async (e) => {
                                 const val = e.target.checked;
-                                setHideTrayIcon(val);
-                                invoke("set_tray_visible", { visible: !val }).catch(console.error);
+                                setTraySaving(true);
+                                setTrayError("");
+                                try {
+                                    await invoke("set_tray_visible", { visible: !val });
+                                    setHideTrayIcon(val);
+                                } catch (error) {
+                                    setTrayError(String(error));
+                                } finally {
+                                    setTraySaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {trayError && <span role="alert">{trayError}</span>}
                 </div>
 
                 <NativeFeatureBoundary t={t}>
@@ -168,14 +232,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={edgeDocking}
-                            onChange={(e) => {
-                                const val = e.target.checked;
-                                setEdgeDocking(val);
-                                invoke("set_edge_docking", { enabled: val }).catch(console.error);
+                            aria-label={t('edge_docking')}
+                            disabled={dockSaving}
+                            onChange={async (e) => {
+                                const enabled = e.target.checked;
+                                setDockSaving(true);
+                                setDockError("");
+                                try {
+                                    await invoke("set_edge_docking", { enabled });
+                                    setEdgeDocking(enabled);
+                                } catch (error) {
+                                    setDockError(String(error));
+                                } finally {
+                                    setDockSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {dockError && <span role="alert">{dockError}</span>}
                 </div>
 
                 <div className="setting-item">
@@ -187,14 +262,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={followMouse}
-                            onChange={(e) => {
-                                const val = e.target.checked;
-                                setFollowMouse(val);
-                                invoke("set_follow_mouse", { enabled: val }).catch(console.error);
+                            aria-label={t('follow_mouse')}
+                            disabled={followSaving}
+                            onChange={async (e) => {
+                                const enabled = e.target.checked;
+                                setFollowSaving(true);
+                                setFollowError("");
+                                try {
+                                    await invoke("set_follow_mouse", { enabled });
+                                    setFollowMouse(enabled);
+                                } catch (error) {
+                                    setFollowError(String(error));
+                                } finally {
+                                    setFollowSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {followError && <span role="alert">{t("common_error")} · {followError}</span>}
                 </div>
 
                 </NativeFeatureBoundary>
@@ -208,14 +294,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={disableWebviewGpu}
-                            onChange={(e) => {
+                            aria-label={t('disable_webview_gpu')}
+                            disabled={gpuSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setDisableWebviewGpu(enabled);
-                                saveAppSetting('disable_webview_gpu', String(enabled));
+                                setGpuSaving(true);
+                                setGpuError("");
+                                try {
+                                    await invoke("save_setting", { key: "app.disable_webview_gpu", value: String(enabled) });
+                                    setDisableWebviewGpu(enabled);
+                                } catch (error) {
+                                    setGpuError(String(error));
+                                } finally {
+                                    setGpuSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {gpuError && <span role="alert">{t("common_error")} · {gpuError}</span>}
                 </div>
 
                 <div className="setting-item">
@@ -227,16 +324,27 @@ const GeneralSettingsGroup = ({
                         <input
                             className="cb"
                             type="checkbox"
+                            aria-label={t('idle_destroy_enabled')}
                             checked={idleDestroyEnabled}
-                            onChange={(e) => {
+                            disabled={idleSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setIdleDestroyEnabled(enabled);
-                                invoke("set_idle_destroy_enabled", { enabled }).catch(console.error);
+                                setIdleSaving(true);
+                                setIdleError("");
+                                try {
+                                    await invoke("set_idle_destroy_enabled", { enabled });
+                                    setIdleDestroyEnabled(enabled);
+                                } catch (error) {
+                                    setIdleError(String(error));
+                                } finally {
+                                    setIdleSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
                 </div>
+                {idleError && <span role="alert">{t("common_error")} · {idleError}</span>}
                 {idleDestroyEnabled && (
                     <div className="setting-item setting-item--detail">
                         <LabelWithHint
@@ -248,6 +356,8 @@ const GeneralSettingsGroup = ({
                             type="text"
                             inputMode="numeric"
                             pattern="[0-9]*"
+                            aria-label={t('idle_destroy_seconds')}
+                            disabled={idleSaving}
                             value={idleDestroyDraft}
                             onFocus={(e) => {
                                 e.target.select();
@@ -262,7 +372,6 @@ const GeneralSettingsGroup = ({
                             onBlur={(e) => commitIdleDestroy(e.target.value)}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                    commitIdleDestroy(e.currentTarget.value);
                                     e.currentTarget.blur();
                                 }
                             }}
@@ -279,14 +388,13 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={soundEnabled}
-                            onChange={(e) => {
-                                const enabled = e.target.checked;
-                                setSoundEnabled(enabled);
-                                invoke("set_sound_enabled", { enabled }).catch(console.error);
-                            }}
+                            aria-label={t('sound_effects')}
+                            disabled={soundSaving}
+                            onChange={(e) => void commitSound(e.target.checked, false)}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {soundError && <span role="alert">{t("common_error")} · {soundError}</span>}
                 </div>
                 {soundEnabled && (
                     <div className="setting-item setting-item--detail">
@@ -299,6 +407,7 @@ const GeneralSettingsGroup = ({
                             min="0"
                             max="100"
                             step="1"
+                            aria-label={t("sound_volume")}
                             value={soundVolume}
                             onChange={(e) => {
                                 const volume = Number(e.target.value);
@@ -318,11 +427,9 @@ const GeneralSettingsGroup = ({
                                 className="cb"
                                 type="checkbox"
                                 checked={pasteSoundEnabled}
-                                onChange={(e) => {
-                                    const enabled = e.target.checked;
-                                    setPasteSoundEnabled(enabled);
-                                    invoke("save_setting", { key: 'app.sound_paste_enabled', value: String(enabled) }).catch(console.error);
-                                }}
+                                aria-label={t('paste_sound')}
+                                disabled={soundSaving}
+                                onChange={(e) => void commitSound(e.target.checked, true)}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
@@ -340,14 +447,25 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={silentStart}
-                            onChange={(e) => {
+                            aria-label={t('silent_start')}
+                            disabled={silentSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setSilentStart(enabled);
-                                invoke("set_silent_start", { enabled }).catch(console.error);
+                                setSilentSaving(true);
+                                setSilentError("");
+                                try {
+                                    await invoke("set_silent_start", { enabled });
+                                    setSilentStart(enabled);
+                                } catch (error) {
+                                    setSilentError(String(error));
+                                } finally {
+                                    setSilentSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
+                    {silentError && <span role="alert">{silentError}</span>}
                 </div>
                 <div className="setting-item">
                     <LabelWithHint
@@ -416,6 +534,7 @@ const GeneralSettingsGroup = ({
                             className="cb"
                             type="checkbox"
                             checked={tagManagerEnabled}
+                            aria-label={t('tag_manager_enabled')}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setTagManagerEnabled(enabled);

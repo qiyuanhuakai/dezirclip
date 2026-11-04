@@ -209,6 +209,75 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: gh release upload "${GITHUB_REF_NAME}" artifacts/dzc/* --clobber
 
+  windows-x64-mygo:
+    name: Windows x64 MyGo test download
+    if: github.event_name == 'push'
+    needs: create-release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set up Go for the Windows x64 MyGo test package
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: |
+            clients/go/go.sum
+            frontends/dzc-surface/go.sum
+
+      - name: Build and verify standalone Windows x64 MyGo desktop
+        shell: pwsh
+        run: |
+          pnpm run build:mygo:web
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          pnpm run desktop:mygo:build --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo build --locked --release --no-default-features --features native-screen --bin dzc --bin dzc-service
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python scripts/stage-mygo-windows.py --revision "$env:GITHUB_SHA" --tag "$env:GITHUB_REF_NAME" --output "$env:RUNNER_TEMP/mygo-test-package"
+
+      - name: Upload independent Windows x64 MyGo test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DezirClip-${{ github.ref_name }}-windows-x64-MyGo
+          path: ${{ runner.temp }}/mygo-test-package/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach the verified Windows x64 MyGo ZIP to the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DZC_RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'mygo-test-package'
+          $archive = Join-Path $env:RUNNER_TEMP "DezirClip-$env:GITHUB_REF_NAME-windows-x64-MyGo.zip"
+          $files = 'dzc-desktop.exe', 'dzc-service.exe', 'dzc.exe', 'skills' | ForEach-Object { Join-Path $stage $_ }
+          Compress-Archive -LiteralPath $files -DestinationPath $archive -CompressionLevel Optimal
+          python scripts/stage-mygo-windows.py --verify-archive $archive --output $stage
+          if ($LASTEXITCODE) { throw 'MyGo ZIP differs from the tested package' }
+          $release = gh release view "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --json databaseId,isDraft,tagName | ConvertFrom-Json
+          if ($LASTEXITCODE -or !$release.isDraft -or [string]$release.databaseId -ne $env:DZC_RELEASE_ID -or $release.tagName -cne $env:GITHUB_REF_NAME) {
+            throw 'Expected the original draft release for this tag'
+          }
+          gh release upload "$env:GITHUB_REF_NAME" $archive --repo "$env:GITHUB_REPOSITORY" --clobber
+
   publish-tauri:
     name: Tauri release (${{ matrix.name }})
     if: github.event_name == 'push'
@@ -351,8 +420,8 @@ jobs:
 
   collect-release-identities:
     name: Collect actual final package identities
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success')) }}
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, windows-x64-mygo]
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success' && needs.windows-x64-mygo.result == 'success')) }}
     permissions:
       contents: write
       actions: read
@@ -378,8 +447,8 @@ jobs:
 
   verify-publish-and-promote:
     name: Verify signed artifacts, publish and synchronize update channel
-    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.collect-release-identities.result == 'success' && needs.verify-final-windows-upgrade.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success')) }}
+    needs: [create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo]
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.collect-release-identities.result == 'success' && needs.verify-final-windows-upgrade.result == 'success' && (github.event_name == 'workflow_dispatch' || (needs.publish-tauri.result == 'success' && needs.publish-standalone-cli.result == 'success' && needs.publish-flatpak.result == 'success' && needs.windows-x64-mygo.result == 'success')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write

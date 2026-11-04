@@ -85,7 +85,8 @@ function fixture(t, { host = "x86_64-pc-windows-msvc", target = host, profile = 
     if (args[0] === "metadata") return JSON.stringify({ target_directory: targetDirectory });
     assert(["dzc", "dzc-service"].includes(args[4]));
     assert.deepEqual(args, ["build", "--manifest-path", "src-tauri/Cargo.toml", "--bin", args[4], "--locked", "--no-default-features", "--target", target,
-      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : [])]);
+      ...(profile === "release" ? ["--release"] : []), ...(portable ? ["--features", "portable"] : []),
+      ...(args[4] === "dzc-service" ? ["--features", "native-screen"] : [])]);
     if (!omitOutput) {
       mkdirSync(dirname(source), { recursive: true });
       writeFileSync(args[4] === "dzc" ? source : serviceSource, args[4] === "dzc" ? payload : Buffer.from("service:"+payload.toString()));
@@ -202,14 +203,23 @@ test("packaging entry points use the shared hook and portable CLI feature", () =
   assert.match(rpmStep, /gh release upload "\$GITHUB_REF_NAME" "\$rpm_path" --clobber/);
   const { identities, upgrades } = assertReleaseSourceRouting(workflow);
   assert(identities, "publication requires the actual final-package identity workflow");
-  assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak\]/);
+  assert.match(identities, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, windows-x64-mygo\]/);
+  assert.match(identities, /github\.event_name == 'workflow_dispatch' \|\| \(needs\.publish-tauri\.result == 'success' && needs\.publish-standalone-cli\.result == 'success' && needs\.publish-flatpak\.result == 'success' && needs\.windows-x64-mygo\.result == 'success'\)/);
   assert.match(identities, /uses: \.\/\.github\/workflows\/release-identities\.yml/);
   assert.match(identities, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
   assert(upgrades, "publication requires actual final signed NSIS installation and upgrade acceptance");
   assert.match(upgrades, /needs: \[create-release, publish-tauri\]/);
   assert.match(upgrades, /uses: \.\/\.github\/workflows\/release-windows-upgrade\.yml/);
   assert.match(upgrades, /release-id: \$\{\{ needs\.create-release\.outputs\.release_id \}\}/);
-  assert.match(workflow.split("  verify-publish-and-promote:")[1], /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade\]/);
+  const promotion = releaseJob(workflow, "verify-publish-and-promote");
+  const mygo = releaseJob(workflow, "windows-x64-mygo");
+  assert.match(mygo, /python scripts\/stage-mygo-windows\.py --revision "\$env:GITHUB_SHA" --tag "\$env:GITHUB_REF_NAME"/);
+  assert.match(mygo, /DezirClip-\$env:GITHUB_REF_NAME-windows-x64-MyGo\.zip/);
+  assert.match(mygo, /\$files = 'dzc-desktop\.exe', 'dzc-service\.exe', 'dzc\.exe'/);
+  assert.match(mygo, /!\$release\.isDraft.*\$release\.databaseId -ne \$env:DZC_RELEASE_ID/);
+  assert.match(mygo, /gh release upload "\$env:GITHUB_REF_NAME" \$archive/);
+  assert.match(promotion, /needs: \[create-release, publish-tauri, publish-standalone-cli, publish-flatpak, collect-release-identities, verify-final-windows-upgrade, windows-x64-mygo\]/);
+  assert.match(promotion, /github\.event_name == 'workflow_dispatch' \|\| \(needs\.publish-tauri\.result == 'success' && needs\.publish-standalone-cli\.result == 'success' && needs\.publish-flatpak\.result == 'success' && needs\.windows-x64-mygo\.result == 'success'\)/);
 });
 
 test("release source routing rejects loss of the tag fallback, fixed recovery identity or independent tooling", () => {

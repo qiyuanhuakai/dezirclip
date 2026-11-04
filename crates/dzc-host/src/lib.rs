@@ -1,21 +1,30 @@
 //! One headless Host implementation for embedded and optional service clients.
 mod authorization;
 mod events;
+pub mod external;
 mod router;
 mod server;
 mod capture;
 mod client;
 mod work;
 mod desktop;
+mod library;
+mod paste_queue;
+mod quick;
+mod backup;
+mod tools;
+mod themes;
 mod desktop_actions;
 mod desktop_policy;
 mod hotkey;
 mod upload;
 mod ocr;
 mod surface;
+#[cfg(feature = "native-screen")]
+mod screen;
 mod history_version;
 pub use surface::same_surface_state;
-pub use ocr::schedule_capture_ocr;
+pub use ocr::{engine_info, prepare_manual_ocr, schedule_capture_ocr, OCR_ENGINE_DISPLAY_NAME};
 pub mod data;
 pub mod controller;
 pub use client::{Client, ControlFile};

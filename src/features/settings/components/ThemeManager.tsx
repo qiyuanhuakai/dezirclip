@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { getCustomTheme, getCustomThemes, replaceCustomThemes, subscribeCustomThemes } from "../../../shared/lib/themeCatalog";
 import { BUILTIN_THEMES, MAX_CUSTOM_THEMES, parseThemePackage } from "../../../shared/lib/themePackage";

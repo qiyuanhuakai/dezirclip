@@ -15,6 +15,106 @@ pub fn sibling_executable() -> io::Result<PathBuf> {
     let extension = current.extension().map(|value| format!(".{}", value.to_string_lossy())).unwrap_or_default();
     Ok(current.with_file_name(format!("dzc-service{extension}")))
 }
+/// Reserve both session endpoints until the new profile and its redirect are published.
+pub fn move_profile_offline(database: &Path, destination: &Path) -> io::Result<()> {
+    let (source, target) = data::installed_move_directories(database, destination)?;
+    if source == target { return Ok(()); }
+    let _source = data::reserve_profile(&source)?;
+    let _destination = data::reserve_profile(&target)?;
+    let redirect = data::move_redirect(database)?;
+    let history = dzc_core::api::HistoryService::open(database).map_err(io::Error::other)?;
+    let original_directory = database.parent().ok_or_else(|| io::Error::other("Missing profile directory"))?;
+    history.migrate_profile(original_directory, destination, &redirect).map_err(io::Error::other)
+}
+/// Move the installed profile through its original authenticated Service. A copy failure leaves
+/// that Service running. Only a confirmed cutover permits starting the Service at the new path.
+#[derive(serde::Serialize)]
+pub struct MoveRecovery {
+    previous_directory: PathBuf,
+    target: PathBuf,
+    instance: String,
+    no_capture: bool,
+    pub detail: String,
+}
+
+pub async fn move_active_profile(database: &Path, destination: &Path, instance: &str, epoch: u64) -> io::Result<Option<MoveRecovery>> {
+    let (source, target) = data::installed_move_directories(database, destination)?;
+    let sibling = sibling_executable()?;
+    let old_endpoint = endpoint(database)?;
+    let mut client = Client::control(&old_endpoint, ClientRole::Desktop).await?;
+    if client.hello.state.service_instance_id != instance {
+        return Err(io::Error::other("The desktop Service changed; reopen Settings"));
+    }
+    let before: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
+    if before.mode != HostMode::Service { return Err(io::Error::other("Close the embedded desktop Host before moving its profile")); }
+    if before.state.privacy_epoch != epoch || before.privacy.active {
+        return Err(io::Error::other("The profile privacy state changed; reopen Settings"));
+    }
+    let previous = dzc_platform::ipc::ProcessExit::open(&client.peer)?;
+    let path = destination.to_str().ok_or_else(|| io::Error::other("Invalid destination"))?;
+    let moved: ProfileMoveResult = client.call(Method::DesktopProfileMove, BackupPreviewParams {
+        service_instance_id: instance.to_owned(), expected_epoch: epoch, path: path.to_owned(),
+    }, "ProfileMoveResult").await?;
+    if !moved.moved { return Ok(None); }
+    let no_capture = !before.capture_owner;
+    let resume = async {
+        if !moved.service_stopped {
+            let _: OperationResult = client.call(Method::ServiceStop, serde_json::json!({}), "OperationResult").await
+                .map_err(|_| io::Error::other("Data moved, but the old Service did not confirm shutdown"))?;
+        }
+        drop(client);
+        tokio::task::spawn_blocking(move || previous.wait(Duration::from_secs(10))).await
+            .map_err(io::Error::other).and_then(|result| result)
+            .map_err(|_| io::Error::other("Data moved, but the old Service process did not confirm exit"))?;
+        restart_moved_profile(&target, &sibling, instance, no_capture).await
+    }.await;
+    Ok(resume.err().map(|error| MoveRecovery {
+        previous_directory: source, target, instance: instance.to_owned(), no_capture, detail: error.to_string(),
+    }))
+}
+
+/// Resume only the cutover. Validate the installed redirect before touching either endpoint.
+pub async fn recover_profile(target: &Path, previous: &Path, instance: &str, no_capture: bool) -> io::Result<()> {
+    let selected = data::database_path().map_err(io::Error::other)?;
+    let (current, old) = data::installed_move_directories(&selected, previous)?;
+    if current != target.canonicalize()? || current == old || instance.is_empty() {
+        return Err(io::Error::other("The moved profile is no longer selected"));
+    }
+    let endpoint = endpoint(&old.join("clipboard.db"))?;
+    match Client::connect(&endpoint, ClientRole::Desktop, None).await {
+        Ok(probe) => {
+            drop(probe);
+            let mut client = Client::control(&endpoint, ClientRole::Desktop).await?;
+            let status: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
+            if status.mode != HostMode::Service || status.state.service_instance_id != instance {
+                return Err(io::Error::other("A different Host now owns the previous profile"));
+            }
+            let previous = dzc_platform::ipc::ProcessExit::open(&client.peer)?;
+            let _: OperationResult = client.call(Method::ServiceStop, serde_json::json!({}), "OperationResult").await?;
+            drop(client);
+            tokio::task::spawn_blocking(move || previous.wait(Duration::from_secs(10))).await.map_err(io::Error::other)??;
+        }
+        Err(error) if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) => (),
+        Err(error) => return Err(error),
+    }
+    let _old = data::reserve_profile(&old)?;
+    restart_moved_profile(&current, &sibling_executable()?, instance, no_capture).await
+}
+
+async fn restart_moved_profile(target: &Path, sibling: &Path, instance: &str, no_capture: bool) -> io::Result<()> {
+    let selected = data::database_path().map_err(|_| io::Error::other("Data moved, but the new profile could not be located"))?;
+    let actual = selected.canonicalize().map_err(|_| io::Error::other("Data moved, but the selected database is unavailable"))?;
+    let expected = target.join("clipboard.db").canonicalize().map_err(|_| io::Error::other("Data moved, but the destination database is unavailable"))?;
+    if actual != expected {
+        return Err(io::Error::other("Data moved, but the selected profile changed before restart"));
+    }
+    let after = start_preflight(&selected, sibling, no_capture, false, dzc_platform::ipc::ProcessExit::ensure_supported).await
+        .map_err(|_| io::Error::other("Data moved, but the replacement Service could not start"))?;
+    if after.mode != HostMode::Service || after.state.service_instance_id == instance || after.capture_owner == no_capture {
+        return Err(io::Error::other("Data moved, but the replacement Service has an unexpected owner or capture mode"));
+    }
+    Ok(())
+}
 pub async fn status(database: &Path) -> io::Result<ServiceStatus> {
     let mut client = Client::connect(&endpoint(database)?, ClientRole::Cli, None).await?;
     client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await
@@ -45,9 +145,39 @@ pub async fn stop(database: &Path) -> io::Result<()> {
     Ok(())
 }
 pub async fn start(database: &Path, executable: &Path, no_capture: bool) -> io::Result<ServiceStatus> {
-    start_preflight(database,executable,no_capture,dzc_platform::ipc::ProcessExit::ensure_supported).await
+    start_preflight(database,executable,no_capture,true,dzc_platform::ipc::ProcessExit::ensure_supported).await
 }
-async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, probe: impl FnOnce()->io::Result<()>) -> io::Result<ServiceStatus> {
+/// Find the current desktop Host. Starting the sibling Service is opt-in and
+/// cannot displace an Embedded Host that wins a concurrent startup.
+pub async fn desktop_endpoint(database: &Path, start_if_missing: bool) -> io::Result<serde_json::Value> {
+    let endpoint = endpoint(database)?;
+    match Client::connect(&endpoint, ClientRole::Desktop, None).await {
+        Ok(_) => (),
+        Err(error) if start_if_missing && matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) => {
+            if let Err(start_error) = start_preflight(database, &sibling_executable()?, false, false,
+                dzc_platform::ipc::ProcessExit::ensure_supported).await {
+                // Concurrent starts may lose the exclusive bind. Accept only a
+                // responsive owner, authenticated again below.
+                if Client::connect(&endpoint, ClientRole::Desktop, None).await.is_err() {
+                    return Err(start_error);
+                }
+            }
+        }
+        Err(error) => return Err(error),
+    }
+    let client = Client::control(&endpoint, ClientRole::Desktop).await?;
+    if !client.hello.permissions.contains(&Permission::DesktopHistory) {
+        return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+    }
+    Ok(serde_json::json!({
+        "address": endpoint.address(), "control_path": endpoint.control_path(),
+        "pid": client.peer.pid().ok_or_else(|| io::Error::other("HostPidUnavailable"))?,
+        "instance": client.hello.state.service_instance_id,
+        "version": client.hello.core_version,
+    }))
+}
+
+async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, allow_handoff: bool, probe: impl FnOnce()->io::Result<()>) -> io::Result<ServiceStatus> {
     // This must precede even endpoint preparation or helper inspection. An
     // unsupported service transition leaves the existing embedded owner alone.
     probe()?;
@@ -65,6 +195,7 @@ async fn start_preflight(database: &Path, executable: &Path, no_capture: bool, p
     if let Ok(mut existing) = Client::control(&endpoint, ClientRole::Cli).await {
         drop(dzc_platform::ipc::ProcessExit::open(&existing.peer)?);
         let status: ServiceStatus = existing.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
+        if !allow_handoff { return Ok(status); }
         if status.mode == HostMode::Service {
             if status.capture_owner != !no_capture { return Err(io::Error::new(io::ErrorKind::AlreadyExists,"ServiceCaptureModeConflict")); }
             return Ok(status);
@@ -132,7 +263,7 @@ mod tests {
             let (_shutdown,receiver)=tokio::sync::watch::channel(false);
             let server=tokio::spawn(crate::serve_listener(host.clone(),listener,receiver));
             let original=status(&database).await.unwrap();
-            let error=start_preflight(&database,&directory.join("nonexistent-service"),false,||Err(io::Error::new(io::ErrorKind::Unsupported,"SyntheticProcessObservationDenied"))).await.unwrap_err();
+            let error=start_preflight(&database,&directory.join("nonexistent-service"),false,true,||Err(io::Error::new(io::ErrorKind::Unsupported,"SyntheticProcessObservationDenied"))).await.unwrap_err();
             assert_eq!(error.kind(),io::ErrorKind::Unsupported);
             assert_eq!(status(&database).await.unwrap().state.service_instance_id,original.state.service_instance_id);
             assert_eq!(stopped.load(Ordering::SeqCst),0);

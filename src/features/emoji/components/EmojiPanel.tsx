@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "../../../shared/lib/desktopInvoke";
+import { copyHistorySelection } from "../../../shared/lib/copyHistorySelection";
+import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Plus, X } from "lucide-react";
 import { schedulePreview } from "../../../shared/lib/previewQueue";
@@ -223,9 +224,9 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     });
   };
 
-  const removeFavoritePath = (path: string) => {
+  const removeFavoritePath = async (path: string) => {
+    await invoke("remove_emoji_favorite", { path });
     persistFavorites((prev) => prev.filter((p) => p !== path));
-    invoke("remove_emoji_favorite", { path }).catch(console.error);
   };
 
   useEffect(() => {
@@ -235,7 +236,8 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
     invoke<string[]>("list_emoji_favorites")
       .then((diskPaths) => {
         if (cancelled) return;
-        const merged = dedupeFavoritePaths([...favorites, ...(Array.isArray(diskPaths) ? diskPaths : [])]);
+        const present = new Set(diskPaths);
+        const merged = dedupeFavoritePaths([...favorites.filter(path => present.has(path)), ...diskPaths]);
         const current = dedupeFavoritePaths(favorites);
         if (
           merged.length === current.length &&
@@ -332,14 +334,15 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   };
 
   const handleSend = async (content: string, contentType: string) => {
-    await invoke("copy_to_clipboard", {
+    await copyHistorySelection({
       content,
       contentType,
       paste: true,
       id: 0,
       deleteAfterUse: false,
-      pasteWithFormat: false
-    });
+      pasteWithFormat: false,
+      pasteImageAsBase64: false
+    }, t, "send_emoji");
   };
 
   const handleTabChange = (tab: "emoji" | "favorites") => {
@@ -622,7 +625,7 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
                     title={t("delete") || "删除"}
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeFavoritePath(path);
+                      void removeFavoritePath(path).catch(console.error);
                     }}
                   >
                     <X size={12} />

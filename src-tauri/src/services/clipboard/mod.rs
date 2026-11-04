@@ -1,6 +1,5 @@
 mod utils;
 
-use crate::app_state::{PasteQueue, SettingsState};
 pub use crate::database::DbState;
 use dzc_core::capture::{CaptureContext, CaptureEngine, CaptureEvent, CaptureFrame, CaptureOutcome, CaptureReadMetadata, CaptureSettings, CaptureSource, StoredCapture, OwnClipboardCopy};
 use std::sync::{Arc, Mutex, atomic::Ordering};
@@ -38,13 +37,6 @@ impl dzc_host::CaptureHooks for DesktopHooks {
     fn paused(&self)->bool {crate::CLIPBOARD_MONITOR_PAUSED.load(Ordering::Relaxed)}
     fn own_copy(&self,time:i64)->OwnClipboardCopy {own_copy(time)}
     fn clear_own_copy(&self) {clear_own_copy();}
-    fn sequential_echo(&self)->Option<String> {
-        let app=app()?;
-        if !app.state::<SettingsState>().sequential_mode.load(Ordering::Relaxed) {return None;}
-        let state=app.state::<PasteQueue>();
-        let queue=state.0.lock().ok()?;
-        queue.last_action_was_paste.then(||queue.last_pasted_content.clone()).flatten()
-    }
     fn event(&self,event:CaptureEvent) {
         match event {
             CaptureEvent::Removed{id}=>if let Some(app)=app() {if deliver_capture(){let _=app.emit("clipboard-removed",id);}},
@@ -59,7 +51,7 @@ fn distribute(app:&AppHandle,capture:StoredCapture,work:dzc_host::CaptureWork) {
     let history=app.state::<DbState>().history_service();
     let Some(ticket)=capture.privacy_ticket else {return;};
     if history.privacy().check_capture(&ticket,timestamp()).is_err() {return;}
-    let settings=app.state::<SettingsState>();
+    dzc_platform::sound::play(&history, dzc_platform::sound::Cue::Copy);
     let id=capture.entry.id;
     let updated=Arc::new(move|id:i64,status:&'static str| {
         if let Some(app)=self::app() {
@@ -72,14 +64,6 @@ fn distribute(app:&AppHandle,capture:StoredCapture,work:dzc_host::CaptureWork) {
     if dzc_host::schedule_capture_ocr(history,&capture,work,updated).is_err() {crate::warn!("[capture] CaptureFollowUpUnavailable");}
     let deliver=deliver_capture();
     if !deliver {crate::app::idle_destroyer::mark_frontend_catchup_pending();}
-    if settings.sequential_mode.load(Ordering::Relaxed) {
-        let state=app.state::<PasteQueue>();
-        let mut queue=state.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if queue.last_action_was_paste {queue.items.clear();queue.reset_tracking();}
-        queue.items.push_back(id);let length=queue.items.len();drop(queue);
-        let _=app.emit("paste-queue-changed",length);
-    }
-    if settings.sound_enabled.load(Ordering::Relaxed) {let _=app.emit("play-sound","copy");}
     if deliver {
         let instance=app.try_state::<crate::app::ipc_host::DesktopHost>().and_then(|bridge|bridge.instance().ok());
         let _=app.emit("clipboard-captured",serde_json::json!({"id":id,"host_instance_id":instance}));

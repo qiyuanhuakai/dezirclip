@@ -11,15 +11,15 @@ const INSERT: u16 = 0x2d;
 const ENTER: u16 = 0x0d;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Encoding { Virtual, Scan, ScanWithVirtual, ExtendedScan, Unicode }
+pub enum Encoding { Virtual, Scan, ScanWithVirtual, ExtendedScan, Unicode }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Input { pub key: u16, pub encoding: Encoding, pub up: bool }
+pub struct Input { pub key: u16, pub encoding: Encoding, pub up: bool }
 impl Input {
     fn new(key: u16, encoding: Encoding, up: bool) -> Self { Self { key, encoding, up } }
     fn released(self) -> Self { Self { up: true, ..self } }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum PasteError { InputRejected { expected: usize, accepted: usize }, ForegroundChanged }
+pub enum PasteError { InputRejected { expected: usize, accepted: usize }, ForegroundChanged }
 impl fmt::Display for PasteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -28,7 +28,7 @@ impl fmt::Display for PasteError {
         }
     }
 }
-pub(crate) trait InputDriver {
+pub trait InputDriver {
     fn send(&mut self, inputs: &[Input]) -> usize;
     fn pause(&mut self, millis: u64);
     fn key_is_down(&self, key: u16) -> bool;
@@ -116,7 +116,7 @@ impl<D: InputDriver> Attempt<'_, D> {
         if !releases.is_empty() { let _ = self.driver.send(&releases); }
     }
 }
-pub(crate) fn send_paste(driver: &mut impl InputDriver, method: &str, content: Option<&str>, content_type: Option<&str>) -> Result<(), PasteError> {
+pub fn send_paste(driver: &mut impl InputDriver, method: &str, content: Option<&str>, content_type: Option<&str>) -> Result<(), PasteError> {
     let initially_held = [CONTROL, SHIFT, V, INSERT, ENTER].into_iter().filter(|key| driver.key_is_down(*key)).collect();
     let mut attempt = Attempt { driver, pressed: Vec::new(), initially_held };
     let result = attempt.run(method, content, content_type).and_then(|()| {
@@ -139,6 +139,16 @@ pub(crate) fn restore_borrowed_ime<C: Copy + Eq>(original: C,
         }
     }
     release(original);
+}
+
+pub fn send_queue_input(
+    validate:impl FnOnce()->Result<(),String>,
+    send:impl FnOnce()->Result<(),String>,
+    restore:impl FnOnce()->Result<(),String>,
+)->Result<(),String> {
+    validate()?;
+    send()?;
+    restore()
 }
 
 #[cfg(test)]

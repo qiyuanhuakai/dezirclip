@@ -32,6 +32,70 @@ pub struct WindowsBoundPaste {
 unsafe impl Send for WindowsBoundPaste {}
 
 impl WindowsBoundPaste {
+    pub fn foreground() -> PlatformResult<WindowsPasteTarget> {
+        unsafe {
+            let hwnd = GetForegroundWindow();
+            let mut pid = 0;
+            let thread_id = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if crate::windows_input::is_system_focus_window(hwnd) || thread_id == 0 || pid == std::process::id() { return Err(failed()); }
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).map_err(|_| failed())?;
+            let process = OwnedHandle::from_raw_handle(handle.0);
+            let (mut created, mut exit, mut kernel, mut user) = Default::default();
+            GetProcessTimes(HANDLE(process.as_raw_handle()), &mut created, &mut exit, &mut kernel, &mut user).map_err(|_| failed())?;
+            let target = WindowsPasteTarget {
+                hwnd: (hwnd.0 as usize).to_string(), root_hwnd: (GetAncestor(hwnd,GA_ROOT).0 as usize).to_string(), pid, thread_id,
+                creation_time_100ns: ((u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime)).to_string(),
+            };
+            Self::prepare(&target)?;
+            Ok(target)
+        }
+    }
+
+    pub(super) fn restore_from(&self, peer_pid: u32) -> PlatformResult<()> {
+        use ::windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+        self.check_identity()?;
+        if self.check().is_ok() { return Ok(()); }
+        let owner = |window: HWND| unsafe {
+            let mut pid = 0;
+            if !window.0.is_null() { GetWindowThreadProcessId(window, Some(&mut pid)); }
+            pid
+        };
+        if owner(unsafe { GetForegroundWindow() }) != peer_pid { return Err(failed()); }
+        // The GUI grants foreground permission to the verified service process.
+        if !unsafe { SetForegroundWindow(self.window) }.as_bool() { return Err(failed()); }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        loop {
+            if self.check().is_ok() { return Ok(()); }
+            // Across input queues, foreground activation can briefly have no HWND.
+            // Only a fully revalidated original window can complete the handoff.
+            let foreground = unsafe { GetForegroundWindow() };
+            if !foreground.0.is_null() && foreground != self.window && owner(foreground) != peer_pid {
+                return Err(failed());
+            }
+            if std::time::Instant::now() >= deadline { return Err(failed()); }
+            std::thread::sleep(std::time::Duration::from_millis(4));
+        }
+    }
+
+    pub fn send_queue(&self, method: &str, text: Option<&str>, kind: &str, current: &dyn Fn() -> bool) -> PlatformResult<()> {
+        struct Guarded<'a>(&'a WindowsBoundPaste, &'a dyn Fn() -> bool);
+        impl crate::windows_input::InputTarget for Guarded<'_> {
+            fn is_current(&self) -> bool { (self.1)() && self.0.check().is_ok() }
+            fn windows_handle(&self) -> HWND { self.0.window }
+            fn windows_identity_current(&self) -> bool { self.0.check_identity().is_ok() }
+        }
+        let target = Guarded(self, current);
+        let alt = crate::windows_input::alt_is_down();
+        crate::paste_input::send_queue_input(
+            || if current() { Ok(()) } else { Err("PasteQueueChanged".into()) },
+            || crate::windows_input::send_paste(&target, method, text, Some(kind)),
+            || {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                crate::windows_input::restore_held_alt(&target, alt)
+            }
+        ).map_err(|_| failed())
+    }
+
     // Preparation requires the restored target to be foreground with input focus in its original root.
     pub fn prepare(target: &WindowsPasteTarget) -> PlatformResult<Self> {
         let window = positive_decimal(&target.hwnd).and_then(|value| usize::try_from(value).ok()).ok_or_else(failed)?;
@@ -46,7 +110,7 @@ impl WindowsBoundPaste {
         value.check()?;
         Ok(value)
     }
-    fn check(&self) -> PlatformResult<()> {
+    fn check_identity(&self) -> PlatformResult<()> {
         let handle = HANDLE(self.process.as_raw_handle());
         let mut created=FILETIME::default();
         let mut exited=FILETIME::default();
@@ -59,11 +123,20 @@ impl WindowsBoundPaste {
                 return Err(failed());
             }
             let stamp=(u64::from(created.dwHighDateTime)<<32)|u64::from(created.dwLowDateTime);
-            if stamp != self.created || !IsWindow(Some(self.window)).as_bool() || !IsWindowVisible(self.window).as_bool()
+            if stamp != self.created || !IsWindow(Some(self.window)).as_bool()
                 || GetWindowThreadProcessId(self.window,Some(&mut pid)) != self.thread || pid != self.pid
-                || GetAncestor(self.window,GA_ROOT) != self.root || GetForegroundWindow() != self.window {
+                || GetAncestor(self.window,GA_ROOT) != self.root {
                 return Err(failed());
             }
+        }
+        Ok(())
+    }
+    fn check(&self) -> PlatformResult<()> {
+        self.check_identity()?;
+        let handle = HANDLE(self.process.as_raw_handle());
+        let mut pid = 0;
+        unsafe {
+            if !IsWindowVisible(self.window).as_bool() || GetForegroundWindow() != self.window { return Err(failed()); }
             let mut gui=GUITHREADINFO{cbSize:std::mem::size_of::<GUITHREADINFO>() as u32,..Default::default()};
             if GetGUIThreadInfo(self.thread,&mut gui).is_err() {return Err(failed());}
             let focused_root=if !gui.hwndFocus.0.is_null() && IsWindow(Some(gui.hwndFocus)).as_bool() {
@@ -82,6 +155,12 @@ impl WindowsBoundPaste {
     pub fn send(&self) -> PlatformResult<()> {
         super::windows::paste_bound(|| self.check())
     }
+}
+
+impl crate::windows_input::InputTarget for WindowsBoundPaste {
+    fn is_current(&self) -> bool { self.check().is_ok() }
+    fn windows_handle(&self) -> HWND { self.window }
+    fn windows_identity_current(&self) -> bool { self.check_identity().is_ok() }
 }
 
 #[cfg(test)]

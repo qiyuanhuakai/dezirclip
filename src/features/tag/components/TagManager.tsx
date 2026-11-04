@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../../../shared/lib/desktopInvoke';
 import { emit } from '@tauri-apps/api/event';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ArrowDownWideNarrow, Check, ChevronDown, ChevronLeft, ChevronRight, Edit2, Eye, EyeOff, List, ListChecks, ListCollapse, LoaderCircle, MoreHorizontal, Plus, Search, Tag, Trash2, X } from 'lucide-react';

@@ -3,12 +3,10 @@ use tauri::Emitter;
 use tauri::Manager;
 use tauri::{AppHandle, State};
 
-use crate::database::DbState;
-
-#[cfg(target_os = "windows")]
-const OCR_ENGINE_DISPLAY_NAME: &str = "Windows.Media.Ocr";
-#[cfg(not(target_os = "windows"))]
-const OCR_ENGINE_DISPLAY_NAME: &str = "Tesseract";
+use crate::app::ipc_host::DesktopHost;
+use dzc_host::wire::{Method, OcrEngineInfo};
+#[cfg(test)]
+use dzc_host::OCR_ENGINE_DISPLAY_NAME;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrResult {
@@ -25,137 +23,24 @@ pub struct OcrStatusResponse {
     pub ocr_text: Option<String>,
 }
 
-fn prepare_ocr_image(
-    history: &dzc_core::api::HistoryService,
-    item_id: i64,
-    expected_privacy_epoch: Option<u64>,
-) -> Result<
-    (
-        dzc_core::api::CaptureTicket,
-        dzc_core::api::PrivacyReadPermit,
-        Vec<u8>,
-    ),
-    String,
-> {
-    use dzc_core::api::SensitiveAccess;
-    let now = || chrono::Utc::now().timestamp_millis();
-    let ticket = history
-        .privacy()
-        .capture_ticket(now())
-        .map_err(|error| error.to_string())?;
-    let permit = history
-        .privacy()
-        .authorize_selected_copy(
-            item_id,
-            None,
-            if expected_privacy_epoch.is_some() {
-                SensitiveAccess::ExplicitUserAction
-            } else {
-                SensitiveAccess::Denied
-            },
-            Some(expected_privacy_epoch.unwrap_or(ticket.epoch())),
-            now(),
-        )
-        .map_err(|error| error.to_string())?;
-    let bytes = history
-        .image_bytes_authorized(item_id, &permit, now())
-        .map_err(|error| error.to_string())?
-        .ok_or("OcrImageRequired")?;
-    Ok((ticket, permit, bytes))
+#[tauri::command]
+pub async fn recognize_clipboard_image(item_id: i64, app: AppHandle, expected_privacy_epoch: Option<u64>,
+    expected_host_instance_id: Option<String>) -> Result<OcrResult, String> {
+    let output = app.state::<DesktopHost>().manual_ocr(Method::DesktopOcrRecognize, item_id,
+        expected_host_instance_id.as_deref(), expected_privacy_epoch).await?;
+    let _ = app.emit("ocr:complete", OcrResult { item_id, text: String::new(), confidence: None, status: output.status.clone() });
+    Ok(OcrResult { item_id, text: output.text.ok_or("OcrRecognitionFailed")?, confidence: None, status: output.status })
 }
 
 #[tauri::command]
-pub async fn recognize_clipboard_image(
-    item_id: i64,
-    app: AppHandle,
-    expected_privacy_epoch: Option<u64>,
-    expected_host_instance_id:Option<String>,
-) -> Result<OcrResult, String> {
-    let bridge=app.state::<crate::app::ipc_host::DesktopHost>();
-    bridge.check_instance(item_id,expected_host_instance_id.as_deref())?;
-    if item_id<0 {return Err("SessionOcrUnavailable".into());}
-    if bridge.embedded()?.is_none() {return Err("RemoteOcrUnavailable".into());}
-    let work=bridge.embedded()?.ok_or("ClipboardHostUnavailable")?.begin_work().map_err(|_|"CaptureWorkUnavailable")?;
-    let history = app.state::<DbState>().history_service();
-    let now = || chrono::Utc::now().timestamp_millis();
-    let (ticket, permit, bytes) = prepare_ocr_image(&history, item_id, expected_privacy_epoch)?;
-    let task_work=work.clone();
-    let text = tokio::task::spawn_blocking(move || {
-        let _work=task_work;
-        crate::services::ocr::OcrService::new()
-            .map_err(|_| "OcrEngineUnavailable".to_owned())?
-            .recognize(&bytes)
-            .map_err(|_| "OcrRecognitionFailed".to_owned())
-    })
-    .await
-    .map_err(|_| "OcrRecognitionFailed")??;
-    history
-        .update_ocr_authorized(item_id, &text, "done", &ticket, now())
-        .map_err(|error| error.to_string())?;
-    history
-        .privacy()
-        .check_read(&permit, now())
-        .map_err(|error| error.to_string())?;
-    let result = OcrResult {
-        item_id,
-        text,
-        confidence: None,
-        status: "done".into(),
-    };
-    drop(work);
-    let _ = app.emit(
-        "ocr:complete",
-        OcrResult {
-            item_id,
-            text: String::new(),
-            confidence: None,
-            status: "done".into(),
-        },
-    );
-    Ok(result)
-}
-
-#[tauri::command]
-pub fn get_ocr_status(
-    state: State<'_, DbState>,
-    item_id: i64,
-) -> Result<OcrStatusResponse, String> {
-    use dzc_core::api::{PrivacyAccessIntent, SensitiveAccess};
-    let now = || chrono::Utc::now().timestamp_millis();
-    let history = state.history_service();
-    let permit = history
-        .privacy()
-        .authorize_read(
-            PrivacyAccessIntent::AutomationRead,
-            SensitiveAccess::Denied,
-            None,
-            now(),
-        )
-        .map_err(|error| error.to_string())?;
-    let entry = history
-        .get_entry_authorized(item_id, &permit, now())
-        .map_err(|error| error.to_string())?
-        .ok_or("SensitiveAccessDenied")?;
-    Ok(OcrStatusResponse {
-        item_id,
-        ocr_status: entry.ocr_status.unwrap_or_else(|| "pending".into()),
-        ocr_text: entry.ocr_text,
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OcrEngineInfo {
-    pub available: bool,
-    pub engine_name: String,
+pub async fn get_ocr_status(host: State<'_, DesktopHost>, item_id: i64) -> Result<OcrStatusResponse, String> {
+    let row = host.manual_ocr(Method::DesktopOcrStatus, item_id, None, None).await?;
+    Ok(OcrStatusResponse { item_id, ocr_status: row.status, ocr_text: row.text })
 }
 
 #[tauri::command]
 pub fn check_ocr_engine_available() -> OcrEngineInfo {
-    let available = crate::services::ocr::OcrService::new().is_ok();
-    OcrEngineInfo {
-        available,
-        engine_name: OCR_ENGINE_DISPLAY_NAME.to_string(),
-    }
+    dzc_host::engine_info()
 }
 
 #[cfg(test)]
@@ -182,12 +67,12 @@ mod tests {
             let id = history.save(&entry, None).unwrap();
             if sensitive {
                 assert_eq!(
-                    prepare_ocr_image(&history, id, None).unwrap_err(),
+                    dzc_host::prepare_manual_ocr(&history, id, None, false).unwrap_err(),
                     "SensitiveAccessDenied"
                 );
             } else {
                 assert_eq!(
-                    prepare_ocr_image(&history, id, None).unwrap().2,
+                    dzc_host::prepare_manual_ocr(&history, id, None, false).unwrap().2,
                     *png.get_ref()
                 );
             }
@@ -197,7 +82,7 @@ mod tests {
                 .unwrap()
                 .privacy_epoch;
             assert_eq!(
-                prepare_ocr_image(&history, id, Some(epoch)).unwrap().2,
+                dzc_host::prepare_manual_ocr(&history, id, Some(epoch), true).unwrap().2,
                 *png.get_ref()
             );
             history
@@ -208,7 +93,7 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                prepare_ocr_image(&history, id, Some(epoch)).unwrap_err(),
+                dzc_host::prepare_manual_ocr(&history, id, Some(epoch), true).unwrap_err(),
                 "PrivacySessionActive"
             );
             history
@@ -219,7 +104,7 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(
-                prepare_ocr_image(&history, id, Some(epoch)).unwrap_err(),
+                dzc_host::prepare_manual_ocr(&history, id, Some(epoch), true).unwrap_err(),
                 "PrivacyEpochChanged"
             );
         }

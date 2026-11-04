@@ -76,6 +76,18 @@ pub struct HistoryService {
 }
 
 impl HistoryService {
+    /// Publish a standalone profile snapshot and reserve this source connection for reads until restart.
+    pub fn migrate_profile(&self, source: &Path, destination: &Path, redirect: &Path) -> Result<(), super::MigrationError> {
+        self.repository.migrate_profile(source, destination, redirect, None)
+    }
+
+    pub fn migrate_profile_at_epoch(&self, source: &Path, destination: &Path, redirect: &Path, epoch: u64) -> Result<(), super::MigrationError> {
+        if cfg!(feature = "portable") {
+            return Err(super::MigrationError::Validation("Move the complete portable directory to relocate its data".into()));
+        }
+        self.repository.migrate_profile(source, destination, redirect, Some(epoch))
+    }
+
     pub fn open(path: &Path) -> CoreResult<Self> {
         if path.as_os_str().is_empty() {
             return Err(CoreError::validation("database path is empty"));
@@ -171,6 +183,14 @@ impl HistoryService {
     pub fn get_entries_by_tag(&self, tag: &str) -> CoreResult<Vec<ClipboardEntry>> {
         self.tags.get_entries_by_tag(tag).map_err(Into::into)
     }
+    pub fn tag_colors(&self) -> CoreResult<std::collections::HashMap<String, String>> {
+        self.tags.get_colors().map_err(Into::into)
+    }
+
+    pub fn set_tag_color(&self, name: &str, color: Option<String>) -> CoreResult<()> {
+        self.tags.set_color(name, color).map_err(Into::into)
+    }
+
     pub fn tag_counts(&self) -> CoreResult<std::collections::HashMap<String, i32>> {
         self.tags.get_all_with_counts().map_err(Into::into)
     }

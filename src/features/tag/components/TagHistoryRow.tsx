@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '../../../shared/lib/desktopInvoke';
+import { copyHistorySelection } from '../../../shared/lib/copyHistorySelection';
 import ClipboardItem, { hideCompactPreviewGlobal } from '../../clipboard/components/ClipboardItem';
 import type { ClipboardEntry, Locale } from '../../../shared/types';
 import { beginPrivacyAccess, forgetPrivacyReveal, getPrivacyEntry, getPrivacyViewState, invokePrivacyBound, refreshPrivacyAfterConfirmation, registerPrivacyReveal, subscribePrivacyInvalidation } from '../../../shared/lib/privacySession';
@@ -184,10 +185,10 @@ export function TagHistoryRow({ item, index, selected, compactMode, isWindowPinn
             || capabilities.report?.write.availability.status !== 'available') { onError(); return; }
         const access = beginPrivacyAccess();
         if (!access || (sensitive && !detail)) { onError(); return; }
-        void invoke('copy_to_clipboard', { id: item.id, expectedHostInstanceId: item.host_instance_id, content: '', contentType: item.content_type,
+        void copyHistorySelection({ id: item.id, expectedHostInstanceId: item.host_instance_id, content: '', contentType: item.content_type,
             paste: !capabilities.report.native_wayland, deleteAfterUse: false, pasteWithFormat, pasteImageAsBase64,
-            expectedPrivacyEpoch: sensitive ? access.epoch : undefined })
-            .then(onChanged).catch(onError);
+            expectedPrivacyEpoch: sensitive ? access.epoch : undefined }, t)
+            .then(outcome => { if (outcome !== 'cancelled') onChanged(); }).catch(onError);
     };
     const authorizeMetadata = async (persists: boolean, original?: PrivacyMetadataIntent) => {
         const intent = original ?? capturePrivacyMetadataIntent(getPrivacyViewState());

@@ -11,6 +11,18 @@ import (
     "github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
 )
 func run()error {
+    if len(os.Args)==4 && os.Args[1]=="--desktop" {
+        ctx,cancel:=context.WithTimeout(context.Background(),30*time.Second);defer cancel()
+        if os.Args[3]!="start" && os.Args[3]!="attach" { return client.ErrProtocol }
+        connection,err:=client.OpenDesktop(ctx,os.Args[2],os.Args[3]=="start")
+        if err!=nil{return err};defer connection.Close()
+        var status protocol.ServiceStatus
+        if err=connection.Call(ctx,protocol.MethodServiceStatus,protocol.EmptyParams{},"ServiceStatus",&status);err!=nil{return err}
+        var list protocol.ThemeIndex
+        state:=connection.Hello().State
+        if err=connection.Call(ctx,protocol.MethodDesktopThemesList,protocol.LibraryStateParams{ServiceInstanceId:state.ServiceInstanceId,ExpectedEpoch:state.PrivacyEpoch},"ThemeIndex",&list);err!=nil{return err}
+        return json.NewEncoder(os.Stdout).Encode(status)
+    }
     if len(os.Args)!=3 {return fmt.Errorf("fixture endpoint and expected mode required")}
     ctx,cancel:=context.WithTimeout(context.Background(),10*time.Second);defer cancel()
     hello:=protocol.HelloParams{ProtocolVersion:protocol.Version,ClientVersion:"actual-host-fixture",ClientRole:protocol.ClientRoleSurface,Capabilities:[]string{},RequiredCapabilities:[]string{}}

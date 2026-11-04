@@ -18,16 +18,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--helper", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--temporary-profile", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     output = Path(args.output).resolve()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     helper = Path(args.helper).resolve(strict=True)
     helper_sha = digest(helper)
-    parent = Path("/q")
-    parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.chmod(parent, 0o700)
-    root = Path(tempfile.mkdtemp(prefix="dezirclip-private-ss-", dir=parent))
+    if args.temporary_profile:
+        temporary = tempfile.TemporaryDirectory(prefix="dezirclip-private-ss-", dir="/tmp")
+        root = Path(temporary.name)
+    else:
+        parent = Path("/q")
+        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(parent, 0o700)
+        root = Path(tempfile.mkdtemp(prefix="dezirclip-private-ss-", dir=parent))
     marker = root / ".dzc-private-ss-qa-v1"
     marker.write_text("synthetic-fixture-only\n")
     marker.chmod(0o600)
@@ -113,6 +118,8 @@ def main():
         if not record["helper_unchanged"]:
             record["status"] = "failed"
         (output / "proof.json").write_text(json.dumps(record, indent=2) + "\n")
+        if args.temporary_profile:
+            temporary.cleanup()
     print(json.dumps({"status": record["status"], "proof": str(output / "proof.json")}))
     if failed or record["status"] != "passed":
         raise SystemExit(1)

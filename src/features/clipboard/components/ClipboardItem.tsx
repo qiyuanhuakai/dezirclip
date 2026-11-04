@@ -1,6 +1,7 @@
-import { useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { PreviewOpacityContext } from "../../../shared/hooks/usePreviewPreferences";
+import { useContext, useRef, useEffect, useState, useMemo, useCallback, memo } from "react";
+import { derivedCopySource, invoke } from "../../../shared/lib/desktopInvoke";
+import { getCurrentWindow } from "../../../shared/lib/desktopWindow";
 import { listen } from "@tauri-apps/api/event";
 import {
     Pin,
@@ -431,6 +432,7 @@ const ClipboardItem = ({
         };
     }, [item.source_app_path]);
 
+    const previewOpacity = useContext(PreviewOpacityContext);
     const previewOwner = useRef({});
     const hideCompactPreview = () => hideCompactPreviewGlobal(previewOwner.current);
     const showCompactPreview = (anchor: CompactPreviewAnchor, fromKeyboard = false) => {
@@ -443,7 +445,7 @@ const ClipboardItem = ({
         return requestCompactPreview(previewOwner.current, anchor, {
             id: item.id, expectedHostInstanceId: item.host_instance_id,
             allowSensitive: isSensitiveEntry(item) && isRevealed,
-            language, theme, richTextSnapshotPreview,
+            language, theme, richTextSnapshotPreview, previewOpacity,
             colorMode: document.documentElement.classList.contains("dark-mode") ? "dark" : "light",
             clipboardItemFontSize: fontSize("--clipboard-item-font-size"),
             clipboardTagFontSize: fontSize("--clipboard-tag-font-size")
@@ -604,7 +606,8 @@ const ClipboardItem = ({
         setOcrSource(item);
         setOcrRunning(true);
         setOcrStatus("processing");
-        invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedHostInstanceId: item.host_instance_id, expectedPrivacyEpoch: access.epoch })
+        invokePrivacyBound("recognize_clipboard_image", { itemId: item.id, expectedHostInstanceId: item.host_instance_id, expectedPrivacyEpoch: access.epoch,
+            ...(import.meta.env.MODE === "mygo" ? { allowSensitive: isSensitiveEntry(item) } : {}) })
             .then((result: unknown) => {
                 if (!access.isCurrent() || generation !== contentIdentity.current.generation || hiddenRef.current) return;
                 const res = result as { text: string; status: string };
@@ -636,9 +639,7 @@ const ClipboardItem = ({
                 pasteWithFormat: false,
                 moveToTop: false,
                 pasteImageAsBase64: false,
-                expectedPrivacyEpoch: access.epoch,
-                expectedHostInstanceId: item.host_instance_id,
-                derivedFromId: isSensitiveEntry(item) ? item.id : undefined
+                ...derivedCopySource(item, isSensitiveEntry(item), access.epoch),
             })
                 .then(() => onTransformItemSuccess?.(kind))
                 .catch((err) => {
@@ -687,7 +688,8 @@ const ClipboardItem = ({
                 moveToTop: false,
                 pasteImageAsBase64: true,
                 expectedHostInstanceId: item.host_instance_id,
-                expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined
+                expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined,
+                ...(import.meta.env.MODE === "mygo" ? { viewEpoch: access.epoch } : {})
             });
             onTransformItemSuccess?.("image_base64");
         } catch (err) {
@@ -710,9 +712,7 @@ const ClipboardItem = ({
                 pasteWithFormat: false,
                 moveToTop: false,
                 pasteImageAsBase64: false,
-                expectedPrivacyEpoch: access.epoch,
-                expectedHostInstanceId: item.host_instance_id,
-                derivedFromId: isSensitiveEntry(item) ? item.id : undefined,
+                ...derivedCopySource(item, isSensitiveEntry(item), access.epoch),
             });
             onTransformItemSuccess?.("paste_ocr");
         } catch (err) {
@@ -744,6 +744,7 @@ const ClipboardItem = ({
                 pasteImageAsBase64: false,
                 expectedHostInstanceId: item.host_instance_id,
                 expectedPrivacyEpoch: isSensitiveEntry(item) ? access.epoch : undefined,
+                ...(import.meta.env.MODE === "mygo" ? { viewEpoch: access.epoch } : {}),
             });
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -1006,6 +1007,7 @@ const ClipboardItem = ({
                         <button
                             className="btn-icon"
                             onClick={onOpen}
+                            aria-label={t('open')}
                             title={t('open')}
                         >
                             <ExternalLink size={12} />

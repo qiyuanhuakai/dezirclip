@@ -8,11 +8,82 @@ import subprocess
 import tempfile
 import time
 import shutil
+import sys
+
+
+def verify_installed_profile_move(cli, profile, isolated_env):
+    # Linux honors XDG_DATA_HOME for discovery. Use only this fixture's installed profile.
+    assert sys.platform.startswith('linux') and Path(isolated_env['XDG_DATA_HOME']) == profile/'data'
+    env = dict(isolated_env)
+    for key in ('DEZIRCLIP_DB_PATH', 'TIEZ_DB_PATH'):
+        env.pop(key, None)
+    target = profile/'moved profile'
+    target.mkdir()
+    config = profile/'data/io.github.qiyuanhuakai.dezirclip'
+    redirect = config/'datapath.txt'
+    def run(*args, environment=env, success=True):
+        result = subprocess.run([cli, *args], env=environment, capture_output=True, text=True, timeout=20)
+        assert (result.returncode == 0) == success, (args, result.returncode, result.stderr)
+        return result.stdout
+    run('add', 'installed-profile-before-relocation')
+    run('service', 'move-data', target, environment=isolated_env, success=False)
+    for busy_env in (env, {**env, 'DEZIRCLIP_DB_PATH': str(target/'another.db')}):
+        run('service', 'start', '--no-capture', '--json', environment=busy_env)
+        try:
+            run('service', 'move-data', target, success=False)
+            assert not redirect.exists() and not (target/'clipboard.db').exists()
+        finally:
+            run('service', 'stop', environment=busy_env)
+    run('service', 'move-data', target)
+    assert Path(redirect.read_text()) == target and (config/'clipboard.db').is_file()
+    assert 'installed-profile-before-relocation' in run('get', 'latest')
+    run('add', 'installed-profile-after-relocation')
+    assert 'installed-profile-after-relocation' in run('get', 'latest')
+    old_env = {**env, 'DEZIRCLIP_DB_PATH': str(config/'clipboard.db')}
+    assert 'installed-profile-before-relocation' in run('get', 'latest', environment=old_env)
+    started = json.loads(run('service', 'start', '--no-capture', '--json'))
+    try:
+        discovered = json.loads(run('service', 'status', '--json',
+            environment={**env, 'DEZIRCLIP_DB_PATH': str(target/'clipboard.db')}))
+        assert discovered['state']['service_instance_id'] == started['state']['service_instance_id']
+        run('service', 'status', '--json', environment=old_env, success=False)
+        destination = profile/'online move'
+        destination.mkdir()
+        instance = started['state']['service_instance_id']
+        epoch = started['state']['privacy_epoch']
+        def move(instance, epoch, success):
+            return run('service', 'move-data', destination, '--from-instance', instance, '--epoch', str(epoch), success=success)
+        move('a-different-instance', epoch, False)
+        move(instance, epoch + 1, False)
+        run('privacy', 'on')
+        private = json.loads(run('service', 'status', '--json'))
+        move(instance, private['state']['privacy_epoch'], False)
+        run('privacy', 'off')
+        epoch = json.loads(run('service', 'status', '--json'))['state']['privacy_epoch']
+        attachments = target/'attachments'
+        attachments.mkdir(exist_ok=True)
+        obstacle = attachments/'fixture-link'
+        obstacle.symlink_to(profile)
+        move(instance, epoch, False)
+        assert Path(redirect.read_text()) == target and not (destination/'clipboard.db').exists()
+        assert json.loads(run('service', 'status', '--json'))['state']['service_instance_id'] == instance
+        run('add', 'source-still-writable')
+        obstacle.unlink()
+        move(instance, epoch, True)
+        replacement = json.loads(run('service', 'status', '--json'))
+        assert replacement['state']['service_instance_id'] != instance and not replacement['capture_owner']
+        assert Path(redirect.read_text()) == destination and 'source-still-writable' in run('get', 'latest')
+        run('service', 'status', '--json', environment={**env, 'DEZIRCLIP_DB_PATH': str(target/'clipboard.db')}, success=False)
+    finally:
+        run('service', 'stop')
+    print('Verified offline relocation, old profile preservation and discovery of the moved profile by fresh CLI and Service processes')
+    print('Verified authenticated online relocation, refusal on instance or privacy changes, continued source writes after copy failure, and replacement without capture')
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cli', type=Path, required=True)
+    parser.add_argument('--desktop-fixture', type=Path)
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     cli = args.cli.resolve(strict=True)
@@ -52,6 +123,14 @@ def main():
             active = True
             first = run('service', 'start', '--no-capture', '--json', json_result=True)
             assert first['mode'] == 'service' and first['capture_owner'] is False
+            if args.desktop_fixture:
+                version = run('build-info', '--json', json_result=True)['component_version']
+                for mode in ('attach', 'start'):
+                    result = subprocess.run([str(args.desktop_fixture.resolve(strict=True)), '--desktop', version, mode],
+                                            env=env, check=True, capture_output=True, text=True, timeout=35)
+                    status = json.loads(result.stdout)
+                    assert not status['capture_owner'] and status['state']['service_instance_id'] == first['state']['service_instance_id']
+                report['independent_desktop_reused_owner'] = True
             again = run('service', 'start', '--no-capture', '--json', json_result=True)
             assert again['state']['service_instance_id'] == first['state']['service_instance_id']
             on = run('privacy','on','--seconds','60','--json',json_result=True)
@@ -74,6 +153,8 @@ def main():
             run('service','stop')
             active = False
             run('service','status','--json',succeeds=False)
+            if sys.platform.startswith('linux'):
+                verify_installed_profile_move(cli, profile, env)
             report['status'] = 'passed'
         except Exception as error:
             report['status'] = 'failed'

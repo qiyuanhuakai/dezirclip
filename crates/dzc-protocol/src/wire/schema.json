@@ -1,6 +1,196 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "BackupPreviewParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "BackupImportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "replace"
+          ]
+        },
+        "passphrase": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "BackupExportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "encrypted"
+          ]
+        },
+        "passphrase": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "BackupPreviewRow": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "BackupPreview": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/BackupPreviewRow"
+          }
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "additionalProperties": false
+    },
+    "BackupImportResult": {
+      "type": "object",
+      "properties": {
+        "imported": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "merge",
+            "replace"
+          ]
+        }
+      },
+      "required": [
+        "imported",
+        "skipped",
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "BackupExportResult": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "encrypted"
+          ]
+        },
+        "encrypted": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "count",
+        "format",
+        "encrypted",
+        "path"
+      ],
+      "additionalProperties": false
+    },
     "Permission": {
       "type": "string",
       "enum": [
@@ -21,6 +211,28 @@
         "service"
       ]
     },
+    "DesktopPlatformReport": {
+      "type": "object",
+      "properties": {
+        "report": {
+          "type": "object",
+          "required": [
+            "native_wayland",
+            "read",
+            "write",
+            "monitor",
+            "auto_paste",
+            "global_shortcut",
+            "resolve_source",
+            "read_privacy_hints"
+          ]
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false
+    },
     "CapabilityReport": {
       "type": "object",
       "properties": {
@@ -30,7 +242,7 @@
             "type": "string",
             "maxLength": 128
           },
-          "maxItems": 64
+          "maxItems": 256
         },
         "permissions": {
           "type": "array",
@@ -175,6 +387,148 @@
           }
         }
       ]
+    },
+    "ExternalOpenParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "reveal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id",
+        "reveal"
+      ],
+      "additionalProperties": false
+    },
+    "ApplicationSelection": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.text",
+            "app.rich_text",
+            "app.image",
+            "app.video",
+            "app.code",
+            "app.url"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "BackgroundParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "expected_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "expected_path"
+      ],
+      "additionalProperties": false
+    },
+    "BackgroundResource": {
+      "type": "object",
+      "properties": {
+        "src": {
+          "type": "string",
+          "maxLength": 22369688
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProfileMoveResult": {
+      "type": "object",
+      "properties": {
+        "moved": {
+          "type": "boolean"
+        },
+        "service_stopped": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "moved",
+        "service_stopped"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopProfileInfo": {
+      "type": "object",
+      "properties": {
+        "data_directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "database_schema_version": {
+          "type": "integer",
+          "minimum": 1,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "data_directory",
+        "database_schema_version"
+      ],
+      "additionalProperties": false
     },
     "DesktopPageParams": {
       "type": "object",
@@ -645,6 +999,96 @@
       ],
       "additionalProperties": true
     },
+    "EmojiFavoritesParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "mutation": {
+          "type": "string",
+          "enum": [
+            "import",
+            "remove"
+          ]
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": false
+    },
+    "EmojiFavoritesResult": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "preview": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "WindowEmojiParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "image"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "paste": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "kind",
+        "content",
+        "paste"
+      ],
+      "additionalProperties": false
+    },
     "GeneratedBody": {
       "type": "object",
       "properties": {
@@ -734,6 +1178,60 @@
         "action"
       ],
       "additionalProperties": true
+    },
+    "ManualEntryParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "content_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "maxItems": 128
+        },
+        "confirm_persistence": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "content_type",
+        "tags",
+        "confirm_persistence"
+      ],
+      "additionalProperties": false
+    },
+    "ManualEntryFinish": {
+      "type": "object",
+      "properties": {
+        "capture_id": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 32
+        }
+      },
+      "required": [
+        "capture_id"
+      ],
+      "additionalProperties": false
     },
     "DesktopMutationResult": {
       "type": "object",
@@ -922,7 +1420,67 @@
         "desktop.capture.write",
         "desktop.capture.finish",
         "desktop.history.summary",
+        "desktop.platform.probe",
+        "desktop.profile.info",
+        "desktop.profile.move",
+        "desktop.appearance.background",
+        "desktop.history.open",
+        "desktop.applications.select",
+        "desktop.window.target",
+        "desktop.window.pin",
+        "desktop.window.resize",
+        "desktop.tools.catalog",
+        "desktop.settings.fonts",
+        "desktop.tools.classify",
+        "desktop.tools.transform",
+        "desktop.tools.qr",
+        "desktop.backup.preview",
+        "desktop.backup.import",
+        "desktop.backup.export",
+        "desktop.ocr.recognize",
+        "desktop.ocr.status",
+        "desktop.ocr.engine",
+        "desktop.settings.preferences",
+        "desktop.settings.view.set",
+        "desktop.settings.capture.get",
+        "desktop.settings.capture.set",
+        "desktop.screen.begin",
+        "desktop.screen.read",
+        "desktop.screen.crop",
+        "desktop.screen.finish",
+        "desktop.screen.cancel",
+        "desktop.tags.counts",
+        "desktop.tags.colors",
+        "desktop.tags.color",
+        "desktop.tags.delete_contents",
+        "desktop.tags.delete_entries",
+        "desktop.history.count",
+        "desktop.paste.target",
+        "desktop.queue.get",
+        "desktop.queue.set",
+        "desktop.queue.next",
+        "desktop.queue.configure",
+        "desktop.screen.preferences",
+        "desktop.quick.preferences",
+        "desktop.quick.begin",
+        "desktop.quick.dismiss",
+        "desktop.quick.paste",
+        "desktop.themes.list",
+        "desktop.themes.get",
+        "desktop.themes.import",
+        "desktop.themes.export",
+        "desktop.themes.remove",
+        "desktop.history.clear",
+        "desktop.history.reorder",
+        "desktop.tags.create",
+        "desktop.tags.rename",
+        "desktop.tags.remove",
         "desktop.history.mutate",
+        "desktop.history.manual.begin",
+        "desktop.history.manual.finish",
+        "desktop.window.paste",
+        "desktop.window.emoji",
+        "desktop.emoji.favorites",
         "desktop.clipboard.copy",
         "desktop.privacy.rules",
         "desktop.privacy.decision",
@@ -1736,6 +2294,1057 @@
           "if": {
             "properties": {
               "method": {
+                "const": "desktop.history.open"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ExternalOpenParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.applications.select"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ApplicationSelection"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.appearance.background"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackgroundParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "enum": [
+                  "desktop.platform.probe",
+                  "desktop.profile.info"
+                ]
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.pin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/WindowPinParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.resize"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/WindowSizeParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.target"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.catalog"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.fonts"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.classify"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolClassifyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.transform"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolTransformParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tools.qr"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolQrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "enum": [
+                  "desktop.backup.preview",
+                  "desktop.profile.move"
+                ]
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackupPreviewParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.import"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackupImportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.backup.export"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/BackupExportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.recognize"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ManualOcrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.status"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ManualOcrParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.ocr.engine"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ToolCatalogParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.view.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ViewSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.capture.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.capture.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/CaptureSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenBeginParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.read"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenReadParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.crop"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenCropParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.finish"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenSessionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.cancel"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ScreenSessionParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.counts"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.colors"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.color"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryColorParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.delete_contents"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryTagParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.delete_entries"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryTagBatchParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.count"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.paste.target"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QueueReplaceParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.next"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QueueNextParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.queue.configure"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QueueSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.screen.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EmptyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.preferences"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EmptyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.dismiss"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QuickDismissParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.quick.paste"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/QuickPasteParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.list"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeIdParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.import"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeImportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.export"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeExportParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.themes.remove"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ThemeIdParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.clear"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.reorder"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryOrderParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.create"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryTagParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.rename"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryRenameParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.tags.remove"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryTagParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.manual.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ManualEntryParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.history.manual.finish"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ManualEntryFinish"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
                 "const": "desktop.history.mutate"
               }
             },
@@ -1747,6 +3356,63 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/DesktopMutationParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.paste"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/DesktopCopyParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.window.emoji"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/WindowEmojiParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.emoji.favorites"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/EmojiFavoritesParams"
               }
             }
           }
@@ -2358,6 +4024,348 @@
       ],
       "additionalProperties": true
     },
+    "LibraryStateParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryTagParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryRenameParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        },
+        "new_name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "name",
+        "new_name"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryPinOrder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "order": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        }
+      },
+      "required": [
+        "id",
+        "order"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryOrderParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "orders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LibraryPinOrder"
+          },
+          "maxItems": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "orders"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryColorParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        },
+        "color": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryTagBatchParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "selected",
+            "all"
+          ]
+        },
+        "ids": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "x-rust-type": "i64"
+          }
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "name",
+        "scope",
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryDeleted": {
+      "type": "object",
+      "properties": {
+        "deleted_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "cleanup_failed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted_count",
+        "cleanup_failed"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryCount": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryCounts": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "LibraryColors": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "ManualOcrParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64"
+        },
+        "reveal": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id",
+        "reveal"
+      ],
+      "additionalProperties": false
+    },
+    "ManualOcrText": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 33554432
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "OcrEngineInfo": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "engine_name": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "available",
+        "engine_name"
+      ],
+      "additionalProperties": false
+    },
     "DesktopPolicyParams": {
       "type": "object",
       "properties": {
@@ -2598,6 +4606,899 @@
         "active"
       ],
       "additionalProperties": true
+    },
+    "QueueTarget": {
+      "type": "object",
+      "properties": {
+        "windows": {
+          "$ref": "#/$defs/WindowsPasteTarget"
+        },
+        "x11": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "windows"
+          ]
+        },
+        {
+          "required": [
+            "x11"
+          ]
+        }
+      ]
+    },
+    "QueuePreferences": {
+      "type": "object",
+      "properties": {
+        "sequential": {
+          "type": "boolean"
+        },
+        "delete_after_paste": {
+          "type": "boolean"
+        },
+        "paste_method": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "sequential",
+        "delete_after_paste",
+        "paste_method"
+      ],
+      "additionalProperties": false
+    },
+    "QueueState": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "x-rust-type": "i64",
+            "not": {
+              "const": 0
+            }
+          },
+          "maxItems": 32768
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "preferences": {
+          "$ref": "#/$defs/QueuePreferences"
+        }
+      },
+      "required": [
+        "ids",
+        "revision",
+        "preferences"
+      ],
+      "additionalProperties": false
+    },
+    "QueueReplaceParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991,
+            "x-rust-type": "i64",
+            "not": {
+              "const": 0
+            }
+          },
+          "maxItems": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "QueueNextParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "expected_revision": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "target": {
+          "$ref": "#/$defs/QueueTarget"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "expected_revision",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "QueueStepResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "empty",
+            "missing",
+            "pasted",
+            "metadata_failed"
+          ]
+        },
+        "remaining": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32768,
+          "x-rust-type": "u32"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64",
+          "not": {
+            "const": 0
+          }
+        }
+      },
+      "required": [
+        "status",
+        "remaining"
+      ],
+      "additionalProperties": false
+    },
+    "QueueSettingParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.sequential_mode",
+            "app.delete_after_paste",
+            "app.paste_method"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "QuickTicket": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "state": {
+          "$ref": "#/$defs/RuntimeState"
+        }
+      },
+      "required": [
+        "token",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "QuickDismissParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "restore": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token",
+        "restore"
+      ],
+      "additionalProperties": false
+    },
+    "QuickPasteParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "id": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991,
+          "x-rust-type": "i64",
+          "not": {
+            "const": 0
+          }
+        },
+        "expected_history_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token",
+        "id",
+        "expected_history_revision"
+      ],
+      "additionalProperties": false
+    },
+    "QuickPreferences": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "hotkey": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "enabled",
+        "hotkey"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenPoint": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenBeginParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "cursor": {
+          "$ref": "#/$defs/ScreenPoint"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenImage": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "png_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "token",
+        "x",
+        "y",
+        "width",
+        "height",
+        "png_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenSessionParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenReadParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token",
+        "offset"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenCropParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "x": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "y": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647,
+          "x-rust-type": "i32"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "token",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenChunk": {
+      "type": "object",
+      "properties": {
+        "data_base64": {
+          "type": "string",
+          "maxLength": 262144
+        },
+        "next_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        },
+        "finished": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "data_base64",
+        "next_offset",
+        "finished"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenFinishResult": {
+      "type": "object",
+      "properties": {
+        "copied": {
+          "type": "boolean"
+        },
+        "recorded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "copied",
+        "recorded"
+      ],
+      "additionalProperties": false
+    },
+    "ScreenPreferences": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "full": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "enabled",
+        "region",
+        "full"
+      ],
+      "additionalProperties": false
+    },
+    "ViewSettingParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.theme",
+            "app.color_mode",
+            "app.language",
+            "app.compact_mode",
+            "app.show_app_border",
+            "app.show_scroll_top_button",
+            "app.show_search_box",
+            "app.tag_manager_enabled",
+            "app.rich_text_snapshot_preview",
+            "app.rich_text_snapshot_cache_limit",
+            "app.arrow_key_selection",
+            "app.preview_keyboard_enabled",
+            "app.update_auto_check",
+            "app.update_channel",
+            "app.silent_start",
+            "app.hide_tray_icon",
+            "app.edge_docking",
+            "app.follow_mouse",
+            "app.disable_webview_gpu",
+            "app.idle_destroy_enabled",
+            "app.idle_destroy_seconds",
+            "app.sound_enabled",
+            "app.sound_paste_enabled",
+            "app.sound_volume",
+            "app.clipboard_item_font_size",
+            "app.clipboard_tag_font_size",
+            "app.surface_opacity",
+            "app.preview_opacity",
+            "app.font_main",
+            "app.font_mono",
+            "app.emoji_panel_enabled",
+            "app.emoji_panel_tab",
+            "app.emoji_favorites",
+            "app.custom_background",
+            "app.custom_background_opacity"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 131072
+        }
+      },
+      "if": {
+        "properties": {
+          "key": {
+            "enum": [
+              "app.font_main",
+              "app.font_mono"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "value": {
+            "maxLength": 256
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "key": {
+              "const": "app.custom_background"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "value": {
+              "maxLength": 32768
+            }
+          }
+        },
+        "else": {
+          "if": {
+            "properties": {
+              "key": {
+                "const": "app.emoji_favorites"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "value": {
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopPreferences": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "additionalProperties": false
+    },
+    "WindowSizeParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 32768,
+          "x-rust-type": "u32"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 200,
+          "maximum": 32768,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "WindowPinParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "pinned"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureSettingParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "enum": [
+            "app.persistent",
+            "app.persistent_limit_enabled",
+            "app.persistent_limit",
+            "app.deduplicate",
+            "app.capture_files",
+            "app.capture_rich_text",
+            "app.ocr_enabled",
+            "app.privacy_protection",
+            "app.privacy_protection_kinds",
+            "app.privacy_protection_custom_rules",
+            "app.excluded_source_apps"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CaptureSettingValues": {
+      "type": "object",
+      "properties": {
+        "persistent": {
+          "type": "boolean"
+        },
+        "deduplicate": {
+          "type": "boolean"
+        },
+        "capture_files": {
+          "type": "boolean"
+        },
+        "capture_rich_text": {
+          "type": "boolean"
+        },
+        "ocr_enabled": {
+          "type": "boolean"
+        },
+        "privacy_protection": {
+          "type": "boolean"
+        },
+        "privacy_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        },
+        "privacy_custom_rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        },
+        "excluded_source_apps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "maxItems": 65536
+        }
+      },
+      "required": [
+        "persistent",
+        "deduplicate",
+        "capture_files",
+        "capture_rich_text",
+        "ocr_enabled",
+        "privacy_protection",
+        "privacy_kinds",
+        "privacy_custom_rules",
+        "excluded_source_apps"
+      ],
+      "additionalProperties": false
     },
     "SurfaceBuildIdentity": {
       "type": "object",
@@ -3473,6 +6374,355 @@
       "required": [
         "entry_id",
         "state"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeIdParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeImportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeExportParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "path",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeIndex": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 48,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "ThemeRemoved": {
+      "type": "object",
+      "properties": {
+        "active_reset": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "active_reset"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopThemePackage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 48,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1,
+          "x-rust-type": "u32"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "dezirclip-theme"
+          ]
+        },
+        "base": {
+          "type": "string",
+          "maxLength": 48
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "author": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "css": {
+          "type": "string",
+          "maxLength": 262144
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "format",
+        "base",
+        "name",
+        "css"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopFont": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "type": "string"
+        },
+        "is_mono": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "family",
+        "is_mono",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "DesktopFontList": {
+      "type": "object",
+      "properties": {
+        "fonts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DesktopFont"
+          }
+        }
+      },
+      "required": [
+        "fonts"
+      ],
+      "additionalProperties": false
+    },
+    "ToolCatalogParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "ToolClassifyParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 250000
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ToolTransformParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 250000
+        },
+        "kind": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "text",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "ToolQrParams": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "png",
+            "svg"
+          ]
+        },
+        "size_px": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "x-rust-type": "u32"
+        }
+      },
+      "required": [
+        "content",
+        "format"
+      ],
+      "additionalProperties": false
+    },
+    "ToolTransformKind": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "label_zh": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "label_en": {
+          "type": "string",
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "id",
+        "label_zh",
+        "label_en"
+      ],
+      "additionalProperties": false
+    },
+    "ToolCatalog": {
+      "type": "object",
+      "properties": {
+        "content_kinds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "transforms": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/ToolTransformKind"
+          }
+        }
+      },
+      "required": [
+        "content_kinds",
+        "transforms"
+      ],
+      "additionalProperties": false
+    },
+    "ToolClassification": {
+      "type": "object",
+      "properties": {
+        "kinds": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      },
+      "required": [
+        "kinds"
+      ],
+      "additionalProperties": false
+    },
+    "ToolText": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      },
+      "required": [
+        "text"
       ],
       "additionalProperties": false
     }

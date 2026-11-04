@@ -4,6 +4,7 @@ export interface CliInfo {
     readonly skill_path: string | null;
     readonly theme_skill_path: string | null;
     readonly cli_on_path: boolean;
+    readonly cli_registered_for_user: boolean;
     readonly path_cli_path: string | null;
     readonly path_cli_version: string | null;
     readonly cli_path_conflict: boolean;
@@ -30,6 +31,8 @@ export const ToolsPathStatus = ({
             ? t("cli_path_other_copy_badge")
             : cliInfo?.cli_on_path
             ? t("cli_path_ready_badge")
+            : cliInfo?.cli_registered_for_user
+            ? t("cli_path_registered_badge")
             : cliInfo?.cli_path
                 ? t("cli_path_missing_badge")
                 : t("cli_path_not_found_badge");
@@ -41,7 +44,7 @@ export const ToolsPathStatus = ({
                 <span className="capture-engine-badge__dot" />
                 {badgeText}
             </span>
-            {cliInfo?.cli_path && !cliInfo.cli_on_path && (
+            {cliInfo?.cli_path && !cliInfo.cli_on_path && !cliInfo.cli_registered_for_user && (
                 <button
                     type="button"
                     className="setting-btn setting-btn--compact"

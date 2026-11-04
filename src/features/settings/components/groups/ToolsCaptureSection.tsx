@@ -1,6 +1,6 @@
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
 import { useCallback, useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { Camera } from "lucide-react";
 import HotkeyRecorder from "../HotkeyRecorder";
 import QuickPasteRendererSetting from "./QuickPasteRendererSetting";

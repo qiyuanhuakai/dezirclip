@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { translations } from "../../../locales";
+import { invoke } from "../../../shared/lib/desktopInvoke";
 import { emitTo } from "@tauri-apps/api/event";
 import { currentMonitor, cursorPosition, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -15,7 +16,30 @@ export type CompactPreviewAnchor = {
     clientX: number; clientY: number; screenX: number; screenY: number;
     itemRect: CompactPreviewRect | null;
 };
-type RequestOptions = Omit<PreviewRequest, "requestId" | "privacyEpoch" | "maxWidth" | "maxHeight">;
+type RequestOptions = Omit<PreviewRequest, "requestId" | "privacyEpoch" | "maxWidth" | "maxHeight"> & { previewOpacity: number };
+type NativeBounds = { X: number; Y: number; Width: number; Height: number };
+async function nativePreviewOffset(anchor: CompactPreviewAnchor) {
+    const { Main: main, WorkArea: area, Width, Height } = await window.mygo.call<{
+        Main: NativeBounds; WorkArea: NativeBounds; Width: number; Height: number;
+    }>("Preview.Layout");
+    if (window.innerWidth < 1 || window.innerHeight < 1) throw new Error("PreviewPositionUnavailable");
+    const sx = main.Width / window.innerWidth, sy = main.Height / window.innerHeight;
+    const rect = anchor.itemRect;
+    const point = pickPreviewPosition({
+        anchorX: anchor.clientX * sx, anchorY: anchor.clientY * sy,
+        anchorRect: rect && { left: rect.left * sx, right: rect.right * sx, top: rect.top * sy, bottom: rect.bottom * sy },
+        widthPx: Width, heightPx: Height, monitorPos: { x: area.X - main.X, y: area.Y - main.Y },
+        monitorSize: { width: area.Width, height: area.Height }, margin: 10, offset: 12,
+        avoidRect: { left: 0, top: 0, right: main.Width, bottom: main.Height },
+    });
+    const left = Math.floor((rect?.left ?? anchor.clientX) * sx);
+    const top = Math.floor((rect?.top ?? anchor.clientY) * sy);
+    return {
+        Point: { X: Math.round(point.x), Y: Math.round(point.y) },
+        Source: { X: left, Y: top, Width: Math.max(1, Math.ceil((rect?.right ?? anchor.clientX) * sx) - left),
+            Height: Math.max(1, Math.ceil((rect?.bottom ?? anchor.clientY) * sy) - top) },
+    };
+}
 type Session = {
     owner: object;
     request: PreviewRequest | null;
@@ -37,6 +61,9 @@ const sessions = createPreviewSessionQueue<Session>();
 const pageId = crypto.randomUUID();
 let preview: WebviewWindow | null = null;
 let creating: Promise<WebviewWindow> | null = null;
+let nativeOwner: object | null = null;
+let nativeSequence = 0;
+let stopNativeInvalidation: (() => void) | null = null;
 let listeners: Promise<void> | null = null;
 let requestTimer: { id: number; handle: ReturnType<typeof setTimeout> } | null = null;
 const mountedWaiters = new Set<() => void>();
@@ -80,6 +107,15 @@ async function clearWindow() {
     }
 }
 export function hideCompactPreviewGlobal(owner?: object): Promise<void> {
+    if (import.meta.env.MODE === "mygo") {
+        if (!nativeOwner || (owner && nativeOwner !== owner)) return Promise.resolve();
+        if (leaveTimer !== null) clearTimeout(leaveTimer);
+        leaveTimer = null;
+        nativeOwner = null;
+        stopNativeInvalidation?.();
+        stopNativeInvalidation = null;
+        return window.mygo.call<void>("Preview.Hide", ++nativeSequence).catch(error => compactPreviewLog("native hide failed", error));
+    }
     const owned = owner === undefined || sessions.owns(owner);
     const result = sessions.cancel(clearWindow, owner);
     if (owned) {
@@ -90,6 +126,20 @@ export function hideCompactPreviewGlobal(owner?: object): Promise<void> {
     return result.catch(error => { compactPreviewLog("preview hide failed", error); });
 }
 export function leaveCompactPreview(owner: object): void {
+    if (import.meta.env.MODE === "mygo") {
+        if (nativeOwner !== owner) return;
+        const sequence = nativeSequence;
+        if (leaveTimer !== null) clearTimeout(leaveTimer);
+        const check = async () => {
+            if (sequence !== nativeSequence || nativeOwner !== owner) return;
+            const inside = await window.mygo.call<boolean>("Preview.PointerInside", sequence).catch(() => false);
+            if (sequence !== nativeSequence || nativeOwner !== owner) return;
+            if (inside) leaveTimer = setTimeout(check, 250);
+            else void hideCompactPreviewGlobal(owner);
+        };
+        leaveTimer = setTimeout(check, 500);
+        return;
+    }
     if (!sessions.owns(owner)) return;
     const id = sessions.current();
     const value = id === null ? null : sessions.get(id);
@@ -263,6 +313,34 @@ export async function showCompactPreview(owner: object, anchor: CompactPreviewAn
     stillHovered: () => boolean, sourceIsCurrent: () => boolean = stillHovered) {
     const access = beginPrivacyAccess(options.allowSensitive ? "reveal" : "list");
     if (!access || !stillHovered()) return;
+    if (import.meta.env.MODE === "mygo") {
+        if (!options.expectedHostInstanceId || !sourceIsCurrent()) return;
+        nativeOwner = owner;
+        stopNativeInvalidation?.();
+        stopNativeInvalidation = subscribePrivacyInvalidation(scope => {
+            if (scope === "all" || options.allowSensitive) void hideCompactPreviewGlobal(owner);
+        });
+        const sequence = ++nativeSequence;
+        try {
+            const offset = await nativePreviewOffset(anchor);
+            if (sequence !== nativeSequence || !access.isCurrent() || !sourceIsCurrent() || !stillHovered()) return;
+            const rgb = getComputedStyle(document.documentElement).getPropertyValue("--surface-shell-rgb").trim().split(/\s+/).map(Number);
+            const background = rgb.length === 3 && rgb.every(n => Number.isInteger(n) && n >= 0 && n <= 255) ? { R: rgb[0], G: rgb[1], B: rgb[2] } : null;
+            const labels = translations[options.language];
+            const appearance = { Opacity: options.previewOpacity, Dark: options.colorMode === "dark", Background: background,
+                OpacityLabel: labels.preview_toolbar_opacity, ZoomIn: labels.preview_toolbar_zoom_in, ZoomOut: labels.preview_toolbar_zoom_out,
+                Fit: labels.preview_toolbar_fit, FitLabel: labels.preview_toolbar_fit_label, Actual: labels.preview_toolbar_actual,
+                ImageZoom: labels.preview_toolbar_zoom, Pin: labels.preview_toolbar_pin, Close: labels.preview_toolbar_close, Retry: labels.privacy_retry,
+                Concealed: labels.privacy_sensitive_hidden, Failed: labels.privacy_action_failed };
+            await window.mygo.call("Preview.ShowEntry", sequence, options.id, options.expectedHostInstanceId, access.epoch, options.allowSensitive, offset, appearance);
+        } catch (error) {
+            compactPreviewLog("native preview presentation failed", error);
+            if (sequence === nativeSequence) await hideCompactPreviewGlobal(owner);
+        } finally {
+            if (sequence === nativeSequence && (!access.isCurrent() || !sourceIsCurrent() || !stillHovered())) await hideCompactPreviewGlobal(owner);
+        }
+        return;
+    }
     stopRequestTimer();
     const value: Session = { owner, allowSensitive: options.allowSensitive, request: null, isHovered: stillHovered, pointerInside: false, pinning: false,
         requestId: "", window: null, anchor, scale: 1, origin: { x: 0, y: 0 },

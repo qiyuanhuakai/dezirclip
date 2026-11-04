@@ -365,6 +365,17 @@ impl PrivacySessionService {
         Ok(())
     }
 
+    /// Serialize a managed profile file change with privacy transitions and read-only mode.
+    pub fn with_writable_profile<T>(&self, epoch: u64, now_ms: i64, publish: impl FnOnce() -> T) -> PrivacyResult<T> {
+        let mut connection = self.connection.lock().map_err(unavailable)?;
+        crate::database::ensure_writable(&connection).map_err(unavailable)?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate).map_err(unavailable)?;
+        if snapshot_with_conn(&transaction, now_ms)?.privacy_epoch != epoch { return Err(PrivacyError::PrivacyEpochChanged); }
+        let outcome = publish();
+        transaction.commit().map_err(unavailable)?;
+        Ok(outcome)
+    }
+
     pub fn toggle(&self, now_ms: i64) -> PrivacyResult<RuntimeSnapshot> {
         let mut conn = self.connection.lock().map_err(unavailable)?;
         let tx = conn

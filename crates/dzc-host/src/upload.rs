@@ -6,13 +6,57 @@ use base64::Engine;
 use serde_json::Value;
 use std::{sync::{Arc,Mutex},time::{Duration,Instant}};
 
-struct Upload { id:String, owner:String, ticket:Option<CaptureTicket>, copy_permit:Option<PrivacyReadPermit>, epoch:u64, timestamp:i64, expires:Instant, bytes:Vec<u8>, paste_target:Option<Box<dyn crate::PreparedPaste>> }
+struct Upload { id:String, owner:String, ticket:Option<CaptureTicket>, copy_permit:Option<PrivacyReadPermit>, epoch:u64, timestamp:i64, expires:Instant, bytes:Vec<u8>, paste_target:Option<Box<dyn crate::PreparedPaste>>, manual:Option<(ManualEntryParams, PrivacyReadPermit)> }
 #[derive(Default)]
 pub(crate) struct Uploads(Arc<Mutex<Vec<Upload>>>);
 impl Uploads {
     pub(crate) fn clear(&self) -> Result<(),WireErrorCode> { self.0.lock().map_err(|_|WireErrorCode::Unavailable)?.clear(); Ok(()) }
 }
 impl Host {
+    fn register_upload(&self, uploads: &mut Vec<Upload>, upload: Upload, state: RuntimeState) -> Result<Value, WireErrorCode> {
+        let id = upload.id.clone();
+        let storage = self.uploads.0.clone();
+        let expired_id = id.clone();
+        uploads.push(upload);
+        if std::thread::Builder::new().name("dzc-upload-expiry".into()).spawn(move || {
+            std::thread::sleep(Duration::from_secs(5));
+            if let Ok(mut uploads) = storage.lock() { uploads.retain(|upload| upload.id != expired_id); }
+        }).is_err() { uploads.retain(|upload| upload.id != id); return Err(WireErrorCode::Unavailable); }
+        serde_json::to_value(CaptureBeginResult { capture_id: Some(id), state }).map_err(|_| WireErrorCode::Internal)
+    }
+
+    fn manual_permit(&self, request: &ManualEntryParams, now: i64) -> Result<PrivacyReadPermit, WireErrorCode> {
+        if request.service_instance_id != self.instance_id() { return Err(WireErrorCode::PrivacyBlocked); }
+        self.history.privacy().authorize_read(PrivacyAccessIntent::InteractiveRead, SensitiveAccess::Denied,
+            Some(request.expected_epoch), now).map_err(crate::router::privacy_error)
+    }
+
+    /// In-process Tauri and the authenticated Service share the same manual write and event.
+    pub fn add_manual_owned(&self, request: ManualEntryParams, content: String) -> Result<i64, WireErrorCode> {
+        let _guard = self.requests.lock().map_err(|_| WireErrorCode::Unavailable)?;
+        let permit = self.manual_permit(&request, crate::router::now_ms()?)?;
+        self.save_manual(request, content, &permit)
+    }
+
+    fn save_manual(&self, request: ManualEntryParams, content: String, permit: &PrivacyReadPermit) -> Result<i64, WireErrorCode> {
+        if self.is_stopping() { return Err(WireErrorCode::Busy); }
+        let now = crate::router::now_ms()?;
+        let preview = match content.char_indices().nth(200) {
+            Some((end, _)) => format!("{}...", &content[..end]),
+            None => content.clone(),
+        };
+        let entry = dzc_core::api::ClipboardEntry {
+            id: 0, content_type: request.content_type, content, html_content: None, source_app: "Manual".into(),
+            source_app_path: None, timestamp: now, preview, is_pinned: false, tags: request.tags, use_count: 0,
+            is_external: false, pinned_order: 0, file_preview_exists: true, content_kinds: Vec::new(), ocr_text: None, ocr_status: None,
+        };
+        let intent = if request.confirm_persistence { dzc_core::api::ManualPersistenceIntent::ConfirmedDuringPrivacySession }
+            else { dzc_core::api::ManualPersistenceIntent::Ordinary };
+        let id = self.history.save_manual_authorized(&entry, Some(&self.directory), intent, permit, now).map_err(crate::router::privacy_error)?;
+        self.publish(EventKind::EntryAdded, EventData { entry_id: Some(id), status: None })?;
+        Ok(id)
+    }
+
     pub(crate) fn upload(&self, session:&Session, method:Method, parameters:Value) -> Result<Value,WireErrorCode> {
         session.require(Permission::DesktopHistory)?;
         if session.role()!=ClientRole::Desktop {return Err(WireErrorCode::PermissionDenied);}
@@ -20,6 +64,20 @@ impl Host {
         let mut uploads=self.uploads.0.lock().map_err(|_|WireErrorCode::Unavailable)?;
         let epoch=self.snapshot()?.privacy_epoch;
         uploads.retain(|upload|upload.expires>Instant::now() && upload.epoch==epoch);
+        if method == Method::DesktopHistoryManualBegin {
+            if uploads.len() >= 4 { return Err(WireErrorCode::Busy); }
+            let request: ManualEntryParams = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+            let permit = self.manual_permit(&request, now)?;
+            if !request.confirm_persistence && self.history.privacy().status(now).map_err(crate::router::privacy_error)?.session.active {
+                return Err(WireErrorCode::ManualPersistenceConfirmationRequired);
+            }
+            let state = self.snapshot()?;
+            if state.privacy_epoch != request.expected_epoch { return Err(WireErrorCode::PrivacyEpochChanged); }
+            let upload = Upload { id: uuid::Uuid::new_v4().simple().to_string(), owner: session.id().into(), ticket: None,
+                copy_permit: None, epoch: request.expected_epoch, timestamp: now, expires: Instant::now() + Duration::from_secs(5),
+                bytes: Vec::new(), paste_target: None, manual: Some((request, permit)) };
+            return self.register_upload(&mut uploads, upload, state);
+        }
         if method==Method::DesktopCaptureBegin {
             let request:CaptureBeginParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
             let state=self.snapshot()?;
@@ -40,13 +98,8 @@ impl Host {
             };
             let id=uuid::Uuid::new_v4().simple().to_string();
             if ticket.as_ref().is_some_and(|ticket|ticket.epoch()!=request.expected_epoch) {return Err(WireErrorCode::PrivacyBlocked);}
-            uploads.push(Upload{id:id.clone(),owner:session.id().into(),ticket,copy_permit,epoch:request.expected_epoch,timestamp:now,expires:Instant::now()+Duration::from_secs(5),bytes:Vec::new(),paste_target});
-            let storage=self.uploads.0.clone();let expired_id=id.clone();
-            if std::thread::Builder::new().name("dzc-upload-expiry".into()).spawn(move|| {
-                std::thread::sleep(Duration::from_secs(5));
-                if let Ok(mut uploads)=storage.lock() {uploads.retain(|upload|upload.id!=expired_id);}
-            }).is_err() {uploads.retain(|upload|upload.id!=id);return Err(WireErrorCode::Unavailable);}
-            return serde_json::to_value(CaptureBeginResult{capture_id:Some(id),state}).map_err(|_|WireErrorCode::Internal);
+            let upload = Upload{id,owner:session.id().into(),ticket,copy_permit,epoch:request.expected_epoch,timestamp:now,expires:Instant::now()+Duration::from_secs(5),bytes:Vec::new(),paste_target,manual:None};
+            return self.register_upload(&mut uploads, upload, state);
         }
         if method==Method::DesktopCaptureWrite {
             let request:CaptureWriteParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
@@ -59,9 +112,20 @@ impl Host {
             upload.bytes.extend(bytes);
             return serde_json::to_value(OperationResult{performed:true}).map_err(|_|WireErrorCode::Internal);
         }
+        if method == Method::DesktopHistoryManualFinish {
+            let finish: ManualEntryFinish = serde_json::from_value(parameters).map_err(|_| WireErrorCode::InvalidRequest)?;
+            let index = uploads.iter().position(|u| u.id == finish.capture_id && u.owner == session.id() && u.manual.is_some())
+                .ok_or(WireErrorCode::NotFound)?;
+            let upload = uploads.remove(index);
+            drop(uploads);
+            let (request, permit) = upload.manual.ok_or(WireErrorCode::InvalidRequest)?;
+            let content = String::from_utf8(upload.bytes).map_err(|_| WireErrorCode::InvalidRequest)?;
+            let id = self.save_manual(request, content, &permit)?;
+            return serde_json::to_value(DesktopMutationResult { id, performed: true }).map_err(|_| WireErrorCode::Internal);
+        }
         if parameters.get("expected_paste_target").is_some() {return Err(WireErrorCode::InvalidRequest);}
         let request:CaptureFinishParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
-        let index=uploads.iter().position(|upload|upload.id==request.capture_id && upload.owner==session.id()).ok_or(WireErrorCode::NotFound)?;
+        let index=uploads.iter().position(|upload|upload.id==request.capture_id && upload.owner==session.id() && upload.manual.is_none()).ok_or(WireErrorCode::NotFound)?;
         let upload=uploads.remove(index);
         drop(uploads);
         self.check_upload(&upload,now)?;
@@ -74,24 +138,11 @@ impl Host {
                 || (cfg!(target_os="windows") || self.actions.supports_windows_bound_paste()) && upload.paste_target.is_none()) {
                 return Err(WireErrorCode::UnsupportedCapability);
             }
-            // This entry contains only the caller's new payload. It is never
-            // resolved as a history/session ID or allowed to name a local file.
-            if body.kind=="image" && !body.text.starts_with("data:image/") {return Err(WireErrorCode::InvalidRequest);}
-            let entry=dzc_core::api::ClipboardEntry {id:0,content_type:body.kind.clone(),content:body.text.clone(),html_content:body.html.clone(),
-                source_app:request.source_app.clone(),source_app_path:None,timestamp:upload.timestamp,preview:String::new(),is_pinned:false,tags:vec![],
-                use_count:0,is_external:false,pinned_order:0,file_preview_exists:true,content_kinds:vec![],ocr_text:None,ocr_status:None};
-            let payload=self.history.generated_clipboard_payload_authorized(&entry,&permit,now).map_err(crate::router::privacy_error)?;
-            if self.capture_owner.load(std::sync::atomic::Ordering::Acquire) {
-                if let Some(ticket)=upload.ticket {
-                    let frame=CaptureFrame{data:generated_data(body)?,metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),..Default::default()}};
-                    self.capture_generated(frame,CaptureSource{app_name:request.source_app,process_path:None},upload.timestamp)?;
-                }
-            }
-            self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
-            self.copy_payload(payload)?;
+            self.commit_generated_copy(body, &request.source_app, upload.timestamp, upload.ticket, &permit)?;
             if request.paste==Some(true) {
                 self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
                 if let Some(target)=upload.paste_target { target.send()?; } else { self.actions.paste()?; }
+                self.play_feedback(dzc_platform::sound::Cue::Paste);
             }
             return serde_json::to_value(OperationResult{performed:true}).map_err(|_|WireErrorCode::Internal);
         }
@@ -103,7 +154,30 @@ impl Host {
         let performed=lifecycle.capture_generated(frame,CaptureSource{app_name:request.source_app,process_path:None},upload.timestamp)?;
         serde_json::to_value(OperationResult{performed}).map_err(|_|WireErrorCode::Internal)
     }
+    pub(crate) fn commit_generated_copy(&self, body: GeneratedBody, source_app: &str, timestamp: i64,
+        ticket: Option<CaptureTicket>, permit: &PrivacyReadPermit) -> Result<bool, WireErrorCode> {
+        // This entry contains only the caller's new payload. It is never
+        // resolved as a history/session ID or allowed to name a local file.
+        if body.kind=="image" && !body.text.starts_with("data:image/") {return Err(WireErrorCode::InvalidRequest);}
+        let entry=dzc_core::api::ClipboardEntry {id:0,content_type:body.kind.clone(),content:body.text.clone(),html_content:body.html.clone(),
+            source_app:source_app.to_owned(),source_app_path:None,timestamp,preview:String::new(),is_pinned:false,tags:vec![],
+            use_count:0,is_external:false,pinned_order:0,file_preview_exists:true,content_kinds:vec![],ocr_text:None,ocr_status:None};
+        let payload=self.history.generated_clipboard_payload_authorized(&entry,permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        let mut recorded = false;
+        if self.capture_owner.load(std::sync::atomic::Ordering::Acquire) {
+            if let Some(ticket)=ticket {
+                let frame=CaptureFrame{data:generated_data(body)?,metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),..Default::default()}};
+                recorded = self.capture_generated(frame,CaptureSource{app_name:source_app.to_owned(),process_path:None},timestamp)?;
+            }
+        }
+        self.history.privacy().check_read(permit,crate::router::now_ms()?).map_err(crate::router::privacy_error)?;
+        self.copy_payload(payload)?;
+        Ok(recorded)
+    }
     fn check_upload(&self,upload:&Upload,now:i64)->Result<(),WireErrorCode> {
+        if let Some((_, permit)) = &upload.manual {
+            self.history.privacy().check_read(permit, now).map_err(crate::router::privacy_error)?;
+        }
         if let Some(ticket)=&upload.ticket {self.history.privacy().check_capture(ticket,now).map_err(|_|WireErrorCode::PrivacyBlocked)?;}
         if let Some(permit)=&upload.copy_permit {self.history.privacy().check_read(permit,now).map_err(crate::router::privacy_error)?;}
         Ok(())
@@ -238,6 +312,35 @@ mod tests {
         assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst),0);
         assert!(actions.copied.lock().unwrap().is_empty());
     }
+    #[test]
+    fn emoji_copy_checks_grant_epoch_managed_path_and_original_target_before_writing() {
+        let original = crate::router::tests::synthetic_host();
+        let actions = Arc::new(Actions::default());
+        let host = Host::new(HostOptions { mode: HostMode::Service, history: original.history.clone(),
+            directory: original.directory.clone(), actions: actions.clone() }).unwrap();
+        let desktop = session(&host, ClientRole::Desktop, true);
+        let state = host.snapshot().unwrap();
+        let send = |user, kind, content, paste, epoch| call(&host, user, Method::DesktopWindowEmoji, serde_json::json!({
+            "service_instance_id": state.service_instance_id, "expected_epoch": epoch, "kind": kind, "content": content, "paste": paste
+        }));
+        let outsider = session(&host, ClientRole::Desktop, false);
+        assert_eq!(send(&outsider,"text","🎸",false,state.privacy_epoch).error.unwrap().code, WireErrorCode::PermissionDenied);
+        assert_eq!(send(&desktop,"text","🎸",true,state.privacy_epoch).error.unwrap().code, WireErrorCode::NotFound);
+        assert_eq!(send(&desktop,"text","🎸",false,state.privacy_epoch + 1).error.unwrap().code, WireErrorCode::PrivacyEpochChanged);
+        assert_eq!(send(&desktop,"image","/unmanaged/image.png",false,state.privacy_epoch).error.unwrap().code, WireErrorCode::InvalidRequest);
+        assert!(actions.copied.lock().unwrap().is_empty());
+        assert!(send(&desktop,"text","🎸",false,state.privacy_epoch).error.is_none());
+        let root = host.directory.join("emoji_favorites");
+        std::fs::create_dir_all(&root).unwrap();
+        let image = root.join("fav_ab.png");
+        std::fs::write(&image, base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVQI12P4z8AAAAMBAQAY3Y2wAAAAAElFTkSuQmCC").unwrap()).unwrap();
+        assert!(send(&desktop,"image",image.to_str().unwrap(),false,state.privacy_epoch).error.is_none());
+        assert_eq!(actions.copied.lock().unwrap().as_slice(), ["text:4", "image"]);
+        assert_eq!(actions.pastes.load(std::sync::atomic::Ordering::SeqCst), 0);
+        std::fs::remove_file(image).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn generated_copy_uses_desktop_owner_for_emoji_image_and_large_unpersisted_content() {
         let original=crate::router::tests::synthetic_host();

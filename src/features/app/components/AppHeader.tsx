@@ -13,7 +13,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../shared/lib/desktopInvoke";
 import type { TagFilterPickerHandle } from "../../tag/components/TagFilterPicker";
 import { getClipboardTypeName } from "../../../shared/lib/clipboardTypeName";
 
@@ -108,7 +108,7 @@ const AppHeader = ({
     <div className="header-top" data-tauri-drag-region>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         {(showSettings || showTagManager || showEmojiPanel) && (
-          <button className="btn-icon" onClick={() => {
+          <button className="btn-icon" aria-label={t("common_close")} onClick={() => {
             if (showEmojiPanel) setShowEmojiPanel(false);
             else if (showTagManager) setShowTagManager(false);
             else setShowSettings(false);
@@ -134,8 +134,7 @@ const AppHeader = ({
           title={t(desktopInteractions ? 'pin' : pending ? 'platform_capabilities_checking' : failed ? 'platform_capabilities_unavailable' : 'wayland_interaction_unavailable')}
           onClick={() => {
             const newVal = !isWindowPinned;
-            setIsWindowPinned(newVal);
-            invoke("set_window_pinned", { pinned: newVal }).catch(console.error);
+            invoke("set_window_pinned", { pinned: newVal }).then(() => setIsWindowPinned(newVal)).catch(console.error);
           }}
         >
           {isWindowPinned ? <PinOff size={16} /> : <Pin size={16} />}

@@ -98,6 +98,7 @@ export function prepareSidecars({ args = process.argv.slice(2), env = process.en
   // desktop features too, then synchronize exactly the paths enumerated by
   // the bundler, including its default-host namespace.
   const serviceArgs = cargoArgs.map((value) => value === "dzc" ? "dzc-service" : value);
+  serviceArgs.push("--features", "native-screen");
   run("cargo", serviceArgs, { cwd: repoRoot, stdio: "inherit" });
   const serviceSource = join(targetDirectory, targetTriple, options.profile, `dzc-service${extension}`);
   const serviceSha256 = digest(serviceSource);

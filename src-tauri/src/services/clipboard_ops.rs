@@ -169,7 +169,6 @@ pub(crate) async fn copy_to_clipboard_bound(
             let body=generated_copy_body(&content,&content_type,paste_image_as_base64.unwrap_or(false))?;
             if paste {check_paste_target(paste_target.as_deref())?;}
             upload.finish_copy(body,paste).await.map_err(AppError::Validation)?;
-            if paste {play_paste_sound_if_enabled(&app_handle);}
             return Ok(());
         }
         let epoch=expected_privacy_epoch.unwrap_or(state.history_service().runtime_snapshot(Utc::now().timestamp_millis()).map_err(|error|AppError::Validation(error.to_string()))?.privacy_epoch);
@@ -180,7 +179,6 @@ pub(crate) async fn copy_to_clipboard_bound(
             delete_after_use:Some(delete_after_use),move_to_top,expected_paste_target:None,
         },paste_target.as_deref().and_then(Target::windows_paste_target)).await.map_err(AppError::Validation)?;
         if !result.performed {return Err(AppError::Internal("Clipboard copy was not performed".into()));}
-        if paste {play_paste_sound_if_enabled(&app_handle);}
         return Ok(());
     }
     let operation_permission=if let Some(epoch)=expected_privacy_epoch {
@@ -390,7 +388,7 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle, target: Op
             #[cfg(target_os = "windows")]
             {
                 let target = target.ok_or_else(|| AppError::Internal("Paste target unavailable".into()))?;
-                crate::infrastructure::windows_api::paste::release_window_keys(target).map_err(AppError::Internal)?;
+                crate::infrastructure::windows_api::paste::release_window_keys(target.as_ref()).map_err(AppError::Internal)?;
             }
             #[cfg(target_os = "linux")]
             crate::app::window_manager::release_win_keys();
@@ -1060,11 +1058,8 @@ fn handle_post_paste_actions(
     Ok(())
 }
 
-fn play_paste_sound_if_enabled(app_handle: &tauri::AppHandle) {
-    let settings = app_handle.state::<SettingsState>();
-    if settings.sound_enabled.load(Ordering::Relaxed) {
-        let _ = app_handle.emit("play-sound", "paste");
-    }
+pub(crate) fn play_paste_sound_if_enabled(app_handle: &tauri::AppHandle) {
+    dzc_platform::sound::play(&app_handle.state::<DbState>().history_service(), dzc_platform::sound::Cue::Paste);
 }
 
 #[tauri::command]

@@ -9,6 +9,7 @@ pub trait PreparedPaste: Send {
     fn send(&self) -> Result<(), WireErrorCode>;
 }
 pub trait HostActions: Send + Sync {
+    fn system_fonts(&self) -> Vec<DesktopFont> { dzc_platform::fonts::list_system_fonts() }
     fn platform_capabilities(&self) -> Value;
     fn can_copy(&self) -> bool;
     fn copy(&self, payload: dzc_core::ports::ClipboardPayload) -> Result<(), WireErrorCode>;
@@ -25,7 +26,14 @@ pub trait HostActions: Send + Sync {
     fn revoke_private_exports(&self) -> Result<(), WireErrorCode> {
         dzc_platform::runtime::revoke_private_exports().map_err(|_| WireErrorCode::Busy)
     }
+    fn queue_changed(&self, _count: usize) {}
     fn privacy_changed(&self, _snapshot: &api::RuntimeSnapshot) {}
+}
+
+impl Host {
+    pub(crate) fn play_feedback(&self, cue: dzc_platform::sound::Cue) {
+        dzc_platform::sound::play(&self.history, cue);
+    }
 }
 
 pub trait HostLifecycle: Send + Sync {
@@ -57,11 +65,23 @@ pub struct Host {
     pub(crate) capture_owner: AtomicBool,
     pub(crate) lifecycle: Mutex<Option<Arc<dyn HostLifecycle>>>,
     pub(crate) requests: Mutex<()>,
+    pub(crate) backup_operation: Mutex<()>,
+    #[cfg(test)]
+    pub(crate) after_backup_ticket: Mutex<Option<(tokio::sync::oneshot::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+    pub(crate) manual_ocr_operation: Mutex<()>,
+    font_scan: Mutex<()>,
+    background_read: Mutex<()>,
+    application_selection: Mutex<()>,
+    pub(crate) external: crate::external::ExternalEdits,
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
+    pub(crate) queue: crate::paste_queue::Queue,
+    delivery: Mutex<()>,
     pub(crate) uploads: crate::upload::Uploads,
+    #[cfg(feature = "native-screen")]
+    pub(crate) screen: crate::screen::Screens,
     copy_echo:Mutex<Option<(dzc_platform::capture::ClipboardEcho,i64)>>,
     capture_diagnostic:Mutex<Option<String>>,
     history_version:Mutex<crate::history_version::HistoryVersion>,
@@ -94,10 +114,14 @@ impl Host {
     }
     pub fn with_session(options: HostOptions, session: Arc<api::SessionHistoryStore>) -> Result<Arc<Self>, WireErrorCode> {
         let epoch = options.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.privacy_epoch;
-        let host = Arc::new(Self { history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
+        let host = Arc::new_cyclic(|owner| Self { external: crate::external::ExternalEdits::new(owner.clone()), history: options.history, directory: options.directory, session, mode: options.mode, actions: options.actions,
             grants: GrantAuthority::default(), instance: uuid::Uuid::new_v4().to_string(), events: Events::new(),
-            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), requests: Mutex::new(()), stopped: AtomicBool::new(false),
-            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
+            #[cfg(test)] after_backup_ticket: Mutex::new(None),
+            stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), background_read: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
+            application_selection: Mutex::new(()),
+            #[cfg(feature = "native-screen")]
+            screen: Default::default(),
+            snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
         *host.hotkey.lock().map_err(unavailable)? = Some(crate::hotkey::Hotkey::new(Arc::downgrade(&host)));
         Ok(host)
     }
@@ -121,6 +145,9 @@ impl Host {
     fn capture_active(&self) -> bool {
         self.capture_owner.load(Ordering::Acquire) && self.lifecycle.lock().ok().and_then(|slot|slot.as_ref().map(|lifecycle|lifecycle.capture_active())).unwrap_or(false)
     }
+    pub(crate) fn capture_disabled_by_request(&self) -> Result<bool, WireErrorCode> {
+        Ok(self.capture_diagnostic.lock().map_err(unavailable)?.as_deref() == Some("disabled_by_request"))
+    }
     /// Trusted in-process lifecycle entry; the IPC router separately checks its grant.
     pub fn shutdown(&self) -> Result<(), WireErrorCode> {
         let _serial = self.requests.lock().map_err(unavailable)?;
@@ -128,6 +155,13 @@ impl Host {
     }
     fn stop(&self) -> Result<(), WireErrorCode> {
         if self.stopped.load(Ordering::Acquire) {return Ok(());}
+        let _delivery = self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        let _ocr = self.manual_ocr_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        self.stop_locked()
+    }
+    // Caller owns the delivery, OCR and backup guards.
+    fn stop_locked(&self) -> Result<(), WireErrorCode> {
         self.stop_requested.store(true, Ordering::Release);
         self.events.interrupt();
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.stop_capture()?; }
@@ -135,10 +169,40 @@ impl Host {
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
+        #[cfg(feature = "native-screen")]
+        self.screen.clear()?;
         self.actions.stop_helpers()?;
         if let Some(lifecycle) = self.lifecycle.lock().map_err(unavailable)?.as_ref() { lifecycle.release_ownership()?; }
         self.stopped.store(true, Ordering::Release);
         Ok(())
+    }
+    fn move_installed_profile(&self, session: &Session, request: BackupPreviewParams) -> Result<Value, WireErrorCode> {
+        session.require(Permission::ServiceManage)?;
+        self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        if self.mode != HostMode::Service { return Err(WireErrorCode::UnsupportedCapability); }
+        if self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?.session.active {
+            return Err(WireErrorCode::PrivacySessionActive);
+        }
+        let destination = std::path::Path::new(&request.path);
+        if !destination.is_absolute() { return Err(WireErrorCode::InvalidRequest); }
+        let database = crate::data::database_path().map_err(unavailable)?;
+        let (source, target) = crate::data::installed_move_directories(&database, destination).map_err(|_| WireErrorCode::InvalidRequest)?;
+        if source != self.directory { return Err(WireErrorCode::Unavailable); }
+        if source == target { return result("ProfileMoveResult", ProfileMoveResult { moved:false, service_stopped:false }); }
+        let _target = crate::data::reserve_profile(&target).map_err(|_| WireErrorCode::Busy)?;
+        let redirect = crate::data::move_redirect(&database).map_err(unavailable)?;
+        let _delivery = self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        let _ocr = self.manual_ocr_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        let _backup = self.backup_operation.try_lock().map_err(|_| WireErrorCode::Busy)?;
+        self.history.migrate_profile_at_epoch(database.parent().ok_or(WireErrorCode::InvalidRequest)?, destination, &redirect, request.expected_epoch)
+            .map_err(|error| match error {
+                dzc_core::api::MigrationError::Validation(ref code) if code == "PrivacySessionActive" || code == "PrivacyEpochChanged" => privacy_error(code),
+                dzc_core::api::MigrationError::Validation(_) => WireErrorCode::InvalidRequest,
+                _ => WireErrorCode::Unavailable,
+            })?;
+        // The redirect is committed. Report this even if draining the old Service must be retried.
+        let service_stopped = self.stop_locked().is_ok();
+        result("ProfileMoveResult", ProfileMoveResult { moved: true, service_stopped })
     }
     pub fn snapshot(&self) -> Result<RuntimeState, WireErrorCode> {
         // No RAM guard is held while acquiring the database lock here. A RAM
@@ -170,6 +234,9 @@ impl Host {
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
+        #[cfg(feature = "native-screen")]
+        self.screen.clear()?;
+        self.queue.invalidate()?;
         let state = self.snapshot()?;
         self.events.push(EventKind::PrivacyStateChanged, state, EventData { entry_id: None, status: None }).map_err(unavailable)?;
         *observed = snapshot.privacy_epoch;
@@ -226,9 +293,13 @@ impl Host {
         Ok(PrivacyState { active: snapshot.session.active, expires_at_ms: snapshot.session.expires_at_ms, privacy_epoch: snapshot.privacy_epoch })
     }
     pub fn hello(&self, hello: HelloParams) -> Result<(Session, HelloResult), WireErrorCode> {
+        self.hello_with_peer(hello, None)
+    }
+    pub(crate) fn hello_with_peer(&self, hello: HelloParams, peer: Option<dzc_platform::ipc::PeerIdentity>) -> Result<(Session, HelloResult), WireErrorCode> {
         self.synchronize_privacy()?;
         if hello.protocol_version.major != wire::VERSION.major { return Err(WireErrorCode::ProtocolMismatch); }
-        let session = self.grants.accept(&hello)?;
+        let mut session = self.grants.accept(&hello)?;
+        session.peer = peer;
         let available = self.capabilities(&session);
         if hello.required_capabilities.iter().any(|capability| !available.methods.contains(capability)
             && !available.permissions.iter().any(|permission| serde_json::to_value(permission).ok().and_then(|value| value.as_str().map(str::to_owned)).as_ref() == Some(capability))) {
@@ -248,6 +319,47 @@ impl Host {
         if can(Permission::ClipboardPaste) && self.actions.can_copy() && self.actions.can_paste() { methods.push("surface.paste"); }
         if can(Permission::PrivacyWrite) { methods.extend(["privacy.set", "privacy.toggle", "privacy.hotkey.get", "privacy.hotkey.set"]); }
         if can(Permission::DesktopHistory) && session.role() == ClientRole::Desktop {
+            methods.push("desktop.settings.capture.get");
+            if can(Permission::PrivacyWrite) { methods.push("desktop.settings.capture.set"); }
+            #[cfg(feature = "native-screen")]
+            if crate::screen::supported() {
+                methods.extend(["desktop.screen.begin", "desktop.screen.read", "desktop.screen.crop", "desktop.screen.cancel"]);
+                if self.actions.can_copy() { methods.push("desktop.screen.finish"); }
+            }
+            methods.extend(["desktop.ocr.recognize", "desktop.ocr.status", "desktop.ocr.engine"]);
+            methods.extend(["desktop.backup.preview", "desktop.backup.import", "desktop.backup.export"]);
+            methods.extend(["desktop.tools.catalog", "desktop.tools.classify", "desktop.tools.transform", "desktop.tools.qr"]);
+            if session.extended_methods {
+                methods.push("desktop.settings.view.set");
+                methods.push("desktop.settings.fonts");
+                methods.extend(["desktop.window.pin", "desktop.window.resize"]);
+                methods.push("desktop.emoji.favorites");
+                if self.actions.can_copy() { methods.push("desktop.window.emoji"); }
+                methods.extend(["desktop.history.manual.begin", "desktop.history.manual.finish"]);
+                if can(Permission::ClipboardPaste) && self.actions.can_paste() && self.actions.can_copy() {
+                    methods.extend(["desktop.window.target", "desktop.window.paste"]);
+                }
+                methods.push("desktop.platform.probe");
+                methods.push("desktop.profile.info");
+                if self.mode == HostMode::Service && can(Permission::ServiceManage) {
+                    methods.push("desktop.profile.move");
+                }
+                methods.push("desktop.appearance.background");
+                methods.push("desktop.applications.select");
+                methods.push("desktop.history.open");
+                methods.push("desktop.settings.preferences");
+                methods.push("desktop.quick.preferences");
+                methods.push("desktop.screen.preferences");
+                methods.extend(["desktop.themes.list", "desktop.themes.get", "desktop.themes.import", "desktop.themes.export", "desktop.themes.remove"]);
+                methods.extend(["desktop.queue.get", "desktop.queue.set", "desktop.queue.configure"]);
+                if self.actions.can_copy() && self.actions.can_paste() {
+                    methods.extend(["desktop.paste.target", "desktop.queue.next"]);
+                    if session.peer.is_some() { methods.extend(["desktop.quick.begin","desktop.quick.dismiss","desktop.quick.paste"]); }
+                }
+                methods.extend(["desktop.tags.counts", "desktop.tags.colors", "desktop.tags.color", "desktop.tags.delete_contents",
+                    "desktop.tags.delete_entries", "desktop.history.count"]);
+                methods.extend(["desktop.history.clear", "desktop.history.reorder", "desktop.tags.create", "desktop.tags.rename", "desktop.tags.remove"]);
+            }
             methods.extend(["desktop.history.page", "desktop.tags.page", "desktop.history.get", "desktop.history.summary", "desktop.history.mutate", "desktop.snapshot.read", "desktop.capture.begin", "desktop.capture.write", "desktop.capture.finish"]);
             if self.actions.can_copy() {methods.extend(["desktop.clipboard.copy", "desktop.surface.copy"]);}
             if can(Permission::PrivacyWrite) {methods.extend(["desktop.privacy.rules", "desktop.privacy.decision", "desktop.privacy.feedback", "desktop.privacy.remove_rule"]);}
@@ -293,8 +405,20 @@ impl Host {
         if request.method == Method::EventsSubscribe {
             return match self.subscribe(session, request.params) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) };
         }
+        // File IO and key derivation can take seconds. Keep privacy controls responsive.
+        if Self::independent_dispatch(request.method) {
+            return match self.route(session, request) {
+                Ok(value) => Response::success(id, value),
+                Err(code) => Response::failure(id, code),
+            };
+        }
         let Ok(_serial) = self.requests.lock() else { return Response::failure(id, WireErrorCode::Unavailable); };
         match self.route(session, request) { Ok(value) => Response::success(id, value), Err(code) => Response::failure(id, code) }
+    }
+    pub(crate) fn independent_dispatch(method: Method) -> bool {
+        matches!(method, Method::DesktopHistoryOpen | Method::DesktopApplicationsSelect | Method::DesktopAppearanceBackground | Method::DesktopSettingsFonts | Method::DesktopWindowEmoji | Method::DesktopEmojiFavorites |
+            Method::DesktopWindowPaste | Method::DesktopPlatformProbe | Method::DesktopQuickPaste | Method::DesktopQueueNext | Method::DesktopOcrRecognize |
+            Method::DesktopOcrEngine | Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview)
     }
     fn subscribe(&self, session: &Session, parameters: Value) -> Result<Value, WireErrorCode> {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
@@ -314,6 +438,13 @@ impl Host {
         if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
         self.synchronize_privacy()?;
         if self.is_stopping() && !matches!(request.method, Method::ServiceStatus | Method::Health | Method::ServiceStop | Method::ServiceHandoff) { return Err(WireErrorCode::Busy); }
+        // Keep another IPC writer from replacing the clipboard between copy and input.
+        let _delivery = if matches!(request.method, Method::DesktopWindowPaste | Method::DesktopQuickPaste | Method::DesktopQueueNext |
+            Method::DesktopClipboardCopy | Method::DesktopSurfaceCopy | Method::SurfaceCopy | Method::ClipboardCopy |
+            Method::SurfacePaste | Method::DesktopScreenFinish | Method::DesktopCaptureFinish) {
+            Some(self.delivery.try_lock().map_err(|_| WireErrorCode::Busy)?)
+        } else { None };
+        if _delivery.is_some() && self.is_stopping() { return Err(WireErrorCode::Busy); }
         let now = now_ms()?;
         match request.method {
             Method::Hello => Err(WireErrorCode::InvalidRequest),
@@ -369,12 +500,155 @@ impl Host {
                 result("PrivacyHotkey", PrivacyHotkey { hotkey })
             }
             Method::DesktopHistoryPage | Method::DesktopHistoryGet | Method::DesktopSnapshotRead => self.desktop(session, request.method, request.params),
+            Method::DesktopAppearanceBackground => {
+                let request: BackgroundParams = params(request.params)?;
+                self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+                let _reading = self.background_read.lock().map_err(unavailable)?;
+                self.read_background(session, request)
+            }
+            Method::DesktopProfileMove => {
+                let request: BackupPreviewParams = params(request.params)?;
+                self.move_installed_profile(session, request)
+            }
+            Method::DesktopProfileInfo => {
+                self.desktop_permission(session, self.instance_id())?;
+                let directory = self.directory.to_str().ok_or(WireErrorCode::Unavailable)?;
+                result("DesktopProfileInfo", DesktopProfileInfo {
+                    data_directory: directory.to_owned(),
+                    database_schema_version: dzc_core::api::DATABASE_SCHEMA_VERSION as u32,
+                })
+            }
+            Method::DesktopPlatformProbe => {
+                self.desktop_permission(session, self.instance_id())?;
+                result("DesktopPlatformReport", serde_json::json!({ "report": dzc_platform::runtime::session_capabilities() }))
+            }
+            Method::DesktopSettingsFonts => {
+                self.desktop_permission(session, self.instance_id())?;
+                let _scan = self.font_scan.try_lock().map_err(|_| WireErrorCode::Busy)?;
+                let fonts = self.actions.system_fonts();
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                crate::tools::bounded(serde_json::json!({ "fonts": fonts }))
+            }
+            Method::DesktopToolsCatalog | Method::DesktopToolsClassify | Method::DesktopToolsTransform | Method::DesktopToolsQr => {
+                self.desktop_permission(session, self.instance_id())?;
+                crate::tools::run(request.method, request.params)
+            }
+            Method::DesktopSettingsPreferences | Method::DesktopTagsCounts | Method::DesktopTagsColors | Method::DesktopHistoryCount =>
+                self.library_summary(session, request.method, request.params),
+            Method::DesktopTagsDeleteContents | Method::DesktopTagsDeleteEntries =>
+                self.delete_library_entries(session, request.method, request.params),
+            Method::DesktopTagsColor | Method::DesktopHistoryClear | Method::DesktopHistoryReorder | Method::DesktopTagsCreate
+            | Method::DesktopTagsRename | Method::DesktopTagsRemove => self.edit_library(session, request.method, request.params),
+            Method::DesktopBackupImport | Method::DesktopBackupExport | Method::DesktopBackupPreview =>
+                self.backup(session, request.method, request.params),
+            Method::DesktopThemesList | Method::DesktopThemesGet | Method::DesktopThemesImport |
+            Method::DesktopThemesExport | Method::DesktopThemesRemove => self.theme_request(session, request.method, request.params),
+            Method::DesktopSettingsCaptureGet => {
+                let input: LibraryStateParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                let settings = self.history.capture_settings_snapshot().map_err(unavailable)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                result("CaptureSettingValues", settings)
+            }
+            Method::DesktopSettingsCaptureSet => {
+                let input: CaptureSettingParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                session.require(Permission::PrivacyWrite)?;
+                self.history.update_capture_setting(&input.key, &input.value, input.expected_epoch).map_err(|error| match error.code {
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("capture_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopHistoryOpen => {
+                self.open_history_item(session, params(request.params)?)?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopApplicationsSelect => {
+                let input: ApplicationSelection = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                let _selection = self.application_selection.try_lock().map_err(|_| WireErrorCode::Busy)?;
+                if !input.value.is_empty() {
+                    let installed = dzc_platform::apps::scan_installed_apps().map_err(unavailable)?;
+                    if !installed.iter().any(|app| app.path == input.value) { return Err(WireErrorCode::InvalidRequest); }
+                }
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.set_default_application(&input.key, &input.value, input.expected_epoch).map_err(|e| match e.code {
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopSettingsViewSet => {
+                let input: ViewSettingParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.update_view_setting(&input.key, &input.value, input.expected_epoch).map_err(|error| match error.code {
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop |
+            Method::DesktopScreenFinish | Method::DesktopScreenCancel => {
+                #[cfg(feature = "native-screen")]
+                { self.screen_request(session, request.method, request.params) }
+                #[cfg(not(feature = "native-screen"))]
+                { Err(WireErrorCode::UnsupportedCapability) }
+            }
+            Method::DesktopScreenPreferences => {
+                self.desktop_permission(session, self.instance_id())?;
+                let (enabled, region, full) = self.history.screen_preferences().map_err(unavailable)?;
+                result("ScreenPreferences", ScreenPreferences { enabled, region, full })
+            }
+            Method::DesktopQuickPreferences => {
+                self.desktop_permission(session, self.instance_id())?;
+                let (enabled, hotkey) = self.history.quick_preferences().map_err(unavailable)?;
+                result("QuickPreferences", QuickPreferences { enabled, hotkey })
+            }
+            Method::DesktopQuickBegin | Method::DesktopQuickDismiss | Method::DesktopQuickPaste => self.quick_request(session, request.method, request.params),
+            Method::DesktopPasteTarget | Method::DesktopQueueGet | Method::DesktopQueueSet |
+            Method::DesktopQueueConfigure | Method::DesktopQueueNext => self.queue_request(session, request.method, request.params),
+            Method::DesktopOcrEngine => {
+                self.desktop_permission(session, self.instance_id())?;
+                result("OcrEngineInfo", crate::ocr::engine_info())
+            }
+            Method::DesktopOcrRecognize | Method::DesktopOcrStatus => {
+                let params: ManualOcrParams = params(request.params)?;
+                self.desktop_permission(session, &params.service_instance_id)?;
+                let (permit, output) = self.manual_ocr(request.method, params)?;
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                self.authorized_snapshot(session, &permit, &output)
+            }
             Method::DesktopHistorySummary => self.desktop_summary(session,request.params),
             Method::DesktopTagsPage => self.desktop_tag_page(session,request.params),
             Method::DesktopClipboardCopy => self.desktop_copy(session,request.params),
+            Method::DesktopEmojiFavorites => self.emoji_favorites(session, params(request.params)?),
+            Method::DesktopWindowEmoji => self.send_window_emoji(session, params(request.params)?),
+            Method::DesktopWindowTarget => self.remember_window_target(session),
+            Method::DesktopWindowResize => {
+                let input: WindowSizeParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.set_window_size(input.width, input.height, input.expected_epoch).map_err(privacy_error)?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopWindowPin => {
+                let input: WindowPinParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                self.history.set_window_pinned(input.pinned, input.expected_epoch).map_err(privacy_error)?;
+                result("OperationResult", OperationResult { performed: true })
+            }
+            Method::DesktopWindowPaste => self.paste_from_window(session, params(request.params)?),
             Method::DesktopHistoryMutate => self.desktop_mutate(session,request.params),
             Method::DesktopPrivacyRules|Method::DesktopPrivacyDecision|Method::DesktopPrivacyFeedback|Method::DesktopPrivacyRemoveRule=>self.desktop_policy(session,request.method,request.params),
-            Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish => self.upload(session, request.method, request.params),
+            Method::DesktopCaptureBegin | Method::DesktopCaptureWrite | Method::DesktopCaptureFinish
+            | Method::DesktopHistoryManualBegin | Method::DesktopHistoryManualFinish => self.upload(session, request.method, request.params),
             Method::SurfaceHistoryPage => self.surface_page(session, params(request.params)?),
             Method::DesktopSurfaceCopy => self.desktop_surface_copy(session, params(request.params)?),
             Method::HistoryList | Method::SurfaceHistoryList => {
@@ -424,7 +698,7 @@ impl Host {
                 } else { self.history.clipboard_payload_authorized(request_body.id, &permit, now).map_err(privacy_error)? };
                 self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?;
                 self.copy_payload(payload)?;
-                if request.method == Method::SurfacePaste { self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?; self.actions.paste()?; }
+                if request.method == Method::SurfacePaste { self.history.privacy().check_read(&permit, now_ms()?).map_err(privacy_error)?; self.actions.paste()?; self.play_feedback(dzc_platform::sound::Cue::Paste); }
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::SurfaceActivate | Method::SurfaceDismiss => {
@@ -532,11 +806,99 @@ pub(crate) mod tests {
     fn dispatch(host: &Host, session: &Session, method: Method, params: Value) -> Response {
         host.dispatch(session, Request { request_id: "synthetic-request".into(), method, params })
     }
+    #[test]
+    fn extended_catalog_is_negotiated_within_each_clients_schema_limit() {
+        let host = synthetic_host();
+        let grant = host.grants().issue_control(ClientRole::Desktop).unwrap();
+        for extended in [false, true] {
+            let mut hello = hello(ClientRole::Desktop);
+            hello.grant = Some(grant.token().into());
+            if extended { hello.capabilities.push("desktop.extended_methods".into()); }
+            let (session, _) = host.hello(hello).unwrap();
+            let result = dispatch(&host, &session, Method::Capabilities, serde_json::json!({})).result.unwrap();
+            let report: CapabilityReport = serde_json::from_value(result).unwrap();
+            assert_eq!(report.methods.iter().any(|name|name == "desktop.queue.get"), extended);
+            assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
+            assert!(report.methods.len() <= if extended {256} else {64});
+        }
+    }
+
+    #[test]
+    fn standalone_desktop_tools_use_shared_implementations_and_require_a_grant() {
+        let host = synthetic_host();
+        let (untrusted, _) = host.hello(hello(ClientRole::Desktop)).unwrap();
+        let grant = host.grants().issue_control(ClientRole::Desktop).unwrap();
+        let (desktop, _) = host.hello(HelloParams {
+            grant: Some(grant.token().into()), ..hello(ClientRole::Desktop)
+        }).unwrap();
+        for (method, input, schema) in [
+            (Method::DesktopSettingsFonts, serde_json::json!({}), "DesktopFontList"),
+            (Method::DesktopToolsCatalog, serde_json::json!({}), "ToolCatalog"),
+            (Method::DesktopToolsClassify, serde_json::json!({"text": "https://example.com"}), "ToolClassification"),
+            (Method::DesktopToolsTransform, serde_json::json!({"text": "Hello", "kind": "to_uppercase"}), "ToolText"),
+            (Method::DesktopToolsQr, serde_json::json!({"content": "Hello", "format": "png"}), "ToolText"),
+        ] {
+            let denied = dispatch(&host, &untrusted, method, input.clone());
+            assert_eq!(denied.error.unwrap().code, WireErrorCode::PermissionDenied);
+            let result = dispatch(&host, &desktop, method, input).result.unwrap();
+            wire::validate(schema, &result).unwrap();
+            match method {
+                Method::DesktopSettingsFonts => assert!(result["fonts"].is_array()),
+                Method::DesktopToolsCatalog => assert_eq!(result["transforms"].as_array().unwrap().len(), 17),
+                Method::DesktopToolsClassify => assert_eq!(result["kinds"], serde_json::json!(["url"])),
+                Method::DesktopToolsTransform => assert_eq!(result["text"], "HELLO"),
+                Method::DesktopToolsQr => assert!(result["text"].as_str().unwrap().starts_with("data:image/png;base64,iVBOR")),
+                _ => unreachable!(),
+            }
+        }
+    }
     fn insert(host: &Host, text: &str, tags: &[&str]) -> i64 {
         let entry: ClipboardEntry = serde_json::from_value(serde_json::json!({"id":0,"content_type":"text","content":text,
             "preview":text,"source_app":"fixture","timestamp":1,"is_pinned":false,"tags":tags})).unwrap();
         host.history.save(&entry, None).unwrap()
     }
+    #[test]
+    fn desktop_library_operations_bind_the_host_and_keep_session_and_database_consistent() {
+        let host = synthetic_host();
+        let grant = host.grants().issue_control(ClientRole::Desktop).unwrap();
+        let (desktop, _) = host.hello(HelloParams { grant: Some(grant.token().into()), ..hello(ClientRole::Desktop) }).unwrap();
+        let (untrusted, _) = host.hello(hello(ClientRole::Desktop)).unwrap();
+        let state = host.snapshot().unwrap();
+        let params = serde_json::json!({"service_instance_id":state.service_instance_id, "expected_epoch":state.privacy_epoch});
+        let mut create = params.clone();
+        create["name"] = "keep".into();
+        assert_eq!(dispatch(&host, &untrusted, Method::DesktopTagsCreate, create.clone()).error.unwrap().code, WireErrorCode::PermissionDenied);
+        assert!(dispatch(&host, &desktop, Method::DesktopTagsCreate, create.clone()).error.is_none());
+        let persistent = insert(&host, "preserved tagged text", &["keep"]);
+        insert(&host, "transient text", &[]);
+        let row = |id, tags: &[&str]| serde_json::from_value::<ClipboardEntry>(serde_json::json!({
+            "id":id,"content_type":"text","content":"RAM", "preview":"RAM", "source_app":"fixture", "timestamp":1,"is_pinned":false,"tags":tags
+        })).unwrap();
+        host.session.lock().unwrap().extend([row(-1,&["keep"]),row(-2,&[])]);
+        let mut rename = create.clone();
+        rename["new_name"] = "retained".into();
+        assert!(dispatch(&host, &desktop, Method::DesktopTagsRename, rename).error.is_none());
+        let mut stale = params.clone();
+        stale["expected_epoch"] = (state.privacy_epoch + 1).into();
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHistoryClear, stale).error.unwrap().code, WireErrorCode::PrivacyEpochChanged);
+        assert_eq!(host.history.get_count().unwrap(), 2);
+        assert!(dispatch(&host, &desktop, Method::DesktopHistoryClear, params.clone()).error.is_none());
+        assert_eq!(host.history.get_count().unwrap(), 1);
+        assert_eq!(host.history.get_entries_by_tag("retained").unwrap()[0].id, persistent);
+        {
+            let rows = host.session.lock().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].tags, ["retained"]);
+        }
+        create["name"] = "retained".into();
+        assert!(dispatch(&host, &desktop, Method::DesktopTagsRemove, create).error.is_none());
+        assert_eq!(host.history.get_count().unwrap(), 1);
+        assert!(host.session.lock().unwrap()[0].tags.is_empty());
+        let mut order = params;
+        order["orders"] = serde_json::json!([{"id":-1,"order":0}]);
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHistoryReorder, order).error.unwrap().code, WireErrorCode::InvalidRequest);
+    }
+
     #[test]
     fn core_visibility_applies_to_summaries_and_service_local_copy() {
         let host = synthetic_host();

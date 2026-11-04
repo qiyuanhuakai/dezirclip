@@ -563,6 +563,33 @@ pub async fn hide_region_select(app: AppHandle, session_token: Option<String>) -
     }).await.map_err(|error| error.to_string())?
 }
 
+async fn capture_host_display(client: &mut dzc_host::Client, cursor: Option<(i32, i32)>) -> Result<ScreenshotResult, String> {
+    use dzc_host::wire::*;
+    let state = client.hello.state.clone();
+    let image: ScreenImage = client.call(Method::DesktopScreenBegin, ScreenBeginParams {
+        service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch,
+        cursor: cursor.map(|(x, y)| ScreenPoint { x, y }),
+    }, "ScreenImage").await.map_err(|error| error.to_string())?;
+    if image.png_bytes == 0 || image.png_bytes > 160 * 1024 * 1024 { return Err("InvalidScreenshotSize".into()); }
+    let mut png = zeroize::Zeroizing::new(Vec::with_capacity(image.png_bytes as usize));
+    while png.len() < image.png_bytes as usize {
+        let chunk: ScreenChunk = client.call(Method::DesktopScreenRead, ScreenReadParams {
+            service_instance_id: state.service_instance_id.clone(), expected_epoch: state.privacy_epoch,
+            token: image.token.clone(), offset: png.len() as u32,
+        }, "ScreenChunk").await.map_err(|error| error.to_string())?;
+        let bytes = zeroize::Zeroizing::new(general_purpose::STANDARD.decode(chunk.data_base64).map_err(|_| "InvalidScreenshotChunk")?);
+        let next = png.len() + bytes.len();
+        if bytes.is_empty() || next != chunk.next_offset as usize || next > image.png_bytes as usize
+            || chunk.finished != (next == image.png_bytes as usize) { return Err("InvalidScreenshotChunk".into()); }
+        png.extend_from_slice(&bytes);
+    }
+    let result: ScreenFinishResult = client.call(Method::DesktopScreenFinish, ScreenSessionParams {
+        service_instance_id: state.service_instance_id, expected_epoch: state.privacy_epoch, token: image.token,
+    }, "ScreenFinishResult").await.map_err(|error| error.to_string())?;
+    if !result.copied { return Err("ScreenshotCopyFailed".into()); }
+    Ok(ScreenshotResult { width: image.width, height: image.height, png_bytes: std::mem::take(&mut *png) })
+}
+
 /// Capture the display the cursor is on as a PNG and broadcast a toast.
 ///
 /// This is the second half of a feature whose first half already existed:
@@ -578,10 +605,18 @@ pub async fn hide_region_select(app: AppHandle, session_token: Option<String>) -
 #[tauri::command]
 pub async fn capture_full_screen(app: AppHandle) -> Result<ScreenshotResult, String> {
     super::capability_cmd::require_desktop_interaction()?;
-    let ticket = crate::services::clipboard::generated_capture_ticket(&app).await?;
-    let result = screenshot::capture_full_screen(global_cursor(&app)).map_err(|e| e.to_string())?;
-    save_screenshot_to_history(&app, &result, ticket).await?;
-    copy_screenshot_to_clipboard(&result)?;
+    let cursor = global_cursor(&app);
+    let host = app.state::<crate::app::ipc_host::DesktopHost>();
+    let result = if let Some(mut client) = host.screen_client().await? {
+        capture_host_display(&mut client, cursor).await?
+    } else {
+        // Earlier compatible services accept generated uploads but cannot acquire a display.
+        let ticket = crate::services::clipboard::generated_capture_ticket(&app).await?;
+        let result = screenshot::capture_full_screen(cursor).map_err(|error| error.to_string())?;
+        save_screenshot_to_history(&app, &result, ticket).await?;
+        copy_screenshot_to_clipboard(&result)?;
+        result
+    };
     // The region path does not toast: the mask appearing and then disappearing
     // is its own confirmation, and the region hotkey usually fires from another
     // application where the main window is not even on screen to show it. This
@@ -680,14 +715,14 @@ async fn save_screenshot_to_history(app: &AppHandle, result: &ScreenshotResult, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::screenshot::screenshot_smoke_enabled;
+    fn screenshot_smoke_enabled() -> bool { std::env::var_os("DEZIRCLIP_RUN_SCREENSHOT_SMOKE_TESTS").is_some() }
 
     const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
     fn frozen_session(token: &str) -> RegionCapture {
         let rect = MonitorRect { x: -1, y: 0, width: 1, height: 1, is_primary: false };
         RegionCapture { token: token.into(), generation: 0, rect,
-            frame: FrozenScreenFrame::from_pixels(rect, xcap::image::RgbaImage::new(1, 1)).unwrap(),
+            frame: FrozenScreenFrame::from_pixels(rect, image::RgbaImage::new(1, 1)).unwrap(),
             preview: Arc::new(zeroize::Zeroizing::new(Vec::new())),
             ticket: None, host_instance: "synthetic-host".into(), privacy_epoch: 7, presented: false }
     }

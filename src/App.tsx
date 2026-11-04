@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { invoke } from "./shared/lib/desktopInvoke";
+import { emit, listen } from "@tauri-apps/api/event";
 import ToastContainer from "./shared/components/ToastContainer";
 import ConfirmDialog from "./shared/components/ConfirmDialog";
 import ProgressToast from "./features/shared/components/ProgressToast";
@@ -27,7 +27,6 @@ import { useSettingsSync } from "./shared/hooks/useSettingsSync";
 import { useTagColors } from "./shared/hooks/useTagColors";
 import { useClipboardEvents } from "./shared/hooks/useClipboardEvents";
 import { useClipboardActions } from "./shared/hooks/useClipboardActions";
-import { useSoundEffects } from "./shared/hooks/useSoundEffects";
 import { useWindowPinnedListener } from "./shared/hooks/useWindowPinnedListener";
 import { useCustomBackground } from "./shared/hooks/useCustomBackground";
 import { useDragDegradation } from "./shared/hooks/useDragDegradation";
@@ -52,7 +51,7 @@ import { useOverlays } from "./shared/hooks/useOverlays";
 import { applyHistoryUpdate } from "./shared/lib/historyInsert";
 import QrCodeDialog from "./features/clipboard/components/QrCodeDialog";
 import { usePrivacySession } from "./shared/hooks/usePrivacySession";
-import { usePreviewPreferences } from "./shared/hooks/usePreviewPreferences";
+import { PreviewOpacityContext, usePreviewPreferences } from "./shared/hooks/usePreviewPreferences";
 import { beginPrivacyAccess, privacyListGeneration, privacyRevealEpoch, subscribePrivacyInvalidation } from "./shared/lib/privacySession";
 import { concealSensitiveEntry, isSensitiveEntry } from "./shared/lib/privacyRuntime";
 import { clearRichTextSnapshots } from "./shared/lib/richTextSnapshot";
@@ -198,11 +197,9 @@ const App = () => {
     setHasMore,
     currentOffset,
     setCurrentOffset,
-    soundEnabled,
     setSoundEnabled,
     soundVolume,
     setSoundVolume,
-    pasteSoundEnabled,
     setPasteSoundEnabled,
     setPasteMethod,
     typeFilter,
@@ -357,15 +354,16 @@ const App = () => {
   }), [setHistory, setRevealedIds, setEditingTagsId, setTagInput, closeConfirm, editingTagsId, history, revealedIds]);
   // Search changes have their own trigger; this refresh belongs to privacy/resume transitions.
   const initialPage = useRef({ fetchHistory, needed: true });
+  const refreshAfterResume = useRef(false);
   initialPage.current = { fetchHistory, needed: appliedSearch !== debouncedSearch };
   const listGeneration = privacyListGeneration();
   useEffect(() => {
-    if (historyViewActive && privacyState.phase === "ready" && mainResume.phase === "idle" && initialPage.current.needed) {
+    if (historyViewActive && privacyState.phase === "ready" && mainResume.phase === "idle" && (initialPage.current.needed || refreshAfterResume.current)) {
+      refreshAfterResume.current = false;
       void initialPage.current.fetchHistory(true);
     }
   }, [historyViewActive, privacyState.phase, listGeneration, mainResume.phase]);
 
-  useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
   useDragDegradation();
 
@@ -507,6 +505,9 @@ const App = () => {
   useMainWindowPaintSignal(settingsLoaded);
 
   useCustomBackground({ customBackground, customBackgroundOpacity, theme,
+    privacyGeneration: import.meta.env.MODE === "mygo"
+      ? privacyState.phase === "ready" && privacyState.snapshot && !privacyState.pending ? listGeneration : null
+      : undefined,
     onError: () => pushToast(t("custom_background_load_failed")) });
 
   useClipboardEvents({
@@ -517,12 +518,17 @@ const App = () => {
       setHistory(prev => prev.filter(item => item.id !== id));
     },
     onChanged: () => {
+      if (mainResumePending) {
+        refreshAfterResume.current = true;
+        return;
+      }
       fetchHistory(true);
     }
   });
 
   useEffect(() => {
-    fetchHistory();
+    // A fresh MyGo window loads its first page during the guarded visible restore.
+    if (import.meta.env.MODE !== "mygo") fetchHistory();
   }, []);
 
   useToastListener({ pushToast, t });
@@ -558,6 +564,15 @@ const App = () => {
   const saveAppSetting = useCallback(async (type: string, path: string) => {
     const key = `app.${type}`;
     if (appSettingsRef.current[key] === path) return;
+    if (["text", "rich_text", "image", "video", "code", "url"].includes(type)) {
+      try {
+        await invoke("save_setting", { key, value: path });
+        setAppSettings(prev => ({ ...prev, [key]: path }));
+      } catch (error) {
+        pushToast(t("common_error") + " · " + String(error));
+      }
+      return;
+    }
     const backgroundGeneration = type === "custom_background" ? ++backgroundSaveGeneration.current : 0;
     if (type === "custom_background") {
       appSettingsRef.current = { ...appSettingsRef.current, [key]: path };
@@ -578,6 +593,7 @@ const App = () => {
         const request = backgroundSaveQueue.current.then(() => invoke<void>("save_setting", { key, value: path }));
         backgroundSaveQueue.current = request.catch(() => undefined);
         await request;
+        if (import.meta.env.MODE === "mygo") await emit("custom-background-changed", path);
       } else {
         await invoke("save_setting", { key, value: path });
       }
@@ -656,6 +672,7 @@ const App = () => {
   const { copyToClipboard, openContent, deleteEntry, togglePin, handleUpdateTags } =
     useClipboardActions({
       t,
+      isWindowPinned,
       pushToast,
       deleteAfterPaste,
       moveToTopAfterPaste,
@@ -878,6 +895,7 @@ const App = () => {
   };
 
   return (
+    <PreviewOpacityContext value={previewPreferences.opacity}>
     <div
       className="app-container"
     >
@@ -927,6 +945,7 @@ const App = () => {
       )}
 
     </div >
+    </PreviewOpacityContext>
   );
 }
 

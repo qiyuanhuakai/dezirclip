@@ -80,3 +80,15 @@ impl From<dzc_core::api::CoreError> for AppError {
         AppError::Internal(error.to_string())
     }
 }
+
+impl From<dzc_core::api::MigrationError> for AppError {
+    fn from(error: dzc_core::api::MigrationError) -> Self {
+        use dzc_core::api::MigrationError;
+        match error {
+            MigrationError::Database(msg) => Self::Database(msg),
+            MigrationError::Io(msg) => Self::IO(msg),
+            MigrationError::Validation(msg) => Self::Validation(msg),
+            MigrationError::Internal(msg) => Self::Internal(msg),
+        }
+    }
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 import { listen } from "@tauri-apps/api/event";
 import type { Locale } from "../types";
 import { getCustomThemes, loadCustomThemesFromSettings, replaceCustomThemes } from "../lib/themeCatalog";

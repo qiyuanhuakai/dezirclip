@@ -6,6 +6,49 @@ import "encoding/json"
 const MaxFrameBytes = 1048576
 const MaxJSONDepth = 64
 
+type BackupPreviewParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+}
+
+type BackupImportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+    Mode string `json:"mode"`
+    Passphrase *string `json:"passphrase,omitempty"`
+}
+
+type BackupExportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+    Format string `json:"format"`
+    Passphrase *string `json:"passphrase,omitempty"`
+}
+
+type BackupPreviewRow struct {
+    Content string `json:"content"`
+}
+
+type BackupPreview struct {
+    Entries []BackupPreviewRow `json:"entries"`
+}
+
+type BackupImportResult struct {
+    Imported uint64 `json:"imported"`
+    Skipped uint64 `json:"skipped"`
+    Mode string `json:"mode"`
+}
+
+type BackupExportResult struct {
+    Count uint64 `json:"count"`
+    Format string `json:"format"`
+    Encrypted bool `json:"encrypted"`
+    Path string `json:"path"`
+}
+
 type Permission string
 const (
     PermissionHistoryRead Permission = "history_read"
@@ -23,6 +66,10 @@ const (
     HostModeEmbedded HostMode = "embedded"
     HostModeService HostMode = "service"
 )
+
+type DesktopPlatformReport struct {
+    Report json.RawMessage `json:"report"`
+}
 
 type CapabilityReport struct {
     Methods []string `json:"methods"`
@@ -50,6 +97,40 @@ type OperationResult struct {
 type SurfaceActionParams struct {
     EntryId *int64 `json:"entry_id,omitempty"`
     ServiceInstanceId *string `json:"service_instance_id,omitempty"`
+}
+
+type ExternalOpenParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id int64 `json:"id"`
+    Reveal bool `json:"reveal"`
+}
+
+type ApplicationSelection struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
+}
+
+type BackgroundParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    ExpectedPath string `json:"expected_path"`
+}
+
+type BackgroundResource struct {
+    Src *string `json:"src,omitempty"`
+}
+
+type ProfileMoveResult struct {
+    Moved bool `json:"moved"`
+    ServiceStopped bool `json:"service_stopped"`
+}
+
+type DesktopProfileInfo struct {
+    DataDirectory string `json:"data_directory"`
+    DatabaseSchemaVersion uint32 `json:"database_schema_version"`
 }
 
 type DesktopPageParams struct {
@@ -157,6 +238,26 @@ type CaptureFinishParams struct {
     Paste *bool `json:"paste,omitempty"`
 }
 
+type EmojiFavoritesParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path *string `json:"path,omitempty"`
+    Mutation *string `json:"mutation,omitempty"`
+}
+
+type EmojiFavoritesResult struct {
+    Paths []string `json:"paths"`
+    Preview *string `json:"preview,omitempty"`
+}
+
+type WindowEmojiParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Kind string `json:"kind"`
+    Content string `json:"content"`
+    Paste bool `json:"paste"`
+}
+
 type GeneratedBody struct {
     Kind string `json:"kind"`
     Text string `json:"text"`
@@ -173,6 +274,18 @@ type DesktopMutationParams struct {
     Tags *[]string `json:"tags,omitempty"`
     Content *string `json:"content,omitempty"`
     ConfirmPersistence *bool `json:"confirm_persistence,omitempty"`
+}
+
+type ManualEntryParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    ContentType string `json:"content_type"`
+    Tags []string `json:"tags"`
+    ConfirmPersistence bool `json:"confirm_persistence"`
+}
+
+type ManualEntryFinish struct {
+    CaptureId string `json:"capture_id"`
 }
 
 type DesktopMutationResult struct {
@@ -250,7 +363,67 @@ const (
     MethodDesktopCaptureWrite Method = "desktop.capture.write"
     MethodDesktopCaptureFinish Method = "desktop.capture.finish"
     MethodDesktopHistorySummary Method = "desktop.history.summary"
+    MethodDesktopPlatformProbe Method = "desktop.platform.probe"
+    MethodDesktopProfileInfo Method = "desktop.profile.info"
+    MethodDesktopProfileMove Method = "desktop.profile.move"
+    MethodDesktopAppearanceBackground Method = "desktop.appearance.background"
+    MethodDesktopHistoryOpen Method = "desktop.history.open"
+    MethodDesktopApplicationsSelect Method = "desktop.applications.select"
+    MethodDesktopWindowTarget Method = "desktop.window.target"
+    MethodDesktopWindowPin Method = "desktop.window.pin"
+    MethodDesktopWindowResize Method = "desktop.window.resize"
+    MethodDesktopToolsCatalog Method = "desktop.tools.catalog"
+    MethodDesktopSettingsFonts Method = "desktop.settings.fonts"
+    MethodDesktopToolsClassify Method = "desktop.tools.classify"
+    MethodDesktopToolsTransform Method = "desktop.tools.transform"
+    MethodDesktopToolsQr Method = "desktop.tools.qr"
+    MethodDesktopBackupPreview Method = "desktop.backup.preview"
+    MethodDesktopBackupImport Method = "desktop.backup.import"
+    MethodDesktopBackupExport Method = "desktop.backup.export"
+    MethodDesktopOcrRecognize Method = "desktop.ocr.recognize"
+    MethodDesktopOcrStatus Method = "desktop.ocr.status"
+    MethodDesktopOcrEngine Method = "desktop.ocr.engine"
+    MethodDesktopSettingsPreferences Method = "desktop.settings.preferences"
+    MethodDesktopSettingsViewSet Method = "desktop.settings.view.set"
+    MethodDesktopSettingsCaptureGet Method = "desktop.settings.capture.get"
+    MethodDesktopSettingsCaptureSet Method = "desktop.settings.capture.set"
+    MethodDesktopScreenBegin Method = "desktop.screen.begin"
+    MethodDesktopScreenRead Method = "desktop.screen.read"
+    MethodDesktopScreenCrop Method = "desktop.screen.crop"
+    MethodDesktopScreenFinish Method = "desktop.screen.finish"
+    MethodDesktopScreenCancel Method = "desktop.screen.cancel"
+    MethodDesktopTagsCounts Method = "desktop.tags.counts"
+    MethodDesktopTagsColors Method = "desktop.tags.colors"
+    MethodDesktopTagsColor Method = "desktop.tags.color"
+    MethodDesktopTagsDeleteContents Method = "desktop.tags.delete_contents"
+    MethodDesktopTagsDeleteEntries Method = "desktop.tags.delete_entries"
+    MethodDesktopHistoryCount Method = "desktop.history.count"
+    MethodDesktopPasteTarget Method = "desktop.paste.target"
+    MethodDesktopQueueGet Method = "desktop.queue.get"
+    MethodDesktopQueueSet Method = "desktop.queue.set"
+    MethodDesktopQueueNext Method = "desktop.queue.next"
+    MethodDesktopQueueConfigure Method = "desktop.queue.configure"
+    MethodDesktopScreenPreferences Method = "desktop.screen.preferences"
+    MethodDesktopQuickPreferences Method = "desktop.quick.preferences"
+    MethodDesktopQuickBegin Method = "desktop.quick.begin"
+    MethodDesktopQuickDismiss Method = "desktop.quick.dismiss"
+    MethodDesktopQuickPaste Method = "desktop.quick.paste"
+    MethodDesktopThemesList Method = "desktop.themes.list"
+    MethodDesktopThemesGet Method = "desktop.themes.get"
+    MethodDesktopThemesImport Method = "desktop.themes.import"
+    MethodDesktopThemesExport Method = "desktop.themes.export"
+    MethodDesktopThemesRemove Method = "desktop.themes.remove"
+    MethodDesktopHistoryClear Method = "desktop.history.clear"
+    MethodDesktopHistoryReorder Method = "desktop.history.reorder"
+    MethodDesktopTagsCreate Method = "desktop.tags.create"
+    MethodDesktopTagsRename Method = "desktop.tags.rename"
+    MethodDesktopTagsRemove Method = "desktop.tags.remove"
     MethodDesktopHistoryMutate Method = "desktop.history.mutate"
+    MethodDesktopHistoryManualBegin Method = "desktop.history.manual.begin"
+    MethodDesktopHistoryManualFinish Method = "desktop.history.manual.finish"
+    MethodDesktopWindowPaste Method = "desktop.window.paste"
+    MethodDesktopWindowEmoji Method = "desktop.window.emoji"
+    MethodDesktopEmojiFavorites Method = "desktop.emoji.favorites"
     MethodDesktopClipboardCopy Method = "desktop.clipboard.copy"
     MethodDesktopPrivacyRules Method = "desktop.privacy.rules"
     MethodDesktopPrivacyDecision Method = "desktop.privacy.decision"
@@ -425,6 +598,85 @@ type EntryResult struct {
     Truncated bool `json:"truncated"`
 }
 
+type LibraryStateParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+}
+
+type LibraryTagParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+}
+
+type LibraryRenameParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+    NewName string `json:"new_name"`
+}
+
+type LibraryPinOrder struct {
+    Id int64 `json:"id"`
+    Order int64 `json:"order"`
+}
+
+type LibraryOrderParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Orders []LibraryPinOrder `json:"orders"`
+}
+
+type LibraryColorParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+    Color *string `json:"color,omitempty"`
+}
+
+type LibraryTagBatchParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Name string `json:"name"`
+    Scope string `json:"scope"`
+    Ids []int64 `json:"ids"`
+    Query *string `json:"query,omitempty"`
+}
+
+type LibraryDeleted struct {
+    DeletedCount uint64 `json:"deleted_count"`
+    CleanupFailed bool `json:"cleanup_failed"`
+}
+
+type LibraryCount struct {
+    Count uint64 `json:"count"`
+}
+
+type LibraryCounts struct {
+    Values json.RawMessage `json:"values"`
+}
+
+type LibraryColors struct {
+    Values json.RawMessage `json:"values"`
+}
+
+type ManualOcrParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id int64 `json:"id"`
+    Reveal bool `json:"reveal"`
+}
+
+type ManualOcrText struct {
+    Status string `json:"status"`
+    Text *string `json:"text,omitempty"`
+}
+
+type OcrEngineInfo struct {
+    Available bool `json:"available"`
+    EngineName string `json:"engine_name"`
+}
+
 type DesktopPolicyParams struct {
     ServiceInstanceId string `json:"service_instance_id"`
     ExpectedEpoch uint64 `json:"expected_epoch"`
@@ -474,6 +726,177 @@ type PrivacyState struct {
 type PrivacySetParams struct {
     Active bool `json:"active"`
     DurationMs *uint64 `json:"duration_ms,omitempty"`
+}
+
+type QueueTarget struct {
+    Windows *WindowsPasteTarget `json:"windows,omitempty"`
+    X11 *uint32 `json:"x11,omitempty"`
+}
+
+type QueuePreferences struct {
+    Sequential bool `json:"sequential"`
+    DeleteAfterPaste bool `json:"delete_after_paste"`
+    PasteMethod string `json:"paste_method"`
+}
+
+type QueueState struct {
+    Ids []int64 `json:"ids"`
+    Revision string `json:"revision"`
+    Preferences QueuePreferences `json:"preferences"`
+}
+
+type QueueReplaceParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Ids []int64 `json:"ids"`
+}
+
+type QueueNextParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    ExpectedRevision string `json:"expected_revision"`
+    Target QueueTarget `json:"target"`
+}
+
+type QueueStepResult struct {
+    Status string `json:"status"`
+    Remaining uint32 `json:"remaining"`
+    Id *int64 `json:"id,omitempty"`
+}
+
+type QueueSettingParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
+}
+
+type QuickTicket struct {
+    Token string `json:"token"`
+    State RuntimeState `json:"state"`
+}
+
+type QuickDismissParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    Restore bool `json:"restore"`
+}
+
+type QuickPasteParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    Id int64 `json:"id"`
+    ExpectedHistoryRevision uint64 `json:"expected_history_revision"`
+}
+
+type QuickPreferences struct {
+    Enabled bool `json:"enabled"`
+    Hotkey string `json:"hotkey"`
+}
+
+type ScreenPoint struct {
+    X int64 `json:"x"`
+    Y int64 `json:"y"`
+}
+
+type ScreenBeginParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Cursor *ScreenPoint `json:"cursor,omitempty"`
+}
+
+type ScreenImage struct {
+    Token string `json:"token"`
+    X int64 `json:"x"`
+    Y int64 `json:"y"`
+    Width uint32 `json:"width"`
+    Height uint32 `json:"height"`
+    PngBytes uint32 `json:"png_bytes"`
+}
+
+type ScreenSessionParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+}
+
+type ScreenReadParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    Offset uint32 `json:"offset"`
+}
+
+type ScreenCropParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Token string `json:"token"`
+    X int64 `json:"x"`
+    Y int64 `json:"y"`
+    Width uint32 `json:"width"`
+    Height uint32 `json:"height"`
+}
+
+type ScreenChunk struct {
+    DataBase64 string `json:"data_base64"`
+    NextOffset uint32 `json:"next_offset"`
+    Finished bool `json:"finished"`
+}
+
+type ScreenFinishResult struct {
+    Copied bool `json:"copied"`
+    Recorded bool `json:"recorded"`
+}
+
+type ScreenPreferences struct {
+    Enabled bool `json:"enabled"`
+    Region string `json:"region"`
+    Full string `json:"full"`
+}
+
+type ViewSettingParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
+}
+
+type DesktopPreferences struct {
+    Values json.RawMessage `json:"values"`
+}
+
+type WindowSizeParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Width uint32 `json:"width"`
+    Height uint32 `json:"height"`
+}
+
+type WindowPinParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Pinned bool `json:"pinned"`
+}
+
+type CaptureSettingParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Key string `json:"key"`
+    Value string `json:"value"`
+}
+
+type CaptureSettingValues struct {
+    Persistent bool `json:"persistent"`
+    Deduplicate bool `json:"deduplicate"`
+    CaptureFiles bool `json:"capture_files"`
+    CaptureRichText bool `json:"capture_rich_text"`
+    OcrEnabled bool `json:"ocr_enabled"`
+    PrivacyProtection bool `json:"privacy_protection"`
+    PrivacyKinds []string `json:"privacy_kinds"`
+    PrivacyCustomRules []string `json:"privacy_custom_rules"`
+    ExcludedSourceApps []string `json:"excluded_source_apps"`
 }
 
 type SurfaceBuildIdentity struct {
@@ -627,4 +1050,89 @@ type SurfaceControlMessage struct {
 type DesktopSurfaceCopyParams struct {
     EntryId int64 `json:"entry_id"`
     State RuntimeState `json:"state"`
+}
+
+type ThemeIdParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Id string `json:"id"`
+}
+
+type ThemeImportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+}
+
+type ThemeExportParams struct {
+    ServiceInstanceId string `json:"service_instance_id"`
+    ExpectedEpoch uint64 `json:"expected_epoch"`
+    Path string `json:"path"`
+    Id string `json:"id"`
+}
+
+type ThemeIndex struct {
+    Ids []string `json:"ids"`
+}
+
+type ThemeRemoved struct {
+    ActiveReset bool `json:"active_reset"`
+}
+
+type DesktopThemePackage struct {
+    Id string `json:"id"`
+    Version uint32 `json:"version"`
+    Format string `json:"format"`
+    Base string `json:"base"`
+    Name string `json:"name"`
+    Author *string `json:"author,omitempty"`
+    Description *string `json:"description,omitempty"`
+    Css string `json:"css"`
+}
+
+type DesktopFont struct {
+    Family string `json:"family"`
+    IsMono bool `json:"is_mono"`
+    Path string `json:"path"`
+}
+
+type DesktopFontList struct {
+    Fonts []DesktopFont `json:"fonts"`
+}
+
+type ToolCatalogParams struct {
+}
+
+type ToolClassifyParams struct {
+    Text string `json:"text"`
+}
+
+type ToolTransformParams struct {
+    Text string `json:"text"`
+    Kind string `json:"kind"`
+}
+
+type ToolQrParams struct {
+    Content string `json:"content"`
+    Format string `json:"format"`
+    SizePx *uint32 `json:"size_px,omitempty"`
+}
+
+type ToolTransformKind struct {
+    Id string `json:"id"`
+    LabelZh string `json:"label_zh"`
+    LabelEn string `json:"label_en"`
+}
+
+type ToolCatalog struct {
+    ContentKinds []string `json:"content_kinds"`
+    Transforms []ToolTransformKind `json:"transforms"`
+}
+
+type ToolClassification struct {
+    Kinds []string `json:"kinds"`
+}
+
+type ToolText struct {
+    Text string `json:"text"`
 }

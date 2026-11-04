@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
 
 /** The 11 content kinds matching Task 27's backend definition */
 export const CONTENT_KINDS = [

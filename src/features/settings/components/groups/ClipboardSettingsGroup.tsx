@@ -1,7 +1,8 @@
 import NativeFeatureBoundary from "../NativeFeatureBoundary";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ComponentType, CSSProperties, ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
+import { refreshPrivacyState } from "../../../../shared/lib/privacySession";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import ThemedSelect from "../ThemedSelect";
@@ -125,6 +126,44 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
         props.setPasteMethod(val);
         invoke("save_setting", { key: 'app.paste_method', value: val }).catch(console.error);
     };
+    const [rulesDraft, setRulesDraft] = useState<string | null>(null);
+    const [rulesSaveFailed, setRulesSaveFailed] = useState(false);
+    const pendingRules = useRef<string | null>(null);
+    const editingRules = useRef(false);
+    const savingRules = useRef(false);
+    const rulesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flushRules = async () => {
+        if (savingRules.current) return;
+        savingRules.current = true;
+        try {
+            while (pendingRules.current !== null && rulesTimer.current === null) {
+                const rules: string = pendingRules.current;
+                if (import.meta.env.MODE === "mygo") await refreshPrivacyState();
+                await invoke("set_privacy_protection_custom_rules", { rules });
+                if (pendingRules.current === rules) {
+                    pendingRules.current = null;
+                    props.setPrivacyProtectionCustomRules(rules);
+                    if (!editingRules.current) setRulesDraft(null);
+                }
+            }
+        } catch {
+            setRulesSaveFailed(true);
+        } finally {
+            savingRules.current = false;
+        }
+    };
+
+    const saveRules = (value: string) => {
+        pendingRules.current = value;
+        setRulesDraft(value);
+        setRulesSaveFailed(false);
+        if (rulesTimer.current !== null) clearTimeout(rulesTimer.current);
+        rulesTimer.current = setTimeout(() => {
+            rulesTimer.current = null;
+            void flushRules();
+        }, 250);
+    };
+
     const [registryWinVChanging, setRegistryWinVChanging] = useState(false);
     const [persistentLimitDraft, setPersistentLimitDraft] = useState(
         props.persistentLimit.toString()
@@ -181,19 +220,34 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
         }
     };
 
-    const commitPersistentLimit = (rawValue?: string) => {
-        const source = rawValue ?? persistentLimitDraft;
-        const parsed = parseInt(source, 10);
+    const [limitSaving, setLimitSaving] = useState(false);
+    const [limitError, setLimitError] = useState("");
+    const saveLimit = async (key: "persistent_limit" | "persistent_limit_enabled", value: string) => {
+        setLimitSaving(true);
+        setLimitError("");
+        try {
+            await invoke("save_setting", { key: "app." + key, value });
+            if (key === "persistent_limit_enabled") props.setPersistentLimitEnabled(value === "true");
+            else {
+                props.setPersistentLimit(Number(value));
+                setPersistentLimitDraft(value);
+            }
+        } catch (error) {
+            setLimitError(String(error));
+            setPersistentLimitDraft(String(props.persistentLimit));
+        } finally {
+            setLimitSaving(false);
+        }
+    };
+    const commitPersistentLimit = () => {
+        const parsed = Number.parseInt(persistentLimitDraft, 10);
         if (!Number.isFinite(parsed)) {
-            setPersistentLimitDraft(props.persistentLimit.toString());
+            setPersistentLimitDraft(String(props.persistentLimit));
             return;
         }
-        const clamped = Math.max(50, Math.min(99999, parsed));
-        props.setPersistentLimit(clamped);
-        props.saveAppSetting('persistent_limit', clamped.toString());
-        if (clamped.toString() !== source) {
-            setPersistentLimitDraft(clamped.toString());
-        }
+        const value = Math.max(50, Math.min(99999, parsed));
+        if (value === props.persistentLimit) setPersistentLimitDraft(String(value));
+        else void saveLimit("persistent_limit", String(value));
     };
 
     return (
@@ -214,6 +268,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 className="cb"
                                 type="checkbox"
                                 checked={props.persistent}
+                                aria-label={props.t('persistent_storage')}
                                 onChange={(e) => props.setPersistent(e.target.checked)}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -231,14 +286,14 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         className="cb"
                                         type="checkbox"
                                         checked={props.persistentLimitEnabled}
-                                        onChange={(e) => {
-                                            props.setPersistentLimitEnabled(e.target.checked);
-                                            props.saveAppSetting('persistent_limit_enabled', e.target.checked.toString());
-                                        }}
+                                        aria-label={props.t('persistent_limit_enabled')}
+                                        disabled={limitSaving}
+                                        onChange={(e) => void saveLimit("persistent_limit_enabled", String(e.target.checked))}
                                     />
                                     <div className="toggle"><div className="left" /><div className="right" /></div>
                                 </label>
                             </div>
+                            {limitError && <span role="alert">{props.t("common_error")} · {limitError}</span>}
                             {props.persistentLimitEnabled && (
                                 <div className="setting-item">
                                     <props.LabelWithHint
@@ -250,6 +305,8 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         type="text"
                                         inputMode="numeric"
                                         pattern="[0-9]*"
+                                        aria-label={props.t('persistent_limit')}
+                                        disabled={limitSaving}
                                         value={persistentLimitDraft}
                                         onFocus={(e) => {
                                             e.target.select();
@@ -269,7 +326,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         }}
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
-                                                commitPersistentLimit(e.currentTarget.value);
                                                 e.currentTarget.blur();
                                             }
                                         }}
@@ -335,6 +391,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 className="cb"
                                 type="checkbox"
                                 checked={props.richTextSnapshotPreview}
+                                aria-label={props.t('rich_text_snapshot_preview')}
                                 onChange={(e) => {
                                     const val = e.target.checked;
                                     props.setRichTextSnapshotPreview(val);
@@ -357,6 +414,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 inputMode="numeric"
                                 pattern="[0-9]*"
                                 value={snapshotCacheLimitDraft}
+                                aria-label={props.t('rich_text_snapshot_cache_limit')}
                                 onFocus={(e) => e.target.select()}
                                 onChange={(e) => {
                                     const next = e.target.value;
@@ -756,15 +814,31 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <textarea
                                 className="search-input"
                                 style={{ width: 'calc(100% - 30px)', maxWidth: '100%', minHeight: '80px', padding: '8px', borderRadius: '0', marginLeft: '30px', boxSizing: 'border-box' }}
+                                aria-label={props.t("privacy_protection_custom_rules")}
                                 placeholder={props.t('privacy_protection_custom_rules_placeholder')}
-                                value={props.privacyProtectionCustomRules}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    props.setPrivacyProtectionCustomRules(val);
-                                    invoke('set_privacy_protection_custom_rules', { rules: val }).catch(console.error);
+                                value={rulesDraft ?? props.privacyProtectionCustomRules}
+                                onFocus={() => {
+                                    editingRules.current = true;
+                                    if (import.meta.env.MODE !== "mygo") void invoke("focus_clipboard_window").catch(console.error);
                                 }}
+                                onBlur={() => {
+                                    editingRules.current = false;
+                                    if (rulesTimer.current !== null) {
+                                        clearTimeout(rulesTimer.current);
+                                        rulesTimer.current = null;
+                                        void flushRules();
+                                    }
+                                    if (pendingRules.current === null) setRulesDraft(null);
+                                }}
+                                onChange={e => { void saveRules(e.target.value); }}
                             />
+                        )}
+                        {rulesSaveFailed && rulesDraft !== null && (
+                            <p role="alert">{props.t("privacy_rules_save_failed")}{" "}
+                                <button type="button" className="setting-btn" onClick={() => { void saveRules(rulesDraft); }}>
+                                    {props.t("common_retry")}
+                                </button>
+                            </p>
                         )}
                     </div>
 

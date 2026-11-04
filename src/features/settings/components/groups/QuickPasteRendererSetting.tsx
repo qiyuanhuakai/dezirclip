@@ -1,14 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../../../shared/lib/desktopInvoke";
 import { emit } from "@tauri-apps/api/event";
 import ThemedSelect from "../ThemedSelect";
 
 type Availability = "checking" | "installed" | "missing" | "failed";
 
-export default function QuickPasteRendererSetting({ t, renderer }: {
+interface RendererProps {
     t: (key: string) => string;
     renderer: string;
-}) {
+}
+
+export default function QuickPasteRendererSetting(props: RendererProps) {
+    if (import.meta.env.MODE === "mygo") {
+        return <div className="setting-item quick-paste-renderer-setting">
+            <div className="item-label-group"><span className="item-label">{props.t("quick_paste_renderer")}</span></div>
+            <span>MyGo Native</span>
+        </div>;
+    }
+    return <SelectableRenderer {...props} />;
+}
+
+function SelectableRenderer({ t, renderer }: RendererProps) {
     const [value, setValue] = useState(renderer === "mygo" ? "mygo" : "tauri");
     const [saving, setSaving] = useState(false);
     const [failed, setFailed] = useState(false);

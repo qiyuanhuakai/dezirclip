@@ -1,6 +1,7 @@
 import { usePlatformCapabilities } from "./usePlatformCapabilities";
 import { useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../lib/desktopInvoke";
+import { copyHistorySelection } from "../lib/copyHistorySelection";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ClipboardEntry } from "../types";
@@ -27,6 +28,7 @@ interface UseClipboardActionsOptions {
   t: (key: string) => string;
   pushToast: (msg: string, duration?: number) => number;
   deleteAfterPaste: boolean;
+  isWindowPinned: boolean;
   moveToTopAfterPaste: boolean;
   setSearch: (val: string) => void;
   setHistory: Dispatch<SetStateAction<ClipboardEntry[]>>;
@@ -37,6 +39,7 @@ export const useClipboardActions = ({
   t,
   pushToast,
   deleteAfterPaste,
+  isWindowPinned,
   moveToTopAfterPaste,
   setSearch,
   setHistory,
@@ -62,7 +65,7 @@ export const useClipboardActions = ({
           document.activeElement.blur();
         }
 
-        await invoke("copy_to_clipboard", {
+        const request = {
           content,
           contentType,
           paste: !manualCopy,
@@ -74,7 +77,13 @@ export const useClipboardActions = ({
           derivedFromId,
           ...entryInstanceArgs(hostInstanceId),
           moveToTop: !manualCopy && moveToTopAfterPaste
-        });
+        };
+        const outcome = await copyHistorySelection(request, t);
+        if (outcome === "cancelled") return;
+        if (outcome === "copied") {
+          pushToast(t("wayland_manual_copy_done"));
+          return;
+        }
 
         if (!manualCopy && moveToTopAfterPaste && !deleteAfterPaste) {
           const now = Date.now();
@@ -87,12 +96,13 @@ export const useClipboardActions = ({
 
         if (manualCopy) pushToast(t("wayland_manual_copy_done"));
         else setSearch("");
+        if (import.meta.env.MODE === "mygo" && !manualCopy && !isWindowPinned) await invoke("hide_window_cmd", { afterPaste: true }).catch(console.error);
       } catch (err) {
         const errorMsg = t("copy_failed") + (err?.toString() || "");
         pushToast(errorMsg, 3000);
       }
     },
-    [deleteAfterPaste, moveToTopAfterPaste, pushToast, setHistory, setSearch, t, manualCopy, pending, failed, report]
+    [deleteAfterPaste, isWindowPinned, moveToTopAfterPaste, pushToast, setHistory, setSearch, t, manualCopy, pending, failed, report]
   );
 
   const openContent = useCallback(

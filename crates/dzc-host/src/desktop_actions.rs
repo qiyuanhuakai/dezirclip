@@ -46,12 +46,128 @@ impl Host {
     }
     pub(crate) fn desktop_copy(&self,session:&Session,parameters:Value)->Result<Value,WireErrorCode> {
         let request:DesktopCopyParams=serde_json::from_value(parameters).map_err(|_|WireErrorCode::InvalidRequest)?;
+        self.desktop_copy_bound(session, request, None)
+    }
+
+    pub(crate) fn remember_window_target(&self, session: &Session) -> Result<Value, WireErrorCode> {
+        self.desktop_permission(session, self.instance_id())?;
+        session.require(Permission::ClipboardPaste)?;
+        let mut slot = session.window_target.lock().map_err(|_| WireErrorCode::Unavailable)?;
+        *slot = None;
+        let peer = session.peer.as_ref().ok_or(WireErrorCode::PermissionDenied)?;
+        *slot = Some(dzc_platform::runtime::RememberedFocus::capture(peer).map_err(|_| WireErrorCode::Unavailable)?);
+        encoded(OperationResult { performed: true })
+    }
+
+    pub(crate) fn paste_from_window(&self, session: &Session, request: DesktopCopyParams) -> Result<Value, WireErrorCode> {
+        self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        session.require(Permission::ClipboardPaste)?;
+        if !request.paste || request.expected_paste_target.is_some() || request.id == 0 {
+            return Err(WireErrorCode::InvalidRequest);
+        }
+        let state = self.snapshot()?;
+        if state.privacy_epoch != request.expected_epoch { return Err(WireErrorCode::PrivacyEpochChanged); }
+        let input = self.take_window_target(session)?;
+        if !crate::same_surface_state(&state, &self.snapshot()?) { return Err(WireErrorCode::HistoryRevisionChanged); }
+        self.desktop_copy_bound(session, request, Some((input, state)))
+    }
+
+    fn take_window_target(&self, session: &Session) -> Result<dzc_platform::runtime::QueueInputTarget, WireErrorCode> {
+        let destination = session.window_target.lock().map_err(|_| WireErrorCode::Unavailable)?
+            .take().ok_or(WireErrorCode::NotFound)?;
+        let target = destination.restore().map_err(|_| WireErrorCode::Unavailable)?;
+        dzc_platform::runtime::QueueInputTarget::prepare(target).map_err(|_| WireErrorCode::Unavailable)
+    }
+
+    pub(crate) fn send_window_emoji(&self, session: &Session, request: WindowEmojiParams) -> Result<Value, WireErrorCode> {
+        self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        if !self.actions.can_copy() || (request.paste && !self.actions.can_paste()) {
+            return Err(WireErrorCode::UnsupportedCapability);
+        }
+        if request.paste { session.require(Permission::ClipboardPaste)?; }
+        let now = crate::router::now_ms()?;
+        let privacy = self.history.privacy();
+        let permit = privacy.authorize_read(PrivacyAccessIntent::GeneratedCopy, SensitiveAccess::Denied, Some(request.expected_epoch), now).map_err(denied)?;
+        let text = match request.kind.as_str() {
+            "text" => request.content,
+            "image" => dzc_platform::user_resource::read_managed_emoji(&self.directory, request.content.as_ref(), false)
+                .map_err(|_| WireErrorCode::InvalidRequest)?,
+            _ => return Err(WireErrorCode::InvalidRequest),
+        };
+        let ticket = match privacy.capture_ticket(now) {
+            Ok(ticket) => Some(ticket),
+            Err(dzc_core::api::PrivacyError::PrivacySessionActive) => None,
+            Err(error) => return Err(denied(error)),
+        };
+        let input = if request.paste {
+            let (_, _, method) = self.history.queue_preferences().map_err(|_| WireErrorCode::Unavailable)?;
+            let plain = (request.kind == "text").then(|| text.clone());
+            Some((self.take_window_target(session)?, method, plain))
+        } else { None };
+        let authorized = || !self.is_stopping() && self.grants.still_valid(session)
+            && crate::router::now_ms().is_ok_and(|time| privacy.check_read(&permit, time).is_ok());
+        if !authorized() { return Err(WireErrorCode::PrivacyBlocked); }
+        self.commit_generated_copy(GeneratedBody { kind: request.kind, text, html: None }, "DezirClip", now, ticket, &permit)?;
+        if let Some((target, method, plain)) = input {
+            let kind = if plain.is_some() { "text" } else { "binary" };
+            target.send(&method, plain.as_deref(), kind, authorized).map_err(|_| WireErrorCode::Unavailable)?;
+            self.play_feedback(dzc_platform::sound::Cue::Paste);
+        }
+        encoded(OperationResult { performed: true })
+    }
+
+    pub(crate) fn emoji_favorites(&self, session: &Session, request: EmojiFavoritesParams) -> Result<Value, WireErrorCode> {
+        self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        if let Some(action) = request.mutation.as_deref() {
+            use dzc_platform::user_resource;
+            let path = std::path::Path::new(request.path.as_deref().ok_or(WireErrorCode::InvalidRequest)?);
+            if !path.is_absolute() { return Err(WireErrorCode::InvalidRequest); }
+            let image = match action {
+                "import" => {
+                    let source = user_resource::selected_background_path(&self.directory, path).map_err(|_| WireErrorCode::InvalidRequest)?;
+                    Some(user_resource::read_image_bytes(&source).map_err(|_| WireErrorCode::InvalidRequest)?)
+                }
+                "remove" => None,
+                _ => return Err(WireErrorCode::InvalidRequest),
+            };
+            let privacy = self.history.privacy();
+            let prepared = if let Some(bytes) = image.as_ref() {
+                privacy.with_writable_profile(request.expected_epoch, crate::router::now_ms()?, || ()).map_err(denied)?;
+                Some(user_resource::prepare_emoji_favorite(&self.directory, bytes).map_err(|_| WireErrorCode::InvalidRequest)?)
+            } else { None };
+            let paths = privacy.with_writable_profile(request.expected_epoch, crate::router::now_ms()?, || {
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                match prepared {
+                    Some(image) => image.publish().map(|path| vec![path]),
+                    None => user_resource::remove_emoji_favorite(&self.directory, path).map(|()| Vec::new()),
+                }.map_err(|_| WireErrorCode::InvalidRequest)
+            }).map_err(denied)??;
+            return encoded(EmojiFavoritesResult { paths, preview: None });
+        }
+        let (paths, preview) = match request.path {
+            Some(path) => (Vec::new(), Some(dzc_platform::user_resource::read_managed_emoji(&self.directory, path.as_ref(), true)
+                .map_err(|_| WireErrorCode::InvalidRequest)?)),
+            None => (dzc_platform::user_resource::list_emoji_favorites(&self.directory).map_err(|_| WireErrorCode::Unavailable)?, None),
+        };
+        self.check_library_state(session, &request.service_instance_id, request.expected_epoch)?;
+        if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+        let result = EmojiFavoritesResult { paths, preview };
+        if serde_json::to_vec(&result).map_err(|_| WireErrorCode::Internal)?.len() > MAX_FRAME_BYTES - 4096 {
+            return Err(WireErrorCode::FrameTooLarge);
+        }
+        encoded(result)
+    }
+
+    pub(crate) fn desktop_copy_bound(&self, session: &Session, request: DesktopCopyParams, bound: Option<(dzc_platform::runtime::QueueInputTarget, RuntimeState)>) -> Result<Value,WireErrorCode> {
         self.desktop_permission(session,&request.service_instance_id)?;
         if !self.actions.can_copy() || request.paste && !self.actions.can_paste() {return Err(WireErrorCode::UnsupportedCapability);}
-        let paste_target=self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())?;
+        let paste_target=if bound.is_none() { self.prepare_desktop_paste(request.paste,request.expected_paste_target.as_ref())? } else { None };
         let now=crate::router::now_ms()?;
         let generated=request.derived_text.is_some() || request.image_as_base64.unwrap_or(false);
-        let ticket=if generated {match self.history.privacy().capture_ticket(now) {
+        // A Service started without capture still handles explicit copy actions.
+        // An unexpectedly unavailable capture owner still fails closed.
+        let capture_generated = generated && !self.capture_disabled_by_request()?;
+        let ticket=if capture_generated {match self.history.privacy().capture_ticket(now) {
             Ok(ticket)=>Some(ticket),Err(dzc_core::api::PrivacyError::PrivacySessionActive)=>None,Err(error)=>return Err(denied(error))}}
             else {None};
         let permit=self.history.privacy().authorize_selected_copy(request.id,Some(&request.service_instance_id),if request.reveal {SensitiveAccess::ExplicitUserAction}else{SensitiveAccess::Denied},Some(request.expected_epoch),now).map_err(denied)?;
@@ -63,18 +179,42 @@ impl Host {
             else {self.history.clipboard_payload_authorized(request.id,&permit,now)}.map_err(denied)?;
         if request.image_as_base64.unwrap_or(false) {payload=image_text(payload)?;}
         if request.with_format==Some(false) {payload=plain(payload);}
-        if generated {
-            if let Some(ticket)=ticket {
-                let text=payload_text(&payload).ok_or(WireErrorCode::InvalidRequest)?;
-                let frame=CaptureFrame {data:CaptureData::Text(text.into()),metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),inherited_protection:matches!(payload,ClipboardPayload::Private{..}),..Default::default()}};
-                self.capture_generated(frame,CaptureSource{app_name:"DezirClip Derived".into(),process_path:None},now)?;
-            }
+        if let Some(ticket)=ticket {
+            let text=payload_text(&payload).ok_or(WireErrorCode::InvalidRequest)?;
+            let frame=CaptureFrame {data:CaptureData::Text(text.into()),metadata:CaptureReadMetadata{privacy_ticket:Some(ticket),inherited_protection:matches!(payload,ClipboardPayload::Private{..}),..Default::default()}};
+            self.capture_generated(frame,CaptureSource{app_name:"DezirClip Derived".into(),process_path:None},now)?;
         }
         self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
+        let input = if bound.is_some() {
+            let (_, _, method) = self.history.queue_preferences().map_err(|_|WireErrorCode::Unavailable)?;
+            let mut data = &payload;
+            while let ClipboardPayload::Private {payload,..} = data { data = payload; }
+            let (kind, text) = match data {
+                ClipboardPayload::Text(text) => ("text", Some(text.clone())),
+                ClipboardPayload::Html {text,..} => ("rich_text", Some(text.clone())),
+                _ => ("binary", None),
+            };
+            Some((method, kind, text))
+        } else { None };
+        let selected_state = bound.as_ref().map(|(_,state)| state.clone());
+        let check_selection = || -> Result<(), WireErrorCode> {
+            if let Some(state) = &selected_state {
+                if !self.grants.still_valid(session) { return Err(WireErrorCode::PermissionDenied); }
+                if !crate::same_surface_state(state, &self.snapshot()?) { return Err(WireErrorCode::HistoryRevisionChanged); }
+            }
+            Ok(())
+        };
+        check_selection()?;
         self.copy_payload(payload)?;
         if request.paste {
+            check_selection()?;
             self.history.privacy().check_read(&permit,crate::router::now_ms()?).map_err(denied)?;
-            if let Some(target)=paste_target { target.send()?; } else { self.actions.paste()?; }
+            if let Some(((target, _), (method, kind, text))) = bound.zip(input) {
+                target.send(&method, text.as_deref(), kind, || !self.is_stopping() && check_selection().is_ok()
+                    && crate::router::now_ms().is_ok_and(|now| self.history.privacy().check_read(&permit, now).is_ok()))
+                    .map_err(|_| WireErrorCode::Unavailable)?;
+            } else if let Some(target)=paste_target { target.send()?; } else { self.actions.paste()?; }
+            self.play_feedback(dzc_platform::sound::Cue::Paste);
         }
         if request.delete_after_use==Some(true) {
             if request.id<0 {self.session.lock().map_err(|_|WireErrorCode::Unavailable)?.retain(|row|row.id!=request.id);}
@@ -98,7 +238,7 @@ impl Host {
         let _request=self.requests.lock().map_err(|_|WireErrorCode::Unavailable)?;
         self.mutate_inner(request)
     }
-    fn mutate_inner(&self,request:DesktopMutationParams)->Result<DesktopMutationResult,WireErrorCode> {
+    pub(super) fn mutate_inner(&self,request:DesktopMutationParams)->Result<DesktopMutationResult,WireErrorCode> {
         if self.is_stopping() {return Err(WireErrorCode::Busy);}
         if request.service_instance_id!=self.snapshot()?.service_instance_id {return Err(WireErrorCode::PrivacyBlocked);}
         let now=crate::router::now_ms()?;
@@ -171,7 +311,7 @@ impl Host {
         Ok(DesktopMutationResult{id:request.id,performed:true})
     }
 }
-fn plain(payload:ClipboardPayload)->ClipboardPayload {match payload {
+pub(crate) fn plain(payload:ClipboardPayload)->ClipboardPayload {match payload {
     ClipboardPayload::Html{text,..}=>ClipboardPayload::Text(text),
     ClipboardPayload::Private{payload,authorization}=>ClipboardPayload::Private{payload:Box::new(plain(*payload)),authorization},payload=>payload}}
 fn image_text(payload:ClipboardPayload)->Result<ClipboardPayload,WireErrorCode> {Ok(match payload {

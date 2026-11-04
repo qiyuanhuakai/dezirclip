@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "./desktopInvoke";
 import { emit, listen } from "@tauri-apps/api/event";
 import { normalizePreviewOpacity, PREVIEW_KEYBOARD_KEY, PREVIEW_OPACITY_KEY, readPreviewPreferences } from "./previewPreferences";
 

@@ -38,6 +38,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Local package operations used by the sibling MyGo desktop.
+    #[command(hide = true)]
+    DesktopTools { #[arg(value_enum)] action: DesktopTool },
     /// Explicitly manage the optional per-user Host service.
     Service(cli::service::ServiceArgs),
     /// Start, stop or query the shared privacy session without a GUI.
@@ -632,8 +635,84 @@ fn main() {
     }
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum DesktopTool {
+    UpdateSupport,
+    EvaluateUpdate,
+    Info,
+    AddToPath,
+    OpenInstallFolder,
+    OpenCliGuide,
+    OpenThemeGuide,
+    LoginStatus,
+    EnableLogin,
+    DisableLogin,
+    InstalledApps,
+    DefaultApps,
+}
+
+fn run_desktop_tool(action: DesktopTool) -> Result<(), String> {
+    use dezirclip::infrastructure::desktop_tools::{self, AgentSkill};
+    let cli = std::env::current_exe().map_err(|e| e.to_string())?;
+    let directory = cli.parent().ok_or("install folder not found")?;
+    let guide = |skill: AgentSkill| {
+        let path = directory.join("skills").join(skill.name());
+        path.join("SKILL.md").is_file().then_some(path)
+    };
+    let response = match action {
+        DesktopTool::UpdateSupport => {
+            use dezirclip::domain::update::{UpdateSupport, UpdateInstallation};
+            serde_json::to_value(UpdateSupport::new(UpdateInstallation::Portable))
+        }
+        DesktopTool::EvaluateUpdate => {
+            use std::io::Read;
+            use dezirclip::domain::update::check_manual_indexes;
+            let mut bytes = Vec::new();
+            const LIMIT: u64 = 2 * 256 * 1024 + 1024;
+            std::io::stdin().take(LIMIT + 1).read_to_end(&mut bytes).map_err(|_| "update_invalid_manifest")?;
+            if bytes.len() as u64 > LIMIT { return Err("update_invalid_manifest".into()); }
+            let input = serde_json::from_slice(&bytes).map_err(|_| "update_invalid_manifest")?;
+            let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| "update_invalid_version")?;
+            serde_json::to_value(check_manual_indexes(input, &version, std::env::consts::OS, std::env::consts::ARCH)?)
+        }
+        DesktopTool::InstalledApps => serde_json::to_value(dzc_platform::apps::scan_installed_apps().map_err(|e| e.to_string())?),
+        DesktopTool::DefaultApps => {
+            let mut names = serde_json::Map::new();
+            for kind in ["text", "rich_text", "image", "video", "code", "url"] {
+                if let Ok(name) = dzc_platform::apps::get_system_default_app(kind.into()) {
+                    names.insert(kind.into(), serde_json::Value::String(name));
+                }
+            }
+            Ok(serde_json::Value::Object(names))
+        }
+        DesktopTool::Info => serde_json::to_value(desktop_tools::cli_info(Some(cli.clone()), guide)),
+        DesktopTool::AddToPath => serde_json::to_value(desktop_tools::install_cli_path(Some(cli))?),
+        DesktopTool::LoginStatus | DesktopTool::EnableLogin | DesktopTool::DisableLogin => {
+            use dezirclip::infrastructure::login_start;
+            let desktop = directory.join(format!("dzc-desktop{}", std::env::consts::EXE_SUFFIX));
+            if !desktop.is_file() { return Err("sibling MyGo desktop not found".into()); }
+            if !matches!(action, DesktopTool::LoginStatus) {
+                login_start::set(&desktop, matches!(action, DesktopTool::EnableLogin)).map_err(|e| e.to_string())?;
+            }
+            serde_json::to_value(login_start::enabled(&desktop).map_err(|e| e.to_string())?)
+        }
+        DesktopTool::OpenInstallFolder | DesktopTool::OpenCliGuide | DesktopTool::OpenThemeGuide => {
+            let folder = match action {
+                DesktopTool::OpenCliGuide => guide(AgentSkill::DzcCli),
+                DesktopTool::OpenThemeGuide => guide(AgentSkill::DezirclipTheme),
+                _ => Some(directory.to_owned()),
+            }.ok_or("bundled guide not found")?;
+            desktop_tools::open_folder(&folder).map_err(|e| e.to_string())?;
+            Ok(serde_json::Value::Null)
+        }
+    }.map_err(|e| e.to_string())?;
+    println!("{response}");
+    Ok(())
+}
+
 fn run(args: Cli) -> Result<(), String> {
     let command = match args.command {
+        Commands::DesktopTools { action } => return run_desktop_tool(action),
         Commands::BuildInfo { json } => {
             let info = dezirclip::protocol::build_info::BuildInfo::current_with_host(
                 dezirclip::protocol::build_info::Component::Cli, dezirclip::api::DATABASE_SCHEMA_VERSION);
@@ -685,7 +764,8 @@ fn run(args: Cli) -> Result<(), String> {
             let selected = cli::tui::run(&options, clip_repo.as_ref(), tag_repo.as_ref())?;
             finish_selection(selected, &options, clip_repo.as_ref())
         }
-        Commands::BuildInfo { .. }
+        Commands::DesktopTools { .. }
+        | Commands::BuildInfo { .. }
         | Commands::Capabilities { .. }
         | Commands::Mcp {..}
         | Commands::Theme(_)
