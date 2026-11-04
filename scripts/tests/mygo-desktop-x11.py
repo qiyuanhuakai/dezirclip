@@ -1498,9 +1498,14 @@ def check_profile_move(executable, home):
                          and 'Action' in f and i.get_state_set().contains(Atspi.StateType.SENSITIVE)), None)
         wait(lambda: labeled('Change Data Path'), 'Directory chooser')
         def click_row(label):
-            node = wait(lambda: labeled(label), label)
-            box = Atspi.Component.get_extents(node, Atspi.CoordType.SCREEN)
-            assert box.width > 0 and box.height > 0
+            def visible_row():
+                node = labeled(label)
+                if node:
+                    Atspi.Component.scroll_to(node, Atspi.ScrollType.ANYWHERE)
+                    box = Atspi.Component.get_extents(node, Atspi.CoordType.SCREEN)
+                    if box.width > 0 and box.height > 0:
+                        return box
+            box = wait(visible_row, f'{label} directory row did not finish layout')
             assert Atspi.generate_mouse_event(box.x+box.width//2, box.y+box.height//2, 'b1c')
         click_row('Test profiles')
         click_row('destination')
