@@ -41,6 +41,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   set_edge_docking: args => shellCall("SetEdgeDocking", args.enabled, currentEpoch()),
   set_tray_visible: args => shellCall("SetTrayVisible", args.visible, currentEpoch()),
   set_sound_enabled: args => library("SetSetting", "app.sound_enabled", String(args.enabled), currentEpoch()),
+  set_idle_destroy_enabled: args => library("SetSetting", "app.idle_destroy_enabled", String(args.enabled), currentEpoch()),
+  set_idle_destroy_seconds: args => library("SetSetting", "app.idle_destroy_seconds", String(args.seconds), currentEpoch()),
   set_follow_mouse: args => library("SetSetting", "app.follow_mouse", String(args.enabled), currentEpoch()),
   set_silent_start: args => library("SetSetting", "app.silent_start", String(args.enabled), currentEpoch()),
   open_content: args => {
@@ -212,7 +214,7 @@ export async function invokeMyGo<T>(command: string, args: Arguments = {}): Prom
   }
   if (command === "restore_window_pinned") return window.mygo.call<T>("DesktopShell.SetAlwaysOnTop", args.pinned);
   if (command === "activate_window_focus" || command === "focus_clipboard_window") return window.mygo.call<T>("DesktopShell.Focus");
-  if (command === "hide_window_cmd") return window.mygo.call<T>("mygo:window.Close");
+  if (command === "hide_window_cmd") return args.afterPaste ? window.mygo.call<T>("mygo:window.Close") : shellCall<T>("HideMain");
   if (command === "get_platform_capabilities") return library<T>("Platform");
   if (command === "check_ocr_engine_available") return library<T>("OcrEngine");
   if (command === "list_transform_kinds" || command === "get_supported_kinds") {

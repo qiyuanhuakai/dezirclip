@@ -1390,6 +1390,60 @@ def check_preview(button, atspi, pin=None):
     print('Verified arrow-key preview stayed beside the selected history while the pointer remained at the screen corner')
 
 
+def check_idle(executable):
+    import gi
+    gi.require_version('Atspi', '2.0')
+    from gi.repository import Atspi
+    cli = executable.with_name('dzc')
+    subprocess.run([cli, 'add', 'Idle settings fixture'], check=True)
+    db = sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH'])
+    with db:
+        db.executemany("INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)",
+                       [('app.language','en'), ('app.idle_destroy_enabled','false'), ('app.idle_destroy_seconds','5')])
+    subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True)
+    process = subprocess.Popen([executable, '--show'])
+    def wait(probe, message):
+        deadline = time.monotonic() + 12
+        while time.monotonic() < deadline:
+            result = probe()
+            if result: return result
+            time.sleep(.06)
+        raise AssertionError(message)
+    def visible(): return visible_main_window(process.pid, executable)
+    def hide():
+        control = wait(lambda: next((item for item,name,interfaces,_ in mygo_nodes(Atspi,executable)
+                                     if name == 'Hide' and 'Action' in interfaces), None), 'Missing Hide button')
+        assert Atspi.Action.do_action(control, 0)
+        wait(lambda: not visible(), 'Manual hide did not hide the main WebView')
+    def show():
+        wait(lambda: tray_item(process.pid, '打开剪贴板'), 'Resident tray could not reopen history')
+        return wait(visible, 'Main window did not return')
+    try:
+        xid = wait(visible, 'Initial WebView missing')
+        pid = int(subprocess.check_output(['xprop','-id',str(xid),'_NET_WM_PID'],text=True).split()[-1])
+        hide()
+        time.sleep(5.5)
+        assert Path(f'/proc/{pid}').exists() and show() == xid, 'Disabled idle release destroyed the WebView'
+        with db:
+            db.execute("UPDATE settings SET value='true' WHERE key='app.idle_destroy_enabled'")
+        hide()
+        time.sleep(1)
+        assert show() == xid, 'Reopening before the deadline replaced the WebView'
+        time.sleep(5)
+        assert visible() == xid, 'An expired idle timer closed a reopened WebView'
+        hide()
+        wait(lambda: not Path(f'/proc/{pid}').exists(), 'Hidden WebView process survived the idle deadline')
+        replacement = show()
+        next_pid = int(subprocess.check_output(['xprop','-id',str(replacement),'_NET_WM_PID'],text=True).split()[-1])
+        assert process.poll() is None and next_pid != pid, 'Resident did not recreate the main WebView'
+        print('Verified idle release off, cancel on reopen, expiration and recreation with the same resident')
+    finally:
+        db.close()
+        process.terminate()
+        process.wait(timeout=10)
+        subprocess.run([cli,'service','stop'],check=True)
+
+
 def check_profile_move(executable, home):
     import gi
     gi.require_version('Atspi', '2.0')
@@ -1513,7 +1567,7 @@ def check_profile_move(executable, home):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview'):
+    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle'):
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -1591,7 +1645,9 @@ with open(sys.argv[1], 'r+') as document:
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
             pinned = '--pinned' in sys.argv[3:]
-            if '--move-profile' in sys.argv[3:]:
+            if '--idle' in sys.argv[3:]:
+                check_idle(desktop)
+            elif '--move-profile' in sys.argv[3:]:
                 check_profile_move(desktop, home)
             else:
                 with (contextlib.nullcontext() if pinned or '--pin-preview' in sys.argv else private_audio(home)) as audio:

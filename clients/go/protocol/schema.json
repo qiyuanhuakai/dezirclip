@@ -5242,6 +5242,8 @@
             "app.edge_docking",
             "app.follow_mouse",
             "app.disable_webview_gpu",
+            "app.idle_destroy_enabled",
+            "app.idle_destroy_seconds",
             "app.sound_enabled",
             "app.sound_paste_enabled",
             "app.sound_volume",

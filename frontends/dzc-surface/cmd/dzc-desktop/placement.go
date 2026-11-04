@@ -11,6 +11,8 @@ import (
 )
 
 type windowPreferences struct {
+	IdleDestroy string `json:"app.idle_destroy_enabled"`
+	IdleSeconds string `json:"app.idle_destroy_seconds"`
 	EdgeDocking string `json:"app.edge_docking"`
 	GpuDisabled string `json:"app.disable_webview_gpu"`
 	FollowMouse string `json:"app.follow_mouse"`

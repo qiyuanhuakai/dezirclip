@@ -96,6 +96,8 @@ const GeneralSettingsGroup = ({
     const [traySaving, setTraySaving] = useState(false);
     const [trayError, setTrayError] = useState("");
     const [dockSaving, setDockSaving] = useState(false);
+    const [idleSaving, setIdleSaving] = useState(false);
+    const [idleError, setIdleError] = useState("");
     const [dockError, setDockError] = useState("");
     const [gpuSaving, setGpuSaving] = useState(false);
     const [gpuError, setGpuError] = useState("");
@@ -126,7 +128,7 @@ const GeneralSettingsGroup = ({
     useEffect(() => {
         setIdleDestroyDraft(idleDestroySeconds.toString());
     }, [idleDestroySeconds]);
-    const commitIdleDestroy = (rawValue?: string) => {
+    const commitIdleDestroy = async (rawValue?: string) => {
         const source = rawValue ?? idleDestroyDraft;
         if (!/^\d+$/.test(source)) {
             setIdleDestroyDraft(idleDestroySeconds.toString());
@@ -136,8 +138,17 @@ const GeneralSettingsGroup = ({
         const clamped = Math.max(5, Math.min(3600, parsed));
         setIdleDestroyDraft(clamped.toString());
         if (clamped !== idleDestroySeconds) {
-            setIdleDestroySeconds(clamped);
-            invoke("set_idle_destroy_seconds", { seconds: clamped }).catch(console.error);
+            setIdleSaving(true);
+            setIdleError("");
+            try {
+                await invoke("set_idle_destroy_seconds", { seconds: clamped });
+                setIdleDestroySeconds(clamped);
+            } catch (error) {
+                setIdleDestroyDraft(String(idleDestroySeconds));
+                setIdleError(String(error));
+            } finally {
+                setIdleSaving(false);
+            }
         }
     };
 
@@ -313,16 +324,27 @@ const GeneralSettingsGroup = ({
                         <input
                             className="cb"
                             type="checkbox"
+                            aria-label={t('idle_destroy_enabled')}
                             checked={idleDestroyEnabled}
-                            onChange={(e) => {
+                            disabled={idleSaving}
+                            onChange={async (e) => {
                                 const enabled = e.target.checked;
-                                setIdleDestroyEnabled(enabled);
-                                invoke("set_idle_destroy_enabled", { enabled }).catch(console.error);
+                                setIdleSaving(true);
+                                setIdleError("");
+                                try {
+                                    await invoke("set_idle_destroy_enabled", { enabled });
+                                    setIdleDestroyEnabled(enabled);
+                                } catch (error) {
+                                    setIdleError(String(error));
+                                } finally {
+                                    setIdleSaving(false);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
                     </label>
                 </div>
+                {idleError && <span role="alert">{t("common_error")} · {idleError}</span>}
                 {idleDestroyEnabled && (
                     <div className="setting-item setting-item--detail">
                         <LabelWithHint
@@ -334,6 +356,8 @@ const GeneralSettingsGroup = ({
                             type="text"
                             inputMode="numeric"
                             pattern="[0-9]*"
+                            aria-label={t('idle_destroy_seconds')}
+                            disabled={idleSaving}
                             value={idleDestroyDraft}
                             onFocus={(e) => {
                                 e.target.select();
@@ -348,7 +372,6 @@ const GeneralSettingsGroup = ({
                             onBlur={(e) => commitIdleDestroy(e.target.value)}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                    commitIdleDestroy(e.currentTarget.value);
                                     e.currentTarget.blur();
                                 }
                             }}

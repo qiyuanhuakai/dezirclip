@@ -257,12 +257,12 @@ func run() error {
 		dock.configure(settings.EdgeDocking == "true")
 		win.OnBlur(func() { history.targetInvalid.Store(true); preview.clear(); focusChanged.Emit(win, false) })
 		win.OnFocus(func() { fmt.Fprintln(os.Stdout, "focus"); focusChanged.Emit(win, true) })
-		win.OnShow(func() { dock.hidden = false; dock.shown = time.Now(); visibilityChanged.Emit(win, true) })
+		win.OnShow(func() { shell.idle.cancel(); dock.hidden = false; dock.shown = time.Now(); visibilityChanged.Emit(win, true) })
 		win.OnHide(func() { preview.clear(); visibilityChanged.Emit(win, false) })
 		win.OnMove(func() { preview.clear(); windowMoved.Emit(win, true) })
 		win.OnFileDrop(func(e *mygo.FileDropEvent) { filesDropped.Emit(win, e.Paths) })
 		win.OnClose(func(*mygo.CloseEvent) { fmt.Fprintln(os.Stdout, "closing") })
-		win.OnClosed(func() { dock.hidden = false; dock.configure(false); preview.clear(); mygo.App.Quit() })
+		win.OnClosed(func() { shell.idle.cancel(); dock.hidden = false; dock.configure(false); preview.clear(); mygo.App.Quit() })
 		win.Page().OnWillNavigate(func(e *mygo.NavigateEvent) { e.PreventDefault() })
 		win.Page().SetWindowOpenHandler(func(mygo.WindowOpenRequest) *mygo.WindowOptions { return nil })
 		win.Page().LoadURL("mygo://localhost/")
@@ -315,7 +315,11 @@ func run() error {
 					shell.resident.accept(command)
 					continue
 				}
-				if command == "rebuild" || command == "toggle" && win.IsFocused() {
+				if command == "toggle" && win.IsFocused() {
+					mygo.RunOnMain(func() { shell.hideMain(win) })
+					continue
+				}
+				if command == "rebuild" {
 					mygo.RunOnMain(func() { win.Close() })
 					continue
 				}

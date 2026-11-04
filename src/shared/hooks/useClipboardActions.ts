@@ -96,7 +96,7 @@ export const useClipboardActions = ({
 
         if (manualCopy) pushToast(t("wayland_manual_copy_done"));
         else setSearch("");
-        if (import.meta.env.MODE === "mygo" && !manualCopy && !isWindowPinned) await invoke("hide_window_cmd").catch(console.error);
+        if (import.meta.env.MODE === "mygo" && !manualCopy && !isWindowPinned) await invoke("hide_window_cmd", { afterPaste: true }).catch(console.error);
       } catch (err) {
         const errorMsg = t("copy_failed") + (err?.toString() || "");
         pushToast(errorMsg, 3000);

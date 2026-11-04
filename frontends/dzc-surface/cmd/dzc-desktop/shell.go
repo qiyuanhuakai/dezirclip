@@ -14,6 +14,7 @@ import (
 )
 
 type DesktopShell struct {
+	idle            hiddenWebView
 	dock            edgeDock
 	resident        residentBridge
 	settingsPending atomic.Bool

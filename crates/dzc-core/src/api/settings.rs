@@ -46,6 +46,7 @@ impl HistoryService {
     pub fn is_view_setting(key: &str) -> bool {
         matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.update_auto_check" | "app.update_channel" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
+            | "app.idle_destroy_enabled" | "app.idle_destroy_seconds"
             | "app.sound_enabled" | "app.sound_paste_enabled" | "app.sound_volume"
             | "app.clipboard_item_font_size" | "app.clipboard_tag_font_size" | "app.surface_opacity" | "app.preview_opacity" | "app.font_main" | "app.font_mono"
             | "app.custom_background" | "app.custom_background_opacity" | "app.emoji_panel_enabled" | "app.emoji_panel_tab" | "app.emoji_favorites")
@@ -59,6 +60,8 @@ impl HistoryService {
             "app.color_mode" => matches!(value, "light" | "dark" | "system"),
             "app.emoji_favorites" => value.len() <= 128 * 1024 && serde_json::from_str::<Vec<String>>(value)
                 .is_ok_and(|paths| paths.len() <= 4096 && paths.iter().all(|path| !path.is_empty() && !path.contains('\0'))),
+            "app.idle_destroy_seconds" => value.bytes().all(|b| b.is_ascii_digit())
+                && value.parse::<u16>().is_ok_and(|seconds| (5..=3600).contains(&seconds)),
             "app.update_channel" => matches!(value, "stable" | "preview"),
             "app.emoji_panel_tab" => matches!(value, "emoji" | "favorites"),
             "app.language" => matches!(value, "zh" | "tw" | "en"),
