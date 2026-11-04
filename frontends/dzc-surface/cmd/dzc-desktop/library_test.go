@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qiyuanhuakai/dezirclip/clients/go/client"
 	"github.com/qiyuanhuakai/dezirclip/clients/go/protocol"
@@ -79,6 +80,45 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("isolated status: %+v %v", status, err)
 	}
 	instance, epoch := status.State.ServiceInstanceId, status.State.PrivacyEpoch
+	t.Run("preferences during snapshot contention", func(t *testing.T) {
+		host, err := owner.DesktopConnection(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer host.Close()
+		params := protocol.LibraryStateParams{ServiceInstanceId: instance, ExpectedEpoch: epoch}
+		var held [4]protocol.BodySnapshot
+		for i := range held {
+			if err := host.Call(ctx, protocol.MethodDesktopSettingsPreferences, params, "BodySnapshot", &held[i]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var excess protocol.BodySnapshot
+		var busy *client.RemoteError
+		err = host.Call(ctx, protocol.MethodDesktopSettingsPreferences, params, "BodySnapshot", &excess)
+		if !errors.As(err, &busy) || busy.Code != protocol.WireErrorCodeBusy {
+			t.Fatalf("expected Host snapshot capacity to be exhausted, got %v", err)
+		}
+		released := make(chan error, 1)
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			for _, body := range held {
+				var prefs protocol.DesktopPreferences
+				if err := host.ReadSnapshot(ctx, body, "DesktopPreferences", &prefs); err != nil {
+					released <- err
+					return
+				}
+			}
+			released <- nil
+		}()
+		prefs, err := library.Preferences(ctx)
+		if releaseErr := <-released; releaseErr != nil {
+			t.Fatal(releaseErr)
+		}
+		if err != nil || len(prefs) == 0 {
+			t.Fatalf("settings did not recover when snapshot capacity became available: %v", err)
+		}
+	})
 	t.Run("default application", func(t *testing.T) {
 		var remote *client.RemoteError
 		unlisted := filepath.Join(t.TempDir(), "unregistered-handler")
