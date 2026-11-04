@@ -117,7 +117,7 @@ consume the pending notice. Neither path reopens an old display or repeats input
 Before granting access or starting the UI, Desktop runs the fixed sibling's
 bounded `--build-info` path and requires the same verified build set, MyGo
 v0.6.4/source 6255ea40139d06e0762a7c4a32626148ba410478 and toolkit patch
-`mygo-v0.6.4-native-alpha-v4`. This branch returns before App.Run. An old
+`mygo-v0.6.4-native-alpha-v5`. This branch returns before App.Run. An old
 unpatched/unknown helper is rejected before the upstream startup cleanup can run.
 
 ## Read-only Surface IPC

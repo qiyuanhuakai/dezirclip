@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v4';
+export const MYGO_PATCH_ID = 'mygo-v0.6.4-native-alpha-v5';
 export const MYGO_APP_SHA256 = 'af53a7f7c0dbe36d42edc6de34f9f7735569ae53170715264af6618b99e281b9';
 const modulePath = 'github.com/egoist/mygo';
 const version = 'v0.6.4';
@@ -59,7 +59,12 @@ function windowsPatches(directory) {
   const marker = 'if o.Flyout != nil {\n\t\t// What the content leaves transparent shows what is behind.';
   if (upstream.split(marker).length !== 2) throw new Error('Expected the reviewed MyGo native composition condition');
   const window = upstream.replace(marker, marker.replace('o.Flyout != nil', 'o.Flyout != nil || o.Transparent && o.Surface'));
-  return [[entry, Buffer.from(start)], [options, Buffer.from(getters)], [windowFile, Buffer.from(window)]];
+  // A non-activating flyout must receive pointer events without blurring its parent WebView.
+  const surfaceFile = 'internal/windows/surface.go';
+  const surface = source(surfaceFile, '41dd1c1eacd1a8f6c812725ec2d4eb96f3bf6634dcc2b743a1459c38b1e55c2f')
+    .replace('\t\tprocSetFocus.Call(hwnd)\n\t\tif s.buttons == 0 {',
+      '\t\tif f := s.w.opts.Flyout; f == nil || f.Focusable {\n\t\t\tprocSetFocus.Call(hwnd)\n\t\t}\n\t\tif s.buttons == 0 {');
+  return [[entry, Buffer.from(start)], [options, Buffer.from(getters)], [windowFile, Buffer.from(window)], [surfaceFile, Buffer.from(surface)]];
 }
 
 export function prepareMyGoPatch({ run, go, moduleRoot, outputRoot, env }) {
