@@ -533,7 +533,7 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         Remove-Item Env:TIEZ_DB_PATH -ErrorAction SilentlyContinue
     }
     if ($Emoji -or $Elevation) {
-        if ($env:DZC_SERVICE_CRASH_ROOT) {
+        if ($env:DZC_SERVICE_CRASH_ROOT -and $env:DZC_SERVICE_CRASH_LAUNCH -ne 'cli') {
             $recorded = Start-RecordedService (Join-Path (Split-Path $exe) 'dzc-service.exe') ('--database "' + $fixtureDatabase + '"') $env:DZC_SERVICE_CRASH_ROOT
             $startedServiceProcess = $recorded.Process
             $serviceCrashReceipt = $recorded.Receipt
@@ -567,6 +567,19 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         # Retain the kernel handle before a possible exit; a later PID lookup
         # cannot distinguish a crashed Service from a reused process ID.
         $null = $startedServiceProcess.Handle
+        if ($env:DZC_SERVICE_CRASH_ROOT -and !$serviceCrashReceipt) {
+            # CLI launches retain their identity after readiness. Direct diagnostic
+            # launches above separately cover exits before readiness is available.
+            $serviceCrashReceipt = Join-Path $env:DZC_SERVICE_CRASH_ROOT ("service-{0}.json" -f $startedServiceProcess.Id)
+            [pscustomobject]@{
+                pid = $startedServiceProcess.Id
+                executable = $startedServiceProcess.Path
+                sha256 = (Get-FileHash -LiteralPath $startedServiceProcess.Path -Algorithm SHA256).Hash
+                created_at = $startedServiceProcess.StartTime.ToUniversalTime().ToString('o')
+                crashed = $false
+                exit = $null
+            } | ConvertTo-Json | Set-Content -LiteralPath $serviceCrashReceipt -Encoding UTF8
+        }
     }
     [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
     $form.Show()

@@ -32,6 +32,7 @@ $registry = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps
 if (Test-Path -LiteralPath $registry) { throw 'Existing Service crash configuration is not modified' }
 $configured = $false
 $originalRoot = $env:DZC_SERVICE_CRASH_ROOT
+$originalLaunch = $env:DZC_SERVICE_CRASH_LAUNCH
 $functionalFailure = $null
 $foundCrash = $false
 try {
@@ -50,10 +51,13 @@ try {
         }
         Write-Host 'Verified launch receipt survives a Service exit without waiting for readiness'
     } finally { $probe.Process.Dispose() }
-    for ($cycle = 1; $cycle -le 32; $cycle++) {
-        Write-Host "Service stack diagnostic cycle $cycle of 32"
-        powershell -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -File ./scripts/tests/mygo-desktop-windows.ps1 -Desktop $binary -Emoji
-        if ($LASTEXITCODE) { throw "Service diagnostic cycle $cycle failed: $LASTEXITCODE" }
+    foreach ($launch in @('cli', 'direct')) {
+        $env:DZC_SERVICE_CRASH_LAUNCH = $launch
+        for ($cycle = 1; $cycle -le 32; $cycle++) {
+            Write-Host "Service stack diagnostic $launch cycle $cycle of 32"
+            powershell -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -File ./scripts/tests/mygo-desktop-windows.ps1 -Desktop $binary -Emoji
+            if ($LASTEXITCODE) { throw "Service diagnostic $launch cycle $cycle failed: $LASTEXITCODE" }
+        }
     }
 } catch {
     $functionalFailure = $_
@@ -84,6 +88,7 @@ try {
     } catch { Write-Host ("Stack diagnostics failed: " + $_.Exception.Message) }
     finally {
         $env:DZC_SERVICE_CRASH_ROOT = $originalRoot
+        $env:DZC_SERVICE_CRASH_LAUNCH = $originalLaunch
         if ($configured) { Remove-Item -LiteralPath $registry -Recurse }
         $resolvedRoot = [IO.Path]::GetFullPath($root)
         $temporary = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\') + '\'
