@@ -19,6 +19,8 @@ import { invoke } from "../lib/desktopInvoke";
  */
 export const useMainWindowPaintSignal = (settingsLoaded: boolean) => {
   useEffect(() => {
+    // The MyGo resident owns its WebView show/recreate lifecycle directly.
+    if (import.meta.env.MODE === "mygo") return;
     if (!settingsLoaded) return;
 
     let cancelled = false;
