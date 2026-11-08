@@ -82,12 +82,26 @@ mod tests {
     use super::*;
     #[test]
     fn actual_worker_reference_keeps_lease_when_host_reference_is_dropped() {
-        let _native_process = super::super::NATIVE_PROCESS_TEST_LOCK.lock().unwrap();
+        const CHILD: &str = "DZC_CAPTURE_LEASE_LIFETIME_TEST_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            // Keep the lease descriptor out of the parallel harness process,
+            // whose other tests may fork before their CLOEXEC handles close.
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command.args(["--exact", "ipc::ownership::tests::actual_worker_reference_keeps_lease_when_host_reference_is_dropped", "--nocapture"])
+                .env(CHILD, "1").stdin(std::process::Stdio::null());
+            #[cfg(target_os = "windows")]
+            { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
+            let output = command.output().unwrap();
+            assert!(output.status.success() && String::from_utf8_lossy(&output.stdout).contains("DZC_CAPTURE_LEASE_LIFETIME_PASSED"),
+                "lease child failed: {}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
         let host = CaptureLease::acquire().unwrap();
         let worker = host.clone();
         drop(host);
         assert!(CaptureLease::acquire().is_err());
         std::thread::spawn(move || drop(worker)).join().unwrap();
         assert!(CaptureLease::acquire().is_ok());
+        println!("DZC_CAPTURE_LEASE_LIFETIME_PASSED");
     }
 }

@@ -17,11 +17,6 @@ pub use private_file::{read_private, write_private};
 mod process;
 pub use process::{spawn_background, inspect_helper, inspect_private_helper, ProcessExit, BackgroundChild};
 
-// A Linux child briefly inherits other threads' flock descriptors before exec
-// closes CLOEXEC handles. Keep process-spawning tests outside lease assertions.
-#[cfg(test)]
-static NATIVE_PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 /// Produced only after an operating-system identity check, never deserialized.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerIdentity {
@@ -101,7 +96,6 @@ mod tests {
 
     #[test]
     fn private_native_endpoint_authenticates_and_releases_ownership() {
-        let _native_process = NATIVE_PROCESS_TEST_LOCK.lock().unwrap();
         let directory = std::env::temp_dir().join(format!("dzc-ipc-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         #[cfg(target_os = "linux")]
