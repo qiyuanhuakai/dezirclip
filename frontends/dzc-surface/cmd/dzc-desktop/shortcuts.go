@@ -113,6 +113,11 @@ func changeMainHotkeys(registered map[string]bool, raw string, register func(str
 }
 
 func persistMainHotkeys(owner *client.Client, hotkeys string, epoch uint64) error {
+	keys := strings.FieldsFunc(hotkeys, func(r rune) bool { return r == '\r' || r == '\n' })
+	for i := range keys {
+		keys[i] = mainShortcutName(keys[i])
+	}
+	hotkeys = strings.Join(keys, "\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	var result protocol.OperationResult

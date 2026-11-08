@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut)
+param([Parameter(Mandatory)][string]$Desktop, [switch]$Emoji, [switch]$Capture, [switch]$PinPreview, [switch]$Elevation, [switch]$InstalledElevation, [switch]$MiddleShortcut, [switch]$RichPaste)
 
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
@@ -512,6 +512,15 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                    [("app.hotkey", "Ctrl+Shift+F8"), ("app.silent_start", "false"), ("app.emoji_panel_enabled", "true"), ("app.language","en"), ("app.theme", "acrylic"), ("app.color_mode", "dark"), ("app.show_app_border", "false"), ("app.window_width","670"), ("app.window_height","608")])
 '@ | python -
     if ($LASTEXITCODE) { throw 'Could not seed isolated window appearance' }
+    if ($RichPaste) {
+        @'
+import os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
+                   [('app.rich_paste_hotkey','Ctrl+Shift+F10'), ('app.delete_after_paste','true')])
+'@ | python -
+        if ($LASTEXITCODE) { throw 'Could not seed rich paste preferences' }
+    }
     if ($MiddleShortcut) {
         @'
 import os, sqlite3
@@ -657,6 +666,46 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             [Math]::Abs($clientRect.right - 670) -le 1 -and [Math]::Abs($clientRect.bottom - 608) -le 1
     } 'MyGo did not restore the existing physical client dimensions'
     $root = [Windows.Automation.AutomationElement]::FromHandle($main.MainWindowHandle)
+    if ($RichPaste) {
+        Click-Control $main (Get-ControlPoint $root 'Search clipboard...' ([Windows.Automation.ControlType]::Edit))
+        $search = $root.FindFirst([Windows.Automation.TreeScope]::Descendants,
+            [Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::NameProperty, 'Search clipboard...'))
+        $value = $search.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern)
+        $before = $value.Current.Value
+        $richRow = @'
+import json, os, sqlite3
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    row = db.execute('SELECT id,content FROM clipboard_history ORDER BY timestamp DESC,id DESC LIMIT 1').fetchone()
+    print(json.dumps({'id':row[0], 'content':row[1]}))
+'@ | python - | ConvertFrom-Json
+        if ($LASTEXITCODE -or !$richRow) { throw 'Could not read isolated rich paste row' }
+        [Windows.Forms.SendKeys]::SendWait('^+{F10}')
+        $null = Wait-Until {
+            (Get-Content -LiteralPath (Join-Path $dir.FullName 'desktop.log') -Raw) -match 'Paste shortcut target unavailable'
+        } 'Rich paste did not reject the resident own main-window target'
+        if ($value.Current.Value -cne $before) { throw 'Rich paste changed its own search field' }
+        $remaining = @'
+import os, sqlite3, sys
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    print(db.execute('SELECT count(*) FROM clipboard_history WHERE id=?',(int(sys.argv[1]),)).fetchone()[0])
+'@ | python - $richRow.id
+        if ($LASTEXITCODE -or $remaining -ne '1') { throw 'Rejected self paste deleted history' }
+        $form.Activate()
+        $null = $edit.Focus()
+        $null = Wait-Until { $edit.Focused -and [MyGoInput]::GetForegroundWindow() -eq $form.Handle } 'External rich paste editor did not acquire focus'
+        [Windows.Forms.SendKeys]::SendWait('^+{F10}')
+        $null = Wait-Until { $edit.Text -ceq $richRow.content } 'Rich paste did not deliver to the external editor'
+        $null = Wait-Until {
+            $count = @'
+import os, sqlite3, sys
+with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+    print(db.execute('SELECT count(*) FROM clipboard_history WHERE id=?',(int(sys.argv[1]),)).fetchone()[0])
+'@ | python - $richRow.id
+            $LASTEXITCODE -eq 0 -and $count -eq '0'
+        } 'Successful external rich paste did not apply delete-after-paste'
+        Write-Output 'Verified rich paste rejects its own search without deleting history and pastes into an external editor before deleting history'
+        return
+    }
     if ($MiddleShortcut) {
         $null = Wait-Until { [MyGoInput]::GetForegroundWindow() -eq $main.MainWindowHandle } 'Main window did not acquire foreground'
         $previousMainId = $main.Id

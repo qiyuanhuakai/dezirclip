@@ -135,6 +135,12 @@ impl Drop for QueueStepGuard {
 }
 
 impl Queue {
+    pub(crate) fn clear(&self) -> Result<(), WireErrorCode> {
+        let mut queue = self.state.lock().map_err(|_| WireErrorCode::Unavailable)?;
+        queue.items.clear();
+        queue.reset_tracking();
+        Ok(())
+    }
     pub(crate) fn invalidate(&self) -> Result<(), WireErrorCode> {
         self.state
             .lock()

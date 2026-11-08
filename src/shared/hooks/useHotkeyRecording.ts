@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/desktopInvoke";
+import { completeRecording } from "../lib/recordingCompletion";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 interface RecordingOwner {
+  readonly completion: AbortController;
   readonly cancel: () => void;
   readonly fail: (error: unknown) => void;
   readonly activated: (ready: boolean) => void;
@@ -55,17 +57,20 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
   wasRecording.current = recording;
 
   const cancel = useCallback(() => {
+    owner.current?.completion.abort();
     consumed.current = true;
     callbacks.current.onCancelled();
   }, []);
   const record = useCallback((hotkey: string) => {
     if (!wasRecording.current || consumed.current || !hotkey) return;
-    if (owner.current && activeOwner !== owner.current) return;
+    const current = owner.current;
+    if (!current || activeOwner !== current || current.completion.signal.aborted) return;
     consumed.current = true;
     const handler = callbacks.current;
     // Release temporary recording grabs before the shortcut owner registers the chosen chord.
     modeQueue = modeQueue.catch(() => undefined).then(() => applyNativeMode(false));
-    void modeQueue.then(() => {
+    void completeRecording(modeQueue, current.completion.signal,
+      () => wasRecording.current && owner.current === current && activeOwner === current, () => {
       handler.onCancelled();
       handler.onRecorded(hotkey);
     }, error => {
@@ -79,6 +84,7 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     let disposed = false;
     const cleanups: UnlistenFn[] = [];
     const current: RecordingOwner = {
+      completion: new AbortController(),
       cancel, ready: false,
       activated: setNativeReady,
       fail: error => { callbacks.current.onError?.(error); cancel(); },
@@ -104,6 +110,7 @@ export function useHotkeyRecording({ recording, onRecorded, onCancelled, onError
     })();
 
     return () => {
+      current.completion.abort();
       disposed = true;
       cleanups.splice(0).forEach(stop => stop());
       if (owner.current === current) owner.current = null;

@@ -556,6 +556,21 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				tray.Destroy()
 			}
 		})
+		resetContext, stopResetWatch := context.WithCancel(context.Background())
+		mygo.App.OnWillQuit(func(*mygo.QuitEvent) { stopResetWatch() })
+		go watchSettingsReset(resetContext, owner, func() {
+			mygo.RunOnMain(func() {
+				if resetContext.Err() != nil || stopping || migrating || moved || pending != nil || relaunch {
+					return
+				}
+				relaunch, closing = true, true
+				if commands == nil {
+					mygo.App.Quit()
+				} else {
+					_, _ = io.WriteString(commands, "rebuild\n")
+				}
+			})
+		})
 		mygo.App.OnBeforeQuit(func(event *mygo.QuitEvent) {
 			if migrating {
 				event.PreventDefault()
