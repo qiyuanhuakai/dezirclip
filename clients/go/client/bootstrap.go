@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -111,6 +112,25 @@ func bundledCLI(ctx context.Context, args ...string) (*exec.Cmd, error) {
 	return cmd, nil
 }
 
+// Drain stderr completely while bounding retained diagnostic data.
+type desktopStderr struct {
+	data [1024]byte
+	n    int
+}
+
+func (b *desktopStderr) Write(p []byte) (int, error) {
+	b.n += copy(b.data[b.n:], p)
+	return len(p), nil
+}
+
+func (b *desktopStderr) exitError(err error) error {
+	message := strings.TrimSpace(string(b.data[:b.n]))
+	if message == "" {
+		return fmt.Errorf("desktop-endpoint: %w", err)
+	}
+	return fmt.Errorf("desktop-endpoint: %w: %s", err, message)
+}
+
 // OpenDesktop discovers the profile using the bundled sibling CLI so portable
 // profiles, redirected storage and current-session naming follow Rust exactly.
 // On first launch the desktop can opt in to starting its sibling Service.
@@ -129,13 +149,15 @@ func OpenDesktop(ctx context.Context, version string, startIfMissing bool) (*Cli
 	if err != nil {
 		return nil, err
 	}
+	var stderr desktopStderr
+	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
 	raw, readErr := io.ReadAll(io.LimitReader(stdout, 64*1024+1))
 	stdout.Close()
 	if err := cmd.Wait(); err != nil {
-		return nil, err
+		return nil, stderr.exitError(err)
 	}
 	if readErr != nil || len(raw) > 64*1024 {
 		return nil, ErrProtocol
