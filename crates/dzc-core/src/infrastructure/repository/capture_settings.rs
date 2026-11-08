@@ -216,10 +216,10 @@ mod tests {
         connection.execute("INSERT INTO settings(key,value) VALUES('app.sequential_hotkey','Alt+V'),('app.hotkey','Ctrl+Shift+V'),('app.private_credential','not-an-accelerator')",[]).unwrap();
         let repository=SqliteClipboardRepository::new(Arc::new(Mutex::new(connection)));
         let mut values=repository.reserved_shortcuts().unwrap();values.sort();
-        assert_eq!(values,vec!["Alt+V","Ctrl+Shift+V"]);
+        assert_eq!(values,vec!["Alt+V","Ctrl+Shift+A","Ctrl+Shift+F","Ctrl+Shift+V","Ctrl+Shift+V"]);
         repository.conn.lock().unwrap().execute("UPDATE settings SET value='Win+V'||char(13)||char(10)||'Ctrl+V' WHERE key='app.hotkey'",[]).unwrap();
         let mut chords = repository.reserved_shortcuts().unwrap(); chords.sort();
-        assert_eq!(chords, vec!["Alt+V","Ctrl+V","Win+V"]);
+        assert_eq!(chords, vec!["Alt+V","Ctrl+Shift+A","Ctrl+Shift+F","Ctrl+Shift+V","Ctrl+V","Win+V"]);
         repository.conn.lock().unwrap().execute("UPDATE settings SET value='Ctrl+'||char(0)||'V' WHERE key='app.hotkey'",[]).unwrap();
         assert!(repository.reserved_shortcuts().is_err());
     }
