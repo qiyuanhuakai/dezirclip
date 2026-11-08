@@ -48,6 +48,21 @@ func (l *Library) SetPrivacy(ctx context.Context, params protocol.PrivacySetPara
 	return status, err
 }
 
+func (l *Library) SetPrivacyHotkey(ctx context.Context, hotkey string) (string, error) {
+	var result protocol.PrivacyHotkey
+	err := l.owner.DesktopCall(ctx, protocol.MethodPrivacyHotkeySet, protocol.PrivacyHotkey{Hotkey: hotkey}, "PrivacyHotkey", &result)
+	var remote *client.RemoteError
+	if errors.As(err, &remote) {
+		switch remote.Code {
+		case protocol.WireErrorCodeBusy:
+			return "", errors.New("PrivacyHotkeyBusy")
+		case protocol.WireErrorCodeUnsupportedCapability:
+			return "", errors.New("PrivacyHotkeyUnavailable")
+		}
+	}
+	return result.Hotkey, err
+}
+
 // The descriptor and its chunks must be read on the same authenticated stream.
 func (l *Library) snapshot(ctx context.Context, method protocol.Method, params any, schema string, result any, epoch uint64) error {
 	host, err := l.owner.DesktopConnection(ctx)

@@ -58,7 +58,7 @@ async function watchHost() {
           dispatch("clipboard-removed", data.entry_id);
         } else if (event === "HistoryReset") {
           dispatch("tag-colors-updated");
-        } else if (event === "ServiceStateChanged" && data.status && ["capture_settings_changed", "view_settings_changed", "custom_themes_changed"].includes(data.status)) {
+        } else if (event === "ServiceStateChanged" && data.status && ["capture_settings_changed", "view_settings_changed", "custom_themes_changed", "PrivacyHotkeyChanged"].includes(data.status)) {
           settingsChanged = true;
         } else if (event === "ServiceStateChanged" && data.status?.startsWith("paste_queue_changed:")) {
           const count = Number(data.status.slice("paste_queue_changed:".length));

@@ -171,6 +171,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
   set_privacy_session: async args => privacySnapshot(await library("SetPrivacy", {
     active: args.enabled, duration_ms: args.durationMs ?? undefined,
   })),
+  set_privacy_session_hotkey: args => library("SetPrivacyHotkey", args.hotkey),
   get_clipboard_history: args => library("Page", { limit: args.limit, offset: args.offset, kind: args.content_type }, args.expectedEpoch),
   search_clipboard_history: args => library("Page", { limit: args.limit, offset: 0, query: args.searchTerm }, args.expectedEpoch),
   get_all_tags_info: args => library("TagCounts", args.expectedEpoch),

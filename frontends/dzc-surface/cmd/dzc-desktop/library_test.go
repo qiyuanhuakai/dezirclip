@@ -78,6 +78,17 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	owner.Close()
 	library := Library{owner}
+	t.Run("privacy shortcut validation", func(t *testing.T) {
+		if _, err := library.SetPrivacyHotkey(ctx, "not-a-key"); err == nil {
+			t.Fatal("invalid privacy shortcut accepted")
+		}
+		if _, err := library.SetPrivacyHotkey(ctx, "Ctrl+Shift+V"); err == nil || err.Error() != "PrivacyHotkeyBusy" {
+			t.Fatalf("reserved quick-paste shortcut was not rejected: %v", err)
+		}
+		if value, err := library.SetPrivacyHotkey(ctx, ""); err != nil || value != "" {
+			t.Fatalf("clearing the privacy shortcut: %q %v", value, err)
+		}
+	})
 	info, err := library.ProfileInfo(ctx)
 	if err != nil || info.DatabaseSchemaVersion < 1 {
 		t.Fatalf("profile info: %+v %v", info, err)

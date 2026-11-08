@@ -2,6 +2,29 @@ use super::clipboard_repo::SqliteClipboardRepository;
 use crate::{api::{CoreError, CoreResult}, capture::CaptureSettings};
 use std::collections::HashMap;
 
+#[cfg(test)]
+mod shortcut_tests {
+    use super::SqliteClipboardRepository;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn reserved_shortcuts_include_active_defaults_but_respect_explicit_empty_values() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)").unwrap();
+        let connection = Arc::new(Mutex::new(connection));
+        let repository = SqliteClipboardRepository::new(connection.clone());
+        let mut values = repository.reserved_shortcuts().unwrap();
+        values.sort();
+        assert_eq!(values, ["Ctrl+Shift+A", "Ctrl+Shift+F", "Ctrl+Shift+V"]);
+        connection.lock().unwrap().execute_batch("INSERT INTO settings VALUES
+            ('app.quick_paste_hotkey',''), ('app.screenshot_hotkey','Ctrl+Alt+A'),
+            ('app.hotkey','Alt+C\nCtrl+Alt+C')").unwrap();
+        let mut values = repository.reserved_shortcuts().unwrap();
+        values.sort();
+        assert_eq!(values, ["Alt+C", "Ctrl+Alt+A", "Ctrl+Alt+C", "Ctrl+Shift+F"]);
+    }
+}
+
 impl SqliteClipboardRepository {
     pub(crate) fn feedback_volume(&self, paste: bool) -> CoreResult<u8> {
         let conn = self.conn.lock().map_err(|_| CoreError::validation("SettingsUnavailable"))?;
@@ -103,11 +126,17 @@ impl SqliteClipboardRepository {
 
     pub(crate) fn reserved_shortcuts(&self) -> CoreResult<Vec<String>> {
         let connection = self.conn.lock().map_err(|_| CoreError::from("ShortcutSettingsUnavailable".to_owned()))?;
-        let mut query = connection.prepare("SELECT value FROM settings WHERE key IN ('app.hotkey','app.quick_paste_hotkey','app.sequential_hotkey','app.rich_paste_hotkey','app.search_hotkey','app.screenshot_hotkey','app.screenshot_full_hotkey')")
+        let mut query = connection.prepare("SELECT key,value FROM settings WHERE key IN ('app.hotkey','app.quick_paste_hotkey','app.sequential_hotkey','app.rich_paste_hotkey','app.search_hotkey','app.screenshot_hotkey','app.screenshot_full_hotkey')")
             .map_err(|error| CoreError::from(error.to_string()))?;
-        let values = query.query_map([], |row| row.get::<_,String>(0)).map_err(|error| CoreError::from(error.to_string()))?
-            .collect::<Result<Vec<_>,_>>().map_err(|error| CoreError::from(error.to_string()))?;
-        let chords: Vec<_> = values.iter().flat_map(|value| value.split(['\r', '\n'])).map(str::trim).filter(|chord| !chord.is_empty()).collect();
+        let mut values = query.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .map_err(|error| CoreError::from(error.to_string()))?
+            .collect::<Result<HashMap<_, _>, _>>().map_err(|error| CoreError::from(error.to_string()))?;
+        // These defaults are active even before a standalone profile saves any settings.
+        for (key, fallback) in [("app.quick_paste_hotkey", "Ctrl+Shift+V"),
+            ("app.screenshot_hotkey", "Ctrl+Shift+A"), ("app.screenshot_full_hotkey", "Ctrl+Shift+F")] {
+            values.entry(key.into()).or_insert_with(|| fallback.into());
+        }
+        let chords: Vec<_> = values.values().flat_map(|value| value.split(['\r', '\n'])).map(str::trim).filter(|chord| !chord.is_empty()).collect();
         if chords.iter().any(|chord| chord.len() > 128 || chord.chars().any(char::is_control)) { return Err(CoreError::validation("ShortcutSettingsInvalid")); }
         Ok(chords.into_iter().map(str::to_owned).collect())
     }
