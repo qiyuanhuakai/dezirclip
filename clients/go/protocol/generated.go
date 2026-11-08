@@ -417,6 +417,10 @@ const (
     MethodDesktopSettingsPreferences Method = "desktop.settings.preferences"
     MethodDesktopSettingsViewSet Method = "desktop.settings.view.set"
     MethodDesktopSettingsReset Method = "desktop.settings.reset"
+    MethodDesktopSystemWinVGet Method = "desktop.system.win_v.get"
+    MethodDesktopSystemWinVBegin Method = "desktop.system.win_v.begin"
+    MethodDesktopSystemWinVFinish Method = "desktop.system.win_v.finish"
+    MethodDesktopSystemClipboardHistorySet Method = "desktop.system.clipboard_history.set"
     MethodDesktopHotkeyRecording Method = "desktop.hotkey.recording"
     MethodDesktopHotkeyMainSet Method = "desktop.hotkey.main.set"
     MethodDesktopHotkeyPanelSet Method = "desktop.hotkey.panel.set"
@@ -890,6 +894,20 @@ type ScreenPreferences struct {
     Enabled bool `json:"enabled"`
     Region string `json:"region"`
     Full string `json:"full"`
+}
+
+type WindowsSettingParams struct {
+    Enabled bool `json:"enabled"`
+}
+
+type WindowsSettingFinishParams struct {
+    Token string `json:"token"`
+    Rollback bool `json:"rollback"`
+}
+
+type WindowsSettingResult struct {
+    Value bool `json:"value"`
+    Token string `json:"token"`
 }
 
 type ViewSettingParams struct {

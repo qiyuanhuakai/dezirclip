@@ -594,6 +594,14 @@ pub enum Method {
     DesktopSettingsViewSet,
     #[serde(rename = "desktop.settings.reset")]
     DesktopSettingsReset,
+    #[serde(rename = "desktop.system.win_v.get")]
+    DesktopSystemWinVGet,
+    #[serde(rename = "desktop.system.win_v.begin")]
+    DesktopSystemWinVBegin,
+    #[serde(rename = "desktop.system.win_v.finish")]
+    DesktopSystemWinVFinish,
+    #[serde(rename = "desktop.system.clipboard_history.set")]
+    DesktopSystemClipboardHistorySet,
     #[serde(rename = "desktop.hotkey.recording")]
     DesktopHotkeyRecording,
     #[serde(rename = "desktop.hotkey.main.set")]
@@ -1269,6 +1277,26 @@ pub struct ScreenPreferences {
     pub enabled: bool,
     pub region: String,
     pub full: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsSettingParams {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsSettingFinishParams {
+    pub token: String,
+    pub rollback: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowsSettingResult {
+    pub value: bool,
+    pub token: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

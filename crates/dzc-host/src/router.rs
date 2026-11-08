@@ -342,6 +342,9 @@ impl Host {
                 methods.push("desktop.hotkey.action.set");
                 methods.push("desktop.settings.view.set");
                 if can(Permission::PrivacyWrite) { methods.push("desktop.settings.reset"); }
+                if can(Permission::PrivacyWrite) && dzc_platform::desktop_system::supported() {
+                    methods.extend(["desktop.system.win_v.get", "desktop.system.win_v.begin", "desktop.system.win_v.finish", "desktop.system.clipboard_history.set"]);
+                }
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
                 methods.push("desktop.emoji.favorites");
@@ -696,6 +699,8 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            Method::DesktopSystemWinVGet | Method::DesktopSystemWinVBegin | Method::DesktopSystemWinVFinish |
+            Method::DesktopSystemClipboardHistorySet => self.system_settings_request(session, request.method, request.params),
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop |
             Method::DesktopScreenFinish | Method::DesktopScreenCancel => {
                 #[cfg(feature = "native-screen")]
@@ -922,6 +927,33 @@ pub(crate) mod tests {
             assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
             assert!(report.methods.len() <= if extended {256} else {64});
         }
+    }
+
+    #[test]
+    fn windows_settings_reject_other_roles_and_unowned_receipts() {
+        let host = synthetic_host();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (desktop, _) = host.hello(request).unwrap();
+        let grant = host.grants.issue_control(ClientRole::Cli).unwrap();
+        let mut request = hello(ClientRole::Cli);
+        request.grant = Some(grant.token().into());
+        let (cli, _) = host.hello(request).unwrap();
+        let (reader, _) = host.hello(hello(ClientRole::Desktop)).unwrap();
+        let receipt = serde_json::json!({"token":"00000000-0000-0000-0000-000000000000","rollback":true});
+        for session in [&cli, &reader] {
+            for (method, params) in [
+                (Method::DesktopSystemWinVGet, serde_json::json!({})),
+                (Method::DesktopSystemWinVBegin, serde_json::json!({"enabled":true})),
+                (Method::DesktopSystemWinVFinish, receipt.clone()),
+                (Method::DesktopSystemClipboardHistorySet, serde_json::json!({"enabled":false})),
+            ] {
+                assert_eq!(dispatch(&host, session, method, params).error.unwrap().code, WireErrorCode::PermissionDenied);
+            }
+        }
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopSystemWinVFinish, receipt).error.unwrap().code, WireErrorCode::NotFound);
+        assert!(desktop.system_change.lock().unwrap().is_none());
     }
 
     #[test]

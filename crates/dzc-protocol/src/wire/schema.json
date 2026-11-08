@@ -1573,6 +1573,10 @@
         "desktop.settings.preferences",
         "desktop.settings.view.set",
         "desktop.settings.reset",
+        "desktop.system.win_v.get",
+        "desktop.system.win_v.begin",
+        "desktop.system.win_v.finish",
+        "desktop.system.clipboard_history.set",
         "desktop.hotkey.recording",
         "desktop.hotkey.main.set",
         "desktop.hotkey.panel.set",
@@ -2867,6 +2871,84 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/RecordingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.system.win_v.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.system.win_v.begin"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/WindowsSettingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.system.win_v.finish"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/WindowsSettingFinishParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.system.clipboard_history.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/WindowsSettingParams"
               }
             }
           }
@@ -5439,6 +5521,53 @@
       ],
       "additionalProperties": false
     },
+    "WindowsSettingParams": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsSettingFinishParams": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 36,
+          "maxLength": 36
+        },
+        "rollback": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "token",
+        "rollback"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsSettingResult": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "boolean"
+        },
+        "token": {
+          "type": "string",
+          "maxLength": 36
+        }
+      },
+      "required": [
+        "value",
+        "token"
+      ],
+      "additionalProperties": false
+    },
     "ViewSettingParams": {
       "type": "object",
       "properties": {
@@ -5456,6 +5585,7 @@
         "key": {
           "type": "string",
           "enum": [
+            "app.use_win_v_shortcut",
             "app.theme",
             "app.color_mode",
             "app.language",

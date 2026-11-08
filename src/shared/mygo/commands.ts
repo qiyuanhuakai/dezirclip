@@ -38,6 +38,13 @@ function mutateEntry(args: Arguments, action: string, fields: Arguments = {}) {
 }
 
 const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
+  is_registry_win_v_optimized: () => window.mygo.call("SystemSettings.WinVStatus"),
+  begin_registry_win_v_change: async args => {
+    const result = await window.mygo.call<{value: boolean; token: string}>("SystemSettings.BeginWinV", args.enable);
+    return [result.value, result.token];
+  },
+  finish_registry_win_v_change: args => window.mygo.call("SystemSettings.FinishWinV", args.token, args.rollback),
+  set_windows_clipboard_history: args => window.mygo.call("SystemSettings.SetClipboardHistory", args.enabled),
   is_window_topmost: args => {
     if (args.label !== "compact-preview") throw new Error(`Unknown MyGo preview: ${String(args.label)}`);
     return window.mygo.call("Preview.IsAlwaysOnTop");

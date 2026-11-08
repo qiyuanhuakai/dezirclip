@@ -68,7 +68,7 @@ impl HistoryService {
     }
 
     pub fn is_view_setting(key: &str) -> bool {
-        matches!(key, "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
+        matches!(key, "app.use_win_v_shortcut" | "app.theme" | "app.color_mode" | "app.language" | "app.compact_mode" | "app.show_app_border"
             | "app.show_scroll_top_button" | "app.show_search_box" | "app.tag_manager_enabled" | "app.rich_text_snapshot_preview" | "app.rich_text_snapshot_cache_limit" | "app.arrow_key_selection" | "app.preview_keyboard_enabled" | "app.update_auto_check" | "app.update_channel" | "app.silent_start" | "app.hide_tray_icon" | "app.edge_docking" | "app.follow_mouse" | "app.disable_webview_gpu"
             | "app.idle_destroy_enabled" | "app.idle_destroy_seconds"
             | "app.quick_paste_enabled" | "app.screenshot_enabled"

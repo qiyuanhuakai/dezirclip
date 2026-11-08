@@ -238,6 +238,9 @@ func run() error {
 	mygo.Bind(history)
 	library := &Library{owner: actions}
 	mygo.Bind(library)
+	systemSettings := &SystemSettings{owner: actions}
+	mygo.Bind(systemSettings)
+	defer systemSettings.close()
 	shell := &DesktopShell{resident: residentBridge{output: os.Stdout, grantFocus: grantResidentFocus}}
 	mygo.Bind(shell)
 	preview := &Preview{owner: actions, resident: &shell.resident}

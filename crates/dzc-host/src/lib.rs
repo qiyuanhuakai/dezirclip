@@ -18,6 +18,7 @@ mod desktop_actions;
 mod desktop_policy;
 mod hotkey;
 mod recording;
+mod system_settings;
 mod upload;
 mod ocr;
 mod surface;

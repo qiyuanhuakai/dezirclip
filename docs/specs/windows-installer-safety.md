@@ -52,6 +52,20 @@ write value, never a full after-operation snapshot. No raw registry journal is
 accepted from the frontend. Pending journals are
 limited to 16, and tokens are single use until application exit.
 
+The independent MyGo desktop sends `desktop.system.win_v.get`,
+`desktop.system.win_v.begin`, `desktop.system.win_v.finish`, and
+`desktop.system.clipboard_history.set` over the local Host protocol. These
+operations require a Desktop session with desktop history and privacy-write
+permissions; they are advertised only on Windows. Both desktop distributions
+use the same `dzc-platform` registry implementation.
+
+The Host associates each pending Win+V journal with its originating connection.
+Another connection cannot finish it, even if it knows the token. Disconnecting
+attempts rollback through the same ownership checks. MyGo retains that connection
+and sends health requests while the confirmation dialog is open, including after
+a failed finish so that the caller can retry rollback. Successful confirmation
+or cancellation closes the connection; closing the WebView also releases it.
+
 Confirming finishes the token with `finish_registry_win_v_change(token, false)`.
 Canceling or failing after begin uses the same command with `rollback: true`.
 Rollback restores only values and receipts actually changed by that request,
