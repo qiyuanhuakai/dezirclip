@@ -74,6 +74,12 @@ restarted it, and returns errors to the confirmation flow. It never terminates
 other Explorer processes by executable name. Its native restart test is opt-in
 and restricted to disposable GitHub-hosted Windows runners.
 
+`desktop.system.admin.get` reports the Rust Host's Windows token elevation.
+MyGo uses it for `check_is_admin`, so an elevated interface cannot incorrectly
+claim that its unelevated Service can paste into elevated applications. The
+Tauri entry point uses the same platform query. Querying status does not request
+elevation or restart either process.
+
 Confirming finishes the token with `finish_registry_win_v_change(token, false)`.
 Canceling or failing after begin uses the same command with `rollback: true`.
 Rollback restores only values and receipts actually changed by that request,

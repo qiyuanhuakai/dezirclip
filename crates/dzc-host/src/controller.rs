@@ -120,8 +120,21 @@ pub async fn status(database: &Path) -> io::Result<ServiceStatus> {
     client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await
 }
 pub async fn stop(database: &Path) -> io::Result<()> {
+    stop_expected(database, None).await
+}
+
+/// Validate the observed instance on the same authenticated connection used to
+/// stop it. A desktop handoff must never stop a replacement Host found later.
+pub async fn stop_instance(database: &Path, instance: &str) -> io::Result<()> {
+    stop_expected(database, Some(instance)).await
+}
+
+async fn stop_expected(database: &Path, instance: Option<&str>) -> io::Result<()> {
     let endpoint = endpoint(database)?;
     let mut client = Client::control(&endpoint, ClientRole::Cli).await?;
+    if instance.is_some_and(|expected| expected != client.hello.state.service_instance_id) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "HostChangedBeforeStop"));
+    }
     let status: ServiceStatus = client.call(Method::ServiceStatus, serde_json::json!({}), "ServiceStatus").await?;
     let process = if status.mode == HostMode::Service { Some(dzc_platform::ipc::ProcessExit::open(&client.peer)?) } else { None };
     let _: OperationResult = client.call(Method::ServiceStop, serde_json::json!({}), "OperationResult").await?;
@@ -263,13 +276,19 @@ mod tests {
             let (_shutdown,receiver)=tokio::sync::watch::channel(false);
             let server=tokio::spawn(crate::serve_listener(host.clone(),listener,receiver));
             let original=status(&database).await.unwrap();
+            let wrong_instance=uuid::Uuid::new_v4().to_string();
+            let rejected=stop_instance(&database,&wrong_instance).await.unwrap_err();
+            assert_eq!(rejected.kind(),io::ErrorKind::InvalidInput);
+            assert_eq!(status(&database).await.unwrap().state.service_instance_id,original.state.service_instance_id);
+            assert_eq!(stopped.load(Ordering::SeqCst),0);
+            assert!(!host.is_stopping());
             let error=start_preflight(&database,&directory.join("nonexistent-service"),false,true,||Err(io::Error::new(io::ErrorKind::Unsupported,"SyntheticProcessObservationDenied"))).await.unwrap_err();
             assert_eq!(error.kind(),io::ErrorKind::Unsupported);
             assert_eq!(status(&database).await.unwrap().state.service_instance_id,original.state.service_instance_id);
             assert_eq!(stopped.load(Ordering::SeqCst),0);
             assert!(!host.is_stopping());
             assert!(!database.exists());
-            stop(&database).await.unwrap();
+            stop_instance(&database,&original.state.service_instance_id).await.unwrap();
             server.await.unwrap().unwrap();
             assert_eq!(stopped.load(Ordering::SeqCst),1);
             drop(credentials);

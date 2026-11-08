@@ -2,6 +2,13 @@ use std::io;
 
 pub fn supported() -> bool { cfg!(target_os = "windows") }
 
+pub fn is_admin() -> io::Result<bool> {
+    #[cfg(target_os = "windows")]
+    { crate::system_settings::is_admin() }
+    #[cfg(target_os = "linux")]
+    { Ok(false) }
+}
+
 pub fn restart_explorer() -> io::Result<()> {
     #[cfg(target_os = "windows")]
     { crate::system_settings::restart_explorer() }

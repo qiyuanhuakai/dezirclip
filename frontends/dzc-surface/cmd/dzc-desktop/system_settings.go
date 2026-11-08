@@ -45,6 +45,12 @@ func (s *SystemSettings) WinVStatus(ctx context.Context) (bool, error) {
 	return result.Value, err
 }
 
+func (s *SystemSettings) IsAdmin(ctx context.Context) (bool, error) {
+	var result protocol.WindowsSettingResult
+	err := s.owner.DesktopCall(ctx, protocol.MethodDesktopSystemAdminGet, struct{}{}, "WindowsSettingResult", &result)
+	return result.Value, err
+}
+
 func (s *SystemSettings) RestartExplorer(ctx context.Context) error {
 	var result protocol.WindowsSettingResult
 	return s.owner.DesktopCall(ctx, protocol.MethodDesktopSystemExplorerRestart, struct{}{}, "WindowsSettingResult", &result)

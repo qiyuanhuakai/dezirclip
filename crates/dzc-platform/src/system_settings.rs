@@ -1,5 +1,20 @@
 //! Changes to Windows settings carry an exact-value, write-ahead restoration receipt.
 
+pub fn is_admin() -> io::Result<bool> {
+    use windows::Win32::Security::{TokenElevation, TOKEN_ELEVATION};
+    let mut token = HANDLE::default();
+    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }.map_err(io::Error::other)?;
+    let mut elevation = TOKEN_ELEVATION::default();
+    let mut length = 0;
+    let result = unsafe {
+        GetTokenInformation(token, TokenElevation, Some((&mut elevation as *mut TOKEN_ELEVATION).cast()),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32, &mut length)
+    };
+    unsafe { let _ = CloseHandle(token); }
+    result.map_err(io::Error::other)?;
+    Ok(elevation.TokenIsElevated != 0)
+}
+
 /// Restart only the shell attached to this desktop, retaining a handle to its
 /// process throughout validation and termination so a reused PID cannot target
 /// another process.

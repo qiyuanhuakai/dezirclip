@@ -343,7 +343,7 @@ impl Host {
                 methods.push("desktop.settings.view.set");
                 if can(Permission::PrivacyWrite) { methods.push("desktop.settings.reset"); }
                 if can(Permission::PrivacyWrite) && dzc_platform::desktop_system::supported() {
-                    methods.extend(["desktop.system.win_v.get", "desktop.system.win_v.begin", "desktop.system.win_v.finish", "desktop.system.clipboard_history.set", "desktop.system.explorer.restart"]);
+                    methods.extend(["desktop.system.win_v.get", "desktop.system.win_v.begin", "desktop.system.win_v.finish", "desktop.system.clipboard_history.set", "desktop.system.explorer.restart", "desktop.system.admin.get"]);
                 }
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
@@ -699,7 +699,7 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
-            Method::DesktopSystemExplorerRestart | Method::DesktopSystemWinVGet | Method::DesktopSystemWinVBegin | Method::DesktopSystemWinVFinish |
+            Method::DesktopSystemAdminGet | Method::DesktopSystemExplorerRestart | Method::DesktopSystemWinVGet | Method::DesktopSystemWinVBegin | Method::DesktopSystemWinVFinish |
             Method::DesktopSystemClipboardHistorySet => self.system_settings_request(session, request.method, request.params),
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop |
             Method::DesktopScreenFinish | Method::DesktopScreenCancel => {
@@ -946,6 +946,7 @@ pub(crate) mod tests {
             for (method, params) in [
                 (Method::DesktopSystemWinVGet, serde_json::json!({})),
                 (Method::DesktopSystemExplorerRestart, serde_json::json!({})),
+                (Method::DesktopSystemAdminGet, serde_json::json!({})),
                 (Method::DesktopSystemWinVBegin, serde_json::json!({"enabled":true})),
                 (Method::DesktopSystemWinVFinish, receipt.clone()),
                 (Method::DesktopSystemClipboardHistorySet, serde_json::json!({"enabled":false})),

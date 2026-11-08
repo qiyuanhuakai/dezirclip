@@ -218,37 +218,7 @@ pub fn restart_as_admin(app_handle: AppHandle) -> AppResult<()> {
 
 #[tauri::command]
 pub fn check_is_admin() -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        use std::ffi::c_void;
-        use windows::Win32::Foundation::HANDLE;
-        use windows::Win32::Security::{
-            GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
-        };
-        use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-
-        unsafe {
-            let mut token_handle = HANDLE::default();
-            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle).is_ok() {
-                let mut elevation = TOKEN_ELEVATION::default();
-                let mut return_length = 0;
-                let success = GetTokenInformation(
-                    token_handle,
-                    TokenElevation,
-                    Some(&mut elevation as *mut _ as *mut c_void),
-                    std::mem::size_of::<TOKEN_ELEVATION>() as u32,
-                    &mut return_length,
-                );
-
-                let _ = windows::Win32::Foundation::CloseHandle(token_handle);
-
-                if success.is_ok() {
-                    return elevation.TokenIsElevated != 0;
-                }
-            }
-        }
-    }
-    false
+    dzc_platform::desktop_system::is_admin().unwrap_or(false)
 }
 
 #[tauri::command]

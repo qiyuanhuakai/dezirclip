@@ -1575,6 +1575,7 @@
         "desktop.settings.reset",
         "desktop.system.win_v.get",
         "desktop.system.explorer.restart",
+        "desktop.system.admin.get",
         "desktop.system.win_v.begin",
         "desktop.system.win_v.finish",
         "desktop.system.clipboard_history.set",
@@ -2902,6 +2903,27 @@
             "properties": {
               "method": {
                 "const": "desktop.system.explorer.restart"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.system.admin.get"
               }
             },
             "required": [

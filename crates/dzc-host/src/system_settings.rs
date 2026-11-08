@@ -8,6 +8,7 @@ impl Host {
         session.require(Permission::PrivacyWrite)?;
         let mut pending = session.system_change.lock().map_err(|_| WireErrorCode::Unavailable)?;
         let value = match method {
+            Method::DesktopSystemAdminGet => dzc_platform::desktop_system::is_admin().map_err(system_error)?,
             Method::DesktopSystemExplorerRestart => {
                 dzc_platform::desktop_system::restart_explorer().map_err(system_error)?;
                 true

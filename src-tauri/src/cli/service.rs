@@ -10,7 +10,7 @@ enum ServiceCommand {
     /// Start the optional service, acknowledging any existing embedded capture handoff.
     Start { #[arg(long)] no_capture: bool, #[arg(long)] json: bool },
     /// Stop and drain the current Host; a failed stop remains a failure.
-    Stop,
+    Stop { #[arg(long)] from_instance: Option<String> },
     /// Query the current Host without starting one.
     Status { #[arg(long)] json: bool },
     /// Move an installed profile offline or through the identified standalone Service.
@@ -75,7 +75,10 @@ pub fn run(args: ServiceArgs) -> Result<(),String> {
                 println!("{}", descriptor);
                 Ok(())
             }
-            ServiceCommand::Stop => controller::stop(&database).await.map_err(|e|e.to_string()),
+            ServiceCommand::Stop { from_instance } => match from_instance {
+                Some(instance) => controller::stop_instance(&database, &instance).await,
+                None => controller::stop(&database).await,
+            }.map_err(|e|e.to_string()),
             ServiceCommand::GrantSurface { copy,paste,seconds } => {
                 let mut client = Client::control(&controller::endpoint(&database).map_err(|e|e.to_string())?,ClientRole::Cli).await.map_err(|e|e.to_string())?;
                 let mut permissions = vec!["history_read", "surface_control"];
