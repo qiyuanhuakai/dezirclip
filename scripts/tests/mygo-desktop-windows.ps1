@@ -450,6 +450,7 @@ $edit = New-Object Windows.Forms.TextBox
 $form.Controls.Add($edit)
 $resident = $null
 $startedService = $null
+$startedServiceProcess = $null
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
@@ -499,6 +500,17 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         if ($LASTEXITCODE -or $startedService.mode -ne 'service' -or !$startedService.capture_owner -or !$startedService.state.service_instance_id) {
             throw 'Could not start the independent capture Service before MyGo'
         }
+        $serviceEndpoint = & $cli service desktop-endpoint | ConvertFrom-Json
+        if ($LASTEXITCODE -or !$serviceEndpoint.pid -or $serviceEndpoint.instance -cne $startedService.state.service_instance_id) {
+            throw 'Could not identify the original capture Service process'
+        }
+        $startedServiceProcess = Get-Process -Id $serviceEndpoint.pid
+        if ($startedServiceProcess.Path -ne (Join-Path (Split-Path $exe) 'dzc-service.exe')) {
+            throw 'Original capture Service used an unexpected executable'
+        }
+        # Retain the kernel handle before a possible exit; a later PID lookup
+        # cannot distinguish a crashed Service from a reused process ID.
+        $null = $startedServiceProcess.Handle
     }
     [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
     $form.Show()
@@ -696,6 +708,14 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     $log = Join-Path $dir.FullName 'desktop.log'
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
     if ($Emoji -and $startedService) {
+        if ($startedServiceProcess) {
+            $startedServiceProcess.Refresh()
+            if ($startedServiceProcess.HasExited) {
+                Write-Host ("Original Service exited: pid={0}, exit={1}" -f $startedServiceProcess.Id, $startedServiceProcess.ExitCode)
+            } else {
+                Write-Host ("Original Service is still running: pid={0}" -f $startedServiceProcess.Id)
+            }
+        }
         try {
             $observedService = & $cli service status --json | ConvertFrom-Json
             Write-Host ("Before cleanup: status exit={0}, original Service={1}, capture owner={2}" -f
@@ -707,5 +727,6 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
     if ($main -and !$main.HasExited) { $main.Kill(); $main.WaitForExit() }
     & $cli service stop | Out-Null
+    if ($startedServiceProcess) { $startedServiceProcess.Dispose() }
     $form.Dispose()
 }
