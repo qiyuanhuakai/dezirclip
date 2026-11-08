@@ -78,6 +78,7 @@ pub struct Host {
     stopped: AtomicBool,
     pub(crate) snapshots: crate::desktop::Snapshots,
     observed_epoch: Mutex<u64>,
+    settings_reset_pending: Mutex<bool>,
     hotkey: Mutex<Option<crate::hotkey::Hotkey>>,
     pub(crate) recording: crate::recording::Recording,
     pub(crate) queue: crate::paste_queue::Queue,
@@ -122,7 +123,7 @@ impl Host {
             #[cfg(test)] after_backup_ticket: Mutex::new(None),
             #[cfg(test)] explorer_restart_pause: Mutex::new(None),
             stop_requested: AtomicBool::new(false), capture_owner: AtomicBool::new(false), lifecycle: Mutex::new(None), manual_ocr_operation: Mutex::new(()), font_scan: Mutex::new(()), background_read: Mutex::new(()), backup_operation: Mutex::new(()), requests: Mutex::new(()), stopped: AtomicBool::new(false),
-            application_selection: Mutex::new(()),
+            application_selection: Mutex::new(()), settings_reset_pending: Mutex::new(false),
             #[cfg(feature = "native-screen")]
             screen: Default::default(),
             snapshots: Default::default(), observed_epoch: Mutex::new(epoch), hotkey: Mutex::new(None), recording: Default::default(), queue: Default::default(), delivery:Mutex::new(()), uploads:Default::default(),copy_echo:Mutex::new(None),capture_diagnostic:Mutex::new(None),history_version:Mutex::new(Default::default()) });
@@ -232,9 +233,10 @@ impl Host {
     /// a request. Failed native revocation leaves the old observed epoch so the
     /// next request retries; no successful ACK or privacy event is published.
     pub(crate) fn synchronize_privacy(&self) -> Result<(), WireErrorCode> {
-        let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
         let mut observed = self.observed_epoch.lock().map_err(unavailable)?;
-        if *observed == snapshot.privacy_epoch { return Ok(()); }
+        let mut reset = self.settings_reset_pending.lock().map_err(unavailable)?;
+        let snapshot = self.history.runtime_snapshot(now_ms()?).map_err(unavailable)?;
+        if *observed == snapshot.privacy_epoch && !*reset { return Ok(()); }
         self.actions.revoke_private_exports()?;
         self.snapshots.clear()?;
         self.uploads.clear()?;
@@ -243,6 +245,14 @@ impl Host {
         self.queue.invalidate()?;
         let state = self.snapshot()?;
         self.events.push(EventKind::PrivacyStateChanged, state, EventData { entry_id: None, status: None }).map_err(unavailable)?;
+        if *reset {
+            self.queue.clear()?;
+            self.actions.queue_changed(0);
+            for status in ["paste_queue_changed:0", "PrivacyHotkeyChanged", "view_settings_changed", "application_settings_reset"] {
+                self.events.push(EventKind::ServiceStateChanged, self.snapshot()?, EventData { entry_id: None, status: Some(status.into()) }).map_err(unavailable)?;
+            }
+            *reset = false;
+        }
         *observed = snapshot.privacy_epoch;
         self.actions.privacy_changed(&snapshot);
         Ok(())
@@ -686,6 +696,7 @@ impl Host {
                 let mut native = self.hotkey.lock().map_err(unavailable)?;
                 let hotkey = native.as_mut().ok_or(WireErrorCode::Unavailable)?;
                 hotkey.stop()?;
+                let mut pending = self.settings_reset_pending.lock().map_err(unavailable)?;
                 if let Err(error) = self.history.reset_application_preferences(input.expected_epoch) {
                     hotkey.set(&previous)?;
                     return Err(match error.code {
@@ -693,14 +704,10 @@ impl Host {
                         _ => WireErrorCode::Unavailable,
                     });
                 }
+                *pending = true;
+                drop(pending);
                 drop(native);
                 self.synchronize_privacy()?;
-                let epoch = self.snapshot()?.privacy_epoch;
-                self.queue_request(session, Method::DesktopQueueSet, serde_json::json!({
-                    "service_instance_id": self.instance_id(), "expected_epoch": epoch, "ids": []
-                }))?;
-                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("PrivacyHotkeyChanged".into()) })?;
-                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
             Method::DesktopSystemAdminGet | Method::DesktopSystemExplorerRestart | Method::DesktopSystemWinVGet | Method::DesktopSystemWinVBegin | Method::DesktopSystemWinVFinish |
@@ -960,6 +967,52 @@ pub(crate) mod tests {
         }
         assert_eq!(dispatch(&host, &desktop, Method::DesktopSystemWinVFinish, receipt).error.unwrap().code, WireErrorCode::NotFound);
         assert!(desktop.system_change.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn settings_reset_retries_post_commit_revocation_before_completing_queue_and_events() {
+        struct Revocation { busy: AtomicBool }
+        impl HostActions for Revocation {
+            fn platform_capabilities(&self) -> Value { serde_json::json!({}) }
+            fn can_copy(&self) -> bool { false }
+            fn copy(&self, _: dzc_core::ports::ClipboardPayload) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
+            fn can_paste(&self) -> bool { false }
+            fn paste(&self) -> Result<(), WireErrorCode> { Err(WireErrorCode::Unavailable) }
+            fn stop_helpers(&self) -> Result<(), WireErrorCode> { Ok(()) }
+            fn revoke_private_exports(&self) -> Result<(), WireErrorCode> {
+                if self.busy.load(Ordering::SeqCst) { Err(WireErrorCode::Busy) } else { Ok(()) }
+            }
+        }
+        let original = synthetic_host();
+        let actions = Arc::new(Revocation { busy: AtomicBool::new(false) });
+        let host = Host::new(HostOptions { mode: HostMode::Service, history: original.history.clone(), directory: original.directory.clone(), actions: actions.clone() }).unwrap();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (desktop, _) = host.hello(request).unwrap();
+        let id = insert(&host, "queued reset fixture", &[]);
+        let epoch = host.snapshot().unwrap().privacy_epoch;
+        host.history.update_view_setting("app.theme", "retro", epoch).unwrap();
+        assert!(dispatch(&host, &desktop, Method::DesktopQueueSet, serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":epoch,"ids":[id]})).error.is_none());
+        let sequence = host.snapshot().unwrap().event_sequence;
+        actions.busy.store(true, Ordering::SeqCst);
+        let response = dispatch(&host, &desktop, Method::DesktopSettingsReset, serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":epoch}));
+        assert_eq!(response.error.unwrap().code, WireErrorCode::Busy);
+        assert_eq!(host.history.desktop_preferences().unwrap()["app.theme"], "mica");
+        assert!(*host.settings_reset_pending.lock().unwrap());
+        assert_eq!(host.queue_length().unwrap(), 1);
+        assert_eq!(dispatch(&host, &desktop, Method::Health, serde_json::json!({})).error.unwrap().code, WireErrorCode::Busy);
+        actions.busy.store(false, Ordering::SeqCst);
+        assert!(dispatch(&host, &desktop, Method::Health, serde_json::json!({})).error.is_none());
+        assert!(!*host.settings_reset_pending.lock().unwrap());
+        assert_eq!(host.queue_length().unwrap(), 0);
+        let events = host.events.after(sequence, Duration::ZERO, host.snapshot().unwrap()).unwrap();
+        for expected in ["paste_queue_changed:0", "PrivacyHotkeyChanged", "view_settings_changed", "application_settings_reset"] {
+            assert_eq!(events.events.iter().filter(|event| event.data.status.as_deref() == Some(expected)).count(), 1);
+        }
+        let completed = host.snapshot().unwrap().event_sequence;
+        host.synchronize_privacy().unwrap();
+        assert_eq!(host.snapshot().unwrap().event_sequence, completed);
     }
 
     #[test]

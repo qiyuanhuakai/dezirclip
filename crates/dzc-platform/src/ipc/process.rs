@@ -5,6 +5,7 @@ use std::io::Read;
 /// An exit observation opened before requesting shutdown. It never terminates
 /// the peer and cannot accidentally follow a subsequently reused process ID.
 pub struct ProcessExit {
+    pid: u32,
     #[cfg(target_os="windows")]
     handle: windows::Win32::Foundation::HANDLE,
     #[cfg(target_os="linux")]
@@ -19,11 +20,14 @@ impl ProcessExit {
     }
     pub fn open(peer: &super::PeerIdentity) -> io::Result<Self> {
         let pid = peer.pid().ok_or_else(super::denied)?;
+        Self::open_pid(pid)
+    }
+    fn open_pid(pid: u32) -> io::Result<Self> {
         #[cfg(target_os="windows")]
         {
             use windows::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
             let handle = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid).map_err(io::Error::other)? };
-            Ok(Self { handle })
+            Ok(Self { pid, handle })
         }
         #[cfg(target_os="linux")]
         {
@@ -35,8 +39,25 @@ impl ProcessExit {
                     io::Error::new(io::ErrorKind::Unsupported,"ServiceProcessObservationUnsupported")
                 } else { error });
             }
-            Ok(Self { pidfd: unsafe { std::os::fd::OwnedFd::from_raw_fd(descriptor as i32) } })
+            Ok(Self { pid, pidfd: unsafe { std::os::fd::OwnedFd::from_raw_fd(descriptor as i32) } })
         }
+    }
+    /// Compare OS-reported executable identities while both process generations
+    /// remain alive. No client-provided path or window property is trusted.
+    pub fn shares_executable(&self, pid: u32) -> io::Result<bool> {
+        let other = Self::open_pid(pid)?;
+        if !self.is_running()? || !other.is_running()? { return Err(super::denied()); }
+        #[cfg(target_os="windows")]
+        let same = process_image(self.pid)?.eq_ignore_ascii_case(&process_image(pid)?);
+        #[cfg(target_os="linux")]
+        let same = {
+            use std::os::unix::fs::MetadataExt;
+            let left = std::fs::metadata(format!("/proc/{}/exe", self.pid))?;
+            let right = std::fs::metadata(format!("/proc/{pid}/exe"))?;
+            left.dev() == right.dev() && left.ino() == right.ino()
+        };
+        if !self.is_running()? || !other.is_running()? { return Err(super::denied()); }
+        Ok(same)
     }
     pub fn wait(self, timeout: std::time::Duration) -> io::Result<()> { self.observe(timeout) }
 
@@ -76,6 +97,18 @@ impl ProcessExit {
             }
         }
     }
+}
+
+#[cfg(target_os="windows")]
+fn process_image(pid: u32) -> io::Result<String> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
+    use windows::{core::PWSTR, Win32::{Foundation::HANDLE, System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION}}};
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).map_err(io::Error::other)? };
+    let process = unsafe { OwnedHandle::from_raw_handle(handle.0) };
+    let mut image = vec![0u16; 32768];
+    let mut length = image.len() as u32;
+    unsafe { QueryFullProcessImageNameW(HANDLE(process.as_raw_handle()), PROCESS_NAME_WIN32, PWSTR(image.as_mut_ptr()), &mut length).map_err(io::Error::other)?; }
+    String::from_utf16(&image[..length as usize]).map_err(io::Error::other)
 }
 #[cfg(target_os="windows")]
 impl Drop for ProcessExit { fn drop(&mut self) { unsafe { let _ = windows::Win32::Foundation::CloseHandle(self.handle); } } }
@@ -210,6 +243,42 @@ fn inspect_command(mut command:Command,arguments:&[&str],timeout:std::time::Dura
             return Err(io::Error::new(io::ErrorKind::TimedOut,"HelperIdentityUnconfirmed"));
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn executable_identity_child() {
+        if std::env::var_os("DZC_EXECUTABLE_IDENTITY_CHILD").is_some() {
+            let mut byte = [0];
+            let _ = std::io::stdin().read(&mut byte);
+        }
+    }
+
+    #[test]
+    fn executable_identity_excludes_own_child_but_accepts_another_program() {
+        let peer = ProcessExit::open(&super::super::current_identity().unwrap()).unwrap();
+        assert!(peer.shares_executable(std::process::id()).unwrap());
+        let mut own = Command::new(std::env::current_exe().unwrap());
+        own.args(["--exact", "ipc::process::identity_tests::executable_identity_child"])
+            .env("DZC_EXECUTABLE_IDENTITY_CHILD", "1");
+        #[cfg(target_os="windows")]
+        let mut external = { let mut command = Command::new("cmd.exe"); command.args(["/D", "/Q", "/C", "set /p DZC_IDENTITY_WAIT="]); command };
+        #[cfg(target_os="linux")]
+        let mut external = Command::new("/bin/cat");
+        for (command, expected) in [(&mut own, true), (&mut external, false)] {
+            command.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
+            #[cfg(target_os="windows")]
+            { use std::os::windows::process::CommandExt; command.creation_flags(0x08000000); }
+            let mut child = command.spawn().unwrap();
+            let result = peer.shares_executable(child.id());
+            drop(child.stdin.take());
+            child.wait().unwrap();
+            assert_eq!(result.unwrap(), expected);
+        }
     }
 }
 

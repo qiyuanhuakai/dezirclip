@@ -5,6 +5,35 @@ import (
 	"testing"
 )
 
+func TestCanonicalMainShortcutContinuousEditsAndRollback(t *testing.T) {
+	registered, live := map[string]bool{}, map[string]bool{}
+	register := func(key string) error {
+		if live[key] {
+			t.Fatalf("duplicate native claim: %s", key)
+		}
+		live[key] = true
+		return nil
+	}
+	unregister := func(key string) { delete(live, key) }
+	for _, raw := range []string{"Ctrl+Shift+Alt+K", "Ctrl+Alt+Shift+K\nAlt+J", "shift+control+alt+k\nAlt+J"} {
+		if err := changeMainHotkeys(registered, raw, register, unregister, func() error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	failure := errors.New("save failed")
+	if err := changeMainHotkeys(registered, "Control+Shift+Alt+K\nAlt+F9", register, unregister, func() error { return failure }); !errors.Is(err, failure) {
+		t.Fatal(err)
+	}
+	if len(live) != 2 || !live["Ctrl+Alt+Shift+K"] || !live["Alt+J"] {
+		t.Fatal(live)
+	}
+	for raw, canonical := range map[string]string{"win+control+return": "Ctrl+Super+Enter", "shift+esc": "Shift+Escape", "alt+ArrowLeft": "Alt+Left", "meta+del": "Super+Delete", "CTRL+f24": "Ctrl+F24"} {
+		if got := mainShortcutName(raw); got != canonical {
+			t.Fatalf("%s: %s != %s", raw, got, canonical)
+		}
+	}
+}
+
 func TestMainShortcutAliasesShareOneNativeClaim(t *testing.T) {
 	registered := map[string]bool{}
 	claims := 0

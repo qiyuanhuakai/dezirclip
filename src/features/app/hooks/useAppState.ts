@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useState, type SetStateAction } from "react";
+import { updateRecordingTarget, type RecordingTarget } from "../../../shared/lib/recordingTarget";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
 import { DEFAULT_RICH_TEXT_SNAPSHOT_CACHE } from "../../../shared/lib/richTextSnapshotCache";
 import type { AppState, DefaultAppsMap, InstalledAppOption } from "../types";
@@ -40,10 +41,23 @@ export const useAppState = (): AppState => {
   const [richPasteHotkey, setRichPasteHotkey] = useState<string>("Ctrl+Shift+Z");
   const [searchHotkey, setSearchHotkey] = useState<string>("Alt+F");
   const [sequentialMode, setSequentialModeState] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isRecordingSequential, setIsRecordingSequential] = useState(false);
-  const [isRecordingRich, setIsRecordingRich] = useState(false);
-  const [isRecordingSearch, setIsRecordingSearch] = useState(false);
+  const [recordingTarget, setRecordingTarget] = useState<RecordingTarget | null>(null);
+  const isRecording = recordingTarget === "main";
+  const isRecordingSequential = recordingTarget === "sequential";
+  const isRecordingRich = recordingTarget === "rich";
+  const isRecordingSearch = recordingTarget === "search";
+  const setIsRecording = useCallback((value: SetStateAction<boolean>) => {
+    setRecordingTarget(current => updateRecordingTarget(current, "main", value));
+  }, []);
+  const setIsRecordingSequential = useCallback((value: SetStateAction<boolean>) => {
+    setRecordingTarget(current => updateRecordingTarget(current, "sequential", value));
+  }, []);
+  const setIsRecordingRich = useCallback((value: SetStateAction<boolean>) => {
+    setRecordingTarget(current => updateRecordingTarget(current, "rich", value));
+  }, []);
+  const setIsRecordingSearch = useCallback((value: SetStateAction<boolean>) => {
+    setRecordingTarget(current => updateRecordingTarget(current, "search", value));
+  }, []);
   const [deleteAfterPaste, setDeleteAfterPaste] = useState(false);
   const [moveToTopAfterPaste, setMoveToTopAfterPaste] = useState(true);
   const [privacyProtection, setPrivacyProtection] = useState(true);

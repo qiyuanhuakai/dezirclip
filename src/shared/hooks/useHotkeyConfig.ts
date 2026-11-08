@@ -341,12 +341,14 @@ export const useHotkeyConfig = ({
   );
 
   // Main shortcuts use the shared editor; these inline recorders use the same native session.
+  const actionTarget = isRecordingSequential ? "sequential" : isRecordingRich ? "rich" : isRecordingSearch ? "search" : undefined;
   const actionRecording = useHotkeyRecording({
-    recording: isRecordingSequential || isRecordingRich || isRecordingSearch,
+    recording: actionTarget !== undefined,
+    sessionKey: actionTarget,
     onRecorded: hotkey => {
-      if (isRecordingSequential) void updateSequentialHotkey(hotkey);
-      if (isRecordingRich) void updateRichPasteHotkey(hotkey);
-      if (isRecordingSearch) void updateSearchHotkey(hotkey);
+      if (actionTarget === "sequential") void updateSequentialHotkey(hotkey);
+      else if (actionTarget === "rich") void updateRichPasteHotkey(hotkey);
+      else if (actionTarget === "search") void updateSearchHotkey(hotkey);
     },
     onCancelled: () => {
       setIsRecordingSequential(false);

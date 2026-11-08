@@ -26,13 +26,13 @@ impl RememberedFocus {
         #[cfg(target_os = "windows")]
         let original = {
             let descriptor = target.windows.as_ref().ok_or_else(failed)?;
-            if descriptor.pid == peer_pid {
+            if descriptor.pid == peer_pid || peer.shares_executable(descriptor.pid).map_err(|_| failed())? {
                 return Err(failed());
             }
             WindowsBoundPaste::prepare(descriptor)?
         };
         #[cfg(target_os = "linux")]
-        let original = linux::Original::capture(target.x11.ok_or_else(failed)?, peer_pid)?;
+        let original = linux::Original::capture(target.x11.ok_or_else(failed)?, peer_pid, &peer)?;
         Ok(Self {
             peer_pid,
             peer,
@@ -98,10 +98,10 @@ mod linux {
     }
 
     impl Original {
-        pub(super) fn capture(focus: u32, peer: u32) -> PlatformResult<Self> {
+        pub(super) fn capture(focus: u32, peer: u32, identity: &ProcessExit) -> PlatformResult<Self> {
             let (conn, _) = super::super::x11::connection().map_err(|_| failed())?;
             let pid = owner(&conn, focus)?;
-            if pid == peer || pid == std::process::id() {
+            if pid == peer || pid == std::process::id() || identity.shares_executable(pid).map_err(|_| failed())? {
                 return Err(failed());
             }
             let mut client = focus;
