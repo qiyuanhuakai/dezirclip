@@ -260,6 +260,7 @@ mod identity_tests {
 
     #[test]
     fn executable_identity_excludes_own_child_but_accepts_another_program() {
+        let _native_process = super::super::NATIVE_PROCESS_TEST_LOCK.lock().unwrap();
         let peer = ProcessExit::open(&super::super::current_identity().unwrap()).unwrap();
         assert!(peer.shares_executable(std::process::id()).unwrap());
         let mut own = Command::new(std::env::current_exe().unwrap());

@@ -82,6 +82,7 @@ mod tests {
     use super::*;
     #[test]
     fn actual_worker_reference_keeps_lease_when_host_reference_is_dropped() {
+        let _native_process = super::super::NATIVE_PROCESS_TEST_LOCK.lock().unwrap();
         let host = CaptureLease::acquire().unwrap();
         let worker = host.clone();
         drop(host);
