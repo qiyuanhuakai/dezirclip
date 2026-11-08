@@ -471,6 +471,12 @@ jobs:
           DZC_TEST_RECEIPT_PROCESS: '1'
         run: ./scripts/tests/test-service-process-receipt.ps1
 
+      - name: Verify Windows clipboard reader window ownership
+        if: runner.os == 'Windows' && matrix.can_test
+        env:
+          DZC_TEST_CLIPBOARD_READER: '1'
+        run: cargo test --locked -p dzc-platform capture::windows_access::tests::reader_window_owns_the_lock_until_drop -- --exact
+
       - name: Diagnose Windows Service startup crashes with local symbols
         if: runner.os == 'Windows' && matrix.can_test && inputs.windows_service_crash_stacks
         timeout-minutes: 20

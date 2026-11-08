@@ -11,6 +11,8 @@ mod dropfiles;
 #[cfg(target_os = "windows")]
 pub mod windows_clipboard;
 #[cfg(target_os = "windows")]
+mod windows_access;
+#[cfg(target_os = "windows")]
 pub mod windows_privacy;
 #[cfg(target_os = "linux")]
 pub mod x11_clipboard;

@@ -9,6 +9,40 @@ const CF_DIB: u32 = 8; // DIB
 const CF_DIBV5: u32 = 17; // DIBV5
 const CF_UNICODETEXT: u32 = 13; // Unicode text
 
+pub(super) fn get_clipboard_text() -> Option<String> {
+    // Preserve arboard's six attempts, spaced 5 ms apart, for transient contention.
+    let mut opened = None;
+    for attempt in 0..6 {
+        match super::windows_access::ClipboardReadGuard::open() {
+            Ok(guard) => { opened = Some(guard); break; }
+            Err(_) if attempt < 5 => std::thread::sleep(std::time::Duration::from_millis(5)),
+            Err(_) => return None,
+        }
+    }
+    let _guard = opened?;
+    unsafe {
+        let handle = HGLOBAL(GetClipboardData(CF_UNICODETEXT).ok()?.0);
+        let data = GlobalLock(handle);
+        if data.is_null() { return None; }
+        struct Locked(HGLOBAL);
+        impl Drop for Locked {
+            fn drop(&mut self) { unsafe { let _ = GlobalUnlock(self.0); } }
+        }
+        let _locked = Locked(handle);
+        let bytes = GlobalSize(handle);
+        if bytes < 2 || bytes % 2 != 0 { return None; }
+        // Every text that fits the 64 MiB UTF-8 capture queue fits this UTF-16
+        // scan, including its terminator. Allocation padding is not text.
+        let units = std::slice::from_raw_parts(data.cast::<u16>(), (bytes / 2).min(64 * 1024 * 1024 + 1));
+        decode_clipboard_text(units)
+    }
+}
+
+fn decode_clipboard_text(units: &[u16]) -> Option<String> {
+    let end = units.iter().position(|unit| *unit == 0)?;
+    Some(String::from_utf16_lossy(&units[..end]))
+}
+
 // OpenClipboard retry policy: another thread may hold the clipboard briefly
 // (per Microsoft docs); retry a few times with a short sleep before giving up.
 const MAX_OPEN_RETRIES: u32 = 3;
@@ -134,9 +168,7 @@ pub(super) fn normalize_zero_alpha(pixels: &mut [u8]) {
 /// Try to get image from Windows clipboard using native API
 pub unsafe fn get_clipboard_image() -> Option<ImageData> {
     // Try to open clipboard
-    if OpenClipboard(None).is_err() {
-        return None;
-    }
+    let guard = super::windows_access::ClipboardReadGuard::open().ok()?;
 
     // Try CF_DIBV5 first (newer format), then CF_DIB
     let h_dib = match GetClipboardData(CF_DIBV5) {
@@ -144,7 +176,6 @@ pub unsafe fn get_clipboard_image() -> Option<ImageData> {
         _ => match GetClipboardData(CF_DIB) {
             Ok(handle) if !handle.is_invalid() => handle,
             _ => {
-                let _ = CloseClipboard();
                 return None;
             }
         },
@@ -154,7 +185,6 @@ pub unsafe fn get_clipboard_image() -> Option<ImageData> {
     let h_global = HGLOBAL(h_dib.0 as *mut _);
     let p_dib = GlobalLock(h_global);
     if p_dib.is_null() {
-        let _ = CloseClipboard();
         return None;
     }
 
@@ -165,7 +195,7 @@ pub unsafe fn get_clipboard_image() -> Option<ImageData> {
 
     // Unlock and Close Clipboard IMMEDIATELY
     let _ = GlobalUnlock(h_global);
-    let _ = CloseClipboard();
+    drop(guard);
 
     // Process the data offline (without holding clipboard lock)
     // Wrap in closure just to use ? or early return logic easily
@@ -340,6 +370,16 @@ pub unsafe fn get_clipboard_image() -> Option<ImageData> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clipboard_text_requires_a_terminator_and_preserves_unicode() {
+        let text = "中文 😀\r\nsecond line";
+        let mut units: Vec<u16> = text.encode_utf16().collect();
+        assert_eq!(super::decode_clipboard_text(&units), None);
+        units.extend([0, 65]);
+        assert_eq!(super::decode_clipboard_text(&units).as_deref(), Some(text));
+        assert_eq!(super::decode_clipboard_text(&[0]).as_deref(), Some(""));
+        assert_eq!(super::decode_clipboard_text(&[0xd800, 0]).as_deref(), Some("�"));
+    }
     use super::{detect_appended_bitfields_masks, MAX_OPEN_RETRIES, RETRY_DELAY_MS};
 
     #[test]
@@ -374,9 +414,7 @@ const CF_HDROP: u32 = 15;
 
 /// Try to get file paths from Windows clipboard (CF_HDROP)
 pub unsafe fn get_clipboard_files() -> Option<Vec<String>> {
-    if OpenClipboard(None).is_err() {
-        return None;
-    }
+    let guard = super::windows_access::ClipboardReadGuard::open().ok()?;
 
     let result = (|| {
         let h_drop = match GetClipboardData(CF_HDROP) {
@@ -400,7 +438,7 @@ pub unsafe fn get_clipboard_files() -> Option<Vec<String>> {
         files
     })();
 
-    let _ = CloseClipboard();
+    drop(guard);
     result
 }
 
@@ -517,9 +555,7 @@ pub unsafe fn get_clipboard_raw_format(format_name: &str) -> Option<Vec<u8>> {
         return None;
     }
 
-    if OpenClipboard(None).is_err() {
-        return None;
-    }
+    let guard = super::windows_access::ClipboardReadGuard::open().ok()?;
 
     let result = (|| {
         let h_data = match GetClipboardData(format_id) {
@@ -541,7 +577,7 @@ pub unsafe fn get_clipboard_raw_format(format_name: &str) -> Option<Vec<u8>> {
         Some(buffer)
     })();
 
-    let _ = CloseClipboard();
+    drop(guard);
     result
 }
 

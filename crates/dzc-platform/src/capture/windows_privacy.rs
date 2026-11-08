@@ -4,8 +4,7 @@ use dzc_core::ports::PrivacyHint;
 use windows::core::w;
 use windows::Win32::Foundation::HGLOBAL;
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, GetClipboardData, GetClipboardSequenceNumber, IsClipboardFormatAvailable,
-    OpenClipboard, RegisterClipboardFormatW,
+    GetClipboardData, GetClipboardSequenceNumber, IsClipboardFormatAvailable, RegisterClipboardFormatW,
 };
 use windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
 
@@ -38,16 +37,8 @@ pub(crate) fn preflight_for(expected: Option<u64>) -> Result<PrivacyPreflight, C
         if excluded == 0 || include == 0 {
             return Err(failure());
         }
-        struct OpenGuard;
-        impl Drop for OpenGuard {
-            fn drop(&mut self) {
-                unsafe {
-                    let _ = CloseClipboard();
-                }
-            }
-        }
         let _guard = super::acquisition::acquire_same_selection(sequence, selection_id,
-            || OpenClipboard(None).ok().map(|_| OpenGuard), std::thread::sleep).map_err(|_| failure())?;
+            || super::windows_access::ClipboardReadGuard::open().ok(), std::thread::sleep).map_err(|_| failure())?;
         let excluded_present = IsClipboardFormatAvailable(excluded).is_ok();
         let include_history = if !excluded_present && IsClipboardFormatAvailable(include).is_ok() {
             let handle = GetClipboardData(include).map_err(|_| failure())?;
