@@ -1620,6 +1620,7 @@ dependencies = [
  "wayland-protocols-wlr",
  "windows 0.62.2",
  "windows-core 0.62.2",
+ "winreg",
  "x11-clipboard",
  "x11rb",
  "xcap",

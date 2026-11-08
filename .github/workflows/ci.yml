@@ -354,6 +354,10 @@ jobs:
           cargo test -p dzc-platform --features ipc ipc::
           cargo build -p dzc-platform --features ipc --example ipc_protocol_fixture
 
+      - name: Test shared Windows settings ownership and rollback
+        if: matrix.can_test && runner.os == 'Windows'
+        run: cargo test --locked -p dzc-platform system_settings::
+
       - name: Verify native Rust and Go protocol compatibility
         if: matrix.can_test
         shell: python
