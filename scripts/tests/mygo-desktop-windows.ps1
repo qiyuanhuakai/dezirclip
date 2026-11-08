@@ -75,8 +75,10 @@ public static class MyGoInput {
     [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
     [DllImport("user32.dll")] static extern bool OpenClipboard(IntPtr owner);
     [DllImport("user32.dll")] static extern bool CloseClipboard();
-    [DllImport("user32.dll")] static extern IntPtr GetClipboardData(uint format);
-    [DllImport("kernel32.dll")] static extern UIntPtr GlobalSize(IntPtr memory);
+    [DllImport("user32.dll", SetLastError=true)] static extern IntPtr GetClipboardData(uint format);
+    [DllImport("kernel32.dll", SetLastError=true)] static extern UIntPtr GlobalSize(IntPtr memory);
+    [DllImport("user32.dll")] static extern IntPtr GetClipboardOwner();
+    [DllImport("user32.dll")] static extern bool IsClipboardFormatAvailable(uint format);
     [DllImport("kernel32.dll")] static extern IntPtr GlobalLock(IntPtr memory);
     [DllImport("kernel32.dll")] static extern bool GlobalUnlock(IntPtr memory);
 
@@ -85,8 +87,16 @@ public static class MyGoInput {
         try {
             if (sequence != GetClipboardSequenceNumber()) throw new InvalidOperationException("Clipboard sequence changed before verification");
             IntPtr handle = GetClipboardData(13); // CF_UNICODETEXT
-            if (handle == IntPtr.Zero || GlobalSize(handle).ToUInt64() < (ulong)(expected.Length + 1) * 2)
-                throw new InvalidOperationException("Clipboard does not contain the complete selected text");
+            int readError = Marshal.GetLastWin32Error();
+            ulong size = handle == IntPtr.Zero ? 0 : GlobalSize(handle).ToUInt64();
+            int sizeError = Marshal.GetLastWin32Error();
+            if (handle == IntPtr.Zero || size < (ulong)(expected.Length + 1) * 2) {
+                uint ownerPid;
+                GetWindowThreadProcessId(GetClipboardOwner(), out ownerPid);
+                throw new InvalidOperationException(String.Format(
+                    "Clipboard does not contain the complete selected text: handle={0}, bytes={1}, expectedBytes={2}, readError={3}, sizeError={4}, available={5}, ownerPid={6}, sequence={7}",
+                    handle.ToInt64(), size, (expected.Length + 1) * 2, readError, sizeError, IsClipboardFormatAvailable(13), ownerPid, sequence));
+            }
             IntPtr data = GlobalLock(handle);
             if (data == IntPtr.Zero) throw new InvalidOperationException("Clipboard text handle is unreadable");
             try {
