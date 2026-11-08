@@ -176,6 +176,8 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
     limit: args.limit ?? 60, offset: args.offset ?? 0, expected_epoch: args.expectedEpoch }),
   get_privacy_entry: args => library("Entry", { id: args.id, expected_epoch: args.expectedEpoch,
     service_instance_id: args.expectedHostInstanceId, reveal: args.reveal ?? true }),
+  get_source_app_icon: args => library("SourceIcon", { id: args.id, expected_epoch: args.expectedEpoch,
+    service_instance_id: args.expectedHostInstanceId, reveal: false }),
   get_history_resource_preview: args => library("Entry", { id: args.id, expected_epoch: args.expectedEpoch,
     service_instance_id: args.expectedHostInstanceId, reveal: false,
     thumbnail_dimension: Math.min(1024, Math.max(64, Number(args.maxDimension ?? 384))) }),

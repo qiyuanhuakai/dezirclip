@@ -336,6 +336,12 @@ func (l *Library) SetSetting(ctx context.Context, key, value string, epoch uint6
 	return err
 }
 
+func (l *Library) SourceIcon(ctx context.Context, params protocol.DesktopEntryParams) (*string, error) {
+	var icon protocol.SourceAppIcon
+	err := l.snapshot(ctx, protocol.MethodDesktopHistorySourceIcon, params, "SourceAppIcon", &icon, params.ExpectedEpoch)
+	return icon.Src, err
+}
+
 func (l *Library) entry(ctx context.Context, method protocol.Method, params protocol.DesktopEntryParams) (hostedEntry, error) {
 	instance := l.owner.Hello().State.ServiceInstanceId
 	if (params.Id < 0 || params.ServiceInstanceId != "") && params.ServiceInstanceId != instance {

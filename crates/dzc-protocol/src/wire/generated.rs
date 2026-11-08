@@ -136,6 +136,12 @@ pub struct SurfaceActionParams {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SourceAppIcon {
+    pub src: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExternalOpenParams {
     pub service_instance_id: String,
     pub expected_epoch: u64,
@@ -496,6 +502,8 @@ pub enum Method {
     DesktopTagsPage,
     #[serde(rename = "desktop.history.get")]
     DesktopHistoryGet,
+    #[serde(rename = "desktop.history.source_icon")]
+    DesktopHistorySourceIcon,
     #[serde(rename = "desktop.snapshot.read")]
     DesktopSnapshotRead,
     #[serde(rename = "desktop.capture.begin")]

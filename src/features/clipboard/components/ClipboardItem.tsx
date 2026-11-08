@@ -34,7 +34,7 @@ import { isSensitiveEntry } from "../../../shared/lib/privacyRuntime";
 import { hasHistoryPreviewText, type HistoryPreviewContent, type HistoryPreviewPhase } from "../../../shared/lib/historyPreview";
 import { useImagePreview } from "../../../shared/hooks/useImagePreview";
 import { extractRichImageFallback, resolveRichImageSrc } from "../../../shared/lib/richPreview";
-import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
+import { getHistorySourceAppIcon, getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
 import { seekVideoPreviewFrame } from "../../../shared/lib/videoPreview";
 import { getContentTypeIcon } from "../../../shared/lib/contentTypeIcon";
 import { createFrameThrottle } from "../../../shared/lib/frameThrottle";
@@ -404,6 +404,13 @@ const ClipboardItem = ({
 
     useEffect(() => {
         let cancelled = false;
+        if (import.meta.env.MODE === "mygo") {
+            setSourceAppIcon(null);
+            void getHistorySourceAppIcon(item).then(icon => {
+                if (!cancelled) setSourceAppIcon(icon);
+            });
+            return () => { cancelled = true; };
+        }
         const sourceAppPath = item.source_app_path?.trim();
         const cachedIcon = peekSourceAppIcon(sourceAppPath);
 
@@ -430,7 +437,7 @@ const ClipboardItem = ({
         return () => {
             cancelled = true;
         };
-    }, [item.source_app_path]);
+    }, [item.source_app_path, item.host_instance_id, item.id, item.timestamp]);
 
     const previewOpacity = useContext(PreviewOpacityContext);
     const previewOwner = useRef({});

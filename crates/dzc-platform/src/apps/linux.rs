@@ -214,6 +214,20 @@ pub fn get_executable_icon(executable_path: String) -> io::Result<Option<String>
     Ok(None)
 }
 
+pub fn get_source_app_icon(executable_path: String) -> io::Result<Option<String>> {
+    use base64::Engine;
+    let Some(path) = get_executable_icon(executable_path)? else { return Ok(None); };
+    let path = Path::new(&path);
+    let mime = match path.extension().and_then(|extension| extension.to_str()) {
+        Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        _ => return Ok(None),
+    };
+    let bytes = dzc_core::filesystem::read_bounded_regular(path, 256 * 1024)?;
+    Ok(Some(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes))))
+}
+
 fn parse_desktop_file(path: &Path) -> Option<AppInfo> {
     let content = read_desktop_metadata(path)?;
     let mut name = None;

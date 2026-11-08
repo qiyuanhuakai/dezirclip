@@ -388,6 +388,22 @@
         }
       ]
     },
+    "SourceAppIcon": {
+      "type": "object",
+      "properties": {
+        "src": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 349600
+        }
+      },
+      "required": [
+        "src"
+      ],
+      "additionalProperties": false
+    },
     "ExternalOpenParams": {
       "type": "object",
       "properties": {
@@ -1415,6 +1431,7 @@
         "desktop.history.page",
         "desktop.tags.page",
         "desktop.history.get",
+        "desktop.history.source_icon",
         "desktop.snapshot.read",
         "desktop.capture.begin",
         "desktop.capture.write",
@@ -2180,7 +2197,10 @@
           "if": {
             "properties": {
               "method": {
-                "const": "desktop.history.get"
+                "enum": [
+                  "desktop.history.get",
+                  "desktop.history.source_icon"
+                ]
               }
             },
             "required": [

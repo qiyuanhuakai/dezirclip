@@ -7,6 +7,10 @@ pub use linux::*;
 mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::*;
+#[cfg(target_os = "windows")]
+mod windows_icon;
+#[cfg(target_os = "windows")]
+pub use windows_icon::{get_executable_icon, get_source_app_icon};
 
 pub fn open_url(handler: &Handler, value: &str) -> std::io::Result<()> {
     let value = value.trim();

@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dezirclip.local/protocol/v1/desktop.schema.json",
   "$defs": {
+    "SourceAppIcon": {
+      "type": "object",
+      "properties": { "src": { "type": ["string", "null"], "maxLength": 349600 } },
+      "required": ["src"], "additionalProperties": false
+    },
     "ExternalOpenParams": {
       "type": "object", "properties": {
         "service_instance_id": { "type": "string", "minLength": 1, "maxLength": 64 },

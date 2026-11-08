@@ -32,6 +32,28 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Skip("requires sibling CLI and Service")
 	}
 	profile := t.TempDir()
+	iconExecutable := filepath.Join(os.Getenv("SystemRoot"), "explorer.exe")
+	if runtime.GOOS == "linux" {
+		data := t.TempDir()
+		applications := filepath.Join(data, "applications")
+		if err := os.MkdirAll(applications, 0700); err != nil {
+			t.Fatal(err)
+		}
+		icon := filepath.Join(data, "fixture.png")
+		if err := os.WriteFile(icon, ocrFixture, 0600); err != nil {
+			t.Fatal(err)
+		}
+		iconExecutable = "/synthetic/dzc-source-icon-fixture"
+		desktop := "[Desktop Entry]\nType=Application\nName=Source icon fixture\nExec=" + iconExecutable + "\nIcon=" + icon + "\n"
+		if err := os.WriteFile(filepath.Join(applications, "dzc-source-icon-fixture.desktop"), []byte(desktop), 0600); err != nil {
+			t.Fatal(err)
+		}
+		dirs := os.Getenv("XDG_DATA_DIRS")
+		if dirs == "" {
+			dirs = "/usr/local/share:/usr/share"
+		}
+		t.Setenv("XDG_DATA_DIRS", data+":"+dirs)
+	}
 	t.Setenv("DEZIRCLIP_DB_PATH", filepath.Join(profile, "clipboard.db"))
 	executable, err := os.Executable()
 	if err != nil {
@@ -376,7 +398,12 @@ func TestReactLibraryWithService(t *testing.T) {
 	}
 	file := filepath.Join(profile, "backup.json")
 	const backup = `{"version":"dezirclip-export-v2","exported_at":1,"entries":[{"id":1,"content_type":"text","content":"bridge-marker","source_app":"fixture","created_at":1,"updated_at":1,"tags":["fixture"]}]}`
-	if err := os.WriteFile(file, []byte(backup), 0600); err != nil {
+	iconPath, err := json.Marshal(iconExecutable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupWithIcon := strings.Replace(backup, `"source_app":"fixture"`, `"source_app":"fixture","source_app_path":`+string(iconPath), 1)
+	if err := os.WriteFile(file, []byte(backupWithIcon), 0600); err != nil {
 		t.Fatal(err)
 	}
 	preview, err := library.PreviewBackup(ctx, epoch, file)
@@ -438,6 +465,20 @@ func TestReactLibraryWithService(t *testing.T) {
 		t.Fatalf("tag page: %+v %v", page, err)
 	}
 	params := protocol.DesktopEntryParams{Id: rows[0].Id, ExpectedEpoch: epoch, ServiceInstanceId: instance}
+	icon, err := library.SourceIcon(ctx, params)
+	if err != nil || icon == nil || !strings.HasPrefix(*icon, "data:image/png;base64,") {
+		t.Fatalf("source icon missing: %v", err)
+	}
+	iconPNG, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(*icon, "data:image/png;base64,"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := png.DecodeConfig(bytes.NewReader(iconPNG)); err != nil {
+		t.Fatalf("invalid source icon PNG: %v", err)
+	}
+	if runtime.GOOS == "linux" && !bytes.Equal(iconPNG, ocrFixture) {
+		t.Fatal("source icon differs from installed application icon")
+	}
 	action := "ignore_source"
 	policy := protocol.DesktopPolicyParams{ServiceInstanceId: instance, ExpectedEpoch: epoch, Id: &params.Id, Action: &action}
 	if decision, err := library.PolicyDecision(ctx, policy); err != nil || decision.Reason == "" {

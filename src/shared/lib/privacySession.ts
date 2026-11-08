@@ -311,7 +311,7 @@ export async function invokePrivacyBound<T>(command: string, args?: Record<strin
 }
 
 const publicReadCommands = new Set(["get_clipboard_history", "search_clipboard_history", "get_tag_items_page",
-  "get_captured_entry_summary", "get_history_resource_preview", "get_all_tags_info"]);
+  "get_captured_entry_summary", "get_history_resource_preview", "get_all_tags_info", "get_source_app_icon"]);
 
 export const privacyListGeneration = () => listFence.current();
 
