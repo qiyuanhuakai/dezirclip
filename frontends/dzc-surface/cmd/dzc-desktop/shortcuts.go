@@ -15,6 +15,23 @@ func (s *DesktopShell) SetMainHotkeys(ctx context.Context, hotkeys string, epoch
 	return s.resident.send(ctx, residentRequest{Operation: "main-hotkeys", Hotkey: hotkeys, Epoch: epoch}, 10*time.Second)
 }
 
+func (s *DesktopShell) ResetSettings(ctx context.Context, epoch uint64) error {
+	return s.resident.send(ctx, residentRequest{Operation: "reset-settings", Epoch: epoch}, 15*time.Second)
+}
+
+func resetSettings(owner *client.Client, epoch uint64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var result protocol.OperationResult
+	err := owner.DesktopCall(ctx, protocol.MethodDesktopSettingsReset, protocol.LibraryStateParams{
+		ServiceInstanceId: owner.Hello().State.ServiceInstanceId, ExpectedEpoch: epoch,
+	}, "OperationResult", &result)
+	if err == nil && !result.Performed {
+		return client.ErrProtocol
+	}
+	return err
+}
+
 func (s *DesktopShell) SetSearchHotkey(ctx context.Context, hotkey string, epoch uint64) error {
 	return s.resident.send(ctx, residentRequest{Operation: "search-hotkey", Hotkey: hotkey, Epoch: epoch}, 10*time.Second)
 }

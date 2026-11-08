@@ -73,6 +73,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		var setTrayVisible func(bool) error
 		pinnedCount := 0
 		var commands io.WriteCloser
+		mainPID := 0
 		recorder := &shortcutRecording{post: mygo.RunOnMain}
 		panel.SetShortcutRecorder(recorder.offer)
 		selector.SetShortcutRecorder(recorder.offer)
@@ -191,6 +192,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					}
 					return
 				}
+				if err := grantMainFocus(mainPID); err != nil {
+					log.Printf("Main activation permission unavailable: %v", err)
+				}
 				if _, err := io.WriteString(commands, command+"\n"); err != nil {
 					if reopen != "settings" {
 						reopen = command
@@ -225,6 +229,10 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				return
 			}
 			commands = input
+			mainPID = child.Process.Pid
+			if err := grantMainFocus(mainPID); err != nil {
+				log.Printf("New main activation permission unavailable: %v", err)
+			}
 			if command == "settings" || command == "search" {
 				if _, err := io.WriteString(input, command+"\n"); err != nil {
 					log.Printf("Main window unavailable: %v", err)
@@ -254,6 +262,22 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									return
 								}
 								switch request.Operation {
+								case "reset-settings":
+									if pasteBusy {
+										reply(fmt.Errorf("PasteBusy"))
+										break
+									}
+									if err := recorder.stop(); err != nil {
+										reply(err)
+										break
+									}
+									if err := resetSettings(owner, request.Epoch); err != nil {
+										reply(err)
+										break
+									}
+									relaunch, closing = true, true
+									reply(nil)
+									_, _ = io.WriteString(input, "rebuild\n")
 								case "paste-hotkey":
 									keys, ok := pasteKeys[request.Panel]
 									if !ok {
@@ -455,8 +479,9 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 					_ = recorder.stop()
 					input.Close()
 					commands = nil
+					mainPID = 0
 					closing = false
-					if moved {
+					if moved || relaunch {
 						relaunch = true
 						mygo.App.Quit()
 					} else if migrating || pending != nil {

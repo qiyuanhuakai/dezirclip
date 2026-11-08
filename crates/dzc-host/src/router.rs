@@ -341,6 +341,7 @@ impl Host {
                 methods.push("desktop.hotkey.panel.set");
                 methods.push("desktop.hotkey.action.set");
                 methods.push("desktop.settings.view.set");
+                if can(Permission::PrivacyWrite) { methods.push("desktop.settings.reset"); }
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
                 methods.push("desktop.emoji.favorites");
@@ -670,6 +671,31 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            Method::DesktopSettingsReset => {
+                session.require(Permission::PrivacyWrite)?;
+                let input: LibraryStateParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                let previous = self.history.privacy().hotkey().map_err(privacy_error)?;
+                let mut native = self.hotkey.lock().map_err(unavailable)?;
+                let hotkey = native.as_mut().ok_or(WireErrorCode::Unavailable)?;
+                hotkey.stop()?;
+                if let Err(error) = self.history.reset_application_preferences(input.expected_epoch) {
+                    hotkey.set(&previous)?;
+                    return Err(match error.code {
+                        dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                        _ => WireErrorCode::Unavailable,
+                    });
+                }
+                drop(native);
+                self.synchronize_privacy()?;
+                let epoch = self.snapshot()?.privacy_epoch;
+                self.queue_request(session, Method::DesktopQueueSet, serde_json::json!({
+                    "service_instance_id": self.instance_id(), "expected_epoch": epoch, "ids": []
+                }))?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("PrivacyHotkeyChanged".into()) })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
             Method::DesktopScreenBegin | Method::DesktopScreenRead | Method::DesktopScreenCrop |
             Method::DesktopScreenFinish | Method::DesktopScreenCancel => {
                 #[cfg(feature = "native-screen")]
@@ -896,6 +922,31 @@ pub(crate) mod tests {
             assert!(report.methods.iter().any(|name|name == "desktop.history.page"));
             assert!(report.methods.len() <= if extended {256} else {64});
         }
+    }
+
+    #[test]
+    fn settings_reset_requires_current_desktop_authority() {
+        let host = synthetic_host();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (desktop, _) = host.hello(request).unwrap();
+        let (cli, _) = host.hello(hello(ClientRole::Cli)).unwrap();
+        let epoch = host.snapshot().unwrap().privacy_epoch;
+        host.history.update_view_setting("app.theme", "retro", epoch).unwrap();
+        host.history.set_main_hotkeys(&["Ctrl+Shift+F8".into()], epoch).unwrap();
+        let input = |stamp| serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":stamp});
+        assert!(dispatch(&host, &cli, Method::DesktopSettingsReset, input(epoch)).error.is_some());
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopSettingsReset, input(epoch + 1)).error.unwrap().code, WireErrorCode::PrivacyEpochChanged);
+        assert_eq!(host.history.desktop_preferences().unwrap()["app.theme"], "retro");
+        assert!(dispatch(&host, &desktop, Method::DesktopSettingsReset, input(epoch)).error.is_none());
+        let preferences = host.history.desktop_preferences().unwrap();
+        assert_eq!(preferences["app.theme"], "mica");
+        assert_eq!(preferences["app.hotkey"], "Alt+C");
+        assert!(host.history.privacy().hotkey().unwrap().is_empty());
+        let queue = dispatch(&host, &desktop, Method::DesktopQueueGet, input(host.snapshot().unwrap().privacy_epoch)).result.unwrap();
+        assert_eq!(queue["ids"], serde_json::json!([]));
+        assert!(host.snapshot().unwrap().privacy_epoch > epoch);
     }
 
     #[test]

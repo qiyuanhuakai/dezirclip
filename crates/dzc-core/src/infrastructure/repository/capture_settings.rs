@@ -107,9 +107,9 @@ impl SqliteClipboardRepository {
         let state = crate::api::privacy_session::snapshot_with_conn(&transaction, chrono::Utc::now().timestamp_millis())
             .map_err(|error| CoreError::from(error.to_string()))?;
         if state.privacy_epoch != epoch { return Err(CoreError::from("PrivacyEpochChanged".to_owned())); }
-        // The Host owns the privacy shortcut registration; identity and internal
-        // state are not appearance or behavior preferences.
-        transaction.execute("DELETE FROM settings WHERE substr(key,1,4)='app.' AND key NOT IN ('app.anon_id','app.privacy_session_hotkey')", []).map_err(database)?;
+        // The Host stops native shortcut registrations before this transaction.
+        // Identity and internal state are not application preferences.
+        transaction.execute("DELETE FROM settings WHERE substr(key,1,4)='app.' AND key <> 'app.anon_id'", []).map_err(database)?;
         crate::database::seed_preference_defaults(&transaction).map_err(database)?;
         super::sensitive_tags::ensure_system_tags(&transaction).map_err(database)?;
         transaction.commit().map_err(database)
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(settings["app.hotkey"], "Alt+C");
         assert!(!settings.contains_key("app.custom_themes"));
         assert_eq!(settings["app.anon_id"], "stable-identity");
-        assert_eq!(settings["app.privacy_session_hotkey"], "Ctrl+Alt+P");
+        assert!(!settings.contains_key("app.privacy_session_hotkey"));
         assert_eq!(settings["internal.fixture"], "keep");
         let after = crate::api::privacy_session::snapshot_with_conn(&shared.lock().unwrap(), 0).unwrap();
         assert!(after.privacy_epoch > before.privacy_epoch, "resetting privacy preferences invalidates old permits");

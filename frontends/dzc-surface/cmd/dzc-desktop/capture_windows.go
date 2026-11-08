@@ -22,3 +22,16 @@ func grantResidentFocus() error {
 	}
 	return nil
 }
+
+// WM_HOTKEY grants activation to the resident; the existing WebView is a
+// separate process and needs that right before handling the show request.
+func grantMainFocus(pid int) error {
+	if pid <= 0 {
+		return errors.New("MainWindowUnavailable")
+	}
+	ok, _, err := windows.NewLazySystemDLL("user32.dll").NewProc("AllowSetForegroundWindow").Call(uintptr(pid))
+	if ok == 0 {
+		return err
+	}
+	return nil
+}

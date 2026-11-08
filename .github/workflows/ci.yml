@@ -426,6 +426,7 @@ jobs:
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --pin-preview
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --idle
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --paste-hotkeys
+          /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --reset-settings
           /usr/bin/python3 scripts/tests/mygo-desktop-x11.py target/debug/dzc-desktop --move-profile
 
       - name: Verify shared MyGo WebView2 paste into an independent Windows editor

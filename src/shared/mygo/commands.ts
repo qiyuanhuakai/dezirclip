@@ -205,6 +205,7 @@ const commands: Record<string, (args: Arguments) => Promise<unknown>> = {
 };
 
 export async function invokeMyGo<T>(command: string, args: Arguments = {}): Promise<T> {
+  if (command === "reset_settings") return shellCall<T>("ResetSettings", currentEpoch());
   if (command === "get_update_support") return shellCall<T>("PackageTool", "update-support");
   if (command === "check_for_update") return shellCall<T>("CheckForUpdate", args.channel);
   if (command === "set_data_path") return shellCall<T>("MoveProfile", args.newPath, currentEpoch());

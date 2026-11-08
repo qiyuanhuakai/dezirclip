@@ -1334,6 +1334,61 @@ def check(desktop, pinned, audio, pin_preview=False):
     check_storage_limit(cli)
 
 
+def check_reset_settings(desktop):
+    import gi
+    gi.require_version('Atspi', '2.0')
+    from gi.repository import Atspi
+    cli = desktop.with_name('dzc')
+    marker = 'reset-preserves-history-' + secrets.token_hex(6)
+    subprocess.run([cli, 'add', marker], check=True, stdout=subprocess.DEVNULL)
+    with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+        db.executemany('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [
+            ('app.language', 'en'), ('app.theme', 'retro'), ('app.hotkey', 'Ctrl+Shift+F8'),
+            ('app.silent_start', 'false'), ('app.hide_tray_icon', 'true')])
+    subprocess.run([cli, 'service', 'start', '--no-capture', '--json'], check=True, stdout=subprocess.DEVNULL)
+    resident = subprocess.Popen([desktop, '--show'], stdout=subprocess.DEVNULL)
+    replacement = None
+    def wait(check, message):
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            result = check()
+            if result: return result
+            time.sleep(.05)
+        raise AssertionError((message, [(name, text[:80]) for _, name, _, text in mygo_nodes(Atspi, desktop) if name or text]))
+    def control(label):
+        return next((node for node, name, interfaces, _ in mygo_nodes(Atspi, desktop)
+                     if name.casefold() == label.casefold() and 'Action' in interfaces), None)
+    def click(node):
+        Atspi.Component.scroll_to(node, Atspi.ScrollType.ANYWHERE)
+        bounds = Atspi.Component.get_extents(node, Atspi.CoordType.SCREEN)
+        assert Atspi.generate_mouse_event(bounds.x + bounds.width//2, bounds.y + bounds.height//2, 'b1c')
+    try:
+        click(wait(lambda: control('Settings'), 'Settings did not open'))
+        click(wait(lambda: control('Reset to Defaults'), 'Reset control unavailable'))
+        assert Atspi.Action.do_action(wait(lambda: control('Confirm'), 'Reset confirmation unavailable'), 0)
+        wait(lambda: resident.poll() is not None, 'Reset did not replace the native resident')
+        node = wait(lambda: next((node for node, _, _, text in mygo_nodes(Atspi, desktop) if text == marker), None),
+                    'Reset did not reopen history in the replacement WebView')
+        parent = int(Path(f'/proc/{node.get_process_id()}/stat').read_text().rsplit(')', 1)[1].split()[1])
+        if b'--main-window' in Path(f'/proc/{parent}/cmdline').read_bytes().split(b'\0'):
+            parent = int(Path(f'/proc/{parent}/stat').read_text().rsplit(')', 1)[1].split()[1])
+        assert parent != resident.pid and Path(f'/proc/{parent}/exe').resolve() == desktop
+        replacement = parent
+        with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
+            settings = dict(db.execute('SELECT key,value FROM settings'))
+            assert settings['app.theme'] == 'mica' and settings['app.hotkey'] == 'Alt+C'
+            assert settings['app.hide_tray_icon'] == 'false'
+            assert db.execute('SELECT count(*) FROM clipboard_history WHERE content=?', (marker,)).fetchone() == (1,)
+        wait(lambda: tray_item(replacement, '退出', activate=False), 'Reset did not restore the native tray')
+        print('Verified React reset confirmation, default preferences, resident replacement, restored tray and preserved history', flush=True)
+    finally:
+        if resident.poll() is None: resident.terminate()
+        resident.wait(timeout=10)
+        if replacement is not None:
+            os.kill(replacement, 15)
+        subprocess.run([cli, 'service', 'stop'], check=True)
+
+
 def check_paste_hotkeys(desktop):
     import gi
     gi.require_version('Gtk', '3.0')
@@ -1805,7 +1860,7 @@ def check_profile_move(executable, home):
 
 if __name__ == '__main__':
     desktop = Path(sys.argv[1]).resolve(strict=True)
-    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys'):
+    if len(sys.argv) == 2 or sys.argv[2] in ('--pinned', '--move-profile', '--pin-preview', '--idle', '--paste-hotkeys', '--reset-settings'):
         with tempfile.TemporaryDirectory(prefix='dzc-mygo-') as path:
             home = Path(path)
             for name in ('runtime', 'data', 'config', 'cache'):
@@ -1883,7 +1938,9 @@ with open(sys.argv[1], 'r+') as document:
                 assert wm.poll() is None and time.monotonic() < deadline, 'Window manager failed to start'
                 time.sleep(.05)
             pinned = '--pinned' in sys.argv[3:]
-            if '--paste-hotkeys' in sys.argv[3:]:
+            if '--reset-settings' in sys.argv[3:]:
+                check_reset_settings(desktop)
+            elif '--paste-hotkeys' in sys.argv[3:]:
                 check_paste_hotkeys(desktop)
             elif '--idle' in sys.argv[3:]:
                 check_idle(desktop)

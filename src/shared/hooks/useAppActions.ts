@@ -39,7 +39,7 @@ export const useAppActions = ({
       onConfirm: async () => {
         try {
           await invoke("reset_settings");
-          window.location.reload();
+          if (import.meta.env.MODE !== "mygo") window.location.reload();
         } catch (err) {
           const errorMsg = t("reset_failed") + (err?.toString() || "");
           pushToast(errorMsg, 3000);

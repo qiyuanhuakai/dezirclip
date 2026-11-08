@@ -416,6 +416,7 @@ const (
     MethodDesktopOcrEngine Method = "desktop.ocr.engine"
     MethodDesktopSettingsPreferences Method = "desktop.settings.preferences"
     MethodDesktopSettingsViewSet Method = "desktop.settings.view.set"
+    MethodDesktopSettingsReset Method = "desktop.settings.reset"
     MethodDesktopHotkeyRecording Method = "desktop.hotkey.recording"
     MethodDesktopHotkeyMainSet Method = "desktop.hotkey.main.set"
     MethodDesktopHotkeyPanelSet Method = "desktop.hotkey.panel.set"

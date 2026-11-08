@@ -36,6 +36,15 @@ const SettingsFooter = ({
             <div
                 className="settings-group settings-footer-action settings-footer-card"
                 onClick={() => onResetSettings()}
+                role="button"
+                tabIndex={0}
+                aria-label={t('reset_defaults')}
+                onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onResetSettings();
+                    }
+                }}
             >
                 <div className="settings-footer-card-content">
                     <RotateCcw size={16} />

@@ -592,6 +592,8 @@ pub enum Method {
     DesktopSettingsPreferences,
     #[serde(rename = "desktop.settings.view.set")]
     DesktopSettingsViewSet,
+    #[serde(rename = "desktop.settings.reset")]
+    DesktopSettingsReset,
     #[serde(rename = "desktop.hotkey.recording")]
     DesktopHotkeyRecording,
     #[serde(rename = "desktop.hotkey.main.set")]

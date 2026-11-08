@@ -1572,6 +1572,7 @@
         "desktop.ocr.engine",
         "desktop.settings.preferences",
         "desktop.settings.view.set",
+        "desktop.settings.reset",
         "desktop.hotkey.recording",
         "desktop.hotkey.main.set",
         "desktop.hotkey.panel.set",
@@ -2866,6 +2867,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/RecordingParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.settings.reset"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/LibraryStateParams"
               }
             }
           }
