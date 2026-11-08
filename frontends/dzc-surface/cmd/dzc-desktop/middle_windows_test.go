@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -10,10 +11,29 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func middleHookFixtureEnabled() bool {
+	return os.Getenv("GITHUB_ACTIONS") == "true" && os.Getenv("RUNNER_ENVIRONMENT") == "github-hosted" && os.Getenv("DZC_TEST_MIDDLE_HOOK") == "1"
+}
+
+// App.Run requires the initial goroutine, whereas testing runs each Test in a
+// worker goroutine. Keep the native loop in TestMain and propagate its result.
+func TestMain(m *testing.M) {
+	if middleHookFixtureEnabled() {
+		if err := runMiddleHookFixture(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+	os.Exit(m.Run())
+}
+
 func TestMiddleHookSurvivesBlockedResident(t *testing.T) {
-	if os.Getenv("GITHUB_ACTIONS") != "true" || os.Getenv("RUNNER_ENVIRONMENT") != "github-hosted" || os.Getenv("DZC_TEST_MIDDLE_HOOK") != "1" {
+	if !middleHookFixtureEnabled() {
 		t.Skip("requires disposable Windows desktop")
 	}
+}
+
+func runMiddleHookFixture() error {
 	finished := make(chan error, 1)
 	mygo.App.WhenReady(func() {
 		pressed := make(chan struct{}, 2)
@@ -75,9 +95,7 @@ func TestMiddleHookSurvivesBlockedResident(t *testing.T) {
 		<-release
 	})
 	if err := mygo.App.Run(); err != nil {
-		t.Fatal(err)
+		return err
 	}
-	if err := <-finished; err != nil {
-		t.Fatal(err)
-	}
+	return <-finished
 }

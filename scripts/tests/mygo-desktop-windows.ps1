@@ -455,6 +455,7 @@ $form.Controls.Add($edit)
 $resident = $null
 $startedService = $null
 $startedServiceProcess = $null
+$serviceCrashReceipt = $null
 try {
     & $cli add $marker | Out-Null
     if ($LASTEXITCODE) { throw 'Could not seed isolated clipboard history' }
@@ -532,6 +533,16 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
         # Retain the kernel handle before a possible exit; a later PID lookup
         # cannot distinguish a crashed Service from a reused process ID.
         $null = $startedServiceProcess.Handle
+        if ($env:DZC_SERVICE_CRASH_ROOT) {
+            $serviceCrashReceipt = Join-Path $env:DZC_SERVICE_CRASH_ROOT ("service-{0}.json" -f $startedServiceProcess.Id)
+            [pscustomobject]@{
+                pid = $startedServiceProcess.Id
+                executable = $startedServiceProcess.Path
+                sha256 = (Get-FileHash -LiteralPath $startedServiceProcess.Path -Algorithm SHA256).Hash
+                crashed = $false
+                exit = $null
+            } | ConvertTo-Json | Set-Content -LiteralPath $serviceCrashReceipt -Encoding UTF8
+        }
     }
     [Windows.Forms.Clipboard]::SetText('Before ' + $marker)
     $form.Show()
@@ -802,6 +813,12 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
             $startedServiceProcess.Refresh()
             if ($startedServiceProcess.HasExited) {
                 Write-Host ("Original Service exited: pid={0}, exit={1}" -f $startedServiceProcess.Id, $startedServiceProcess.ExitCode)
+                if ($serviceCrashReceipt) {
+                    $receipt = Get-Content -LiteralPath $serviceCrashReceipt -Raw | ConvertFrom-Json
+                    $receipt.crashed = $startedServiceProcess.ExitCode -lt 0
+                    $receipt.exit = $startedServiceProcess.ExitCode
+                    $receipt | ConvertTo-Json | Set-Content -LiteralPath $serviceCrashReceipt -Encoding UTF8
+                }
                 try {
                     $reported = $false
                     foreach ($event in @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000; StartTime = (Get-Date).AddMinutes(-5) } -MaxEvents 20 -ErrorAction Stop)) {
