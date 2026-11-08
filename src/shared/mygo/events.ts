@@ -7,6 +7,16 @@ let connected = false;
 let generation = 0;
 let settingsListeners = 0;
 let pendingSettings = false;
+let searchListeners = 0;
+let pendingSearch = false;
+
+async function receiveSearchRequest() {
+  if (await window.mygo.call<boolean>("DesktopShell.TakeSearchRequest")) pendingSearch = true;
+  if (searchListeners && pendingSearch) {
+    pendingSearch = false;
+    dispatch("focus-search-input");
+  }
+}
 
 async function receiveSettingsRequest() {
   if (await window.mygo.call<boolean>("DesktopShell.TakeSettingsRequest")) pendingSettings = true;
@@ -92,11 +102,13 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
   const handler = (message: Event) => receive({ event, id, payload: (message as CustomEvent<T>).detail });
   bus.addEventListener(event, handler);
   if (event === "open-settings-panel") settingsListeners++;
+  if (event === "focus-search-input") searchListeners++;
   if (!watching) {
     watching = true;
     window.mygo.on<string>("hotkey-recorded", hotkey => dispatch("hotkey-recorded", hotkey));
     window.mygo.on("recording-cancelled", () => dispatch("recording-cancelled"));
     window.mygo.on("settings-requested", () => { void receiveSettingsRequest().catch(console.error); });
+    window.mygo.on("search-requested", () => { void receiveSearchRequest().catch(console.error); });
     window.mygo.on<boolean>("window-focus", focused => dispatch("mygo-window-focus", focused));
     window.mygo.on<boolean>("window-visibility", visible => dispatch(visible ? "privacy-view-shown" : "privacy-view-hidden"));
     window.mygo.on("window-moved", () => dispatch("mygo-window-moved"));
@@ -104,8 +116,10 @@ export async function listen<T>(event: string, receive: (message: DesktopEvent<T
     window.mygo.on<string[]>("window-file-drop", paths => dispatch("tauri://drag-drop", { paths }));
     void watchHost();
   }
+  if (event === "focus-search-input") void receiveSearchRequest().catch(console.error);
   return () => {
     if (event === "open-settings-panel") settingsListeners--;
+    if (event === "focus-search-input") searchListeners--;
     bus.removeEventListener(event, handler);
   };
 }

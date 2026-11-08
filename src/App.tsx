@@ -440,6 +440,7 @@ const App = () => {
   }, [settingsLoaded, appSettings]);
 
   useEffect(() => {
+    if (import.meta.env.MODE === "mygo" && !settingsLoaded) return;
     const unlisten = listen("focus-search-input", () => {
       setShowSettings(false);
       setShowTagManager(false);
@@ -455,6 +456,7 @@ const App = () => {
       unlisten.then((off) => off());
     };
   }, [
+    settingsLoaded,
     setShowSettings,
     setShowTagManager,
     setShowEmojiPanel,

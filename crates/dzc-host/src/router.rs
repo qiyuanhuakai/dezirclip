@@ -339,6 +339,7 @@ impl Host {
                 methods.push("desktop.hotkey.recording");
                 methods.push("desktop.hotkey.main.set");
                 methods.push("desktop.hotkey.panel.set");
+                methods.push("desktop.hotkey.action.set");
                 methods.push("desktop.settings.view.set");
                 methods.push("desktop.settings.fonts");
                 methods.extend(["desktop.window.pin", "desktop.window.resize"]);
@@ -640,6 +641,24 @@ impl Host {
                 self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
                 result("OperationResult", OperationResult { performed: true })
             }
+            Method::DesktopHotkeyActionSet => {
+                let input: ActionHotkeyParams = params(request.params)?;
+                self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
+                if !matches!(input.key.as_str(), "app.sequential_hotkey" | "app.rich_paste_hotkey" | "app.search_hotkey") {
+                    return Err(WireErrorCode::InvalidRequest);
+                }
+                let key = if input.hotkey.is_empty() { String::new() } else {
+                    dzc_platform::shortcut::normalize_shortcut(&input.hotkey).map_err(|_| WireErrorCode::InvalidRequest)?
+                };
+                self.check_shortcut_conflicts(&input.key, std::slice::from_ref(&key))?;
+                self.history.set_action_hotkey(&input.key, &key, input.expected_epoch).map_err(|error| match error.code {
+                    dzc_core::api::CoreErrorCode::PrivacyEpochChanged => WireErrorCode::PrivacyEpochChanged,
+                    dzc_core::api::CoreErrorCode::Validation => WireErrorCode::InvalidRequest,
+                    _ => WireErrorCode::Unavailable,
+                })?;
+                self.publish(EventKind::ServiceStateChanged, EventData { entry_id: None, status: Some("view_settings_changed".into()) })?;
+                result("OperationResult", OperationResult { performed: true })
+            }
             Method::DesktopSettingsViewSet => {
                 let input: ViewSettingParams = params(request.params)?;
                 self.check_library_state(session, &input.service_instance_id, input.expected_epoch)?;
@@ -906,6 +925,36 @@ pub(crate) mod tests {
                 assert_eq!(host.history.desktop_preferences().unwrap()[key], "Ctrl+Shift+F9");
             }
             assert!(dispatch(&host, &desktop, Method::DesktopHotkeyPanelSet, input(key, "", epoch)).error.is_none());
+            assert_eq!(host.history.desktop_preferences().unwrap()[key], "");
+        }
+    }
+
+    #[test]
+    fn action_hotkeys_require_desktop_authority_and_preserve_previous_binding() {
+        let host = synthetic_host();
+        let grant = host.grants.issue_control(ClientRole::Desktop).unwrap();
+        let mut request = hello(ClientRole::Desktop);
+        request.grant = Some(grant.token().into());
+        let (desktop, _) = host.hello(request).unwrap();
+        let (cli, _) = host.hello(hello(ClientRole::Cli)).unwrap();
+        let epoch = host.snapshot().unwrap().privacy_epoch;
+        host.history.set_main_hotkeys(&["Ctrl+Alt+F22".into()], epoch).unwrap();
+        let input = |key: &str, hotkey: &str, expected_epoch| serde_json::json!({"service_instance_id":host.instance_id(),"expected_epoch":expected_epoch,"key":key,"hotkey":hotkey});
+        assert!(dispatch(&host, &cli, Method::DesktopHotkeyActionSet, input("app.search_hotkey", "Ctrl+Shift+F9", epoch)).error.is_some());
+        assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyActionSet, input("app.hotkey", "Ctrl+Shift+F9", epoch)).error.unwrap().code, WireErrorCode::InvalidRequest);
+        for key in ["app.sequential_hotkey", "app.rich_paste_hotkey", "app.search_hotkey"] {
+            assert!(dispatch(&host, &desktop, Method::DesktopHotkeyActionSet, input(key, "Control+Shift+F9", epoch)).error.is_none());
+            assert!(dispatch(&host, &desktop, Method::DesktopHotkeyActionSet, input(key, "Ctrl+Shift+F9", epoch)).error.is_none());
+            for (value, stamp, code) in [
+                ("Ctrl+Alt+F22", epoch, WireErrorCode::Busy),
+                ("Ctrl+Shift+V", epoch, WireErrorCode::Busy),
+                ("Ctrl+Shift+F8", epoch + 1, WireErrorCode::PrivacyEpochChanged),
+                ("invalid-key", epoch, WireErrorCode::InvalidRequest),
+            ] {
+                assert_eq!(dispatch(&host, &desktop, Method::DesktopHotkeyActionSet, input(key, value, stamp)).error.unwrap().code, code);
+                assert_eq!(host.history.desktop_preferences().unwrap()[key], "Ctrl+Shift+F9");
+            }
+            assert!(dispatch(&host, &desktop, Method::DesktopHotkeyActionSet, input(key, "", epoch)).error.is_none());
             assert_eq!(host.history.desktop_preferences().unwrap()[key], "");
         }
     }

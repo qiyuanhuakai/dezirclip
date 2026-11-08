@@ -84,11 +84,31 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		var pending *client.MoveRecovery
 		reopen := ""
 		registered := make(map[string]bool)
+		searchKeys := make(map[string]bool)
 		reachable := func() bool {
-			return len(registered) > 0 || (tray != nil && trayHostAvailable(tray))
+			return len(registered) > 0 || len(searchKeys) > 0 || (tray != nil && trayHostAvailable(tray))
 		}
 		var toggle func()
 		var present func(string)
+		registerSearch := func(key string) error {
+			return mygo.GlobalShortcut.Register(key, func() {
+				if !recorder.offer(key) {
+					present("search")
+				}
+			})
+		}
+		refreshSearch := func(settings map[string]string) {
+			if settings == nil {
+				return
+			}
+			key, found := settings["app.search_hotkey"]
+			if !found {
+				key = "Alt+F"
+			}
+			if err := changeMainHotkeys(searchKeys, key, registerSearch, mygo.GlobalShortcut.Unregister, func() error { return nil }); err != nil {
+				log.Printf("Search shortcut unavailable: %v", err)
+			}
+		}
 		reconnect := func(report func(error)) {
 			migrating = true
 			receipt := pending
@@ -170,8 +190,8 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 				return
 			}
 			commands = input
-			if command == "settings" {
-				if _, err := io.WriteString(input, "settings\n"); err != nil {
+			if command == "settings" || command == "search" {
+				if _, err := io.WriteString(input, command+"\n"); err != nil {
 					log.Printf("Main window unavailable: %v", err)
 					reopen = command
 				}
@@ -199,6 +219,10 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 									return
 								}
 								switch request.Operation {
+								case "search-hotkey":
+									reply(changeMainHotkeys(searchKeys, request.Hotkey, registerSearch, mygo.GlobalShortcut.Unregister, func() error {
+										return persistActionHotkey(owner, "app.search_hotkey", request.Hotkey, request.Epoch)
+									}))
 								case "panel-hotkey":
 									fallback := map[string]string{"app.quick_paste_hotkey": "Ctrl+Shift+V", "app.screenshot_hotkey": "Ctrl+Shift+A", "app.screenshot_full_hotkey": "Ctrl+Shift+F"}
 									previous, ok := fallback[request.Panel]
@@ -373,7 +397,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 							if !stopping && !migrating && !moved && pending == nil {
 								panel.RefreshShortcut()
 								selector.Refresh()
-								refreshMainShortcuts(owner, registered, toggle, recorder.offer)
+								refreshSearch(refreshMainShortcuts(owner, registered, toggle, recorder.offer))
 							}
 						})
 					}
@@ -404,6 +428,7 @@ func runResident(owner *client.Client, minimized, forceShow bool) error {
 		toggle = func() { present("toggle") }
 		open := func() { present("show") }
 		startupSettings := refreshMainShortcuts(owner, registered, toggle, recorder.offer)
+		refreshSearch(startupSettings)
 		setTrayVisible = func(visible bool) error {
 			if (tray != nil) == visible {
 				return nil

@@ -300,6 +300,14 @@ export const useHotkeyConfig = ({
         }
       }
 
+      if (import.meta.env.MODE === "mygo") {
+        try {
+          await invoke("set_search_hotkey", { hotkey: newHotkey });
+          setSearchHotkey(newHotkey);
+        } catch (error) { pushToast(t("hotkey_register_failed") + resolveHotkeyErrorMessage(error), 5000); }
+        setIsRecordingSearch(false);
+        return;
+      }
       setSearchHotkey(newHotkey);
       saveAppSetting("search_hotkey", newHotkey);
       await invoke("set_search_hotkey", { hotkey: newHotkey }).catch(console.error);
@@ -310,13 +318,14 @@ export const useHotkeyConfig = ({
       pushToast,
       saveAppSetting,
       setSearchHotkey,
+      t,
       setIsRecordingSearch,
       resolveHotkeyErrorMessage
     ]
   );
 
   // Main shortcuts use the shared editor; these inline recorders use the same native session.
-  useHotkeyRecording({
+  const actionRecording = useHotkeyRecording({
     recording: isRecordingSequential || isRecordingRich || isRecordingSearch,
     onRecorded: hotkey => {
       if (isRecordingSequential) void updateSequentialHotkey(hotkey);
@@ -336,8 +345,8 @@ export const useHotkeyConfig = ({
     updateHotkey,
     addMainHotkey,
     removeMainHotkey,
-    updateSequentialHotkey,
-    updateRichPasteHotkey,
-    updateSearchHotkey
+    updateSequentialHotkey: isRecordingSequential ? actionRecording.record : updateSequentialHotkey,
+    updateRichPasteHotkey: isRecordingRich ? actionRecording.record : updateRichPasteHotkey,
+    updateSearchHotkey: isRecordingSearch ? actionRecording.record : updateSearchHotkey
   };
 };

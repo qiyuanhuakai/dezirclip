@@ -493,6 +493,9 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         </div>
                         <div
                             className={`key-group ${props.isRecordingSearch ? 'recording' : ''}`}
+                            role="button"
+                            aria-label={props.t('search_hotkey_label')}
+                            aria-pressed={props.isRecordingSearch}
                             onClick={(e) => { props.setIsRecordingSearch(true); invoke("focus_clipboard_window").catch(console.error); e.currentTarget.focus(); }}
                             tabIndex={0}
                             onKeyDown={(e) => {

@@ -343,7 +343,7 @@ func run() error {
 					mygo.RunOnMain(func() { win.Close() })
 					continue
 				}
-				if command == "show" || command == "toggle" || command == "settings" {
+				if command == "show" || command == "toggle" || command == "settings" || command == "search" {
 					position := false
 					if !win.IsFocused() {
 						history.rememberTarget(ctx)
@@ -359,6 +359,10 @@ func run() error {
 							if command == "settings" {
 								shell.settingsPending.Store(true)
 								settingsRequested.Emit(win, true)
+							}
+							if command == "search" {
+								shell.searchPending.Store(true)
+								searchRequested.Emit(win, true)
 							}
 						}
 					})

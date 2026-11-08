@@ -18,9 +18,13 @@ type DesktopShell struct {
 	dock            edgeDock
 	resident        residentBridge
 	settingsPending atomic.Bool
+	searchPending   atomic.Bool
 }
 
 var settingsRequested = mygo.NewEvent[bool]("settings-requested")
+var searchRequested = mygo.NewEvent[bool]("search-requested")
+
+func (shell *DesktopShell) TakeSearchRequest() bool { return shell.searchPending.Swap(false) }
 
 func (shell *DesktopShell) TakeSettingsRequest() bool {
 	return shell.settingsPending.Swap(false)

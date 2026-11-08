@@ -830,8 +830,25 @@ def check_pinned(row, atspi, gtk, marker, target, editor, executable, resident):
         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
             wait_for(lambda: db.execute("SELECT value FROM settings WHERE key='app.hotkey'").fetchone() == ('Ctrl+Shift+F8',),
                      'Removing a main shortcut did not preserve the original binding')
-        custom_rules = wait_for(lambda: find_item('Custom Rules'), 'Clipboard settings did not survive shortcut editing')
         print('Verified main shortcut addition, persistence, native activation, WebView recreation and removal', flush=True)
+        def focused_search():
+            return next((item for item, name, interfaces, _ in mygo_nodes(atspi, executable)
+                         if item.get_state_set().contains(atspi.StateType.FOCUSED)
+                         and name == 'Search clipboard...'), None)
+        alternate.present()
+        wait_for(alternate.is_active, 'Independent editor did not regain focus before search')
+        shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
+        wait_for(focused_search, 'Search shortcut did not leave Settings and focus the search input')
+        search_window = settings_window().get_xid()
+        shortcut((Gdk.KEY_Control_L, Gdk.KEY_Shift_L, Gdk.KEY_F8))
+        wait_for(lambda: subprocess.run(['xwininfo', '-id', str(search_window)], capture_output=True).returncode != 0,
+                 'Main shortcut did not close the search WebView')
+        alternate.present()
+        wait_for(alternate.is_active, 'Independent editor did not regain focus before cold search')
+        shortcut((Gdk.KEY_Alt_L, Gdk.KEY_f))
+        wait_for(focused_search, 'Search shortcut did not recreate the WebView with a focused search input')
+        custom_rules = open_appearance('Settings', 'Clipboard', 'Custom Rules')
+        print('Verified resident search shortcut focuses shared React search from Settings and after WebView recreation', flush=True)
         def begin_privacy_recording():
             button = wait_for(lambda: find_item('Toggle privacy session shortcut'), 'Privacy shortcut recorder unavailable')
             atspi.Component.scroll_to(button, atspi.ScrollType.ANYWHERE)
@@ -1278,6 +1295,7 @@ def check(desktop, pinned, audio, pin_preview=False):
                         assert process.wait(timeout=15) == 0
                         with sqlite3.connect(os.environ['DEZIRCLIP_DB_PATH']) as db:
                             db.execute("UPDATE settings SET value=? WHERE key='app.hotkey'", (key,))
+                            db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('app.search_hotkey','')")
                         move_pointer()
                         process = subprocess.Popen([desktop, *args], stdout=subprocess.DEVNULL)
                         deadline = time.monotonic() + 15

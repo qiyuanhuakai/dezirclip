@@ -388,6 +388,37 @@
         }
       ]
     },
+    "ActionHotkeyParams": {
+      "type": "object",
+      "properties": {
+        "service_instance_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "x-rust-type": "u64"
+        },
+        "key": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "hotkey": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "service_instance_id",
+        "expected_epoch",
+        "key",
+        "hotkey"
+      ],
+      "additionalProperties": false
+    },
     "PanelHotkeyParams": {
       "type": "object",
       "properties": {
@@ -1544,6 +1575,7 @@
         "desktop.hotkey.recording",
         "desktop.hotkey.main.set",
         "desktop.hotkey.panel.set",
+        "desktop.hotkey.action.set",
         "desktop.settings.capture.get",
         "desktop.settings.capture.set",
         "desktop.screen.begin",
@@ -2758,6 +2790,25 @@
             "properties": {
               "params": {
                 "$ref": "#/$defs/LibraryStateParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "desktop.hotkey.action.set"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ActionHotkeyParams"
               }
             }
           }
