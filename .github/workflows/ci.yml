@@ -464,6 +464,13 @@ jobs:
             if ($LASTEXITCODE) { throw "Service startup and emoji paste cycle $_ failed: $LASTEXITCODE" }
           }
 
+      - name: Verify Service exit receipts before readiness
+        if: runner.os == 'Windows' && matrix.can_test
+        shell: powershell
+        env:
+          DZC_TEST_RECEIPT_PROCESS: '1'
+        run: ./scripts/tests/test-service-process-receipt.ps1
+
       - name: Diagnose Windows Service startup crashes with local symbols
         if: runner.os == 'Windows' && matrix.can_test && inputs.windows_service_crash_stacks
         timeout-minutes: 20

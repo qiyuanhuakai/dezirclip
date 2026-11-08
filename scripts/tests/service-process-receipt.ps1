@@ -1,3 +1,20 @@
+function Update-RecordedServiceExit($Process, [string]$Receipt) {
+    if (!$Process -or !$Receipt) { return }
+    $Process.Refresh()
+    if (!$Process.HasExited) { return }
+    $record = Get-Content -LiteralPath $Receipt -Raw | ConvertFrom-Json
+    if ($record.pid -ne $Process.Id) { throw 'Service exit does not match its retained launch identity' }
+    $record.exit = $Process.ExitCode
+    $record.crashed = $Process.ExitCode -lt 0
+    $record | ConvertTo-Json | Set-Content -LiteralPath $Receipt -Encoding UTF8
+}
+
+function Select-ServiceCrashReceipt([string]$Receipt, [string]$Executable) {
+    $record = Get-Content -LiteralPath $Receipt -Raw | ConvertFrom-Json
+    if ($record.executable -cne $Executable -or $record.pid -le 0) { throw 'Unexpected Service receipt' }
+    if ($record.crashed -and $record.exit -lt 0) { return $record }
+}
+
 function Start-RecordedService([string]$Executable, [string]$Arguments, [string]$Root) {
     if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
         throw 'Recorded Service launches require a disposable GitHub runner'

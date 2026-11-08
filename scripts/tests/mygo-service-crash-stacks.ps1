@@ -32,6 +32,8 @@ $registry = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps
 if (Test-Path -LiteralPath $registry) { throw 'Existing Service crash configuration is not modified' }
 $configured = $false
 $originalRoot = $env:DZC_SERVICE_CRASH_ROOT
+$functionalFailure = $null
+$foundCrash = $false
 try {
     $null = New-Item -Path $registry -Force
     $configured = $true
@@ -53,15 +55,18 @@ try {
         powershell -NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -File ./scripts/tests/mygo-desktop-windows.ps1 -Desktop $binary -Emoji
         if ($LASTEXITCODE) { throw "Service diagnostic cycle $cycle failed: $LASTEXITCODE" }
     }
+} catch {
+    $functionalFailure = $_
+    throw
 } finally {
     # Analyze only a PID recorded by this fixture before its process exited.
     # Raw dumps and debugger output stay on the ephemeral runner, never artifacts.
     try {
         foreach ($receiptFile in @(Get-ChildItem -LiteralPath $root -Filter 'service-*.json' -File)) {
-            $receipt = Get-Content -LiteralPath $receiptFile.FullName -Raw | ConvertFrom-Json
-            if ($receipt.executable -cne $service -or $receipt.pid -le 0) { throw 'Unexpected Service receipt' }
+            $receipt = Select-ServiceCrashReceipt $receiptFile.FullName $service
+            if (!$receipt) { continue }
+            $foundCrash = $true
             $dump = Join-Path $root ("dzc-service.exe.{0}.dmp" -f $receipt.pid)
-            if (!$receipt.crashed) { continue }
             $deadline = (Get-Date).AddSeconds(30)
             while (!(Test-Path -LiteralPath $dump) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
             if (!(Test-Path -LiteralPath $dump)) { Write-Host "No WER dump for recorded Service PID $($receipt.pid)"; continue }
@@ -85,5 +90,6 @@ try {
         if (!$resolvedRoot.StartsWith($temporary, [StringComparison]::OrdinalIgnoreCase) -or
             (Split-Path $resolvedRoot -Leaf) -notmatch '^dzc-service-stacks-[a-f0-9]{32}$') { throw 'Invalid diagnostic cleanup root' }
         Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
+        if ($foundCrash -and !$functionalFailure) { throw 'A natural Service crash was recorded before cleanup' }
     }
 }

@@ -816,6 +816,10 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     }
 } catch {
     $failure = $_
+    # A readiness failure leaves startedService null. Record the retained child's
+    # natural exit independently, before any diagnostic query or active cleanup.
+    try { Update-RecordedServiceExit $startedServiceProcess $serviceCrashReceipt }
+    catch { Write-Host ("Service exit receipt failed: " + $_.Exception.Message) }
     Write-Host ("Editor length={0}, exact={1}, focused={2}, foreground={3}, editor window={4}" -f
         $edit.Text.Length, ($edit.Text -ceq $marker), $edit.Focused, [MyGoInput]::GetForegroundWindow(), $form.Handle)
     try {
@@ -828,17 +832,11 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
     } catch { Write-Host ("Diagnostic query failed: " + $_.Exception.Message) }
     $log = Join-Path $dir.FullName 'desktop.log'
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 12 | Write-Host }
-    if (($Emoji -or $Elevation) -and $startedService) {
+    if (($Emoji -or $Elevation) -and ($startedService -or $startedServiceProcess)) {
         if ($startedServiceProcess) {
             $startedServiceProcess.Refresh()
             if ($startedServiceProcess.HasExited) {
                 Write-Host ("Original Service exited: pid={0}, exit={1}" -f $startedServiceProcess.Id, $startedServiceProcess.ExitCode)
-                if ($serviceCrashReceipt) {
-                    $receipt = Get-Content -LiteralPath $serviceCrashReceipt -Raw | ConvertFrom-Json
-                    $receipt.crashed = $startedServiceProcess.ExitCode -lt 0
-                    $receipt.exit = $startedServiceProcess.ExitCode
-                    $receipt | ConvertTo-Json | Set-Content -LiteralPath $serviceCrashReceipt -Encoding UTF8
-                }
                 try {
                     $reported = $false
                     foreach ($event in @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000; StartTime = (Get-Date).AddMinutes(-5) } -MaxEvents 20 -ErrorAction Stop)) {
@@ -864,14 +862,16 @@ with sqlite3.connect(os.environ["DEZIRCLIP_DB_PATH"]) as db:
                 Write-Host ("Original Service is still running: pid={0}" -f $startedServiceProcess.Id)
             }
         }
-        try {
+        if ($startedService) { try {
             $observedService = & $cli service status --json | ConvertFrom-Json
             Write-Host ("Before cleanup: status exit={0}, original Service={1}, capture owner={2}" -f
                 $LASTEXITCODE, ($startedService.state.service_instance_id -ceq $observedService.state.service_instance_id), $observedService.capture_owner)
-        } catch { Write-Host 'Could not inspect the original Service before cleanup' }
+        } catch { Write-Host 'Could not inspect the original Service before cleanup' } }
     }
     throw $failure
 } finally {
+    try { Update-RecordedServiceExit $startedServiceProcess $serviceCrashReceipt }
+    catch { Write-Host ("Service exit receipt failed before cleanup: " + $_.Exception.Message) }
     if ($resident -and !$resident.HasExited) { $resident.Kill(); $resident.WaitForExit() }
     if ($main -and !$main.HasExited) { $main.Kill(); $main.WaitForExit() }
     & $cli service stop | Out-Null
